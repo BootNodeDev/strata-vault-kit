@@ -1,4 +1,33 @@
-# graft's local graph cache — regenerable, not committed (run `graft build`).
-graft/
+# Rust
+target
 
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local settings
+.soroban
+.stellar
+
+# Env & local config (may hold keys or identities)
+.env
+.env.*
+!.env.example
+.config/
+
+# OS
+.DS_Store
+
+# Soroban test snapshot artifacts
+test_snapshots/
+
+# Local agent tooling — per-developer. Each wires an agent to a binary a teammate may
+# not have installed, so committing them would break their sessions rather than help.
+.claude/
+.mcp.json
+.ignore
 .atl/
+graft/
+.agents/
+skills-lock.json
