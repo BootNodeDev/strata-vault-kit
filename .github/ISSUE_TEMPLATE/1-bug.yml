@@ -45,7 +45,9 @@ body:
     id: reproduction
     attributes:
       label: Reproduction link
-      description: Link to a minimal reproduction (repo, sandbox, deploy). Issues without a reproduction may be closed.
+      description:
+        Link to a minimal reproduction (repo, sandbox, deploy). Issues without a
+        reproduction may be closed.
       placeholder: https://github.com/...
     validations:
       required: false
@@ -54,7 +56,8 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Relevant environment details (OS, browser, runtime, package versions).
+      description:
+        Relevant environment details (OS, browser, runtime, package versions).
       render: bash
       placeholder: |
         OS: macOS 15.3
@@ -85,6 +88,7 @@ body:
     id: context
     attributes:
       label: Additional context
-      description: Screenshots, logs, error messages, or anything else that might help.
+      description:
+        Screenshots, logs, error messages, or anything else that might help.
     validations:
       required: false

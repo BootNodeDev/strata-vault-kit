@@ -1,6 +1,6 @@
 {
-  "name": "@stellar-scaffold/ui",
-  "version": "0.0.0",
+  "name": "open-rwa-vault",
+  "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "npm start",

@@ -30,7 +30,10 @@ body:
     id: user-story
     attributes:
       label: User story / Problem statement
-      description: 'Who needs this and why? Pick the format that fits: "As a [role]..." for new capabilities with a clear user beneficiary; "Currently..." for UX fixes, missing feedback, or when the user role is implicit.'
+      description:
+        'Who needs this and why? Pick the format that fits: "As a [role]..." for
+        new capabilities with a clear user beneficiary; "Currently..." for UX
+        fixes, missing feedback, or when the user role is implicit.'
       placeholder: |
         As a [role], I want [goal], so that [benefit].
 
@@ -44,7 +47,9 @@ body:
     id: expected-outcome
     attributes:
       label: Expected outcome
-      description: What does success look like? Describe the desired end state from the user's perspective, not the implementation approach.
+      description:
+        What does success look like? Describe the desired end state from the
+        user's perspective, not the implementation approach.
       placeholder: |
         When this is done, a user should be able to...
         The system should behave as follows...
@@ -55,7 +60,9 @@ body:
     id: acceptance-criteria
     attributes:
       label: Acceptance criteria
-      description: Specific, testable conditions that verify the expected outcome was achieved. These will be mirrored in the PR checklist.
+      description:
+        Specific, testable conditions that verify the expected outcome was
+        achieved. These will be mirrored in the PR checklist.
       placeholder: |
         - [ ] ...
         - [ ] ...
@@ -75,7 +82,9 @@ body:
     id: technical-notes
     attributes:
       label: Technical notes
-      description: Architecture considerations, dependencies, migration concerns, or anything the implementer should know.
+      description:
+        Architecture considerations, dependencies, migration concerns, or
+        anything the implementer should know.
     validations:
       required: false
 

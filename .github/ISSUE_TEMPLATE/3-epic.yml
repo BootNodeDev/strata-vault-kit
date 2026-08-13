@@ -1,5 +1,6 @@
 name: Epic
-description: Define a large body of work that will be broken into smaller issues.
+description:
+  Define a large body of work that will be broken into smaller issues.
 title: ""
 labels: ["epic"]
 body:
@@ -30,7 +31,9 @@ body:
     id: objective
     attributes:
       label: Objective
-      description: What are we trying to achieve? The high-level goal in one or two sentences.
+      description:
+        What are we trying to achieve? The high-level goal in one or two
+        sentences.
       placeholder: Enable users to...
     validations:
       required: true
@@ -39,7 +42,9 @@ body:
     id: rationale
     attributes:
       label: Rationale
-      description: Why does this matter? Business value, user impact, or technical justification.
+      description:
+        Why does this matter? Business value, user impact, or technical
+        justification.
       placeholder: This is important because...
     validations:
       required: true
@@ -48,7 +53,8 @@ body:
     id: scope
     attributes:
       label: Scope
-      description: What is in scope and, just as importantly, what is out of scope.
+      description:
+        What is in scope and, just as importantly, what is out of scope.
       placeholder: |
         **In scope:**
         - ...
@@ -62,7 +68,9 @@ body:
     id: architecture
     attributes:
       label: Architecture & technical considerations
-      description: Key technical decisions, patterns, constraints, or risks. Link to ADRs or design docs if they exist.
+      description:
+        Key technical decisions, patterns, constraints, or risks. Link to ADRs
+        or design docs if they exist.
     validations:
       required: false
 
@@ -70,7 +78,9 @@ body:
     id: dependencies
     attributes:
       label: Dependencies
-      description: What blocks this epic or what does this epic block? External services, other teams, infrastructure, etc.
+      description:
+        What blocks this epic or what does this epic block? External services,
+        other teams, infrastructure, etc.
     validations:
       required: false
 
@@ -78,7 +88,9 @@ body:
     id: issues
     attributes:
       label: Issue breakdown
-      description: Checklist of sub-issues that compose this epic. Can start as a rough draft — the agent or the team will refine and create the actual issues.
+      description:
+        Checklist of sub-issues that compose this epic. Can start as a rough
+        draft — the agent or the team will refine and create the actual issues.
       placeholder: |
         - [ ] #issue or description
         - [ ] #issue or description
@@ -90,7 +102,9 @@ body:
     id: acceptance-criteria
     attributes:
       label: Acceptance criteria
-      description: How do we know this epic is done? High-level conditions, not per-issue details.
+      description:
+        How do we know this epic is done? High-level conditions, not per-issue
+        details.
       placeholder: |
         - [ ] ...
         - [ ] ...

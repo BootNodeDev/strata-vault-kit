@@ -18,7 +18,6 @@ const Home: React.FC = () => (
 			</p>
 		</div>
 
-
 		<div className="card">
 			<h2>Start Building</h2>
 			<ol>

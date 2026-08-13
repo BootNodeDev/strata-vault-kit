@@ -1,13 +1,13 @@
 {
-  "name": "@stellar-scaffold/ui-e2e",
-  "version": "0.0.0",
+  "name": "@open-rwa-vault/e2e",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Playwright UI-smoke parity tests run against every framework template.",
+  "description": "Playwright end-to-end tests for the vault interface.",
   "scripts": {
     "test": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0"
+    "@playwright/test": "1.60.0"
   }
 }

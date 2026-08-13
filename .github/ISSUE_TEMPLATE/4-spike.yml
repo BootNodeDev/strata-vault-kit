@@ -1,5 +1,6 @@
 name: Spike / Research
-description: Time-boxed investigation to answer a question or reduce uncertainty.
+description:
+  Time-boxed investigation to answer a question or reduce uncertainty.
 title: ""
 labels: ["spike"]
 body:
@@ -23,7 +24,8 @@ body:
     id: timebox
     attributes:
       label: Time-box
-      description: Maximum time to spend before reporting back, regardless of outcome.
+      description:
+        Maximum time to spend before reporting back, regardless of outcome.
       options:
         - 2 hours
         - Half day
@@ -37,7 +39,9 @@ body:
     id: background
     attributes:
       label: Background / What we already know
-      description: Context, prior decisions, links to related issues or docs. Prevents the investigator from repeating work.
+      description:
+        Context, prior decisions, links to related issues or docs. Prevents the
+        investigator from repeating work.
     validations:
       required: false
 
@@ -45,7 +49,9 @@ body:
     id: method
     attributes:
       label: Investigation approach
-      description: How should this be investigated? Prototype, docs research, vendor comparison, proof of concept, talk to someone?
+      description:
+        How should this be investigated? Prototype, docs research, vendor
+        comparison, proof of concept, talk to someone?
       placeholder: |
         - Read the docs for X
         - Build a minimal prototype that tests Y
@@ -86,7 +92,8 @@ body:
     id: conclusions
     attributes:
       label: Conclusions & recommendations
-      description: Answers to the original question(s). What do you recommend and why?
+      description:
+        Answers to the original question(s). What do you recommend and why?
     validations:
       required: false
 
@@ -94,7 +101,9 @@ body:
     id: next-steps
     attributes:
       label: Next steps
-      description: Follow-up issues, decisions to make, or work to schedule based on findings.
+      description:
+        Follow-up issues, decisions to make, or work to schedule based on
+        findings.
       placeholder: |
         - [ ] Create issue for...
         - [ ] Discuss with team...
