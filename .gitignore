@@ -1,4 +1,56 @@
-# graft's local graph cache — regenerable, not committed (run `graft build`).
-graft/
+# stellar/soroban/Rust output
+target
+.soroban
 
+# project identity and alias files will be in .config/stellar
+.config
+
+# test snapshot folders from sample contracts
+test_snapshots
+
+# build output
+dist
+dist-ssr
+
+# dependencies
+node_modules/
+
+# logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# environment variables
+.env
+.env.*
+!.env.example
+
+# easy way to create temporary local-only files and folders
+*.local.*
+
+# macOS-specific files
+.DS_Store
+
+# generated contract bindings + clients (Binding packages and flattened index.ts)
+app-lib/clients/*
+!app-lib/clients/.gitkeep
+
+# Agent/editor scratch
+.claude/
+
+# TypeScript incremental build info
+*.tsbuildinfo
+
+# Local agent tooling — per-developer. Each wires an agent to a binary a teammate may
+# not have installed, so committing them would break their sessions rather than help.
+.claude/
+.mcp.json
+.ignore
 .atl/
+graft/
+.agents/
+skills-lock.json
