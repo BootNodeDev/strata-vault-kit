@@ -1,0 +1,16 @@
+Open RWA Vault
+Copyright 2026 BootNode
+
+This product includes software developed by the Scaffold Stellar project:
+
+  https://github.com/stellar-scaffold/ui
+  https://github.com/stellar-scaffold/cli
+
+Licensed under the Apache License, Version 2.0. The project layout, the shared
+frontend library under app-lib/, the application shell under app/, and the
+continuous integration workflow originate there.
+
+Those files have been modified. The changes remove the upstream project's own
+example contracts, governance documents and release automation, and adapt the
+remainder to this project. Modifications are recorded in this repository's git
+history.

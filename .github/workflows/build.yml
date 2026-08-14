@@ -11,11 +11,16 @@ env:
   PKG_CONFIG_PATH: /usr/lib/pkgconfig
   PUBLIC_STELLAR_NETWORK: local
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # ---- Fast checks first ----
       # Fail in seconds on lint / format before the multi-minute CLI build +
@@ -25,12 +30,11 @@ jobs:
       - run: npm run format:check
 
       # ---- Slow path: CLI toolchain, local network, contract codegen ----
-      - uses: actions/cache@v3
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          # NB: ~/.cargo/bin is deliberately NOT cached here — the
-          # stellar-scaffold binary is cached separately keyed on the CLI
-          # commit SHA (see "Cache stellar-scaffold binary"). Caching it under
-          # the UI Cargo.lock key would restore a stale/mismatched binary.
+          # NB: ~/.cargo/bin is deliberately NOT cached here. Keying the
+          # stellar-scaffold binary on this repo's Cargo.lock would restore a
+          # binary built from an unrelated CLI revision.
           path: |
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
@@ -40,40 +44,10 @@ jobs:
       - run:
           sudo apt-get update && sudo apt-get install -y libudev-dev
           libdbus-1-dev pkg-config
-      # Install binstall to quickly install stellar-scaffold-cli
+      # binstall fetches a prebuilt stellar-scaffold-cli instead of compiling it
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
-      # Label a PR `cross-repo` to build the CLI from a same-named branch on the
-      # CLI repo, so coordinated cross-repo changes can go green before the CLI
-      # is released. Unlabeled PRs always use the released CLI (fast path).
-      - name: Resolve CLI source
-        id: cli
-        env:
-          CROSS_REPO:
-            ${{ contains(github.event.pull_request.labels.*.name, 'cross-repo')
-            }}
-        run: |
-          REF="${{ github.head_ref }}"
-          if [ "$CROSS_REPO" != "true" ]; then
-            echo "Using released CLI (binstall)."
-            echo "To build against a CLI branch, label this PR 'cross-repo'."
-            exit 0
-          fi
-          SHA=$(git ls-remote --heads \
-            https://github.com/stellar-scaffold/cli "$REF" 2>/dev/null \
-            | cut -f1)
-          if [ -z "$SHA" ]; then
-            echo "::error::PR is labeled 'cross-repo' but no branch named" \
-              "'$REF' exists on stellar-scaffold/cli. Push that branch," \
-              "or remove the label to use the released CLI."
-            exit 1
-          fi
-          echo "ref=$REF" >> "$GITHUB_OUTPUT"
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
-          echo "Building CLI from branch $REF ($SHA)"
-      # Check for stellar-scaffold-cli binary and install if not present
-      - name: Install stellar-scaffold (released, fast)
-        if: steps.cli.outputs.ref == ''
+        uses: cargo-bins/cargo-binstall@e00d2c94cc0067b77737821097a62d91c0301baa # v1.21.1
+      - name: Install stellar-scaffold
         run: |
           if ! command -v stellar-scaffold &> /dev/null; then
             echo "stellar-scaffold not found, installing..."
@@ -84,33 +58,9 @@ jobs:
           else
             echo "stellar-scaffold already installed. Clear cache to force reinstall."
           fi
-      # Cache the branch-built binary keyed on the CLI commit SHA, so reruns
-      # without a CLI push skip the ~14 min rebuild but a new CLI commit busts
-      # the cache.
-      - name: Cache stellar-scaffold binary
-        if: steps.cli.outputs.ref != ''
-        id: cli-cache
-        uses: actions/cache@v3
-        with:
-          path: ~/.cargo/bin/stellar-scaffold
-          key: cli-bin-${{ runner.os }}-${{ steps.cli.outputs.sha }}
-      - name: Install stellar-scaffold (from CLI branch)
-        if:
-          steps.cli.outputs.ref != '' && steps.cli-cache.outputs.cache-hit !=
-          'true'
-        run: |
-          # `cargo install --git` builds with the runner's default toolchain and
-          # ignores the CLI repo's rust-toolchain.toml — but the CLI's deps
-          # (soroban-cli, stellar-rpc-client, …) require a newer rustc than the
-          # runner ships. Clone the branch and install from the path so, with the
-          # clone as the working dir, rustup honors the pinned toolchain
-          # (auto-installed on demand).
-          git clone --depth 1 --branch "${{ steps.cli.outputs.ref }}" \
-            https://github.com/stellar-scaffold/cli "$RUNNER_TEMP/cli-src"
-          cd "$RUNNER_TEMP/cli-src"
-          cargo install --path crates/stellar-scaffold-cli --locked
       - name: Start Stellar local network
-        uses: stellar/quickstart@main
+        # No tagged releases upstream, so this pins main as read on 2026-08-14
+        uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
         with:
           enable: "core,rpc"
       - name: Add master account as default identity
