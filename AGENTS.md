@@ -7,7 +7,7 @@ It deliberately does **not** restate versions, decisions or known upstream
 issues — those live in [`docs/roadmap-m1.md`](./docs/roadmap-m1.md), and a
 second copy would go stale. What the product _is_ — and is not — is specified in
 [`docs/m1-brief.md`](./docs/m1-brief.md). Work items live in
-[milestone M1](https://github.com/BootNodeDev/open-rwa-vault/milestone/1).
+[milestone M1](https://github.com/BootNodeDev/strata-vault-kit/milestone/1).
 
 ## What this is
 
