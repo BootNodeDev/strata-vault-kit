@@ -3,16 +3,15 @@ export default function Debug() {
 		<div className="debug">
 			<h2>Contract Explorer</h2>
 			<p>
-				The Contract Explorer is being converted to a standalone Stellar
-				Scaffold Extension that runs in its own process. Once available, this
-				page will link to it automatically.
+				This build does not ship an in-app contract explorer. The route is kept
+				so the header link has somewhere to land once one exists.
 			</p>
 			<p>
 				In the meantime, use the{" "}
 				<a href="https://lab.stellar.org" target="_blank" rel="noreferrer">
 					Stellar Lab
 				</a>{" "}
-				to inspect transactions.
+				to invoke contract methods and inspect the transactions you submit.
 			</p>
 		</div>
 	)

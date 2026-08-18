@@ -6,60 +6,38 @@ import styles from "./Home.module.css"
 const Home: React.FC = () => (
 	<div className={styles.Home}>
 		<div>
-			<h1>Yay! You&apos;re on Stellar!</h1>
+			<h1>Strata Vault Kit</h1>
 			<p>
-				A local development template designed to help you build dApps on the
-				Stellar network. This environment lets you easily test wallet
-				connections, smart contract interactions, transaction verifications,
-				etc.{" "}
-				<Link to="https://scaffoldstellar.org/docs/intro" target="_blank">
-					View docs
-				</Link>
+				A white-label tokenized vault template for Stellar. Operators fork this
+				repository, re-skin the interface, and deploy a vault under their own
+				brand. Deposits mint vault shares 1:1, and the shares carry no yield.
 			</p>
 		</div>
 
 		<div className="card">
-			<h2>Start Building</h2>
-			<ol>
+			<h2>Before you connect a wallet</h2>
+			<ul>
 				<li>
-					Add your contract under <code>/src/contracts</code>
+					This build targets Stellar testnet. Do not point it at mainnet, or at
+					funds you cannot afford to lose.
 				</li>
+				<li>The contracts are not audited.</li>
 				<li>
-					Contracts are built by Scaffold when you run <code>npm start</code>
+					This page is a placeholder. The investor interface is not built yet.
 				</li>
-				<li>
-					Changes are rebuilt automatically by <code>Vite</code>
-				</li>
-				<li>
-					Interact with your contract immediately in the Contract Explorer
-				</li>
-			</ol>
-			<p>
-				Watch the full process in our{" "}
-				<Link to="https://www.youtube.com/watch?v=86hWe8Ragtg&list=PLmr3tp_7-7Gjj6gn5-bBn-QTMyaWzwOU5&index=1">
-					Youtube tutorial
-				</Link>
-				<br />
-				Get inspired by our showcase of{" "}
-				<Link to="https://scaffoldstellar.org/showcase">Example frontends</Link>
-				<br />
-				Ready to deploy?{" "}
-				<Link to="https://developers.stellar.org/docs/tools/cli/install-cli">
-					Read the mainnet deployment guide
-				</Link>
-			</p>
+			</ul>
 		</div>
 
 		<section className={styles.cards}>
 			<div className="card">
 				<p>
-					Invoke your smart contract using the{" "}
+					Call the vault contract directly from the{" "}
 					<Link to="/debug">Contract Explorer</Link>
 				</p>
 			</div>
 			<div className="card">
 				<p>
-					Browse your local transactions with the{" "}
+					Inspect the transactions you submit with the{" "}
 					<Link to={labPrefix()}>Transaction Explorer</Link>
 				</p>
 			</div>
