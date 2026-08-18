@@ -74,6 +74,8 @@ apply as the corresponding code lands here.
   setting or the UI talks to the wrong chain.
 - Generated contract clients ship their `src/` but not their `dist/`. A fresh
   clone builds the client before the app, or `tsc` cannot resolve the module.
+- No `Cargo.lock` is committed until the first contract crate lands (#20); see
+  the comment in `Cargo.toml`.
 - `app-lib/clients/index.ts` is auto-generated and rewritten on every build or
   redeploy. Do not hand-edit it; customize by importing the client under `app/`.
 
