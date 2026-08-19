@@ -1,4 +1,8 @@
 [workspace]
+# No Cargo.lock is committed: the workspace has zero members until the first
+# contract crate lands (#20), and `cargo update` refuses to write a lockfile for
+# an empty workspace. The stale one deleted in #39 pinned only the deleted
+# example contracts. It regenerates with that first crate.
 members = ["contracts/*"]
 resolver = "2"
 
@@ -6,7 +10,7 @@ resolver = "2"
 authors = ["BootNode"]
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/BootNodeDev/open-rwa-vault"
+repository = "https://github.com/BootNodeDev/strata-vault-kit"
 version = "0.1.0"
 
 [workspace.dependencies]

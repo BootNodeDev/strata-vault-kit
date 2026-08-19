@@ -100,15 +100,15 @@ flowchart LR
     D5 --> D4
 ```
 
-## E0 — Bootstrap, decisions and upstream (≈2.5 d) · epic [#1](https://github.com/BootNodeDev/open-rwa-vault/issues/1)
+## E0 — Bootstrap, decisions and upstream (≈2.5 d) · epic [#1](https://github.com/BootNodeDev/strata-vault-kit/issues/1)
 
-| Issue                                                          | Title                                               | Est. |
-| -------------------------------------------------------------- | --------------------------------------------------- | ---- |
-| [#6](https://github.com/BootNodeDev/open-rwa-vault/issues/6)   | Initialize the monorepo and land the project docs   | 1    |
-| [#7](https://github.com/BootNodeDev/open-rwa-vault/issues/7)   | Does Role Manager detect a stellar-access contract? | 0.5  |
-| [#8](https://github.com/BootNodeDev/open-rwa-vault/issues/8)   | Close the open design questions and record ADRs     | 0.25 |
-| [#9](https://github.com/BootNodeDev/open-rwa-vault/issues/9)   | Report two OpenZeppelin primitive gaps upstream     | 0.5  |
-| [#28](https://github.com/BootNodeDev/open-rwa-vault/issues/28) | Start a living architecture doc and decision log    | 0.25 |
+| Issue                                                            | Title                                               | Est. |
+| ---------------------------------------------------------------- | --------------------------------------------------- | ---- |
+| [#6](https://github.com/BootNodeDev/strata-vault-kit/issues/6)   | Initialize the monorepo and land the project docs   | 1    |
+| [#7](https://github.com/BootNodeDev/strata-vault-kit/issues/7)   | Does Role Manager detect a stellar-access contract? | 0.5  |
+| [#8](https://github.com/BootNodeDev/strata-vault-kit/issues/8)   | Close the open design questions and record ADRs     | 0.25 |
+| [#9](https://github.com/BootNodeDev/strata-vault-kit/issues/9)   | Report two OpenZeppelin primitive gaps upstream     | 0.5  |
+| [#28](https://github.com/BootNodeDev/strata-vault-kit/issues/28) | Start a living architecture doc and decision log    | 0.25 |
 
 **Notes**
 
@@ -126,20 +126,20 @@ flowchart LR
   (d) licence — the reference base ships BUSL-1.1 and SCF may require
   Apache-2.0.
 
-## E1 — Vault contract (≈6.25 d) · epic [#2](https://github.com/BootNodeDev/open-rwa-vault/issues/2)
+## E1 — Vault contract (≈6.25 d) · epic [#2](https://github.com/BootNodeDev/strata-vault-kit/issues/2)
 
 Built capability by capability, each its own PR with tests.
 
-| Issue                                                          | Title                                              | Est. |
-| -------------------------------------------------------------- | -------------------------------------------------- | ---- |
-| [#20](https://github.com/BootNodeDev/open-rwa-vault/issues/20) | Build the vault on the OpenZeppelin Soroban vault  | 1    |
-| [#21](https://github.com/BootNodeDev/open-rwa-vault/issues/21) | Gate entry with an allowlist and keep exits open   | 1.25 |
-| [#22](https://github.com/BootNodeDev/open-rwa-vault/issues/22) | Gate share transfers on both sides                 | 0.5  |
-| [#23](https://github.com/BootNodeDev/open-rwa-vault/issues/23) | Pause entries without ever blocking exits          | 0.5  |
-| [#24](https://github.com/BootNodeDev/open-rwa-vault/issues/24) | Make the contract upgradeable under governance     | 0.75 |
-| [#25](https://github.com/BootNodeDev/open-rwa-vault/issues/25) | Configure the vault at deploy time                 | 0.75 |
-| [#32](https://github.com/BootNodeDev/open-rwa-vault/issues/32) | Put governance behind a timelock                   | 1    |
-| [#33](https://github.com/BootNodeDev/open-rwa-vault/issues/33) | Keep contract storage alive against state archival | 0.5  |
+| Issue                                                            | Title                                              | Est. |
+| ---------------------------------------------------------------- | -------------------------------------------------- | ---- |
+| [#20](https://github.com/BootNodeDev/strata-vault-kit/issues/20) | Build the vault on the OpenZeppelin Soroban vault  | 1    |
+| [#21](https://github.com/BootNodeDev/strata-vault-kit/issues/21) | Gate entry with an allowlist and keep exits open   | 1.25 |
+| [#22](https://github.com/BootNodeDev/strata-vault-kit/issues/22) | Gate share transfers on both sides                 | 0.5  |
+| [#23](https://github.com/BootNodeDev/strata-vault-kit/issues/23) | Pause entries without ever blocking exits          | 0.5  |
+| [#24](https://github.com/BootNodeDev/strata-vault-kit/issues/24) | Make the contract upgradeable under governance     | 0.75 |
+| [#25](https://github.com/BootNodeDev/strata-vault-kit/issues/25) | Configure the vault at deploy time                 | 0.75 |
+| [#32](https://github.com/BootNodeDev/strata-vault-kit/issues/32) | Put governance behind a timelock                   | 1    |
+| [#33](https://github.com/BootNodeDev/strata-vault-kit/issues/33) | Keep contract storage alive against state archival | 0.5  |
 
 **Notes**
 
@@ -159,12 +159,12 @@ Built capability by capability, each its own PR with tests.
   or share balance locks a holder out of their own funds.
 - No role enumeration in contract logic (K3).
 
-## E2 — CI, deploy and multisigs (≈2 d) · epic [#3](https://github.com/BootNodeDev/open-rwa-vault/issues/3) — parallel to E1
+## E2 — CI, deploy and multisigs (≈2 d) · epic [#3](https://github.com/BootNodeDev/strata-vault-kit/issues/3) — parallel to E1
 
-| Issue                                                          | Title                                           | Est. |
-| -------------------------------------------------------------- | ----------------------------------------------- | ---- |
-| [#14](https://github.com/BootNodeDev/open-rwa-vault/issues/14) | Set up continuous integration for the contracts | 1    |
-| [#15](https://github.com/BootNodeDev/open-rwa-vault/issues/15) | Deploy reproducibly with the four multisigs     | 1    |
+| Issue                                                            | Title                                           | Est. |
+| ---------------------------------------------------------------- | ----------------------------------------------- | ---- |
+| [#14](https://github.com/BootNodeDev/strata-vault-kit/issues/14) | Set up continuous integration for the contracts | 1    |
+| [#15](https://github.com/BootNodeDev/strata-vault-kit/issues/15) | Deploy reproducibly with the four multisigs     | 1    |
 
 **Notes**
 
@@ -175,12 +175,12 @@ Built capability by capability, each its own PR with tests.
 - **#15** — the reference `environments.toml` passes only `--asset` while the
   constructor also takes an admin, so a clean redeploy fails there today.
 
-## E3 — LP interface (≈2.25 d) · epic [#4](https://github.com/BootNodeDev/open-rwa-vault/issues/4)
+## E3 — LP interface (≈2.25 d) · epic [#4](https://github.com/BootNodeDev/strata-vault-kit/issues/4)
 
-| Issue                                                          | Title                                        | Est. |
-| -------------------------------------------------------------- | -------------------------------------------- | ---- |
-| [#27](https://github.com/BootNodeDev/open-rwa-vault/issues/27) | Wireframe the LP interface                   | 1    |
-| [#30](https://github.com/BootNodeDev/open-rwa-vault/issues/30) | Build the investor deposit and withdraw view | 1.25 |
+| Issue                                                            | Title                                        | Est. |
+| ---------------------------------------------------------------- | -------------------------------------------- | ---- |
+| [#27](https://github.com/BootNodeDev/strata-vault-kit/issues/27) | Wireframe the LP interface                   | 1    |
+| [#30](https://github.com/BootNodeDev/strata-vault-kit/issues/30) | Build the investor deposit and withdraw view | 1.25 |
 
 **Notes**
 
@@ -194,15 +194,15 @@ Built capability by capability, each its own PR with tests.
 - **#16** consumes the entrypoint signatures frozen in #21 and the deployment
   from #15. Roles are read with `has_role`, never enumerated.
 
-## E5 — Operator action screens (≈2 d) · epic [#31](https://github.com/BootNodeDev/open-rwa-vault/issues/31)
+## E5 — Operator action screens (≈2 d) · epic [#31](https://github.com/BootNodeDev/strata-vault-kit/issues/31)
 
 Last in the milestone: it starts once the contract, the deploy and the LP
 interface are green.
 
-| Issue                                                          | Title                                             | Est. |
-| -------------------------------------------------------------- | ------------------------------------------------- | ---- |
-| [#29](https://github.com/BootNodeDev/open-rwa-vault/issues/29) | Build the multisig signing flow without a backend | 1.25 |
-| [#16](https://github.com/BootNodeDev/open-rwa-vault/issues/16) | Build one action screen per role                  | 0.75 |
+| Issue                                                            | Title                                             | Est. |
+| ---------------------------------------------------------------- | ------------------------------------------------- | ---- |
+| [#29](https://github.com/BootNodeDev/strata-vault-kit/issues/29) | Build the multisig signing flow without a backend | 1.25 |
+| [#16](https://github.com/BootNodeDev/strata-vault-kit/issues/16) | Build one action screen per role                  | 0.75 |
 
 **Notes**
 
@@ -213,12 +213,12 @@ interface are green.
   every privileged action needs a 2-of-3 threshold. The reference base solved
   this without a backend — read it before designing.
 
-## E4 — Documentation and release (≈1 d) · epic [#5](https://github.com/BootNodeDev/open-rwa-vault/issues/5)
+## E4 — Documentation and release (≈1 d) · epic [#5](https://github.com/BootNodeDev/strata-vault-kit/issues/5)
 
-| Issue                                                          | Title                                               | Est. |
-| -------------------------------------------------------------- | --------------------------------------------------- | ---- |
-| [#18](https://github.com/BootNodeDev/open-rwa-vault/issues/18) | Write the README, architecture and operator runbook | 0.5  |
-| [#19](https://github.com/BootNodeDev/open-rwa-vault/issues/19) | Run the Definition of Done and tag the release      | 0.5  |
+| Issue                                                            | Title                                               | Est. |
+| ---------------------------------------------------------------- | --------------------------------------------------- | ---- |
+| [#18](https://github.com/BootNodeDev/strata-vault-kit/issues/18) | Write the README, architecture and operator runbook | 0.5  |
+| [#19](https://github.com/BootNodeDev/strata-vault-kit/issues/19) | Run the Definition of Done and tag the release      | 0.5  |
 
 **Notes**
 

@@ -17,13 +17,6 @@
 	margin-bottom: 2rem;
 }
 
-.contractNav {
-	display: flex;
-	gap: 1rem;
-	margin: 1rem 0;
-	flex-wrap: wrap;
-}
-
 .cards {
 	display: flex;
 	gap: 2rem;

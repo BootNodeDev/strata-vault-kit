@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test"
 
-// Deliberately asserts nothing about page copy. The landing page is still the
-// scaffold's placeholder and gets replaced by the investor interface in E3; a
-// test bound to that copy would be deleted along with it.
+// Deliberately asserts nothing about page copy. The landing page is a
+// placeholder that the investor interface replaces in E3; a test bound to that
+// copy would be deleted along with it.
 test("the app shell mounts and renders the wallet controls", async ({
 	page,
 }) => {

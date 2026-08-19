@@ -1,4 +1,4 @@
-# Open RWA Vault — Technical Architecture
+# Strata Vault Kit — Technical Architecture
 
 _White-label, compliance-gated vault infrastructure on Stellar/Soroban._
 
@@ -18,7 +18,7 @@ a de-listed holder can always leave. There is no yield in this milestone:
 Every team building a compliance-gated vault on Stellar assembles the same
 pieces. OpenZeppelin's Soroban library provides the audited fraction — token,
 vault math, access control, pausable, upgradeable — and each team wires gating,
-roles, deployment and operations around it. Open RWA Vault is that assembly,
+roles, deployment and operations around it. Strata Vault Kit is that assembly,
 packaged as a template: **a team sets parameters and authorities and deploys.
 Configured, not built.**
 

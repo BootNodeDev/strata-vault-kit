@@ -1,4 +1,4 @@
-# open-rwa-vault
+# strata-vault-kit
 
 White-label tokenized vault on Stellar. An approved investor deposits USDC and
 receives a share token representing their position; they return it and get their
@@ -15,7 +15,7 @@ Two rules the contract enforces:
 Milestone 1 is in progress: no yield, 1 in / 1 out. Testnet only.
 
 Work is tracked in
-[milestone M1 — White-label vault](https://github.com/BootNodeDev/open-rwa-vault/milestone/1).
+[milestone M1 — White-label vault](https://github.com/BootNodeDev/strata-vault-kit/milestone/1).
 Nothing here is production-ready, and nothing here has been audited.
 
 This README is a placeholder. The product README, `architecture.md` and the

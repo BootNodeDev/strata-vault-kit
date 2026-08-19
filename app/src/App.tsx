@@ -20,7 +20,7 @@ function App() {
 const AppLayout = () => (
 	<div className={styles.AppLayout}>
 		<header className={styles.header}>
-			<span className={styles.logo}>Scaffold</span>
+			<span className={styles.logo}>Strata Vault Kit</span>
 			<nav className={styles.headerNav}>
 				<NavLink
 					to="/debug"
@@ -42,21 +42,11 @@ const AppLayout = () => (
 		<footer className={styles.footer}>
 			<nav className={styles.footerNav}>
 				<a
-					href="https://github.com/stellar-scaffold/cli"
+					href="https://github.com/BootNodeDev/strata-vault-kit"
 					target="_blank"
 					rel="noreferrer"
 				>
 					GitHub
-				</a>
-				<a
-					href="https://www.youtube.com/watch?v=0syGaIn3ULk&list=PLmr3tp_7-7Gjj6gn5-bBn-QTMyaWzwOU5"
-					target="_blank"
-					rel="noreferrer"
-				>
-					Tutorial
-				</a>
-				<a href="https://scaffoldstellar.org" target="_blank" rel="noreferrer">
-					View docs
 				</a>
 			</nav>
 		</footer>
