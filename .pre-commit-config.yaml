@@ -1,0 +1,11 @@
+# prek (pre-commit compatible) — https://github.com/j178/prek
+# Enable once per clone with: prek install
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all
+        language: system
+        types: [rust]
+        pass_filenames: false

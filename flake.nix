@@ -76,6 +76,8 @@
               pkgs.cargo-llvm-cov # line/region coverage (needs llvm-tools-preview)
               # Formal methods
               pkgs.tlaplus # tlc + pcal (TLA+ / PlusCal)
+              # Hooks
+              pkgs.prek # pre-commit runner (runs the cargo fmt hook)
             ];
 
             shellHook = ''
