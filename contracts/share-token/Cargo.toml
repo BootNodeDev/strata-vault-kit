@@ -18,3 +18,5 @@ stellar-contract-utils = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+compliance = { path = "../compliance" }
+identity-verifier = { path = "../identity-verifier" }

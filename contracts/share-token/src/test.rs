@@ -1,6 +1,43 @@
 use soroban_sdk::{testutils::Address as _, Address, Env, String};
 
 use crate::{ShareToken, ShareTokenClient};
+use compliance::{Compliance, ComplianceClient};
+use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
+
+#[test]
+fn manager_mints_to_allowlisted_account() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let manager = Address::generate(&e);
+    let receiver = Address::generate(&e);
+
+    let compliance = ComplianceClient::new(&e, &e.register(Compliance, (admin.clone(),)));
+    let identity = IdentityVerifierClient::new(&e, &e.register(IdentityVerifier, (admin.clone(),)));
+
+    let token = ShareTokenClient::new(
+        &e,
+        &e.register(
+            ShareToken,
+            (
+                String::from_str(&e, "Strata Vault USDC"),
+                String::from_str(&e, "bvUSDC"),
+                admin.clone(),
+                manager.clone(),
+                compliance.address.clone(),
+                identity.address.clone(),
+            ),
+        ),
+    );
+
+    compliance.bind_token(&token.address, &admin); // el token debe estar bound
+    identity.allow(&receiver, &true, &admin); // allowlist del receptor
+
+    token.mint(&receiver, &100, &manager); // ← no existe todavía → ROJO
+
+    assert_eq!(token.balance(&receiver), 100);
+}
 
 fn setup(e: &Env) -> ShareTokenClient<'_> {
     let admin = Address::generate(e);
