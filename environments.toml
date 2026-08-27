@@ -8,21 +8,31 @@ run-locally = true # automatically start the local network container, if not alr
 name = "me" # Required. Keys for this account will be saved to `./.stellar/identity`
 default = true # Optional. Whether to use this account as the `--source` for commands that need one.
 
-# No contracts yet — the vault crate lands in #20. Declare it here once it exists,
-# or `stellar scaffold` will try to build and deploy something that isn't there.
-#
-# Keys, for when that happens:
+# Keys:
 #   client = true      build the crate, deploy it, and generate its TS client into
 #                      app-lib/clients. Requires the crate to be a member of the
 #                      local Cargo workspace, and the key here to be the
 #                      underscored form of its Cargo.toml `name`.
-#   constructor_args   arguments to `__constructor`, as passed after `--` to
-#                      `stellar contract deploy`.
+#   constructor_args   arguments to `__constructor`, passed after `--` to
+#                      `stellar contract deploy`. Account and contract names here
+#                      resolve to their deployed addresses.
 #   after_deploy       `stellar contract invoke` calls to run once deployed; each
 #                      line is only the part after the `--`.
 #
 # `constructor_args` and `after_deploy` work in `development` and `testing` only.
 [development.contracts]
+
+[development.contracts.compliance]
+client = true
+constructor_args = "--admin me"
+
+[development.contracts.identity_verifier]
+client = true
+constructor_args = "--admin me"
+
+[development.contracts.share_token]
+client = true
+constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --manager me --compliance compliance --identity_verifier identity_verifier'
 
 ### Staging environment configuration
 [staging.network]
