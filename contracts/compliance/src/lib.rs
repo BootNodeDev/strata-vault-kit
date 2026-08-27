@@ -1,6 +1,10 @@
+//! Testnet-only stub — in production this is an external modular-compliance
+//! module (ERC-3643), not part of this product. Do not deploy to mainnet.
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, Address, Env, Vec};
+use soroban_sdk::{contract, contractimpl, contractmeta, Address, Env, Vec};
+
+contractmeta!(key = "stub", val = "testnet-only; prod = external compliance module");
 use stellar_access::access_control;
 use stellar_macros::only_admin;
 use stellar_tokens::rwa::{compliance, compliance::ComplianceHook, utils::token_binder};
