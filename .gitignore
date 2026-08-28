@@ -1,6 +1,8 @@
 # stellar/soroban/Rust output
 target
 .soroban
+.stellar
+.stellar-completions/
 
 # project identity and alias files will be in .config/stellar
 .config
@@ -28,8 +30,6 @@ lerna-debug.log*
 .env
 .env.*
 !.env.example
-
-# easy way to create temporary local-only files and folders
 *.local.*
 
 # macOS-specific files
@@ -39,14 +39,10 @@ lerna-debug.log*
 app-lib/clients/*
 !app-lib/clients/.gitkeep
 
-# Agent/editor scratch
-.claude/
-
 # TypeScript incremental build info
 *.tsbuildinfo
 
-# Local agent tooling — per-developer. Each wires an agent to a binary a teammate may
-# not have installed, so committing them would break their sessions rather than help.
+# Local agent tooling — per-developer.
 .claude/
 .mcp.json
 .ignore
@@ -54,3 +50,11 @@ app-lib/clients/*
 graft/
 .agents/
 skills-lock.json
+
+
+# TLA+ / TLC generated artifacts
+**/states/
+*.st
+*_TTrace_*.tla
+*.old
+*.bak
