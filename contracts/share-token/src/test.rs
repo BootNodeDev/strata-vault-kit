@@ -31,10 +31,10 @@ fn manager_mints_to_allowlisted_account() {
         ),
     );
 
-    compliance.bind_token(&token.address, &admin); // el token debe estar bound
-    identity.allow(&receiver, &true, &admin); // allowlist del receptor
+    compliance.bind_token(&token.address, &admin); // compliance rejects ops from unbound tokens
+    identity.allow(&receiver, &true, &admin);
 
-    token.mint(&receiver, &100, &manager); // ← no existe todavía → ROJO
+    token.mint(&receiver, &100, &manager);
 
     assert_eq!(token.balance(&receiver), 100);
 }
