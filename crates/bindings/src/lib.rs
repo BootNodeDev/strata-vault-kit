@@ -7,6 +7,7 @@ use soroban_sdk::{contractclient, contracttype, Address, Env};
 pub enum OracleState {
     Valid,
     Stale,
+    Paused,
 }
 
 #[contractclient(name = "OracleFeedClient")]
