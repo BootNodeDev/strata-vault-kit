@@ -105,7 +105,7 @@ fn attest_rejects_out_of_band() {
 }
 
 #[test]
-fn attest_enforces_cooldown_deviation_and_monotonic_date() {
+fn attest_enforces_cooldown_and_deviation() {
     let f = setup();
     let r1 = report(&f.e, SCALE, 1, 1_000_000);
     f.oracle.attest(&r1, &f.attester);
@@ -121,14 +121,23 @@ fn attest_enforces_cooldown_deviation_and_monotonic_date() {
     let big = report(&f.e, SCALE + SCALE / 5, 2, 1_000_000);
     assert!(f.oracle.try_attest(&big, &f.attester).is_err());
 
-    // nav_date not increasing (still 1) rejected.
-    let stale_date = report(&f.e, SCALE + SCALE / 20, 1, 1_000_000);
-    assert!(f.oracle.try_attest(&stale_date, &f.attester).is_err());
-
-    // Valid update: +5% within cap, later nav_date.
+    // Valid update: +5% within cap.
     let ok = report(&f.e, SCALE + SCALE / 20, 2, 1_000_000);
     f.oracle.attest(&ok, &f.attester);
     assert_eq!(f.oracle.nav_per_share(), SCALE + SCALE / 20);
+}
+
+/// The caller's `timestamp` is advisory: the contract stamps ledger time and
+/// derives `expires_at` from its own freshness window.
+#[test]
+fn attest_stamps_its_own_timestamp() {
+    let f = setup();
+    let r = report(&f.e, SCALE, 1, 1_000_000);
+    f.oracle.attest(&r, &f.attester);
+
+    let stored = f.oracle.latest();
+    assert_eq!(stored.timestamp, 10_000);
+    assert_eq!(stored.expires_at, 10_000 + 3600);
 }
 
 #[test]
