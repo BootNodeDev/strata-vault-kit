@@ -42,6 +42,11 @@ constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --mana
 client = true
 constructor_args = "--admin me --attester me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_deviation_bps\":1000,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
 
+# The vault has no constructor yet, so it deploys with no arguments. The
+# authorities and the configuration arrive with the vault skeleton.
+[development.contracts.async_vault]
+client = true
+
 ### Staging environment configuration
 [staging.network]
 rpc-url = "https://soroban-testnet.stellar.org"
