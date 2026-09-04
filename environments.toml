@@ -34,6 +34,14 @@ constructor_args = "--admin me"
 client = true
 constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --manager me --compliance compliance --identity_verifier identity_verifier'
 
+# `--config` takes the OracleConfig struct as JSON. The values mirror the
+# contract's own tests: a one-hour freshness window, a one-minute cooldown, a
+# 10% deviation cap and a 0.5–100 band at the 18-decimal scale. The two i128
+# fields are strings because they do not survive a JSON number round trip.
+[development.contracts.nav_oracle]
+client = true
+constructor_args = "--admin me --attester me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_deviation_bps\":1000,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
+
 ### Staging environment configuration
 [staging.network]
 rpc-url = "https://soroban-testnet.stellar.org"
