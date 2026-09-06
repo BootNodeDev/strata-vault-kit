@@ -1,4 +1,7 @@
-use soroban_sdk::{contracttype, Address, Env};
+use soroban_sdk::{contracttype, panic_with_error, Address, Env};
+
+use crate::error::VaultError;
+use crate::keys::DataKey;
 
 pub(crate) const FIRST_EPOCH: u64 = 1;
 
@@ -19,11 +22,10 @@ pub struct EpochInfo {
 }
 
 #[contracttype]
-pub(crate) enum DataKey {
-    Asset,
-    Manager,
-    Epoch(u64),
-    UserDeposit(u64, Address),
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DepositRequest {
+    pub amount: i128,
+    pub claimed: bool,
 }
 
 pub(crate) fn set_addr(e: &Env, key: &DataKey, addr: &Address) {
@@ -31,7 +33,7 @@ pub(crate) fn set_addr(e: &Env, key: &DataKey, addr: &Address) {
 }
 
 pub(crate) fn get_addr(e: &Env, key: &DataKey) -> Address {
-    storage::get_instance(e, key).unwrap()
+    storage::get_instance(e, key).unwrap_or_else(|| panic_with_error!(e, VaultError::AddressNotSet))
 }
 
 pub(crate) fn set_epoch(e: &Env, id: u64, epoch: &EpochInfo) {
@@ -40,4 +42,21 @@ pub(crate) fn set_epoch(e: &Env, id: u64, epoch: &EpochInfo) {
 
 pub(crate) fn get_epoch(e: &Env, id: u64) -> Option<EpochInfo> {
     storage::get_persistent(e, &DataKey::Epoch(id))
+}
+
+pub(crate) fn set_deposit_request(
+    e: &Env,
+    epoch: u64,
+    controller: &Address,
+    request: &DepositRequest,
+) {
+    storage::set_persistent(e, &DataKey::UserDeposit(epoch, controller.clone()), request);
+}
+
+pub(crate) fn get_deposit_request(
+    e: &Env,
+    epoch: u64,
+    controller: &Address,
+) -> Option<DepositRequest> {
+    storage::get_persistent(e, &DataKey::UserDeposit(epoch, controller.clone()))
 }
