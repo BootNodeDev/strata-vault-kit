@@ -169,3 +169,67 @@ fn attest_is_role_gated() {
     let r = report(&f.e, SCALE, 1, 1_000_000);
     assert!(f.oracle.try_attest(&r, &stranger).is_err());
 }
+
+#[test]
+fn narrowing_the_band_demotes_a_stored_record() {
+    let f = setup();
+    let r = report(&f.e, SCALE, 1, 1_000_000);
+    f.oracle.attest(&r, &f.attester);
+    assert_eq!(f.oracle.state(), OracleState::Valid);
+
+    let narrow = OracleConfig {
+        max_answer: SCALE / 2,
+        ..config()
+    };
+    f.oracle.set_config(&narrow);
+
+    assert_eq!(f.oracle.state(), OracleState::Stale);
+    assert!(f.oracle.is_stale());
+    assert!(f.oracle.try_ensure_consumable().is_err());
+}
+
+#[test]
+#[should_panic(expected = "#3001")]
+fn constructor_rejects_an_unbounded_max_answer() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let attester = Address::generate(&e);
+    let cfg = OracleConfig {
+        max_answer: i128::MAX,
+        ..config()
+    };
+    e.register(NavOracleContract, (admin, attester, cfg));
+}
+
+#[test]
+#[should_panic(expected = "#3001")]
+fn constructor_rejects_a_deviation_above_one_hundred_percent() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let attester = Address::generate(&e);
+    let cfg = OracleConfig {
+        max_deviation_bps: 10_001,
+        ..config()
+    };
+    e.register(NavOracleContract, (admin, attester, cfg));
+}
+
+#[test]
+fn set_config_rejects_an_unbounded_max_answer() {
+    let f = setup();
+    let cfg = OracleConfig {
+        max_answer: i128::MAX,
+        ..config()
+    };
+    assert!(f.oracle.try_set_config(&cfg).is_err());
+}
+
+#[test]
+fn set_config_rejects_a_zero_freshness_duration() {
+    let f = setup();
+    let cfg = OracleConfig {
+        freshness_duration: 0,
+        ..config()
+    };
+    assert!(f.oracle.try_set_config(&cfg).is_err());
+}

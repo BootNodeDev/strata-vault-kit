@@ -1,61 +1,24 @@
 #![no_std]
 
+mod state;
+
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, panic_with_error,
-    symbol_short, Address, Env, Symbol,
+    contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env,
 };
 use stellar_access::access_control;
 use stellar_macros::{only_admin, only_role};
 
+use state::{get_config, get_latest, ripcord_raised, ATTESTER_ROLE};
+
+pub use state::{NavReport, OracleConfig, OracleState};
+
 const BPS_DENOM: i128 = 10_000;
-
-const DAY_IN_LEDGERS: u32 = 17280;
-const PERSISTENT_EXTEND: u32 = 120 * DAY_IN_LEDGERS;
-const PERSISTENT_THRESHOLD: u32 = PERSISTENT_EXTEND - DAY_IN_LEDGERS;
-const INSTANCE_EXTEND: u32 = 120 * DAY_IN_LEDGERS;
-const INSTANCE_THRESHOLD: u32 = INSTANCE_EXTEND - DAY_IN_LEDGERS;
-
-fn bump_instance(e: &Env) {
-    e.storage()
-        .instance()
-        .extend_ttl(INSTANCE_THRESHOLD, INSTANCE_EXTEND);
-}
-
-const ATTESTER_ROLE: Symbol = symbol_short!("attester");
-
-/// The three-state feed health
-//
-// - `Valid`:  ripcord=0 AND now ≤ expires_at
-//             AND min_answer ≤ nav_per_share ≤ max_answer. Mint AND redeem.
-// - `Stale`:  ripcord=0 but past heartbeat/expires_at (or no record yet).
-//             Value untrusted; BOTH mint and redeem halt.
-// - `Paused`: ripcord=1 (issuer freeze). Value ignored entirely, both
-//             directions, until the issuer clears ripcord to 0.
-pub use bindings::OracleState;
-
-#[contracttype]
-#[derive(Clone)]
-pub struct NavReport {
-    pub nav_per_share: i128,
-    pub expires_at: u64,
-    pub timestamp: u64,
-}
-
-#[contracttype]
-#[derive(Clone)]
-pub struct OracleConfig {
-    pub freshness_duration: u64, // before nav is considered stale
-    pub cooldown_secs: u64,      // before new record is admitted
-    pub max_deviation_bps: u32,
-    pub min_answer: i128,
-    pub max_answer: i128,
-}
+const MAX_ANSWER: i128 = i128::MAX / BPS_DENOM;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum OracleError {
-    NotAuthorized = 3000,
     InvalidConfig = 3001,
     /// `nav_per_share <= 0`, or outside `[min_answer, max_answer]`.
     NavOutOfBand = 3002,
@@ -63,7 +26,6 @@ pub enum OracleError {
     CooldownActive = 3003,
     /// Per-share move exceeds `max_deviation_bps`.
     DeviationExceeded = 3004,
-    /// `nav_date` not strictly greater than the previous record.
     /// `expires_at` not in the future — the record would be born stale.
     ExpiresInPast = 3005,
     NoRecord = 3006,
@@ -93,44 +55,23 @@ pub struct ConfigSet {
     pub max_answer: i128,
 }
 
-pub trait NavOracle {
-    fn nav_per_share(e: &Env) -> i128;
-    fn latest(e: &Env) -> NavReport;
-    fn state(e: &Env) -> OracleState;
-    fn is_stale(e: &Env) -> bool;
-    fn ensure_consumable(e: &Env);
-    fn attest(e: &Env, report: NavReport, caller: Address);
-    fn set_ripcord(e: &Env, paused: bool, caller: Address);
-}
-
-#[contracttype]
-enum DataKey {
-    Config,
-    Latest,
-    Ripcord,
-}
-
-fn get_config(e: &Env) -> OracleConfig {
-    e.storage().instance().get(&DataKey::Config).unwrap()
-}
-
-fn get_latest(e: &Env) -> Option<NavReport> {
-    let latest: Option<NavReport> = e.storage().persistent().get(&DataKey::Latest);
-    if latest.is_some() {
-        e.storage().persistent().extend_ttl(
-            &DataKey::Latest,
-            PERSISTENT_THRESHOLD,
-            PERSISTENT_EXTEND,
-        );
+fn validate_config(e: &Env, cfg: &OracleConfig) {
+    if cfg.freshness_duration == 0
+        || cfg.min_answer <= 0
+        || cfg.max_answer < cfg.min_answer
+        || cfg.max_answer > MAX_ANSWER
+        || cfg.max_deviation_bps as i128 > BPS_DENOM
+    {
+        panic_with_error!(e, OracleError::InvalidConfig);
     }
-    latest
 }
 
-fn ripcord_raised(e: &Env) -> bool {
-    e.storage()
-        .instance()
-        .get(&DataKey::Ripcord)
-        .unwrap_or(false)
+fn in_band(cfg: &OracleConfig, nav_per_share: i128) -> bool {
+    nav_per_share >= cfg.min_answer && nav_per_share <= cfg.max_answer
+}
+
+fn trustworthy(e: &Env, report: &NavReport) -> bool {
+    e.ledger().timestamp() <= report.expires_at && in_band(&get_config(e), report.nav_per_share)
 }
 
 fn compute_state(e: &Env) -> OracleState {
@@ -139,14 +80,8 @@ fn compute_state(e: &Env) -> OracleState {
     }
     match get_latest(e) {
         None => OracleState::Stale,
-        Some(r) => {
-            let now = e.ledger().timestamp();
-            if now > r.expires_at {
-                OracleState::Stale
-            } else {
-                OracleState::Valid
-            }
-        }
+        Some(r) if trustworthy(e, &r) => OracleState::Valid,
+        Some(_) => OracleState::Stale,
     }
 }
 
@@ -156,15 +91,12 @@ pub struct NavOracleContract;
 #[contractimpl]
 impl NavOracleContract {
     pub fn __constructor(e: &Env, admin: Address, attester: Address, config: OracleConfig) {
-        if config.min_answer <= 0 || config.max_answer < config.min_answer {
-            panic_with_error!(e, OracleError::InvalidConfig);
-        }
+        validate_config(e, &config);
         access_control::set_admin(e, &admin);
         access_control::grant_role_no_auth(e, &attester, &ATTESTER_ROLE, &admin);
 
-        let s = e.storage().instance();
-        s.set(&DataKey::Config, &config);
-        s.set(&DataKey::Ripcord, &false);
+        state::set_config(e, &config);
+        state::set_ripcord(e, false);
     }
 
     pub fn nav_per_share(e: &Env) -> i128 {
@@ -182,10 +114,7 @@ impl NavOracleContract {
     pub fn is_stale(e: &Env) -> bool {
         match get_latest(e) {
             None => true,
-            Some(r) => {
-                let now = e.ledger().timestamp();
-                now > r.expires_at
-            }
+            Some(r) => !trustworthy(e, &r),
         }
     }
 
@@ -197,11 +126,11 @@ impl NavOracleContract {
 
     #[only_role(caller, "attester")]
     pub fn attest(e: &Env, report: NavReport, caller: Address) {
-        bump_instance(e);
+        storage::bump_instance(e);
         let cfg = get_config(e);
         let now = e.ledger().timestamp();
 
-        if report.nav_per_share < cfg.min_answer || report.nav_per_share > cfg.max_answer {
+        if !in_band(&cfg, report.nav_per_share) {
             panic_with_error!(e, OracleError::NavOutOfBand);
         }
         if report.expires_at <= now {
@@ -226,12 +155,7 @@ impl NavOracleContract {
             timestamp: now,
             expires_at: now.saturating_add(cfg.freshness_duration),
         };
-        e.storage().persistent().set(&DataKey::Latest, &stored);
-        e.storage().persistent().extend_ttl(
-            &DataKey::Latest,
-            PERSISTENT_THRESHOLD,
-            PERSISTENT_EXTEND,
-        );
+        state::set_latest(e, &stored);
 
         NavAttested {
             attester: caller,
@@ -243,21 +167,14 @@ impl NavOracleContract {
 
     #[only_admin]
     pub fn set_ripcord(e: &Env, paused: bool, _caller: Address) {
-        bump_instance(e);
-        e.storage().instance().set(&DataKey::Ripcord, &paused);
+        state::set_ripcord(e, paused);
         RipcordSet { paused }.publish(e);
     }
 
     #[only_admin]
     pub fn set_config(e: &Env, config: OracleConfig) {
-        if config.freshness_duration == 0
-            || config.min_answer <= 0
-            || config.max_answer < config.min_answer
-        {
-            panic_with_error!(e, OracleError::InvalidConfig);
-        }
-        bump_instance(e);
-        e.storage().instance().set(&DataKey::Config, &config);
+        validate_config(e, &config);
+        state::set_config(e, &config);
         ConfigSet {
             freshness_duration: config.freshness_duration,
             cooldown_secs: config.cooldown_secs,
