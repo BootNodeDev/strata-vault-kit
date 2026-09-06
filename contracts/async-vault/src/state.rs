@@ -33,7 +33,17 @@ pub(crate) fn set_addr(e: &Env, key: &DataKey, addr: &Address) {
 }
 
 pub(crate) fn get_addr(e: &Env, key: &DataKey) -> Address {
-    storage::get_instance(e, key).unwrap_or_else(|| panic_with_error!(e, VaultError::AddressNotSet))
+    storage::get_instance(e, key)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::NotInitialized))
+}
+
+pub(crate) fn set_current_epoch(e: &Env, id: u64) {
+    storage::set_instance(e, &DataKey::CurrentEpoch, &id);
+}
+
+pub(crate) fn current_epoch(e: &Env) -> u64 {
+    storage::get_instance(e, &DataKey::CurrentEpoch)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::NotInitialized))
 }
 
 pub(crate) fn set_epoch(e: &Env, id: u64, epoch: &EpochInfo) {

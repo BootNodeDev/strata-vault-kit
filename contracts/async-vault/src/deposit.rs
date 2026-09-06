@@ -3,7 +3,7 @@ use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 use crate::error::VaultError;
 use crate::event::DepositRequested;
 use crate::keys::DataKey;
-use crate::state::{self, DepositRequest, FIRST_EPOCH};
+use crate::state::{self, DepositRequest};
 
 pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     from.require_auth();
@@ -12,7 +12,7 @@ pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
         panic_with_error!(e, VaultError::InvalidAmount);
     }
 
-    let epoch_id = FIRST_EPOCH;
+    let epoch_id = state::current_epoch(e);
 
     if state::get_deposit_request(e, epoch_id, from).is_some() {
         panic_with_error!(e, VaultError::RequestOutstanding);
