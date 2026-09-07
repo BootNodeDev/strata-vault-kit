@@ -8,9 +8,6 @@ use soroban_sdk::contracterror;
 pub enum VaultError {
     /// The controller has no deposit request in the given epoch.
     RequestNotFound = 6001,
-    /// The oracle feed is not `Valid` — no record, stale, or ripcord raised —
-    /// so no price may be struck against it.
-    OracleNotConsumable = 6006,
     /// `request_deposit` was called with an amount of zero or less.
     InvalidAmount = 6007,
     /// The controller already holds an unclaimed request in this epoch. A
@@ -41,4 +38,7 @@ pub enum VaultError {
     /// The deposit is smaller than one share at the struck price, so it would
     /// mint zero. Rejected rather than burning the deposit to dust.
     NothingToClaim = 6036,
+    /// The vault does not hold enough assets to settle the epoch's redemptions
+    /// at the attested price, so the epoch is not struck at all.
+    InsufficientLiquidity = 6037,
 }

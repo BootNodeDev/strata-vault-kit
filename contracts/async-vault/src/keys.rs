@@ -7,6 +7,7 @@ pub(crate) enum DataKey {
     Manager,
     Oracle,
     CurrentEpoch,
+    PendingRedeemAssets,
     Epoch(u64),
     UserDeposit(u64, Address),
     UserRedeem(u64, Address),

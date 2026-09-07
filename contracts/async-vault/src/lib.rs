@@ -19,7 +19,7 @@ use roles::MANAGER_ROLE;
 use state::FIRST_EPOCH;
 
 pub use error::VaultError;
-pub use event::{DepositClaimed, DepositRequested, EpochFulfilled, RedeemRequested};
+pub use event::{DepositClaimed, DepositRequested, EpochFulfilled, RedeemClaimed, RedeemRequested};
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
 
 #[contract]
@@ -98,6 +98,10 @@ impl AsyncVault {
         controller: Address,
     ) -> Option<RedeemRequest> {
         state::get_redeem_request(e, epoch_id, &controller)
+    }
+
+    pub fn claim_redeem(e: &Env, caller: Address, epoch_id: u64) -> i128 {
+        redeem::claim(e, &caller, epoch_id)
     }
 
     #[only_role(caller, "manager")]

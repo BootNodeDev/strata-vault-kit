@@ -29,7 +29,7 @@ pub enum OracleError {
     /// `expires_at` not in the future — the record would be born stale.
     ExpiresInPast = 3005,
     NoRecord = 3006,
-    /// `ensure_consumable` gate: feed is not `Valid`.
+    /// `ensure_consumable` found the feed in a state other than `Valid`.
     NotConsumable = 3007,
 }
 

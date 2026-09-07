@@ -96,3 +96,11 @@ pub(crate) fn get_redeem_request(
 ) -> Option<RedeemRequest> {
     storage::get_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()))
 }
+
+pub(crate) fn set_pending_redeem_assets(e: &Env, assets: i128) {
+    storage::set_instance(e, &DataKey::PendingRedeemAssets, &assets);
+}
+
+pub(crate) fn pending_redeem_assets(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::PendingRedeemAssets).unwrap_or(0)
+}

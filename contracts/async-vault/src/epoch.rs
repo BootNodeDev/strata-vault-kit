@@ -1,5 +1,6 @@
-use bindings::{OracleFeedClient, OracleState};
-use soroban_sdk::{panic_with_error, Env};
+use bindings::OracleFeedClient;
+use soroban_sdk::{panic_with_error, token::TokenClient, Env};
+use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
 use crate::error::VaultError;
 use crate::event::EpochFulfilled;
@@ -17,10 +18,7 @@ pub(crate) fn open(total_deposited: i128) -> EpochInfo {
 
 pub(crate) fn fulfill(e: &Env) -> u64 {
     let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
-
-    if feed.state() != OracleState::Valid {
-        panic_with_error!(e, VaultError::OracleNotConsumable);
-    }
+    feed.ensure_consumable();
 
     let share_price = feed.nav_per_share();
     if share_price <= 0 {
@@ -34,6 +32,18 @@ pub(crate) fn fulfill(e: &Env) -> u64 {
     if epoch.status != EpochStatus::Open {
         panic_with_error!(e, VaultError::EpochNotOpen);
     }
+
+    let owed = checked_mul_div_floor(e, &epoch.total_shares_redeeming, &share_price, &WAD_SCALE)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    let pending = state::pending_redeem_assets(e)
+        .checked_add(owed)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+
+    let asset = state::get_addr(e, &DataKey::Asset);
+    if TokenClient::new(e, &asset).balance(&e.current_contract_address()) < pending {
+        panic_with_error!(e, VaultError::InsufficientLiquidity);
+    }
+    state::set_pending_redeem_assets(e, pending);
 
     let next = current
         .checked_add(1)
