@@ -35,3 +35,65 @@ fn the_vault_holds_the_manager_role_on_the_share_token() {
         .has_role(&f.vault.address, &symbol_short!("manager"))
         .is_some());
 }
+
+#[test]
+fn distinct_authorities_are_accepted() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    register_with(&e, distinct_roles(&e));
+}
+
+#[test]
+#[should_panic(expected = "#6000")]
+fn the_treasury_may_not_also_be_the_guardian() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let mut roles = distinct_roles(&e);
+    roles.guardian = roles.treasury.clone();
+    register_with(&e, roles);
+}
+
+#[test]
+#[should_panic(expected = "#6000")]
+fn the_treasury_may_not_also_be_governance() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let mut roles = distinct_roles(&e);
+    roles.treasury = roles.governance.clone();
+    register_with(&e, roles);
+}
+
+#[test]
+#[should_panic(expected = "#6000")]
+fn compliance_may_not_also_be_governance() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let mut roles = distinct_roles(&e);
+    roles.compliance = roles.governance.clone();
+    register_with(&e, roles);
+}
+
+#[test]
+#[should_panic(expected = "#6000")]
+fn compliance_may_not_also_be_the_treasury() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let mut roles = distinct_roles(&e);
+    roles.compliance = roles.treasury.clone();
+    register_with(&e, roles);
+}
+
+#[test]
+fn the_guardian_may_be_governance() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let mut roles = distinct_roles(&e);
+    roles.guardian = roles.governance.clone();
+    register_with(&e, roles);
+}

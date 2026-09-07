@@ -12,9 +12,9 @@ extern crate std;
 
 pub(crate) use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Ledger as _, MockAuth, MockAuthInvoke},
+    testutils::{Address as _, Ledger as _},
     token::{StellarAssetClient, TokenClient},
-    Address, Env, IntoVal, String,
+    Address, Env, String,
 };
 
 pub(crate) use ::compliance::{Compliance, ComplianceClient};
@@ -24,7 +24,7 @@ pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
 
-pub(crate) use crate::{AsyncVault, AsyncVaultClient, EpochStatus};
+pub(crate) use crate::{AsyncVault, AsyncVaultClient, EpochStatus, VaultRoles};
 
 fn wad(whole: i128) -> i128 {
     whole * WAD_SCALE
@@ -40,6 +40,7 @@ struct Fixture<'a> {
     asset: Address,
     manager: Address,
     treasury: Address,
+    guardian: Address,
     custodian: Address,
     admin: Address,
 }
@@ -100,6 +101,23 @@ impl Fixture<'_> {
     }
 }
 
+pub(crate) fn distinct_roles(e: &Env) -> VaultRoles {
+    VaultRoles {
+        governance: Address::generate(e),
+        manager: Address::generate(e),
+        treasury: Address::generate(e),
+        guardian: Address::generate(e),
+        compliance: Address::generate(e),
+        attester: Address::generate(e),
+    }
+}
+
+pub(crate) fn register_with(e: &Env, roles: VaultRoles) -> Address {
+    let issuer = Address::generate(e);
+    let asset = e.register_stellar_asset_contract_v2(issuer).address();
+    e.register(AsyncVault, (&asset, &asset, &asset, roles))
+}
+
 fn setup<'a>() -> Fixture<'a> {
     let e = Env::default();
     e.mock_all_auths();
@@ -109,9 +127,11 @@ fn setup<'a>() -> Fixture<'a> {
     let asset = e.register_stellar_asset_contract_v2(issuer).address();
     let manager = Address::generate(&e);
     let treasury = Address::generate(&e);
+    let guardian = Address::generate(&e);
     let custodian = Address::generate(&e);
     let admin = Address::generate(&e);
     let attester = Address::generate(&e);
+    let compliance_role = Address::generate(&e);
 
     let compliance = ComplianceClient::new(&e, &e.register(Compliance, (admin.clone(),)));
     let identity = IdentityVerifierClient::new(&e, &e.register(IdentityVerifier, (admin.clone(),)));
@@ -139,6 +159,7 @@ fn setup<'a>() -> Fixture<'a> {
             (
                 admin.clone(),
                 attester.clone(),
+                guardian.clone(),
                 OracleConfig {
                     freshness_duration: 3_600,
                     cooldown_secs: 0,
@@ -156,9 +177,14 @@ fn setup<'a>() -> Fixture<'a> {
             &asset,
             &share.address,
             &oracle.address,
-            &manager,
-            &treasury,
-            &admin,
+            VaultRoles {
+                governance: admin.clone(),
+                manager: manager.clone(),
+                treasury: treasury.clone(),
+                guardian: guardian.clone(),
+                compliance: compliance_role,
+                attester: attester.clone(),
+            },
         ),
     );
     share.grant_role(&contract_id, &symbol_short!("manager"), &admin);
@@ -172,6 +198,7 @@ fn setup<'a>() -> Fixture<'a> {
         asset,
         manager,
         treasury,
+        guardian,
         custodian,
         admin,
         e,

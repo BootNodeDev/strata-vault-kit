@@ -8,7 +8,7 @@ use soroban_sdk::{
 use stellar_access::access_control;
 use stellar_macros::{only_admin, only_role};
 
-use state::{get_config, get_latest, ripcord_raised, ATTESTER_ROLE};
+use state::{get_config, get_latest, ripcord_raised, ATTESTER_ROLE, GUARDIAN_ROLE};
 
 pub use state::{NavReport, OracleConfig, OracleState};
 
@@ -90,10 +90,17 @@ pub struct NavOracleContract;
 
 #[contractimpl]
 impl NavOracleContract {
-    pub fn __constructor(e: &Env, admin: Address, attester: Address, config: OracleConfig) {
+    pub fn __constructor(
+        e: &Env,
+        admin: Address,
+        attester: Address,
+        guardian: Address,
+        config: OracleConfig,
+    ) {
         validate_config(e, &config);
         access_control::set_admin(e, &admin);
         access_control::grant_role_no_auth(e, &attester, &ATTESTER_ROLE, &admin);
+        access_control::grant_role_no_auth(e, &guardian, &GUARDIAN_ROLE, &admin);
 
         state::set_config(e, &config);
         state::set_ripcord(e, false);
@@ -163,6 +170,12 @@ impl NavOracleContract {
             expires_at: stored.expires_at,
         }
         .publish(e);
+    }
+
+    #[only_role(caller, "guardian")]
+    pub fn raise_ripcord(e: &Env, caller: Address) {
+        state::set_ripcord(e, true);
+        RipcordSet { paused: true }.publish(e);
     }
 
     #[only_admin]

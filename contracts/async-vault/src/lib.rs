@@ -16,7 +16,7 @@ use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_macros::{only_admin, only_role, when_not_paused};
 
 use keys::DataKey;
-use roles::{MANAGER_ROLE, TREASURY_ROLE};
+use roles::{GUARDIAN_ROLE, MANAGER_ROLE, TREASURY_ROLE};
 use state::FIRST_EPOCH;
 
 pub use error::VaultError;
@@ -24,6 +24,7 @@ pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
     RedeemClaimed, RedeemRequested,
 };
+pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
 
 #[contract]
@@ -36,22 +37,25 @@ impl AsyncVault {
         asset: Address,
         share_token: Address,
         oracle: Address,
-        manager: Address,
-        treasury: Address,
-        admin: Address,
+        roles: VaultRoles,
     ) {
-        if treasury == admin || treasury == manager {
+        if roles.treasury == roles.guardian
+            || roles.treasury == roles.governance
+            || roles.compliance == roles.governance
+            || roles.compliance == roles.treasury
+        {
             panic_with_error!(e, VaultError::RolesNotDistinct);
         }
 
-        access_control::set_admin(e, &admin);
-        access_control::grant_role_no_auth(e, &manager, &MANAGER_ROLE, &admin);
-        access_control::grant_role_no_auth(e, &treasury, &TREASURY_ROLE, &admin);
+        access_control::set_admin(e, &roles.governance);
+        access_control::grant_role_no_auth(e, &roles.manager, &MANAGER_ROLE, &roles.governance);
+        access_control::grant_role_no_auth(e, &roles.treasury, &TREASURY_ROLE, &roles.governance);
+        access_control::grant_role_no_auth(e, &roles.guardian, &GUARDIAN_ROLE, &roles.governance);
 
         state::set_addr(e, &DataKey::Asset, &asset);
         state::set_addr(e, &DataKey::ShareToken, &share_token);
         state::set_addr(e, &DataKey::Oracle, &oracle);
-        state::set_addr(e, &DataKey::Manager, &manager);
+        state::set_addr(e, &DataKey::Manager, &roles.manager);
 
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
         state::set_current_epoch(e, FIRST_EPOCH);
@@ -152,8 +156,8 @@ impl AsyncVault {
 
 #[contractimpl(contracttrait)]
 impl Pausable for AsyncVault {
-    #[only_admin]
-    fn pause(e: &Env, _caller: Address) {
+    #[only_role(caller, "guardian")]
+    fn pause(e: &Env, caller: Address) {
         pausable::pause(e);
     }
 

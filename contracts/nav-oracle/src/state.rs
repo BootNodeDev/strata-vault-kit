@@ -12,6 +12,9 @@ pub use bindings::OracleState;
 
 pub const ATTESTER_ROLE: Symbol = symbol_short!("attester");
 
+/// Raises the ripcord in an emergency. Cannot lower it again.
+pub const GUARDIAN_ROLE: Symbol = symbol_short!("guardian");
+
 #[contracttype]
 #[derive(Clone)]
 pub struct NavReport {
