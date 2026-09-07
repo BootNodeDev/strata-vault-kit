@@ -10,40 +10,53 @@ stale. The architecture is maintained outside this repository. Work items live i
 
 ## What this is
 
-A white-label tokenized vault on Stellar/Soroban, built on the OpenZeppelin
-Soroban vault. An approved investor deposits USDC and receives `bvUSDC` shares;
-they redeem and get USDC back.
+A white-label RWA vault kit on Stellar/Soroban. Shares are a claim on an
+off-chain asset whose value is attested on chain, so no price exists at the
+moment an investor acts. Entry and exit are therefore requests: what goes in is
+escrowed, the next accepted attestation prices it, and the investor claims the
+result. Three states per side, none skipped: **pending, priced, claimed**.
 
-Two invariants the contract enforces:
+What the contracts enforce:
 
-1. **Entry is gated** by a post-KYC allowlist — the `deposit`/`mint` receiver,
-   and both sides of `transfer`/`transfer_from`.
-2. **Exit is never gated and never pausable.** A de-listed holder can always
-   leave. `withdraw`/`redeem` carry no allowlist check by design.
+1. **Entry is gated** by a post-KYC allowlist, checked on the receiver of a
+   subscription and on every share transfer.
+2. **A priced claim always pays.** Once priced and covered, a cash claim cannot
+   be blocked by a pause, a stale valuation, or the holder losing their
+   allowlist place. Priced claims are never re-priced and never identity-gated;
+   a delisted, non-frozen holder leaves through the exit-only cash path.
+3. **Cancellation is atomic and single-step**, open only until the attestation
+   that prices the request is accepted. There is no instant exit.
 
-Milestone 1 has no yield: shares stay 1:1. Testnet only. Not audited.
+Five authorities, each a native Stellar multisig: governance, compliance,
+attestation, treasury, guardian. Testnet only. Not audited.
 
 ## State of the repo
 
-Bootstrap only: documentation, issue templates and the toolchain pin. The Rust
-workspace arrives with the first contract crate, and the interface after that.
-The sections below describe how the project is built as each piece lands.
+Three contract crates (`compliance`, `identity-verifier`, `share-token`) and two
+shared crates (`bindings`, `pricing`). A React + Vite app shell with TypeScript
+clients generated per contract, and a Playwright e2e harness.
+
+The vault contract itself is not written yet, so the request lifecycle above has
+no on-chain counterpart in this repo today. `app/` and `app-lib/` have no
+unit-test runner.
 
 ## Reference base
 
 [`stellar-vault-demo-dapp`](https://github.com/BootNodeDev/stellar-vault-demo-dapp)
-is our own working testnet demo. Its 188-line contract proves the design. Read
-it while building; do not port it wholesale. Its frontend is not carried over —
-M1 builds a new one designed around the role model.
+is our own working testnet demo, but it is **synchronous**: deposit and withdraw
+are priced at call time. It does not model the request lifecycle and its flow
+does not carry over. Read it for Soroban and OZ mechanics only.
 
 ## Build & run
 
 - **Contracts:** `stellar contract build` — **not** `cargo build`. The OZ crates
   enable an experimental `soroban-sdk` feature (`spec_shaking_v2`) that only
-  works through the CLI wrapper (Stellar CLI ≥ 25.2).
-- **Tests:** `cargo test -p vault` (unit tests run against the in-memory `Env`).
-- **Toolchain:** pinned in `rust-toolchain.toml`. rustup installs it on first
-  build.
+  works through the CLI wrapper. The devshell pins Stellar CLI v27.0.0.
+- **Tests:** `cargo test` from the repo root runs every workspace member against
+  the in-memory `Env`. There is no unit-test runner for `app/` or `app-lib/`;
+  `e2e/` runs Playwright separately. CI does not run the Rust tests yet.
+- **Toolchain:** `nix develop` provides it, or rustup honours
+  `rust-toolchain.toml`.
 
 ## Gotchas
 
@@ -51,17 +64,11 @@ Carried over from the reference base, where each one cost real debugging. They
 apply as the corresponding code lands here.
 
 - Build with `stellar contract build`, not `cargo build` (see above).
-- OZ vault wiring: `#[contractimpl(contracttrait)]` on **both** `FungibleToken`
-  and `FungibleVault`; `type ContractType = Vault` goes **only** on
-  `FungibleToken`; import `soroban_sdk::MuxedAddress` (the contracttrait macro
-  references it).
-- Do **not** call `operator.require_auth()` inside overridden vault methods —
-  `Vault::*` already authorizes, and a second call fails with
-  `Error(Auth, ExistingValue)`.
+- A SEP-56 vault is **not** the base here: its interface assumes the price
+  exists at call time, which a request lifecycle cannot express. Only OZ's
+  conversion and rounding math is reused, as library code.
 - `ed25519-dalek` v3 breaks the test build; pin to `2.2.0` if it resolves
   higher.
-- `motion` must be v12+ (`motion/react`); a bare `npm i motion` pulls v10
-  (Motion One), which has no React entry.
 - USDC is a **classic asset** → an account needs a trustline to hold it.
   `bvUSDC` is a **Soroban contract token** → no trustline. Deposit is a single
   transaction with nested authorization; there is no separate `approve`. Get
@@ -73,8 +80,6 @@ apply as the corresponding code lands here.
   setting or the UI talks to the wrong chain.
 - Generated contract clients ship their `src/` but not their `dist/`. A fresh
   clone builds the client before the app, or `tsc` cannot resolve the module.
-- No `Cargo.lock` is committed until the first contract crate lands (#20); see
-  the comment in `Cargo.toml`.
 - `app-lib/clients/index.ts` is auto-generated and rewritten on every build or
   redeploy. Do not hand-edit it; customize by importing the client under `app/`.
 
