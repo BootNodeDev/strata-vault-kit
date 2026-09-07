@@ -3,9 +3,10 @@
 Guidance for agents and developers working in this repo. This file is the source
 of truth for how to build, run and not break things. `CLAUDE.md` points here.
 
-It deliberately does **not** restate dependency versions — those are pinned in
-`Cargo.toml`, `rust-toolchain.toml` and `flake.nix`, and a second copy would go
-stale. The architecture is maintained outside this repository. Work items live in
+It deliberately does **not** restate the design or the dependency versions. The
+design is in [`docs/architecture.md`](./docs/architecture.md); versions are
+pinned in `Cargo.toml`, `rust-toolchain.toml` and `flake.nix`. A second copy of
+either would go stale. Work items live in
 [milestone M1](https://github.com/BootNodeDev/strata-vault-kit/milestone/1).
 
 ## What this is
