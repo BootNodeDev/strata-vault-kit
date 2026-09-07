@@ -33,9 +33,10 @@ attestation, treasury, guardian. Testnet only. Not audited.
 
 ## State of the repo
 
-Three contract crates (`compliance`, `identity-verifier`, `share-token`) and two
-shared crates (`bindings`, `pricing`). A React + Vite app shell with TypeScript
-clients generated per contract, and a Playwright e2e harness.
+Work in progress. Contract crates under `contracts/`, shared crates under
+`crates/`, a React and Vite app shell with TypeScript clients generated per
+contract, and a Playwright e2e harness. Read the workspace `Cargo.toml` for the
+current members rather than trusting a list here.
 
 The vault contract itself is not written yet, so the request lifecycle above has
 no on-chain counterpart in this repo today. `app/` and `app-lib/` have no
@@ -52,7 +53,7 @@ does not carry over. Read it for Soroban and OZ mechanics only.
 
 - **Contracts:** `stellar contract build` — **not** `cargo build`. The OZ crates
   enable an experimental `soroban-sdk` feature (`spec_shaking_v2`) that only
-  works through the CLI wrapper. The devshell pins Stellar CLI v27.0.0.
+  works through the CLI wrapper. The devshell pins the Stellar CLI it expects.
 - **Tests:** `cargo test` from the repo root runs every workspace member against
   the in-memory `Env`. There is no unit-test runner for `app/` or `app-lib/`;
   `e2e/` runs Playwright separately. CI does not run the Rust tests yet.
@@ -68,13 +69,14 @@ apply as the corresponding code lands here.
 - A SEP-56 vault is **not** the base here: its interface assumes the price
   exists at call time, which a request lifecycle cannot express. Only OZ's
   conversion and rounding math is reused, as library code.
-- `ed25519-dalek` v3 breaks the test build; pin to `2.2.0` if it resolves
-  higher.
-- USDC is a **classic asset** → an account needs a trustline to hold it.
-  `bvUSDC` is a **Soroban contract token** → no trustline. Deposit is a single
-  transaction with nested authorization; there is no separate `approve`. Get
-  test USDC from Circle's faucet (pick Stellar) after establishing the
-  trustline.
+- `ed25519-dalek` is transitive and unpinned by any manifest. A newer major
+  breaks the test build; hold it back in the lockfile if compilation fails
+  there.
+- The deposit asset is a **classic asset** → an account needs a trustline to
+  hold it. The share token is a **Soroban contract token** → no trustline.
+  Deposit is a single transaction with nested authorization; there is no
+  separate `approve`. When the deposit asset is USDC, Circle's faucet (pick
+  Stellar) issues test units once the trustline exists.
 - Two network configs must agree: `environments.toml` is the network the
   CLI/scaffold **deploys** to, `app/.env` (`PUBLIC_STELLAR_*`) is the network
   the **frontend** reads at runtime. The scaffold default is local, so both need
@@ -88,7 +90,7 @@ apply as the corresponding code lands here.
 
 Not recorded here on purpose. The reference base kept them in this file and they
 drifted: its `AGENTS.md` and its generated client pointed at two different vault
-contracts. The addresses emitted by the deploy script (#15) are authoritative.
+contracts. The addresses emitted by the deploy script are authoritative.
 
 ## Conventions
 
