@@ -41,3 +41,11 @@ pub struct RedeemClaimed {
     pub shares: i128,
     pub assets: i128,
 }
+
+#[contractevent]
+pub struct EpochClosed {
+    #[topic]
+    pub epoch: u64,
+    pub total_deposited: i128,
+    pub total_shares_redeeming: i128,
+}

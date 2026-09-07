@@ -25,8 +25,11 @@ pub enum VaultError {
     /// correctly configured feed; kept because the oracle sits behind a
     /// settable address.
     InvalidSharePrice = 6031,
-    /// The epoch has already been fulfilled and can no longer be struck.
+    /// The epoch is not `Open`, so it cannot be closed or take new requests.
     EpochNotOpen = 6032,
+    /// The epoch is not `Pending`, so no price may be struck against it. An
+    /// epoch must be closed before it can be fulfilled.
+    EpochNotPending = 6038,
     /// The epoch counter would exceed `u64::MAX`.
     EpochOverflow = 6033,
     /// The epoch has not been struck yet, so no share price exists to claim

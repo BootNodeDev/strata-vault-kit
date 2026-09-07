@@ -105,8 +105,13 @@ impl AsyncVault {
     }
 
     #[only_role(caller, "manager")]
-    pub fn fulfill_epoch(e: &Env, caller: Address) -> u64 {
-        epoch::fulfill(e)
+    pub fn close_epoch(e: &Env, caller: Address) -> u64 {
+        epoch::close(e)
+    }
+
+    #[only_role(caller, "manager")]
+    pub fn fulfill_epoch(e: &Env, caller: Address, epoch_id: u64) -> i128 {
+        epoch::fulfill(e, epoch_id)
     }
 }
 

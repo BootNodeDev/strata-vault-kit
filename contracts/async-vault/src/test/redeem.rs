@@ -110,10 +110,13 @@ fn fulfill_is_rejected_when_the_vault_cannot_cover_the_redemptions() {
 
     assert_eq!(f.balance(&f.vault.address), 1_000);
 
+    f.close_epoch();
     f.attest(wad(4));
-    assert!(f.vault.try_fulfill_epoch(&f.manager).is_err());
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().status, EpochStatus::Open);
-    assert_eq!(f.vault.current_epoch(), epoch);
+    assert!(f.vault.try_fulfill_epoch(&f.manager, &epoch).is_err());
+    assert_eq!(
+        f.vault.get_epoch(&epoch).unwrap().status,
+        EpochStatus::Pending
+    );
 }
 
 #[test]

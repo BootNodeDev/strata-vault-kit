@@ -81,9 +81,15 @@ impl Fixture<'_> {
         who
     }
 
+    fn close_epoch(&self) -> u64 {
+        self.vault.close_epoch(&self.manager)
+    }
+
     fn fulfill_epoch(&self, nav_per_share: i128) -> u64 {
+        let epoch = self.close_epoch();
         self.attest(nav_per_share);
-        self.vault.fulfill_epoch(&self.manager)
+        self.vault.fulfill_epoch(&self.manager, &epoch);
+        epoch
     }
 }
 
