@@ -8,6 +8,9 @@ use soroban_sdk::contracterror;
 pub enum VaultError {
     /// The controller has no deposit request in the given epoch.
     RequestNotFound = 6001,
+    /// The oracle feed is not `Valid` — no record, stale, or ripcord raised —
+    /// so no price may be struck against it.
+    OracleNotConsumable = 6006,
     /// `request_deposit` was called with an amount of zero or less.
     InvalidAmount = 6007,
     /// The controller already holds an unclaimed request in this epoch. A
@@ -21,7 +24,9 @@ pub enum VaultError {
     /// An entry the constructor writes is absent from instance storage, which
     /// means the instance was archived or the contract was never constructed.
     NotInitialized = 6030,
-    /// `fulfill_epoch` was called with a share price of zero or less.
+    /// The oracle returned a share price of zero or less. Unreachable with a
+    /// correctly configured feed; kept because the oracle sits behind a
+    /// settable address.
     InvalidSharePrice = 6031,
     /// The epoch has already been fulfilled and can no longer be struck.
     EpochNotOpen = 6032,

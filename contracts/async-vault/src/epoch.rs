@@ -1,18 +1,28 @@
+use bindings::{OracleFeedClient, OracleState};
 use soroban_sdk::{panic_with_error, Env};
 
 use crate::error::VaultError;
 use crate::event::EpochFulfilled;
+use crate::keys::DataKey;
 use crate::state::{self, EpochInfo, EpochStatus};
 
 pub(crate) fn open(total_deposited: i128) -> EpochInfo {
     EpochInfo {
         status: EpochStatus::Open,
         total_deposited,
+        total_shares_redeeming: 0,
         share_price: 0,
     }
 }
 
-pub(crate) fn fulfill(e: &Env, share_price: i128) -> u64 {
+pub(crate) fn fulfill(e: &Env) -> u64 {
+    let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
+
+    if feed.state() != OracleState::Valid {
+        panic_with_error!(e, VaultError::OracleNotConsumable);
+    }
+
+    let share_price = feed.nav_per_share();
     if share_price <= 0 {
         panic_with_error!(e, VaultError::InvalidSharePrice);
     }

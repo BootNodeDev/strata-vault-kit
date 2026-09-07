@@ -24,3 +24,11 @@ pub struct DepositClaimed {
     pub amount: i128,
     pub shares: i128,
 }
+
+#[contractevent]
+pub struct RedeemRequested {
+    #[topic]
+    pub controller: Address,
+    pub epoch: u64,
+    pub shares: i128,
+}

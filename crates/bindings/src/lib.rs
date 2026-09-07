@@ -20,4 +20,5 @@ pub trait OracleFeed {
 pub trait Share {
     fn mint(e: &Env, to: Address, amount: i128, operator: Address);
     fn burn(e: &Env, user_address: Address, amount: i128, operator: Address);
+    fn forced_transfer(e: &Env, from: Address, to: Address, amount: i128, operator: Address);
 }

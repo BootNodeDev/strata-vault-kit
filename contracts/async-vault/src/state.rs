@@ -18,6 +18,7 @@ pub enum EpochStatus {
 pub struct EpochInfo {
     pub status: EpochStatus,
     pub total_deposited: i128,
+    pub total_shares_redeeming: i128,
     /// Assets per share, WAD-scaled: 1.0 is `WAD_SCALE`.
     pub share_price: i128,
 }
@@ -26,6 +27,13 @@ pub struct EpochInfo {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DepositRequest {
     pub amount: i128,
+    pub claimed: bool,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RedeemRequest {
+    pub shares: i128,
     pub claimed: bool,
 }
 
@@ -70,4 +78,21 @@ pub(crate) fn get_deposit_request(
     controller: &Address,
 ) -> Option<DepositRequest> {
     storage::get_persistent(e, &DataKey::UserDeposit(epoch, controller.clone()))
+}
+
+pub(crate) fn set_redeem_request(
+    e: &Env,
+    epoch: u64,
+    controller: &Address,
+    request: &RedeemRequest,
+) {
+    storage::set_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()), request);
+}
+
+pub(crate) fn get_redeem_request(
+    e: &Env,
+    epoch: u64,
+    controller: &Address,
+) -> Option<RedeemRequest> {
+    storage::get_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()))
 }

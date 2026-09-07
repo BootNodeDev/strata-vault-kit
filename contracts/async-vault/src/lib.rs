@@ -5,6 +5,7 @@ mod epoch;
 mod error;
 mod event;
 mod keys;
+mod redeem;
 mod roles;
 mod state;
 
@@ -18,8 +19,8 @@ use roles::MANAGER_ROLE;
 use state::FIRST_EPOCH;
 
 pub use error::VaultError;
-pub use event::{DepositClaimed, DepositRequested, EpochFulfilled};
-pub use state::{DepositRequest, EpochInfo, EpochStatus};
+pub use event::{DepositClaimed, DepositRequested, EpochFulfilled, RedeemRequested};
+pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
 
 #[contract]
 pub struct AsyncVault;
@@ -30,6 +31,7 @@ impl AsyncVault {
         e: &Env,
         asset: Address,
         share_token: Address,
+        oracle: Address,
         manager: Address,
         admin: Address,
     ) {
@@ -38,6 +40,7 @@ impl AsyncVault {
 
         state::set_addr(e, &DataKey::Asset, &asset);
         state::set_addr(e, &DataKey::ShareToken, &share_token);
+        state::set_addr(e, &DataKey::Oracle, &oracle);
         state::set_addr(e, &DataKey::Manager, &manager);
 
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
@@ -50,6 +53,10 @@ impl AsyncVault {
 
     pub fn share_token(e: &Env) -> Address {
         state::get_addr(e, &DataKey::ShareToken)
+    }
+
+    pub fn oracle(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::Oracle)
     }
 
     pub fn manager(e: &Env) -> Address {
@@ -81,9 +88,21 @@ impl AsyncVault {
         deposit::claim(e, &caller, epoch_id)
     }
 
+    pub fn request_redeem(e: &Env, from: Address, shares: i128) -> u64 {
+        redeem::request(e, &from, shares)
+    }
+
+    pub fn get_redeem_request(
+        e: &Env,
+        epoch_id: u64,
+        controller: Address,
+    ) -> Option<RedeemRequest> {
+        state::get_redeem_request(e, epoch_id, &controller)
+    }
+
     #[only_role(caller, "manager")]
-    pub fn fulfill_epoch(e: &Env, caller: Address, share_price: i128) -> u64 {
-        epoch::fulfill(e, share_price)
+    pub fn fulfill_epoch(e: &Env, caller: Address) -> u64 {
+        epoch::fulfill(e)
     }
 }
 
