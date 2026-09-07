@@ -21,10 +21,10 @@ What the contracts enforce:
 
 1. **Entry is gated** by a post-KYC allowlist, checked on the receiver of a
    subscription and on every share transfer.
-2. **A priced claim always pays.** Once priced and covered, a cash claim cannot
-   be blocked by a pause, a stale valuation, or the holder losing their
+2. **A covered claim always pays.** Once priced and covered, a cash claim cannot
+   be blocked by a pause, a stale valuation, or the investor losing their
    allowlist place. Priced claims are never re-priced and never identity-gated;
-   a delisted, non-frozen holder leaves through the exit-only cash path.
+   a delisted, non-frozen investor leaves through the exit-only cash path.
 3. **Cancellation is atomic and single-step**, open only until the attestation
    that prices the request is accepted. There is no instant exit.
 
