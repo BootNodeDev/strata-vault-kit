@@ -6,6 +6,8 @@ pub(crate) enum DataKey {
     ShareToken,
     Manager,
     Oracle,
+    Custodian,
+    NetDeployed,
     CurrentEpoch,
     PendingRedeemAssets,
     Epoch(u64),

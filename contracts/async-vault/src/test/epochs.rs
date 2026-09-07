@@ -19,28 +19,7 @@ fn test_manager_can_fulfill_epoch_and_rotate() {
 }
 
 #[test]
-#[should_panic(expected = "#2000")]
-fn test_non_manager_cannot_fulfill() {
-    let f = setup();
-    let impostor = Address::generate(&f.e);
-    f.close_epoch();
-    f.attest(wad(2));
-
-    f.vault.fulfill_epoch(&impostor, &1);
-}
-
-#[test]
-fn the_admin_is_not_the_manager() {
-    let f = setup();
-    f.close_epoch();
-    f.attest(wad(2));
-
-    assert!(f.vault.try_fulfill_epoch(&f.admin, &1).is_err());
-    assert!(f.vault.try_close_epoch(&f.admin).is_err());
-}
-
-#[test]
-fn fulfilling_keeps_the_struck_epoch_total() {
+fn fulfilling_keeps_the_epoch_total() {
     let f = setup();
     let investor = f.investor(1_000);
 
@@ -54,16 +33,6 @@ fn fulfilling_keeps_the_struck_epoch_total() {
         f.vault.get_deposit_request(&1, &investor).unwrap().amount,
         400
     );
-}
-
-#[test]
-fn fulfilling_needs_the_manager_authorisation() {
-    let f = setup();
-
-    f.close_epoch();
-    f.attest(wad(2));
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_fulfill_epoch(&f.manager, &1).is_err());
 }
 
 #[test]
@@ -122,7 +91,7 @@ fn an_open_epoch_cannot_be_fulfilled() {
     let f = setup();
     f.attest(wad(2));
 
-    assert!(f.vault.try_fulfill_epoch(&f.manager, &1).is_err());
+    assert!(f.vault.try_fulfill_epoch(&1).is_err());
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Open);
 }
 
@@ -131,7 +100,7 @@ fn a_sealed_epoch_cannot_be_closed_again() {
     let f = setup();
     f.close_epoch();
 
-    assert!(f.vault.try_fulfill_epoch(&f.manager, &1).is_err());
+    assert!(f.vault.try_fulfill_epoch(&1).is_err());
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Pending);
     assert_eq!(f.vault.current_epoch(), 2);
 }
@@ -141,7 +110,7 @@ fn a_fulfilled_epoch_cannot_be_fulfilled_again() {
     let f = setup();
     let epoch = f.fulfill_epoch(wad(2));
 
-    assert!(f.vault.try_fulfill_epoch(&f.manager, &epoch).is_err());
+    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
 }
 
@@ -153,8 +122,8 @@ fn epochs_can_be_fulfilled_out_of_order_after_closing() {
     let second = f.close_epoch();
     f.attest(wad(2));
 
-    f.vault.fulfill_epoch(&f.manager, &second);
-    f.vault.fulfill_epoch(&f.manager, &first);
+    f.vault.fulfill_epoch(&second);
+    f.vault.fulfill_epoch(&first);
 
     assert_eq!(
         f.vault.get_epoch(&first).unwrap().status,
@@ -164,4 +133,47 @@ fn epochs_can_be_fulfilled_out_of_order_after_closing() {
         f.vault.get_epoch(&second).unwrap().status,
         EpochStatus::Fulfilled
     );
+}
+
+#[test]
+#[should_panic(expected = "#2000")]
+fn test_non_manager_cannot_close() {
+    let f = setup();
+    let impostor = Address::generate(&f.e);
+
+    f.vault.close_epoch(&impostor);
+}
+
+#[test]
+fn the_admin_is_not_the_manager() {
+    let f = setup();
+
+    assert!(f.vault.try_close_epoch(&f.admin).is_err());
+    assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Open);
+}
+
+#[test]
+fn closing_needs_the_manager_authorisation() {
+    let f = setup();
+
+    f.e.set_auths(&[]);
+    assert!(f.vault.try_close_epoch(&f.manager).is_err());
+    assert_eq!(f.vault.current_epoch(), 1);
+}
+
+#[test]
+fn anyone_may_fulfill_a_closed_epoch() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    let epoch = f.close_epoch();
+    f.attest(wad(2));
+
+    f.e.set_auths(&[]);
+    assert_eq!(f.vault.fulfill_epoch(&epoch), wad(2));
+
+    assert_eq!(
+        f.vault.get_epoch(&epoch).unwrap().status,
+        EpochStatus::Fulfilled
+    );
+    assert_eq!(f.shares(&stranger), 0);
 }

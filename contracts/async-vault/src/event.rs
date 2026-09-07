@@ -49,3 +49,25 @@ pub struct EpochClosed {
     pub total_deposited: i128,
     pub total_shares_redeeming: i128,
 }
+
+#[contractevent]
+pub struct CustodianSet {
+    #[topic]
+    pub custodian: Address,
+}
+
+#[contractevent]
+pub struct Deployed {
+    #[topic]
+    pub custodian: Address,
+    pub assets: i128,
+    pub net_deployed: i128,
+}
+
+#[contractevent]
+pub struct Funded {
+    #[topic]
+    pub from: Address,
+    pub assets: i128,
+    pub net_deployed: i128,
+}

@@ -6,6 +6,7 @@ mod deposit;
 mod epochs;
 mod oracle_pricing;
 mod redeem;
+mod treasury;
 
 extern crate std;
 
@@ -38,6 +39,8 @@ struct Fixture<'a> {
     attester: Address,
     asset: Address,
     manager: Address,
+    treasury: Address,
+    custodian: Address,
     admin: Address,
 }
 
@@ -87,9 +90,13 @@ impl Fixture<'_> {
 
     fn fulfill_epoch(&self, nav_per_share: i128) -> u64 {
         let epoch = self.close_epoch();
-        self.attest(nav_per_share);
-        self.vault.fulfill_epoch(&self.manager, &epoch);
+        self.fulfill_epoch_at(epoch, nav_per_share);
         epoch
+    }
+
+    fn fulfill_epoch_at(&self, epoch: u64, nav_per_share: i128) {
+        self.attest(nav_per_share);
+        self.vault.fulfill_epoch(&epoch);
     }
 }
 
@@ -101,6 +108,8 @@ fn setup<'a>() -> Fixture<'a> {
     let issuer = Address::generate(&e);
     let asset = e.register_stellar_asset_contract_v2(issuer).address();
     let manager = Address::generate(&e);
+    let treasury = Address::generate(&e);
+    let custodian = Address::generate(&e);
     let admin = Address::generate(&e);
     let attester = Address::generate(&e);
 
@@ -143,7 +152,14 @@ fn setup<'a>() -> Fixture<'a> {
 
     let contract_id = e.register(
         AsyncVault,
-        (&asset, &share.address, &oracle.address, &manager, &admin),
+        (
+            &asset,
+            &share.address,
+            &oracle.address,
+            &manager,
+            &treasury,
+            &admin,
+        ),
     );
     share.grant_role(&contract_id, &symbol_short!("manager"), &admin);
 
@@ -155,6 +171,8 @@ fn setup<'a>() -> Fixture<'a> {
         attester,
         asset,
         manager,
+        treasury,
+        custodian,
         admin,
         e,
     }

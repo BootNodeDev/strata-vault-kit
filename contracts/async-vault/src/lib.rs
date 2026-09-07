@@ -8,18 +8,22 @@ mod keys;
 mod redeem;
 mod roles;
 mod state;
+mod treasury;
 
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env};
 use stellar_access::access_control;
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_macros::{only_admin, only_role, when_not_paused};
 
 use keys::DataKey;
-use roles::MANAGER_ROLE;
+use roles::{MANAGER_ROLE, TREASURY_ROLE};
 use state::FIRST_EPOCH;
 
 pub use error::VaultError;
-pub use event::{DepositClaimed, DepositRequested, EpochFulfilled, RedeemClaimed, RedeemRequested};
+pub use event::{
+    CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
+    RedeemClaimed, RedeemRequested,
+};
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
 
 #[contract]
@@ -33,10 +37,16 @@ impl AsyncVault {
         share_token: Address,
         oracle: Address,
         manager: Address,
+        treasury: Address,
         admin: Address,
     ) {
+        if treasury == admin || treasury == manager {
+            panic_with_error!(e, VaultError::RolesNotDistinct);
+        }
+
         access_control::set_admin(e, &admin);
         access_control::grant_role_no_auth(e, &manager, &MANAGER_ROLE, &admin);
+        access_control::grant_role_no_auth(e, &treasury, &TREASURY_ROLE, &admin);
 
         state::set_addr(e, &DataKey::Asset, &asset);
         state::set_addr(e, &DataKey::ShareToken, &share_token);
@@ -61,6 +71,32 @@ impl AsyncVault {
 
     pub fn manager(e: &Env) -> Address {
         state::get_addr(e, &DataKey::Manager)
+    }
+
+    pub fn custodian(e: &Env) -> Option<Address> {
+        state::get_addr_opt(e, &DataKey::Custodian)
+    }
+
+    pub fn net_deployed(e: &Env) -> i128 {
+        state::net_deployed(e)
+    }
+
+    pub fn free_reserve(e: &Env) -> i128 {
+        treasury::free_reserve(e)
+    }
+
+    #[only_admin]
+    pub fn set_custodian(e: &Env, custodian: Address, _caller: Address) {
+        treasury::set_custodian(e, &custodian);
+    }
+
+    #[only_role(caller, "treasury")]
+    pub fn deploy_to_custodian(e: &Env, caller: Address, assets: i128) -> i128 {
+        treasury::deploy(e, assets)
+    }
+
+    pub fn fund(e: &Env, from: Address, assets: i128) -> i128 {
+        treasury::fund(e, &from, assets)
     }
 
     pub fn current_epoch(e: &Env) -> u64 {
@@ -109,8 +145,7 @@ impl AsyncVault {
         epoch::close(e)
     }
 
-    #[only_role(caller, "manager")]
-    pub fn fulfill_epoch(e: &Env, caller: Address, epoch_id: u64) -> i128 {
+    pub fn fulfill_epoch(e: &Env, epoch_id: u64) -> i128 {
         epoch::fulfill(e, epoch_id)
     }
 }

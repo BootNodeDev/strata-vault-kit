@@ -46,6 +46,18 @@ pub(crate) fn get_addr(e: &Env, key: &DataKey) -> Address {
         .unwrap_or_else(|| panic_with_error!(e, VaultError::NotInitialized))
 }
 
+pub(crate) fn get_addr_opt(e: &Env, key: &DataKey) -> Option<Address> {
+    storage::get_instance(e, key)
+}
+
+pub(crate) fn set_net_deployed(e: &Env, assets: i128) {
+    storage::set_instance(e, &DataKey::NetDeployed, &assets);
+}
+
+pub(crate) fn net_deployed(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::NetDeployed).unwrap_or(0)
+}
+
 pub(crate) fn set_current_epoch(e: &Env, id: u64) {
     storage::set_instance(e, &DataKey::CurrentEpoch, &id);
 }

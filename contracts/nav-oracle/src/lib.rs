@@ -142,7 +142,7 @@ impl NavOracleContract {
             if now < prev.timestamp.saturating_add(cfg.cooldown_secs) {
                 panic_with_error!(e, OracleError::CooldownActive);
             }
-            // Per-share symmetric deviation cap against the previous strike.
+            // Per-share symmetric deviation cap against the previous record.
             let diff = (report.nav_per_share - prev.nav_per_share).abs();
             let bound = prev.nav_per_share * (cfg.max_deviation_bps as i128) / BPS_DENOM;
             if diff > bound {

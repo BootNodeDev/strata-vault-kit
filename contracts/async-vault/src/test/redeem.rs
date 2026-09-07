@@ -112,7 +112,7 @@ fn fulfill_is_rejected_when_the_vault_cannot_cover_the_redemptions() {
 
     f.close_epoch();
     f.attest(wad(4));
-    assert!(f.vault.try_fulfill_epoch(&f.manager, &epoch).is_err());
+    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
     assert_eq!(
         f.vault.get_epoch(&epoch).unwrap().status,
         EpochStatus::Pending
@@ -120,7 +120,7 @@ fn fulfill_is_rejected_when_the_vault_cannot_cover_the_redemptions() {
 }
 
 #[test]
-fn a_covered_epoch_is_struck_and_leaves_the_liability_pending() {
+fn a_covered_epoch_is_fulfilled_and_leaves_the_liability_pending() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &500);
