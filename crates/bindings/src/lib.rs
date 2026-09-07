@@ -18,6 +18,6 @@ pub trait OracleFeed {
 
 #[contractclient(name = "ShareClient")]
 pub trait Share {
-    fn mint(e: &Env, to: Address, amount: i128);
-    fn burn(e: &Env, from: Address, amount: i128);
+    fn mint(e: &Env, to: Address, amount: i128, operator: Address);
+    fn burn(e: &Env, user_address: Address, amount: i128, operator: Address);
 }

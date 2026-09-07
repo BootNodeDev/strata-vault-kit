@@ -1,16 +1,29 @@
 extern crate std;
 
 use soroban_sdk::{
+    symbol_short,
     testutils::{Address as _, MockAuth, MockAuthInvoke},
     token::{StellarAssetClient, TokenClient},
-    Address, Env, IntoVal,
+    Address, Env, IntoVal, String,
 };
 
+use compliance::{Compliance, ComplianceClient};
+use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
+use share_token::{ShareToken, ShareTokenClient};
+
+use stellar_contract_utils::math::wad::WAD_SCALE;
+
 use crate::{AsyncVault, AsyncVaultClient, EpochStatus};
+
+fn wad(whole: i128) -> i128 {
+    whole * WAD_SCALE
+}
 
 struct Fixture<'a> {
     e: Env,
     vault: AsyncVaultClient<'a>,
+    share: ShareTokenClient<'a>,
+    identity: IdentityVerifierClient<'a>,
     asset: Address,
     manager: Address,
     admin: Address,
@@ -18,6 +31,12 @@ struct Fixture<'a> {
 
 impl Fixture<'_> {
     fn investor(&self, funded: i128) -> Address {
+        let who = self.unverified_investor(funded);
+        self.identity.allow(&who, &true, &self.admin);
+        who
+    }
+
+    fn unverified_investor(&self, funded: i128) -> Address {
         let who = Address::generate(&self.e);
         StellarAssetClient::new(&self.e, &self.asset).mint(&who, &funded);
         who
@@ -25,6 +44,10 @@ impl Fixture<'_> {
 
     fn balance(&self, who: &Address) -> i128 {
         TokenClient::new(&self.e, &self.asset).balance(who)
+    }
+
+    fn shares(&self, who: &Address) -> i128 {
+        self.share.balance(who)
     }
 }
 
@@ -37,10 +60,32 @@ fn setup<'a>() -> Fixture<'a> {
     let manager = Address::generate(&e);
     let admin = Address::generate(&e);
 
-    let contract_id = e.register(AsyncVault, (&asset, &manager, &admin));
+    let compliance = ComplianceClient::new(&e, &e.register(Compliance, (admin.clone(),)));
+    let identity = IdentityVerifierClient::new(&e, &e.register(IdentityVerifier, (admin.clone(),)));
+
+    let share = ShareTokenClient::new(
+        &e,
+        &e.register(
+            ShareToken,
+            (
+                String::from_str(&e, "Strata Vault USDC"),
+                String::from_str(&e, "bvUSDC"),
+                admin.clone(),
+                admin.clone(),
+                compliance.address.clone(),
+                identity.address.clone(),
+            ),
+        ),
+    );
+    compliance.bind_token(&share.address, &admin);
+
+    let contract_id = e.register(AsyncVault, (&asset, &share.address, &manager, &admin));
+    share.grant_role(&contract_id, &symbol_short!("manager"), &admin);
 
     Fixture {
         vault: AsyncVaultClient::new(&e, &contract_id),
+        share,
+        identity,
         asset,
         manager,
         admin,
@@ -53,6 +98,7 @@ fn test_successful_deployment() {
     let f = setup();
 
     assert_eq!(f.vault.asset(), f.asset);
+    assert_eq!(f.vault.share_token(), f.share.address);
     assert_eq!(f.vault.manager(), f.manager);
     assert!(!f.vault.paused());
 
@@ -155,7 +201,12 @@ fn request_deposit_needs_the_investor_authorisation() {
         .address();
     let contract_id = e.register(
         AsyncVault,
-        (&asset, &Address::generate(&e), &Address::generate(&e)),
+        (
+            &asset,
+            &asset,
+            &Address::generate(&e),
+            &Address::generate(&e),
+        ),
     );
 
     e.mock_all_auths();
@@ -212,11 +263,11 @@ fn an_investor_without_a_request_reads_as_none() {
 fn test_manager_can_fulfill_epoch_and_rotate() {
     let f = setup();
 
-    assert_eq!(f.vault.fulfill_epoch(&f.manager, &2), 2);
+    assert_eq!(f.vault.fulfill_epoch(&f.manager, &wad(2)), 2);
 
     let epoch_1 = f.vault.get_epoch(&1).unwrap();
     assert_eq!(epoch_1.status, EpochStatus::Fulfilled);
-    assert_eq!(epoch_1.share_price, 2);
+    assert_eq!(epoch_1.share_price, wad(2));
 
     let epoch_2 = f.vault.get_epoch(&2).unwrap();
     assert_eq!(epoch_2.status, EpochStatus::Open);
@@ -232,13 +283,13 @@ fn test_non_manager_cannot_fulfill() {
     let f = setup();
     let impostor = Address::generate(&f.e);
 
-    f.vault.fulfill_epoch(&impostor, &2);
+    f.vault.fulfill_epoch(&impostor, &wad(2));
 }
 
 #[test]
 fn the_admin_is_not_the_manager() {
     let f = setup();
-    assert!(f.vault.try_fulfill_epoch(&f.admin, &2).is_err());
+    assert!(f.vault.try_fulfill_epoch(&f.admin, &wad(2)).is_err());
     assert_eq!(f.vault.current_epoch(), 1);
 }
 
@@ -248,11 +299,11 @@ fn fulfilling_keeps_the_struck_epoch_total() {
     let investor = f.investor(1_000);
 
     f.vault.request_deposit(&investor, &400);
-    f.vault.fulfill_epoch(&f.manager, &2);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
 
     let epoch_1 = f.vault.get_epoch(&1).unwrap();
     assert_eq!(epoch_1.total_deposited, 400);
-    assert_eq!(epoch_1.share_price, 2);
+    assert_eq!(epoch_1.share_price, wad(2));
     assert_eq!(
         f.vault.get_deposit_request(&1, &investor).unwrap().amount,
         400
@@ -265,7 +316,7 @@ fn deposits_after_fulfilling_land_in_the_new_epoch() {
     let investor = f.investor(1_000);
 
     f.vault.request_deposit(&investor, &400);
-    f.vault.fulfill_epoch(&f.manager, &2);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
 
     assert_eq!(f.vault.request_deposit(&investor, &300), 2);
 
@@ -293,6 +344,192 @@ fn fulfilling_needs_the_manager_authorisation() {
     let f = setup();
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_fulfill_epoch(&f.manager, &2).is_err());
+    assert!(f.vault.try_fulfill_epoch(&f.manager, &wad(2)).is_err());
     assert_eq!(f.vault.current_epoch(), 1);
+}
+
+#[test]
+fn test_user_can_claim_deposit_and_receive_shares() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &400);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+
+    assert_eq!(f.vault.claim_deposit(&user, &1), 200);
+
+    assert_eq!(f.shares(&user), 200);
+    assert!(f.vault.get_deposit_request(&1, &user).unwrap().claimed);
+    assert_eq!(f.balance(&f.vault.address), 400);
+}
+
+#[test]
+#[should_panic(expected = "#6035")]
+fn test_cannot_claim_twice() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &400);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+
+    f.vault.claim_deposit(&user, &1);
+    f.vault.claim_deposit(&user, &1);
+}
+
+#[test]
+fn claiming_an_unfulfilled_epoch_is_rejected() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &400);
+    assert!(f.vault.try_claim_deposit(&user, &1).is_err());
+    assert_eq!(f.shares(&user), 0);
+}
+
+#[test]
+fn claiming_without_a_request_is_rejected() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+    assert!(f.vault.try_claim_deposit(&stranger, &1).is_err());
+}
+
+#[test]
+fn a_deposit_below_one_share_cannot_be_claimed() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &1);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+
+    assert!(f.vault.try_claim_deposit(&user, &1).is_err());
+    assert!(!f.vault.get_deposit_request(&1, &user).unwrap().claimed);
+}
+
+#[test]
+fn claiming_needs_the_investor_authorisation() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &400);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+
+    f.e.set_auths(&[]);
+    assert!(f.vault.try_claim_deposit(&user, &1).is_err());
+}
+
+#[test]
+fn a_paused_vault_still_lets_investors_claim() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &400);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+    f.vault.pause(&f.admin);
+
+    assert_eq!(f.vault.claim_deposit(&user, &1), 200);
+    assert_eq!(f.shares(&user), 200);
+}
+
+#[test]
+fn claims_are_scoped_to_their_own_epoch() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &400);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+    f.vault.request_deposit(&user, &300);
+    f.vault.fulfill_epoch(&f.manager, &wad(3));
+
+    assert_eq!(f.vault.claim_deposit(&user, &1), 200);
+    assert_eq!(f.vault.claim_deposit(&user, &2), 100);
+    assert_eq!(f.shares(&user), 300);
+}
+
+#[test]
+fn a_non_allowlisted_investor_cannot_claim_shares() {
+    let f = setup();
+    let stranger = f.unverified_investor(1_000);
+
+    f.vault.request_deposit(&stranger, &400);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+
+    assert!(f.vault.try_claim_deposit(&stranger, &1).is_err());
+    assert_eq!(f.shares(&stranger), 0);
+    assert!(!f.vault.get_deposit_request(&1, &stranger).unwrap().claimed);
+    assert_eq!(f.balance(&f.vault.address), 400);
+}
+
+#[test]
+fn allowlisting_after_the_fact_lets_the_claim_through() {
+    let f = setup();
+    let investor = f.unverified_investor(1_000);
+
+    f.vault.request_deposit(&investor, &400);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+    assert!(f.vault.try_claim_deposit(&investor, &1).is_err());
+
+    f.identity.allow(&investor, &true, &f.admin);
+
+    assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
+    assert_eq!(f.shares(&investor), 200);
+}
+
+#[test]
+fn the_vault_holds_the_manager_role_on_the_share_token() {
+    let f = setup();
+    assert!(f
+        .share
+        .has_role(&f.vault.address, &symbol_short!("manager"))
+        .is_some());
+}
+
+#[test]
+fn a_fractional_share_price_is_representable() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &400);
+    f.vault.fulfill_epoch(&f.manager, &(3 * WAD_SCALE / 2));
+
+    assert_eq!(f.vault.claim_deposit(&user, &1), 266);
+    assert_eq!(f.shares(&user), 266);
+}
+
+#[test]
+fn conversion_rounds_down_in_the_vaults_favour() {
+    let f = setup();
+    let user = f.investor(1_000);
+
+    f.vault.request_deposit(&user, &401);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+
+    assert_eq!(f.vault.claim_deposit(&user, &1), 200);
+    assert_eq!(f.balance(&f.vault.address), 401);
+}
+
+#[test]
+fn a_deposit_too_large_for_an_i128_product_still_converts() {
+    let f = setup();
+    let whale = f.investor(i128::MAX);
+    let amount = 10i128.pow(30);
+
+    f.vault.request_deposit(&whale, &amount);
+    f.vault.fulfill_epoch(&f.manager, &wad(2));
+
+    assert!(amount.checked_mul(WAD_SCALE).is_none());
+    assert_eq!(f.vault.claim_deposit(&whale, &1), 5 * 10i128.pow(29));
+}
+
+#[test]
+fn a_conversion_that_cannot_fit_i128_is_rejected() {
+    let f = setup();
+    let whale = f.investor(i128::MAX);
+
+    f.vault.request_deposit(&whale, &(i128::MAX / 2));
+    f.vault.fulfill_epoch(&f.manager, &1);
+
+    assert!(f.vault.try_claim_deposit(&whale, &1).is_err());
+    assert!(!f.vault.get_deposit_request(&1, &whale).unwrap().claimed);
 }

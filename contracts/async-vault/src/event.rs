@@ -15,3 +15,12 @@ pub struct EpochFulfilled {
     pub share_price: i128,
     pub total_deposited: i128,
 }
+
+#[contractevent]
+pub struct DepositClaimed {
+    #[topic]
+    pub controller: Address,
+    pub epoch: u64,
+    pub amount: i128,
+    pub shares: i128,
+}

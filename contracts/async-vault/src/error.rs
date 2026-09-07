@@ -6,6 +6,8 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum VaultError {
+    /// The controller has no deposit request in the given epoch.
+    RequestNotFound = 6001,
     /// `request_deposit` was called with an amount of zero or less.
     InvalidAmount = 6007,
     /// The controller already holds an unclaimed request in this epoch. A
@@ -25,4 +27,13 @@ pub enum VaultError {
     EpochNotOpen = 6032,
     /// The epoch counter would exceed `u64::MAX`.
     EpochOverflow = 6033,
+    /// The epoch has not been struck yet, so no share price exists to claim
+    /// against.
+    EpochNotFulfilled = 6034,
+    /// The request was already claimed. Claiming is idempotent by rejection,
+    /// not by silently minting nothing twice.
+    AlreadyClaimed = 6035,
+    /// The deposit is smaller than one share at the struck price, so it would
+    /// mint zero. Rejected rather than burning the deposit to dust.
+    NothingToClaim = 6036,
 }

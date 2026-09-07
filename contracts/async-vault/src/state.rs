@@ -18,6 +18,7 @@ pub enum EpochStatus {
 pub struct EpochInfo {
     pub status: EpochStatus,
     pub total_deposited: i128,
+    /// Assets per share, WAD-scaled: 1.0 is `WAD_SCALE`.
     pub share_price: i128,
 }
 
