@@ -8,11 +8,7 @@ import React, {
 import "./NotificationProvider.css"
 
 type NotificationType =
-	| "primary"
-	| "secondary"
-	| "success"
-	| "error"
-	| "warning"
+	"primary" | "secondary" | "success" | "error" | "warning"
 
 interface Notification {
 	id: string
