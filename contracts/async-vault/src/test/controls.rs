@@ -79,3 +79,16 @@ fn a_paused_vault_still_pays_redemptions() {
 
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
 }
+
+#[test]
+fn a_paused_vault_does_not_fulfill_epochs() {
+    let f = setup();
+    f.close_epoch();
+    f.attest(wad(2));
+    f.vault.pause(&f.guardian);
+
+    assert!(f.vault.try_fulfill_epoch(&1).is_err());
+
+    f.vault.unpause(&f.admin);
+    assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
+}

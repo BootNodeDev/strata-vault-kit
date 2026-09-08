@@ -16,7 +16,7 @@ stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
 stellar-contract-utils = { workspace = true }
 bindings = { path = "../../crates/bindings" }
-pricing = { path = "../../crates/pricing" }
+
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

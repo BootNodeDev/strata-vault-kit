@@ -9,9 +9,9 @@ pub enum VaultError {
     /// The constructor was given the same address for two authorities that
     /// must be held separately.
     RolesNotDistinct = 6000,
-    /// The controller has no deposit request in the given epoch.
+    /// The controller has no request in the given epoch.
     RequestNotFound = 6001,
-    /// `request_deposit` was called with an amount of zero or less.
+    /// An amount or share quantity of zero or less was specified.
     InvalidAmount = 6007,
     /// The controller already holds an unclaimed request in this epoch. A
     /// second request is rejected rather than added to the first, so that at

@@ -149,6 +149,7 @@ impl AsyncVault {
         epoch::close(e)
     }
 
+    #[when_not_paused]
     pub fn fulfill_epoch(e: &Env, epoch_id: u64) -> i128 {
         epoch::fulfill(e, epoch_id)
     }
