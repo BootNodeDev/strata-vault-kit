@@ -8,7 +8,8 @@
     "start": "npm start --workspace app",
     "lint": "npm run lint --workspaces --if-present",
     "format": "prettier . --write",
-    "format:check": "prettier . --check"
+    "format:check": "prettier . --check",
+    "test": "vitest run"
   },
   "workspaces": [
     "app",
@@ -17,7 +18,10 @@
     "e2e"
   ],
   "devDependencies": {
-    "prettier": "^3.8.3"
+    "@testing-library/react": "16.3.3",
+    "jsdom": "29.1.1",
+    "prettier": "^3.8.3",
+    "vitest": "4.1.11"
   },
   "prettier": "@theahaco/ts-config/prettier",
   "packageManager": "npm@11.7.0"
