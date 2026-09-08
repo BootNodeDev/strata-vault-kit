@@ -31,17 +31,6 @@ What the contracts enforce:
 Five authorities, each a native Stellar multisig: governance, compliance,
 attestation, treasury, guardian. Testnet only. Not audited.
 
-## State of the repo
-
-Work in progress. Contract crates under `contracts/`, shared crates under
-`crates/`, a React and Vite app shell with TypeScript clients generated per
-contract, and a Playwright e2e harness. Read the workspace `Cargo.toml` for the
-current members rather than trusting a list here.
-
-The vault contract itself is not written yet, so the request lifecycle above has
-no on-chain counterpart in this repo today. `app/` and `app-lib/` have no
-unit-test runner.
-
 ## Reference base
 
 [`stellar-vault-demo-dapp`](https://github.com/BootNodeDev/stellar-vault-demo-dapp)
@@ -67,8 +56,7 @@ apply as the corresponding code lands here.
 
 - Build with `stellar contract build`, not `cargo build` (see above).
 - A SEP-56 vault is **not** the base here: its interface assumes the price
-  exists at call time, which a request lifecycle cannot express. Only OZ's
-  conversion and rounding math is reused, as library code.
+  exists at call time, which a request lifecycle cannot express.
 - `ed25519-dalek` is transitive and unpinned by any manifest. A newer major
   breaks the test build; hold it back in the lockfile if compilation fails
   there.

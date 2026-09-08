@@ -12,8 +12,7 @@ USDC). **Maintainer:** BootNode (bootnode.dev).
 Shares in this vault are a claim on an off-chain asset whose value is attested
 on chain. No price exists at the moment you act, so entry and exit are requests:
 what you put in goes into escrow, the next accepted attestation prices it, and
-you claim the result. A priced claim is never re-priced, and a covered cash
-claim cannot be blocked by a pause or by losing your allowlist place.
+you claim the result.
 
 ---
 
@@ -45,9 +44,10 @@ claim cannot be blocked by a pause or by losing your allowlist place.
 4. **Attested NAV.** The reporter attests the share price itself, computed
    off-chain from the deployed value and the vault's public figures under a
    documented methodology. The contract validates, stores and exposes it. Every
-   on-chain operation preserves that price by construction: a priced deposit
-   adds assets and shares in proportion, a priced redemption removes both, a
-   custodian transfer moves value between pockets without changing the total.
+   on-chain operation preserves that price by construction: pricing a deposit
+   releases escrow into the reserve and mints shares in proportion, pricing a
+   redemption burns shares and fixes the matching liability, and a custodian
+   transfer moves value between pockets without changing the total.
 
 5. **Payable claims always pay.** Neither the guardian pause, a delisting, nor a
    stale valuation can block the payment of an already-priced, funded cash
