@@ -181,6 +181,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 
 [[package]]
+name = "async-vault"
+version = "0.1.0"
+dependencies = [
+ "bindings",
+ "compliance",
+ "identity-verifier",
+ "nav-oracle",
+ "pricing",
+ "share-token",
+ "soroban-sdk",
+ "stellar-access",
+ "stellar-contract-utils",
+ "stellar-macros",
+ "storage",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1128,6 +1145,7 @@ dependencies = [
  "soroban-sdk",
  "stellar-access",
  "stellar-macros",
+ "storage",
 ]
 
 [[package]]
@@ -1862,6 +1880,13 @@ dependencies = [
  "serde_with",
  "sha2",
  "stellar-strkey 0.0.13",
+]
+
+[[package]]
+name = "storage"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
 ]
 
 [[package]]

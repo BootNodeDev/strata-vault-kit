@@ -40,7 +40,12 @@ constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --mana
 # fields are strings because they do not survive a JSON number round trip.
 [development.contracts.nav_oracle]
 client = true
-constructor_args = "--admin me --attester me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_deviation_bps\":1000,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
+constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_deviation_bps\":1000,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
+
+[development.contracts.async_vault]
+client = true
+constructor_args = '--asset share_token --share_token share_token --oracle nav_oracle --roles "{\"attester\":\"me\",\"compliance\":\"compliance\",\"governance\":\"me\",\"guardian\":\"me\",\"manager\":\"me\",\"treasury\":\"share_token\"}"'
+
 
 ### Staging environment configuration
 [staging.network]

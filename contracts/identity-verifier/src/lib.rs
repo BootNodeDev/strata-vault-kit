@@ -2,9 +2,14 @@
 //! registry (a trusted issuer's), not part of this product. Do not deploy to mainnet.
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contractmeta, contracttype, panic_with_error, Address, Env};
+use soroban_sdk::{
+    contract, contractimpl, contractmeta, contracttype, panic_with_error, Address, Env,
+};
 
-contractmeta!(key = "stub", val = "testnet-only; prod = external ERC-3643 identity registry");
+contractmeta!(
+    key = "stub",
+    val = "testnet-only; prod = external ERC-3643 identity registry"
+);
 use stellar_access::access_control;
 use stellar_macros::only_admin;
 use stellar_tokens::rwa::{identity_verification, RWAError};

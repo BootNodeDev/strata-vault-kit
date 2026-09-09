@@ -4,7 +4,10 @@
 
 use soroban_sdk::{contract, contractimpl, contractmeta, Address, Env, Vec};
 
-contractmeta!(key = "stub", val = "testnet-only; prod = external compliance module");
+contractmeta!(
+    key = "stub",
+    val = "testnet-only; prod = external compliance module"
+);
 use stellar_access::access_control;
 use stellar_macros::only_admin;
 use stellar_tokens::rwa::{compliance, compliance::ComplianceHook, utils::token_binder};
