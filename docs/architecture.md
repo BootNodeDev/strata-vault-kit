@@ -35,11 +35,11 @@ you claim the result.
 
 3. **Request-based entry and exit.** The exact price of a share does not exist
    when an investor acts; it is attested afterwards. Entry and exit are
-   requests: funds or shares go into escrow, the next accepted attestation
-   prices them, and the investor claims the result. This is the ERC-7540 pattern
-   with two differences: cancellation is a single step that closes when the
-   pricing attestation arrives, and the price is set by each attestation for
-   every pending request, not by a manager.
+   requests: funds or shares go into escrow, the epoch holding them is priced
+   against an attestation, and the investor claims the result. This is the
+   ERC-7540 pattern with two differences: cancellation is a single step that
+   closes when the epoch is sealed, and the price comes from the attestation
+   valid at pricing, not from a manager.
 
 4. **Attested NAV.** The reporter attests the share price itself, computed
    off-chain from the deployed value and the vault's public figures under a
@@ -182,18 +182,24 @@ not assumed.
 ## 4. Request lifecycle
 
 Every position change is a request with three states: **pending, priced,
-claimed**. Each accepted attestation prices every pending request; requests are
-then settled individually, by any account, so no attestation processes an
-unbounded batch and no investor can choose their price.
+claimed**. Requests join the open epoch. Sealing an epoch closes it to new
+requests and opens the next; pricing it reads the oracle and fixes one share
+price for every request it holds. Pricing is permissionless and refuses a feed
+that is not valid, so a sealed epoch waits rather than settling at a stale
+price, and no investor can choose their price.
+
+Sealing is gated on the manager role today. It is meant to become permissionless
+once a minimum epoch duration bounds it; until then, whoever seals chooses the
+batch boundary, though not the price it receives.
 
 ### 4.1 Subscription
 
 - Request: verifies the receiver is allowlisted, moves the deposit asset into
   escrow. At most one active request per controller.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set
-  at the attested price, and the shares are minted and held for the investor.
-- Cancellation: atomic, available until the request's pricing attestation is
-  accepted; returns the escrowed asset in full.
+  at the epoch's price, and the shares are minted and held for the investor.
+- Cancellation: atomic, available until the epoch is sealed; returns the
+  escrowed asset in full.
 - Share claim: re-verifies the receiver and delivers the shares. If verification
   fails, the position remains shares and exits through the redemption lifecycle
   at the then-current price. No nominal refund exists after pricing.
@@ -202,7 +208,7 @@ unbounded batch and no investor can choose their price.
 
 - Request: moves shares into escrow, no admission limit.
 - Pricing: the escrowed shares are burned and a fixed cash liability enters
-  committed at the attested price. Priced claims are never re-priced.
+  committed at the epoch's price. Priced claims are never re-priced.
 - Coverage: a priced claim is payable when the liquid reserve covers it, in FIFO
   order. An earlier unpaid claim never blocks a later one that is already
   covered. The gap between committed and liquid reserve is the on-chain
@@ -386,7 +392,7 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 | Phase                                                   | Deliverables                                                                                                                                                                                                                   | Evidence of completion                                                                                                                                                                                                  |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **1: Attested valuation and request pricing**           | Valuation oracle with guardrails, freshness and pause; request lifecycle with escrow, cancellation and pricing-time mint and burn; public kit spec                                                                             | Accounting property tests green in CI (price preserved by deposits, redemptions and custodian transfers; cancellation; rounding); multisig signing of privileged operations verified end to end through the coordinator |
-| **2: Split accounting and redemption**                  | Shortfall exposure; FIFO redemption coverage; exit-only cash path; SEP-57 integration (compliance module, delisted-investor path); threat model and monitoring plan                                                            | Settlement cost measured at 1, 10, 100 and 1,000 pending requests; SEP-57 path demonstrated end to end on testnet                                                                                                       |
+| **2: Split accounting and redemption**                  | Shortfall exposure; FIFO redemption coverage; exit-only cash path; SEP-57 integration (compliance module, delisted-investor path); threat model and monitoring plan                                                            | Settlement e2e test at 1, 10, 100 and 1,000 pending requests; SEP-57 path demonstrated end to end on testnet                                                                                                            |
 | **3: Reference interfaces, audit remediation, mainnet** | Investor dApp and Admin panel (five surfaces, one per authority), backend-free; reproducible deployment; audit remediation (all critical and high findings fixed and verified, public changelog); mainnet reference deployment | Audit inheritance matrix published (component, version, audit report, Strata delta, resulting scope); external developer deploys a configured instance from docs alone; reference instance live on mainnet              |
 
 The funded core is the valuation, pricing and accounting layer. The Investor
