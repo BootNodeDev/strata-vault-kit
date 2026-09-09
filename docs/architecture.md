@@ -253,17 +253,9 @@ sequenceDiagram
 ## 5. Valuation and accounting
 
 The NAV is a permissioned attestation of the share price, published with a proof
-reference. The reporter computes it off-chain:
-
-```text
-share_price = (deployed_value + onchain_reserve - committed) / share_supply
-```
-
-where deployed_value is the attested off-chain value and the other three figures
-are read from the vault's public surface. Cancellable escrow is not part of it:
-pending subscriptions hold no shares yet. The contract does not recompute the
-price; it validates the report, stores it, and exposes it together with the
-liquidity figures it does own:
+reference. The reporter computes it off-chain under a published methodology. The
+contract checks bounds, cooldown and the deviation cap, then stores the price
+and exposes it with the liquidity figures it owns:
 
 ```text
 liquid_reserve = reserve - cancellable_deposit_escrow
