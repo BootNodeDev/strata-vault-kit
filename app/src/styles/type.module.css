@@ -1,0 +1,113 @@
+.vaultName {
+	font-family: var(--vault-font-sans);
+	font-weight: 700;
+	font-size: 30px;
+	line-height: 1.05;
+	letter-spacing: -0.02em;
+}
+
+.cardHead {
+	font-family: var(--vault-font-sans);
+	font-weight: 500;
+	font-size: 21px;
+	line-height: 1.2;
+}
+
+.waitHead {
+	font-family: var(--vault-font-sans);
+	font-weight: 500;
+	font-size: 19px;
+	line-height: 1.25;
+}
+
+.sectionHead {
+	font-family: var(--vault-font-sans);
+	font-weight: 500;
+	font-size: 18px;
+	line-height: 1.25;
+}
+
+.body {
+	font-family: var(--vault-font-sans);
+	font-weight: 400;
+	font-size: 16px;
+	line-height: 1.5;
+}
+
+.stepTitle {
+	font-family: var(--vault-font-sans);
+	font-weight: 500;
+	font-size: 15.5px;
+	line-height: 1.3;
+}
+
+.footnote {
+	font-family: var(--vault-font-sans);
+	font-weight: 400;
+	font-size: 13.5px;
+	line-height: 1.5;
+}
+
+.label {
+	font-family: var(--vault-font-mono);
+	font-weight: 500;
+	font-size: 11px;
+	line-height: 1;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.position {
+	font-family: var(--vault-font-mono);
+	font-weight: 500;
+	font-size: 28px;
+	line-height: 1.05;
+	font-variant-numeric: tabular-nums;
+}
+
+.metric {
+	font-family: var(--vault-font-mono);
+	font-weight: 500;
+	font-size: 25px;
+	line-height: 1.05;
+	font-variant-numeric: tabular-nums;
+}
+
+.amountInput {
+	font-family: var(--vault-font-mono);
+	font-weight: 400;
+	font-size: 25px;
+	line-height: 1.1;
+	font-variant-numeric: tabular-nums;
+}
+
+.estimate {
+	font-family: var(--vault-font-mono);
+	font-weight: 500;
+	font-size: 22px;
+	line-height: 1.15;
+	font-variant-numeric: tabular-nums;
+}
+
+.summaryValue {
+	font-family: var(--vault-font-mono);
+	font-weight: 400;
+	font-size: 15px;
+	line-height: 1.4;
+	font-variant-numeric: tabular-nums;
+}
+
+.railValue {
+	font-family: var(--vault-font-mono);
+	font-weight: 400;
+	font-size: 13.5px;
+	line-height: 1.4;
+	font-variant-numeric: tabular-nums;
+}
+
+.metricSub {
+	font-family: var(--vault-font-mono);
+	font-weight: 400;
+	font-size: 12.5px;
+	line-height: 1.3;
+}
