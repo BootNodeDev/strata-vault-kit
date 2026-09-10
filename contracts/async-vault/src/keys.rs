@@ -9,6 +9,7 @@ pub(crate) enum DataKey {
     NetDeployed,
     CurrentEpoch,
     Committed,
+    CancellableEscrow,
     PendingMintShares,
     Epoch(u64),
     UserDeposit(u64, Address),

@@ -131,9 +131,9 @@ fn deposit_only_redeem_only_and_empty_epochs() {
     assert_eq!(f.vault.committed(), 0);
 }
 
-/// An epoch whose whole redemption total floors to zero still reaches Fulfilled,
-/// having recorded no liability and paid nobody. Fulfilled does not mean settled.
-/// #74 is what gives these shares a way back.
+/// An epoch whose whole redemption total floors to zero reaches Fulfilled having
+/// recorded no liability. The claim then hands each holder their shares back
+/// rather than keeping them.
 #[test]
 fn an_epoch_that_owes_nothing_is_fulfilled_having_paid_nobody() {
     let f = setup();
@@ -149,17 +149,18 @@ fn an_epoch_that_owes_nothing_is_fulfilled_having_paid_nobody() {
     f.vault.fulfill_epoch(&epoch);
     assert_eq!(f.vault.committed(), 0);
 
-    // Each claim floors to zero and is refused, so the shares stay escrowed.
-    assert!(f.vault.try_claim_redeem(&r1, &epoch).is_err());
-    assert!(f.vault.try_claim_redeem(&r2, &epoch).is_err());
-    assert_eq!(f.shares(&f.vault.address), 2);
+    // Each claim pays nothing, so the shares go back to their holders.
+    assert_eq!(f.vault.claim_redeem(&r1, &epoch), 0);
+    assert_eq!(f.vault.claim_redeem(&r2, &epoch), 0);
+    assert_eq!(f.shares(&r1), 1);
+    assert_eq!(f.shares(&r2), 1);
+    assert_eq!(f.shares(&f.vault.address), 0);
 }
 
-/// Coverage is measured against the whole asset balance, so cash deposited into a
-/// later epoch counts toward an earlier epoch's redemptions. #74 removes that,
-/// because unpriced deposits become refundable.
+/// A later epoch's deposit is still refundable, so it does not fund an earlier
+/// epoch's exit. Only priced money does.
 #[test]
-fn a_later_epochs_deposit_covers_an_earlier_epochs_redemption() {
+fn a_later_epochs_deposit_does_not_fund_an_earlier_exit() {
     let f = setup();
     let a = f.holder(200);
     let late = f.investor(1_000);
@@ -177,8 +178,14 @@ fn a_later_epochs_deposit_covers_an_earlier_epochs_redemption() {
     // Nothing on hand, so the claim waits.
     assert!(f.vault.try_claim_redeem(&a, &exits).is_err());
 
-    // A deposit belonging to the open epoch makes the older exit payable.
+    // A deposit into the open epoch is recallable, so it changes nothing.
     f.vault.request_deposit(&late, &400);
+    assert_eq!(f.vault.cancellable_escrow(), 400);
+    assert_eq!(f.vault.uncovered(), 200);
+    assert!(f.vault.try_claim_redeem(&a, &exits).is_err());
+
+    // Money the custodian returns is not recallable, so it does fund the exit.
+    f.vault.fund(&f.custodian, &200);
     assert_eq!(f.vault.uncovered(), 0);
     assert_eq!(f.vault.claim_redeem(&a, &exits), 200);
 }

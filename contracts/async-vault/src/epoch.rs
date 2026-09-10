@@ -79,6 +79,8 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         }
     }
 
+    state::set_cancellable_escrow(e, state::cancellable_escrow(e) - epoch.total_deposited);
+
     epoch.status = EpochStatus::Fulfilled;
     epoch.share_price = share_price;
     state::set_epoch(e, epoch_id, &epoch);

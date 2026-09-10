@@ -118,6 +118,28 @@ pub(crate) fn committed(e: &Env) -> i128 {
     storage::get_instance(e, &DataKey::Committed).unwrap_or(0)
 }
 
+/// Deposit escrow across every unpriced epoch, which the investor can still
+/// recall. Pricing an epoch moves its share of this into the reserve.
+pub(crate) fn set_cancellable_escrow(e: &Env, assets: i128) {
+    storage::set_instance(e, &DataKey::CancellableEscrow, &assets);
+}
+
+pub(crate) fn cancellable_escrow(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::CancellableEscrow).unwrap_or(0)
+}
+
+pub(crate) fn remove_deposit_request(e: &Env, epoch: u64, controller: &Address) {
+    e.storage()
+        .persistent()
+        .remove(&DataKey::UserDeposit(epoch, controller.clone()));
+}
+
+pub(crate) fn remove_redeem_request(e: &Env, epoch: u64, controller: &Address) {
+    e.storage()
+        .persistent()
+        .remove(&DataKey::UserRedeem(epoch, controller.clone()));
+}
+
 pub(crate) fn set_pending_mint_shares(e: &Env, shares: i128) {
     storage::set_instance(e, &DataKey::PendingMintShares, &shares);
 }

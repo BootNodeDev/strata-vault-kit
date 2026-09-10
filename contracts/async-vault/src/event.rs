@@ -71,3 +71,19 @@ pub struct Funded {
     pub assets: i128,
     pub net_deployed: i128,
 }
+
+#[contractevent]
+pub struct DepositCancelled {
+    #[topic]
+    pub controller: Address,
+    pub epoch: u64,
+    pub amount: i128,
+}
+
+#[contractevent]
+pub struct RedeemCancelled {
+    #[topic]
+    pub controller: Address,
+    pub epoch: u64,
+    pub shares: i128,
+}

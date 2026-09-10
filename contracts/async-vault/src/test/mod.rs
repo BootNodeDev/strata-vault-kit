@@ -1,3 +1,4 @@
+mod cancel;
 mod compliance;
 mod constructor;
 mod controls;
@@ -207,6 +208,10 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
         ),
     );
     share.grant_role(&contract_id, &symbol_short!("manager"), &admin);
+    // The vault holds escrowed shares, so returning them on cancellation goes
+    // through the token's checked transfer. That verifies both sides, so the
+    // vault has to be a recognised holder itself.
+    identity.allow(&contract_id, &true, &admin);
 
     Fixture {
         vault: AsyncVaultClient::new(&e, &contract_id),
