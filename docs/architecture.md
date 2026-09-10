@@ -287,9 +287,10 @@ decision.
   replaces it with OZ's contracts without touching the token.
 - KYC happens wherever the operator runs it; the chain sees only its output. The
   compliance authority writes allowlist entries via the Manager.
-- Token interventions (freeze, unfreeze, forced transfer, recovery) are
-  compliance operations via the Manager, available even while the vault is
-  paused.
+- Freeze, unfreeze, forced transfer and recovery are on the share token, not the
+  module. Compliance reaches them through the Manager, and they stay available
+  while the vault is paused. Replacing the module changes who writes the
+  allowlist, nothing else.
 
 ## 7. Treasury and custodian
 
