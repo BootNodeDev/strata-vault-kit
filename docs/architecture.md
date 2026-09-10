@@ -37,9 +37,10 @@ you claim the result.
    when an investor acts; it is attested afterwards. Entry and exit are
    requests: funds or shares go into escrow, the epoch holding them is priced
    against an attestation, and the investor claims the result. This is the
-   ERC-7540 pattern with two differences: cancellation is a single step that
-   closes when the epoch is priced, and the price comes from the attestation
-   valid at pricing, not from a manager.
+   ERC-7540 pattern with two differences: cancellation is a single step, and the
+   price comes from the attestation valid at pricing, not from a manager.
+   Cancellation is an escape hatch rather than a choice: it closes as soon as
+   the epoch could be priced, so nobody declines a price after reading it.
 
 4. **Attested NAV.** The reporter attests the share price itself, computed
    off-chain from the deployed value and the vault's public figures under a
@@ -198,9 +199,12 @@ batch boundary, though not the price it receives.
   escrow. At most one active request per controller.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set
   at the epoch's price, and the shares are minted and held for the investor.
-- Cancellation: atomic, available until the epoch is priced; returns the
-  escrowed asset in full. A sealed epoch is still cancellable, which is what
-  gives a deposit a way out of an epoch that cannot be priced.
+- Cancellation: atomic, and returns the escrowed asset in full. Open while the
+  epoch is, since no price applies to it yet. Once sealed it is refused while
+  the feed could price the epoch, because the price is then already readable and
+  cancelling would be declining it. A sealed epoch the feed cannot price is
+  still cancellable, which is what gives a deposit a way out of an epoch that is
+  stuck.
 - Share claim: re-verifies the receiver and delivers the shares. If verification
   fails, the position remains shares and exits through the redemption lifecycle
   at the then-current price. No nominal refund exists after pricing.
