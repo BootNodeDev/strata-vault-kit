@@ -222,3 +222,65 @@ fn cancelling_is_never_blocked_by_what_the_vault_owes() {
     assert_eq!(f.vault.cancel_deposit(&inv, &open), 500);
     assert_eq!(f.balance(&inv), 500);
 }
+
+// ---- cancellation is an escape hatch, not a free option ----
+
+/// While the epoch is Open no price applies to it yet, so cancelling is free
+/// even when the feed is healthy.
+#[test]
+fn an_open_epoch_cancels_with_a_healthy_feed() {
+    let f = setup();
+    let inv = f.investor(1_000);
+
+    f.attest(wad(2));
+    let epoch = f.vault.request_deposit(&inv, &400);
+
+    assert_eq!(f.vault.cancel_deposit(&inv, &epoch), 400);
+}
+
+/// Once sealed, the standing attestation is the price this epoch will take. An
+/// investor who can read it must not be able to decline it.
+#[test]
+fn a_sealed_epoch_cannot_be_cancelled_while_it_can_be_priced() {
+    let f = setup();
+    let inv = f.investor(1_000);
+
+    let epoch = f.vault.request_deposit(&inv, &400);
+    f.close_epoch();
+    f.attest(wad(2));
+
+    assert!(f.vault.try_cancel_deposit(&inv, &epoch).is_err());
+
+    // The way out is to price it and claim, not to walk away.
+    f.vault.fulfill_epoch(&epoch);
+    assert_eq!(f.vault.claim_deposit(&inv, &epoch), 200);
+}
+
+/// A sealed epoch the feed cannot price is exactly the stuck case cancellation
+/// exists for.
+#[test]
+fn a_sealed_epoch_cancels_once_the_feed_goes_stale() {
+    let f = setup();
+    let inv = f.investor(1_000);
+
+    f.attest(wad(2));
+    let epoch = f.vault.request_deposit(&inv, &400);
+    f.close_epoch();
+
+    f.advance(7_200); // past the freshness window
+    assert_eq!(f.vault.cancel_deposit(&inv, &epoch), 400);
+    assert_eq!(f.balance(&inv), 1_000);
+}
+
+#[test]
+fn a_sealed_epoch_cancels_while_the_ripcord_is_raised() {
+    let f = setup();
+    let holder = f.holder(200);
+
+    let epoch = f.vault.request_redeem(&holder, &200);
+    f.close_epoch();
+    f.oracle.raise_ripcord(&f.guardian);
+
+    assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
+    assert_eq!(f.shares(&holder), 200);
+}

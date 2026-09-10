@@ -58,4 +58,8 @@ pub enum VaultError {
     /// The vault must always have an admin. Governance hands over in two steps
     /// rather than stepping down into nobody.
     AdminRequired = 6040,
+    /// The epoch is sealed and the feed can price it, so the price it will take
+    /// is already knowable. Cancelling now would be declining a price after
+    /// seeing it. Fulfil and claim instead.
+    PriceAvailable = 6041,
 }

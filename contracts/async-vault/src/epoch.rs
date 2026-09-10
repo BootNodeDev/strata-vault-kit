@@ -1,4 +1,4 @@
-use bindings::OracleFeedClient;
+use bindings::{OracleFeedClient, OracleState};
 use soroban_sdk::{panic_with_error, Env};
 use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
@@ -14,6 +14,17 @@ pub(crate) fn open(total_deposited: i128) -> EpochInfo {
         total_shares_redeeming: 0,
         share_price: 0,
     }
+}
+
+/// True when the epoch is sealed and the feed could price it right now. The
+/// price it would take is therefore already readable, which is what closes the
+/// cancellation window.
+pub(crate) fn is_priceable(e: &Env, epoch: &EpochInfo) -> bool {
+    if epoch.status != EpochStatus::Pending {
+        return false;
+    }
+    let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
+    feed.state() == OracleState::Valid
 }
 
 pub(crate) fn close(e: &Env) -> u64 {

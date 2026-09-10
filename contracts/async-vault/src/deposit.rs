@@ -134,6 +134,12 @@ pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
         panic_with_error!(e, VaultError::AlreadyPriced);
     }
 
+    // Cancellation is an escape hatch, not a choice. Once the feed can price a
+    // sealed epoch, the price is knowable and the only way out is to take it.
+    if crate::epoch::is_priceable(e, &epoch) {
+        panic_with_error!(e, VaultError::PriceAvailable);
+    }
+
     let request = state::get_deposit_request(e, epoch_id, from)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
 
