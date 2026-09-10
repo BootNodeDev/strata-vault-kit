@@ -178,13 +178,13 @@ fn a_later_epochs_deposit_does_not_fund_an_earlier_exit() {
     // Nothing on hand, so the claim waits.
     assert!(f.vault.try_claim_redeem(&a, &exits).is_err());
 
-    // A deposit into the open epoch is recallable, so it changes nothing.
+    // A deposit into the open epoch is still cancellable, so it changes nothing.
     f.vault.request_deposit(&late, &400);
     assert_eq!(f.vault.cancellable_escrow(), 400);
     assert_eq!(f.vault.uncovered(), 200);
     assert!(f.vault.try_claim_redeem(&a, &exits).is_err());
 
-    // Money the custodian returns is not recallable, so it does fund the exit.
+    // Money the custodian returns is not cancellable, so it does fund the exit.
     f.vault.fund(&f.custodian, &200);
     assert_eq!(f.vault.uncovered(), 0);
     assert_eq!(f.vault.claim_redeem(&a, &exits), 200);

@@ -118,8 +118,8 @@ pub(crate) fn committed(e: &Env) -> i128 {
     storage::get_instance(e, &DataKey::Committed).unwrap_or(0)
 }
 
-/// Deposit escrow across every unpriced epoch, which the investor can still
-/// recall. Pricing an epoch moves its share of this into the reserve.
+/// Deposit escrow across every unpriced epoch, still cancellable by the
+/// investor. Pricing an epoch moves its share of this into the reserve.
 pub(crate) fn set_cancellable_escrow(e: &Env, assets: i128) {
     storage::set_instance(e, &DataKey::CancellableEscrow, &assets);
 }

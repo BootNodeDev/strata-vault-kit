@@ -91,7 +91,7 @@ fn the_same_investor_can_request_again_after_cancelling() {
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().total_deposited, 250);
 }
 
-/// Money a holder can still recall is not the treasury's to deploy, in any
+/// Money a holder can still cancel is not the treasury's to deploy, in any
 /// unpriced epoch, not only the open one.
 #[test]
 fn refundable_escrow_is_not_free_reserve() {

@@ -79,7 +79,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     }
 
     // Against liquid reserve, not the raw balance: escrow a depositor can still
-    // recall is not available to pay an exit.
+    // cancel is not available to pay an exit.
     if crate::treasury::liquid_reserve(e) < assets {
         panic_with_error!(e, VaultError::ClaimNotCovered);
     }

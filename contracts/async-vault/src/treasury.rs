@@ -19,7 +19,7 @@ fn held(e: &Env) -> i128 {
 }
 
 /// Assets held on-chain that are not already owed to a priced redemption.
-/// What the vault holds less escrow the investor can still recall.
+/// What the vault holds less escrow the investor can still cancel.
 pub(crate) fn liquid_reserve(e: &Env) -> i128 {
     held(e) - state::cancellable_escrow(e)
 }

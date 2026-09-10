@@ -52,7 +52,7 @@ pub enum VaultError {
     ReserveCommittedToExits = 6005,
     /// No custodian has been set, so capital has nowhere to go.
     CustodianNotSet = 6012,
-    /// The epoch is priced, so the request can no longer be recalled. The
+    /// The epoch is priced, so the request can no longer be cancelled. The
     /// controller claims instead.
     AlreadyPriced = 6039,
 }

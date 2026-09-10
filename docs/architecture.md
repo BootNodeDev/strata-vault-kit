@@ -58,7 +58,7 @@ you claim the result.
 
 6. **Split accounting, with priced and payable as separate states.** The vault
    exposes committed (priced redemption liabilities), cancellable escrow
-   (pending subscriptions the investor can still recall) and free reserve.
+   (pending subscriptions the investor can still cancel) and free reserve.
    Escrowed subscriptions never leave the vault. Committed can exceed the liquid
    reserve; that gap is explicitly uncovered on-chain, outbound transfers are
    blocked while it exists, and every priced claim the reserve covers stays
