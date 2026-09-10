@@ -3,6 +3,10 @@ import LifecyclePanel, {
 	type LifecycleStep,
 } from "../components/vault/LifecyclePanel"
 import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
+import PositionCard from "../components/vault/PositionCard"
+import RequestCard, {
+	type ActiveRequest,
+} from "../components/vault/RequestCard"
 import typeStyles from "../styles/type.module.css"
 import styles from "./VaultPreview.module.css"
 
@@ -15,7 +19,7 @@ const metrics: [Metric, Metric, Metric, Metric] = [
 	{
 		label: "Total supply",
 		value: "22,539.16",
-		note: "vTOKEN issued, escrow included",
+		note: "vTOKEN circulating, escrow excluded",
 	},
 	{ label: "Share price", value: "1.0342", note: "Attested 31 Aug 2026" },
 	{ label: "Open epoch", value: "E-18", note: "Takes new requests" },
@@ -45,6 +49,41 @@ const subscribeSteps: [LifecycleStep, LifecycleStep, LifecycleStep] = [
 	},
 ]
 
+const pendingRequest: ActiveRequest = {
+	state: "Pending",
+	side: "Subscription",
+	tone: "pending",
+	rows: [
+		{ label: "In escrow", value: "1,000.00 TOKEN", tone: "value" },
+		{ label: "Epoch", value: "E-18 · open", tone: "value" },
+		{ label: "You receive", value: "Set at pricing", tone: "word" },
+		{ label: "Estimated", value: "≈ 966.93 vTOKEN", tone: "word" },
+	],
+}
+
+const pricedRequest: ActiveRequest = {
+	state: "Priced",
+	side: "Subscription",
+	tone: "priced",
+	rows: [
+		{ label: "Waiting for you", value: "966.93 vTOKEN", tone: "ok" },
+		{ label: "Priced at", value: "1.0342", tone: "value" },
+		{ label: "Epoch", value: "E-18 · priced", tone: "value" },
+	],
+}
+
+const unpayableRequest: ActiveRequest = {
+	state: "Priced",
+	side: "Redemption",
+	tone: "unpayable",
+	rows: [
+		{ label: "Owed to you", value: "1,000.00 TOKEN", tone: "value" },
+		{ label: "Priced at", value: "1.0342", tone: "value" },
+		{ label: "Reserve covers", value: "620.00 TOKEN", tone: "value" },
+		{ label: "Uncovered", value: "380.00 TOKEN", tone: "word" },
+	],
+}
+
 const redeemSteps: [LifecycleStep, LifecycleStep, LifecycleStep] = [
 	{
 		title: "Request redemption",
@@ -54,7 +93,7 @@ const redeemSteps: [LifecycleStep, LifecycleStep, LifecycleStep] = [
 	{
 		title: "Priced",
 		actor: "NEXT ATTESTATION",
-		body: "The epoch is sealed, then priced once the treasury covers it.",
+		body: "The epoch is sealed, then priced at the next attested value.",
 	},
 	{
 		title: "Claim your TOKEN",
@@ -96,6 +135,55 @@ const VaultPreview: React.FC = () => (
 					progress="Nothing open"
 					steps={redeemSteps}
 					currentStep={null}
+				/>
+				<LifecyclePanel
+					title="Subscription lifecycle"
+					progress="Claimed"
+					steps={subscribeSteps}
+					currentStep="complete"
+				/>
+			</div>
+		</section>
+
+		<section className={styles.section}>
+			<h2 className={typeStyles.sectionHead}>Position card</h2>
+			<div className={styles.pair}>
+				<PositionCard
+					label="Your shares"
+					value="1,000.00 vTOKEN"
+					sub="In your wallet"
+				/>
+				<PositionCard
+					label="Your shares"
+					value={null}
+					sub="Not read"
+					note="No shares exist for this request yet"
+				/>
+			</div>
+		</section>
+
+		<section className={styles.section}>
+			<h2 className={typeStyles.sectionHead}>Request card</h2>
+			<div className={styles.pair}>
+				<RequestCard
+					title="Active request"
+					request={pendingRequest}
+					emptyMessage="Your requests appear here."
+				/>
+				<RequestCard
+					title="Active request"
+					request={pricedRequest}
+					emptyMessage="Your requests appear here."
+				/>
+				<RequestCard
+					title="Active request"
+					request={unpayableRequest}
+					emptyMessage="Your requests appear here."
+				/>
+				<RequestCard
+					title="Active request"
+					request={null}
+					emptyMessage="Your requests appear here."
 				/>
 			</div>
 		</section>
