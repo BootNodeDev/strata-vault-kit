@@ -47,6 +47,16 @@ struct Fixture<'a> {
 }
 
 impl Fixture<'_> {
+    /// Moves the ledger clock and its sequence together, so time-dependent and
+    /// TTL-dependent behaviour can both be reached. `setup` pins the clock, and
+    /// nothing else moves it.
+    fn advance(&self, secs: u64) {
+        self.e.ledger().with_mut(|l| {
+            l.timestamp += secs;
+            l.sequence_number += (secs / 5).max(1) as u32;
+        });
+    }
+
     fn investor(&self, funded: i128) -> Address {
         let who = self.unverified_investor(funded);
         self.identity.allow(&who, &true, &self.admin);
@@ -119,7 +129,25 @@ pub(crate) fn register_with(e: &Env, roles: VaultRoles) -> Address {
     e.register(AsyncVault, (&asset, &asset, &asset, roles))
 }
 
+/// The permissive feed most tests want: no cooldown, no effective cap.
+fn open_feed() -> OracleConfig {
+    OracleConfig {
+        freshness_duration: 3_600,
+        cooldown_secs: 0,
+        max_up_bps: 10_000,
+        max_down_bps: Some(10_000),
+        min_answer: 1,
+        max_answer: 1_000 * WAD_SCALE,
+    }
+}
+
 fn setup<'a>() -> Fixture<'a> {
+    setup_with_feed(open_feed())
+}
+
+/// Builds the vault against a caller-chosen feed, so cooldown, freshness and the
+/// deviation cap can be exercised from a vault test rather than only an oracle one.
+fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
     let e = Env::default();
     e.mock_all_auths();
     e.ledger().set_timestamp(10_000);
@@ -157,19 +185,7 @@ fn setup<'a>() -> Fixture<'a> {
         &e,
         &e.register(
             NavOracleContract,
-            (
-                admin.clone(),
-                attester.clone(),
-                guardian.clone(),
-                OracleConfig {
-                    freshness_duration: 3_600,
-                    cooldown_secs: 0,
-                    max_up_bps: 10_000,
-                    max_down_bps: Some(10_000),
-                    min_answer: 1,
-                    max_answer: 1_000 * WAD_SCALE,
-                },
-            ),
+            (admin.clone(), attester.clone(), guardian.clone(), feed),
         ),
     );
 
