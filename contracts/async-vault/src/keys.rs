@@ -4,7 +4,6 @@ use soroban_sdk::{contracttype, Address};
 pub(crate) enum DataKey {
     Asset,
     ShareToken,
-    Manager,
     Oracle,
     Custodian,
     NetDeployed,

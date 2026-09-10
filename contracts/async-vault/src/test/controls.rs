@@ -92,3 +92,29 @@ fn a_paused_vault_does_not_fulfill_epochs() {
     f.vault.unpause(&f.admin);
     assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
 }
+
+#[test]
+fn every_authority_is_readable() {
+    let f = setup();
+
+    assert_eq!(f.vault.governance(), Some(f.admin.clone()));
+    assert_eq!(f.vault.manager(), Some(f.manager.clone()));
+    assert_eq!(f.vault.treasury(), Some(f.treasury.clone()));
+    assert_eq!(f.vault.guardian(), Some(f.guardian.clone()));
+}
+
+#[test]
+fn governance_can_replace_the_guardian() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+
+    f.vault
+        .grant_role(&next, &symbol_short!("guardian"), &f.admin);
+    f.vault
+        .revoke_role(&f.guardian, &symbol_short!("guardian"), &f.admin);
+
+    assert_eq!(f.vault.guardian(), Some(next.clone()));
+    assert!(f.vault.try_pause(&f.guardian).is_err());
+    f.vault.pause(&next);
+    assert!(f.vault.paused());
+}

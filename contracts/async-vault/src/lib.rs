@@ -11,8 +11,8 @@ mod state;
 mod treasury;
 
 use bindings::ShareClient;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env};
-use stellar_access::access_control;
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
+use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_macros::{only_admin, only_role, when_not_paused};
 
@@ -27,6 +27,13 @@ pub use event::{
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
+
+fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
+    if access_control::get_role_member_count(e, role) == 0 {
+        return None;
+    }
+    Some(access_control::get_role_member(e, role, 0))
+}
 
 #[contract]
 pub struct AsyncVault;
@@ -56,7 +63,6 @@ impl AsyncVault {
         state::set_addr(e, &DataKey::Asset, &asset);
         state::set_addr(e, &DataKey::ShareToken, &share_token);
         state::set_addr(e, &DataKey::Oracle, &oracle);
-        state::set_addr(e, &DataKey::Manager, &roles.manager);
 
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
         state::set_current_epoch(e, FIRST_EPOCH);
@@ -74,8 +80,20 @@ impl AsyncVault {
         state::get_addr(e, &DataKey::Oracle)
     }
 
-    pub fn manager(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::Manager)
+    pub fn governance(e: &Env) -> Option<Address> {
+        access_control::get_admin(e)
+    }
+
+    pub fn manager(e: &Env) -> Option<Address> {
+        role_holder(e, &MANAGER_ROLE)
+    }
+
+    pub fn treasury(e: &Env) -> Option<Address> {
+        role_holder(e, &TREASURY_ROLE)
+    }
+
+    pub fn guardian(e: &Env) -> Option<Address> {
+        role_holder(e, &GUARDIAN_ROLE)
     }
 
     pub fn custodian(e: &Env) -> Option<Address> {
@@ -174,6 +192,9 @@ impl AsyncVault {
         epoch::fulfill(e, epoch_id)
     }
 }
+
+#[contractimpl(contracttrait)]
+impl AccessControl for AsyncVault {}
 
 #[contractimpl(contracttrait)]
 impl Pausable for AsyncVault {
