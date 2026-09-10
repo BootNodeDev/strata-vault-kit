@@ -6,6 +6,7 @@ mod deposit;
 mod epochs;
 mod oracle_pricing;
 mod redeem;
+mod supply;
 mod treasury;
 
 extern crate std;

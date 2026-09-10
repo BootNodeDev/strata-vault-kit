@@ -10,6 +10,7 @@ pub(crate) enum DataKey {
     NetDeployed,
     CurrentEpoch,
     PendingRedeemAssets,
+    PendingMintShares,
     Epoch(u64),
     UserDeposit(u64, Address),
     UserRedeem(u64, Address),

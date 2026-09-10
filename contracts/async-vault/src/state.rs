@@ -116,3 +116,11 @@ pub(crate) fn set_pending_redeem_assets(e: &Env, assets: i128) {
 pub(crate) fn pending_redeem_assets(e: &Env) -> i128 {
     storage::get_instance(e, &DataKey::PendingRedeemAssets).unwrap_or(0)
 }
+
+pub(crate) fn set_pending_mint_shares(e: &Env, shares: i128) {
+    storage::set_instance(e, &DataKey::PendingMintShares, &shares);
+}
+
+pub(crate) fn pending_mint_shares(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::PendingMintShares).unwrap_or(0)
+}

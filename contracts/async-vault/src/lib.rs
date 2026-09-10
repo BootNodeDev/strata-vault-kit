@@ -10,6 +10,7 @@ mod roles;
 mod state;
 mod treasury;
 
+use bindings::ShareClient;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env};
 use stellar_access::access_control;
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
@@ -87,6 +88,25 @@ impl AsyncVault {
 
     pub fn free_reserve(e: &Env) -> i128 {
         treasury::free_reserve(e)
+    }
+
+    pub fn pending_redeem_assets(e: &Env) -> i128 {
+        state::pending_redeem_assets(e)
+    }
+
+    pub fn pending_mint_shares(e: &Env) -> i128 {
+        state::pending_mint_shares(e)
+    }
+
+    pub fn total_economic_supply(e: &Env) -> i128 {
+        let share_token = state::get_addr(e, &DataKey::ShareToken);
+        let client = ShareClient::new(e, &share_token);
+        let total_supply = client.total_supply();
+        let vault_escrow = client.balance(&e.current_contract_address());
+        let circulating = total_supply.saturating_sub(vault_escrow);
+        circulating
+            .checked_add(state::pending_mint_shares(e))
+            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
     }
 
     #[only_admin]

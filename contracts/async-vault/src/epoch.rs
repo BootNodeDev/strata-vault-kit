@@ -73,6 +73,17 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
     }
     state::set_pending_redeem_assets(e, pending);
 
+    if epoch.total_deposited > 0 {
+        if let Some(shares_owed) =
+            checked_mul_div_floor(e, &epoch.total_deposited, &WAD_SCALE, &share_price)
+        {
+            let updated_pending_mint = state::pending_mint_shares(e)
+                .checked_add(shares_owed)
+                .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+            state::set_pending_mint_shares(e, updated_pending_mint);
+        }
+    }
+
     epoch.status = EpochStatus::Fulfilled;
     epoch.share_price = share_price;
     state::set_epoch(e, epoch_id, &epoch);

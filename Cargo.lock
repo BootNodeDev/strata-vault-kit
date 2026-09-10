@@ -188,7 +188,6 @@ dependencies = [
  "compliance",
  "identity-verifier",
  "nav-oracle",
- "pricing",
  "share-token",
  "soroban-sdk",
  "stellar-access",
@@ -1272,10 +1271,6 @@ dependencies = [
  "proc-macro2",
  "syn 2.0.119",
 ]
-
-[[package]]
-name = "pricing"
-version = "0.1.0"
 
 [[package]]
 name = "primeorder"
