@@ -178,12 +178,12 @@ impl AsyncVault {
         deposit::claim(e, &caller, epoch_id)
     }
 
-    /// Recalls an unpriced deposit. Never blocked by the pause.
+    /// Cancels an unpriced deposit. Never blocked by the pause.
     pub fn cancel_deposit(e: &Env, from: Address, epoch_id: u64) -> i128 {
         deposit::cancel(e, &from, epoch_id)
     }
 
-    /// Recalls an unpriced redemption. Refused for a controller the share token
+    /// Cancels an unpriced redemption. Refused for a controller the share token
     /// will not let hold shares; that controller exits through the cash claim.
     pub fn cancel_redeem(e: &Env, from: Address, epoch_id: u64) -> i128 {
         redeem::cancel(e, &from, epoch_id)

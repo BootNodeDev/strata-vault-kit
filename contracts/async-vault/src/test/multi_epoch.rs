@@ -21,8 +21,8 @@ fn several_epochs_can_be_pending_at_once() {
     assert_eq!(f.vault.current_epoch(), second + 1);
 }
 
-/// Pricing the younger epoch first is accepted today. #73 leaves this open on
-/// purpose: order of pricing must not decide who gets paid.
+/// Pricing the younger epoch first is accepted. The order epochs are priced in
+/// must not decide who gets paid.
 #[test]
 fn a_younger_epoch_can_be_priced_first() {
     let f = setup();
@@ -157,7 +157,7 @@ fn an_epoch_that_owes_nothing_is_fulfilled_having_paid_nobody() {
     assert_eq!(f.shares(&f.vault.address), 0);
 }
 
-/// A later epoch's deposit is still refundable, so it does not fund an earlier
+/// A later epoch's deposit is still cancellable, so it does not fund an earlier
 /// epoch's exit. Only priced money does.
 #[test]
 fn a_later_epochs_deposit_does_not_fund_an_earlier_exit() {
@@ -190,7 +190,7 @@ fn a_later_epochs_deposit_does_not_fund_an_earlier_exit() {
     assert_eq!(f.vault.claim_redeem(&a, &exits), 200);
 }
 
-// ---- #73: pricing and payment are separate ----
+// ---- pricing and payment are separate ----
 
 /// An epoch prices whether or not the cash is there. The liability is recorded
 /// and the gap is visible.

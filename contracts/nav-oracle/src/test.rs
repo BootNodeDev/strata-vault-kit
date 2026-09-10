@@ -405,3 +405,28 @@ fn the_oracle_admin_cannot_renounce_itself_away() {
     assert!(f.oracle.try_renounce_admin().is_err());
     assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
 }
+
+/// Probe: with the downward cap unset, what actually bounds one attestation?
+#[test]
+fn a_fall_is_bounded_only_by_min_answer() {
+    let mut cfg = config();
+    cfg.max_down_bps = None;
+    let f = setup_with(cfg);
+
+    f.oracle
+        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.e.ledger().set_timestamp(10_100);
+
+    // Straight to the floor in one step, whatever the distance.
+    let floor = config().min_answer;
+    f.oracle
+        .attest(&report(&f.e, floor, 2, 1_000_000), &f.attester);
+    assert_eq!(f.oracle.nav_per_share(), floor);
+
+    // Below the floor is refused, so min_answer is the only bound.
+    f.e.ledger().set_timestamp(10_200);
+    assert!(f
+        .oracle
+        .try_attest(&report(&f.e, floor - 1, 3, 1_000_000), &f.attester)
+        .is_err());
+}
