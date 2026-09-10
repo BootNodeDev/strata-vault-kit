@@ -177,3 +177,28 @@ fn a_stale_feed_refuses_to_price_until_reattested() {
     f.vault.fulfill_epoch(&epoch);
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(1));
 }
+
+#[test]
+fn governance_cannot_renounce_itself_out_of_the_vault() {
+    let f = setup();
+
+    assert!(f.vault.try_renounce_admin().is_err());
+
+    // Still governed: the admin-only paths keep working.
+    f.vault.pause(&f.guardian);
+    f.vault.unpause(&f.admin);
+    assert_eq!(f.vault.governance(), Some(f.admin.clone()));
+}
+
+#[test]
+fn governance_hands_over_in_two_steps_instead() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+
+    f.vault.transfer_admin_role(&next, &1_000);
+    f.vault.accept_admin_transfer();
+
+    assert_eq!(f.vault.governance(), Some(next.clone()));
+    f.vault.pause(&f.guardian);
+    f.vault.unpause(&next);
+}

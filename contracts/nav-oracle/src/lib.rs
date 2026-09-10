@@ -3,9 +3,10 @@
 mod state;
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env,
+    contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env, Symbol,
+    Vec,
 };
-use stellar_access::access_control;
+use stellar_access::access_control::{self, AccessControl};
 use stellar_macros::{only_admin, only_role};
 
 use state::{get_config, get_latest, ripcord_raised, ATTESTER_ROLE, GUARDIAN_ROLE};
@@ -33,6 +34,8 @@ pub enum OracleError {
     NotConsumable = 3007,
     /// `clear_latest` was called while the ripcord was down.
     RipcordNotRaised = 3008,
+    /// The oracle must always have an admin.
+    AdminRequired = 3009,
 }
 
 #[contractevent]
@@ -95,6 +98,15 @@ fn compute_state(e: &Env) -> OracleState {
 
 #[contract]
 pub struct NavOracleContract;
+
+#[contractimpl(contracttrait)]
+impl AccessControl for NavOracleContract {
+    /// Refused. An oracle with no admin can never be reconfigured, never clear a
+    /// stuck record and never lower the ripcord again.
+    fn renounce_admin(e: &Env) {
+        panic_with_error!(e, OracleError::AdminRequired);
+    }
+}
 
 #[contractimpl]
 impl NavOracleContract {

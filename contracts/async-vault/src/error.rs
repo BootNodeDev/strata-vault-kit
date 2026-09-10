@@ -55,4 +55,7 @@ pub enum VaultError {
     /// The epoch is priced, so the request can no longer be cancelled. The
     /// controller claims instead.
     AlreadyPriced = 6039,
+    /// The vault must always have an admin. Governance hands over in two steps
+    /// rather than stepping down into nobody.
+    AdminRequired = 6040,
 }

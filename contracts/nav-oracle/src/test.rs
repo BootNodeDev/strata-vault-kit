@@ -1,6 +1,6 @@
 extern crate std;
 
-use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env};
+use soroban_sdk::{symbol_short, testutils::Address as _, testutils::Ledger as _, Address, Env};
 
 use crate::{NavOracleContract, NavOracleContractClient, NavReport, OracleConfig, OracleState};
 
@@ -377,4 +377,31 @@ fn the_record_clears_only_while_the_ripcord_is_raised() {
     let far = report(&f.e, SCALE * 50, 2, 1_000_000);
     f.oracle.attest(&far, &f.attester);
     assert_eq!(f.oracle.nav_per_share(), SCALE * 50);
+}
+
+#[test]
+fn every_oracle_authority_is_readable_and_rotatable() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+
+    assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
+    assert_eq!(
+        f.oracle.get_role_member(&symbol_short!("attester"), &0),
+        f.attester
+    );
+
+    f.oracle
+        .grant_role(&next, &symbol_short!("guardian"), &f.admin);
+    f.oracle
+        .revoke_role(&f.guardian, &symbol_short!("guardian"), &f.admin);
+
+    assert!(f.oracle.try_raise_ripcord(&f.guardian).is_err());
+    f.oracle.raise_ripcord(&next);
+}
+
+#[test]
+fn the_oracle_admin_cannot_renounce_itself_away() {
+    let f = setup();
+    assert!(f.oracle.try_renounce_admin().is_err());
+    assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
 }
