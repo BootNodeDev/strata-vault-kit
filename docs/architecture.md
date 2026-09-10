@@ -38,7 +38,7 @@ you claim the result.
    requests: funds or shares go into escrow, the epoch holding them is priced
    against an attestation, and the investor claims the result. This is the
    ERC-7540 pattern with two differences: cancellation is a single step that
-   closes when the epoch is sealed, and the price comes from the attestation
+   closes when the epoch is priced, and the price comes from the attestation
    valid at pricing, not from a manager.
 
 4. **Attested NAV.** The reporter attests the share price itself, computed
@@ -198,8 +198,9 @@ batch boundary, though not the price it receives.
   escrow. At most one active request per controller.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set
   at the epoch's price, and the shares are minted and held for the investor.
-- Cancellation: atomic, available until the epoch is sealed; returns the
-  escrowed asset in full.
+- Cancellation: atomic, available until the epoch is priced; returns the
+  escrowed asset in full. A sealed epoch is still cancellable, which is what
+  gives a deposit a way out of an epoch that cannot be priced.
 - Share claim: re-verifies the receiver and delivers the shares. If verification
   fails, the position remains shares and exits through the redemption lifecycle
   at the then-current price. No nominal refund exists after pricing.
@@ -267,8 +268,8 @@ uncovered      = max(committed - liquid_reserve, 0)
 attestation carries the share price and a proof reference; attestations are
 ordered by their acceptance time on the ledger. The price must stay within
 configured bounds, a minimum cooldown bounds frequency, and the deviation cap is
-asymmetric: upside is bounded per update, downward updates are uncapped so
-losses are recognized immediately.
+directional: the upward bound is mandatory and non-zero, the downward bound is
+optional, and leaving it unset lets a loss of any size land in one attestation.
 
 **Freshness and pause:** each attestation opens a validity window; when it
 lapses the feed is stale and new requests stop being priced. Guardian or

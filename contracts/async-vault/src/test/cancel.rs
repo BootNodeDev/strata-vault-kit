@@ -168,3 +168,57 @@ fn a_redemption_that_pays_nothing_returns_the_shares_at_claim() {
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
     assert_eq!(f.shares(&holder), 1);
 }
+
+/// A refund after pricing is an extra payout, so it waits for free reserve
+/// rather than taking money owed to a priced exit.
+#[test]
+fn a_dust_refund_never_takes_committed_money() {
+    let f = setup();
+    let holder = f.holder(200);
+    let dust = f.investor(10);
+
+    f.vault.request_deposit(&dust, &1);
+    f.vault.request_redeem(&holder, &200);
+    let epoch = f.close_epoch();
+    f.attest(wad(2));
+    f.vault.fulfill_epoch(&epoch);
+
+    // Move every free unit out, leaving only what the redeemer is owed.
+    f.vault.set_custodian(&f.custodian, &f.admin);
+    let free = f.vault.free_reserve();
+    if free > 0 {
+        f.vault.deploy_to_custodian(&f.treasury, &free);
+    }
+    assert_eq!(f.vault.free_reserve(), 0);
+
+    // The refund is refused rather than dipping into the redeemer's money.
+    assert!(f.vault.try_claim_deposit(&dust, &epoch).is_err());
+    assert!(f.balance(&f.vault.address) >= f.vault.committed());
+
+    // Once there is spare cash, the refund goes through.
+    let backer = f.investor(50);
+    f.vault.fund(&backer, &10);
+    assert_eq!(f.vault.claim_deposit(&dust, &epoch), 0);
+    assert_eq!(f.balance(&dust), 10);
+}
+
+/// Cancelling before pricing returns escrow that was never counted as free, so
+/// it must not be blocked by what the vault owes elsewhere.
+#[test]
+fn cancelling_is_never_blocked_by_what_the_vault_owes() {
+    let f = setup();
+    let holder = f.holder(200);
+    let inv = f.investor(500);
+
+    f.vault.request_redeem(&holder, &200);
+    let epoch = f.close_epoch();
+    f.attest(wad(2));
+    f.vault.fulfill_epoch(&epoch);
+
+    // A fresh deposit into the open epoch, with the vault fully committed.
+    let open = f.vault.request_deposit(&inv, &500);
+    assert_eq!(f.vault.free_reserve(), 0);
+
+    assert_eq!(f.vault.cancel_deposit(&inv, &open), 500);
+    assert_eq!(f.balance(&inv), 500);
+}

@@ -6,6 +6,7 @@ use crate::error::VaultError;
 use crate::event::{DepositCancelled, DepositClaimed, DepositRequested};
 use crate::keys::DataKey;
 use crate::state::{self, DepositRequest, EpochStatus};
+use crate::treasury;
 
 pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     from.require_auth();
@@ -74,6 +75,12 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
 
     if shares == 0 {
+        // Pricing already released this epoch's escrow into the reserve, so a
+        // refund now is an extra payout rather than part of committed. It comes
+        // out of free reserve and must not reach money owed to a priced exit.
+        if treasury::free_reserve(e) < request.amount {
+            panic_with_error!(e, VaultError::ClaimNotCovered);
+        }
         return refund_deposit(e, caller, epoch_id, request.amount);
     }
 
