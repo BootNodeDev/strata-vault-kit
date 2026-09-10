@@ -4,6 +4,7 @@ mod controls;
 mod conversions;
 mod deposit;
 mod epochs;
+mod multi_epoch;
 mod oracle_pricing;
 mod redeem;
 mod supply;
