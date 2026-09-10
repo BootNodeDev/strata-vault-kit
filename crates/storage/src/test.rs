@@ -10,8 +10,9 @@ use soroban_sdk::{
 };
 
 use crate::{
-    bump_instance, get_persistent, set_instance, set_persistent, INSTANCE_EXTEND_AMOUNT,
-    PERSISTENT_EXTEND_AMOUNT, PERSISTENT_TTL_THRESHOLD,
+    bump_instance, get_instance, get_persistent, set_instance, set_persistent,
+    INSTANCE_EXTEND_AMOUNT, INSTANCE_TTL_THRESHOLD, PERSISTENT_EXTEND_AMOUNT,
+    PERSISTENT_TTL_THRESHOLD,
 };
 
 #[contract]
@@ -103,4 +104,24 @@ fn instance_writes_bump_the_instance() {
         e.as_contract(&id, || e.storage().instance().get_ttl()),
         INSTANCE_EXTEND_AMOUNT
     );
+}
+
+#[test]
+fn reading_the_instance_restores_its_ttl() {
+    let e = Env::default();
+    let id = harness(&e);
+
+    e.as_contract(&id, || set_instance(&e, &Key::Thing, &3i128));
+
+    let decay = INSTANCE_EXTEND_AMOUNT - INSTANCE_TTL_THRESHOLD + 1;
+    e.ledger().with_mut(|l| l.sequence_number += decay);
+
+    e.as_contract(&id, || {
+        assert_eq!(
+            e.storage().instance().get_ttl(),
+            INSTANCE_EXTEND_AMOUNT - decay
+        );
+        assert_eq!(get_instance::<_, i128>(&e, &Key::Thing), Some(3));
+        assert_eq!(e.storage().instance().get_ttl(), INSTANCE_EXTEND_AMOUNT);
+    });
 }
