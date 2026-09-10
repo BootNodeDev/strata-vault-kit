@@ -63,7 +63,7 @@ fn an_unpriced_redemption_does_not_reserve_anything_yet() {
 }
 
 #[test]
-fn an_epoch_cannot_be_fulfilled_while_the_capital_is_deployed() {
+fn a_claim_waits_while_the_capital_is_deployed() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &500);
@@ -72,10 +72,14 @@ fn an_epoch_cannot_be_fulfilled_while_the_capital_is_deployed() {
 
     f.close_epoch();
     f.attest(wad(2));
-    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
+
+    // Pricing does not need the cash back; the claim does.
+    assert_eq!(f.vault.fulfill_epoch(&epoch), wad(2));
+    assert_eq!(f.vault.uncovered(), 1_000);
+    assert!(f.vault.try_claim_redeem(&holder, &epoch).is_err());
 
     f.vault.fund(&f.custodian, &1_000);
-    assert_eq!(f.vault.fulfill_epoch(&epoch), wad(2));
+    assert_eq!(f.vault.uncovered(), 0);
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 1_000);
 }
 

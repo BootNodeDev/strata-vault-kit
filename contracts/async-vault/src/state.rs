@@ -109,12 +109,13 @@ pub(crate) fn get_redeem_request(
     storage::get_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()))
 }
 
-pub(crate) fn set_pending_redeem_assets(e: &Env, assets: i128) {
-    storage::set_instance(e, &DataKey::PendingRedeemAssets, &assets);
+/// Cash owed to holders whose exit is priced but not yet claimed.
+pub(crate) fn set_committed(e: &Env, assets: i128) {
+    storage::set_instance(e, &DataKey::Committed, &assets);
 }
 
-pub(crate) fn pending_redeem_assets(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::PendingRedeemAssets).unwrap_or(0)
+pub(crate) fn committed(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::Committed).unwrap_or(0)
 }
 
 pub(crate) fn set_pending_mint_shares(e: &Env, shares: i128) {

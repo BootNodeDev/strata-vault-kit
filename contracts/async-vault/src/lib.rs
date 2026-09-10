@@ -108,8 +108,12 @@ impl AsyncVault {
         treasury::free_reserve(e)
     }
 
-    pub fn pending_redeem_assets(e: &Env) -> i128 {
-        state::pending_redeem_assets(e)
+    pub fn committed(e: &Env) -> i128 {
+        state::committed(e)
+    }
+
+    pub fn uncovered(e: &Env) -> i128 {
+        treasury::uncovered(e)
     }
 
     pub fn pending_mint_shares(e: &Env) -> i128 {

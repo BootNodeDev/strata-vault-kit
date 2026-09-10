@@ -1,5 +1,5 @@
 use bindings::OracleFeedClient;
-use soroban_sdk::{panic_with_error, token::TokenClient, Env};
+use soroban_sdk::{panic_with_error, Env};
 use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
 use crate::error::VaultError;
@@ -63,15 +63,10 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
 
     let owed = checked_mul_div_floor(e, &epoch.total_shares_redeeming, &share_price, &WAD_SCALE)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    let pending = state::pending_redeem_assets(e)
+    let committed = state::committed(e)
         .checked_add(owed)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-
-    let asset = state::get_addr(e, &DataKey::Asset);
-    if TokenClient::new(e, &asset).balance(&e.current_contract_address()) < pending {
-        panic_with_error!(e, VaultError::InsufficientLiquidity);
-    }
-    state::set_pending_redeem_assets(e, pending);
+    state::set_committed(e, committed);
 
     if epoch.total_deposited > 0 {
         if let Some(shares_owed) =

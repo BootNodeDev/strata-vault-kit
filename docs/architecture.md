@@ -60,11 +60,11 @@ you claim the result.
    exposes committed (priced redemption liabilities), cancellable escrow
    (pending subscriptions the investor can still recall) and free reserve.
    Escrowed subscriptions never leave the vault. Committed can exceed the liquid
-   reserve; that gap is an explicit on-chain shortfall, outbound transfers are
-   blocked while it exists, and priced claims stay payable in FIFO order as
-   treasury tops up. A liquidity shortfall is not insolvency: solvency compares
-   total attested assets against liabilities and is handled by attested losses
-   and governance.
+   reserve; that gap is explicitly uncovered on-chain, outbound transfers are
+   blocked while it exists, and every priced claim the reserve covers stays
+   payable as treasury tops up. Being uncovered is not insolvency: solvency
+   compares total attested assets against liabilities and is handled by attested
+   losses and governance.
 
 ## 2. Component overview
 
@@ -87,8 +87,8 @@ flowchart TB
         subgraph SM["Strata modules"]
             V["Vault · request lifecycle"]:::strata
             OR["Valuation oracle ·<br/>guardrails · NAV"]:::strata
-            SA["Split accounting ·<br/>shortfall exposure"]:::strata
-            RQ["FIFO redemption coverage<br/>· exit-only path"]:::strata
+            SA["Split accounting ·<br/>uncovered exposure"]:::strata
+            RQ["Covered redemption claims<br/>· exit-only path"]:::strata
             MGR["Manager ·<br/>token authority"]:::strata
             IVC["Compliance module<br/>SEP-57 identity + rules"]
         end
@@ -155,7 +155,7 @@ flowchart LR
     OPS --> MGR --> ST
     CMP -->|writes via Manager| CM
     ST -.->|identity + transfer rules| CM
-    TRE -.->|free reserve only,<br/>zero shortfall| CUST
+    TRE -.->|free reserve only,<br/>nothing uncovered| CUST
     V ---|SAC interface| USDC[Deposit asset]
 ```
 
@@ -209,10 +209,10 @@ batch boundary, though not the price it receives.
 - Request: moves shares into escrow, no admission limit.
 - Pricing: the escrowed shares are burned and a fixed cash liability enters
   committed at the epoch's price. Priced claims are never re-priced.
-- Coverage: a priced claim is payable when the liquid reserve covers it, in FIFO
-  order. An earlier unpaid claim never blocks a later one that is already
-  covered. The gap between committed and liquid reserve is the on-chain
-  shortfall treasury must top up.
+- Coverage: a priced claim is payable when the liquid reserve covers that
+  claim's own amount, in any order. An earlier unpaid claim never blocks a later
+  one that is already covered. The gap between committed and liquid reserve is
+  the uncovered amount treasury must top up.
 - Cash claim: pays the fixed amount; it does not depend on identity. A delisted,
   non-frozen investor uses the exit-only cash path and cannot cancel back to
   shares.
@@ -243,7 +243,7 @@ sequenceDiagram
         I->>V: claim
         V-->>I: deposit asset paid
     else reserve short
-        Note over V: shortfall visible on-chain
+        Note over V: uncovered amount visible on-chain
         T->>V: return_from_custodian(funds)
         I->>V: claim
         V-->>I: deposit asset paid
@@ -260,7 +260,7 @@ and exposes it with the liquidity figures it owns:
 ```text
 liquid_reserve = reserve - cancellable_deposit_escrow
 free_reserve   = max(liquid_reserve - committed, 0)
-shortfall      = max(committed - liquid_reserve, 0)
+uncovered      = max(committed - liquid_reserve, 0)
 ```
 
 **Attestation guardrails:** the reporter is a multisig, never a single key. Each
@@ -295,10 +295,10 @@ decision.
 
 - The custodian is a genesis-configured slot; only governance can rotate it.
   Transfers to the custodian move free reserve only, only to that address, and
-  only while the shortfall is zero.
+  only while nothing is uncovered.
 - Transfers from the custodian are always open and credit only assets actually
   received.
-- The exposed figures (share price, liquid reserve, committed, shortfall) make
+- The exposed figures (share price, liquid reserve, committed, uncovered) make
   reserve coverage legible to investors and integrators.
 - Closing a vault needs no dedicated mechanism: governance pauses the vault, the
   attester publishes the final value, treasury returns the funds, and every
@@ -317,8 +317,8 @@ redeem request, cash claim, cancellation of a pending request. Nothing is valued
 at request creation; the only reference shown is the latest attested NAV,
 labelled and timestamped. Three states per side, none skipped: pending, priced,
 claimed. Waiting is stated, never counted down. A priced cash claim shows
-whether the reserve covers it and the current shortfall; a delisted investor
-sees the exit-only path.
+whether the reserve covers it and the current uncovered amount; a delisted
+investor sees the exit-only path.
 
 ### Admin panel
 
@@ -344,7 +344,7 @@ public surface given the vault address.
 | ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the asymmetric deviation cap bounds any single report and the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts |
 | Governance keys        | Malicious upgrade                              | Timelock with an investor exit window; the guardian pause freezes the timelock clock so the window cannot be waited out while entries are closed                                                                                                                                                                                                                   |
-| Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while any shortfall exists, and escrowed subscriptions never leave the vault                                                                                                                                                             |
+| Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while anything is uncovered, and escrowed subscriptions never leave the vault                                                                                                                                                            |
 | Guardian keys          | Griefing via pause                             | Guardian can only pause new requests, pricing and custodian transfers; it can never block payable claims or move funds; governance reverts and rotates the role                                                                                                                                                                                                    |
 | Compliance keys        | Wrongful delisting or freeze                   | Delisted investors keep the exit-only cash path; freezes require the Manager path and are auditable per operation                                                                                                                                                                                                                                                  |
 | Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics; replaceable by governance without touching the token                                                                                                                                                                                                                                                                                        |
@@ -375,8 +375,8 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 | Multisig and signing coordination                                        | Native Stellar + existing coordinators, OZ Role Manager                    | Integrated                                                                                                                                                                             |
 | Request lifecycle priced against attestations                            | Not provided (ERC-7540 on EVM, where OpenZeppelin ships an implementation) | Core of the kit                                                                                                                                                                        |
 | Guarded valuation oracle with freshness and pause                        | Not provided                                                               | Core of the kit                                                                                                                                                                        |
-| Split reserve accounting with explicit shortfall exposure                | Not provided                                                               | Core of the kit                                                                                                                                                                        |
-| FIFO redemption coverage, exit-only path                                 | Not provided                                                               | Core of the kit                                                                                                                                                                        |
+| Split reserve accounting with explicit uncovered exposure                | Not provided                                                               | Core of the kit                                                                                                                                                                        |
+| Covered redemption claims, exit-only path                                | Not provided                                                               | Core of the kit                                                                                                                                                                        |
 | Reusable RWA configuration, verified genesis, white-label frontends      | Not provided                                                               | Core of the kit                                                                                                                                                                        |
 
 ## 12. Delivery phases
@@ -384,7 +384,7 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 | Phase                                                   | Deliverables                                                                                                                                                                                                                   | Evidence of completion                                                                                                                                                                                                  |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **1: Attested valuation and request pricing**           | Valuation oracle with guardrails, freshness and pause; request lifecycle with escrow, cancellation and pricing-time mint and burn; public kit spec                                                                             | Accounting property tests green in CI (price preserved by deposits, redemptions and custodian transfers; cancellation; rounding); multisig signing of privileged operations verified end to end through the coordinator |
-| **2: Split accounting and redemption**                  | Shortfall exposure; FIFO redemption coverage; exit-only cash path; SEP-57 integration (compliance module, delisted-investor path); threat model and monitoring plan                                                            | Settlement e2e test at 1, 10, 100 and 1,000 pending requests; SEP-57 path demonstrated end to end on testnet                                                                                                            |
+| **2: Split accounting and redemption**                  | Uncovered exposure; covered redemption claims; exit-only cash path; SEP-57 integration (compliance module, delisted-investor path); threat model and monitoring plan                                                           | Settlement e2e test at 1, 10, 100 and 1,000 pending requests; SEP-57 path demonstrated end to end on testnet                                                                                                            |
 | **3: Reference interfaces, audit remediation, mainnet** | Investor dApp and Admin panel (five surfaces, one per authority), backend-free; reproducible deployment; audit remediation (all critical and high findings fixed and verified, public changelog); mainnet reference deployment | Audit inheritance matrix published (component, version, audit report, Strata delta, resulting scope); external developer deploys a configured instance from docs alone; reference instance live on mainnet              |
 
 The funded core is the valuation, pricing and accounting layer. The Investor

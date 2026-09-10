@@ -51,7 +51,7 @@ fn economic_supply_excludes_shares_locked_in_redemption_escrow() {
     // Close and fulfill epoch and claim.
     f.close_epoch();
     f.fulfill_epoch_at(epoch, wad(2));
-    assert_eq!(f.vault.pending_redeem_assets(), 100);
+    assert_eq!(f.vault.committed(), 100);
 
     f.vault.claim_redeem(&holder, &epoch);
 
@@ -59,7 +59,7 @@ fn economic_supply_excludes_shares_locked_in_redemption_escrow() {
     assert_eq!(f.share.total_supply(), 150);
     assert_eq!(f.share.balance(&f.vault.address), 0);
     assert_eq!(f.vault.total_economic_supply(), 150);
-    assert_eq!(f.vault.pending_redeem_assets(), 0);
+    assert_eq!(f.vault.committed(), 0);
 }
 
 #[test]

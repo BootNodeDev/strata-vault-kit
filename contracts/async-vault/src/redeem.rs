@@ -77,12 +77,17 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         panic_with_error!(e, VaultError::NothingToClaim);
     }
 
+    let vault = e.current_contract_address();
+    let asset = state::get_addr(e, &DataKey::Asset);
+    if TokenClient::new(e, &asset).balance(&vault) < assets {
+        panic_with_error!(e, VaultError::ClaimNotCovered);
+    }
+
     request.claimed = true;
     state::set_redeem_request(e, epoch_id, caller, &request);
-    state::set_pending_redeem_assets(e, state::pending_redeem_assets(e).saturating_sub(assets));
+    state::set_committed(e, state::committed(e).saturating_sub(assets));
 
-    let vault = e.current_contract_address();
-    TokenClient::new(e, &state::get_addr(e, &DataKey::Asset)).transfer(&vault, caller, &assets);
+    TokenClient::new(e, &asset).transfer(&vault, caller, &assets);
     ShareClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).burn(
         &vault,
         &request.shares,
