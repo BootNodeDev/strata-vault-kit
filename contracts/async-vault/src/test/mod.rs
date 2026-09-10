@@ -164,7 +164,8 @@ fn setup<'a>() -> Fixture<'a> {
                 OracleConfig {
                     freshness_duration: 3_600,
                     cooldown_secs: 0,
-                    max_deviation_bps: 10_000,
+                    max_up_bps: 10_000,
+                    max_down_bps: Some(10_000),
                     min_answer: 1,
                     max_answer: 1_000 * WAD_SCALE,
                 },
