@@ -73,6 +73,21 @@ apply as the corresponding code lands here.
   clone builds the client before the app, or `tsc` cannot resolve the module.
 - `app-lib/clients/index.ts` is auto-generated and rewritten on every build or
   redeploy. Do not hand-edit it; customize by importing the client under `app/`.
+- When a tool must drive `cargo` directly rather than the CLI, set
+  `SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1`. The build script fails
+  without it and its error names neither the variable nor this way out, so
+  coverage runs and size checks look impossible until you read the SDK source.
+- Change a contract's `__constructor` and you must change its `constructor_args`
+  in `environments.toml` in the same commit. Otherwise the scaffold build still
+  exits 0 and CI fails minutes later on a client count, naming neither the
+  contract nor the argument. This has broken two pull requests.
+- An `after_deploy` line is appended to
+  `stellar contract invoke --id <this contract> --`, so it can only call the
+  contract whose block it sits in. Wiring that crosses contracts, such as
+  granting the vault a role on the share token, needs a script instead.
+- Stellar keeps contract events for days, not forever. Anything that needs
+  history stores it on-chain or has an off-chain collector writing it down as it
+  happens; it cannot be rebuilt by replaying the past.
 
 ## Deployed addresses
 

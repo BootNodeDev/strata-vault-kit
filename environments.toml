@@ -45,16 +45,14 @@ constructor_args = "--admin me --attester me --guardian me --config '{\"freshnes
 [development.contracts.async_vault]
 client = true
 constructor_args = '--asset share_token --share_token share_token --oracle nav_oracle --roles "{\"attester\":\"me\",\"compliance\":\"compliance\",\"governance\":\"me\",\"guardian\":\"me\",\"manager\":\"me\",\"treasury\":\"share_token\"}"'
-# The vault mints and burns shares, so it needs the token's manager role. It also
-# holds escrowed shares, and returning them on cancellation goes through the
-# token's checked transfer, which verifies both sides. So the vault has to be an
-# allowlisted holder itself. Without both, a fresh deployment cannot claim or
-# cancel. In production neither call is ours: the token role belongs to the
-# Manager contract, and the allowlist belongs to the operator's identity registry.
-after_deploy = """
-share_token --id share_token -- grant_role --account async_vault --role manager --caller me
-identity_verifier --id identity_verifier -- allow --account async_vault --allowed true --caller me
-"""
+# Two grants are missing here on purpose, because this file cannot express them.
+# `after_deploy` lines are appended to `stellar contract invoke --id <this
+# contract> --`, so a line can only call the contract whose block it sits in.
+# The vault needs the share token's manager role and needs allowlisting on the
+# identity verifier, and both target other contracts while requiring the vault's
+# own address, which only exists after it deploys last. A post-deploy script owns
+# them. Until it lands, a dev deployment can take deposits but can neither
+# deliver shares nor return them. Tracked in #108.
 
 
 ### Staging environment configuration
