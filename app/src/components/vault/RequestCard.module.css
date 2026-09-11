@@ -1,34 +1,18 @@
-.card {
-	display: flex;
-	flex-direction: column;
-	gap: 13px;
-	padding: 22px;
-	border: 1px solid var(--vault-border-hairline);
-	background: var(--vault-surface-card);
-}
-
-.heading {
-	color: var(--vault-text-muted);
-}
-
 .body {
 	display: flex;
 	flex-direction: column;
-	gap: 7px;
-	padding-left: 13px;
-	border-left: 3px solid;
+	gap: 10px;
+	padding: 15px;
+	border: 1px solid var(--vault-border-hairline);
 }
 
 .pending {
-	border-left-color: var(--vault-ink);
+	border-color: var(--vault-border-hairline);
 }
 
-.priced {
-	border-left-color: var(--vault-success);
-}
-
-.unpayable {
-	border-left-color: var(--vault-danger);
+.claimable,
+.blocked {
+	border-color: var(--vault-ink);
 }
 
 .top {
@@ -36,6 +20,13 @@
 	justify-content: space-between;
 	align-items: baseline;
 	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.heading {
+	display: flex;
+	align-items: baseline;
+	gap: 9px;
 	flex-wrap: wrap;
 }
 
@@ -50,19 +41,45 @@
 	color: var(--vault-ink);
 }
 
-.chipPriced {
+.chipClaimable {
 	border: 1px solid var(--vault-success);
 	background: var(--vault-success-fill);
 	color: var(--vault-success);
 }
 
-.chipUnpayable {
+.chipBlocked {
 	border: 1px solid var(--vault-danger);
-	background: var(--vault-fill-warn);
-	color: var(--vault-danger);
+	background: var(--vault-danger);
+	color: var(--vault-surface-card);
 }
 
-.side {
+.title {
+	font-family: var(--vault-font-sans);
+	font-weight: 500;
+	font-size: 15px;
+	line-height: 1.3;
+	color: var(--vault-ink);
+}
+
+.epoch {
+	color: var(--vault-text-muted);
+	white-space: nowrap;
+}
+
+.rows,
+.coverage {
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.coverage {
+	padding: 12px;
+	border: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-inset);
+}
+
+.coverageLabel {
 	color: var(--vault-text-muted);
 }
 
@@ -80,19 +97,69 @@
 .rowValue {
 	color: var(--vault-ink);
 	text-align: right;
+	white-space: nowrap;
 }
 
 .rowOk {
 	color: var(--vault-success);
 	text-align: right;
+	white-space: nowrap;
+	font-weight: 500;
+}
+
+.rowStop {
+	color: var(--vault-danger);
+	text-align: right;
+	white-space: nowrap;
 	font-weight: 500;
 }
 
 .rowWord {
 	color: var(--vault-text-muted);
 	text-align: right;
+	white-space: nowrap;
 }
 
-.empty {
+.note {
+	color: var(--vault-text-muted);
+}
+
+.actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.actionPrimary,
+.actionOrdinary,
+.actionUnavailable {
+	align-self: flex-start;
+	padding: 10px 15px;
+	font-family: var(--vault-font-sans);
+	font-size: 14px;
+	font-weight: 500;
+	min-height: 44px;
+}
+
+.actionPrimary {
+	border: 1px solid var(--vault-action);
+	background: var(--vault-action);
+	color: var(--vault-surface-card);
+}
+
+.actionOrdinary {
+	border: 1px solid var(--vault-ink);
+	background: var(--vault-surface-card);
+	color: var(--vault-ink);
+}
+
+.actionUnavailable {
+	border: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-inset);
+	color: var(--vault-text-muted);
+	cursor: not-allowed;
+}
+
+.foot {
 	color: var(--vault-text-muted);
 }

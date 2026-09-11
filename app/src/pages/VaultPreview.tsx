@@ -4,25 +4,28 @@ import LifecyclePanel, {
 } from "../components/vault/LifecyclePanel"
 import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
-import RequestCard, {
-	type ActiveRequest,
-} from "../components/vault/RequestCard"
+import { type RequestEntry } from "../components/vault/RequestCard"
+import RequestList from "../components/vault/RequestList"
 import typeStyles from "../styles/type.module.css"
 import styles from "./VaultPreview.module.css"
 
 const metrics: [Metric, Metric, Metric, Metric] = [
+	{ label: "Share price", value: "1.0342", note: "NAV of 31 Aug 2026" },
 	{
-		label: "Net assets",
-		value: "23,310.00",
-		note: "On-chain reserve + custodian",
+		label: "Liquid reserve",
+		value: "18,400.00",
+		note: "TOKEN the vault holds now",
 	},
 	{
-		label: "Total supply",
-		value: "22,539.16",
-		note: "vTOKEN circulating, escrow excluded",
+		label: "Committed",
+		value: "6,200.00",
+		note: "TOKEN owed on priced claims",
 	},
-	{ label: "Share price", value: "1.0342", note: "Attested 31 Aug 2026" },
-	{ label: "Open epoch", value: "E-18", note: "Takes new requests" },
+	{
+		label: "Uncovered · vault",
+		value: "0.00",
+		note: "Every claim is covered",
+	},
 ]
 
 const unreadMetrics = metrics.map((metric) => ({
@@ -31,74 +34,106 @@ const unreadMetrics = metrics.map((metric) => ({
 	note: "Not read",
 })) as [Metric, Metric, Metric, Metric]
 
-const subscribeSteps: [LifecycleStep, LifecycleStep, LifecycleStep] = [
+const settlementSteps: LifecycleStep[] = [
 	{
-		title: "Request subscription",
+		title: "Request",
 		actor: "YOU",
-		body: "Your TOKEN joins the open epoch and sits in escrow.",
+		body: "Your TOKEN or shares are locked in the open epoch. One request per side per epoch.",
 	},
 	{
 		title: "Priced",
-		actor: "NEXT ATTESTATION",
-		body: "The epoch is sealed, then priced at the next attested value.",
+		actor: "THE ORACLE",
+		body: "The epoch is closed, then priced as soon as the oracle can price it. One price for everyone in it.",
 	},
 	{
-		title: "Claim your shares",
+		title: "Claimable",
+		actor: "THE VAULT",
+		body: "A share claim is claimable at once. A cash claim waits for the reserve to cover it in full.",
+	},
+	{
+		title: "Claimed",
 		actor: "YOU",
-		body: "Claim to receive the shares in your wallet.",
+		body: "You take the shares or the cash. Shares need an allowlisted address, cash does not.",
 	},
 ]
 
-const pendingRequest: ActiveRequest = {
-	state: "Pending",
-	side: "Subscription",
-	tone: "pending",
-	rows: [
-		{ label: "In escrow", value: "1,000.00 TOKEN", tone: "value" },
-		{ label: "Epoch", value: "E-18 · open", tone: "value" },
-		{ label: "You receive", value: "Set at pricing", tone: "word" },
-		{ label: "Estimated", value: "≈ 966.93 vTOKEN", tone: "word" },
-	],
-}
-
-const pricedRequest: ActiveRequest = {
-	state: "Priced",
-	side: "Subscription",
-	tone: "priced",
-	rows: [
-		{ label: "Waiting for you", value: "966.93 vTOKEN", tone: "ok" },
-		{ label: "Priced at", value: "1.0342", tone: "value" },
-		{ label: "Epoch", value: "E-18 · priced", tone: "value" },
-	],
-}
-
-const unpayableRequest: ActiveRequest = {
-	state: "Priced",
-	side: "Redemption",
-	tone: "unpayable",
-	rows: [
-		{ label: "Owed to you", value: "1,000.00 TOKEN", tone: "value" },
-		{ label: "Priced at", value: "1.0342", tone: "value" },
-		{ label: "Reserve covers", value: "620.00 TOKEN", tone: "value" },
-		{ label: "Uncovered", value: "380.00 TOKEN", tone: "word" },
-	],
-}
-
-const redeemSteps: [LifecycleStep, LifecycleStep, LifecycleStep] = [
+const openRequests: RequestEntry[] = [
 	{
-		title: "Request redemption",
-		actor: "YOU",
-		body: "Your shares join the open epoch and sit in escrow.",
+		id: 1,
+		title: "Subscription",
+		epochLabel: "E-19 · open",
+		state: "Pending",
+		tone: "pending",
+		rows: [
+			{ label: "Locked", value: "1,000.00 TOKEN" },
+			{ label: "Requested", value: "10 Sep 2026" },
+			{ label: "You receive", value: "Set at pricing", tone: "word" },
+		],
+		note: "E-19 is open. You can cancel until it closes.",
+		actions: [
+			{ label: "Cancel this request", kind: "ordinary", onPress: () => {} },
+		],
 	},
 	{
-		title: "Priced",
-		actor: "NEXT ATTESTATION",
-		body: "The epoch is sealed, then priced at the next attested value.",
+		id: 2,
+		title: "Redemption",
+		epochLabel: "E-18 · closed",
+		state: "Pending",
+		tone: "pending",
+		rows: [
+			{ label: "Locked", value: "500.00 vTOKEN" },
+			{ label: "Requested", value: "—" },
+			{ label: "You receive", value: "Set at pricing", tone: "word" },
+		],
+		note: "E-18 is closed and the oracle can price it, so your price is already readable. Cancelling ended there.",
+		actions: [
+			{ label: "Cancelling ended", kind: "unavailable", onPress: () => {} },
+		],
 	},
 	{
-		title: "Claim your TOKEN",
-		actor: "YOU",
-		body: "Claim to receive the cash in your wallet.",
+		id: 3,
+		title: "Redemption",
+		epochLabel: "E-17 · closed",
+		state: "Priced · not payable yet",
+		tone: "blocked",
+		rows: [
+			{ label: "Priced at", value: "1.0290 · 5 Sep 2026" },
+			{ label: "Locked and consumed", value: "12,000.00 vTOKEN" },
+		],
+		coverage: {
+			label: "This claim",
+			rows: [
+				{ label: "Owed to you", value: "12,348.00 TOKEN" },
+				{ label: "Reserve covers", value: "4,200.00 TOKEN" },
+				{ label: "Still needed", value: "8,148.00 TOKEN", tone: "stop" },
+			],
+		},
+		note: "Your price will not change. A claim pays once the reserve covers its full amount, so this one waits for a top-up.",
+		actions: [
+			{
+				label: "Claim (reserve does not cover this yet)",
+				kind: "unavailable",
+				onPress: () => {},
+			},
+		],
+		foot: "Awaiting a top-up. No date is promised.",
+	},
+	{
+		id: 4,
+		title: "Subscription",
+		epochLabel: "E-17 · closed",
+		state: "Claimable",
+		tone: "claimable",
+		rows: [
+			{ label: "You claim", value: "966.93 vTOKEN", tone: "ok" },
+			{ label: "Priced at", value: "1.0342 · 5 Sep 2026" },
+			{ label: "Locked and consumed", value: "1,000.00 TOKEN" },
+		],
+		note: "Priced with the rest of E-17. A priced claim is never re-priced and does not expire.",
+		actions: [
+			{ label: "Claim 966.93 vTOKEN", kind: "primary", onPress: () => {} },
+		],
+		foot: "All or nothing. A claim has no amount field.",
 	},
 ]
 
@@ -125,21 +160,15 @@ const VaultPreview: React.FC = () => (
 			<h2 className={typeStyles.sectionHead}>Lifecycle panel</h2>
 			<div className={styles.pair}>
 				<LifecyclePanel
-					title="Subscription lifecycle"
-					progress="Step 2 of 3"
-					steps={subscribeSteps}
+					title="How a request settles"
+					progress="Step 2 of 4"
+					steps={settlementSteps}
 					currentStep={2}
 				/>
 				<LifecyclePanel
-					title="Redemption lifecycle"
-					progress="Nothing open"
-					steps={redeemSteps}
-					currentStep={null}
-				/>
-				<LifecyclePanel
-					title="Subscription lifecycle"
+					title="How a request settles"
 					progress="Claimed"
-					steps={subscribeSteps}
+					steps={settlementSteps}
 					currentStep="complete"
 				/>
 			</div>
@@ -163,29 +192,23 @@ const VaultPreview: React.FC = () => (
 		</section>
 
 		<section className={styles.section}>
-			<h2 className={typeStyles.sectionHead}>Request card</h2>
-			<div className={styles.pair}>
-				<RequestCard
-					title="Active request"
-					request={pendingRequest}
-					emptyMessage="Your requests appear here."
-				/>
-				<RequestCard
-					title="Active request"
-					request={pricedRequest}
-					emptyMessage="Your requests appear here."
-				/>
-				<RequestCard
-					title="Active request"
-					request={unpayableRequest}
-					emptyMessage="Your requests appear here."
-				/>
-				<RequestCard
-					title="Active request"
-					request={null}
-					emptyMessage="Your requests appear here."
-				/>
-			</div>
+			<h2 className={typeStyles.sectionHead}>Request list</h2>
+			<RequestList
+				heading="Your open requests"
+				count="4 open"
+				entries={openRequests}
+				emptyMessage="Your requests appear here."
+				banner={{
+					label: "Two claims are racing",
+					body: "The reserve is not held for a claim: the first uncovered claim submitted takes it.",
+				}}
+			/>
+			<RequestList
+				heading="Your open requests"
+				count="0 open"
+				entries={[]}
+				emptyMessage="Your requests appear here."
+			/>
 		</section>
 	</div>
 )
