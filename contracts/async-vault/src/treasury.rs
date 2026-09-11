@@ -18,12 +18,12 @@ fn held(e: &Env) -> i128 {
     TokenClient::new(e, &asset).balance(&e.current_contract_address())
 }
 
-/// Assets held on-chain that are not already owed to a priced redemption.
 /// What the vault holds less escrow the investor can still cancel.
 pub(crate) fn liquid_reserve(e: &Env) -> i128 {
     held(e) - state::cancellable_escrow(e)
 }
 
+/// Assets held on-chain that are not already owed to a priced redemption.
 pub(crate) fn free_reserve(e: &Env) -> i128 {
     (liquid_reserve(e) - state::committed(e)).max(0)
 }
