@@ -15,14 +15,6 @@
 	border-color: var(--vault-ink);
 }
 
-.top {
-	display: flex;
-	justify-content: space-between;
-	align-items: baseline;
-	gap: 10px;
-	flex-wrap: wrap;
-}
-
 .heading {
 	display: flex;
 	align-items: baseline;
@@ -59,11 +51,6 @@
 	font-size: 15px;
 	line-height: 1.3;
 	color: var(--vault-ink);
-}
-
-.epoch {
-	color: var(--vault-text-muted);
-	white-space: nowrap;
 }
 
 .rows,

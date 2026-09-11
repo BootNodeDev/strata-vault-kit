@@ -5,7 +5,6 @@ import RequestCard, { type RequestEntry } from "./RequestCard"
 const baseEntry: RequestEntry = {
 	id: 1,
 	title: "Redemption",
-	epochLabel: "E-17 · closed",
 	state: "Priced · not payable yet",
 	tone: "blocked",
 	rows: [{ label: "Priced at", value: "1.0290 · 5 Sep 2026" }],

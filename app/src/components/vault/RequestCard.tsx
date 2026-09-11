@@ -26,7 +26,6 @@ export type RequestTone = "pending" | "claimable" | "blocked"
 export type RequestEntry = {
 	id: string | number
 	title: string
-	epochLabel: string
 	state: string
 	tone: RequestTone
 	rows: RequestRow[]
@@ -67,20 +66,15 @@ const actionClassName: Record<RequestActionKind, string> = {
 
 const RequestCard: React.FC<RequestCardProps> = ({ entry }) => (
 	<div className={`${styles.body} ${bodyClassName[entry.tone]}`}>
-		<div className={styles.top}>
-			<span className={styles.heading}>
-				<span
-					className={`${typeStyles.label} ${styles.chip} ${
-						chipClassName[entry.tone]
-					}`}
-				>
-					{entry.state}
-				</span>
-				<span className={styles.title}>{entry.title}</span>
+		<div className={styles.heading}>
+			<span
+				className={`${typeStyles.label} ${styles.chip} ${
+					chipClassName[entry.tone]
+				}`}
+			>
+				{entry.state}
 			</span>
-			<span className={`${typeStyles.footnote} ${styles.epoch}`}>
-				{entry.epochLabel}
-			</span>
+			<span className={styles.title}>{entry.title}</span>
 		</div>
 		<div className={styles.rows}>
 			{entry.rows.map((row) => (

@@ -5,7 +5,7 @@ import LifecyclePanel, {
 import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
 import { type RequestEntry } from "../components/vault/RequestCard"
-import RequestList from "../components/vault/RequestList"
+import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import typeStyles from "../styles/type.module.css"
 import styles from "./VaultPreview.module.css"
 
@@ -57,19 +57,61 @@ const settlementSteps: LifecycleStep[] = [
 	},
 ]
 
-const openRequests: RequestEntry[] = [
+const claimableEntry: RequestEntry = {
+	id: 4,
+	title: "Subscription",
+	state: "Claimable",
+	tone: "claimable",
+	rows: [
+		{ label: "You claim", value: "966.93 vTOKEN", tone: "ok" },
+		{ label: "Priced at", value: "1.0342 · 5 Sep 2026" },
+		{ label: "Locked and consumed", value: "1,000.00 TOKEN" },
+	],
+	actions: [
+		{ label: "Claim 966.93 vTOKEN", kind: "primary", onPress: () => {} },
+	],
+	foot: "All or nothing. A claim has no amount field.",
+}
+
+const waitingEntry: RequestEntry = {
+	id: 3,
+	title: "Redemption",
+	state: "Priced · not payable yet",
+	tone: "blocked",
+	rows: [
+		{ label: "Priced at", value: "1.0290 · 5 Sep 2026" },
+		{ label: "Locked and consumed", value: "12,000.00 vTOKEN" },
+	],
+	coverage: {
+		label: "This claim",
+		rows: [
+			{ label: "Owed to you", value: "12,348.00 TOKEN" },
+			{ label: "Reserve covers", value: "4,200.00 TOKEN" },
+			{ label: "Still needed", value: "8,148.00 TOKEN", tone: "stop" },
+		],
+	},
+	note: "Your price will not change. A claim pays once the reserve covers its full amount, so this one waits for a top-up.",
+	actions: [
+		{
+			label: "Claim (reserve does not cover this yet)",
+			kind: "unavailable",
+			onPress: () => {},
+		},
+	],
+	foot: "Awaiting a top-up. No date is promised.",
+}
+
+const openEntries: RequestEntry[] = [
 	{
 		id: 1,
 		title: "Subscription",
-		epochLabel: "E-19 · open",
 		state: "Pending",
 		tone: "pending",
 		rows: [
 			{ label: "Locked", value: "1,000.00 TOKEN" },
 			{ label: "Requested", value: "10 Sep 2026" },
-			{ label: "You receive", value: "Set at pricing", tone: "word" },
+			{ label: "Estimated", value: "≈ 966.93 vTOKEN", tone: "word" },
 		],
-		note: "E-19 is open. You can cancel until it closes.",
 		actions: [
 			{ label: "Cancel this request", kind: "ordinary", onPress: () => {} },
 		],
@@ -77,64 +119,38 @@ const openRequests: RequestEntry[] = [
 	{
 		id: 2,
 		title: "Redemption",
-		epochLabel: "E-18 · closed",
 		state: "Pending",
 		tone: "pending",
 		rows: [
 			{ label: "Locked", value: "500.00 vTOKEN" },
 			{ label: "Requested", value: "—" },
-			{ label: "You receive", value: "Set at pricing", tone: "word" },
+			{ label: "Estimated", value: "≈ 517.10 TOKEN", tone: "word" },
 		],
-		note: "E-18 is closed and the oracle can price it, so your price is already readable. Cancelling ended there.",
+		note: "Its batch has closed and the oracle can price it, so your price is already readable. Cancelling ended there.",
 		actions: [
 			{ label: "Cancelling ended", kind: "unavailable", onPress: () => {} },
 		],
 	},
+]
+
+const requestGroups: RequestGroup[] = [
 	{
-		id: 3,
-		title: "Redemption",
-		epochLabel: "E-17 · closed",
-		state: "Priced · not payable yet",
-		tone: "blocked",
-		rows: [
-			{ label: "Priced at", value: "1.0290 · 5 Sep 2026" },
-			{ label: "Locked and consumed", value: "12,000.00 vTOKEN" },
-		],
-		coverage: {
-			label: "This claim",
-			rows: [
-				{ label: "Owed to you", value: "12,348.00 TOKEN" },
-				{ label: "Reserve covers", value: "4,200.00 TOKEN" },
-				{ label: "Still needed", value: "8,148.00 TOKEN", tone: "stop" },
-			],
-		},
-		note: "Your price will not change. A claim pays once the reserve covers its full amount, so this one waits for a top-up.",
-		actions: [
-			{
-				label: "Claim (reserve does not cover this yet)",
-				kind: "unavailable",
-				onPress: () => {},
-			},
-		],
-		foot: "Awaiting a top-up. No date is promised.",
+		heading: "Ready to claim",
+		caption: "priced and covered",
+		entries: [claimableEntry],
 	},
 	{
-		id: 4,
-		title: "Subscription",
-		epochLabel: "E-17 · closed",
-		state: "Claimable",
-		tone: "claimable",
-		rows: [
-			{ label: "You claim", value: "966.93 vTOKEN", tone: "ok" },
-			{ label: "Priced at", value: "1.0342 · 5 Sep 2026" },
-			{ label: "Locked and consumed", value: "1,000.00 TOKEN" },
-		],
-		note: "Priced with the rest of E-17. A priced claim is never re-priced and does not expire.",
-		actions: [
-			{ label: "Claim 966.93 vTOKEN", kind: "primary", onPress: () => {} },
-		],
-		foot: "All or nothing. A claim has no amount field.",
+		heading: "Waiting",
+		caption: "priced, not claimable yet",
+		entries: [waitingEntry],
 	},
+	{ heading: "Open", caption: "not priced yet", entries: openEntries },
+]
+
+const emptyRequestGroups: RequestGroup[] = [
+	{ heading: "Ready to claim", caption: "priced and covered", entries: [] },
+	{ heading: "Waiting", caption: "priced, not claimable yet", entries: [] },
+	{ heading: "Open", caption: "not priced yet", entries: [] },
 ]
 
 const VaultPreview: React.FC = () => (
@@ -158,13 +174,16 @@ const VaultPreview: React.FC = () => (
 
 		<section className={styles.section}>
 			<h2 className={typeStyles.sectionHead}>Lifecycle panel</h2>
+			<LifecyclePanel
+				title="How a request settles"
+				progress="Step 2 of 4"
+				steps={settlementSteps}
+				currentStep={2}
+			/>
+			<p className={`${typeStyles.footnote} ${styles.caption}`}>
+				Narrow enough to stack
+			</p>
 			<div className={styles.pair}>
-				<LifecyclePanel
-					title="How a request settles"
-					progress="Step 2 of 4"
-					steps={settlementSteps}
-					currentStep={2}
-				/>
 				<LifecyclePanel
 					title="How a request settles"
 					progress="Claimed"
@@ -196,7 +215,7 @@ const VaultPreview: React.FC = () => (
 			<RequestList
 				heading="Your open requests"
 				count="4 open"
-				entries={openRequests}
+				groups={requestGroups}
 				emptyMessage="Your requests appear here."
 				banner={{
 					label: "Two claims are racing",
@@ -206,7 +225,7 @@ const VaultPreview: React.FC = () => (
 			<RequestList
 				heading="Your open requests"
 				count="0 open"
-				entries={[]}
+				groups={emptyRequestGroups}
 				emptyMessage="Your requests appear here."
 			/>
 		</section>

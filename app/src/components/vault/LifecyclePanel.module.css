@@ -1,4 +1,5 @@
 .panel {
+	container-type: inline-size;
 	display: flex;
 	flex-direction: column;
 	gap: 18px;
@@ -25,7 +26,8 @@
 
 .steps {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(0, 1fr);
 	gap: 16px;
 	margin: 0;
 	padding: 0;
@@ -114,9 +116,9 @@
 	color: var(--vault-text-muted);
 }
 
-@media (max-width: 1080px) {
+@container (max-width: 700px) {
 	.steps {
-		grid-template-columns: minmax(0, 1fr);
+		grid-auto-flow: row;
 	}
 
 	.connector {
