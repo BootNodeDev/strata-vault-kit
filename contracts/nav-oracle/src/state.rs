@@ -28,7 +28,13 @@ pub struct NavReport {
 pub struct OracleConfig {
     pub freshness_duration: u64, // before nav is considered stale
     pub cooldown_secs: u64,      // before new record is admitted
-    pub max_deviation_bps: u32,
+    /// Upward move allowed per attestation. Always set, never zero.
+    pub max_up_bps: u32,
+    /// Downward move allowed per attestation. `None` leaves falls uncapped, so a
+    /// loss of any size lands in one attestation. With it unset, `min_answer` is
+    /// the only bound on a single report, which makes that floor a risk
+    /// parameter rather than a sanity check.
+    pub max_down_bps: Option<u32>,
     pub min_answer: i128,
     pub max_answer: i128,
 }
@@ -58,6 +64,10 @@ pub(crate) fn ripcord_raised(e: &Env) -> bool {
 
 pub(crate) fn set_latest(e: &Env, report: &NavReport) {
     storage::set_persistent(e, &DataKey::Latest, report);
+}
+
+pub(crate) fn clear_latest(e: &Env) {
+    e.storage().persistent().remove(&DataKey::Latest);
 }
 
 pub(crate) fn get_latest(e: &Env) -> Option<NavReport> {

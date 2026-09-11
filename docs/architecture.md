@@ -37,9 +37,10 @@ you claim the result.
    when an investor acts; it is attested afterwards. Entry and exit are
    requests: funds or shares go into escrow, the epoch holding them is priced
    against an attestation, and the investor claims the result. This is the
-   ERC-7540 pattern with two differences: cancellation is a single step that
-   closes when the epoch is sealed, and the price comes from the attestation
-   valid at pricing, not from a manager.
+   ERC-7540 pattern with two differences: cancellation is a single step, and the
+   price comes from the attestation valid at pricing, not from a manager.
+   Cancellation is an escape hatch rather than a choice: it closes as soon as
+   the epoch could be priced, so nobody declines a price after reading it.
 
 4. **Attested NAV.** The reporter attests the share price itself, computed
    off-chain from the deployed value and the vault's public figures under a
@@ -58,13 +59,13 @@ you claim the result.
 
 6. **Split accounting, with priced and payable as separate states.** The vault
    exposes committed (priced redemption liabilities), cancellable escrow
-   (pending subscriptions the investor can still recall) and free reserve.
+   (pending subscriptions the investor can still cancel) and free reserve.
    Escrowed subscriptions never leave the vault. Committed can exceed the liquid
-   reserve; that gap is an explicit on-chain shortfall, outbound transfers are
-   blocked while it exists, and priced claims stay payable in FIFO order as
-   treasury tops up. A liquidity shortfall is not insolvency: solvency compares
-   total attested assets against liabilities and is handled by attested losses
-   and governance.
+   reserve; that gap is explicitly uncovered on-chain, outbound transfers are
+   blocked while it exists, and every priced claim the reserve covers stays
+   payable as treasury tops up. Being uncovered is not insolvency: solvency
+   compares total attested assets against liabilities and is handled by attested
+   losses and governance.
 
 ## 2. Component overview
 
@@ -87,8 +88,8 @@ flowchart TB
         subgraph SM["Strata modules"]
             V["Vault · request lifecycle"]:::strata
             OR["Valuation oracle ·<br/>guardrails · NAV"]:::strata
-            SA["Split accounting ·<br/>shortfall exposure"]:::strata
-            RQ["FIFO redemption coverage<br/>· exit-only path"]:::strata
+            SA["Split accounting ·<br/>uncovered exposure"]:::strata
+            RQ["Covered redemption claims<br/>· exit-only path"]:::strata
             MGR["Manager ·<br/>token authority"]:::strata
             IVC["Compliance module<br/>SEP-57 identity + rules"]
         end
@@ -155,7 +156,7 @@ flowchart LR
     OPS --> MGR --> ST
     CMP -->|writes via Manager| CM
     ST -.->|identity + transfer rules| CM
-    TRE -.->|free reserve only,<br/>zero shortfall| CUST
+    TRE -.->|free reserve only,<br/>nothing uncovered| CUST
     V ---|SAC interface| USDC[Deposit asset]
 ```
 
@@ -198,8 +199,12 @@ batch boundary, though not the price it receives.
   escrow. At most one active request per controller.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set
   at the epoch's price, and the shares are minted and held for the investor.
-- Cancellation: atomic, available until the epoch is sealed; returns the
-  escrowed asset in full.
+- Cancellation: atomic, and returns the escrowed asset in full. Open while the
+  epoch is, since no price applies to it yet. Once sealed it is refused while
+  the feed could price the epoch, because the price is then already readable and
+  cancelling would be declining it. A sealed epoch the feed cannot price is
+  still cancellable, which is what gives a deposit a way out of an epoch that is
+  stuck.
 - Share claim: re-verifies the receiver and delivers the shares. If verification
   fails, the position remains shares and exits through the redemption lifecycle
   at the then-current price. No nominal refund exists after pricing.
@@ -209,10 +214,10 @@ batch boundary, though not the price it receives.
 - Request: moves shares into escrow, no admission limit.
 - Pricing: the escrowed shares are burned and a fixed cash liability enters
   committed at the epoch's price. Priced claims are never re-priced.
-- Coverage: a priced claim is payable when the liquid reserve covers it, in FIFO
-  order. An earlier unpaid claim never blocks a later one that is already
-  covered. The gap between committed and liquid reserve is the on-chain
-  shortfall treasury must top up.
+- Coverage: a priced claim is payable when the liquid reserve covers that
+  claim's own amount, in any order. An earlier unpaid claim never blocks a later
+  one that is already covered. The gap between committed and liquid reserve is
+  the uncovered amount treasury must top up.
 - Cash claim: pays the fixed amount; it does not depend on identity. A delisted,
   non-frozen investor uses the exit-only cash path and cannot cancel back to
   shares.
@@ -243,7 +248,7 @@ sequenceDiagram
         I->>V: claim
         V-->>I: deposit asset paid
     else reserve short
-        Note over V: shortfall visible on-chain
+        Note over V: uncovered amount visible on-chain
         T->>V: return_from_custodian(funds)
         I->>V: claim
         V-->>I: deposit asset paid
@@ -260,15 +265,15 @@ and exposes it with the liquidity figures it owns:
 ```text
 liquid_reserve = reserve - cancellable_deposit_escrow
 free_reserve   = max(liquid_reserve - committed, 0)
-shortfall      = max(committed - liquid_reserve, 0)
+uncovered      = max(committed - liquid_reserve, 0)
 ```
 
 **Attestation guardrails:** the reporter is a multisig, never a single key. Each
 attestation carries the share price and a proof reference; attestations are
 ordered by their acceptance time on the ledger. The price must stay within
 configured bounds, a minimum cooldown bounds frequency, and the deviation cap is
-asymmetric: upside is bounded per update, downward updates are uncapped so
-losses are recognized immediately.
+directional: the upward bound is mandatory and non-zero, the downward bound is
+optional, and leaving it unset lets a loss of any size land in one attestation.
 
 **Freshness and pause:** each attestation opens a validity window; when it
 lapses the feed is stale and new requests stop being priced. Guardian or
@@ -295,10 +300,10 @@ decision.
 
 - The custodian is a genesis-configured slot; only governance can rotate it.
   Transfers to the custodian move free reserve only, only to that address, and
-  only while the shortfall is zero.
+  only while nothing is uncovered.
 - Transfers from the custodian are always open and credit only assets actually
   received.
-- The exposed figures (share price, liquid reserve, committed, shortfall) make
+- The exposed figures (share price, liquid reserve, committed, uncovered) make
   reserve coverage legible to investors and integrators.
 - Closing a vault needs no dedicated mechanism: governance pauses the vault, the
   attester publishes the final value, treasury returns the funds, and every
@@ -317,8 +322,8 @@ redeem request, cash claim, cancellation of a pending request. Nothing is valued
 at request creation; the only reference shown is the latest attested NAV,
 labelled and timestamped. Three states per side, none skipped: pending, priced,
 claimed. Waiting is stated, never counted down. A priced cash claim shows
-whether the reserve covers it and the current shortfall; a delisted investor
-sees the exit-only path.
+whether the reserve covers it and the current uncovered amount; a delisted
+investor sees the exit-only path.
 
 ### Admin panel
 
@@ -340,16 +345,16 @@ public surface given the vault address.
 
 ## 9. Trust boundaries & failure modes
 
-| Boundary               | Risk                                           | Mitigation                                                                                                                                                                                                                                                                                                                                                         |
-| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the asymmetric deviation cap bounds any single report and the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts |
-| Governance keys        | Malicious upgrade                              | Timelock with an investor exit window; the guardian pause freezes the timelock clock so the window cannot be waited out while entries are closed                                                                                                                                                                                                                   |
-| Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while any shortfall exists, and escrowed subscriptions never leave the vault                                                                                                                                                             |
-| Guardian keys          | Griefing via pause                             | Guardian can only pause new requests, pricing and custodian transfers; it can never block payable claims or move funds; governance reverts and rotates the role                                                                                                                                                                                                    |
-| Compliance keys        | Wrongful delisting or freeze                   | Delisted investors keep the exit-only cash path; freezes require the Manager path and are auditable per operation                                                                                                                                                                                                                                                  |
-| Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics; replaceable by governance without touching the token                                                                                                                                                                                                                                                                                        |
-| Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; declared risk of the chosen asset, verified and reported at genesis (auth flags)                                                                                                                                                                                                                                                         |
-| Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV (downward updates uncapped); the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                |
+| Boundary               | Risk                                           | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ---------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the deviation cap bounds a single report upward, and `min_answer` is what bounds it downward, so that floor is a risk parameter and not a sanity check; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts |
+| Governance keys        | Malicious upgrade                              | Timelock with an investor exit window; the guardian pause freezes the timelock clock so the window cannot be waited out while entries are closed                                                                                                                                                                                                                                                                                                                 |
+| Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while anything is uncovered, and escrowed subscriptions never leave the vault                                                                                                                                                                                                                                                          |
+| Guardian keys          | Griefing via pause                             | Guardian can only pause new requests, pricing and custodian transfers; it can never block payable claims or move funds; governance reverts and rotates the role                                                                                                                                                                                                                                                                                                  |
+| Compliance keys        | Wrongful delisting or freeze                   | Delisted investors keep the exit-only cash path; freezes require the Manager path and are auditable per operation                                                                                                                                                                                                                                                                                                                                                |
+| Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics; replaceable by governance without touching the token                                                                                                                                                                                                                                                                                                                                                                                      |
+| Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; declared risk of the chosen asset, verified and reported at genesis (auth flags)                                                                                                                                                                                                                                                                                                                                                       |
+| Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                              |
 
 Disclosed trust assumptions: the accuracy of the operator's KYC process, the
 quality of the data behind each attestation, and the operator's key ceremony.
@@ -375,8 +380,8 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 | Multisig and signing coordination                                        | Native Stellar + existing coordinators, OZ Role Manager                    | Integrated                                                                                                                                                                             |
 | Request lifecycle priced against attestations                            | Not provided (ERC-7540 on EVM, where OpenZeppelin ships an implementation) | Core of the kit                                                                                                                                                                        |
 | Guarded valuation oracle with freshness and pause                        | Not provided                                                               | Core of the kit                                                                                                                                                                        |
-| Split reserve accounting with explicit shortfall exposure                | Not provided                                                               | Core of the kit                                                                                                                                                                        |
-| FIFO redemption coverage, exit-only path                                 | Not provided                                                               | Core of the kit                                                                                                                                                                        |
+| Split reserve accounting with explicit uncovered exposure                | Not provided                                                               | Core of the kit                                                                                                                                                                        |
+| Covered redemption claims, exit-only path                                | Not provided                                                               | Core of the kit                                                                                                                                                                        |
 | Reusable RWA configuration, verified genesis, white-label frontends      | Not provided                                                               | Core of the kit                                                                                                                                                                        |
 
 ## 12. Delivery phases
@@ -384,7 +389,7 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 | Phase                                                   | Deliverables                                                                                                                                                                                                                   | Evidence of completion                                                                                                                                                                                                  |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **1: Attested valuation and request pricing**           | Valuation oracle with guardrails, freshness and pause; request lifecycle with escrow, cancellation and pricing-time mint and burn; public kit spec                                                                             | Accounting property tests green in CI (price preserved by deposits, redemptions and custodian transfers; cancellation; rounding); multisig signing of privileged operations verified end to end through the coordinator |
-| **2: Split accounting and redemption**                  | Shortfall exposure; FIFO redemption coverage; exit-only cash path; SEP-57 integration (compliance module, delisted-investor path); threat model and monitoring plan                                                            | Settlement e2e test at 1, 10, 100 and 1,000 pending requests; SEP-57 path demonstrated end to end on testnet                                                                                                            |
+| **2: Split accounting and redemption**                  | Uncovered exposure; covered redemption claims; exit-only cash path; SEP-57 integration (compliance module, delisted-investor path); threat model and monitoring plan                                                           | Settlement e2e test at 1, 10, 100 and 1,000 pending requests; SEP-57 path demonstrated end to end on testnet                                                                                                            |
 | **3: Reference interfaces, audit remediation, mainnet** | Investor dApp and Admin panel (five surfaces, one per authority), backend-free; reproducible deployment; audit remediation (all critical and high findings fixed and verified, public changelog); mainnet reference deployment | Audit inheritance matrix published (component, version, audit report, Strata delta, resulting scope); external developer deploys a configured instance from docs alone; reference instance live on mainnet              |
 
 The funded core is the valuation, pricing and accounting layer. The Investor

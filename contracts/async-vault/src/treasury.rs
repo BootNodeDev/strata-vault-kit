@@ -13,11 +13,25 @@ pub(crate) fn set_custodian(e: &Env, custodian: &Address) {
     .publish(e);
 }
 
+fn held(e: &Env) -> i128 {
+    let asset = state::get_addr(e, &DataKey::Asset);
+    TokenClient::new(e, &asset).balance(&e.current_contract_address())
+}
+
+/// What the vault holds less escrow the investor can still cancel.
+pub(crate) fn liquid_reserve(e: &Env) -> i128 {
+    held(e) - state::cancellable_escrow(e)
+}
+
 /// Assets held on-chain that are not already owed to a priced redemption.
 pub(crate) fn free_reserve(e: &Env) -> i128 {
-    let asset = state::get_addr(e, &DataKey::Asset);
-    let held = TokenClient::new(e, &asset).balance(&e.current_contract_address());
-    held.saturating_sub(state::pending_redeem_assets(e))
+    (liquid_reserve(e) - state::committed(e)).max(0)
+}
+
+/// Owed to holders beyond what the vault holds. Zero when every priced claim is
+/// payable. While this is positive nothing may leave for the custodian.
+pub(crate) fn uncovered(e: &Env) -> i128 {
+    (state::committed(e) - liquid_reserve(e)).max(0)
 }
 
 pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {

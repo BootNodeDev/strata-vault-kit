@@ -40,11 +40,19 @@ constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --mana
 # fields are strings because they do not survive a JSON number round trip.
 [development.contracts.nav_oracle]
 client = true
-constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_deviation_bps\":1000,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
+constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_up_bps\":1000,\"max_down_bps\":null,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
 
 [development.contracts.async_vault]
 client = true
 constructor_args = '--asset share_token --share_token share_token --oracle nav_oracle --roles "{\"attester\":\"me\",\"compliance\":\"compliance\",\"governance\":\"me\",\"guardian\":\"me\",\"manager\":\"me\",\"treasury\":\"share_token\"}"'
+# Two grants are missing here on purpose, because this file cannot express them.
+# `after_deploy` lines are appended to `stellar contract invoke --id <this
+# contract> --`, so a line can only call the contract whose block it sits in.
+# The vault needs the share token's manager role and needs allowlisting on the
+# identity verifier, and both target other contracts while requiring the vault's
+# own address, which only exists after it deploys last. A post-deploy script owns
+# them. Until it lands, a dev deployment can take deposits but can neither
+# deliver shares nor return them. Tracked in #108.
 
 
 ### Staging environment configuration

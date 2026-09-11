@@ -1,5 +1,5 @@
-use bindings::OracleFeedClient;
-use soroban_sdk::{panic_with_error, token::TokenClient, Env};
+use bindings::{OracleFeedClient, OracleState};
+use soroban_sdk::{panic_with_error, Env};
 use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
 use crate::error::VaultError;
@@ -14,6 +14,17 @@ pub(crate) fn open(total_deposited: i128) -> EpochInfo {
         total_shares_redeeming: 0,
         share_price: 0,
     }
+}
+
+/// True when the epoch is sealed and the feed could price it right now. The
+/// price it would take is therefore already readable, which is what closes the
+/// cancellation window.
+pub(crate) fn is_priceable(e: &Env, epoch: &EpochInfo) -> bool {
+    if epoch.status != EpochStatus::Pending {
+        return false;
+    }
+    let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
+    feed.state() == OracleState::Valid
 }
 
 pub(crate) fn close(e: &Env) -> u64 {
@@ -63,15 +74,23 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
 
     let owed = checked_mul_div_floor(e, &epoch.total_shares_redeeming, &share_price, &WAD_SCALE)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    let pending = state::pending_redeem_assets(e)
+    let committed = state::committed(e)
         .checked_add(owed)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    state::set_committed(e, committed);
 
-    let asset = state::get_addr(e, &DataKey::Asset);
-    if TokenClient::new(e, &asset).balance(&e.current_contract_address()) < pending {
-        panic_with_error!(e, VaultError::InsufficientLiquidity);
+    if epoch.total_deposited > 0 {
+        if let Some(shares_owed) =
+            checked_mul_div_floor(e, &epoch.total_deposited, &WAD_SCALE, &share_price)
+        {
+            let updated_pending_mint = state::pending_mint_shares(e)
+                .checked_add(shares_owed)
+                .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+            state::set_pending_mint_shares(e, updated_pending_mint);
+        }
     }
-    state::set_pending_redeem_assets(e, pending);
+
+    state::set_cancellable_escrow(e, state::cancellable_escrow(e) - epoch.total_deposited);
 
     epoch.status = EpochStatus::Fulfilled;
     epoch.share_price = share_price;

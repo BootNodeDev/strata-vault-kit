@@ -109,10 +109,41 @@ pub(crate) fn get_redeem_request(
     storage::get_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()))
 }
 
-pub(crate) fn set_pending_redeem_assets(e: &Env, assets: i128) {
-    storage::set_instance(e, &DataKey::PendingRedeemAssets, &assets);
+/// Cash owed to holders whose exit is priced but not yet claimed.
+pub(crate) fn set_committed(e: &Env, assets: i128) {
+    storage::set_instance(e, &DataKey::Committed, &assets);
 }
 
-pub(crate) fn pending_redeem_assets(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::PendingRedeemAssets).unwrap_or(0)
+pub(crate) fn committed(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::Committed).unwrap_or(0)
+}
+
+/// Deposit escrow across every unpriced epoch, still cancellable by the
+/// investor. Pricing an epoch moves its share of this into the reserve.
+pub(crate) fn set_cancellable_escrow(e: &Env, assets: i128) {
+    storage::set_instance(e, &DataKey::CancellableEscrow, &assets);
+}
+
+pub(crate) fn cancellable_escrow(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::CancellableEscrow).unwrap_or(0)
+}
+
+pub(crate) fn remove_deposit_request(e: &Env, epoch: u64, controller: &Address) {
+    e.storage()
+        .persistent()
+        .remove(&DataKey::UserDeposit(epoch, controller.clone()));
+}
+
+pub(crate) fn remove_redeem_request(e: &Env, epoch: u64, controller: &Address) {
+    e.storage()
+        .persistent()
+        .remove(&DataKey::UserRedeem(epoch, controller.clone()));
+}
+
+pub(crate) fn set_pending_mint_shares(e: &Env, shares: i128) {
+    storage::set_instance(e, &DataKey::PendingMintShares, &shares);
+}
+
+pub(crate) fn pending_mint_shares(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::PendingMintShares).unwrap_or(0)
 }
