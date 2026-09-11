@@ -1,25 +1,27 @@
 # strata-vault-kit
 
-White-label tokenized vault on Stellar. An approved investor deposits USDC and
-receives a share token representing their position; they return it and get their
-USDC back.
+White-label tokenized vault on Stellar for assets whose value is attested
+rather than traded. Shares are a claim on an off-chain asset, so no price
+exists at the moment you act: entry and exit are requests. What you put in
+goes into escrow, the next accepted attestation prices it, and you claim the
+result.
 
-Two rules the contract enforces:
+Each operator deploys, configures and brands an independent instance.
+
+Two rules the contracts enforce:
 
 1. **Only approved addresses can enter** — an allowlist maintained post-KYC.
-2. **Exit is always allowed**, even for a de-listed holder. Funds are never
-   trapped.
+2. **A priced claim always pays** — neither a pause, a delisting nor a stale
+   valuation can block an already-priced, funded cash claim.
+
+## Documentation
+
+[Product and architecture](./docs/strata-product-and-architecture.md) — what
+the protocol does, why it is asynchronous, and how the pieces fit together.
 
 ## Status
 
-Milestone 1 is in progress: no yield, 1 in / 1 out. Testnet only.
-
-Work is tracked in
-[milestone M1 — White-label vault](https://github.com/BootNodeDev/strata-vault-kit/milestone/1).
-Nothing here is production-ready, and nothing here has been audited.
-
-This README is a placeholder. The product README, `architecture.md` and the
-operator runbook land in issue #18.
+Pre-release, testnet only. Nothing here is audited or production-ready.
 
 ## Development
 
