@@ -40,6 +40,31 @@
 	color: var(--vault-ink);
 }
 
+.group {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.groupHeader {
+	display: flex;
+	align-items: baseline;
+	gap: 9px;
+	padding-bottom: 6px;
+	border-bottom: 1px solid var(--vault-border-hairline);
+}
+
+.groupLabel {
+	color: var(--vault-ink);
+}
+
+.groupCaption {
+	font-family: var(--vault-font-mono);
+	font-size: 11px;
+	line-height: 1;
+	color: var(--vault-text-muted);
+}
+
 .empty {
 	color: var(--vault-text-muted);
 }
