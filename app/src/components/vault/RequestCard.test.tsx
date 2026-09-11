@@ -1,60 +1,65 @@
-import { render, screen } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
-import RequestCard, { type ActiveRequest } from "./RequestCard"
+import { fireEvent, render, screen } from "@testing-library/react"
+import { describe, expect, it, vi } from "vitest"
+import RequestCard, { type RequestEntry } from "./RequestCard"
 
-const pendingRequest: ActiveRequest = {
-	state: "Pending",
-	side: "Subscription",
-	tone: "pending",
-	rows: [
-		{ label: "In escrow", value: "1,000.00 TOKEN", tone: "value" },
-		{ label: "Epoch", value: "E-18 · open", tone: "value" },
-		{ label: "You receive", value: "Set at pricing", tone: "word" },
-	],
+const baseEntry: RequestEntry = {
+	id: 1,
+	title: "Redemption",
+	epochLabel: "E-17 · closed",
+	state: "Priced · not payable yet",
+	tone: "blocked",
+	rows: [{ label: "Priced at", value: "1.0290 · 5 Sep 2026" }],
+	actions: [],
 }
 
 describe("RequestCard", () => {
-	it("renders the chip, the side, and every row it is given", () => {
+	it("renders an unavailable action and does not call it on click", () => {
+		const onPress = vi.fn()
 		render(
 			<RequestCard
-				title="Active request"
-				request={pendingRequest}
-				emptyMessage="No open request."
-			/>,
-		)
-
-		expect(screen.getByText("Pending")).toBeTruthy()
-		expect(screen.getByText("Subscription")).toBeTruthy()
-		for (const row of pendingRequest.rows) {
-			expect(screen.getByText(row.label)).toBeTruthy()
-			expect(screen.getByText(row.value as string)).toBeTruthy()
-		}
-	})
-
-	it("renders an em dash for a row value that could not be read", () => {
-		render(
-			<RequestCard
-				title="Active request"
-				request={{
-					...pendingRequest,
-					rows: [{ label: "Reserve covers", value: null }],
+				entry={{
+					...baseEntry,
+					actions: [
+						{
+							label: "Claim (reserve does not cover this yet)",
+							kind: "unavailable",
+							onPress,
+						},
+					],
 				}}
-				emptyMessage="No open request."
 			/>,
 		)
 
-		expect(screen.getByText("—")).toBeTruthy()
+		const button = screen.getByRole("button", {
+			name: "Claim (reserve does not cover this yet)",
+		}) as HTMLButtonElement
+		expect(button.disabled).toBe(true)
+		fireEvent.click(button)
+		expect(onPress).not.toHaveBeenCalled()
 	})
 
-	it("renders the empty message when there is no open request", () => {
+	it("renders every row of its nested coverage block", () => {
 		render(
 			<RequestCard
-				title="Active request"
-				request={null}
-				emptyMessage="Your requests appear here."
+				entry={{
+					...baseEntry,
+					coverage: {
+						label: "This claim",
+						rows: [
+							{ label: "Owed to you", value: "12,348.00 TOKEN" },
+							{ label: "Reserve covers", value: "4,200.00 TOKEN" },
+							{ label: "Still needed", value: "8,148.00 TOKEN", tone: "stop" },
+						],
+					},
+				}}
 			/>,
 		)
 
-		expect(screen.getByText("Your requests appear here.")).toBeTruthy()
+		expect(screen.getByText("This claim")).toBeTruthy()
+		expect(screen.getByText("Owed to you")).toBeTruthy()
+		expect(screen.getByText("12,348.00 TOKEN")).toBeTruthy()
+		expect(screen.getByText("Reserve covers")).toBeTruthy()
+		expect(screen.getByText("Still needed")).toBeTruthy()
+		expect(screen.getByText("8,148.00 TOKEN")).toBeTruthy()
 	})
 })

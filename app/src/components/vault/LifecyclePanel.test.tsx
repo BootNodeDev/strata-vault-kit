@@ -54,4 +54,20 @@ describe("LifecyclePanel", () => {
 			items.every((item) => item.getAttribute("aria-current") === null),
 		).toBe(true)
 	})
+
+	it("marks no step as current when currentStep is past the last step", () => {
+		render(
+			<LifecyclePanel
+				title="Subscription lifecycle"
+				progress="Claimed"
+				steps={steps}
+				currentStep={4}
+			/>,
+		)
+
+		const items = screen.getAllByRole("listitem")
+		expect(
+			items.every((item) => item.getAttribute("aria-current") === null),
+		).toBe(true)
+	})
 })
