@@ -2,12 +2,6 @@ import React from "react"
 import typeStyles from "../../styles/type.module.css"
 import styles from "./RequestCard.module.css"
 
-export type RequestRow = {
-	label: string
-	value: string | null
-	tone?: "value" | "ok" | "word" | "stop"
-}
-
 export type RequestActionKind = "primary" | "ordinary" | "unavailable"
 
 export type RequestAction = {
@@ -16,34 +10,42 @@ export type RequestAction = {
 	onPress: () => void
 }
 
-export type RequestCoverage = {
-	label: string
-	rows: RequestRow[]
-}
+export type RequestValueTone = "value" | "ok" | "word" | "stop"
 
 export type RequestTone = "pending" | "claimable" | "blocked"
 
+export type RequestTooltip = {
+	label: string
+	text: string
+}
+
 export type RequestEntry = {
 	id: string | number
-	title: string
+	inLabel: string
+	inAmount: string
+	inMeta: string
+	outLabel: string
+	outAmount: string
+	outMeta?: string
+	outTone?: RequestValueTone
 	state: string
 	tone: RequestTone
-	rows: RequestRow[]
-	coverage?: RequestCoverage
-	note?: string
-	foot?: string
 	actions: RequestAction[]
+	tooltip?: RequestTooltip
+	note?: string
 }
 
 type RequestCardProps = {
 	entry: RequestEntry
+	tipOpen: boolean
+	onToggleTip: () => void
 }
 
-const rowValueClassName = (tone: RequestRow["tone"]): string => {
-	if (tone === "ok") return `${typeStyles.railValue} ${styles.rowOk}`
-	if (tone === "word") return `${typeStyles.footnote} ${styles.rowWord}`
-	if (tone === "stop") return `${typeStyles.railValue} ${styles.rowStop}`
-	return `${typeStyles.railValue} ${styles.rowValue}`
+const outValueClassName = (tone: RequestValueTone | undefined): string => {
+	if (tone === "ok") return `${typeStyles.summaryValue} ${styles.outOk}`
+	if (tone === "stop") return `${typeStyles.summaryValue} ${styles.outStop}`
+	if (tone === "word") return `${typeStyles.footnote} ${styles.outWord}`
+	return `${typeStyles.summaryValue} ${styles.outValue}`
 }
 
 const bodyClassName: Record<RequestTone, string> = {
@@ -64,67 +66,76 @@ const actionClassName: Record<RequestActionKind, string> = {
 	unavailable: `${styles.actionUnavailable}`,
 }
 
-const RequestCard: React.FC<RequestCardProps> = ({ entry }) => (
+const RequestCard: React.FC<RequestCardProps> = ({
+	entry,
+	tipOpen,
+	onToggleTip,
+}) => (
 	<div className={`${styles.body} ${bodyClassName[entry.tone]}`}>
-		<div className={styles.heading}>
-			<span
-				className={`${typeStyles.label} ${styles.chip} ${
-					chipClassName[entry.tone]
-				}`}
-			>
-				{entry.state}
-			</span>
-			<span className={styles.title}>{entry.title}</span>
-		</div>
-		<div className={styles.rows}>
-			{entry.rows.map((row, index) => (
-				<div className={styles.row} key={`${index}-${row.label}`}>
-					<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
-						{row.label}
-					</span>
-					<span className={rowValueClassName(row.tone)}>
-						{row.value ?? "—"}
-					</span>
-				</div>
-			))}
-		</div>
-		{entry.coverage && (
-			<div className={styles.coverage}>
-				<span className={`${typeStyles.label} ${styles.coverageLabel}`}>
-					{entry.coverage.label}
+		<div className={styles.spine}>
+			<div className={styles.column}>
+				<span className={styles.inLabel}>{entry.inLabel}</span>
+				<span className={typeStyles.railValue}>{entry.inAmount}</span>
+				<span className={`${typeStyles.metricSub} ${styles.muted}`}>
+					{entry.inMeta}
 				</span>
-				{entry.coverage.rows.map((row, index) => (
-					<div className={styles.row} key={`${index}-${row.label}`}>
-						<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
-							{row.label}
-						</span>
-						<span className={rowValueClassName(row.tone)}>
-							{row.value ?? "—"}
-						</span>
-					</div>
-				))}
 			</div>
-		)}
+			<div className={styles.column}>
+				<span className={`${typeStyles.label} ${styles.muted}`}>
+					{entry.outLabel}
+				</span>
+				<span className={outValueClassName(entry.outTone)}>
+					{entry.outAmount}
+				</span>
+				{entry.outMeta && (
+					<span className={`${typeStyles.metricSub} ${styles.muted}`}>
+						{entry.outMeta}
+					</span>
+				)}
+			</div>
+			<div className={styles.stateColumn}>
+				<span
+					className={`${typeStyles.label} ${styles.chip} ${
+						chipClassName[entry.tone]
+					}`}
+				>
+					{entry.state}
+				</span>
+			</div>
+			<div className={styles.actionColumn}>
+				{entry.actions.map((action, index) => (
+					<button
+						key={`${index}-${action.label}`}
+						type="button"
+						className={actionClassName[action.kind]}
+						disabled={action.kind === "unavailable"}
+						onClick={action.onPress}
+					>
+						{action.label}
+					</button>
+				))}
+				{entry.tooltip && (
+					<span className={styles.tipWrap}>
+						<button
+							type="button"
+							aria-expanded={tipOpen}
+							aria-label={entry.tooltip.label}
+							className={styles.tipTrigger}
+							onClick={onToggleTip}
+						>
+							i
+						</button>
+						{tipOpen && (
+							<span role="tooltip" className={styles.tooltip}>
+								{entry.tooltip.text}
+							</span>
+						)}
+					</span>
+				)}
+			</div>
+		</div>
 		{entry.note && (
 			<p className={`${typeStyles.footnote} ${styles.note}`}>{entry.note}</p>
-		)}
-		<div className={styles.actions}>
-			{entry.actions.map((action, index) => (
-				<button
-					key={`${index}-${action.label}`}
-					type="button"
-					className={actionClassName[action.kind]}
-					disabled={action.kind === "unavailable"}
-					onClick={action.onPress}
-				>
-					{action.label}
-				</button>
-			))}
-		</div>
-		{entry.foot && (
-			<span className={`${typeStyles.footnote} ${styles.foot}`}>
-				{entry.foot}
-			</span>
 		)}
 	</div>
 )
