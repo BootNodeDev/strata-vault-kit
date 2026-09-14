@@ -34,9 +34,9 @@ const RequestList: React.FC<RequestListProps> = ({
 	return (
 		<div className={styles.list}>
 			<div className={styles.header}>
-				<h2 className={`${typeStyles.sectionHead} ${styles.heading}`}>
+				<h3 className={`${typeStyles.sectionHead} ${styles.heading}`}>
 					{heading}
-				</h2>
+				</h3>
 				<span className={`${typeStyles.footnote} ${styles.count}`}>
 					{count}
 				</span>

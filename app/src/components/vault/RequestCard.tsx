@@ -77,8 +77,8 @@ const RequestCard: React.FC<RequestCardProps> = ({ entry }) => (
 			<span className={styles.title}>{entry.title}</span>
 		</div>
 		<div className={styles.rows}>
-			{entry.rows.map((row) => (
-				<div className={styles.row} key={row.label}>
+			{entry.rows.map((row, index) => (
+				<div className={styles.row} key={`${index}-${row.label}`}>
 					<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
 						{row.label}
 					</span>
@@ -93,8 +93,8 @@ const RequestCard: React.FC<RequestCardProps> = ({ entry }) => (
 				<span className={`${typeStyles.label} ${styles.coverageLabel}`}>
 					{entry.coverage.label}
 				</span>
-				{entry.coverage.rows.map((row) => (
-					<div className={styles.row} key={row.label}>
+				{entry.coverage.rows.map((row, index) => (
+					<div className={styles.row} key={`${index}-${row.label}`}>
 						<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
 							{row.label}
 						</span>
@@ -109,9 +109,9 @@ const RequestCard: React.FC<RequestCardProps> = ({ entry }) => (
 			<p className={`${typeStyles.footnote} ${styles.note}`}>{entry.note}</p>
 		)}
 		<div className={styles.actions}>
-			{entry.actions.map((action) => (
+			{entry.actions.map((action, index) => (
 				<button
-					key={action.label}
+					key={`${index}-${action.label}`}
 					type="button"
 					className={actionClassName[action.kind]}
 					disabled={action.kind === "unavailable"}
