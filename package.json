@@ -23,5 +23,6 @@
     "prettier": "^3.8.3",
     "vitest": "4.1.11"
   },
+  "prettier": "@theahaco/ts-config/prettier",
   "packageManager": "npm@11.7.0"
 }
