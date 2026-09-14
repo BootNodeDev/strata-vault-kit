@@ -44,12 +44,22 @@ pub enum VaultError {
     /// The deposit is smaller than one share at the epoch's price, so it would
     /// mint zero. Rejected rather than burning the deposit to dust.
     NothingToClaim = 6036,
-    /// The vault does not hold enough assets to settle the epoch's redemptions
-    /// at the attested price, so the epoch is not fulfilled at all.
-    InsufficientLiquidity = 6037,
+    /// The vault does not hold enough to pay this claim yet. The liability
+    /// stands and the claim succeeds once the reserve covers it.
+    ClaimNotCovered = 6037,
     /// The amount would deploy assets already owed to holders whose exit has
     /// been priced but not yet claimed.
     ReserveCommittedToExits = 6005,
     /// No custodian has been set, so capital has nowhere to go.
     CustodianNotSet = 6012,
+    /// The epoch is priced, so the request can no longer be cancelled. The
+    /// controller claims instead.
+    AlreadyPriced = 6039,
+    /// The vault must always have an admin. Governance hands over in two steps
+    /// rather than stepping down into nobody.
+    AdminRequired = 6040,
+    /// The epoch is sealed and the feed can price it, so the price it will take
+    /// is already knowable. Cancelling now would be declining a price after
+    /// seeing it. Fulfil and claim instead.
+    PriceAvailable = 6041,
 }

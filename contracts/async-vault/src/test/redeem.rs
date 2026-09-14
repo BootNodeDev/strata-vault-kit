@@ -103,7 +103,7 @@ fn claiming_a_redeem_before_the_epoch_is_fulfilled_is_rejected() {
 }
 
 #[test]
-fn fulfill_is_rejected_when_the_vault_cannot_cover_the_redemptions() {
+fn the_epoch_prices_but_the_claim_waits_for_the_cash() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &500);
@@ -112,11 +112,16 @@ fn fulfill_is_rejected_when_the_vault_cannot_cover_the_redemptions() {
 
     f.close_epoch();
     f.attest(wad(4));
-    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
+
+    // 2_000 owed against 1_000 held. Pricing records it; payment waits.
+    f.vault.fulfill_epoch(&epoch);
     assert_eq!(
         f.vault.get_epoch(&epoch).unwrap().status,
-        EpochStatus::Pending
+        EpochStatus::Fulfilled
     );
+    assert_eq!(f.vault.committed(), 2_000);
+    assert_eq!(f.vault.uncovered(), 1_000);
+    assert!(f.vault.try_claim_redeem(&user, &epoch).is_err());
 }
 
 #[test]

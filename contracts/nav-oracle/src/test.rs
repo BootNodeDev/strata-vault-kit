@@ -1,6 +1,6 @@
 extern crate std;
 
-use soroban_sdk::{testutils::Address as _, testutils::Ledger as _, Address, Env};
+use soroban_sdk::{symbol_short, testutils::Address as _, testutils::Ledger as _, Address, Env};
 
 use crate::{NavOracleContract, NavOracleContractClient, NavReport, OracleConfig, OracleState};
 
@@ -19,7 +19,8 @@ fn config() -> OracleConfig {
     OracleConfig {
         freshness_duration: 3600,
         cooldown_secs: 60,
-        max_deviation_bps: 1_000, // 10%
+        max_up_bps: 1_000,
+        max_down_bps: Some(1_000), // 10%
         min_answer: SCALE / 2,
         max_answer: SCALE * 100,
     }
@@ -155,7 +156,8 @@ fn set_config_takes_effect() {
     // Tighten the per-attestation deviation band to 1%; a subsequent +5% move
     // that the original 10% band would admit is now rejected.
     let tight = OracleConfig {
-        max_deviation_bps: 100,
+        max_up_bps: 100,
+        max_down_bps: Some(100),
         ..config()
     };
     f.oracle.set_config(&tight);
@@ -217,7 +219,8 @@ fn constructor_rejects_a_deviation_above_one_hundred_percent() {
     let admin = Address::generate(&e);
     let attester = Address::generate(&e);
     let cfg = OracleConfig {
-        max_deviation_bps: 10_001,
+        max_up_bps: 10_001,
+        max_down_bps: Some(10_001),
         ..config()
     };
     e.register(
@@ -275,4 +278,155 @@ fn raising_the_ripcord_is_limited_to_the_guardian() {
     assert!(f.oracle.try_raise_ripcord(&f.attester).is_err());
     assert!(f.oracle.try_raise_ripcord(&f.admin).is_err());
     assert_eq!(f.oracle.state(), OracleState::Stale);
+}
+
+/// Builds the fixture with a caller-chosen cap, so both directions are testable.
+fn setup_with(cfg: OracleConfig) -> Fixture<'static> {
+    let e = Env::default();
+    e.mock_all_auths();
+    e.ledger().set_timestamp(10_000);
+
+    let admin = Address::generate(&e);
+    let attester = Address::generate(&e);
+    let guardian = Address::generate(&e);
+    let addr = e.register(
+        NavOracleContract,
+        (admin.clone(), attester.clone(), guardian.clone(), cfg),
+    );
+
+    Fixture {
+        oracle: NavOracleContractClient::new(&e, &addr),
+        admin,
+        attester,
+        guardian,
+        e,
+    }
+}
+
+#[test]
+fn a_large_loss_lands_in_one_attestation() {
+    let mut cfg = config();
+    cfg.max_down_bps = None;
+    let f = setup_with(cfg);
+
+    f.oracle
+        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.e.ledger().set_timestamp(10_100);
+
+    // A 40% fall, far past the 10% upward cap, is admitted at once.
+    let crash = report(&f.e, SCALE * 60 / 100, 2, 1_000_000);
+    f.oracle.attest(&crash, &f.attester);
+    assert_eq!(f.oracle.nav_per_share(), SCALE * 60 / 100);
+}
+
+#[test]
+fn an_unbounded_rise_is_still_refused() {
+    let mut cfg = config();
+    cfg.max_down_bps = None;
+    let f = setup_with(cfg);
+
+    f.oracle
+        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.e.ledger().set_timestamp(10_100);
+
+    let spike = report(&f.e, SCALE * 140 / 100, 2, 1_000_000);
+    assert!(f.oracle.try_attest(&spike, &f.attester).is_err());
+}
+
+#[test]
+fn a_configured_downside_still_bounds_a_fall() {
+    let f = setup();
+
+    f.oracle
+        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.e.ledger().set_timestamp(10_100);
+
+    let crash = report(&f.e, SCALE * 60 / 100, 2, 1_000_000);
+    assert!(f.oracle.try_attest(&crash, &f.attester).is_err());
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #3001)")]
+fn constructor_rejects_a_zero_upside_cap() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let cfg = OracleConfig {
+        max_up_bps: 0,
+        ..config()
+    };
+    e.register(
+        NavOracleContract,
+        (admin.clone(), admin.clone(), admin, cfg),
+    );
+}
+
+#[test]
+fn the_record_clears_only_while_the_ripcord_is_raised() {
+    let f = setup();
+    f.oracle
+        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+
+    assert!(f.oracle.try_clear_latest(&f.admin).is_err());
+
+    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.clear_latest(&f.admin);
+
+    // With no stored record, one in-band value lands however far it sits.
+    f.oracle.set_ripcord(&false, &f.admin);
+    f.e.ledger().set_timestamp(10_100);
+    let far = report(&f.e, SCALE * 50, 2, 1_000_000);
+    f.oracle.attest(&far, &f.attester);
+    assert_eq!(f.oracle.nav_per_share(), SCALE * 50);
+}
+
+#[test]
+fn every_oracle_authority_is_readable_and_rotatable() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+
+    assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
+    assert_eq!(
+        f.oracle.get_role_member(&symbol_short!("attester"), &0),
+        f.attester
+    );
+
+    f.oracle
+        .grant_role(&next, &symbol_short!("guardian"), &f.admin);
+    f.oracle
+        .revoke_role(&f.guardian, &symbol_short!("guardian"), &f.admin);
+
+    assert!(f.oracle.try_raise_ripcord(&f.guardian).is_err());
+    f.oracle.raise_ripcord(&next);
+}
+
+#[test]
+fn the_oracle_admin_cannot_renounce_itself_away() {
+    let f = setup();
+    assert!(f.oracle.try_renounce_admin().is_err());
+    assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
+}
+
+/// Probe: with the downward cap unset, what actually bounds one attestation?
+#[test]
+fn a_fall_is_bounded_only_by_min_answer() {
+    let mut cfg = config();
+    cfg.max_down_bps = None;
+    let f = setup_with(cfg);
+
+    f.oracle
+        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.e.ledger().set_timestamp(10_100);
+
+    // Straight to the floor in one step, whatever the distance.
+    let floor = config().min_answer;
+    f.oracle
+        .attest(&report(&f.e, floor, 2, 1_000_000), &f.attester);
+    assert_eq!(f.oracle.nav_per_share(), floor);
+
+    // Below the floor is refused, so min_answer is the only bound.
+    f.e.ledger().set_timestamp(10_200);
+    assert!(f
+        .oracle
+        .try_attest(&report(&f.e, floor - 1, 3, 1_000_000), &f.attester)
+        .is_err());
 }

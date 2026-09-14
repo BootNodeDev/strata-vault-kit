@@ -10,8 +10,9 @@ mod roles;
 mod state;
 mod treasury;
 
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env};
-use stellar_access::access_control;
+use bindings::ShareClient;
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
+use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_macros::{only_admin, only_role, when_not_paused};
 
@@ -26,6 +27,13 @@ pub use event::{
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
+
+fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
+    if access_control::get_role_member_count(e, role) == 0 {
+        return None;
+    }
+    Some(access_control::get_role_member(e, role, 0))
+}
 
 #[contract]
 pub struct AsyncVault;
@@ -55,7 +63,6 @@ impl AsyncVault {
         state::set_addr(e, &DataKey::Asset, &asset);
         state::set_addr(e, &DataKey::ShareToken, &share_token);
         state::set_addr(e, &DataKey::Oracle, &oracle);
-        state::set_addr(e, &DataKey::Manager, &roles.manager);
 
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
         state::set_current_epoch(e, FIRST_EPOCH);
@@ -73,8 +80,20 @@ impl AsyncVault {
         state::get_addr(e, &DataKey::Oracle)
     }
 
-    pub fn manager(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::Manager)
+    pub fn governance(e: &Env) -> Option<Address> {
+        access_control::get_admin(e)
+    }
+
+    pub fn manager(e: &Env) -> Option<Address> {
+        role_holder(e, &MANAGER_ROLE)
+    }
+
+    pub fn treasury(e: &Env) -> Option<Address> {
+        role_holder(e, &TREASURY_ROLE)
+    }
+
+    pub fn guardian(e: &Env) -> Option<Address> {
+        role_holder(e, &GUARDIAN_ROLE)
     }
 
     pub fn custodian(e: &Env) -> Option<Address> {
@@ -87,6 +106,37 @@ impl AsyncVault {
 
     pub fn free_reserve(e: &Env) -> i128 {
         treasury::free_reserve(e)
+    }
+
+    pub fn committed(e: &Env) -> i128 {
+        state::committed(e)
+    }
+
+    pub fn uncovered(e: &Env) -> i128 {
+        treasury::uncovered(e)
+    }
+
+    pub fn liquid_reserve(e: &Env) -> i128 {
+        treasury::liquid_reserve(e)
+    }
+
+    pub fn cancellable_escrow(e: &Env) -> i128 {
+        state::cancellable_escrow(e)
+    }
+
+    pub fn pending_mint_shares(e: &Env) -> i128 {
+        state::pending_mint_shares(e)
+    }
+
+    pub fn total_economic_supply(e: &Env) -> i128 {
+        let share_token = state::get_addr(e, &DataKey::ShareToken);
+        let client = ShareClient::new(e, &share_token);
+        let total_supply = client.total_supply();
+        let vault_escrow = client.balance(&e.current_contract_address());
+        let circulating = total_supply.saturating_sub(vault_escrow);
+        circulating
+            .checked_add(state::pending_mint_shares(e))
+            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
     }
 
     #[only_admin]
@@ -128,6 +178,17 @@ impl AsyncVault {
         deposit::claim(e, &caller, epoch_id)
     }
 
+    /// Cancels an unpriced deposit. Never blocked by the pause.
+    pub fn cancel_deposit(e: &Env, from: Address, epoch_id: u64) -> i128 {
+        deposit::cancel(e, &from, epoch_id)
+    }
+
+    /// Cancels an unpriced redemption. Refused for a controller the share token
+    /// will not let hold shares; that controller exits through the cash claim.
+    pub fn cancel_redeem(e: &Env, from: Address, epoch_id: u64) -> i128 {
+        redeem::cancel(e, &from, epoch_id)
+    }
+
     pub fn request_redeem(e: &Env, from: Address, shares: i128) -> u64 {
         redeem::request(e, &from, shares)
     }
@@ -152,6 +213,16 @@ impl AsyncVault {
     #[when_not_paused]
     pub fn fulfill_epoch(e: &Env, epoch_id: u64) -> i128 {
         epoch::fulfill(e, epoch_id)
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl AccessControl for AsyncVault {
+    /// Refused. There is no upgrade path, so a vault without an admin could
+    /// never be unpaused, never set a custodian and never rotate a role again.
+    /// `transfer_admin_role` and `accept_admin_transfer` are the way out.
+    fn renounce_admin(e: &Env) {
+        panic_with_error!(e, VaultError::AdminRequired);
     }
 }
 

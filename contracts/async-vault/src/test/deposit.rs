@@ -137,15 +137,17 @@ fn claiming_without_a_request_is_rejected() {
 }
 
 #[test]
-fn a_deposit_below_one_share_cannot_be_claimed() {
+fn a_deposit_below_one_share_is_refunded_at_claim() {
     let f = setup();
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &1);
     f.fulfill_epoch(wad(2));
 
-    assert!(f.vault.try_claim_deposit(&user, &1).is_err());
-    assert!(!f.vault.get_deposit_request(&1, &user).unwrap().claimed);
+    // Nothing to mint, so the asset goes back rather than being kept.
+    assert_eq!(f.vault.claim_deposit(&user, &1), 0);
+    assert_eq!(f.balance(&user), 1_000);
+    assert_eq!(f.vault.get_deposit_request(&1, &user), None);
 }
 
 #[test]

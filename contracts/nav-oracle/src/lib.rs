@@ -3,9 +3,10 @@
 mod state;
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env,
+    contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env, Symbol,
+    Vec,
 };
-use stellar_access::access_control;
+use stellar_access::access_control::{self, AccessControl};
 use stellar_macros::{only_admin, only_role};
 
 use state::{get_config, get_latest, ripcord_raised, ATTESTER_ROLE, GUARDIAN_ROLE};
@@ -31,6 +32,10 @@ pub enum OracleError {
     NoRecord = 3006,
     /// `ensure_consumable` found the feed in a state other than `Valid`.
     NotConsumable = 3007,
+    /// `clear_latest` was called while the ripcord was down.
+    RipcordNotRaised = 3008,
+    /// The oracle must always have an admin.
+    AdminRequired = 3009,
 }
 
 #[contractevent]
@@ -42,6 +47,9 @@ pub struct NavAttested {
 }
 
 #[contractevent]
+pub struct LatestCleared {}
+
+#[contractevent]
 pub struct RipcordSet {
     pub paused: bool,
 }
@@ -50,7 +58,8 @@ pub struct RipcordSet {
 pub struct ConfigSet {
     pub freshness_duration: u64,
     pub cooldown_secs: u64,
-    pub max_deviation_bps: u32,
+    pub max_up_bps: u32,
+    pub max_down_bps: Option<u32>,
     pub min_answer: i128,
     pub max_answer: i128,
 }
@@ -60,7 +69,9 @@ fn validate_config(e: &Env, cfg: &OracleConfig) {
         || cfg.min_answer <= 0
         || cfg.max_answer < cfg.min_answer
         || cfg.max_answer > MAX_ANSWER
-        || cfg.max_deviation_bps as i128 > BPS_DENOM
+        || cfg.max_up_bps == 0
+        || cfg.max_up_bps as i128 > BPS_DENOM
+        || cfg.max_down_bps.is_some_and(|d| d as i128 > BPS_DENOM)
     {
         panic_with_error!(e, OracleError::InvalidConfig);
     }
@@ -87,6 +98,15 @@ fn compute_state(e: &Env) -> OracleState {
 
 #[contract]
 pub struct NavOracleContract;
+
+#[contractimpl(contracttrait)]
+impl AccessControl for NavOracleContract {
+    /// Refused. An oracle with no admin can never be reconfigured, never clear a
+    /// stuck record and never lower the ripcord again.
+    fn renounce_admin(e: &Env) {
+        panic_with_error!(e, OracleError::AdminRequired);
+    }
+}
 
 #[contractimpl]
 impl NavOracleContract {
@@ -149,11 +169,20 @@ impl NavOracleContract {
             if now < prev.timestamp.saturating_add(cfg.cooldown_secs) {
                 panic_with_error!(e, OracleError::CooldownActive);
             }
-            // Per-share symmetric deviation cap against the previous record.
-            let diff = (report.nav_per_share - prev.nav_per_share).abs();
-            let bound = prev.nav_per_share * (cfg.max_deviation_bps as i128) / BPS_DENOM;
-            if diff > bound {
-                panic_with_error!(e, OracleError::DeviationExceeded);
+            // Directional cap. A rise is always bounded. A fall is bounded only
+            // when the deployment asks for it, so a real loss can land at once.
+            let rising = report.nav_per_share >= prev.nav_per_share;
+            let bps = if rising {
+                Some(cfg.max_up_bps)
+            } else {
+                cfg.max_down_bps
+            };
+            if let Some(bps) = bps {
+                let diff = (report.nav_per_share - prev.nav_per_share).abs();
+                let bound = prev.nav_per_share * (bps as i128) / BPS_DENOM;
+                if diff > bound {
+                    panic_with_error!(e, OracleError::DeviationExceeded);
+                }
             }
         }
 
@@ -184,6 +213,22 @@ impl NavOracleContract {
         RipcordSet { paused }.publish(e);
     }
 
+    /// Removes the stored record, so one in-band value can land again whatever
+    /// its distance from the last. Only while the ripcord is raised, so
+    /// resuming is always a deliberate second act.
+    #[only_admin]
+    pub fn clear_latest(e: &Env, _caller: Address) {
+        if !ripcord_raised(e) {
+            panic_with_error!(e, OracleError::RipcordNotRaised);
+        }
+        state::clear_latest(e);
+        LatestCleared {}.publish(e);
+    }
+
+    pub fn config(e: &Env) -> OracleConfig {
+        get_config(e)
+    }
+
     #[only_admin]
     pub fn set_config(e: &Env, config: OracleConfig) {
         validate_config(e, &config);
@@ -191,7 +236,8 @@ impl NavOracleContract {
         ConfigSet {
             freshness_duration: config.freshness_duration,
             cooldown_secs: config.cooldown_secs,
-            max_deviation_bps: config.max_deviation_bps,
+            max_up_bps: config.max_up_bps,
+            max_down_bps: config.max_down_bps,
             min_answer: config.min_answer,
             max_answer: config.max_answer,
         }

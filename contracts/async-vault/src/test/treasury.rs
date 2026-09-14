@@ -4,9 +4,14 @@ use super::*;
 fn capital_makes_the_round_trip_to_the_custodian() {
     let f = setup();
     let investor = f.investor(1_000);
-    f.vault.request_deposit(&investor, &1_000);
+    let epoch = f.vault.request_deposit(&investor, &1_000);
     f.vault.set_custodian(&f.custodian, &f.admin);
 
+    // Escrow stays refundable until the epoch prices, so none of it is free.
+    assert_eq!(f.vault.free_reserve(), 0);
+    f.close_epoch();
+    f.attest(wad(2));
+    f.vault.fulfill_epoch(&epoch);
     assert_eq!(f.vault.free_reserve(), 1_000);
     assert_eq!(f.vault.deploy_to_custodian(&f.treasury, &600), 600);
 
@@ -25,8 +30,11 @@ fn capital_makes_the_round_trip_to_the_custodian() {
 fn returning_more_than_was_deployed_shows_as_negative_net() {
     let f = setup();
     let investor = f.investor(1_000);
-    f.vault.request_deposit(&investor, &1_000);
+    let epoch = f.vault.request_deposit(&investor, &1_000);
     f.vault.set_custodian(&f.custodian, &f.admin);
+    f.close_epoch();
+    f.attest(wad(2));
+    f.vault.fulfill_epoch(&epoch);
 
     f.vault.deploy_to_custodian(&f.treasury, &600);
     StellarAssetClient::new(&f.e, &f.asset).mint(&f.custodian, &50);
@@ -63,7 +71,7 @@ fn an_unpriced_redemption_does_not_reserve_anything_yet() {
 }
 
 #[test]
-fn an_epoch_cannot_be_fulfilled_while_the_capital_is_deployed() {
+fn a_claim_waits_while_the_capital_is_deployed() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &500);
@@ -72,10 +80,14 @@ fn an_epoch_cannot_be_fulfilled_while_the_capital_is_deployed() {
 
     f.close_epoch();
     f.attest(wad(2));
-    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
+
+    // Pricing does not need the cash back; the claim does.
+    assert_eq!(f.vault.fulfill_epoch(&epoch), wad(2));
+    assert_eq!(f.vault.uncovered(), 1_000);
+    assert!(f.vault.try_claim_redeem(&holder, &epoch).is_err());
 
     f.vault.fund(&f.custodian, &1_000);
-    assert_eq!(f.vault.fulfill_epoch(&epoch), wad(2));
+    assert_eq!(f.vault.uncovered(), 0);
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 1_000);
 }
 
