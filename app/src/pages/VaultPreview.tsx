@@ -38,12 +38,12 @@ const settlementSteps: LifecycleStep[] = [
 	{
 		title: "Request",
 		actor: "YOU",
-		body: "Your TOKEN or shares are locked in the open epoch. One request per side per epoch.",
+		body: "Your TOKEN or shares are locked in the batch that is open. One request per side per batch.",
 	},
 	{
 		title: "Priced",
 		actor: "THE ORACLE",
-		body: "The epoch is closed, then priced as soon as the oracle can price it. One price for everyone in it.",
+		body: "The batch is closed, then priced as soon as the oracle can price it. One price for everyone in it.",
 	},
 	{
 		title: "Claimable",
