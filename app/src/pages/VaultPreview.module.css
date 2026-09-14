@@ -1,13 +1,41 @@
 .page {
+	container-type: inline-size;
 	display: flex;
 	flex-direction: column;
-	gap: 40px;
+	gap: 28px;
 	padding: 32px 0;
 }
 
-.intro {
+.identity {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	flex-wrap: wrap;
+}
+
+.address {
+	display: flex;
+	align-items: center;
+	border: 1px solid var(--vault-border-inactive);
+	background: var(--vault-surface-card);
+}
+
+.addressValue {
+	padding: 0 12px;
+}
+
+.copyButton {
+	border: 0;
+	border-left: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-card);
+	height: 32px;
+	padding: 0 12px;
 	color: var(--vault-text-muted);
-	max-width: 60ch;
+}
+
+.copyButton:hover {
+	background: var(--vault-surface-inset);
+	color: var(--vault-ink);
 }
 
 .section {
@@ -16,18 +44,33 @@
 	gap: 12px;
 }
 
-.caption {
-	color: var(--vault-text-muted);
-}
-
-.pair {
+.body {
 	display: grid;
-	gap: 24px;
-	grid-template-columns: 1fr;
+	grid-template-columns: minmax(480px, 1fr) minmax(320px, 360px);
+	align-items: start;
+	gap: 18px;
 }
 
-@media (min-width: 900px) {
-	.pair {
-		grid-template-columns: 1fr 1fr;
+.main {
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+	min-width: 0;
+}
+
+.side {
+	position: sticky;
+	top: 24px;
+	min-width: 0;
+}
+
+@container (max-width: 1080px) {
+	.body {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.side {
+		position: static;
+		order: -1;
 	}
 }
