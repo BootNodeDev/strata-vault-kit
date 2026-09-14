@@ -4,10 +4,13 @@ import RequestCard, { type RequestEntry } from "./RequestCard"
 
 const baseEntry: RequestEntry = {
 	id: 1,
-	title: "Redemption",
-	state: "Priced · not payable yet",
+	inLabel: "Redemption",
+	inAmount: "12,000.00 vTOKEN",
+	inMeta: "Requested 28 Aug 2026",
+	outLabel: "Owed to you",
+	outAmount: "12,348.00 TOKEN",
+	state: "Not payable yet",
 	tone: "blocked",
-	rows: [{ label: "Priced at", value: "1.0290 · 5 Sep 2026" }],
 	actions: [],
 }
 
@@ -26,6 +29,8 @@ describe("RequestCard", () => {
 						},
 					],
 				}}
+				tipOpen={false}
+				onToggleTip={() => {}}
 			/>,
 		)
 
@@ -37,28 +42,55 @@ describe("RequestCard", () => {
 		expect(onPress).not.toHaveBeenCalled()
 	})
 
-	it("renders every row of its nested coverage block", () => {
+	it("renders the out column with the label and amount it is given", () => {
 		render(
+			<RequestCard entry={baseEntry} tipOpen={false} onToggleTip={() => {}} />,
+		)
+
+		expect(screen.getByText("Owed to you")).toBeTruthy()
+		expect(screen.getByText("12,348.00 TOKEN")).toBeTruthy()
+	})
+
+	it("opens its tooltip on click", () => {
+		const onToggleTip = vi.fn()
+		const { rerender } = render(
 			<RequestCard
 				entry={{
 					...baseEntry,
-					coverage: {
-						label: "This claim",
-						rows: [
-							{ label: "Owed to you", value: "12,348.00 TOKEN" },
-							{ label: "Reserve covers", value: "4,200.00 TOKEN" },
-							{ label: "Still needed", value: "8,148.00 TOKEN", tone: "stop" },
-						],
+					tooltip: {
+						label: "Why you cannot claim this yet",
+						text: "Awaiting a top-up, with no date promised.",
 					},
 				}}
+				tipOpen={false}
+				onToggleTip={onToggleTip}
 			/>,
 		)
 
-		expect(screen.getByText("This claim")).toBeTruthy()
-		expect(screen.getByText("Owed to you")).toBeTruthy()
-		expect(screen.getByText("12,348.00 TOKEN")).toBeTruthy()
-		expect(screen.getByText("Reserve covers")).toBeTruthy()
-		expect(screen.getByText("Still needed")).toBeTruthy()
-		expect(screen.getByText("8,148.00 TOKEN")).toBeTruthy()
+		expect(screen.queryByRole("tooltip")).toBeNull()
+
+		const trigger = screen.getByRole("button", {
+			name: "Why you cannot claim this yet",
+		})
+		fireEvent.click(trigger)
+		expect(onToggleTip).toHaveBeenCalledTimes(1)
+
+		rerender(
+			<RequestCard
+				entry={{
+					...baseEntry,
+					tooltip: {
+						label: "Why you cannot claim this yet",
+						text: "Awaiting a top-up, with no date promised.",
+					},
+				}}
+				tipOpen={true}
+				onToggleTip={onToggleTip}
+			/>,
+		)
+
+		expect(screen.getByRole("tooltip").textContent).toBe(
+			"Awaiting a top-up, with no date promised.",
+		)
 	})
 })
