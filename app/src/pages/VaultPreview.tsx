@@ -115,7 +115,6 @@ const openEntries: RequestEntry[] = [
 		outTone: "word",
 		state: "Pending",
 		tone: "pending",
-		note: "Its batch has closed and the oracle can price it, so your price is already readable. Cancelling ended there.",
 		actions: [
 			{ label: "Cancelling ended", kind: "unavailable", onPress: () => {} },
 		],
