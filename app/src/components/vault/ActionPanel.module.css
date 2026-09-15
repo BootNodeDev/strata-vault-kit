@@ -130,10 +130,6 @@
 	color: var(--vault-text-body);
 }
 
-.estimateNote {
-	color: var(--vault-text-muted);
-}
-
 .errorMessage {
 	color: var(--vault-danger);
 	font-weight: 500;
@@ -172,10 +168,6 @@
 	background: var(--vault-surface-inset);
 	color: var(--vault-text-muted);
 	cursor: not-allowed;
-}
-
-.footnote {
-	color: var(--vault-text-muted);
 }
 
 @container (max-width: 280px) {

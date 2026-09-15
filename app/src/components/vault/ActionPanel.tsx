@@ -8,7 +8,6 @@ export type ActionPanelSide = "subscribe" | "redeem"
 export type ActionPanelEstimate = {
 	label: string
 	value: string | null
-	note: string
 }
 
 export type ActionPanelProps = {
@@ -25,7 +24,6 @@ export type ActionPanelProps = {
 	estimate: ActionPanelEstimate
 	submitLabel: string
 	onSubmit: () => void
-	footnote: string
 	blockedReason?: string
 }
 
@@ -48,7 +46,6 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 	estimate,
 	submitLabel,
 	onSubmit,
-	footnote,
 	blockedReason,
 }) => {
 	const parsedAmount = parseAmount(amount)
@@ -129,11 +126,6 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 						<span className={`${typeStyles.estimate} ${styles.estimateValue}`}>
 							{estimate.value ?? "Estimate unavailable"}
 						</span>
-						{estimate.note && (
-							<span className={`${typeStyles.body} ${styles.estimateNote}`}>
-								{estimate.note}
-							</span>
-						)}
 					</div>
 
 					{isOverBalance && (
@@ -175,10 +167,6 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 							</button>
 						)}
 					</div>
-
-					<span className={`${typeStyles.footnote} ${styles.footnote}`}>
-						{footnote}
-					</span>
 				</>
 			)}
 		</div>

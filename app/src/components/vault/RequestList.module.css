@@ -23,23 +23,6 @@
 	color: var(--vault-text-muted);
 }
 
-.banner {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	padding: 16px;
-	border: 2px solid var(--vault-ink);
-	background: var(--vault-surface-page);
-}
-
-.bannerLabel {
-	color: var(--vault-text-muted);
-}
-
-.bannerBody {
-	color: var(--vault-ink);
-}
-
 .empty {
 	color: var(--vault-text-muted);
 }

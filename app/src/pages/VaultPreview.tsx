@@ -17,7 +17,6 @@ const vaultName = "Operator vault name"
 const vaultAddress = "CB4AQ7XKPMWQ4ZDXKR2NHVUJZ9F49K2T"
 
 const shareNav = 1.0342
-const shareNavDate = "31 Aug 2026"
 const tokenBalance = 2450
 const shareBalance = 1000
 
@@ -83,10 +82,6 @@ const claimableEntry: RequestEntry = {
 	state: "Claimable",
 	tone: "claimable",
 	actions: [{ label: "Claim", kind: "primary", onPress: () => {} }],
-	tooltip: {
-		label: "What claiming does",
-		text: "All or nothing: a claim has no amount field. A priced claim is never re-priced and does not expire.",
-	},
 }
 
 const waitingEntry: RequestEntry = {
@@ -102,7 +97,7 @@ const waitingEntry: RequestEntry = {
 	actions: [{ label: "Claim", kind: "unavailable", onPress: () => {} }],
 	tooltip: {
 		label: "Why you cannot claim this yet",
-		text: "Your price will not change. A claim pays once the reserve covers its full amount: it covers 4,200.00 TOKEN of this claim and 8,148.00 TOKEN is still needed. Awaiting a top-up, with no date promised.",
+		text: "Your price will not change. A claim pays once the reserve covers its full amount: it covers 4,200.00 TOKEN of this claim and 8,148.00 TOKEN is still needed. The reserve is not held for this claim: the first uncovered claim submitted takes it. Awaiting a top-up, with no date promised.",
 	},
 }
 
@@ -170,13 +165,6 @@ const VaultPreview: React.FC = () => {
 			: `≈ ${formatAmount(
 					isSubscribe ? parsedAmount / shareNav : parsedAmount * shareNav,
 				)} ${outTicker}`
-	const estimateNote =
-		parsedAmount === null
-			? ""
-			: `Based on the share price ${shareNav.toFixed(4)}, from the NAV of ${shareNavDate}. Final ${
-					isSubscribe ? "shares" : "proceeds"
-				} are set at pricing and may be higher or lower.`
-
 	const copyAddress = async () => {
 		try {
 			await navigator.clipboard.writeText(vaultAddress)
@@ -214,10 +202,6 @@ const VaultPreview: React.FC = () => {
 						countLabel={(open) => `${open} open`}
 						entries={requestEntries}
 						emptyMessage="Your requests appear here."
-						banner={{
-							label: "Two claims are racing",
-							body: "The reserve is not held for a claim: the first uncovered claim submitted takes it.",
-						}}
 						openTooltipId={openTooltipId}
 						onToggleTooltip={toggleTooltip}
 					/>
@@ -260,13 +244,11 @@ const VaultPreview: React.FC = () => {
 								? "Estimated shares"
 								: "Estimated proceeds at the latest share price",
 							value: estimateValue,
-							note: estimateNote,
 						}}
 						submitLabel={
 							isSubscribe ? "Request subscription" : "Request redemption"
 						}
 						onSubmit={() => setActionAmount("")}
-						footnote="One approval in your wallet. One request per side per batch: when this one closes, the next takes another."
 					/>
 				</aside>
 			</div>

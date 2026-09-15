@@ -8,7 +8,6 @@ type RequestListProps = {
 	countLabel: (open: number) => string
 	entries: RequestEntry[]
 	emptyMessage: string
-	banner?: { label: string; body: string }
 	openTooltipId: string | number | null
 	onToggleTooltip: (id: string | number) => void
 }
@@ -18,7 +17,6 @@ const RequestList: React.FC<RequestListProps> = ({
 	countLabel,
 	entries,
 	emptyMessage,
-	banner,
 	openTooltipId,
 	onToggleTooltip,
 }) => (
@@ -31,16 +29,6 @@ const RequestList: React.FC<RequestListProps> = ({
 				{countLabel(entries.length)}
 			</span>
 		</div>
-		{banner && (
-			<div className={styles.banner}>
-				<span className={`${typeStyles.label} ${styles.bannerLabel}`}>
-					{banner.label}
-				</span>
-				<p className={`${typeStyles.body} ${styles.bannerBody}`}>
-					{banner.body}
-				</p>
-			</div>
-		)}
 		{entries.length > 0 ? (
 			entries.map((entry) => (
 				<RequestCard

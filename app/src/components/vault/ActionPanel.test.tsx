@@ -13,11 +13,9 @@ const baseProps: ActionPanelProps = {
 	ticker: "TOKEN",
 	balance: 18400,
 	balanceLabel: "Balance 18,400.00",
-	estimate: { label: "Estimated shares", value: "≈ —", note: "" },
+	estimate: { label: "Estimated shares", value: "≈ —" },
 	submitLabel: "Request subscription",
 	onSubmit: () => {},
-	footnote:
-		"One approval in your wallet. One request per side per batch: when this one closes, the next takes another.",
 }
 
 describe("ActionPanel", () => {
@@ -49,7 +47,6 @@ describe("ActionPanel", () => {
 				estimate={{
 					label: "Estimated shares",
 					value: null,
-					note: "No fresh NAV is currently available.",
 				}}
 			/>,
 		)
