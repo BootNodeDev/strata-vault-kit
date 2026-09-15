@@ -36,6 +36,11 @@ cargo test               # run the workspace unit tests
 With `direnv` + `nix-direnv`, `echo 'use flake' > .envrc && direnv allow` loads
 the shell — and your editor's language server — automatically.
 
+If you want to run the contract locally, you can use the following command:
+```sh
+stellar contract run --wasm target/wasm32-unknown-unknown/release/strata_vault_kit.wasm --env local
+```
+
 ### Without Nix
 
 ```sh
