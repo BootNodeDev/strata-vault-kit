@@ -81,9 +81,11 @@ const RequestCard: React.FC<RequestCardProps> = ({
 				</span>
 			</div>
 			<div className={styles.column}>
-				<span className={`${typeStyles.label} ${styles.muted}`}>
-					{entry.outLabel}
-				</span>
+				{entry.outLabel && (
+					<span className={`${typeStyles.label} ${styles.muted}`}>
+						{entry.outLabel}
+					</span>
+				)}
 				<span className={outValueClassName(entry.outTone)}>
 					{entry.outAmount}
 				</span>

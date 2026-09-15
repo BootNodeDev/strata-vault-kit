@@ -80,7 +80,8 @@
 .chip {
 	align-self: flex-start;
 	padding: 4px 9px;
-	white-space: nowrap;
+	text-wrap: pretty;
+	letter-spacing: 0;
 }
 
 .chipPending {
