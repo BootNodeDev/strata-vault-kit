@@ -1,3 +1,4 @@
+import { formatAmount } from "@stellar-scaffold/app-lib"
 import React from "react"
 import ActionPanel, {
 	type ActionPanelSide,
@@ -22,12 +23,6 @@ const shareBalance = 1000
 
 const shortenAddress = (address: string) =>
 	`${address.slice(0, 4)}…${address.slice(-4)}`
-
-const formatAmount = (value: number) =>
-	value.toLocaleString("en-US", {
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2,
-	})
 
 const parseAmount = (raw: string): number | null => {
 	const value = Number(raw.replace(/,/g, ""))
