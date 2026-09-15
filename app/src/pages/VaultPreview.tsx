@@ -171,7 +171,7 @@ const VaultPreview: React.FC = () => {
 				<div className={styles.main}>
 					<RequestList
 						heading="Your requests"
-						count="4 open"
+						countLabel={(open) => `${open} open`}
 						entries={requestEntries}
 						emptyMessage="Your requests appear here."
 						banner={{

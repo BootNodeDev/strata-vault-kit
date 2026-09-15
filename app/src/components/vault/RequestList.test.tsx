@@ -7,7 +7,7 @@ describe("RequestList", () => {
 		const { rerender } = render(
 			<RequestList
 				heading="Your open requests"
-				count="0 open"
+				countLabel={(open) => `${open} open`}
 				entries={[]}
 				emptyMessage="You have no open requests."
 				openTooltipId={null}
@@ -20,7 +20,7 @@ describe("RequestList", () => {
 		rerender(
 			<RequestList
 				heading="Your open requests"
-				count="0 open"
+				countLabel={(open) => `${open} open`}
 				entries={[]}
 				emptyMessage="You have no open requests."
 				banner={{
@@ -39,7 +39,7 @@ describe("RequestList", () => {
 		render(
 			<RequestList
 				heading="Your open requests"
-				count="0 open"
+				countLabel={(open) => `${open} open`}
 				entries={[]}
 				emptyMessage="You have no open requests."
 				openTooltipId={null}
