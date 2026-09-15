@@ -3,24 +3,19 @@ import typeStyles from "../../styles/type.module.css"
 import RequestCard, { type RequestEntry } from "./RequestCard"
 import styles from "./RequestList.module.css"
 
-export type RequestListBanner = {
-	label: string
-	body: string
-}
-
 type RequestListProps = {
 	heading: string
-	count: string
+	countLabel: (open: number) => string
 	entries: RequestEntry[]
 	emptyMessage: string
-	banner?: RequestListBanner
+	banner?: { label: string; body: string }
 	openTooltipId: string | number | null
 	onToggleTooltip: (id: string | number) => void
 }
 
 const RequestList: React.FC<RequestListProps> = ({
 	heading,
-	count,
+	countLabel,
 	entries,
 	emptyMessage,
 	banner,
@@ -32,7 +27,9 @@ const RequestList: React.FC<RequestListProps> = ({
 			<h3 className={`${typeStyles.sectionHead} ${styles.heading}`}>
 				{heading}
 			</h3>
-			<span className={`${typeStyles.footnote} ${styles.count}`}>{count}</span>
+			<span className={`${typeStyles.footnote} ${styles.count}`}>
+				{countLabel(entries.length)}
+			</span>
 		</div>
 		{banner && (
 			<div className={styles.banner}>

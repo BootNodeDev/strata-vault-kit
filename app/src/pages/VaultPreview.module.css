@@ -46,7 +46,7 @@
 
 .body {
 	display: grid;
-	grid-template-columns: minmax(480px, 1fr) minmax(320px, 360px);
+	grid-template-columns: minmax(0, 2.2fr) minmax(320px, 1fr);
 	align-items: start;
 	gap: 18px;
 }
