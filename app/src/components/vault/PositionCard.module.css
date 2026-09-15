@@ -1,0 +1,30 @@
+.card {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	padding: 22px;
+	border: 1px solid var(--vault-ink);
+	background: var(--vault-surface-card);
+}
+
+.label {
+	color: var(--vault-text-muted);
+}
+
+.figure {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.value {
+	color: var(--vault-ink);
+}
+
+.sub {
+	color: var(--vault-text-muted);
+}
+
+.note {
+	color: var(--vault-text-muted);
+}

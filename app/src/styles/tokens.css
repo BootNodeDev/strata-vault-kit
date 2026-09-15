@@ -14,6 +14,7 @@
 	--vault-success: #1f7a4c;
 	--vault-success-fill: #ebf4ef;
 	--vault-danger: #b3261e;
+	--vault-danger-fill: #fbeceb;
 	--vault-font-sans: "Space Grotesk", system-ui, sans-serif;
 	--vault-font-mono: "JetBrains Mono", ui-monospace, monospace;
 }

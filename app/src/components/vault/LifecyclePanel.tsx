@@ -8,19 +8,22 @@ export type LifecycleStep = {
 	body: string
 }
 
+export type LifecycleProgress = number | "complete" | null
+
 type LifecyclePanelProps = {
 	title: string
 	progress: string
-	steps: [LifecycleStep, LifecycleStep, LifecycleStep]
-	currentStep: 1 | 2 | 3 | null
+	steps: LifecycleStep[]
+	currentStep: LifecycleProgress
 }
 
 type StepState = "done" | "current" | "upcoming"
 
 const stepState = (
 	position: number,
-	currentStep: 1 | 2 | 3 | null,
+	currentStep: LifecycleProgress,
 ): StepState => {
+	if (currentStep === "complete") return "done"
 	if (currentStep === null) return "upcoming"
 	if (position < currentStep) return "done"
 	if (position === currentStep) return "current"
@@ -44,7 +47,6 @@ const LifecyclePanel: React.FC<LifecyclePanelProps> = ({
 			{steps.map((step, index) => {
 				const position = index + 1
 				const state = stepState(position, currentStep)
-				const showConnector = index < 2
 
 				return (
 					<li
@@ -56,14 +58,12 @@ const LifecyclePanel: React.FC<LifecyclePanelProps> = ({
 							<span className={`${styles.marker} ${styles[state]}`}>
 								{position}
 							</span>
-							{showConnector && (
-								<span
-									aria-hidden="true"
-									className={`${styles.connector} ${
-										state === "done" ? styles.connectorDone : ""
-									}`}
-								/>
-							)}
+							<span
+								aria-hidden="true"
+								className={`${styles.connector} ${
+									state === "done" ? styles.connectorDone : ""
+								}`}
+							/>
 						</div>
 						<span
 							className={`${typeStyles.stepTitle} ${
