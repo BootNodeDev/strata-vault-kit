@@ -5,6 +5,13 @@ import { networkPassphrase, stellarNetwork } from "./env"
 export const shortAddress = (addr: string): string =>
 	`${addr.slice(0, 4)}...${addr.slice(-4)}`
 
+/** Grouped, two decimals. Display only: a claim is signed in contract units. */
+export const formatAmount = (value: number): string =>
+	value.toLocaleString("en-US", {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	})
+
 /** Human-friendly network label (STANDALONE → Local; otherwise capitalized). */
 export const formatNetworkName = (name: string): string =>
 	name === "STANDALONE"

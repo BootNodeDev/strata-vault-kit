@@ -1,4 +1,8 @@
+import { formatAmount } from "@stellar-scaffold/app-lib"
 import React from "react"
+import ActionPanel, {
+	type ActionPanelSide,
+} from "../components/vault/ActionPanel"
 import LifecyclePanel, {
 	type LifecycleStep,
 } from "../components/vault/LifecyclePanel"
@@ -12,8 +16,17 @@ import styles from "./VaultPreview.module.css"
 const vaultName = "Operator vault name"
 const vaultAddress = "CB4AQ7XKPMWQ4ZDXKR2NHVUJZ9F49K2T"
 
+const shareNav = 1.0342
+const tokenBalance = 2450
+const shareBalance = 1000
+
 const shortenAddress = (address: string) =>
 	`${address.slice(0, 4)}…${address.slice(-4)}`
+
+const parseAmount = (raw: string): number | null => {
+	const value = Number(raw.replace(/,/g, ""))
+	return Number.isFinite(value) && value > 0 ? value : null
+}
 
 const metrics: [Metric, Metric, Metric, Metric] = [
 	{ label: "Share price", value: "1.0342", note: "NAV of 31 Aug 2026" },
@@ -69,10 +82,6 @@ const claimableEntry: RequestEntry = {
 	state: "Claimable",
 	tone: "claimable",
 	actions: [{ label: "Claim", kind: "primary", onPress: () => {} }],
-	tooltip: {
-		label: "What claiming does",
-		text: "All or nothing: a claim has no amount field. A priced claim is never re-priced and does not expire.",
-	},
 }
 
 const waitingEntry: RequestEntry = {
@@ -88,7 +97,7 @@ const waitingEntry: RequestEntry = {
 	actions: [{ label: "Claim", kind: "unavailable", onPress: () => {} }],
 	tooltip: {
 		label: "Why you cannot claim this yet",
-		text: "Your price will not change. A claim pays once the reserve covers its full amount: it covers 4,200.00 TOKEN of this claim and 8,148.00 TOKEN is still needed. Awaiting a top-up, with no date promised.",
+		text: "Your price will not change. A claim pays once the reserve covers its full amount: it covers 4,200.00 TOKEN of this claim and 8,148.00 TOKEN is still needed. The reserve is not held for this claim: the first uncovered claim submitted takes it. Awaiting a top-up, with no date promised.",
 	},
 }
 
@@ -132,11 +141,30 @@ const VaultPreview: React.FC = () => {
 		string | number | null
 	>(null)
 	const [copied, setCopied] = React.useState(false)
+	const [actionSide, setActionSide] =
+		React.useState<ActionPanelSide>("subscribe")
+	const [actionAmount, setActionAmount] = React.useState("")
 
 	const toggleTooltip = (id: string | number) => {
 		setOpenTooltipId((current) => (current === id ? null : id))
 	}
 
+	const changeActionSide = (side: ActionPanelSide) => {
+		setActionSide(side)
+		setActionAmount("")
+	}
+
+	const isSubscribe = actionSide === "subscribe"
+	const inTicker = isSubscribe ? "TOKEN" : "vTOKEN"
+	const outTicker = isSubscribe ? "vTOKEN" : "TOKEN"
+	const balance = isSubscribe ? tokenBalance : shareBalance
+	const parsedAmount = parseAmount(actionAmount)
+	const estimateValue =
+		parsedAmount === null
+			? "≈ —"
+			: `≈ ${formatAmount(
+					isSubscribe ? parsedAmount / shareNav : parsedAmount * shareNav,
+				)} ${outTicker}`
 	const copyAddress = async () => {
 		try {
 			await navigator.clipboard.writeText(vaultAddress)
@@ -174,10 +202,6 @@ const VaultPreview: React.FC = () => {
 						countLabel={(open) => `${open} open`}
 						entries={requestEntries}
 						emptyMessage="Your requests appear here."
-						banner={{
-							label: "Two claims are racing",
-							body: "The reserve is not held for a claim: the first uncovered claim submitted takes it.",
-						}}
 						openTooltipId={openTooltipId}
 						onToggleTooltip={toggleTooltip}
 					/>
@@ -199,7 +223,30 @@ const VaultPreview: React.FC = () => {
 					/>
 				</div>
 
-				<aside className={styles.side} aria-label="Actions" />
+				<aside className={styles.side} aria-label="Actions">
+					<ActionPanel
+						side={actionSide}
+						onSideChange={changeActionSide}
+						heading={
+							isSubscribe ? "Request a subscription" : "Request a redemption"
+						}
+						note="Your request joins the batch that is currently open."
+						amount={actionAmount}
+						onAmountChange={setActionAmount}
+						amountLabel={
+							isSubscribe ? "Amount to subscribe" : "Amount to redeem"
+						}
+						ticker={inTicker}
+						balance={balance}
+						balanceLabel={`Balance ${formatAmount(balance)}`}
+						estimate={{
+							label: isSubscribe ? "Estimated shares" : "Estimated proceeds",
+							value: estimateValue,
+						}}
+						submitLabel={isSubscribe ? "Subscribe" : "Redeem"}
+						onSubmit={() => setActionAmount("")}
+					/>
+				</aside>
 			</div>
 		</div>
 	)
