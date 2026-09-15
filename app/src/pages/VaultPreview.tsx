@@ -240,14 +240,10 @@ const VaultPreview: React.FC = () => {
 						balance={balance}
 						balanceLabel={`Balance ${formatAmount(balance)}`}
 						estimate={{
-							label: isSubscribe
-								? "Estimated shares"
-								: "Estimated proceeds at the latest share price",
+							label: isSubscribe ? "Estimated shares" : "Estimated proceeds",
 							value: estimateValue,
 						}}
-						submitLabel={
-							isSubscribe ? "Request subscription" : "Request redemption"
-						}
+						submitLabel={isSubscribe ? "Subscribe" : "Redeem"}
 						onSubmit={() => setActionAmount("")}
 					/>
 				</aside>

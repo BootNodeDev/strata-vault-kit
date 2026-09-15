@@ -14,7 +14,7 @@ const baseProps: ActionPanelProps = {
 	balance: 18400,
 	balanceLabel: "Balance 18,400.00",
 	estimate: { label: "Estimated shares", value: "≈ —" },
-	submitLabel: "Request subscription",
+	submitLabel: "Subscribe",
 	onSubmit: () => {},
 }
 
@@ -23,7 +23,7 @@ describe("ActionPanel", () => {
 		render(<ActionPanel {...baseProps} amount="" />)
 
 		const button = screen.getByRole("button", {
-			name: "Enter an amount",
+			name: "Subscribe",
 		}) as HTMLButtonElement
 		expect(button.disabled).toBe(true)
 	})
