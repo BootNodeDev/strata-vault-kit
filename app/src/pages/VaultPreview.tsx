@@ -1,4 +1,7 @@
 import React from "react"
+import ActionPanel, {
+	type ActionPanelSide,
+} from "../components/vault/ActionPanel"
 import LifecyclePanel, {
 	type LifecycleStep,
 } from "../components/vault/LifecyclePanel"
@@ -12,8 +15,24 @@ import styles from "./VaultPreview.module.css"
 const vaultName = "Operator vault name"
 const vaultAddress = "CB4AQ7XKPMWQ4ZDXKR2NHVUJZ9F49K2T"
 
+const shareNav = 1.0342
+const shareNavDate = "31 Aug 2026"
+const tokenBalance = 2450
+const shareBalance = 1000
+
 const shortenAddress = (address: string) =>
 	`${address.slice(0, 4)}…${address.slice(-4)}`
+
+const formatAmount = (value: number) =>
+	value.toLocaleString("en-US", {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	})
+
+const parseAmount = (raw: string): number | null => {
+	const value = Number(raw.replace(/,/g, ""))
+	return Number.isFinite(value) && value > 0 ? value : null
+}
 
 const metrics: [Metric, Metric, Metric, Metric] = [
 	{ label: "Share price", value: "1.0342", note: "NAV of 31 Aug 2026" },
@@ -132,10 +151,36 @@ const VaultPreview: React.FC = () => {
 		string | number | null
 	>(null)
 	const [copied, setCopied] = React.useState(false)
+	const [actionSide, setActionSide] =
+		React.useState<ActionPanelSide>("subscribe")
+	const [actionAmount, setActionAmount] = React.useState("")
 
 	const toggleTooltip = (id: string | number) => {
 		setOpenTooltipId((current) => (current === id ? null : id))
 	}
+
+	const changeActionSide = (side: ActionPanelSide) => {
+		setActionSide(side)
+		setActionAmount("")
+	}
+
+	const isSubscribe = actionSide === "subscribe"
+	const inTicker = isSubscribe ? "TOKEN" : "vTOKEN"
+	const outTicker = isSubscribe ? "vTOKEN" : "TOKEN"
+	const balance = isSubscribe ? tokenBalance : shareBalance
+	const parsedAmount = parseAmount(actionAmount)
+	const estimateValue =
+		parsedAmount === null
+			? "≈ —"
+			: `≈ ${formatAmount(
+					isSubscribe ? parsedAmount / shareNav : parsedAmount * shareNav,
+				)} ${outTicker}`
+	const estimateNote =
+		parsedAmount === null
+			? ""
+			: `Based on the share price ${shareNav.toFixed(4)}, from the NAV of ${shareNavDate}. Final ${
+					isSubscribe ? "shares" : "proceeds"
+				} are set at pricing and may be higher or lower.`
 
 	const copyAddress = async () => {
 		try {
@@ -199,7 +244,36 @@ const VaultPreview: React.FC = () => {
 					/>
 				</div>
 
-				<aside className={styles.side} aria-label="Actions" />
+				<aside className={styles.side} aria-label="Actions">
+					<ActionPanel
+						side={actionSide}
+						onSideChange={changeActionSide}
+						heading={
+							isSubscribe ? "Request a subscription" : "Request a redemption"
+						}
+						note="Your request joins the batch that is currently open."
+						amount={actionAmount}
+						onAmountChange={setActionAmount}
+						amountLabel={
+							isSubscribe ? "Amount to subscribe" : "Amount to redeem"
+						}
+						ticker={inTicker}
+						balance={balance}
+						balanceLabel={`Balance ${formatAmount(balance)}`}
+						estimate={{
+							label: isSubscribe
+								? "Estimated shares"
+								: "Estimated proceeds at the latest share price",
+							value: estimateValue,
+							note: estimateNote,
+						}}
+						submitLabel={
+							isSubscribe ? "Request subscription" : "Request redemption"
+						}
+						onSubmit={() => setActionAmount("")}
+						footnote="One approval in your wallet. One request per side per batch: when this one closes, the next takes another."
+					/>
+				</aside>
 			</div>
 		</div>
 	)
