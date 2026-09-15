@@ -1,3 +1,4 @@
+import { formatAmount } from "@stellar-scaffold/app-lib"
 import React from "react"
 import typeStyles from "../../styles/type.module.css"
 import styles from "./ActionPanel.module.css"
@@ -32,12 +33,6 @@ const parseAmount = (raw: string): number | null => {
 	const value = Number(raw.replace(/,/g, ""))
 	return Number.isFinite(value) && value > 0 ? value : null
 }
-
-const formatAmount = (value: number): string =>
-	value.toLocaleString("en-US", {
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2,
-	})
 
 const ActionPanel: React.FC<ActionPanelProps> = ({
 	side,
