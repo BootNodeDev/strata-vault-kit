@@ -80,6 +80,7 @@
 .chip {
 	align-self: flex-start;
 	padding: 4px 9px;
+	white-space: nowrap;
 }
 
 .chipPending {
@@ -96,8 +97,8 @@
 
 .chipBlocked {
 	border: 1px solid var(--vault-danger);
-	background: var(--vault-danger);
-	color: var(--vault-surface-card);
+	background: var(--vault-danger-fill);
+	color: var(--vault-danger);
 }
 
 .actionColumn {
