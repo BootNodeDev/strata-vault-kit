@@ -142,7 +142,7 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 									className={styles.actionPrimary}
 									onClick={fillMax}
 								>
-									{`Use my maximum, ${formatAmount(balance)} ${ticker}`}
+									{`Use ${formatAmount(balance)}`}
 								</button>
 								<button
 									type="button"
@@ -161,9 +161,7 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 								disabled={!canSubmit}
 								onClick={onSubmit}
 							>
-								{canSubmit && parsedAmount !== null
-									? `${submitLabel} · ${formatAmount(parsedAmount)} ${ticker}`
-									: "Enter an amount"}
+								{submitLabel}
 							</button>
 						)}
 					</div>

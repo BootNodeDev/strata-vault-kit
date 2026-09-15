@@ -31,6 +31,7 @@
 	padding: 12px;
 	min-height: 44px;
 	border: 0;
+	border-radius: 0;
 	background: var(--vault-surface-card);
 	color: var(--vault-ink);
 	font-family: var(--vault-font-sans);
@@ -38,7 +39,13 @@
 	font-weight: 500;
 }
 
-.tabActive {
+.tab:hover:not(:disabled) {
+	background: var(--vault-action-ring);
+	color: var(--vault-action);
+}
+
+.tabActive,
+.tabActive:hover:not(:disabled) {
 	background: var(--vault-action);
 	color: var(--vault-surface-card);
 }
@@ -92,14 +99,17 @@
 	min-height: 40px;
 	padding: 9px 11px;
 	border: 1px solid var(--vault-border-hairline);
+	border-radius: 0;
 	background: var(--vault-surface-card);
 	font-family: var(--vault-font-mono);
 	font-weight: 500;
 	font-size: 12px;
 }
 
-.maxButton:hover {
-	border-color: var(--vault-ink);
+.maxButton:hover:not(:disabled) {
+	background: var(--vault-action-ring);
+	border-color: var(--vault-action);
+	color: var(--vault-action);
 }
 
 .balanceRow {
@@ -150,6 +160,7 @@
 	font-family: var(--vault-font-sans);
 	font-size: 15.5px;
 	font-weight: 500;
+	border-radius: 0;
 }
 
 .actionPrimary {
