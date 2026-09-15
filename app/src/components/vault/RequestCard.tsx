@@ -14,11 +14,6 @@ export type RequestValueTone = "value" | "ok" | "word" | "stop"
 
 export type RequestTone = "pending" | "claimable" | "blocked"
 
-export type RequestTooltip = {
-	label: string
-	text: string
-}
-
 export type RequestEntry = {
 	id: string | number
 	inLabel: string
@@ -31,7 +26,7 @@ export type RequestEntry = {
 	state: string
 	tone: RequestTone
 	actions: RequestAction[]
-	tooltip?: RequestTooltip
+	tooltip?: { label: string; text: string }
 	note?: string
 }
 

@@ -9,6 +9,12 @@ import RequestList from "../components/vault/RequestList"
 import typeStyles from "../styles/type.module.css"
 import styles from "./VaultPreview.module.css"
 
+const vaultName = "Operator vault name"
+const vaultAddress = "CB4AQ7XKPMWQ4ZDXKR2NHVUJZ9F49K2T"
+
+const shortenAddress = (address: string) =>
+	`${address.slice(0, 4)}…${address.slice(-4)}`
+
 const metrics: [Metric, Metric, Metric, Metric] = [
 	{ label: "Share price", value: "1.0342", note: "NAV of 31 Aug 2026" },
 	{
@@ -27,12 +33,6 @@ const metrics: [Metric, Metric, Metric, Metric] = [
 		note: "Every claim is covered",
 	},
 ]
-
-const unreadMetrics = metrics.map((metric) => ({
-	...metric,
-	value: null,
-	note: "Not read",
-})) as [Metric, Metric, Metric, Metric]
 
 const settlementSteps: LifecycleStep[] = [
 	{
@@ -131,91 +131,76 @@ const VaultPreview: React.FC = () => {
 	const [openTooltipId, setOpenTooltipId] = React.useState<
 		string | number | null
 	>(null)
+	const [copied, setCopied] = React.useState(false)
 
 	const toggleTooltip = (id: string | number) => {
 		setOpenTooltipId((current) => (current === id ? null : id))
 	}
 
+	const copyAddress = async () => {
+		try {
+			await navigator.clipboard.writeText(vaultAddress)
+			setCopied(true)
+			setTimeout(() => setCopied(false), 1500)
+		} catch {
+			// Clipboard access can be denied by the browser; the address is still visible.
+		}
+	}
+
 	return (
 		<div className={styles.page}>
-			<div>
-				<h1 className={typeStyles.vaultName}>Component preview</h1>
-				<p className={`${typeStyles.body} ${styles.intro}`}>
-					Static props, no wallet and no contract reads. This page exists to
-					review the vault components while the data layer is built.
-				</p>
+			<div className={styles.identity}>
+				<h1 className={typeStyles.vaultName}>{vaultName}</h1>
+				<div className={styles.address}>
+					<span className={`${typeStyles.railValue} ${styles.addressValue}`}>
+						{shortenAddress(vaultAddress)}
+					</span>
+					<button
+						type="button"
+						className={`${typeStyles.label} ${styles.copyButton}`}
+						onClick={copyAddress}
+					>
+						{copied ? "Copied" : "Copy"}
+					</button>
+				</div>
 			</div>
 
-			<section className={styles.section}>
-				<h2 className={typeStyles.sectionHead}>Metrics strip</h2>
-				<MetricsStrip metrics={metrics} />
-				<p className={`${typeStyles.footnote} ${styles.caption}`}>
-					Every figure unreadable
-				</p>
-				<MetricsStrip metrics={unreadMetrics} />
-			</section>
+			<MetricsStrip metrics={metrics} />
 
-			<section className={styles.section}>
-				<h2 className={typeStyles.sectionHead}>Lifecycle panel</h2>
-				<LifecyclePanel
-					title="How a request settles"
-					progress="Step 2 of 4"
-					steps={settlementSteps}
-					currentStep={2}
-				/>
-				<p className={`${typeStyles.footnote} ${styles.caption}`}>
-					Narrow enough to stack
-				</p>
-				<div className={styles.pair}>
+			<div className={styles.body}>
+				<div className={styles.main}>
+					<RequestList
+						heading="Your requests"
+						countLabel={(open) => `${open} open`}
+						entries={requestEntries}
+						emptyMessage="Your requests appear here."
+						banner={{
+							label: "Two claims are racing",
+							body: "The reserve is not held for a claim: the first uncovered claim submitted takes it.",
+						}}
+						openTooltipId={openTooltipId}
+						onToggleTooltip={toggleTooltip}
+					/>
+
+					<section className={styles.section}>
+						<h2 className={typeStyles.sectionHead}>Your position</h2>
+						<PositionCard
+							label="Your shares"
+							value="1,000.00 vTOKEN"
+							sub="In your wallet"
+						/>
+					</section>
+
 					<LifecyclePanel
 						title="How a request settles"
-						progress="Claimed"
+						progress="Every request, both sides"
 						steps={settlementSteps}
-						currentStep="complete"
+						currentStep={null}
 					/>
 				</div>
-			</section>
 
-			<section className={styles.section}>
-				<h2 className={typeStyles.sectionHead}>Position card</h2>
-				<div className={styles.pair}>
-					<PositionCard
-						label="Your shares"
-						value="1,000.00 vTOKEN"
-						sub="In your wallet"
-					/>
-					<PositionCard
-						label="Your shares"
-						value={null}
-						sub="Not read"
-						note="No shares exist for this request yet"
-					/>
-				</div>
-			</section>
-
-			<section className={styles.section}>
-				<h2 className={typeStyles.sectionHead}>Request list</h2>
-				<RequestList
-					heading="Your open requests"
-					count="4 open"
-					entries={requestEntries}
-					emptyMessage="Your requests appear here."
-					banner={{
-						label: "Two claims are racing",
-						body: "The reserve is not held for a claim: the first uncovered claim submitted takes it.",
-					}}
-					openTooltipId={openTooltipId}
-					onToggleTooltip={toggleTooltip}
-				/>
-				<RequestList
-					heading="Your open requests"
-					count="0 open"
-					entries={[]}
-					emptyMessage="Your requests appear here."
-					openTooltipId={openTooltipId}
-					onToggleTooltip={toggleTooltip}
-				/>
-			</section>
+				<aside className={styles.side} aria-label="Actions" />
+			</div>
 		</div>
 	)
 }

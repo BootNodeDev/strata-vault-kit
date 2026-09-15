@@ -6,20 +6,6 @@
 	letter-spacing: -0.02em;
 }
 
-.cardHead {
-	font-family: var(--vault-font-sans);
-	font-weight: 500;
-	font-size: 21px;
-	line-height: 1.2;
-}
-
-.waitHead {
-	font-family: var(--vault-font-sans);
-	font-weight: 500;
-	font-size: 19px;
-	line-height: 1.25;
-}
-
 .sectionHead {
 	font-family: var(--vault-font-sans);
 	font-weight: 500;
