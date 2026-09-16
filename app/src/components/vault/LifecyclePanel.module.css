@@ -116,7 +116,10 @@
 	color: var(--vault-text-muted);
 }
 
-@container (max-width: 700px) {
+/* The panel's own width, not the window's: it sits in the main column, whose
+   content box is around 700px on a desktop. A threshold near that never lets
+   the steps run across. */
+@container (max-width: 560px) {
 	.steps {
 		grid-auto-flow: row;
 	}
