@@ -1,9 +1,9 @@
 import { formatAmount, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
+import AboutVault, { type AddressRow } from "../components/vault/AboutVault"
 import ActionPanel, {
 	type ActionPanelSide,
 } from "../components/vault/ActionPanel"
-import AddressList, { type AddressRow } from "../components/vault/AddressList"
 import LifecyclePanel, {
 	type LifecycleStep,
 } from "../components/vault/LifecyclePanel"
@@ -27,6 +27,9 @@ const sections: { id: string; label: string }[] = [
 	{ id: "lifecycle", label: "Lifecycle" },
 	{ id: "actions", label: "Actions" },
 ]
+
+const vaultSummary =
+	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the struck price, and each claim pays once the reserve covers it in full, in any order rather than by queue position."
 
 // TODO: read these from the vault, which exposes one public view per row.
 const authorityRows: AddressRow[] = [
@@ -207,21 +210,12 @@ const VaultPreview: React.FC = () => {
 				</div>
 			</div>
 
-			<div className={styles.explainer}>
-				<p className={`${typeStyles.body} ${styles.explainerBody}`}>
-					A share is a claim on an off-chain asset whose price is set by an
-					oracle. Entering or exiting a position happens by submitting a
-					request, which is priced and settled in a batch — not by an instant
-					trade.
-				</p>
-			</div>
-
 			<nav aria-label="Sections" className={styles.nav}>
 				{sections.map((section) => (
 					<a
 						key={section.id}
 						href={`#${section.id}`}
-						className={`${typeStyles.label} ${styles.navLink}`}
+						className={`${typeStyles.body} ${styles.navLink}`}
 					>
 						{section.label}
 					</a>
@@ -264,7 +258,8 @@ const VaultPreview: React.FC = () => {
 						/>
 					</div>
 
-					<AddressList
+					<AboutVault
+						summary={vaultSummary}
 						groups={[
 							{ title: "Contracts", rows: contractRows },
 							{ title: "Authorities", rows: authorityRows },

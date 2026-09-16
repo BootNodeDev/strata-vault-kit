@@ -45,6 +45,18 @@ const stellarEncode = (str: string) => {
 	return str.replace(/\//g, "//").replace(/;/g, "/;")
 }
 
+/** Explorer page for a contract, or null on a network with no public one. */
+export const explorerContract = (contractId: string): string | null => {
+	switch (stellarNetwork) {
+		case "PUBLIC":
+			return `https://stellar.expert/explorer/public/contract/${contractId}`
+		case "TESTNET":
+			return `https://stellar.expert/explorer/testnet/contract/${contractId}`
+		default:
+			return null
+	}
+}
+
 export const labPrefix = () => {
 	switch (stellarNetwork) {
 		case "LOCAL":

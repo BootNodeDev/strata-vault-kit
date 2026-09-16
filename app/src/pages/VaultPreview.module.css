@@ -38,30 +38,28 @@
 	color: var(--vault-ink);
 }
 
-.explainer {
-	max-width: 640px;
-}
-
-.explainerBody {
-	color: var(--vault-text-muted);
-}
-
 .nav {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 14px;
+	align-items: baseline;
+	gap: 6px 22px;
+	border-bottom: 1px solid var(--vault-border-hairline);
+	padding-bottom: 11px;
 }
 
 .navLink {
-	color: var(--vault-text-muted);
+	color: var(--vault-text-body);
+	text-decoration: none;
+	border-bottom: 1px solid transparent;
 }
 
 .navLink:hover {
 	color: var(--vault-ink);
+	border-bottom-color: var(--vault-ink);
 }
 
 .anchor {
-	scroll-margin-top: 24px;
+	scroll-margin-top: 18px;
 }
 
 .section {

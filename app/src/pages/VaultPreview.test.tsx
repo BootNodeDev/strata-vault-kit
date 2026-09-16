@@ -1,7 +1,7 @@
 import { shortAddress } from "@stellar-scaffold/app-lib"
 import { render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { type AddressRow } from "../components/vault/AddressList"
+import { type AddressRow } from "../components/vault/AboutVault"
 import VaultPreview from "./VaultPreview"
 
 const { mockVaultId } = vi.hoisted(() => ({
