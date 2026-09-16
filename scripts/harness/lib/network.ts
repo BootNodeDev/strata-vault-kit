@@ -39,26 +39,18 @@ const QUICKSTART_ROOT =
 const NETWORKS: Record<NetworkName, Network> = {
 	local: {
 		name: "local",
-		rpcUrl:
-			process.env["HARNESS_RPC_URL"] ??
-			process.env["LIFECYCLE_RPC_URL"] ??
-			"http://localhost:8000/rpc",
+		rpcUrl: process.env["HARNESS_RPC_URL"] ?? "http://localhost:8000/rpc",
 		passphrase: Networks.STANDALONE,
 		funding: {
 			kind: "root",
-			secret:
-				process.env["HARNESS_ROOT_SECRET"] ??
-				process.env["LIFECYCLE_ROOT_SECRET"] ??
-				QUICKSTART_ROOT,
+			secret: process.env["HARNESS_ROOT_SECRET"] ?? QUICKSTART_ROOT,
 		},
 		oracle: { freshness_duration: 300, cooldown_secs: 5, ...band },
 	},
 	testnet: {
 		name: "testnet",
 		rpcUrl:
-			process.env["HARNESS_RPC_URL"] ??
-			process.env["LIFECYCLE_RPC_URL"] ??
-			"https://soroban-testnet.stellar.org",
+			process.env["HARNESS_RPC_URL"] ?? "https://soroban-testnet.stellar.org",
 		passphrase: Networks.TESTNET,
 		funding: { kind: "friendbot", url: "https://friendbot.stellar.org" },
 		oracle: { freshness_duration: 3600, cooldown_secs: 60, ...band },
@@ -66,10 +58,7 @@ const NETWORKS: Record<NetworkName, Network> = {
 }
 
 export function network(): Network {
-	const wanted =
-		process.env["HARNESS_NETWORK"] ??
-		process.env["LIFECYCLE_NETWORK"] ??
-		"local"
+	const wanted = process.env["HARNESS_NETWORK"] ?? "local"
 	if (!Object.hasOwn(NETWORKS, wanted)) {
 		throw new Error(
 			`unknown HARNESS_NETWORK ${wanted}; expected ${Object.keys(NETWORKS).join(" or ")}`,

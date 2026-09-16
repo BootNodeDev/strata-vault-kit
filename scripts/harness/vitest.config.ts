@@ -1,7 +1,6 @@
 import { defineConfig } from "vitest/config"
 
-const network =
-	process.env["HARNESS_NETWORK"] ?? process.env["LIFECYCLE_NETWORK"] ?? "local"
+const network = process.env["HARNESS_NETWORK"] ?? "local"
 
 export default defineConfig({
 	test: {
