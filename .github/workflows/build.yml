@@ -129,3 +129,7 @@ jobs:
           HARNESS_NETWORK: local
       - name: Typecheck the harness workspace
         run: npm run typecheck -w scripts/harness
+      - name: Run the vault happy path on the local network
+        run: npm run test:happy-path -w scripts/harness
+        env:
+          HARNESS_NETWORK: local
