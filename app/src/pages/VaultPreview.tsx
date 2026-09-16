@@ -28,16 +28,13 @@ const sections: { id: string; label: string }[] = [
 	{ id: "actions", label: "Actions" },
 ]
 
-// The six roles the vault is constructed with.
-// TODO: read these from the vault. Compliance and attester have no public view,
-// so listing them needs a contract change first.
+// TODO: read these from the vault, which exposes one public view per row.
 const authorityRows: AddressRow[] = [
 	{ label: "Governance", source: "placeholder" },
 	{ label: "Manager", source: "placeholder" },
 	{ label: "Treasury", source: "placeholder" },
 	{ label: "Guardian", source: "placeholder" },
-	{ label: "Compliance", source: "placeholder" },
-	{ label: "Attester", source: "placeholder" },
+	{ label: "Custodian", source: "placeholder" },
 ]
 
 const parseAmount = (raw: string): number | null => {

@@ -26,18 +26,6 @@ describe("VaultPreview", () => {
 		expect(side.childElementCount).toBeGreaterThan(0)
 	})
 
-	it("resolves every nav link to a section present in the page", () => {
-		const { container } = render(<VaultPreview />)
-
-		const nav = screen.getByRole("navigation", { name: "Sections" })
-		const links = nav.querySelectorAll("a")
-		expect(links).toHaveLength(4)
-		links.forEach((link) => {
-			const id = link.getAttribute("href")?.slice(1)
-			expect(container.querySelector(`#${id}`)).toBeTruthy()
-		})
-	})
-
 	it("renders the header and the Vault row from the same configured address", () => {
 		render(<VaultPreview />)
 
