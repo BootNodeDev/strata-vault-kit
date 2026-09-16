@@ -1,105 +1,255 @@
+import { formatAmount } from "@stellar-scaffold/app-lib"
 import React from "react"
+import ActionPanel, {
+	type ActionPanelSide,
+} from "../components/vault/ActionPanel"
 import LifecyclePanel, {
 	type LifecycleStep,
 } from "../components/vault/LifecyclePanel"
 import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
+import PositionCard from "../components/vault/PositionCard"
+import { type RequestEntry } from "../components/vault/RequestCard"
+import RequestList from "../components/vault/RequestList"
 import typeStyles from "../styles/type.module.css"
 import styles from "./VaultPreview.module.css"
 
+const vaultName = "Operator vault name"
+const vaultAddress = "CB4AQ7XKPMWQ4ZDXKR2NHVUJZ9F49K2T"
+
+const shareNav = 1.0342
+const tokenBalance = 2450
+const shareBalance = 1000
+
+const shortenAddress = (address: string) =>
+	`${address.slice(0, 4)}…${address.slice(-4)}`
+
+const parseAmount = (raw: string): number | null => {
+	const value = Number(raw.replace(/,/g, ""))
+	return Number.isFinite(value) && value > 0 ? value : null
+}
+
 const metrics: [Metric, Metric, Metric, Metric] = [
+	{ label: "Share price", value: "1.0342", note: "NAV of 31 Aug 2026" },
 	{
-		label: "Net assets",
-		value: "23,310.00",
-		note: "On-chain reserve + custodian",
+		label: "Liquid reserve",
+		value: "18,400.00",
+		note: "TOKEN the vault holds now",
 	},
 	{
-		label: "Total supply",
-		value: "22,539.16",
-		note: "vTOKEN issued, escrow included",
+		label: "Committed",
+		value: "6,200.00",
+		note: "TOKEN owed on priced claims",
 	},
-	{ label: "Share price", value: "1.0342", note: "Attested 31 Aug 2026" },
-	{ label: "Open epoch", value: "E-18", note: "Takes new requests" },
+	{
+		label: "Uncovered · vault",
+		value: "0.00",
+		note: "Every claim is covered",
+	},
 ]
 
-const unreadMetrics = metrics.map((metric) => ({
-	...metric,
-	value: null,
-	note: "Not read",
-})) as [Metric, Metric, Metric, Metric]
-
-const subscribeSteps: [LifecycleStep, LifecycleStep, LifecycleStep] = [
+const settlementSteps: LifecycleStep[] = [
 	{
-		title: "Request subscription",
+		title: "Request",
 		actor: "YOU",
-		body: "Your TOKEN joins the open epoch and sits in escrow.",
+		body: "Your TOKEN or shares are locked in the batch that is open. One request per side per batch.",
 	},
 	{
 		title: "Priced",
-		actor: "NEXT ATTESTATION",
-		body: "The epoch is sealed, then priced at the next attested value.",
+		actor: "THE ORACLE",
+		body: "The batch is closed, then priced as soon as the oracle can price it. One price for everyone in it.",
 	},
 	{
-		title: "Claim your shares",
+		title: "Claimable",
+		actor: "THE VAULT",
+		body: "A share claim is claimable at once. A cash claim waits for the reserve to cover it in full.",
+	},
+	{
+		title: "Claimed",
 		actor: "YOU",
-		body: "Claim to receive the shares in your wallet.",
+		body: "You take the shares or the cash. Shares need an allowlisted address, cash does not.",
 	},
 ]
 
-const redeemSteps: [LifecycleStep, LifecycleStep, LifecycleStep] = [
+const claimableEntry: RequestEntry = {
+	id: 4,
+	inLabel: "Subscription",
+	inAmount: "1,000.00 TOKEN",
+	inMeta: "Requested 5 Sep 2026",
+	outLabel: "You claim",
+	outAmount: "966.93 vTOKEN",
+	outMeta: "Priced 5 Sep 2026",
+	outTone: "ok",
+	state: "Claimable",
+	tone: "claimable",
+	actions: [{ label: "Claim", kind: "primary", onPress: () => {} }],
+}
+
+const waitingEntry: RequestEntry = {
+	id: 3,
+	inLabel: "Redemption",
+	inAmount: "12,000.00 vTOKEN",
+	inMeta: "Requested 28 Aug 2026",
+	outLabel: "Owed to you",
+	outAmount: "12,348.00 TOKEN",
+	outMeta: "Priced 5 Sep 2026",
+	state: "Not payable yet",
+	tone: "blocked",
+	actions: [{ label: "Claim", kind: "unavailable", onPress: () => {} }],
+	tooltip: {
+		label: "Why you cannot claim this yet",
+		text: "Your price will not change. A claim pays once the reserve covers its full amount: it covers 4,200.00 TOKEN of this claim and 8,148.00 TOKEN is still needed. The reserve is not held for this claim: the first uncovered claim submitted takes it. Awaiting a top-up, with no date promised.",
+	},
+}
+
+const openEntries: RequestEntry[] = [
 	{
-		title: "Request redemption",
-		actor: "YOU",
-		body: "Your shares join the open epoch and sit in escrow.",
+		id: 1,
+		inLabel: "Subscription",
+		inAmount: "1,000.00 TOKEN",
+		inMeta: "Requested 10 Sep 2026",
+		outLabel: "",
+		outAmount: "≈ 966.93 vTOKEN",
+		outTone: "word",
+		state: "Pending",
+		tone: "pending",
+		actions: [{ label: "Cancel request", kind: "ordinary", onPress: () => {} }],
 	},
 	{
-		title: "Priced",
-		actor: "NEXT ATTESTATION",
-		body: "The epoch is sealed, then priced once the treasury covers it.",
-	},
-	{
-		title: "Claim your TOKEN",
-		actor: "YOU",
-		body: "Claim to receive the cash in your wallet.",
+		id: 2,
+		inLabel: "Redemption",
+		inAmount: "500.00 vTOKEN",
+		inMeta: "Requested —",
+		outLabel: "",
+		outAmount: "≈ 517.10 TOKEN",
+		outTone: "word",
+		state: "Pending",
+		tone: "pending",
+		actions: [
+			{ label: "Cancelling ended", kind: "unavailable", onPress: () => {} },
+		],
 	},
 ]
 
-const VaultPreview: React.FC = () => (
-	<div className={styles.page}>
-		<div>
-			<h1 className={typeStyles.vaultName}>Component preview</h1>
-			<p className={`${typeStyles.body} ${styles.intro}`}>
-				Static props, no wallet and no contract reads. This page exists to
-				review the vault components while the data layer is built.
-			</p>
-		</div>
+const requestEntries: RequestEntry[] = [
+	claimableEntry,
+	waitingEntry,
+	...openEntries,
+]
 
-		<section className={styles.section}>
-			<h2 className={typeStyles.sectionHead}>Metrics strip</h2>
-			<MetricsStrip metrics={metrics} />
-			<p className={`${typeStyles.footnote} ${styles.caption}`}>
-				Every figure unreadable
-			</p>
-			<MetricsStrip metrics={unreadMetrics} />
-		</section>
+const VaultPreview: React.FC = () => {
+	const [openTooltipId, setOpenTooltipId] = React.useState<
+		string | number | null
+	>(null)
+	const [copied, setCopied] = React.useState(false)
+	const [actionSide, setActionSide] =
+		React.useState<ActionPanelSide>("subscribe")
+	const [actionAmount, setActionAmount] = React.useState("")
 
-		<section className={styles.section}>
-			<h2 className={typeStyles.sectionHead}>Lifecycle panel</h2>
-			<div className={styles.pair}>
-				<LifecyclePanel
-					title="Subscription lifecycle"
-					progress="Step 2 of 3"
-					steps={subscribeSteps}
-					currentStep={2}
-				/>
-				<LifecyclePanel
-					title="Redemption lifecycle"
-					progress="Nothing open"
-					steps={redeemSteps}
-					currentStep={null}
-				/>
+	const toggleTooltip = (id: string | number) => {
+		setOpenTooltipId((current) => (current === id ? null : id))
+	}
+
+	const changeActionSide = (side: ActionPanelSide) => {
+		setActionSide(side)
+		setActionAmount("")
+	}
+
+	const isSubscribe = actionSide === "subscribe"
+	const inTicker = isSubscribe ? "TOKEN" : "vTOKEN"
+	const outTicker = isSubscribe ? "vTOKEN" : "TOKEN"
+	const balance = isSubscribe ? tokenBalance : shareBalance
+	const parsedAmount = parseAmount(actionAmount)
+	const estimateValue =
+		parsedAmount === null
+			? "≈ —"
+			: `≈ ${formatAmount(
+					isSubscribe ? parsedAmount / shareNav : parsedAmount * shareNav,
+				)} ${outTicker}`
+	const copyAddress = async () => {
+		try {
+			await navigator.clipboard.writeText(vaultAddress)
+			setCopied(true)
+			setTimeout(() => setCopied(false), 1500)
+		} catch {
+			// Clipboard access can be denied by the browser; the address is still visible.
+		}
+	}
+
+	return (
+		<div className={styles.page}>
+			<div className={styles.identity}>
+				<h1 className={typeStyles.vaultName}>{vaultName}</h1>
+				<div className={styles.address}>
+					<span className={`${typeStyles.railValue} ${styles.addressValue}`}>
+						{shortenAddress(vaultAddress)}
+					</span>
+					<button
+						type="button"
+						className={`${typeStyles.label} ${styles.copyButton}`}
+						onClick={copyAddress}
+					>
+						{copied ? "Copied" : "Copy"}
+					</button>
+				</div>
 			</div>
-		</section>
-	</div>
-)
+
+			<MetricsStrip metrics={metrics} />
+
+			<div className={styles.body}>
+				<div className={styles.main}>
+					<RequestList
+						heading="Your requests"
+						countLabel={(open) => `${open} open`}
+						entries={requestEntries}
+						emptyMessage="Your requests appear here."
+						openTooltipId={openTooltipId}
+						onToggleTooltip={toggleTooltip}
+					/>
+
+					<section className={styles.section}>
+						<h2 className={typeStyles.sectionHead}>Your position</h2>
+						<PositionCard
+							label="Your shares"
+							value="1,000.00 vTOKEN"
+							sub="In your wallet"
+						/>
+					</section>
+
+					<LifecyclePanel
+						title="How a request settles"
+						progress="Every request, both sides"
+						steps={settlementSteps}
+						currentStep={null}
+					/>
+				</div>
+
+				<aside className={styles.side} aria-label="Actions">
+					<ActionPanel
+						side={actionSide}
+						onSideChange={changeActionSide}
+						heading={
+							isSubscribe ? "Request a subscription" : "Request a redemption"
+						}
+						note="Your request joins the batch that is currently open."
+						amount={actionAmount}
+						onAmountChange={setActionAmount}
+						amountLabel={
+							isSubscribe ? "Amount to subscribe" : "Amount to redeem"
+						}
+						ticker={inTicker}
+						balance={balance}
+						balanceLabel={`Balance ${formatAmount(balance)}`}
+						estimate={{
+							label: isSubscribe ? "Estimated shares" : "Estimated proceeds",
+							value: estimateValue,
+						}}
+						submitLabel={isSubscribe ? "Subscribe" : "Redeem"}
+						onSubmit={() => setActionAmount("")}
+					/>
+				</aside>
+			</div>
+		</div>
+	)
+}
 
 export default VaultPreview
