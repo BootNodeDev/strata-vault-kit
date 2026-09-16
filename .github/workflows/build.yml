@@ -65,6 +65,11 @@ jobs:
           else
             echo "stellar-scaffold already installed. Clear cache to force reinstall."
           fi
+      - name: Install stellar CLI
+        run: |
+          if ! command -v stellar &> /dev/null; then
+            cargo binstall --locked stellar-cli@27.0.0
+          fi
       - name: Start Stellar local network
         # No tagged releases upstream, so this pins main as read on 2026-08-14
         uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
