@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, it } from "vitest"
+import { setTimeout as sleep } from "node:timers/promises"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { pay, trustline } from "./lib/accounts.js"
 import { assetsFor, price, sharesFor, units } from "./lib/amounts.js"
@@ -444,6 +445,7 @@ describe("a sealed epoch while the feed is down", () => {
 			}),
 		)
 		expect(await closeEpoch()).toBe(epoch)
+		await attest(c, secondPrice)
 		const v = vault(c, first)
 		expectRefused(
 			await v.cancel_deposit({ from: first.publicKey(), epoch_id: epoch }),
@@ -464,8 +466,8 @@ describe("a sealed epoch while the feed is down", () => {
 		expect((await feed.state()).result.tag).toBe("Paused")
 		expectRefused(
 			await vault(c, outsider).fulfill_epoch({ epoch_id: epoch }),
-			feed,
-			"NotConsumable",
+			reader,
+			"FeedNotValid",
 		)
 	})
 
@@ -503,5 +505,103 @@ describe("a sealed epoch while the feed is down", () => {
 			reader,
 			"RequestNotFound",
 		)
+	})
+})
+
+describe("the notice period and valuation age rules", () => {
+	const noticeSecs = 10n
+	let epochA = 0n
+	let epochB = 0n
+
+	beforeAll(async () => {
+		await send(
+			oracle(c, governance).set_ripcord({
+				paused: false,
+				caller: governance.publicKey(),
+			}),
+		)
+		await send(
+			vault(c, governance).set_notice({
+				secs: noticeSecs,
+				caller: governance.publicKey(),
+			}),
+		)
+	})
+
+	afterAll(async () => {
+		await send(
+			vault(c, governance).set_notice({
+				secs: 0n,
+				caller: governance.publicKey(),
+			}),
+		)
+	})
+
+	it("records priceable_at at close and holds it through the notice", async () => {
+		await send(
+			vault(c, first).request_deposit({
+				from: first.publicKey(),
+				amount: usdc(100),
+			}),
+		)
+		epochA = await closeEpoch()
+		const info = await epochOf(epochA)
+		expect(info?.closed_at).toBeGreaterThan(0n)
+		expect(info?.priceable_at).toBe(info!.closed_at + noticeSecs)
+
+		expectRefused(
+			await vault(c, outsider).fulfill_epoch({ epoch_id: epochA }),
+			reader,
+			"NoticeNotElapsed",
+		)
+	})
+
+	it("refuses pricing after the notice when the valuation is before the close", async () => {
+		const info = await epochOf(epochA)
+		const now = BigInt(Math.floor(Date.now() / 1000))
+		const waitMs = Math.max(0, Number(info!.priceable_at - now + 2n) * 1000)
+		if (waitMs > 0) {
+			await sleep(waitMs)
+		}
+		expectRefused(
+			await vault(c, outsider).fulfill_epoch({ epoch_id: epochA }),
+			reader,
+			"AttestationBeforeClose",
+		)
+	})
+
+	it("prices once a valuation lands after the close", async () => {
+		await attest(c, secondPrice)
+		expect(await fulfill(epochA)).toBe(secondPrice)
+		expect((await epochOf(epochA))?.share_price).toBe(secondPrice)
+	})
+
+	it("refuses cancellation while the notice is running once price is readable", async () => {
+		await send(
+			vault(c, first).request_deposit({
+				from: first.publicKey(),
+				amount: usdc(100),
+			}),
+		)
+		epochB = await closeEpoch()
+		await attest(c, secondPrice)
+		const v = vault(c, first)
+		expectRefused(
+			await v.cancel_deposit({ from: first.publicKey(), epoch_id: epochB }),
+			v,
+			"PriceAvailable",
+		)
+		expectRefused(
+			await vault(c, outsider).fulfill_epoch({ epoch_id: epochB }),
+			reader,
+			"NoticeNotElapsed",
+		)
+		const info = await epochOf(epochB)
+		const now = BigInt(Math.floor(Date.now() / 1000))
+		const waitMs = Math.max(0, Number(info!.priceable_at - now + 2n) * 1000)
+		if (waitMs > 0) {
+			await sleep(waitMs)
+		}
+		expect(await fulfill(epochB)).toBe(secondPrice)
 	})
 })
