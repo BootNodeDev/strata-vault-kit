@@ -123,3 +123,9 @@ jobs:
       - name: Run smoke tests
         run: npx playwright test
         working-directory: e2e
+      - name: Deploy the vault set to the local network
+        run: npm run deploy -w scripts/harness
+        env:
+          HARNESS_NETWORK: local
+      - name: Typecheck the harness workspace
+        run: npm run typecheck -w scripts/harness
