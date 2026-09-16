@@ -75,8 +75,7 @@ fn a_claim_waits_while_the_capital_is_deployed() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &500);
-    f.vault.set_custodian(&f.custodian, &f.admin);
-    f.vault.deploy_to_custodian(&f.treasury, &1_000);
+    f.empty_reserve();
 
     f.close_epoch();
     f.attest(wad(2));

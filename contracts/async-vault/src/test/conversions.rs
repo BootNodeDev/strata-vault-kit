@@ -1,4 +1,6 @@
 use super::*;
+use proptest::prelude::*;
+use stellar_contract_utils::math::i128_fixed_point::checked_mul_div_floor;
 
 #[test]
 fn a_fractional_share_price_is_representable() {
@@ -43,8 +45,34 @@ fn a_conversion_that_cannot_fit_i128_is_rejected() {
     let whale = f.investor(i128::MAX);
 
     f.vault.request_deposit(&whale, &(i128::MAX / 2));
-    f.fulfill_epoch(1);
+    let epoch = f.close_epoch();
+    f.attest(1);
 
-    assert!(f.vault.try_claim_deposit(&whale, &1).is_err());
-    assert!(!f.vault.get_deposit_request(&1, &whale).unwrap().claimed);
+    refused(
+        f.vault.try_fulfill_epoch(&epoch),
+        VaultError::AmountTooLarge,
+    );
+}
+
+#[test]
+fn conversion_arithmetic_holds_its_rounding_direction() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    // Inputs are capped at 10^15 so products fit i128 without overflow.
+    // The property is scale-independent.
+    proptest!(|(
+        shares in 0i128..=1_000_000_000_000_000i128,
+        price in 1i128..=1_000_000_000_000_000i128,
+    )| {
+        let assets = checked_mul_div_floor(&env, &shares, &price, &WAD_SCALE).unwrap();
+
+        // The vault never pays out more than the exact rational amount.
+        prop_assert!(assets * WAD_SCALE <= shares * price);
+        // And never less than it has to: the floor is tight.
+        prop_assert!((assets + 1) * WAD_SCALE > shares * price);
+        // Depositing and redeeming straight back never manufactures value.
+        let back = checked_mul_div_floor(&env, &assets, &WAD_SCALE, &price).unwrap();
+        prop_assert!(back <= shares);
+    });
 }

@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_request_deposit_updates_epoch_and_user_state() {
+fn request_deposit_updates_epoch_and_user_state() {
     let f = setup();
     let user = f.investor(1_000);
 
@@ -90,7 +90,7 @@ fn an_investor_without_a_request_reads_as_none() {
 }
 
 #[test]
-fn test_user_can_claim_deposit_and_receive_shares() {
+fn a_user_can_claim_deposit_and_receive_shares() {
     let f = setup();
     let user = f.investor(1_000);
 
@@ -106,7 +106,7 @@ fn test_user_can_claim_deposit_and_receive_shares() {
 
 #[test]
 #[should_panic(expected = "#6035")]
-fn test_cannot_claim_twice() {
+fn a_deposit_cannot_be_claimed_twice() {
     let f = setup();
     let user = f.investor(1_000);
 
