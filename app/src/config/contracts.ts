@@ -1,5 +1,4 @@
 import {
-	asset,
 	asyncVault,
 	compliance,
 	identityVerifier,
@@ -22,7 +21,6 @@ export const contractRows: AddressRow[] = [
 		source: "config",
 		address: navOracle.options.contractId,
 	},
-	{ label: "Asset", source: "config", address: asset.options.contractId },
 	{
 		label: "Identity verifier",
 		source: "config",

@@ -26,15 +26,17 @@ describe("AddressList", () => {
 
 		render(<AddressList groups={groups} />)
 		const [contracts, authorities] = screen.getAllByRole("list")
-		const [vault, asset] = within(contracts).getAllByRole("listitem")
+		const [vault, asset] = within(contracts!).getAllByRole("listitem")
 
-		within(vault).getByRole("button", { name: "Copy" }).click()
+		within(vault!).getByRole("button", { name: "Copy" }).click()
 
 		expect(writeText).toHaveBeenCalledWith("CVAULTADDRESS1234")
-		await within(vault).findByRole("button", { name: "Copied" })
-		expect(within(asset).getByRole("button", { name: "Copy" })).toBeTruthy()
+		await within(vault!).findByRole("button", { name: "Copied" })
+		expect(within(asset!).getByRole("button", { name: "Copy" })).toBeTruthy()
 
-		const [governance] = within(authorities).getAllByRole("listitem")
-		expect(within(governance).getByText("Not read from the vault")).toBeTruthy()
+		const [governance] = within(authorities!).getAllByRole("listitem")
+		expect(
+			within(governance!).getByText("Not read from the vault"),
+		).toBeTruthy()
 	})
 })
