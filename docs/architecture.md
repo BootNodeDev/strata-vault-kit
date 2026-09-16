@@ -184,10 +184,11 @@ not assumed.
 
 Every position change is a request with three states: **pending, priced,
 claimed**. Requests join the open epoch. Sealing an epoch closes it to new
-requests and opens the next; pricing it reads the oracle and fixes one share
-price for every request it holds. Pricing is permissionless and refuses a feed
-that is not valid, so a sealed epoch waits rather than settling at a stale
-price, and no investor can choose their price.
+requests and opens the next; it then waits out a notice set by governance before
+it can be priced, and every request in the epoch waits the same. Pricing it reads
+the oracle and fixes one share price for every request it holds. Pricing is
+permissionless and refuses a feed that is not valid, so a sealed epoch waits
+rather than settling at a stale price, and no investor can choose their price.
 
 Sealing is gated on the manager role today. It is meant to become permissionless
 once a minimum epoch duration bounds it; until then, whoever seals chooses the
@@ -200,11 +201,11 @@ batch boundary, though not the price it receives.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set
   at the epoch's price, and the shares are minted and held for the investor.
 - Cancellation: atomic, and returns the escrowed asset in full. Open while the
-  epoch is, since no price applies to it yet. Once sealed it is refused while
-  the feed could price the epoch, because the price is then already readable and
-  cancelling would be declining it. A sealed epoch the feed cannot price is
-  still cancellable, which is what gives a deposit a way out of an epoch that is
-  stuck.
+  epoch is, since no price applies to it yet. Once sealed it is refused once a
+  valuation accepted at or after the close makes the price readable, because
+  cancelling would be declining a price already seen. A sealed epoch whose price
+  is not readable is still cancellable, which is what gives a deposit a way out
+  of an epoch that is stuck.
 - Share claim: re-verifies the receiver and delivers the shares. If verification
   fails, the position remains shares and exits through the redemption lifecycle
   at the then-current price. No nominal refund exists after pricing.
@@ -274,6 +275,8 @@ ordered by their acceptance time on the ledger. The price must stay within
 configured bounds, a minimum cooldown bounds frequency, and the deviation cap is
 directional: the upward bound is mandatory and non-zero, the downward bound is
 optional, and leaving it unset lets a loss of any size land in one attestation.
+An epoch is never priced against a valuation accepted before it closed, and the
+oracle's cooldown therefore bounds how soon a closed epoch can be priced.
 
 **Freshness and pause:** each attestation opens a validity window; when it
 lapses the feed is stale and new requests stop being priced. Guardian or
