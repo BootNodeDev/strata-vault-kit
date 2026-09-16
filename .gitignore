@@ -44,6 +44,7 @@ app-lib/clients/*
 
 # Local agent tooling — per-developer.
 .claude/
+.codex/
 .mcp.json
 .ignore
 .atl/
