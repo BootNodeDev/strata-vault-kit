@@ -21,3 +21,6 @@ playwright-report
 
 # Markdown — pipe padding and list spacing change nothing in the render
 *.md
+
+scripts/harness/deployed.*.json
+scripts/harness/runs

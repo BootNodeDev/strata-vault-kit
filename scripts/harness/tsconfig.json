@@ -1,0 +1,23 @@
+{
+	"extends": "@theahaco/ts-config/typescript.lib",
+	"compilerOptions": {
+		"lib": ["ES2023"],
+		"types": ["node"],
+		"noEmit": true,
+		"declaration": false,
+		"declarationMap": false,
+		"sourceMap": false,
+		"noUncheckedIndexedAccess": true,
+		"exactOptionalPropertyTypes": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"skipLibCheck": true
+	},
+	"include": [
+		"deploy.ts",
+		"build-clients.ts",
+		"lib/**/*.ts",
+		"*.test.ts",
+		"vitest.config.ts"
+	]
+}
