@@ -133,3 +133,14 @@ jobs:
         run: npm run test:happy-path -w scripts/harness
         env:
           HARNESS_NETWORK: local
+      - name: Run the vault guards on the local network
+        run: npm run test:guards -w scripts/harness
+        env:
+          HARNESS_NETWORK: local
+      - name: Keep the harness report when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-runs
+          path: scripts/harness/runs/
+          if-no-files-found: ignore
