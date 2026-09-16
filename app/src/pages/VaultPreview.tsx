@@ -1,8 +1,9 @@
-import { formatAmount } from "@stellar-scaffold/app-lib"
+import { formatAmount, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
 import ActionPanel, {
 	type ActionPanelSide,
 } from "../components/vault/ActionPanel"
+import AddressList, { type AddressRow } from "../components/vault/AddressList"
 import LifecyclePanel, {
 	type LifecycleStep,
 } from "../components/vault/LifecyclePanel"
@@ -10,18 +11,34 @@ import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
 import { type RequestEntry } from "../components/vault/RequestCard"
 import RequestList from "../components/vault/RequestList"
+import { contractRows, vaultContractId } from "../config/contracts"
 import typeStyles from "../styles/type.module.css"
 import styles from "./VaultPreview.module.css"
 
 const vaultName = "Operator vault name"
-const vaultAddress = "CB4AQ7XKPMWQ4ZDXKR2NHVUJZ9F49K2T"
 
 const shareNav = 1.0342
 const tokenBalance = 2450
 const shareBalance = 1000
 
-const shortenAddress = (address: string) =>
-	`${address.slice(0, 4)}…${address.slice(-4)}`
+const sections: { id: string; label: string }[] = [
+	{ id: "requests", label: "Requests" },
+	{ id: "position", label: "Position" },
+	{ id: "lifecycle", label: "Lifecycle" },
+	{ id: "actions", label: "Actions" },
+]
+
+// The six roles the vault is constructed with.
+// TODO: read these from the vault. Compliance and attester have no public view,
+// so listing them needs a contract change first.
+const authorityRows: AddressRow[] = [
+	{ label: "Governance", source: "placeholder" },
+	{ label: "Manager", source: "placeholder" },
+	{ label: "Treasury", source: "placeholder" },
+	{ label: "Guardian", source: "placeholder" },
+	{ label: "Compliance", source: "placeholder" },
+	{ label: "Attester", source: "placeholder" },
+]
 
 const parseAmount = (raw: string): number | null => {
 	const value = Number(raw.replace(/,/g, ""))
@@ -167,7 +184,7 @@ const VaultPreview: React.FC = () => {
 				)} ${outTicker}`
 	const copyAddress = async () => {
 		try {
-			await navigator.clipboard.writeText(vaultAddress)
+			await navigator.clipboard.writeText(vaultContractId)
 			setCopied(true)
 			setTimeout(() => setCopied(false), 1500)
 		} catch {
@@ -181,7 +198,7 @@ const VaultPreview: React.FC = () => {
 				<h1 className={typeStyles.vaultName}>{vaultName}</h1>
 				<div className={styles.address}>
 					<span className={`${typeStyles.railValue} ${styles.addressValue}`}>
-						{shortenAddress(vaultAddress)}
+						{shortAddress(vaultContractId)}
 					</span>
 					<button
 						type="button"
@@ -193,20 +210,46 @@ const VaultPreview: React.FC = () => {
 				</div>
 			</div>
 
+			<div className={styles.explainer}>
+				<p className={`${typeStyles.body} ${styles.explainerBody}`}>
+					A share is a claim on an off-chain asset whose price is set by an
+					oracle. Entering or exiting a position happens by submitting a
+					request, which is priced and settled in a batch — not by an instant
+					trade.
+				</p>
+			</div>
+
+			<nav aria-label="Sections" className={styles.nav}>
+				{sections.map((section) => (
+					<a
+						key={section.id}
+						href={`#${section.id}`}
+						className={`${typeStyles.label} ${styles.navLink}`}
+					>
+						{section.label}
+					</a>
+				))}
+			</nav>
+
 			<MetricsStrip metrics={metrics} />
 
 			<div className={styles.body}>
 				<div className={styles.main}>
-					<RequestList
-						heading="Your requests"
-						countLabel={(open) => `${open} open`}
-						entries={requestEntries}
-						emptyMessage="Your requests appear here."
-						openTooltipId={openTooltipId}
-						onToggleTooltip={toggleTooltip}
-					/>
+					<div id="requests" className={styles.anchor}>
+						<RequestList
+							heading="Your requests"
+							countLabel={(open) => `${open} open`}
+							entries={requestEntries}
+							emptyMessage="Your requests appear here."
+							openTooltipId={openTooltipId}
+							onToggleTooltip={toggleTooltip}
+						/>
+					</div>
 
-					<section className={styles.section}>
+					<section
+						id="position"
+						className={`${styles.section} ${styles.anchor}`}
+					>
 						<h2 className={typeStyles.sectionHead}>Your position</h2>
 						<PositionCard
 							label="Your shares"
@@ -215,15 +258,28 @@ const VaultPreview: React.FC = () => {
 						/>
 					</section>
 
-					<LifecyclePanel
-						title="How a request settles"
-						progress="Every request, both sides"
-						steps={settlementSteps}
-						currentStep={null}
+					<div id="lifecycle" className={styles.anchor}>
+						<LifecyclePanel
+							title="How a request settles"
+							progress="Every request, both sides"
+							steps={settlementSteps}
+							currentStep={null}
+						/>
+					</div>
+
+					<AddressList
+						groups={[
+							{ title: "Contracts", rows: contractRows },
+							{ title: "Authorities", rows: authorityRows },
+						]}
 					/>
 				</div>
 
-				<aside className={styles.side} aria-label="Actions">
+				<aside
+					id="actions"
+					className={`${styles.side} ${styles.anchor}`}
+					aria-label="Actions"
+				>
 					<ActionPanel
 						side={actionSide}
 						onSideChange={changeActionSide}

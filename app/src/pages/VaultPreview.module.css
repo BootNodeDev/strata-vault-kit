@@ -38,6 +38,32 @@
 	color: var(--vault-ink);
 }
 
+.explainer {
+	max-width: 640px;
+}
+
+.explainerBody {
+	color: var(--vault-text-muted);
+}
+
+.nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 14px;
+}
+
+.navLink {
+	color: var(--vault-text-muted);
+}
+
+.navLink:hover {
+	color: var(--vault-ink);
+}
+
+.anchor {
+	scroll-margin-top: 24px;
+}
+
 .section {
 	display: flex;
 	flex-direction: column;
