@@ -50,9 +50,9 @@ constructor_args = '--asset share_token --share_token share_token --oracle nav_o
 # contract> --`, so a line can only call the contract whose block it sits in.
 # The vault needs the share token's manager role and needs allowlisting on the
 # identity verifier, and both target other contracts while requiring the vault's
-# own address, which only exists after it deploys last. A post-deploy script owns
-# them. Until it lands, a dev deployment can take deposits but can neither
-# deliver shares nor return them. Tracked in #108.
+# own address, which only exists after it deploys last. The deploy in
+# scripts/harness performs and verifies both. A deployment made only from
+# this file can take deposits but can neither deliver shares nor return them.
 
 
 ### Staging environment configuration
@@ -65,7 +65,7 @@ name = "testnet-user"
 default = true
 
 # Deployed contract addresses go here as `name = { id = "C..." }`. The deploy
-# script (#15) is what emits them.
+# in scripts/harness is what emits them.
 [staging.contracts]
 
 ### Production environment configuration
