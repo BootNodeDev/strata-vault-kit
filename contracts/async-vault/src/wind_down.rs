@@ -1,11 +1,11 @@
 use bindings::ShareClient;
-use soroban_sdk::{contracttype, panic_with_error, Address, Env};
+use soroban_sdk::{contracttype, panic_with_error, token::TokenClient, Address, Env};
 use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
 use crate::error::VaultError;
 use crate::event::{
-    WindDownActivated, WindDownDelaySet, WindDownProposalCancelled, WindDownProposed,
-    WindDownRoundFinalized,
+    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
+    WindDownProposed, WindDownRoundFinalized,
 };
 use crate::keys::DataKey;
 use crate::state;
@@ -190,4 +190,83 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
     .publish(e);
 
     credited
+}
+
+pub(crate) fn position(e: &Env, holder: &Address) -> WindDownPosition {
+    storage::get_persistent(e, &DataKey::WindDownPosition(holder.clone())).unwrap_or(
+        WindDownPosition {
+            entitlement: 0,
+            watermark: 0,
+        },
+    )
+}
+
+/// What this holder would be paid if they claimed now, surrendering whatever
+/// they hold.
+pub(crate) fn claimable(e: &Env, holder: &Address) -> i128 {
+    if info(e).map(|wd| wd.round).unwrap_or(0) == 0 {
+        return 0;
+    }
+
+    let share_token = state::get_addr(e, &DataKey::ShareToken);
+    let held = ShareClient::new(e, &share_token).balance(holder);
+    let p = position(e, holder);
+    let entitlement = p.entitlement.saturating_add(held);
+
+    checked_mul_div_floor(e, &entitlement, &(acc(e) - p.watermark), &WAD_SCALE).unwrap_or(0)
+}
+
+pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
+    holder.require_auth();
+
+    let round = info(e).map(|wd| wd.round).unwrap_or(0);
+    if round == 0 {
+        panic_with_error!(e, VaultError::DistributionNotStarted);
+    }
+
+    let vault = e.current_contract_address();
+    let share_token = state::get_addr(e, &DataKey::ShareToken);
+    let share = ShareClient::new(e, &share_token);
+
+    let surrendered = share.balance(holder);
+    let mut p = position(e, holder);
+    p.entitlement = p
+        .entitlement
+        .checked_add(surrendered)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+
+    let acc_per_share = acc(e);
+    let assets = checked_mul_div_floor(
+        e,
+        &p.entitlement,
+        &(acc_per_share - p.watermark),
+        &WAD_SCALE,
+    )
+    .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+
+    if surrendered == 0 && assets == 0 {
+        panic_with_error!(e, VaultError::NoEntitlement);
+    }
+
+    p.watermark = acc_per_share;
+    storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
+
+    if surrendered > 0 {
+        share.burn(holder, &surrendered, &vault);
+    }
+
+    if assets > 0 {
+        storage::set_instance(e, &DataKey::WindDownOwed, &(owed(e) - assets));
+        let asset = state::get_addr(e, &DataKey::Asset);
+        TokenClient::new(e, &asset).transfer(&vault, holder, &assets);
+    }
+
+    WindDownClaimed {
+        holder: holder.clone(),
+        surrendered,
+        assets,
+    }
+    .publish(e);
+
+    assets
 }

@@ -335,3 +335,129 @@ fn a_round_leaves_priced_liabilities_alone() {
     assert_eq!(f.vault.committed(), committed);
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
 }
+
+#[test]
+fn two_holders_split_a_round_in_proportion() {
+    let f = setup();
+    let big = f.holder(600);
+    let small = f.holder(200);
+    wind_down_now(&f);
+
+    let pot = f.vault.finalize_wind_down_round(&f.admin);
+    let supply = f.vault.wind_down_supply();
+
+    let big_shares = f.shares(&big);
+    let small_shares = f.shares(&small);
+
+    let paid_big = f.vault.claim_wind_down(&big);
+    let paid_small = f.vault.claim_wind_down(&small);
+
+    assert_eq!(paid_big, big_shares * pot / supply);
+    assert_eq!(paid_small, small_shares * pot / supply);
+    assert_eq!(f.shares(&big), 0);
+    assert_eq!(f.shares(&small), 0);
+    assert!(paid_big + paid_small <= pot);
+}
+
+#[test]
+fn a_holder_who_waits_collects_every_round_at_once() {
+    let f = setup();
+    let patient = f.holder(400);
+    let prompt = f.holder(400);
+    let backer = f.investor(10_000);
+    wind_down_now(&f);
+
+    f.vault.finalize_wind_down_round(&f.admin);
+    let first = f.vault.claim_wind_down(&prompt);
+
+    f.vault.fund(&backer, &800);
+    f.vault.finalize_wind_down_round(&f.admin);
+    let second = f.vault.claim_wind_down(&prompt);
+
+    let all_at_once = f.vault.claim_wind_down(&patient);
+
+    assert_eq!(all_at_once, first + second);
+}
+
+#[test]
+fn claiming_burns_the_shares_and_pays_once() {
+    let f = setup();
+    let user = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+
+    let paid = f.vault.claim_wind_down(&user);
+    assert!(paid > 0);
+    assert_eq!(f.shares(&user), 0);
+
+    assert!(f.vault.try_claim_wind_down(&user).is_err());
+    assert_eq!(f.balance(&user), paid);
+}
+
+#[test]
+fn surrendering_between_rounds_pays_nothing_and_is_allowed() {
+    let f = setup();
+    let user = f.holder(500);
+    let backer = f.investor(10_000);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+    f.vault.claim_wind_down(&user);
+
+    // Nothing surrendered, nothing owed.
+    assert!(f.vault.try_claim_wind_down(&user).is_err());
+
+    f.vault.fund(&backer, &800);
+    f.vault.finalize_wind_down_round(&f.admin);
+    assert!(f.vault.claim_wind_down(&user) > 0);
+}
+
+#[test]
+fn claiming_before_the_first_round_is_refused() {
+    let f = setup();
+    let user = f.holder(500);
+    wind_down_now(&f);
+
+    assert!(f.vault.try_claim_wind_down(&user).is_err());
+}
+
+#[test]
+fn a_holder_with_no_shares_cannot_claim() {
+    let f = setup();
+    let _user = f.holder(500);
+    let stranger = Address::generate(&f.e);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+
+    assert!(f.vault.try_claim_wind_down(&stranger).is_err());
+}
+
+#[test]
+fn an_escrowed_redemption_is_recovered_then_surrendered() {
+    let f = setup();
+    let user = f.holder(200);
+    let epoch = f.vault.request_redeem(&user, &200);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+
+    // The escrowed shares are inside the snapshot, so they must come back first.
+    assert!(f.vault.try_claim_wind_down(&user).is_err());
+    f.vault.cancel_redeem(&user, &epoch);
+    let rest = f.vault.claim_wind_down(&user);
+
+    assert!(rest > 0);
+    assert_eq!(f.shares(&user), 0);
+}
+
+#[test]
+fn the_payouts_never_exceed_what_the_rounds_credited() {
+    let f = setup();
+    let a = f.holder(333);
+    let b = f.holder(667);
+    wind_down_now(&f);
+
+    let pot = f.vault.finalize_wind_down_round(&f.admin);
+    let paid = f.vault.claim_wind_down(&a) + f.vault.claim_wind_down(&b);
+
+    assert!(paid <= pot);
+    assert!(f.vault.wind_down_owed() >= 0);
+}

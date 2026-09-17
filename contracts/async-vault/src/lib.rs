@@ -24,8 +24,8 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    RedeemClaimed, RedeemRequested, WindDownActivated, WindDownDelaySet, WindDownProposalCancelled,
-    WindDownProposed, WindDownRoundFinalized,
+    RedeemClaimed, RedeemRequested, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
@@ -191,6 +191,16 @@ impl AsyncVault {
 
     pub fn wind_down_acc(e: &Env) -> i128 {
         wind_down::acc(e)
+    }
+
+    /// Surrenders whatever the holder holds and pays their share of every round
+    /// finalised since they last claimed.
+    pub fn claim_wind_down(e: &Env, holder: Address) -> i128 {
+        wind_down::claim(e, &holder)
+    }
+
+    pub fn wind_down_claimable(e: &Env, holder: Address) -> i128 {
+        wind_down::claimable(e, &holder)
     }
 
     #[only_role(caller, "treasury")]
