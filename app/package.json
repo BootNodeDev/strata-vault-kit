@@ -5,7 +5,9 @@
   "private": true,
   "scripts": {
     "dev": "npm start",
+    "prestart": "node ../scripts/generate-addresses.mjs",
     "start": "concurrently --kill-others-on-fail --names stellar,vite -c gray,green --pad-prefix \"stellar scaffold watch --build-clients\" \"vite\"",
+    "prebuild": "node ../scripts/generate-addresses.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",

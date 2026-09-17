@@ -1,5 +1,6 @@
 import React from "react"
 import typeStyles from "../../styles/type.module.css"
+import Info from "../icons/Info"
 import styles from "./RequestCard.module.css"
 
 export type RequestActionKind = "primary" | "ordinary" | "unavailable"
@@ -120,7 +121,7 @@ const RequestCard: React.FC<RequestCardProps> = ({
 							className={styles.tipTrigger}
 							onClick={onToggleTip}
 						>
-							i
+							<Info className={styles.tipIcon} />
 						</button>
 						{tipOpen && (
 							<span role="tooltip" className={styles.tooltip}>

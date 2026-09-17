@@ -9,7 +9,7 @@ const baseEntry: RequestEntry = {
 	inMeta: "Requested 28 Aug 2026",
 	outLabel: "Owed to you",
 	outAmount: "12,348.00 TOKEN",
-	state: "Not payable yet",
+	state: "Awaiting liquidity",
 	tone: "blocked",
 	actions: [],
 }
