@@ -193,3 +193,46 @@ fn only_governance_applies() {
     assert!(f.vault.try_apply_upgrade(&f.guardian).is_err());
     assert!(f.vault.upgrade_proposal().is_some());
 }
+
+#[cfg(feature = "upgrade_wasm")]
+mod with_wasm {
+    use super::*;
+
+    const TARGET: &[u8] =
+        include_bytes!("../../../../target/wasm32v1-none/release/upgrade_target.wasm");
+
+    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/upgrade_target.wasm");
+
+    #[test]
+    fn applying_a_wasm_proposal_replaces_the_code() {
+        let f = setup();
+        let hash = f.e.deployer().upload_contract_wasm(TARGET);
+
+        assert_eq!(f.vault.schema_version(), 1);
+
+        f.vault.propose_upgrade(&hash, &f.admin);
+        f.advance(MIN_UPGRADE_DELAY);
+        f.vault.apply_upgrade(&f.admin);
+
+        let target = Client::new(&f.e, &f.vault.address);
+        assert_eq!(target.schema_version(), 1);
+
+        target.migrate(&f.admin);
+        assert_eq!(target.schema_version(), 2);
+    }
+
+    #[test]
+    fn a_migration_refuses_a_second_run() {
+        let f = setup();
+        let hash = f.e.deployer().upload_contract_wasm(TARGET);
+        f.vault.propose_upgrade(&hash, &f.admin);
+        f.advance(MIN_UPGRADE_DELAY);
+        f.vault.apply_upgrade(&f.admin);
+
+        let target = Client::new(&f.e, &f.vault.address);
+        target.migrate(&f.admin);
+
+        assert!(target.try_migrate(&f.admin).is_err());
+        assert_eq!(target.schema_version(), 2);
+    }
+}
