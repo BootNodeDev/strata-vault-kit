@@ -24,3 +24,4 @@ nav-oracle = { path = "../nav-oracle" }
 share-token = { path = "../share-token" }
 compliance = { path = "../compliance" }
 identity-verifier = { path = "../identity-verifier" }
+proptest = "1"

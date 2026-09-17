@@ -61,7 +61,10 @@ fn a_priced_epoch_is_not_cancellable() {
     f.attest(wad(2));
     f.vault.fulfill_epoch(&epoch);
 
-    assert!(f.vault.try_cancel_deposit(&inv, &epoch).is_err());
+    refused(
+        f.vault.try_cancel_deposit(&inv, &epoch),
+        VaultError::AlreadyPriced,
+    );
 }
 
 #[test]
@@ -192,7 +195,10 @@ fn a_dust_refund_never_takes_committed_money() {
     assert_eq!(f.vault.free_reserve(), 0);
 
     // The refund is refused rather than dipping into the redeemer's money.
-    assert!(f.vault.try_claim_deposit(&dust, &epoch).is_err());
+    refused(
+        f.vault.try_claim_deposit(&dust, &epoch),
+        VaultError::ClaimNotCovered,
+    );
     assert!(f.balance(&f.vault.address) >= f.vault.committed());
 
     // Once there is spare cash, the refund goes through.
@@ -249,7 +255,10 @@ fn a_sealed_epoch_cannot_be_cancelled_while_it_can_be_priced() {
     f.close_epoch();
     f.attest(wad(2));
 
-    assert!(f.vault.try_cancel_deposit(&inv, &epoch).is_err());
+    refused(
+        f.vault.try_cancel_deposit(&inv, &epoch),
+        VaultError::PriceAvailable,
+    );
 
     // The way out is to price it and claim, not to walk away.
     f.vault.fulfill_epoch(&epoch);
