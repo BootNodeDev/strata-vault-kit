@@ -1,10 +1,14 @@
+use bindings::ShareClient;
 use soroban_sdk::{contracttype, panic_with_error, Address, Env};
+use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
 use crate::error::VaultError;
 use crate::event::{
     WindDownActivated, WindDownDelaySet, WindDownProposalCancelled, WindDownProposed,
+    WindDownRoundFinalized,
 };
 use crate::keys::DataKey;
+use crate::state;
 
 /// Ninety days. Long enough for a real announcement period, short enough that
 /// governance cannot set a delay the vault would never outlive.
@@ -115,4 +119,75 @@ pub(crate) fn activate(e: &Env) {
     storage::set_instance(e, &DataKey::WindDown, &wd);
 
     WindDownActivated {}.publish(e);
+}
+
+pub(crate) fn owed(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::WindDownOwed).unwrap_or(0)
+}
+
+pub(crate) fn acc(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::WindDownAcc).unwrap_or(0)
+}
+
+pub(crate) fn supply_snapshot(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::WindDownSupply).unwrap_or(0)
+}
+
+/// Shares that exist or are owed: circulating, escrowed against an unpriced
+/// redemption, and owed by a deposit that has been priced but not claimed.
+fn snapshot_supply(e: &Env) -> i128 {
+    let share_token = state::get_addr(e, &DataKey::ShareToken);
+    ShareClient::new(e, &share_token)
+        .total_supply()
+        .checked_add(state::pending_mint_shares(e))
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+}
+
+pub(crate) fn finalize_round(e: &Env) -> i128 {
+    let mut wd = info(e).unwrap_or_else(|| panic_with_error!(e, VaultError::WindDownNotActive));
+    if wd.status != WindDownStatus::Active {
+        panic_with_error!(e, VaultError::WindDownNotActive);
+    }
+
+    let snapshot = if wd.round == 0 {
+        let s = snapshot_supply(e);
+        storage::set_instance(e, &DataKey::WindDownSupply, &s);
+        s
+    } else {
+        supply_snapshot(e)
+    };
+
+    if snapshot <= 0 {
+        panic_with_error!(e, VaultError::NothingToDistribute);
+    }
+
+    let pot = crate::treasury::free_reserve(e);
+    let delta = checked_mul_div_floor(e, &pot, &WAD_SCALE, &snapshot)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    if delta <= 0 {
+        panic_with_error!(e, VaultError::NothingToDistribute);
+    }
+
+    // What the accumulator actually promises, which is the pot less the dust the
+    // division dropped. The dust stays free and joins the next round.
+    let credited = checked_mul_div_floor(e, &delta, &snapshot, &WAD_SCALE)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+
+    let acc_per_share = acc(e)
+        .checked_add(delta)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    storage::set_instance(e, &DataKey::WindDownAcc, &acc_per_share);
+    storage::set_instance(e, &DataKey::WindDownOwed, &(owed(e) + credited));
+
+    wd.round += 1;
+    storage::set_instance(e, &DataKey::WindDown, &wd);
+
+    WindDownRoundFinalized {
+        round: wd.round,
+        pot: credited,
+        acc_per_share,
+    }
+    .publish(e);
+
+    credited
 }

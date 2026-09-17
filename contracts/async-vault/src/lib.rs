@@ -25,7 +25,7 @@ pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
     RedeemClaimed, RedeemRequested, WindDownActivated, WindDownDelaySet, WindDownProposalCancelled,
-    WindDownProposed,
+    WindDownProposed, WindDownRoundFinalized,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
@@ -174,6 +174,23 @@ impl AsyncVault {
     /// the wind-down it announced.
     pub fn activate_wind_down(e: &Env) {
         wind_down::activate(e);
+    }
+
+    #[only_admin]
+    pub fn finalize_wind_down_round(e: &Env, _caller: Address) -> i128 {
+        wind_down::finalize_round(e)
+    }
+
+    pub fn wind_down_owed(e: &Env) -> i128 {
+        wind_down::owed(e)
+    }
+
+    pub fn wind_down_supply(e: &Env) -> i128 {
+        wind_down::supply_snapshot(e)
+    }
+
+    pub fn wind_down_acc(e: &Env) -> i128 {
+        wind_down::acc(e)
     }
 
     #[only_role(caller, "treasury")]

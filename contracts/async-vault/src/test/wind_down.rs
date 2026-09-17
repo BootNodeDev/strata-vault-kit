@@ -251,3 +251,87 @@ fn an_escrowed_redemption_is_still_cancellable_after_the_announcement() {
     assert_eq!(f.vault.cancel_redeem(&user, &epoch), 200);
     assert_eq!(f.shares(&user), 500);
 }
+
+#[test]
+fn the_first_round_snapshots_supply_and_credits_the_free_reserve() {
+    let f = setup();
+    let user = f.holder(500);
+    wind_down_now(&f);
+
+    let reserve = f.vault.free_reserve();
+    assert!(reserve > 0);
+
+    let pot = f.vault.finalize_wind_down_round(&f.admin);
+
+    assert_eq!(pot, reserve);
+    assert_eq!(f.vault.wind_down_supply(), f.shares(&user));
+    assert_eq!(f.vault.wind_down().unwrap().round, 1);
+    assert_eq!(f.vault.wind_down_owed(), pot);
+    assert_eq!(f.vault.free_reserve(), 0);
+}
+
+#[test]
+fn a_second_round_does_not_credit_the_first_round_again() {
+    let f = setup();
+    let _user = f.holder(500);
+    let backer = f.investor(1_000);
+    wind_down_now(&f);
+
+    let first = f.vault.finalize_wind_down_round(&f.admin);
+    assert!(first > 0);
+
+    f.vault.fund(&backer, &600);
+    let second = f.vault.finalize_wind_down_round(&f.admin);
+
+    assert_eq!(second, 600);
+    assert_eq!(f.vault.wind_down_owed(), first + 600);
+}
+
+#[test]
+fn a_round_with_nothing_to_distribute_is_refused() {
+    let f = setup();
+    let _user = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+
+    assert!(f.vault.try_finalize_wind_down_round(&f.admin).is_err());
+}
+
+#[test]
+fn a_round_before_activation_is_refused() {
+    let f = setup();
+    let _user = f.holder(500);
+    f.vault.propose_wind_down(&f.admin);
+
+    assert!(f.vault.try_finalize_wind_down_round(&f.admin).is_err());
+}
+
+#[test]
+fn only_governance_finalises_a_round() {
+    let f = setup();
+    let _user = f.holder(500);
+    let stranger = Address::generate(&f.e);
+    wind_down_now(&f);
+
+    f.e.set_auths(&[]);
+    assert!(f.vault.try_finalize_wind_down_round(&stranger).is_err());
+    assert!(f.vault.try_finalize_wind_down_round(&f.manager).is_err());
+    assert!(f.vault.try_finalize_wind_down_round(&f.treasury).is_err());
+    assert_eq!(f.vault.wind_down().unwrap().round, 0);
+}
+
+#[test]
+fn a_round_leaves_priced_liabilities_alone() {
+    let f = setup();
+    let user = f.holder(500);
+    let epoch = f.vault.request_redeem(&user, &200);
+    f.fulfill_epoch(wad(2));
+    let committed = f.vault.committed();
+    assert_eq!(committed, 400);
+    wind_down_now(&f);
+
+    f.vault.finalize_wind_down_round(&f.admin);
+
+    assert_eq!(f.vault.committed(), committed);
+    assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
+}
