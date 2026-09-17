@@ -7,22 +7,73 @@
 	background: var(--vault-surface-card);
 }
 
-.header {
-	display: flex;
-	align-items: baseline;
-	justify-content: space-between;
-	gap: 14px;
-	flex-wrap: wrap;
-}
-
 .heading {
 	color: var(--vault-ink);
 }
 
-.count {
+.empty {
 	color: var(--vault-text-muted);
 }
 
-.empty {
-	color: var(--vault-text-muted);
+.tabs {
+	display: flex;
+	border: 1px solid var(--vault-action);
+}
+
+.tab {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	text-wrap: pretty;
+	padding: 12px;
+	min-height: 44px;
+	border: 0;
+	border-radius: 0;
+	background: var(--vault-surface-card);
+	color: var(--vault-ink);
+	font-family: var(--vault-font-sans);
+	font-size: 15px;
+	font-weight: 500;
+}
+
+.tab:hover:not(:disabled) {
+	background: var(--vault-action-ring);
+	color: var(--vault-action);
+}
+
+.tabActive,
+.tabActive:hover:not(:disabled) {
+	background: var(--vault-action);
+	color: var(--vault-surface-card);
+}
+
+.tabCount {
+	flex: none;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	border-radius: 999px;
+	background: var(--vault-border-hairline);
+	color: var(--vault-text-body);
+	font-family: var(--vault-font-mono);
+	font-size: 11px;
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+
+.tabActive .tabCount {
+	background: var(--vault-surface-card);
+	color: var(--vault-action);
+}
+
+.panel {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
 }
