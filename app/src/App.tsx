@@ -1,6 +1,7 @@
 import { Outlet, Route, Routes } from "react-router-dom"
 import styles from "./App.module.css"
 import ConnectAccount from "./components/ConnectAccount"
+import ExternalLink from "./components/icons/ExternalLink"
 import VaultPreview from "./pages/VaultPreview"
 
 function App() {
@@ -32,6 +33,7 @@ const AppLayout = () => (
 					rel="noreferrer"
 				>
 					GitHub
+					<ExternalLink className={styles.linkIcon} />
 				</a>
 			</nav>
 		</footer>
