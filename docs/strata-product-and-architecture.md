@@ -408,9 +408,22 @@ integrators read the oracle's own interface today.
   received.
 - The exposed figures (share price, liquid reserve, committed, uncovered) make
   reserve coverage legible to investors and integrators.
-- Closing a vault needs no dedicated mechanism: governance pauses the vault, the
-  attester publishes the final value, treasury returns the funds, and every
-  position exits through the normal redemption path.
+- Closing a vault is a dedicated, announced state. Governance proposes a
+  wind-down; once its delay has run, anyone may activate it, so the operator
+  cannot announce a closure and then stall it. While it is active the vault takes
+  no new requests, prices nothing and sends nothing to the custodian, while
+  cancellation, priced claims and funding all stay open. Governance then
+  distributes what the vault holds in rounds: each round takes the free reserve,
+  so priced exit liabilities and refundable subscription escrow are paid first,
+  and holders pull their pro-rata share against a supply snapshot taken at the
+  first round. Every payment rounds in the vault's favour and the remainder joins
+  the next round's pot.
+- A wind-down distributes what is on chain. The vault cannot compel the custodian
+  to return capital; recovering the rest is off-chain work, and nothing here is a
+  guarantee that it will be recovered. Two further limits are on the record: a
+  holder who never surrenders their shares is never paid, because no entrypoint
+  may iterate over holders; and a refund owed to a deposit priced at zero shares
+  is not tracked as a liability, so a round can credit the assets it needed.
 
 ### 8.8 Reference interfaces
 
@@ -438,8 +451,8 @@ to exactly one authority, so the panel splits into five surfaces:
 | Cycle         | attestation, treasury; anyone settles | Continuous          | Attestations, funding, transfers to and from the custodian, settlement      |
 | Compliance    | compliance                            | Continuous          | Allowlist, freeze/unfreeze, forced transfer, recovery via Manager           |
 | Emergency     | guardian                              | Rare and urgent     | Vault pause, share-token pause                                              |
-| Configuration | governance                            | Rare and deliberate | Custodian slot, compliance module, parameters (bounds, freshness, timelock) |
-| Governance    | governance                            | Very rare           | Roles, admin handover, upgrade                                              |
+| Configuration | governance                            | Rare and deliberate | Custodian slot, compliance module, parameters (bounds, freshness, timelock, wind-down delay) |
+| Governance    | governance                            | Very rare           | Roles, admin handover, upgrade, wind-down proposal, cancellation and distribution rounds     |
 
 Every operation is shown in domain terms, with its conditions and resulting
 state, before a signature is requested; read-only by default. Signing runs
