@@ -25,12 +25,21 @@
 }
 
 .copyButton {
+	display: flex;
+	align-items: center;
+	gap: 6px;
 	border: 0;
 	border-left: 1px solid var(--vault-border-hairline);
 	background: var(--vault-surface-card);
 	height: 32px;
 	padding: 0 12px;
 	color: var(--vault-text-muted);
+}
+
+.copyIcon {
+	width: 13px;
+	height: 13px;
+	flex: none;
 }
 
 .copyButton:hover {

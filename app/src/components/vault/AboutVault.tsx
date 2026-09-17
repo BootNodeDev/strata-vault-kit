@@ -1,6 +1,7 @@
 import { explorerContract, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
 import typeStyles from "../../styles/type.module.css"
+import ExternalLink from "../icons/ExternalLink"
 import styles from "./AboutVault.module.css"
 
 export type AddressRow =
@@ -55,6 +56,7 @@ const AboutVault: React.FC<AboutVaultProps> = ({ summary, groups }) => (
 										rel="noreferrer"
 									>
 										{shortAddress(row.address)}
+										<ExternalLink className={styles.rowIcon} />
 									</a>
 								)}
 							</li>

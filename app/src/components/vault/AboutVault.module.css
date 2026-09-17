@@ -64,6 +64,18 @@
 	border-bottom-color: var(--vault-ink);
 }
 
+.rowIcon {
+	width: 13px;
+	height: 13px;
+	margin-left: 5px;
+	vertical-align: -2px;
+	color: var(--vault-text-muted);
+}
+
+.rowLink:hover .rowIcon {
+	color: var(--vault-ink);
+}
+
 .placeholder {
 	color: var(--vault-text-muted);
 	white-space: nowrap;

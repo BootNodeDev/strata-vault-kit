@@ -1,5 +1,6 @@
 import { formatAmount, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
+import Copy from "../components/icons/Copy"
 import AboutVault, { type AddressRow } from "../components/vault/AboutVault"
 import ActionPanel, {
 	type ActionPanelSide,
@@ -205,6 +206,7 @@ const VaultPreview: React.FC = () => {
 						className={`${typeStyles.label} ${styles.copyButton}`}
 						onClick={copyAddress}
 					>
+						<Copy className={styles.copyIcon} />
 						{copied ? "Copied" : "Copy"}
 					</button>
 				</div>
