@@ -15,4 +15,7 @@ pub(crate) enum DataKey {
     Epoch(u64),
     UserDeposit(u64, Address),
     UserRedeem(u64, Address),
+    Notice,
+    UpgradeDelay,
+    UpgradeProposal,
 }

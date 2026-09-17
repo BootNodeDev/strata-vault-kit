@@ -12,6 +12,7 @@ mod redeem;
 mod supply;
 mod timing;
 mod treasury;
+mod upgrade;
 
 extern crate std;
 
@@ -19,7 +20,7 @@ pub(crate) use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger as _},
     token::{StellarAssetClient, TokenClient},
-    Address, Env, String,
+    Address, BytesN, Env, String,
 };
 
 pub(crate) use ::compliance::{Compliance, ComplianceClient};
@@ -30,7 +31,8 @@ pub(crate) use share_token::{ShareToken, ShareTokenClient};
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
 
 pub(crate) use crate::{
-    AsyncVault, AsyncVaultClient, EpochStatus, VaultError, VaultRoles, MAX_NOTICE_SECS,
+    AsyncVault, AsyncVaultClient, EpochStatus, UpgradeAction, VaultError, VaultRoles,
+    MAX_NOTICE_SECS, MIN_UPGRADE_DELAY,
 };
 
 fn wad(whole: i128) -> i128 {
