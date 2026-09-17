@@ -44,16 +44,10 @@ const stageByTone: Record<RequestTone, RequestStage> = {
 
 export const partitionByStage = (
 	entries: RequestEntry[],
-): Record<RequestStage, RequestEntry[]> => {
-	const groups: Record<RequestStage, RequestEntry[]> = {
-		ready: [],
-		waiting: [],
-	}
-	for (const entry of entries) {
-		groups[stageByTone[entry.tone]].push(entry)
-	}
-	return groups
-}
+): Record<RequestStage, RequestEntry[]> => ({
+	ready: entries.filter((entry) => stageByTone[entry.tone] === "ready"),
+	waiting: entries.filter((entry) => stageByTone[entry.tone] === "waiting"),
+})
 
 type RequestCardProps = {
 	entry: RequestEntry
