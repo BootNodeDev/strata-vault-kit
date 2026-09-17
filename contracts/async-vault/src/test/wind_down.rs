@@ -461,3 +461,59 @@ fn the_payouts_never_exceed_what_the_rounds_credited() {
     assert!(paid <= pot);
     assert!(f.vault.wind_down_owed() >= 0);
 }
+
+#[test]
+fn the_pause_does_not_block_a_wind_down_claim() {
+    let f = setup();
+    let user = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+    f.vault.pause(&f.guardian);
+
+    assert!(f.vault.claim_wind_down(&user) > 0);
+}
+
+#[test]
+fn a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve() {
+    let f = setup();
+    let _holder = f.holder(500);
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &1);
+    f.close_epoch();
+    // A price high enough that one unit of the asset buys no shares at all.
+    f.fulfill_epoch_at(epoch, wad(2));
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+
+    // Known limit: the refund is not tracked as a liability, so a round can
+    // credit the assets it needed.
+    assert!(f.vault.try_claim_deposit(&investor, &epoch).is_err());
+}
+
+#[test]
+fn the_vault_cannot_claim_against_its_own_escrowed_shares() {
+    let f = setup();
+    let user = f.holder(500);
+    f.vault.request_redeem(&user, &200);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+
+    f.e.set_auths(&[]);
+    assert!(f.vault.try_claim_wind_down(&f.vault.address).is_err());
+}
+
+#[test]
+fn a_position_survives_the_ledger_advancing() {
+    let f = setup();
+    let user = f.holder(500);
+    let backer = f.investor(10_000);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round(&f.admin);
+    f.vault.claim_wind_down(&user);
+
+    f.advance(29 * 24 * 60 * 60);
+
+    f.vault.fund(&backer, &800);
+    f.vault.finalize_wind_down_round(&f.admin);
+    assert!(f.vault.claim_wind_down(&user) > 0);
+}
