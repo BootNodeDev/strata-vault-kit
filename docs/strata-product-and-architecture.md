@@ -1,22 +1,120 @@
-# Technical Architecture: Strata
+# Strata: Product and Architecture
 
-**Product:** Strata, an RWA lifecycle protocol for attested-value assets:
-request-based subscriptions and redemptions priced against on-chain guarded
-attestations, built on OpenZeppelin's Stellar contracts. Distributed as a kit:
-each operator deploys, configures and brands an independent white-label
-instance. **Chain:** Stellar. Soroban smart contracts; classic assets consumed
-through their Stellar Asset Contract (SAC) interface. **Deposit asset:** any
-classic Stellar asset chosen at genesis (typically a USD stablecoin such as
-USDC). **Maintainer:** BootNode (bootnode.dev).
+## 1. What it is
+
+Strata is an open-source vault kit on Stellar for teams whose capital works
+off-chain: they raise funds on-chain, deploy it into a real-world structure, and
+attest value back. Because no live market prices the asset, subscriptions and
+redemptions are requests, priced against on-chain guarded attestations. Built on
+OpenZeppelin's Stellar contracts and distributed as a kit: each operator
+deploys, configures and brands an independent white-label instance, setting
+roughly ten parameters and five authorities.
 
 Shares in this vault are a claim on an off-chain asset whose value is attested
 on chain. No price exists at the moment you act, so entry and exit are requests:
 what you put in goes into escrow, the next accepted attestation prices it, and
 you claim the result.
 
----
+## 2. Problem
 
-## 1. Design principles
+Every team tokenizing an off-chain asset builds the same vault: attested
+valuation, reserve accounting, request-based subscriptions and redemptions,
+separation of duties, and the mechanics to operate it. None of it is their
+business, and all of it is trust-critical.
+
+Because each implementation is private and one-off, the work never compounds: no
+shared best practices, audits that start from zero every time, quality bounded
+by one team's review. One open-source project solving exactly this inverts that:
+one codebase hardened by every adopter, one audit surface, and each team's
+effort going into its asset and its business.
+
+## 3. Why these vaults are asynchronous
+
+The vault does not hold the asset. The capital works off-chain, in things like
+insurance treaties, bonds, or a vineyard's production, which take administrative
+work to enter and exit and are not always liquid. Redemptions therefore cannot
+be instant: they start with a request and settle later, when the position can
+actually be unwound.
+
+Pricing is asynchronous for the same reason. Since the asset is off-chain, the
+contract cannot compute its value; someone accountable reports it, and the share
+price derives from that attested NAV, published periodically rather than at the
+moment of each transaction. Subscriptions and redemptions settle against a
+published NAV, not against an instantaneous market price.
+
+Finally, this is a regulated environment: shares cannot be bought freely.
+Investors are vetted off-chain, and only allowlisted addresses can subscribe.
+
+This is the shape ERC-7540 standardized on EVM: request-based deposits and
+redemptions on top of the tokenized vault. Strata brings that shape to Stellar.
+
+## 4. Solution
+
+Strata is a vault kit: out-of-the-shelf Soroban contract modules plus
+white-label frontends, built on top of existing Stellar tooling and
+OpenZeppelin's contracts rather than replacing them. The contracts cover the
+RWA-specific layer: a request-based vault on OpenZeppelin's token and contract
+crates (SEP-41 share token with SEP-57 RWA extensions, access control, pausable,
+upgradeable), a valuation oracle with on-chain guardrails, split reserve
+accounting with explicit uncovered exposure, covered redemption claims, and
+allowlist compliance.
+
+The frontends cover operations: a white-label investor dApp for the LP and an
+admin panel for the operator, both backend-free.
+
+Everything ships as an Apache-2.0 template with reproducible, verified deploys,
+so a team sets roughly ten parameters and five authorities, brands the frontend,
+and runs its own instance. A standard SEP-40 price-feed adapter, so integrators
+can consume the share price, is a planned addition and is not yet delivered.
+
+What stays with the operator: legal entity, custody, KYC, the data behind the
+attestation, and what the numbers mean. Deliberately not a custody, compliance,
+or legal solution, and not a vault for on-chain RWA tokens.
+
+## 5. Actors
+
+| Actor | On-chain authority | Does |
+|---|---|---|
+| Investor (LP) | None (allowlisted address) | Requests deposits and redemptions, claims shares or cash, cancels pending requests, views position |
+| Valuation reporter | attestation | Attests the share price with a proof reference, under on-chain guardrails |
+| Treasury ops | treasury | Moves free reserve between the vault and the custodian |
+| Compliance | compliance | Maintains the allowlist; token interventions (freeze, forced transfer, recovery) |
+| Guardian | guardian | Pauses new requests, pricing and custodian transfers; can never block payable claims |
+| Governance | governance | Parameters, roles, custodian rotation, upgrades behind a timelock |
+| Custodian | Not an authority | Off-chain party holding the real-world structure; a genesis-configured slot rotatable only by governance |
+
+Five authorities in code, held by native Stellar multisig accounts, assignable
+at deploy; one account may hold several.
+
+## 6. How it works
+
+1. Compliance allowlists a verified investor.
+2. The investor requests a subscription: USDC moves into escrow, cancellable
+   until it is priced.
+3. The reporter attests the share price. The epoch is priced, shares are minted
+   at that price, and the investor claims them.
+4. Treasury deploys free reserve into the real-world structure; attested value
+   moves between pockets, the total does not change.
+5. The investor requests a redemption: shares move into escrow, the next
+   attestation prices them, and a fixed cash liability is created. Priced claims
+   are never re-priced.
+6. The investor claims the cash once the liquid reserve covers it, in any
+   order; an earlier unpaid claim never blocks a later covered one. If the
+   reserve falls short, the uncovered amount is visible on-chain and treasury
+   tops up.
+
+## 7. Who uses it
+
+- An SCF-funded RWA team (reinsurance, trade finance, commodities) that wants to
+  spend its grant on its business, not on vault plumbing.
+- A fund or asset manager tokenizing an off-chain strategy for verified
+  investors.
+- An integrator or protocol consuming the vault share price the vault exposes
+  on-chain (a standard SEP-40 feed adapter is a planned addition).
+
+## 8. Architecture
+
+### 8.1 Design principles
 
 1. **Configured, not built.** Each operator deploys an independent instance: no
    factory, no shared state. A deployment is defined by its configuration and
@@ -67,7 +165,7 @@ you claim the result.
    compares total attested assets against liabilities and is handled by attested
    losses and governance.
 
-## 2. Component overview
+### 8.2 Component overview
 
 Orange marks what only Strata provides; white is the existing ecosystem the kit
 consumes or integrates.
@@ -165,7 +263,7 @@ transactions that the authority multisigs sign. The chain never sees KYC data or
 valuation methodology, only their outputs: an allowlisted address, an attested
 number with a proof reference.
 
-## 3. Components and authorities
+### 8.3 Components and authorities
 
 | Component             | Role                                                                                                                                                                                                      | Controls                                                                                                                                                                      |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -180,7 +278,7 @@ Each authority's threshold is sized to the quorum that authority requires.
 Signing of privileged operations through a coordinator is verified end to end,
 not assumed.
 
-## 4. Request lifecycle
+### 8.4 Request lifecycle
 
 Every position change is a request with three states: **pending, priced,
 claimed**. Requests join the open epoch. Sealing an epoch closes it to new
@@ -194,7 +292,7 @@ Sealing is gated on the manager role today. It is meant to become permissionless
 once a minimum epoch duration bounds it; until then, whoever seals chooses the
 batch boundary, though not the price it receives.
 
-### 4.1 Subscription
+#### Subscription
 
 - Request: verifies the receiver is allowlisted, moves the deposit asset into
   escrow. At most one active request per controller.
@@ -210,7 +308,7 @@ batch boundary, though not the price it receives.
   fails, the position remains shares and exits through the redemption lifecycle
   at the then-current price. No nominal refund exists after pricing.
 
-### 4.2 Redemption
+#### Redemption
 
 - Request: moves shares into escrow, no admission limit.
 - Pricing: the escrowed shares are burned and a fixed cash liability enters
@@ -256,7 +354,7 @@ sequenceDiagram
     end
 ```
 
-## 5. Valuation and accounting
+### 8.5 Valuation and accounting
 
 The NAV is a permissioned attestation of the share price, published with a proof
 reference. The reporter computes it off-chain under a published methodology. The
@@ -287,7 +385,12 @@ governance lifts the pause, and only while the latest attestation is fresh.
 Paused and stale are independent: freshness lapses on its own, the pause is a
 decision.
 
-## 6. Compliance
+**Integrator surface:** the oracle exposes the attested share price directly, as
+the latest report with its proof reference and acceptance time. The SEP-40 feed
+named in section 4 is an adapter over that surface and is not implemented yet;
+integrators read the oracle's own interface today.
+
+### 8.6 Compliance
 
 - The share token follows the SEP-57 topology: it consults identity for every
   receiver and rules for every transfer. The kit ships one compliance module for
@@ -299,7 +402,7 @@ decision.
   compliance operations via the Manager, available even while the vault is
   paused.
 
-## 7. Treasury and custodian
+### 8.7 Treasury and custodian
 
 - The custodian is a genesis-configured slot; only governance can rotate it.
   Transfers to the custodian move free reserve only, only to that address, and
@@ -312,7 +415,7 @@ decision.
   attester publishes the final value, treasury returns the funds, and every
   position exits through the normal redemption path.
 
-## 8. Reference interfaces
+### 8.8 Reference interfaces
 
 Both interfaces are part of the kit: they are how investors and operators use
 the protocol without writing code. Both are backend-free and read only the
@@ -346,7 +449,7 @@ state, before a signature is requested; read-only by default. Signing runs
 through an existing self-hostable coordinator. Configuration is derived from the
 public surface given the vault address.
 
-## 9. Trust boundaries & failure modes
+### 8.9 Trust boundaries & failure modes
 
 | Boundary               | Risk                                           | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -362,14 +465,14 @@ public surface given the vault address.
 Disclosed trust assumptions: the accuracy of the operator's KYC process, the
 quality of the data behind each attestation, and the operator's key ceremony.
 
-## 10. Deployment
+### 8.10 Deployment
 
 Deployment is scripted and ends with no human key holding governance. It is
 complete only when the final state is verified on-chain: every authority is the
 intended multisig, no bootstrap key retains any role, the configuration matches
 the request, and the deposit asset's auth flags are checked and reported.
 
-## 11. Relationship to existing Stellar tooling
+## 9. Relationship to existing Stellar tooling
 
 Where a cell says "Not provided", it means: not provided by SEP-41, SEP-56,
 SEP-57, OpenZeppelin Stellar Contracts, or the Soroban vault implementations
@@ -387,7 +490,7 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 | Covered redemption claims, exit-only path                                | Not provided                                                               | Core of the kit                                                                                                                                                                        |
 | Reusable RWA configuration, verified genesis, white-label frontends      | Not provided                                                               | Core of the kit                                                                                                                                                                        |
 
-## 12. Delivery phases
+## 10. Delivery phases
 
 | Phase                                                   | Deliverables                                                                                                                                                                                                                   | Evidence of completion                                                                                                                                                                                                  |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -399,3 +502,37 @@ The funded core is the valuation, pricing and accounting layer. The Investor
 dApp and the Admin panel are how that core is used by investors and operators;
 without the Admin panel the five authorities are not operable by a
 non-developer, and the kit stops being a kit.
+
+## 11. Potential future features
+
+The items below are candidate extensions, deliberately excluded from v1 to keep
+the scope narrow. They will be evaluated and prioritized after v1, based on
+adopter feedback and adoption metrics. Ordered by expected business impact.
+
+1. **Fee module.** Management and performance fees with a high-water mark,
+   crystallized by share dilution; rates as per-deployment configuration.
+2. **Operator notifications and alerting.** Implementation of the monitoring
+   plan as push alerts (stale valuation, reserve coverage, privileged actions)
+   via DMe, BootNode's open-source notification layer.
+3. **No-code vault launcher.** A wizard that configures and deploys a vault
+   instance without touching code.
+4. **Factory contract.** One-transaction deployment of a configured vault
+   instance.
+5. **Investor lost-key recovery.** A documented clawback-and-reissue procedure
+   for verified investors.
+6. **Large-ticket handling.** Auto-slicing of large subscriptions into
+   execution-sized intents with progressive settlement.
+7. **Per-investor caps.** Subscription ceilings per investor and per call, as
+   compliance configuration.
+8. **Valuation history.** On-chain history buffer plus an off-chain collector,
+   API and charts (Stellar retains events only days).
+9. **SEP-12 KYC onboarding adapter.** Standard interface between the allowlist
+   and existing KYC providers.
+10. **CCTP integration.** Native USDC in and out of Stellar for cross-chain
+    subscriptions and treasury mobility.
+11. **Reconciliation service.** Event-driven off-chain mirror of vault state
+    with invariant checks and alerts on discrepancies.
+12. **Oracle override path.** A second-signature path to record genuine extreme
+    market moves past the deviation cap.
+13. **SEP-57 (T-REX) wider support.** Extend SEP-57 coverage as the standard
+    matures, for richer on-chain compliance.
