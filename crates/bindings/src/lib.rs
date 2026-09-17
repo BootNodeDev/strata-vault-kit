@@ -14,7 +14,7 @@ pub enum OracleState {
 pub trait OracleFeed {
     fn state(e: &Env) -> OracleState;
     fn nav_per_share(e: &Env) -> i128;
-    fn ensure_consumable(e: &Env);
+    fn attested_at(e: &Env) -> u64;
 }
 
 #[contractclient(name = "ShareClient")]

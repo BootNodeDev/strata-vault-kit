@@ -430,3 +430,21 @@ fn a_fall_is_bounded_only_by_min_answer() {
         .try_attest(&report(&f.e, floor - 1, 3, 1_000_000), &f.attester)
         .is_err());
 }
+
+#[test]
+fn attested_at_is_when_the_contract_took_the_report_not_when_the_caller_says() {
+    let f = setup();
+    f.e.ledger().set_timestamp(50_000);
+
+    f.oracle
+        .attest(&report(&f.e, SCALE, 7, 1_000_000), &f.attester);
+
+    assert_eq!(f.oracle.attested_at(), 50_000);
+}
+
+#[test]
+fn attested_at_without_a_report_is_refused() {
+    let f = setup();
+
+    assert!(f.oracle.try_attested_at().is_err());
+}

@@ -145,6 +145,12 @@ impl NavOracleContract {
         }
     }
 
+    /// Ledger time the standing report was accepted. Not the valuation date
+    /// the reporter had in mind: the moment the contract took it.
+    pub fn attested_at(e: &Env) -> u64 {
+        Self::latest(e).timestamp
+    }
+
     pub fn ensure_consumable(e: &Env) {
         if compute_state(e) != OracleState::Valid {
             panic_with_error!(e, OracleError::NotConsumable);

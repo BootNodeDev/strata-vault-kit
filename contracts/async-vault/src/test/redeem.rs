@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_request_redeem_locks_shares_and_updates_epoch() {
+fn request_redeem_locks_shares_and_updates_epoch() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.current_epoch();
@@ -62,7 +62,7 @@ fn redeeming_more_shares_than_held_is_rejected() {
 }
 
 #[test]
-fn test_claim_redeem_pays_assets_and_burns_the_shares() {
+fn claim_redeem_pays_assets_and_burns_the_shares() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);

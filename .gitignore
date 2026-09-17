@@ -60,5 +60,7 @@ skills-lock.json
 *.old
 *.bak
 
+# The model is run locally, not versioned.
+/spec/
 # Generated from environments.toml on every build.
 app/src/config/addresses.ts
