@@ -264,8 +264,8 @@ impl AsyncVault {
 
 #[contractimpl(contracttrait)]
 impl AccessControl for AsyncVault {
-    /// Refused. There is no upgrade path, so a vault without an admin could
-    /// never be unpaused, never set a custodian and never rotate a role again.
+    /// Refused. A vault without an admin could never be unpaused, never set a
+    /// custodian, never rotate a role and never be upgraded again.
     /// `transfer_admin_role` and `accept_admin_transfer` are the way out.
     fn renounce_admin(e: &Env) {
         panic_with_error!(e, VaultError::AdminRequired);
