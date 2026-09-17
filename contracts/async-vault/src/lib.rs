@@ -9,6 +9,7 @@ mod redeem;
 mod roles;
 mod state;
 mod treasury;
+mod wind_down;
 
 use bindings::ShareClient;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
@@ -23,10 +24,11 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    RedeemClaimed, RedeemRequested,
+    RedeemClaimed, RedeemRequested, WindDownDelaySet,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
+pub use wind_down::{WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY};
 
 fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
     if access_control::get_role_member_count(e, role) == 0 {
@@ -142,6 +144,19 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_custodian(e: &Env, custodian: Address, _caller: Address) {
         treasury::set_custodian(e, &custodian);
+    }
+
+    #[only_admin]
+    pub fn set_wind_down_delay(e: &Env, secs: u64, _caller: Address) {
+        wind_down::set_delay(e, secs);
+    }
+
+    pub fn wind_down_delay(e: &Env) -> u64 {
+        wind_down::delay(e)
+    }
+
+    pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
+        wind_down::info(e)
     }
 
     #[only_role(caller, "treasury")]
