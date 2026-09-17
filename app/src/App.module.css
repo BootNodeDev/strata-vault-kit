@@ -50,3 +50,10 @@
 .footerNav a:hover {
 	color: var(--color-text);
 }
+
+.linkIcon {
+	width: 13px;
+	height: 13px;
+	margin-left: 5px;
+	vertical-align: -2px;
+}

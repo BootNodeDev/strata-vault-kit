@@ -127,8 +127,9 @@
 }
 
 .actionPrimary:hover:not(:disabled) {
-	background: var(--vault-ink);
-	border-color: var(--vault-ink);
+	background: var(--vault-action-ring);
+	border-color: var(--vault-action);
+	color: var(--vault-action);
 }
 
 .actionOrdinary {
@@ -164,17 +165,18 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	border: 1px solid var(--vault-text-muted);
-	background: var(--vault-surface-card);
+	border: 0;
+	background: transparent;
 	color: var(--vault-text-muted);
-	font-family: var(--vault-font-mono);
-	font-size: 12px;
-	line-height: 1;
 }
 
 .tipTrigger:hover {
-	border-color: var(--vault-ink);
 	color: var(--vault-ink);
+}
+
+.tipIcon {
+	width: 16px;
+	height: 16px;
 }
 
 .tooltip {
