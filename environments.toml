@@ -66,7 +66,17 @@ default = true
 
 # Deployed contract addresses go here as `name = { id = "C..." }`. The deploy
 # in scripts/harness is what emits them.
+#
+# `client` defaults to true, so none of these repeat it. `asset` is the
+# underlying Stellar Asset Contract and has no crate here; it still gets a
+# generated client, because a SAC carries its own spec.
 [staging.contracts]
+async_vault = { id = "CDU62QMAHWVNGH23FRTLDFSCJZN5PGRUJAFNYWXCRBZFDGST36PEDHTQ" }
+nav_oracle = { id = "CC2P332C4RLDY6NLB2MVQUWL7ZMVKKCGHNBFT2GZEPMQS6ITGYSKSOLL" }
+share_token = { id = "CDXJ3HKTXMWFBPNPMUVBML376X3FYSW4H7HGY32XSQE6KSVMZV22K5XT" }
+identity_verifier = { id = "CBORVVDZ4IM2ECWM63NWABJWPMQMXPTQ3BUGVWLFHIOYSV5TJFHB4INW" }
+compliance = { id = "CBI2N3NNAVAY5KKRYNSRALSUX23YH7HYTIRF4ZHNQSG7LWXT2WVHKAFN" }
+asset = { id = "CBHI6SJ6DCALZEB3B6SUJP5QUIK76PSEJG4D5ELBSHM6KESWZGFVICQU" }
 
 ### Production environment configuration
 # Commented out on purpose. Mainnet needs an external audit and an audited

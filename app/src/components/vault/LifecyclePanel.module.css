@@ -1,4 +1,5 @@
 .panel {
+	container-type: inline-size;
 	display: flex;
 	flex-direction: column;
 	gap: 18px;
@@ -25,7 +26,8 @@
 
 .steps {
 	display: grid;
-	grid-template-columns: repeat(3, minmax(0, 1fr));
+	grid-auto-flow: column;
+	grid-auto-columns: minmax(0, 1fr);
 	gap: 16px;
 	margin: 0;
 	padding: 0;
@@ -84,6 +86,10 @@
 	background: var(--vault-action);
 }
 
+.step:last-child .connector {
+	display: none;
+}
+
 .titleActive {
 	color: var(--vault-ink);
 }
@@ -110,9 +116,12 @@
 	color: var(--vault-text-muted);
 }
 
-@media (max-width: 1080px) {
+/* The panel's own width, not the window's: it sits in the main column, whose
+   content box is around 700px on a desktop. A threshold near that never lets
+   the steps run across. */
+@container (max-width: 560px) {
 	.steps {
-		grid-template-columns: minmax(0, 1fr);
+		grid-auto-flow: row;
 	}
 
 	.connector {
