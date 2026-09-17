@@ -25,11 +25,11 @@ const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
 	{ id: "position", label: "Position" },
 	{ id: "lifecycle", label: "Lifecycle" },
-	{ id: "actions", label: "Actions" },
+	{ id: "about", label: "About" },
 ]
 
 const vaultSummary =
-	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim pays once the reserve covers it in full, in any order rather than by queue position."
+	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim becomes claimable once the reserve covers it in full, in any order rather than by queue position."
 
 // TODO: read these from the vault, which exposes one public view per row.
 const authorityRows: AddressRow[] = [
@@ -109,12 +109,12 @@ const waitingEntry: RequestEntry = {
 	outLabel: "Owed to you",
 	outAmount: "12,348.00 TOKEN",
 	outMeta: "Priced 5 Sep 2026",
-	state: "Not payable yet",
+	state: "Awaiting liquidity",
 	tone: "blocked",
 	actions: [{ label: "Claim", kind: "unavailable", onPress: () => {} }],
 	tooltip: {
 		label: "Why you cannot claim this yet",
-		text: "Your price will not change. A claim pays once the reserve covers its full amount: it covers 4,200.00 TOKEN of this claim and 8,148.00 TOKEN is still needed. The reserve is not held for this claim: the first uncovered claim submitted takes it. Awaiting a top-up, with no date promised.",
+		text: "Your price will not change. A claim becomes claimable once the reserve covers its full amount: it covers 4,200.00 TOKEN of this claim and 8,148.00 TOKEN is still needed. The reserve is not held for this claim: the first uncovered claim submitted takes it. Awaiting a top-up, with no date promised.",
 	},
 }
 
@@ -213,19 +213,19 @@ const VaultPreview: React.FC = () => {
 			<MetricsStrip metrics={metrics} />
 
 			<div className={styles.body}>
-				<div className={styles.main}>
-					<nav aria-label="Sections" className={styles.nav}>
-						{sections.map((section) => (
-							<a
-								key={section.id}
-								href={`#${section.id}`}
-								className={`${typeStyles.body} ${styles.navLink}`}
-							>
-								{section.label}
-							</a>
-						))}
-					</nav>
+				<nav aria-label="Sections" className={styles.nav}>
+					{sections.map((section) => (
+						<a
+							key={section.id}
+							href={`#${section.id}`}
+							className={`${typeStyles.body} ${styles.navLink}`}
+						>
+							{section.label}
+						</a>
+					))}
+				</nav>
 
+				<div className={styles.main}>
 					<div id="requests" className={styles.anchor}>
 						<RequestList
 							heading="Your requests"
@@ -258,20 +258,18 @@ const VaultPreview: React.FC = () => {
 						/>
 					</div>
 
-					<AboutVault
-						summary={vaultSummary}
-						groups={[
-							{ title: "Contracts", rows: contractRows },
-							{ title: "Authorities", rows: authorityRows },
-						]}
-					/>
+					<div id="about" className={styles.anchor}>
+						<AboutVault
+							summary={vaultSummary}
+							groups={[
+								{ title: "Contracts", rows: contractRows },
+								{ title: "Authorities", rows: authorityRows },
+							]}
+						/>
+					</div>
 				</div>
 
-				<aside
-					id="actions"
-					className={`${styles.side} ${styles.anchor}`}
-					aria-label="Actions"
-				>
+				<aside className={styles.side} aria-label="Actions">
 					<ActionPanel
 						side={actionSide}
 						onSideChange={changeActionSide}

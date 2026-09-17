@@ -4,7 +4,7 @@ const sections = [
 	{ link: "Requests", heading: "Your requests" },
 	{ link: "Position", heading: "Your position" },
 	{ link: "Lifecycle", heading: "How a request settles" },
-	{ link: "Actions", heading: "Request a subscription" },
+	{ link: "About", heading: "About this vault" },
 ]
 
 test("every section link brings its section into view", async ({ page }) => {

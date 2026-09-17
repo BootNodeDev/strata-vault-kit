@@ -34,11 +34,13 @@
 }
 
 .copyButton:hover {
-	background: var(--vault-surface-inset);
-	color: var(--vault-ink);
+	background: var(--vault-action-ring);
+	color: var(--vault-action);
 }
 
 .nav {
+	grid-column: 1;
+	grid-row: 1;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
@@ -76,6 +78,8 @@
 }
 
 .main {
+	grid-column: 1;
+	grid-row: 2;
 	display: flex;
 	flex-direction: column;
 	gap: 18px;
@@ -83,6 +87,8 @@
 }
 
 .side {
+	grid-column: 2;
+	grid-row: 2;
 	position: sticky;
 	top: 24px;
 	min-width: 0;
@@ -91,6 +97,13 @@
 @container (max-width: 1080px) {
 	.body {
 		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nav,
+	.main,
+	.side {
+		grid-column: 1;
+		grid-row: auto;
 	}
 
 	.side {

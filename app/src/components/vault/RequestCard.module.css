@@ -127,8 +127,9 @@
 }
 
 .actionPrimary:hover:not(:disabled) {
-	background: var(--vault-ink);
-	border-color: var(--vault-ink);
+	background: var(--vault-action-ring);
+	border-color: var(--vault-action);
+	color: var(--vault-action);
 }
 
 .actionOrdinary {
