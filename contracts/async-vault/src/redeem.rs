@@ -8,6 +8,7 @@ use crate::keys::DataKey;
 use crate::state::{self, EpochStatus, RedeemRequest};
 
 pub(crate) fn request(e: &Env, from: &Address, shares: i128) -> u64 {
+    crate::wind_down::refuse_if_active(e);
     from.require_auth();
 
     if shares <= 0 {
@@ -144,7 +145,9 @@ pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
 
     // Cancellation is an escape hatch, not a choice. Once the feed can price a
     // sealed epoch, the price is knowable and the only way out is to take it.
-    if crate::epoch::is_priceable(e, &epoch) {
+    // Fulfilment is closed during a wind-down, so this epoch will never take a
+    // price. There is nothing to decline.
+    if !crate::wind_down::is_active(e) && crate::epoch::is_priceable(e, &epoch) {
         panic_with_error!(e, VaultError::PriceAvailable);
     }
 

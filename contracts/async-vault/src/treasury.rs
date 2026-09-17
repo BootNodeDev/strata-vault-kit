@@ -35,6 +35,7 @@ pub(crate) fn uncovered(e: &Env) -> i128 {
 }
 
 pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {
+    crate::wind_down::refuse_if_active(e);
     if assets <= 0 {
         panic_with_error!(e, VaultError::InvalidAmount);
     }

@@ -145,3 +145,109 @@ fn a_zero_delay_activates_immediately() {
 
     assert_eq!(f.vault.wind_down().unwrap().status, WindDownStatus::Active);
 }
+
+/// Proposes, waits and activates. Returns nothing; the vault is active after.
+fn wind_down_now(f: &Fixture) {
+    f.vault.propose_wind_down(&f.admin);
+    f.vault.activate_wind_down();
+}
+
+#[test]
+fn an_active_wind_down_takes_no_new_requests() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let holder = f.holder(500);
+    wind_down_now(&f);
+
+    assert!(f.vault.try_request_deposit(&investor, &100).is_err());
+    assert!(f.vault.try_request_redeem(&holder, &100).is_err());
+}
+
+#[test]
+fn an_active_wind_down_prices_nothing_and_closes_no_epoch() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.vault.request_deposit(&investor, &400);
+    let epoch = f.close_epoch();
+    wind_down_now(&f);
+
+    f.attest(wad(2));
+    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
+    assert!(f.vault.try_close_epoch(&f.manager).is_err());
+}
+
+#[test]
+fn an_active_wind_down_sends_nothing_to_the_custodian() {
+    let f = setup();
+    f.vault.set_custodian(&f.custodian, &f.admin);
+    let investor = f.investor(1_000);
+    f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+    wind_down_now(&f);
+
+    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &100).is_err());
+}
+
+#[test]
+fn funding_stays_open_during_a_wind_down() {
+    let f = setup();
+    f.vault.set_custodian(&f.custodian, &f.admin);
+    let backer = f.investor(1_000);
+    wind_down_now(&f);
+
+    f.vault.fund(&backer, &500);
+    assert_eq!(f.balance(&f.vault.address), 500);
+}
+
+#[test]
+fn a_priced_claim_still_pays_during_a_wind_down() {
+    let f = setup();
+    let user = f.holder(500);
+    let epoch = f.vault.request_redeem(&user, &200);
+    f.fulfill_epoch(wad(2));
+    wind_down_now(&f);
+
+    assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
+}
+
+#[test]
+fn a_priced_deposit_still_claims_during_a_wind_down() {
+    let f = setup();
+    let user = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&user, &400);
+    f.fulfill_epoch(wad(2));
+    wind_down_now(&f);
+
+    assert_eq!(f.vault.claim_deposit(&user, &epoch), 200);
+    assert_eq!(f.shares(&user), 200);
+}
+
+#[test]
+fn an_epoch_sealed_before_the_announcement_is_still_cancellable() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.close_epoch();
+    f.attest(wad(2));
+
+    // The price is readable, so without a wind-down this cancel is refused.
+    assert!(f.vault.try_cancel_deposit(&investor, &epoch).is_err());
+
+    wind_down_now(&f);
+
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+    assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn an_escrowed_redemption_is_still_cancellable_after_the_announcement() {
+    let f = setup();
+    let user = f.holder(500);
+    let epoch = f.vault.request_redeem(&user, &200);
+    f.close_epoch();
+    f.attest(wad(2));
+    wind_down_now(&f);
+
+    assert_eq!(f.vault.cancel_redeem(&user, &epoch), 200);
+    assert_eq!(f.shares(&user), 500);
+}
