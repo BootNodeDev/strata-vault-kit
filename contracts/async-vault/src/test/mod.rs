@@ -29,7 +29,7 @@ pub(crate) use share_token::{ShareToken, ShareTokenClient};
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
 
 pub(crate) use crate::{
-    AsyncVault, AsyncVaultClient, EpochStatus, VaultRoles, MAX_WIND_DOWN_DELAY,
+    AsyncVault, AsyncVaultClient, EpochStatus, VaultRoles, WindDownStatus, MAX_WIND_DOWN_DELAY,
 };
 
 fn wad(whole: i128) -> i128 {

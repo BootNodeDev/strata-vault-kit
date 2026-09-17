@@ -1,7 +1,9 @@
 use soroban_sdk::{contracttype, panic_with_error, Address, Env};
 
 use crate::error::VaultError;
-use crate::event::WindDownDelaySet;
+use crate::event::{
+    WindDownActivated, WindDownDelaySet, WindDownProposalCancelled, WindDownProposed,
+};
 use crate::keys::DataKey;
 
 /// Ninety days. Long enough for a real announcement period, short enough that
@@ -64,4 +66,53 @@ pub(crate) fn refuse_if_active(e: &Env) {
     if is_active(e) {
         panic_with_error!(e, VaultError::WindDownActive);
     }
+}
+
+pub(crate) fn propose(e: &Env) {
+    if info(e).is_some() {
+        panic_with_error!(e, VaultError::WindDownAlreadyProposed);
+    }
+
+    let active_at = e.ledger().timestamp().saturating_add(delay(e));
+    storage::set_instance(
+        e,
+        &DataKey::WindDown,
+        &WindDownInfo {
+            status: WindDownStatus::Proposed,
+            active_at,
+            round: 0,
+        },
+    );
+
+    WindDownProposed { active_at }.publish(e);
+}
+
+pub(crate) fn cancel_proposal(e: &Env) {
+    match info(e) {
+        Some(WindDownInfo {
+            status: WindDownStatus::Proposed,
+            ..
+        }) => {}
+        Some(_) => panic_with_error!(e, VaultError::WindDownActive),
+        None => panic_with_error!(e, VaultError::WindDownNotProposed),
+    }
+
+    e.storage().instance().remove(&DataKey::WindDown);
+    WindDownProposalCancelled {}.publish(e);
+}
+
+pub(crate) fn activate(e: &Env) {
+    let mut wd = info(e).unwrap_or_else(|| panic_with_error!(e, VaultError::WindDownNotProposed));
+
+    if wd.status == WindDownStatus::Active {
+        panic_with_error!(e, VaultError::WindDownActive);
+    }
+    if e.ledger().timestamp() < wd.active_at {
+        panic_with_error!(e, VaultError::WindDownDelayNotElapsed);
+    }
+
+    wd.status = WindDownStatus::Active;
+    storage::set_instance(e, &DataKey::WindDown, &wd);
+
+    WindDownActivated {}.publish(e);
 }

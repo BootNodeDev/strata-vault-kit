@@ -24,7 +24,8 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    RedeemClaimed, RedeemRequested, WindDownDelaySet,
+    RedeemClaimed, RedeemRequested, WindDownActivated, WindDownDelaySet, WindDownProposalCancelled,
+    WindDownProposed,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
@@ -157,6 +158,22 @@ impl AsyncVault {
 
     pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
         wind_down::info(e)
+    }
+
+    #[only_admin]
+    pub fn propose_wind_down(e: &Env, _caller: Address) {
+        wind_down::propose(e);
+    }
+
+    #[only_admin]
+    pub fn cancel_wind_down_proposal(e: &Env, _caller: Address) {
+        wind_down::cancel_proposal(e);
+    }
+
+    /// Open to anyone once the delay has passed, so the operator cannot stall
+    /// the wind-down it announced.
+    pub fn activate_wind_down(e: &Env) {
+        wind_down::activate(e);
     }
 
     #[only_role(caller, "treasury")]
