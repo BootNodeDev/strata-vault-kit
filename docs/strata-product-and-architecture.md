@@ -57,11 +57,15 @@ RWA-specific layer: a request-based vault on OpenZeppelin's token and contract
 crates (SEP-41 share token with SEP-57 RWA extensions, access control, pausable,
 upgradeable), a valuation oracle with on-chain guardrails, split reserve
 accounting with explicit uncovered exposure, covered redemption claims, and
-allowlist compliance. The frontends cover operations: a white-label investor
-dApp and an admin panel for the operator. Everything ships as an Apache-2.0
-template with reproducible, verified deploys and a standard price feed (SEP-40),
+allowlist compliance.
+
+The frontends cover operations: a white-label investor dApp for the LP and an
+admin panel for the operator, both backend-free.
+
+Everything ships as an Apache-2.0 template with reproducible, verified deploys,
 so a team sets roughly ten parameters and five authorities, brands the frontend,
-and runs its own instance.
+and runs its own instance. A standard SEP-40 price-feed adapter, so integrators
+can consume the share price, is a planned addition and is not yet delivered.
 
 What stays with the operator: legal entity, custody, KYC, the data behind the
 attestation, and what the numbers mean. Deliberately not a custody, compliance,
@@ -105,8 +109,8 @@ at deploy; one account may hold several.
   spend its grant on its business, not on vault plumbing.
 - A fund or asset manager tokenizing an off-chain strategy for verified
   investors.
-- An integrator or protocol consuming the vault share price through the standard
-  SEP-40 feed.
+- An integrator or protocol consuming the vault share price the vault exposes
+  on-chain (a standard SEP-40 feed adapter is a planned addition).
 
 ## 8. Architecture
 
