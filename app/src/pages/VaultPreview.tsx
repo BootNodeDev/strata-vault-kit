@@ -29,7 +29,7 @@ const sections: { id: string; label: string }[] = [
 ]
 
 const vaultSummary =
-	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the struck price, and each claim pays once the reserve covers it in full, in any order rather than by queue position."
+	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim pays once the reserve covers it in full, in any order rather than by queue position."
 
 // TODO: read these from the vault, which exposes one public view per row.
 const authorityRows: AddressRow[] = [
@@ -210,22 +210,22 @@ const VaultPreview: React.FC = () => {
 				</div>
 			</div>
 
-			<nav aria-label="Sections" className={styles.nav}>
-				{sections.map((section) => (
-					<a
-						key={section.id}
-						href={`#${section.id}`}
-						className={`${typeStyles.body} ${styles.navLink}`}
-					>
-						{section.label}
-					</a>
-				))}
-			</nav>
-
 			<MetricsStrip metrics={metrics} />
 
 			<div className={styles.body}>
 				<div className={styles.main}>
+					<nav aria-label="Sections" className={styles.nav}>
+						{sections.map((section) => (
+							<a
+								key={section.id}
+								href={`#${section.id}`}
+								className={`${typeStyles.body} ${styles.navLink}`}
+							>
+								{section.label}
+							</a>
+						))}
+					</nav>
+
 					<div id="requests" className={styles.anchor}>
 						<RequestList
 							heading="Your requests"
