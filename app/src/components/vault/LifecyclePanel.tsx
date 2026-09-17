@@ -1,0 +1,90 @@
+import React from "react"
+import typeStyles from "../../styles/type.module.css"
+import styles from "./LifecyclePanel.module.css"
+
+export type LifecycleStep = {
+	title: string
+	actor: string
+	body: string
+}
+
+export type LifecycleProgress = number | "complete" | null
+
+type LifecyclePanelProps = {
+	title: string
+	progress: string
+	steps: LifecycleStep[]
+	currentStep: LifecycleProgress
+}
+
+type StepState = "done" | "current" | "upcoming"
+
+const stepState = (
+	position: number,
+	currentStep: LifecycleProgress,
+): StepState => {
+	if (currentStep === "complete") return "done"
+	if (currentStep === null) return "upcoming"
+	if (position < currentStep) return "done"
+	if (position === currentStep) return "current"
+	return "upcoming"
+}
+
+const LifecyclePanel: React.FC<LifecyclePanelProps> = ({
+	title,
+	progress,
+	steps,
+	currentStep,
+}) => (
+	<div className={styles.panel}>
+		<div className={styles.header}>
+			<h3 className={`${typeStyles.sectionHead} ${styles.title}`}>{title}</h3>
+			<span className={`${typeStyles.metricSub} ${styles.progress}`}>
+				{progress}
+			</span>
+		</div>
+		<ol role="list" className={styles.steps}>
+			{steps.map((step, index) => {
+				const position = index + 1
+				const state = stepState(position, currentStep)
+
+				return (
+					<li
+						className={styles.step}
+						key={step.title}
+						aria-current={state === "current" ? "step" : undefined}
+					>
+						<div className={styles.markerRow}>
+							<span className={`${styles.marker} ${styles[state]}`}>
+								{position}
+							</span>
+							<span
+								aria-hidden="true"
+								className={`${styles.connector} ${
+									state === "done" ? styles.connectorDone : ""
+								}`}
+							/>
+						</div>
+						<span
+							className={`${typeStyles.stepTitle} ${
+								state === "upcoming" ? styles.titleMuted : styles.titleActive
+							}`}
+						>
+							{step.title}
+						</span>
+						<span className={styles.actor}>{step.actor}</span>
+						<p
+							className={`${typeStyles.footnote} ${
+								state === "current" ? styles.bodyCurrent : styles.bodyMuted
+							}`}
+						>
+							{step.body}
+						</p>
+					</li>
+				)
+			})}
+		</ol>
+	</div>
+)
+
+export default LifecyclePanel

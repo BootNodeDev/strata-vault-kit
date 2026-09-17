@@ -8,7 +8,7 @@ const DAY_IN_LEDGERS: u32 = 17280;
 
 pub const PERSISTENT_EXTEND_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 pub const PERSISTENT_TTL_THRESHOLD: u32 = PERSISTENT_EXTEND_AMOUNT - DAY_IN_LEDGERS;
-pub const INSTANCE_EXTEND_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
+pub const INSTANCE_EXTEND_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
 pub const INSTANCE_TTL_THRESHOLD: u32 = INSTANCE_EXTEND_AMOUNT - DAY_IN_LEDGERS;
 
 pub fn bump_instance(e: &Env) {
@@ -32,7 +32,11 @@ where
     V: TryFromVal<Env, Val>,
     <V as TryFromVal<Env, Val>>::Error: Debug,
 {
-    e.storage().instance().get(key)
+    let val: Option<V> = e.storage().instance().get(key);
+    if val.is_some() {
+        bump_instance(e);
+    }
+    val
 }
 
 pub fn set_persistent<K, V>(e: &Env, key: &K, val: &V)

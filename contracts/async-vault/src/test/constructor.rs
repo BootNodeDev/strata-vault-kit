@@ -6,7 +6,7 @@ fn test_successful_deployment() {
 
     assert_eq!(f.vault.asset(), f.asset);
     assert_eq!(f.vault.share_token(), f.share.address);
-    assert_eq!(f.vault.manager(), f.manager);
+    assert_eq!(f.vault.manager(), Some(f.manager.clone()));
     assert!(!f.vault.paused());
 
     let first = f.vault.get_epoch(&1).unwrap();

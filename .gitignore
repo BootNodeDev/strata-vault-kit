@@ -44,6 +44,7 @@ app-lib/clients/*
 
 # Local agent tooling — per-developer.
 .claude/
+.codex/
 .mcp.json
 .ignore
 .atl/
@@ -58,3 +59,6 @@ skills-lock.json
 *_TTrace_*.tla
 *.old
 *.bak
+
+# Generated from environments.toml on every build.
+app/src/config/addresses.ts

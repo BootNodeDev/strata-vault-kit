@@ -1,0 +1,122 @@
+.page {
+	container-type: inline-size;
+	display: flex;
+	flex-direction: column;
+	gap: 28px;
+	padding: 32px 0;
+}
+
+.identity {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	flex-wrap: wrap;
+}
+
+.address {
+	display: flex;
+	align-items: center;
+	border: 1px solid var(--vault-border-inactive);
+	background: var(--vault-surface-card);
+}
+
+.addressValue {
+	padding: 0 12px;
+}
+
+.copyButton {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	border: 0;
+	border-left: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-card);
+	height: 32px;
+	padding: 0 12px;
+	color: var(--vault-text-muted);
+}
+
+.copyIcon {
+	width: 13px;
+	height: 13px;
+	flex: none;
+}
+
+.copyButton:hover {
+	background: var(--vault-action-ring);
+	color: var(--vault-action);
+}
+
+.nav {
+	grid-column: 1;
+	grid-row: 1;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 6px 22px;
+	border-bottom: 1px solid var(--vault-border-hairline);
+	padding-bottom: 11px;
+}
+
+.navLink {
+	color: var(--vault-text-body);
+	text-decoration: none;
+	border-bottom: 1px solid transparent;
+}
+
+.navLink:hover {
+	color: var(--vault-ink);
+	border-bottom-color: var(--vault-ink);
+}
+
+.anchor {
+	scroll-margin-top: 18px;
+}
+
+.section {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.body {
+	display: grid;
+	grid-template-columns: minmax(0, 2.2fr) minmax(320px, 1fr);
+	align-items: start;
+	gap: 18px;
+}
+
+.main {
+	grid-column: 1;
+	grid-row: 2;
+	display: flex;
+	flex-direction: column;
+	gap: 18px;
+	min-width: 0;
+}
+
+.side {
+	grid-column: 2;
+	grid-row: 2;
+	position: sticky;
+	top: 24px;
+	min-width: 0;
+}
+
+@container (max-width: 1080px) {
+	.body {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.nav,
+	.main,
+	.side {
+		grid-column: 1;
+		grid-row: auto;
+	}
+
+	.side {
+		position: static;
+		order: -1;
+	}
+}
