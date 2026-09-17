@@ -194,6 +194,18 @@ fn only_governance_applies() {
     assert!(f.vault.upgrade_proposal().is_some());
 }
 
+#[test]
+fn the_vault_exposes_no_immediate_upgrade() {
+    let f = setup();
+    let hash = BytesN::from_array(&f.e, &[7u8; 32]);
+
+    // If the Upgradeable trait were implemented, this client would work
+    // against the vault and replace the code with no delay at all.
+    let client =
+        stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.vault.address);
+    assert!(client.try_upgrade(&hash, &f.admin).is_err());
+}
+
 #[cfg(feature = "upgrade_wasm")]
 mod with_wasm {
     use super::*;
