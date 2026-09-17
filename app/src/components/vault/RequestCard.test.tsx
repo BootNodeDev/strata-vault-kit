@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import RequestCard, { type RequestEntry } from "./RequestCard"
+import RequestCard, { partitionByStage, type RequestEntry } from "./RequestCard"
 
 const baseEntry: RequestEntry = {
 	id: 1,
@@ -9,7 +9,7 @@ const baseEntry: RequestEntry = {
 	inMeta: "Requested 28 Aug 2026",
 	outLabel: "Owed to you",
 	outAmount: "12,348.00 TOKEN",
-	state: "Awaiting liquidity",
+	state: "Priced",
 	tone: "blocked",
 	actions: [],
 }
@@ -92,5 +92,28 @@ describe("RequestCard", () => {
 		expect(screen.getByRole("tooltip").textContent).toBe(
 			"Awaiting a top-up, with no date promised.",
 		)
+	})
+})
+
+describe("partitionByStage", () => {
+	it("groups claimable entries as ready and pending or blocked entries as waiting", () => {
+		const claimable: RequestEntry = { ...baseEntry, id: 1, tone: "claimable" }
+		const pending: RequestEntry = { ...baseEntry, id: 2, tone: "pending" }
+		const blocked: RequestEntry = { ...baseEntry, id: 3, tone: "blocked" }
+		const secondClaimable: RequestEntry = {
+			...baseEntry,
+			id: 4,
+			tone: "claimable",
+		}
+
+		const groups = partitionByStage([
+			claimable,
+			pending,
+			blocked,
+			secondClaimable,
+		])
+
+		expect(groups.ready).toEqual([claimable, secondClaimable])
+		expect(groups.waiting).toEqual([pending, blocked])
 	})
 })

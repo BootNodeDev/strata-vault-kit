@@ -1,17 +1,21 @@
 import { formatAmount, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
 import Copy from "../components/icons/Copy"
-import AboutVault, { type AddressRow } from "../components/vault/AboutVault"
+import AboutVault, {
+	type AddressRow,
+	type RuleGroup,
+} from "../components/vault/AboutVault"
 import ActionPanel, {
 	type ActionPanelSide,
 } from "../components/vault/ActionPanel"
-import LifecyclePanel, {
-	type LifecycleStep,
-} from "../components/vault/LifecyclePanel"
 import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
-import { type RequestEntry } from "../components/vault/RequestCard"
-import RequestList from "../components/vault/RequestList"
+import {
+	partitionByStage,
+	type RequestEntry,
+	type RequestStage,
+} from "../components/vault/RequestCard"
+import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
 import typeStyles from "../styles/type.module.css"
 import styles from "./VaultPreview.module.css"
@@ -25,9 +29,18 @@ const shareBalance = 1000
 const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
 	{ id: "position", label: "Position" },
-	{ id: "lifecycle", label: "Lifecycle" },
 	{ id: "about", label: "About" },
 ]
+
+const vaultRules: RuleGroup = {
+	title: "How a request settles",
+	items: [
+		"One request per side per batch.",
+		"One price for everyone in the batch.",
+		"A share claim is claimable at once. A cash claim waits for the reserve to cover it in full.",
+		"Shares need an allowlisted address, cash does not.",
+	],
+}
 
 const vaultSummary =
 	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim becomes claimable once the reserve covers it in full, in any order rather than by queue position."
@@ -65,29 +78,6 @@ const metrics: [Metric, Metric, Metric, Metric] = [
 	},
 ]
 
-const settlementSteps: LifecycleStep[] = [
-	{
-		title: "Request",
-		actor: "YOU",
-		body: "Your TOKEN or shares are locked in the batch that is open. One request per side per batch.",
-	},
-	{
-		title: "Priced",
-		actor: "THE ORACLE",
-		body: "The batch is closed, then priced as soon as the oracle can price it. One price for everyone in it.",
-	},
-	{
-		title: "Claimable",
-		actor: "THE VAULT",
-		body: "A share claim is claimable at once. A cash claim waits for the reserve to cover it in full.",
-	},
-	{
-		title: "Claimed",
-		actor: "YOU",
-		body: "You take the shares or the cash. Shares need an allowlisted address, cash does not.",
-	},
-]
-
 const claimableEntry: RequestEntry = {
 	id: 4,
 	inLabel: "Subscription",
@@ -110,7 +100,7 @@ const waitingEntry: RequestEntry = {
 	outLabel: "Owed to you",
 	outAmount: "12,348.00 TOKEN",
 	outMeta: "Priced 5 Sep 2026",
-	state: "Awaiting liquidity",
+	state: "Priced",
 	tone: "blocked",
 	actions: [{ label: "Claim", kind: "unavailable", onPress: () => {} }],
 	tooltip: {
@@ -128,7 +118,7 @@ const openEntries: RequestEntry[] = [
 		outLabel: "",
 		outAmount: "≈ 966.93 vTOKEN",
 		outTone: "word",
-		state: "Pending",
+		state: "Request",
 		tone: "pending",
 		actions: [{ label: "Cancel request", kind: "ordinary", onPress: () => {} }],
 	},
@@ -140,7 +130,7 @@ const openEntries: RequestEntry[] = [
 		outLabel: "",
 		outAmount: "≈ 517.10 TOKEN",
 		outTone: "word",
-		state: "Pending",
+		state: "Request",
 		tone: "pending",
 		actions: [
 			{ label: "Cancelling ended", kind: "unavailable", onPress: () => {} },
@@ -154,10 +144,36 @@ const requestEntries: RequestEntry[] = [
 	...openEntries,
 ]
 
+const stagedRequests = partitionByStage(requestEntries)
+
+const initialStage: RequestStage =
+	stagedRequests.ready.length === 0 && stagedRequests.waiting.length > 0
+		? "waiting"
+		: "ready"
+
+const requestGroups: [RequestGroup, RequestGroup] = [
+	{
+		id: "ready",
+		label: "Ready to claim",
+		entries: stagedRequests.ready,
+		emptyMessage:
+			"Nothing to claim yet. A request appears here once it is priced, and for cash, once the reserve covers it in full.",
+	},
+	{
+		id: "waiting",
+		label: "Waiting",
+		entries: stagedRequests.waiting,
+		emptyMessage:
+			"Nothing is waiting. A request you make appears here until it is claimable.",
+	},
+]
+
 const VaultPreview: React.FC = () => {
 	const [openTooltipId, setOpenTooltipId] = React.useState<
 		string | number | null
 	>(null)
+	const [activeStage, setActiveStage] =
+		React.useState<RequestStage>(initialStage)
 	const [copied, setCopied] = React.useState(false)
 	const [actionSide, setActionSide] =
 		React.useState<ActionPanelSide>("subscribe")
@@ -170,6 +186,11 @@ const VaultPreview: React.FC = () => {
 	const changeActionSide = (side: ActionPanelSide) => {
 		setActionSide(side)
 		setActionAmount("")
+	}
+
+	const changeStage = (stage: RequestStage) => {
+		setActiveStage(stage)
+		setOpenTooltipId(null)
 	}
 
 	const isSubscribe = actionSide === "subscribe"
@@ -231,38 +252,27 @@ const VaultPreview: React.FC = () => {
 					<div id="requests" className={styles.anchor}>
 						<RequestList
 							heading="Your requests"
-							countLabel={(open) => `${open} open`}
-							entries={requestEntries}
-							emptyMessage="Your requests appear here."
+							groups={requestGroups}
+							activeStage={activeStage}
+							onStageChange={changeStage}
 							openTooltipId={openTooltipId}
 							onToggleTooltip={toggleTooltip}
 						/>
 					</div>
 
-					<section
-						id="position"
-						className={`${styles.section} ${styles.anchor}`}
-					>
-						<h2 className={typeStyles.sectionHead}>Your position</h2>
+					<section id="position" className={styles.anchor}>
 						<PositionCard
+							heading="Your position"
 							label="Your shares"
 							value="1,000.00 vTOKEN"
 							sub="In your wallet"
 						/>
 					</section>
 
-					<div id="lifecycle" className={styles.anchor}>
-						<LifecyclePanel
-							title="How a request settles"
-							progress="Every request, both sides"
-							steps={settlementSteps}
-							currentStep={null}
-						/>
-					</div>
-
 					<div id="about" className={styles.anchor}>
 						<AboutVault
 							summary={vaultSummary}
+							rules={vaultRules}
 							groups={[
 								{ title: "Contracts", rows: contractRows },
 								{ title: "Authorities", rows: authorityRows },
