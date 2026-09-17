@@ -9,11 +9,13 @@ mod redeem;
 mod roles;
 mod state;
 mod treasury;
+mod upgrade;
 
 use bindings::ShareClient;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
 use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
+use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
 
 use keys::DataKey;
@@ -23,10 +25,12 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    RedeemClaimed, RedeemRequested,
+    RedeemClaimed, RedeemRequested, UpgradeCancelled, UpgradeDelayProposed, UpgradeProposed,
+    Upgraded,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
+pub use upgrade::{UpgradeAction, UpgradeProposal, MIN_UPGRADE_DELAY};
 
 fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
     if access_control::get_role_member_count(e, role) == 0 {
@@ -66,6 +70,7 @@ impl AsyncVault {
 
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
         state::set_current_epoch(e, FIRST_EPOCH);
+        upgradeable::set_schema_version(e, 1);
     }
 
     pub fn asset(e: &Env) -> Address {
@@ -142,6 +147,42 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_custodian(e: &Env, custodian: Address, _caller: Address) {
         treasury::set_custodian(e, &custodian);
+    }
+
+    #[only_admin]
+    pub fn set_notice(e: &Env, secs: u64, _caller: Address) {
+        state::set_notice(e, secs);
+    }
+
+    pub fn notice(e: &Env) -> u64 {
+        state::notice(e)
+    }
+
+    #[only_admin]
+    pub fn propose_upgrade(e: &Env, wasm_hash: BytesN<32>, _caller: Address) {
+        upgrade::propose_wasm(e, wasm_hash);
+    }
+
+    #[only_admin]
+    pub fn propose_upgrade_delay(e: &Env, secs: u64, _caller: Address) {
+        upgrade::propose_delay(e, secs);
+    }
+
+    #[only_admin]
+    pub fn cancel_upgrade(e: &Env, _caller: Address) {
+        upgrade::cancel(e);
+    }
+
+    pub fn upgrade_delay(e: &Env) -> u64 {
+        upgrade::delay(e)
+    }
+
+    pub fn upgrade_proposal(e: &Env) -> Option<UpgradeProposal> {
+        upgrade::proposal(e)
+    }
+
+    pub fn schema_version(e: &Env) -> u32 {
+        upgradeable::get_schema_version(e)
     }
 
     #[only_role(caller, "treasury")]

@@ -67,6 +67,14 @@ pub(crate) fn current_epoch(e: &Env) -> u64 {
         .unwrap_or_else(|| panic_with_error!(e, VaultError::NotInitialized))
 }
 
+pub(crate) fn set_notice(e: &Env, secs: u64) {
+    storage::set_instance(e, &DataKey::Notice, &secs);
+}
+
+pub(crate) fn notice(e: &Env) -> u64 {
+    storage::get_instance(e, &DataKey::Notice).unwrap_or(0)
+}
+
 pub(crate) fn set_epoch(e: &Env, id: u64, epoch: &EpochInfo) {
     storage::set_persistent(e, &DataKey::Epoch(id), epoch);
 }
