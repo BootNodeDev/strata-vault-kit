@@ -229,6 +229,9 @@ async function main(): Promise<void> {
 	}
 	saveDeployment(record)
 	console.log(`wrote deployed.${net.name}.json`)
+	if (net.name === "testnet") {
+		console.log("updated environments.toml [staging.contracts]")
+	}
 }
 
 main().catch((error: unknown) => {

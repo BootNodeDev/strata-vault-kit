@@ -34,11 +34,39 @@ export function deploymentFile(network: NetworkName): string {
 	return join(PACKAGE_ROOT, `deployed.${network}.json`)
 }
 
+export function syncEnvironmentsStaging(record: Deployment): void {
+	if (record.network !== "testnet") return
+	const envPath = join(REPO_ROOT, "environments.toml")
+	let content = readFileSync(envPath, "utf8")
+
+	const stagingContractsBlock = [
+		`[staging.contracts]`,
+		`async_vault = { id = "${record.contracts.async_vault}" }`,
+		`nav_oracle = { id = "${record.contracts.nav_oracle}" }`,
+		`share_token = { id = "${record.contracts.share_token}" }`,
+		`identity_verifier = { id = "${record.contracts.identity_verifier}" }`,
+		`compliance = { id = "${record.contracts.compliance}" }`,
+		`asset = { id = "${record.asset.contract}" }`,
+	].join("\n")
+
+	const regex = /\[staging\.contracts\](?:\r?\n[a-z_]+ = \{ id = "[^"]*" \})*/
+	if (!regex.test(content)) {
+		throw new Error(
+			"Could not find [staging.contracts] section in environments.toml",
+		)
+	}
+	content = content.replace(regex, stagingContractsBlock)
+	writeFileSync(envPath, content)
+}
+
 export function saveDeployment(record: Deployment): void {
 	writeFileSync(
 		deploymentFile(record.network),
 		`${JSON.stringify(record, null, 2)}\n`,
 	)
+	if (record.network === "testnet") {
+		syncEnvironmentsStaging(record)
+	}
 }
 
 export function loadDeployment(network: NetworkName): Deployment {
