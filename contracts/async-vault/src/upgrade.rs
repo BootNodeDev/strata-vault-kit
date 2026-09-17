@@ -1,7 +1,7 @@
 use soroban_sdk::{contracttype, panic_with_error, BytesN, Env};
 
 use crate::error::VaultError;
-use crate::event::{UpgradeCancelled, UpgradeDelayProposed, UpgradeProposed};
+use crate::event::{UpgradeCancelled, UpgradeDelayProposed, UpgradeProposed, Upgraded};
 use crate::keys::DataKey;
 use crate::state;
 
@@ -71,4 +71,30 @@ pub(crate) fn cancel(e: &Env) {
     }
     e.storage().instance().remove(&DataKey::UpgradeProposal);
     UpgradeCancelled {}.publish(e);
+}
+
+pub(crate) fn apply(e: &Env) {
+    let p =
+        proposal(e).unwrap_or_else(|| panic_with_error!(e, VaultError::UpgradeProposalNotFound));
+
+    if e.ledger().timestamp() < p.eta {
+        panic_with_error!(e, VaultError::UpgradeDelayNotElapsed);
+    }
+
+    match &p.action {
+        UpgradeAction::Delay(secs) => {
+            // The notice may have moved since the proposal; this check decides.
+            check_delay(e, *secs);
+            storage::set_instance(e, &DataKey::UpgradeDelay, secs);
+            e.storage().instance().remove(&DataKey::UpgradeProposal);
+        }
+        UpgradeAction::Wasm(hash) => {
+            e.storage().instance().remove(&DataKey::UpgradeProposal);
+            stellar_contract_utils::upgradeable::upgrade(e, hash);
+            Upgraded {
+                schema_version: stellar_contract_utils::upgradeable::get_schema_version(e),
+            }
+            .publish(e);
+        }
+    }
 }

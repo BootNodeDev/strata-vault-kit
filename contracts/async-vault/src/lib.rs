@@ -178,6 +178,11 @@ impl AsyncVault {
         upgrade::cancel(e);
     }
 
+    #[only_admin]
+    pub fn apply_upgrade(e: &Env, _caller: Address) {
+        upgrade::apply(e);
+    }
+
     pub fn upgrade_delay(e: &Env) -> u64 {
         upgrade::delay(e)
     }

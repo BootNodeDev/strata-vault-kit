@@ -109,3 +109,87 @@ fn the_schema_version_is_one_after_construction() {
 
     assert_eq!(f.vault.schema_version(), 1);
 }
+
+#[test]
+fn applying_before_the_eta_is_refused() {
+    let f = setup();
+    f.vault.propose_upgrade_delay(&(30 * DAY), &f.admin);
+
+    assert!(f.vault.try_apply_upgrade(&f.admin).is_err());
+
+    f.advance(MIN_UPGRADE_DELAY - 1);
+    assert!(f.vault.try_apply_upgrade(&f.admin).is_err());
+
+    f.advance(1);
+    f.vault.apply_upgrade(&f.admin);
+    assert_eq!(f.vault.upgrade_delay(), 30 * DAY);
+    assert_eq!(f.vault.upgrade_proposal(), None);
+}
+
+#[test]
+fn changing_the_delay_serves_the_old_delay_first() {
+    let f = setup();
+
+    f.vault.propose_upgrade_delay(&(30 * DAY), &f.admin);
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_upgrade(&f.admin);
+
+    // The next proposal uses the new, longer delay.
+    let hash = BytesN::from_array(&f.e, &[7u8; 32]);
+    f.vault.propose_upgrade(&hash, &f.admin);
+    assert_eq!(
+        f.vault.upgrade_proposal().unwrap().eta,
+        f.e.ledger().timestamp() + 30 * DAY
+    );
+}
+
+#[test]
+fn shortening_the_delay_cannot_be_rushed() {
+    let f = setup();
+    f.vault.propose_upgrade_delay(&(30 * DAY), &f.admin);
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_upgrade(&f.admin);
+
+    // Back down to the minimum: still costs the full thirty days.
+    f.vault.propose_upgrade_delay(&MIN_UPGRADE_DELAY, &f.admin);
+    f.advance(30 * DAY - 1);
+    assert!(f.vault.try_apply_upgrade(&f.admin).is_err());
+
+    f.advance(1);
+    f.vault.apply_upgrade(&f.admin);
+    assert_eq!(f.vault.upgrade_delay(), MIN_UPGRADE_DELAY);
+}
+
+#[test]
+fn a_delay_that_the_notice_outgrew_is_refused_at_application() {
+    let f = setup();
+    f.vault.propose_upgrade_delay(&(10 * DAY), &f.admin);
+
+    // The notice moves past the queued delay while the proposal stands.
+    f.vault.set_notice(&(20 * DAY), &f.admin);
+    f.advance(MIN_UPGRADE_DELAY);
+
+    assert!(f.vault.try_apply_upgrade(&f.admin).is_err());
+    assert_eq!(f.vault.upgrade_delay(), MIN_UPGRADE_DELAY);
+}
+
+#[test]
+fn applying_nothing_is_refused() {
+    let f = setup();
+
+    assert!(f.vault.try_apply_upgrade(&f.admin).is_err());
+}
+
+#[test]
+fn only_governance_applies() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    f.vault.propose_upgrade_delay(&(30 * DAY), &f.admin);
+    f.advance(MIN_UPGRADE_DELAY);
+
+    f.e.set_auths(&[]);
+    assert!(f.vault.try_apply_upgrade(&stranger).is_err());
+    assert!(f.vault.try_apply_upgrade(&f.manager).is_err());
+    assert!(f.vault.try_apply_upgrade(&f.guardian).is_err());
+    assert!(f.vault.upgrade_proposal().is_some());
+}
