@@ -24,3 +24,7 @@ nav-oracle = { path = "../nav-oracle" }
 share-token = { path = "../share-token" }
 compliance = { path = "../compliance" }
 identity-verifier = { path = "../identity-verifier" }
+
+[features]
+upgrade_wasm = []
+

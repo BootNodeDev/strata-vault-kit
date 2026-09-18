@@ -87,3 +87,22 @@ pub struct RedeemCancelled {
     pub epoch: u64,
     pub shares: i128,
 }
+
+#[contractevent]
+pub struct UpgradeProposed {
+    pub eta: u64,
+}
+
+#[contractevent]
+pub struct UpgradeDelayProposed {
+    pub secs: u64,
+    pub eta: u64,
+}
+
+#[contractevent]
+pub struct UpgradeCancelled {}
+
+#[contractevent]
+pub struct Upgraded {
+    pub schema_version: u32,
+}
