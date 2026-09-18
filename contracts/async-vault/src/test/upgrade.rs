@@ -210,10 +210,13 @@ fn the_vault_exposes_no_immediate_upgrade() {
 mod with_wasm {
     use super::*;
 
-    const TARGET: &[u8] =
-        include_bytes!("../../../../target/wasm32v1-none/release/upgrade_target.wasm");
+    const TARGET: &[u8] = include_bytes!(
+        "../../../../fixtures/upgrade-target/target/wasm32v1-none/release/upgrade_target.wasm"
+    );
 
-    soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/upgrade_target.wasm");
+    soroban_sdk::contractimport!(
+        file = "../../fixtures/upgrade-target/target/wasm32v1-none/release/upgrade_target.wasm"
+    );
 
     #[test]
     fn applying_a_wasm_proposal_replaces_the_code() {
