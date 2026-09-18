@@ -6,6 +6,7 @@ use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};
 use crate::keys::DataKey;
 use crate::state::{self, EpochInfo, EpochStatus};
+use crate::wind_down;
 
 pub(crate) fn open(total_deposited: i128) -> EpochInfo {
     EpochInfo {
@@ -28,7 +29,7 @@ pub(crate) fn is_priceable(e: &Env, epoch: &EpochInfo) -> bool {
 }
 
 pub(crate) fn close(e: &Env) -> u64 {
-    crate::wind_down::refuse_if_active(e);
+    wind_down::refuse_if_active(e);
     let current = state::current_epoch(e);
     let mut epoch = state::get_epoch(e, current)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
@@ -58,7 +59,7 @@ pub(crate) fn close(e: &Env) -> u64 {
 }
 
 pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
-    crate::wind_down::refuse_if_active(e);
+    wind_down::refuse_if_active(e);
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
 

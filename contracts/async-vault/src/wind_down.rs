@@ -9,6 +9,7 @@ use crate::event::{
 };
 use crate::keys::DataKey;
 use crate::state;
+use crate::treasury;
 
 /// Ninety days. Long enough for a real announcement period, short enough that
 /// governance cannot set a delay the vault would never outlive.
@@ -161,7 +162,7 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
         panic_with_error!(e, VaultError::NothingToDistribute);
     }
 
-    let pot = crate::treasury::free_reserve(e);
+    let pot = treasury::free_reserve(e);
     let delta = checked_mul_div_floor(e, &pot, &WAD_SCALE, &snapshot)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
     if delta <= 0 {
