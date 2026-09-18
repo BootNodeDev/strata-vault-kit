@@ -424,6 +424,16 @@ integrators read the oracle's own interface today.
   holder who never surrenders their shares is never paid, because no entrypoint
   may iterate over holders; and a refund owed to a deposit priced at zero shares
   is not tracked as a liability, so a round can credit the assets it needed.
+- Funding a vault that is winding down cannot be undone. What arrives first
+  covers priced exits and refundable escrow; the surplus is taken by the next
+  round and credited to holders, and no entrypoint returns it. Treasury sends
+  only what it intends to distribute.
+- A wind-down never declares itself finished, because no holder can be made to
+  claim. It is finished when three exposed figures read zero together: what the
+  rounds still owe holders, the share supply, and the free reserve. The owed
+  figure counts holders who have not claimed yet and falls only when one is
+  paid, so its reaching zero means every credit has been collected rather than
+  merely offered.
 
 ### 8.8 Reference interfaces
 
