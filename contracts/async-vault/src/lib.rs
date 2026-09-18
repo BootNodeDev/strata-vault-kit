@@ -9,6 +9,7 @@ mod redeem;
 mod roles;
 mod state;
 mod treasury;
+mod wind_down;
 
 use bindings::ShareClient;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
@@ -23,10 +24,12 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    RedeemClaimed, RedeemRequested,
+    RedeemClaimed, RedeemRequested, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
+pub use wind_down::{WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY};
 
 fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
     if access_control::get_role_member_count(e, role) == 0 {
@@ -142,6 +145,62 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_custodian(e: &Env, custodian: Address, _caller: Address) {
         treasury::set_custodian(e, &custodian);
+    }
+
+    #[only_admin]
+    pub fn set_wind_down_delay(e: &Env, secs: u64, _caller: Address) {
+        wind_down::set_delay(e, secs);
+    }
+
+    pub fn wind_down_delay(e: &Env) -> u64 {
+        wind_down::delay(e)
+    }
+
+    pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
+        wind_down::info(e)
+    }
+
+    #[only_admin]
+    pub fn propose_wind_down(e: &Env, _caller: Address) {
+        wind_down::propose(e);
+    }
+
+    #[only_admin]
+    pub fn cancel_wind_down_proposal(e: &Env, _caller: Address) {
+        wind_down::cancel_proposal(e);
+    }
+
+    /// Open to anyone once the delay has passed, so the operator cannot stall
+    /// the wind-down it announced.
+    pub fn activate_wind_down(e: &Env) {
+        wind_down::activate(e);
+    }
+
+    #[only_admin]
+    pub fn finalize_wind_down_round(e: &Env, _caller: Address) -> i128 {
+        wind_down::finalize_round(e)
+    }
+
+    pub fn wind_down_owed(e: &Env) -> i128 {
+        wind_down::owed(e)
+    }
+
+    pub fn wind_down_supply(e: &Env) -> i128 {
+        wind_down::supply_snapshot(e)
+    }
+
+    pub fn wind_down_acc(e: &Env) -> i128 {
+        wind_down::acc(e)
+    }
+
+    /// Surrenders whatever the holder holds and pays their share of every round
+    /// finalised since they last claimed.
+    pub fn claim_wind_down(e: &Env, holder: Address) -> i128 {
+        wind_down::claim(e, &holder)
+    }
+
+    pub fn wind_down_claimable(e: &Env, holder: Address) -> i128 {
+        wind_down::claimable(e, &holder)
     }
 
     #[only_role(caller, "treasury")]
