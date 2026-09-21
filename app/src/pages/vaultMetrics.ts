@@ -3,7 +3,12 @@ import {
 	type Amount,
 	formatScaled,
 } from "@stellar-scaffold/app-lib"
+import { type AddressRow, type FigureRow } from "../components/vault/AboutVault"
 import { type Metric } from "../components/vault/MetricsStrip"
+import {
+	type AuthorityKey,
+	type VaultAuthorities,
+} from "../hooks/useVaultAuthorities"
 import { type VaultFigures } from "../hooks/useVaultFigures"
 
 export function toMetrics(
@@ -39,5 +44,42 @@ export function toMetrics(
 			"TOKEN owed on priced claims",
 		),
 		metric("Uncovered · vault", uncovered, uncoveredNote(uncovered)),
+	]
+}
+
+const AUTHORITY_LABELS: [AuthorityKey, string][] = [
+	["governance", "Governance"],
+	["manager", "Manager"],
+	["treasury", "Treasury"],
+	["guardian", "Guardian"],
+	["custodian", "Custodian"],
+]
+
+export function toAuthorityRows(
+	authorities: VaultAuthorities | undefined,
+	isPending: boolean,
+): AddressRow[] {
+	return AUTHORITY_LABELS.map(([key, label]) =>
+		isPending
+			? { label, address: null, pending: true }
+			: { label, address: authorities?.[key] ?? null },
+	)
+}
+
+export function toSizeFigures(
+	figures: VaultFigures | undefined,
+	isPending: boolean,
+): FigureRow[] {
+	const figure = (label: string, raw: Amount | null): FigureRow =>
+		isPending
+			? { label, value: null, pending: true }
+			: {
+					label,
+					value: raw === null ? null : formatScaled(raw, AMOUNT_DECIMALS),
+				}
+
+	return [
+		figure("Economic supply", figures?.economicSupply ?? null),
+		figure("Net deployed", figures?.netDeployed ?? null),
 	]
 }
