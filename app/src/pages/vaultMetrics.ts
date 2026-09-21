@@ -6,15 +6,6 @@ import {
 import { type Metric } from "../components/vault/MetricsStrip"
 import { type VaultFigures } from "../hooks/useVaultFigures"
 
-const uncoveredNote = (
-	uncovered: Amount | null,
-	isPending: boolean,
-): string => {
-	if (isPending) return "TOKEN not covered"
-	if (uncovered === null) return "Could not read the vault"
-	return uncovered > 0n ? "TOKEN still needed" : "Every claim is covered"
-}
-
 export function toMetrics(
 	figures: VaultFigures | undefined,
 	isPending: boolean,
@@ -27,6 +18,12 @@ export function toMetrics(
 					value: raw === null ? null : formatScaled(raw, AMOUNT_DECIMALS),
 					note,
 				}
+
+	const uncoveredNote = (uncovered: Amount | null): string => {
+		if (isPending) return "TOKEN not covered"
+		if (uncovered === null) return "Could not read the vault"
+		return uncovered > 0n ? "TOKEN still needed" : "Every claim is covered"
+	}
 
 	const uncovered = figures?.uncovered ?? null
 
@@ -41,6 +38,6 @@ export function toMetrics(
 			figures?.committed ?? null,
 			"TOKEN owed on priced claims",
 		),
-		metric("Uncovered · vault", uncovered, uncoveredNote(uncovered, isPending)),
+		metric("Uncovered · vault", uncovered, uncoveredNote(uncovered)),
 	]
 }

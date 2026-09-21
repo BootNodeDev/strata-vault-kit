@@ -129,21 +129,18 @@ export function formatScaled<D extends Decimals>(
 	decimals: NoInfer<D>,
 	fractionDigits = 2,
 ): string {
-	const negative = value < 0n
-	const magnitude = negative ? -value : value
-	const divisor = 10n ** BigInt(decimals)
-	const integerPart = magnitude / divisor
-	const remainder = magnitude % divisor
-	const fraction = remainder
-		.toString()
-		.padStart(decimals, "0")
-		.padEnd(fractionDigits, "0")
-		.slice(0, fractionDigits)
+	const [integer = "0", fraction] = formatUnits(
+		value,
+		decimals,
+		fractionDigits,
+	).split(".")
+	const negative = integer.startsWith("-")
+	const magnitude = negative ? integer.slice(1) : integer
+	const grouped = BigInt(magnitude).toLocaleString("en-US")
 	const sign = negative ? "-" : ""
-	const grouped = integerPart.toLocaleString("en-US")
-	return fractionDigits > 0
-		? `${sign}${grouped}.${fraction}`
-		: `${sign}${grouped}`
+	return fraction === undefined
+		? `${sign}${grouped}`
+		: `${sign}${grouped}.${fraction}`
 }
 
 /**

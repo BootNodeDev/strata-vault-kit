@@ -133,6 +133,11 @@ describe("formatScaled", () => {
 		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe("-2.50")
 	})
 
+	it("keeps the sign when the magnitude is smaller than one whole unit", () => {
+		const value = -5000000n as Amount
+		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe("-0.50")
+	})
+
 	it("stays exact above Number.MAX_SAFE_INTEGER", () => {
 		const value = 90071992547409921234567n as Amount
 		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe(

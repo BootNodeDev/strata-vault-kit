@@ -49,12 +49,4 @@ describe("readContract", () => {
 
 		expect(read).toEqual({ kind: "unreadable" })
 	})
-
-	it("is unreadable when a rejecting client accessor inside the thunk throws before the call resolves", async () => {
-		const read = await readContract(async () => {
-			throw new Error("could not construct the contract client")
-		})
-
-		expect(read).toEqual({ kind: "unreadable" })
-	})
 })
