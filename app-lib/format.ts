@@ -124,8 +124,6 @@ export function formatUnits<D extends Decimals>(
 		: `${sign}${integerPart}`
 }
 
-// Grouped counterpart to `formatUnits`. Groups as bigint, so exact above
-// `Number.MAX_SAFE_INTEGER`.
 export function formatScaled<D extends Decimals>(
 	value: Scaled<D>,
 	decimals: NoInfer<D>,

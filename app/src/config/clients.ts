@@ -1,1 +1,1 @@
-export { asyncVault, navOracle } from "@stellar-scaffold/app-lib/clients"
+export { asyncVault } from "@stellar-scaffold/app-lib/clients"
