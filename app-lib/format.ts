@@ -124,6 +124,30 @@ export function formatUnits<D extends Decimals>(
 		: `${sign}${integerPart}`
 }
 
+// Grouped counterpart to `formatUnits`. Groups as bigint, so exact above
+// `Number.MAX_SAFE_INTEGER`.
+export function formatScaled<D extends Decimals>(
+	value: Scaled<D>,
+	decimals: NoInfer<D>,
+	fractionDigits = 2,
+): string {
+	const negative = value < 0n
+	const magnitude = negative ? -value : value
+	const divisor = 10n ** BigInt(decimals)
+	const integerPart = magnitude / divisor
+	const remainder = magnitude % divisor
+	const fraction = remainder
+		.toString()
+		.padStart(decimals, "0")
+		.padEnd(fractionDigits, "0")
+		.slice(0, fractionDigits)
+	const sign = negative ? "-" : ""
+	const grouped = integerPart.toLocaleString("en-US")
+	return fractionDigits > 0
+		? `${sign}${grouped}.${fraction}`
+		: `${sign}${grouped}`
+}
+
 /**
  * Parse investor input into a scaled contract value. `null` for anything the
  * chain cannot represent exactly, including more fraction digits than
