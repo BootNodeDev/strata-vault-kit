@@ -31,10 +31,13 @@ const RequestList: React.FC<RequestListProps> = ({
 	onToggleTooltip,
 }) => {
 	const [first, last] = groups
+	const instanceId = React.useId()
+	const tabId = (stage: RequestStage) => `${instanceId}-tab-${stage}`
+	const panelId = (stage: RequestStage) => `${instanceId}-panel-${stage}`
 
 	const selectTab = (group: RequestGroup) => {
 		onStageChange(group.id)
-		document.getElementById(`request-tab-${group.id}`)?.focus()
+		document.getElementById(tabId(group.id))?.focus()
 	}
 
 	const onTabKeyDown = (
@@ -72,9 +75,9 @@ const RequestList: React.FC<RequestListProps> = ({
 							key={group.id}
 							type="button"
 							role="tab"
-							id={`request-tab-${group.id}`}
+							id={tabId(group.id)}
 							aria-selected={isActive}
-							aria-controls={isActive ? `request-panel-${group.id}` : undefined}
+							aria-controls={isActive ? panelId(group.id) : undefined}
 							tabIndex={isActive ? 0 : -1}
 							className={`${styles.tab} ${isActive ? styles.tabActive : ""}`}
 							onClick={() => selectTab(group)}
@@ -88,8 +91,8 @@ const RequestList: React.FC<RequestListProps> = ({
 			</div>
 			<div
 				role="tabpanel"
-				id={`request-panel-${activeGroup.id}`}
-				aria-labelledby={`request-tab-${activeGroup.id}`}
+				id={panelId(activeGroup.id)}
+				aria-labelledby={tabId(activeGroup.id)}
 				className={styles.panel}
 			>
 				{activeGroup.entries.length > 0 ? (

@@ -21,13 +21,7 @@ describe("RequestCard", () => {
 			<RequestCard
 				entry={{
 					...baseEntry,
-					actions: [
-						{
-							label: "Claim (reserve does not cover this yet)",
-							kind: "unavailable",
-							onPress,
-						},
-					],
+					actions: [{ label: "Claim", kind: "unavailable", onPress }],
 				}}
 				tipOpen={false}
 				onToggleTip={() => {}}
@@ -35,7 +29,7 @@ describe("RequestCard", () => {
 		)
 
 		const button = screen.getByRole("button", {
-			name: "Claim (reserve does not cover this yet)",
+			name: "Claim",
 		}) as HTMLButtonElement
 		expect(button.disabled).toBe(true)
 		fireEvent.click(button)
