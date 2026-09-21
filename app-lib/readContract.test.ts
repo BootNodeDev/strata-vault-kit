@@ -1,5 +1,14 @@
+import type { Api } from "@stellar/stellar-sdk/rpc"
 import { describe, expect, it } from "vitest"
 import { readContract } from "./readContract"
+
+const errorSimulation: Api.SimulateTransactionErrorResponse = {
+	id: "1",
+	latestLedger: 100,
+	events: [],
+	_parsed: true,
+	error: "HostError: Error(Contract, #3006)",
+}
 
 describe("readContract", () => {
 	it("passes the value through when the call resolves cleanly", async () => {
@@ -11,7 +20,7 @@ describe("readContract", () => {
 	it("parses the error code out of the simulation, never touching result", async () => {
 		const read = await readContract(() =>
 			Promise.resolve({
-				simulation: { error: "HostError: Error(Contract, #3006)" },
+				simulation: errorSimulation,
 				get result(): bigint {
 					throw new Error("No simulation result!")
 				},
@@ -37,6 +46,14 @@ describe("readContract", () => {
 				},
 			}),
 		)
+
+		expect(read).toEqual({ kind: "unreadable" })
+	})
+
+	it("is unreadable when a rejecting client accessor inside the thunk throws before the call resolves", async () => {
+		const read = await readContract(async () => {
+			throw new Error("could not construct the contract client")
+		})
 
 		expect(read).toEqual({ kind: "unreadable" })
 	})

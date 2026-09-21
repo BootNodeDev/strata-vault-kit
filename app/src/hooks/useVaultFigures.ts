@@ -1,7 +1,10 @@
-import { type Amount } from "@stellar-scaffold/app-lib"
+import {
+	type Amount,
+	type ContractRead,
+	readContract,
+} from "@stellar-scaffold/app-lib"
 import { useQuery } from "@tanstack/react-query"
 import { asyncVault } from "../config/clients"
-import { type ContractRead, readContract } from "../lib/readContract"
 
 export type FigureKey =
 	"liquidReserve" | "committed" | "uncovered" | "economicSupply" | "netDeployed"
@@ -14,11 +17,11 @@ const toAmount = (read: ContractRead<bigint>): Amount | null =>
 async function fetchVaultFigures(): Promise<VaultFigures> {
 	const [liquidReserve, committed, uncovered, economicSupply, netDeployed] =
 		await Promise.all([
-			readContract(() => asyncVault.liquid_reserve()),
-			readContract(() => asyncVault.committed()),
-			readContract(() => asyncVault.uncovered()),
-			readContract(() => asyncVault.total_economic_supply()),
-			readContract(() => asyncVault.net_deployed()),
+			readContract(async () => (await asyncVault()).liquid_reserve()),
+			readContract(async () => (await asyncVault()).committed()),
+			readContract(async () => (await asyncVault()).uncovered()),
+			readContract(async () => (await asyncVault()).total_economic_supply()),
+			readContract(async () => (await asyncVault()).net_deployed()),
 		])
 
 	return {

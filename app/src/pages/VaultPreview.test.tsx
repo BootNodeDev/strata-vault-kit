@@ -19,16 +19,15 @@ vi.mock("../config/contracts", () => {
 
 vi.mock("../config/clients", () => {
 	const figure = (result: bigint) => async () => ({ result })
-
-	return {
-		asyncVault: {
-			liquid_reserve: figure(184000000000n),
-			committed: figure(62000000000n),
-			uncovered: figure(0n),
-			total_economic_supply: figure(0n),
-			net_deployed: figure(0n),
-		},
+	const vault = {
+		liquid_reserve: figure(184000000000n),
+		committed: figure(62000000000n),
+		uncovered: figure(0n),
+		total_economic_supply: figure(0n),
+		net_deployed: figure(0n),
 	}
+
+	return { asyncVault: async () => vault }
 })
 
 const renderVaultPreview = (): ReturnType<typeof render> => {
