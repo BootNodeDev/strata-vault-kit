@@ -7,10 +7,6 @@
 	background: var(--vault-surface-card);
 }
 
-.about > h2 {
-	margin: 0;
-}
-
 .prose {
 	display: flex;
 	flex-direction: column;
@@ -19,7 +15,6 @@
 
 .summary {
 	max-width: 80ch;
-	margin: 0;
 	color: var(--vault-text-body);
 	text-wrap: pretty;
 }

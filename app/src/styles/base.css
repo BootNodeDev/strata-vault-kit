@@ -1,0 +1,11 @@
+/* Layout spacing comes from flex and grid gaps. Default heading and paragraph
+   margins do not collapse inside a flex container, so they add to every gap. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+	margin: 0;
+}
