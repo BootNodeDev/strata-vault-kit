@@ -162,6 +162,46 @@ fn a_cooldown_holds_the_standing_price() {
 }
 
 #[test]
+fn a_cooldown_delays_pricing_until_the_attester_can_post() {
+    let f = setup_with_feed(OracleConfig {
+        cooldown_secs: 3_600,
+        ..open_feed()
+    });
+    // holder() attests at 2.0 to price its own deposit.
+    let holder = f.holder(100);
+
+    f.vault.request_redeem(&holder, &100);
+    f.advance(60);
+    let epoch = f.close_epoch();
+
+    // Inside the cooldown the attester cannot post, so the epoch has no
+    // valuation younger than its close and waits.
+    assert!(f
+        .oracle
+        .try_attest(
+            &NavReport {
+                nav_per_share: wad(1),
+                timestamp: 0,
+                expires_at: 1_000_000,
+            },
+            &f.attester
+        )
+        .is_err());
+    refused(
+        f.vault.try_fulfill_epoch(&epoch),
+        VaultError::AttestationBeforeClose,
+    );
+
+    // Once the cooldown lapses the attester posts and the epoch prices at the
+    // new number, not the one standing when it closed.
+    f.advance(3_600);
+    f.attest(wad(1));
+    f.vault.fulfill_epoch(&epoch);
+
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(1));
+}
+
+#[test]
 fn a_stale_feed_refuses_to_price_until_reattested() {
     let f = setup();
     let holder = f.holder(100);
@@ -171,7 +211,7 @@ fn a_stale_feed_refuses_to_price_until_reattested() {
     let epoch = f.close_epoch();
 
     f.advance(7_200); // past the 3600s freshness window
-    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
+    refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
 
     f.attest(wad(1));
     f.vault.fulfill_epoch(&epoch);
@@ -182,7 +222,7 @@ fn a_stale_feed_refuses_to_price_until_reattested() {
 fn governance_cannot_renounce_itself_out_of_the_vault() {
     let f = setup();
 
-    assert!(f.vault.try_renounce_admin().is_err());
+    refused(f.vault.try_renounce_admin(), VaultError::AdminRequired);
 
     // Still governed: the admin-only paths keep working.
     f.vault.pause(&f.guardian);

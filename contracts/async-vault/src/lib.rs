@@ -8,6 +8,7 @@ mod keys;
 mod redeem;
 mod roles;
 mod state;
+mod timing;
 mod treasury;
 
 use bindings::ShareClient;
@@ -23,10 +24,14 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    RedeemClaimed, RedeemRequested,
+    NoticeSet, RedeemClaimed, RedeemRequested,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
+
+/// Thirty days. Longer than any notice a real structure uses, short enough that
+/// setting it by mistake is survivable.
+pub const MAX_NOTICE_SECS: u64 = 30 * 24 * 60 * 60;
 
 fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
     if access_control::get_role_member_count(e, role) == 0 {
@@ -144,6 +149,15 @@ impl AsyncVault {
         treasury::set_custodian(e, &custodian);
     }
 
+    #[only_admin]
+    pub fn set_notice(e: &Env, secs: u64, _caller: Address) {
+        if secs > MAX_NOTICE_SECS {
+            panic_with_error!(e, VaultError::NoticeTooLong);
+        }
+        state::set_notice(e, secs);
+        NoticeSet { secs }.publish(e);
+    }
+
     #[only_role(caller, "treasury")]
     pub fn deploy_to_custodian(e: &Env, caller: Address, assets: i128) -> i128 {
         treasury::deploy(e, assets)
@@ -151,6 +165,10 @@ impl AsyncVault {
 
     pub fn fund(e: &Env, from: Address, assets: i128) -> i128 {
         treasury::fund(e, &from, assets)
+    }
+
+    pub fn notice(e: &Env) -> u64 {
+        state::notice(e)
     }
 
     pub fn current_epoch(e: &Env) -> u64 {

@@ -1,0 +1,27 @@
+{
+  "name": "@strata-vault-kit/harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deploys the vault set to a network and runs integration tests.",
+  "scripts": {
+    "deploy": "tsx deploy.ts",
+    "build:clients": "tsx build-clients.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test:happy-path": "vitest run happy-path.test.ts",
+    "test:guards": "vitest run guards.test.ts"
+  },
+  "dependencies": {
+    "@stellar/stellar-sdk": "16.1.0"
+  },
+  "devDependencies": {
+    "@theahaco/ts-config": "1.3.2",
+    "@types/node": "22.19.2",
+    "eslint": "10.0.0",
+    "globals": "17.6.0",
+    "tsx": "4.23.13",
+    "typescript": "6.0.2",
+    "vitest": "4.1.11"
+  }
+}
