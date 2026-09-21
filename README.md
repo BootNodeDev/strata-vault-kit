@@ -50,6 +50,24 @@ stellar contract build && cargo test
 Formatting and secret-scanning run on commit via a `prek` hook — see
 `.pre-commit-config.yaml` and run `prek install` once.
 
+### Integration & On-Chain Tests
+
+To generate TypeScript client bindings from contract WASMs:
+
+```sh
+stellar contract build
+npm run build:clients
+```
+
+To deploy contracts and run integration test suites against a network:
+
+```sh
+npm run deploy -w scripts/harness
+npm run test:happy-path -w scripts/harness
+npm run test:guards -w scripts/harness
+```
+
+
 ## Reference base
 
 Built on our own

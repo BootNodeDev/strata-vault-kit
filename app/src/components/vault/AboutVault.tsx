@@ -14,14 +14,20 @@ export type AddressGroup = {
 }
 
 type AboutVaultProps = {
-	summary: string
+	summary: string[]
 	groups: AddressGroup[]
 }
 
 const AboutVault: React.FC<AboutVaultProps> = ({ summary, groups }) => (
 	<section className={styles.about}>
 		<h2 className={typeStyles.sectionHead}>About this vault</h2>
-		<p className={`${typeStyles.body} ${styles.summary}`}>{summary}</p>
+		<div className={styles.prose}>
+			{summary.map((paragraph) => (
+				<p className={`${typeStyles.body} ${styles.summary}`} key={paragraph}>
+					{paragraph}
+				</p>
+			))}
+		</div>
 		{groups.map((group) => (
 			<div className={styles.group} key={group.title}>
 				<span className={`${typeStyles.label} ${styles.groupTitle}`}>

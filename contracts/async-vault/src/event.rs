@@ -57,6 +57,11 @@ pub struct CustodianSet {
 }
 
 #[contractevent]
+pub struct NoticeSet {
+    pub secs: u64,
+}
+
+#[contractevent]
 pub struct Deployed {
     #[topic]
     pub custodian: Address,

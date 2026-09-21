@@ -73,12 +73,6 @@
 	scroll-margin-top: 18px;
 }
 
-.section {
-	display: flex;
-	flex-direction: column;
-	gap: 12px;
-}
-
 .body {
 	display: grid;
 	grid-template-columns: minmax(0, 2.2fr) minmax(320px, 1fr);

@@ -41,9 +41,6 @@ pub enum VaultError {
     /// The request was already claimed. Claiming is idempotent by rejection,
     /// not by silently minting nothing twice.
     AlreadyClaimed = 6035,
-    /// The deposit is smaller than one share at the epoch's price, so it would
-    /// mint zero. Rejected rather than burning the deposit to dust.
-    NothingToClaim = 6036,
     /// The vault does not hold enough to pay this claim yet. The liability
     /// stands and the claim succeeds once the reserve covers it.
     ClaimNotCovered = 6037,
@@ -62,6 +59,17 @@ pub enum VaultError {
     /// is already knowable. Cancelling now would be declining a price after
     /// seeing it. Fulfil and claim instead.
     PriceAvailable = 6041,
+    /// The epoch closed less than its notice ago, so its price is not fixed
+    /// yet and every request in it is still waiting.
+    NoticeNotElapsed = 6042,
+    /// The standing valuation was accepted before the epoch closed. Pricing
+    /// against it would use a number the close already outran.
+    AttestationBeforeClose = 6043,
+    /// The feed is paused or stale, so the epoch has no price to take.
+    FeedNotValid = 6044,
+    /// The notice exceeds the longest the vault accepts. A notice no investor
+    /// could outlive would strand their exit with no way to undo it.
+    NoticeTooLong = 6045,
     /// The vault is winding down. Entry, pricing and transfers to the custodian
     /// are closed for the rest of its life.
     WindDownActive = 6046,

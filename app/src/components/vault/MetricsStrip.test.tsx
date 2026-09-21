@@ -3,18 +3,22 @@ import { describe, expect, it } from "vitest"
 import MetricsStrip, { type Metric } from "./MetricsStrip"
 
 const metrics: [Metric, Metric, Metric, Metric] = [
-	{
-		label: "Net assets",
-		value: "23,310.00",
-		note: "On-chain reserve + custodian",
-	},
-	{
-		label: "Total supply",
-		value: "22,539.16",
-		note: "vTOKEN issued, escrow included",
-	},
 	{ label: "Share price", value: "1.0342", note: "Attested 31 Aug 2026" },
-	{ label: "Open epoch", value: "E-18", note: "Takes new requests" },
+	{
+		label: "Liquid reserve",
+		value: "18,400.00",
+		note: "TOKEN the vault holds now",
+	},
+	{
+		label: "Committed",
+		value: "6,200.00",
+		note: "TOKEN owed on priced claims",
+	},
+	{
+		label: "Uncovered · vault",
+		value: "0.00",
+		note: "Every claim is covered",
+	},
 ]
 
 describe("MetricsStrip", () => {
