@@ -66,6 +66,6 @@ describe("VaultPreview", () => {
 	it("states one of the four batch-settlement rules in the vault explainer", () => {
 		render(<VaultPreview />)
 
-		expect(screen.getByText("One request per side per batch.")).toBeTruthy()
+		expect(screen.getByText(/one request per side per batch/i)).toBeTruthy()
 	})
 })

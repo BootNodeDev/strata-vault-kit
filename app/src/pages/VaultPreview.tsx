@@ -1,10 +1,7 @@
 import { formatAmount, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
 import Copy from "../components/icons/Copy"
-import AboutVault, {
-	type AddressRow,
-	type RuleGroup,
-} from "../components/vault/AboutVault"
+import AboutVault, { type AddressRow } from "../components/vault/AboutVault"
 import ActionPanel, {
 	type ActionPanelSide,
 } from "../components/vault/ActionPanel"
@@ -32,18 +29,10 @@ const sections: { id: string; label: string }[] = [
 	{ id: "about", label: "About" },
 ]
 
-const vaultRules: RuleGroup = {
-	title: "How a request settles",
-	items: [
-		"One request per side per batch.",
-		"One price for everyone in the batch.",
-		"A share claim is claimable at once. A cash claim waits for the reserve to cover it in full.",
-		"Shares need an allowlisted address, cash does not.",
-	],
-}
-
-const vaultSummary =
-	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim becomes claimable once the reserve covers it in full, in any order rather than by queue position."
+const vaultSummary = [
+	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim becomes claimable once the reserve covers it in full, in any order rather than by queue position.",
+	"You may hold one request per side per batch, and one price applies to everyone in it. A share claim is claimable at once; a cash claim waits for the reserve to cover it in full. Shares need an allowlisted address to claim, cash does not.",
+]
 
 // TODO: read these from the vault, which exposes one public view per row.
 const authorityRows: AddressRow[] = [
@@ -272,7 +261,6 @@ const VaultPreview: React.FC = () => {
 					<div id="about" className={styles.anchor}>
 						<AboutVault
 							summary={vaultSummary}
-							rules={vaultRules}
 							groups={[
 								{ title: "Contracts", rows: contractRows },
 								{ title: "Authorities", rows: authorityRows },

@@ -7,8 +7,19 @@
 	background: var(--vault-surface-card);
 }
 
+.about > h2 {
+	margin: 0;
+}
+
+.prose {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
 .summary {
 	max-width: 80ch;
+	margin: 0;
 	color: var(--vault-text-body);
 	text-wrap: pretty;
 }
@@ -23,21 +34,6 @@
 
 .groupTitle {
 	color: var(--vault-text-muted);
-}
-
-.rules {
-	display: flex;
-	flex-direction: column;
-	gap: 9px;
-	margin: 0;
-	padding: 0;
-	list-style: none;
-}
-
-.rule {
-	max-width: 80ch;
-	color: var(--vault-text-body);
-	text-wrap: pretty;
 }
 
 .rows {

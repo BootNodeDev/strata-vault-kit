@@ -1,20 +1,12 @@
 import { render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import AboutVault, { type AddressGroup, type RuleGroup } from "./AboutVault"
+import AboutVault, { type AddressGroup } from "./AboutVault"
 
 vi.mock("@stellar-scaffold/app-lib", () => ({
 	shortAddress: (address: string) =>
 		`${address.slice(0, 4)}...${address.slice(-4)}`,
 	explorerContract: (address: string) => `https://explorer.test/${address}`,
 }))
-
-const rules: RuleGroup = {
-	title: "How a request settles",
-	items: [
-		"One request per side per batch.",
-		"One price for everyone in the batch.",
-	],
-}
 
 const groups: AddressGroup[] = [
 	{
@@ -31,13 +23,12 @@ describe("AboutVault", () => {
 	it("links a configured address to the explorer and leaves a placeholder unlinked", () => {
 		render(
 			<AboutVault
-				summary="What this vault is."
-				rules={rules}
+				summary={["What this vault is.", "How a request settles."]}
 				groups={groups}
 			/>,
 		)
 
-		const [ruleList, contracts, authorities] = screen.getAllByRole("list")
+		const [contracts, authorities] = screen.getAllByRole("list")
 		const [vault] = within(contracts!).getAllByRole("listitem")
 		const [governance] = within(authorities!).getAllByRole("listitem")
 
@@ -47,8 +38,6 @@ describe("AboutVault", () => {
 				.getAttribute("href"),
 		).toBe("https://explorer.test/CVAULTADDRESS1234")
 		expect(within(governance!).queryByRole("link")).toBeNull()
-		expect(
-			within(ruleList!).getByText("One request per side per batch."),
-		).toBeTruthy()
+		expect(screen.getByText("How a request settles.")).toBeTruthy()
 	})
 })

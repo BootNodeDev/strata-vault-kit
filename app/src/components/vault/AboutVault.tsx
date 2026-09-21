@@ -13,32 +13,20 @@ export type AddressGroup = {
 	rows: AddressRow[]
 }
 
-export type RuleGroup = {
-	title: string
-	items: string[]
-}
-
 type AboutVaultProps = {
-	summary: string
-	rules: RuleGroup
+	summary: string[]
 	groups: AddressGroup[]
 }
 
-const AboutVault: React.FC<AboutVaultProps> = ({ summary, rules, groups }) => (
+const AboutVault: React.FC<AboutVaultProps> = ({ summary, groups }) => (
 	<section className={styles.about}>
 		<h2 className={typeStyles.sectionHead}>About this vault</h2>
-		<p className={`${typeStyles.body} ${styles.summary}`}>{summary}</p>
-		<div className={styles.group}>
-			<span className={`${typeStyles.label} ${styles.groupTitle}`}>
-				{rules.title}
-			</span>
-			<ul className={styles.rules}>
-				{rules.items.map((item) => (
-					<li className={`${typeStyles.footnote} ${styles.rule}`} key={item}>
-						{item}
-					</li>
-				))}
-			</ul>
+		<div className={styles.prose}>
+			{summary.map((paragraph) => (
+				<p className={`${typeStyles.body} ${styles.summary}`} key={paragraph}>
+					{paragraph}
+				</p>
+			))}
 		</div>
 		{groups.map((group) => (
 			<div className={styles.group} key={group.title}>
