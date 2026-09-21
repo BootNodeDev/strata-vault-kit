@@ -25,8 +25,8 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    RedeemClaimed, RedeemRequested, NoticeSet, WindDownActivated, WindDownClaimed, WindDownDelaySet,
-    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
+    NoticeSet, RedeemClaimed, RedeemRequested, WindDownActivated, WindDownClaimed,
+    WindDownDelaySet, WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
@@ -206,6 +206,9 @@ impl AsyncVault {
 
     pub fn wind_down_claimable(e: &Env, holder: Address) -> i128 {
         wind_down::claimable(e, &holder)
+    }
+
+    #[only_admin]
     pub fn set_notice(e: &Env, secs: u64, _caller: Address) {
         if secs > MAX_NOTICE_SECS {
             panic_with_error!(e, VaultError::NoticeTooLong);

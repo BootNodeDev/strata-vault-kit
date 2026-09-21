@@ -6,8 +6,8 @@ use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};
 use crate::keys::DataKey;
 use crate::state::{self, EpochInfo, EpochStatus};
-use crate::wind_down;
 use crate::timing::{FulfilmentTiming, StandardTiming};
+use crate::wind_down;
 
 /// The schedule this vault fulfils on.
 type Timing = StandardTiming;
