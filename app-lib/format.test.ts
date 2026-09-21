@@ -3,6 +3,7 @@ import { networkPassphrase } from "./env"
 import {
 	AMOUNT_DECIMALS,
 	type Amount,
+	formatDate,
 	formatNetworkName,
 	formatScaled,
 	formatUnits,
@@ -143,6 +144,23 @@ describe("formatScaled", () => {
 		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe(
 			"9,007,199,254,740,992.12",
 		)
+	})
+})
+
+describe("formatDate", () => {
+	it("renders a ledger timestamp in UTC, not the local calendar day", () => {
+		const timestamp = BigInt(Date.UTC(2026, 8, 16, 0, 30, 0) / 1000)
+
+		expect(formatDate(timestamp)).toBe("16 Sep 2026")
+
+		const nonUtcRendering = new Intl.DateTimeFormat("en-US", {
+			day: "numeric",
+			month: "short",
+			year: "numeric",
+			timeZone: "America/New_York",
+		}).format(new Date(Number(timestamp) * 1000))
+		expect(nonUtcRendering).toBe("Sep 15, 2026")
+		expect(formatDate(timestamp)).not.toBe(nonUtcRendering)
 	})
 })
 

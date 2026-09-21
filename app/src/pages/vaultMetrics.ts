@@ -1,10 +1,13 @@
 import {
 	AMOUNT_DECIMALS,
 	type Amount,
+	formatDate,
 	formatScaled,
+	PRICE_DECIMALS,
 } from "@stellar-scaffold/app-lib"
 import { type AddressRow, type FigureRow } from "../components/vault/AboutVault"
 import { type Metric } from "../components/vault/MetricsStrip"
+import { type NavClassification } from "../hooks/useNavPrice"
 import {
 	type AuthorityKey,
 	type VaultAuthorities,
@@ -64,6 +67,49 @@ export function toAuthorityRows(
 			? { label, address: null, pending: true }
 			: { label, address: authorities?.[key] ?? null },
 	)
+}
+
+export function toPriceMetric(
+	nav: NavClassification | undefined,
+	isPending: boolean,
+): Metric {
+	if (isPending) {
+		return {
+			label: "Share price",
+			value: null,
+			note: "Reading the oracle",
+			pending: true,
+		}
+	}
+
+	switch (nav?.status) {
+		case "valid":
+			return {
+				label: "Share price",
+				value: formatScaled(nav.price, PRICE_DECIMALS, 4),
+				note: `Attested ${formatDate(nav.attestedAt)}`,
+			}
+		case "stale":
+			return {
+				label: "Share price",
+				value: null,
+				note: `Price expired ${formatDate(nav.expiresAt)}`,
+			}
+		case "paused":
+			return { label: "Share price", value: null, note: "Oracle paused" }
+		case "never":
+			return {
+				label: "Share price",
+				value: null,
+				note: "No price attested yet",
+			}
+		default:
+			return {
+				label: "Share price",
+				value: null,
+				note: "Could not read the oracle",
+			}
+	}
 }
 
 export function toSizeFigures(

@@ -14,10 +14,16 @@ import {
 } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
+import { useNavPrice } from "../hooks/useNavPrice"
 import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
 import { useVaultFigures } from "../hooks/useVaultFigures"
 import typeStyles from "../styles/type.module.css"
-import { toAuthorityRows, toMetrics, toSizeFigures } from "./vaultMetrics"
+import {
+	toAuthorityRows,
+	toMetrics,
+	toPriceMetric,
+	toSizeFigures,
+} from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
 
 const vaultName = "Operator vault name"
@@ -40,12 +46,6 @@ const vaultSummary = [
 const parseAmount = (raw: string): number | null => {
 	const value = Number(raw.replace(/,/g, ""))
 	return Number.isFinite(value) && value > 0 ? value : null
-}
-
-const sharePriceMetric: Metric = {
-	label: "Share price",
-	value: "1.0342",
-	note: "NAV of 31 Aug 2026",
 }
 
 const claimableEntry: RequestEntry = {
@@ -151,8 +151,9 @@ const VaultPreview: React.FC = () => {
 
 	const { figures, isPending: isPendingFigures } = useVaultFigures()
 	const { authorities, isPending: isPendingAuthorities } = useVaultAuthorities()
+	const { nav, isPending: isPendingNav } = useNavPrice()
 	const metrics: [Metric, Metric, Metric, Metric] = [
-		sharePriceMetric,
+		toPriceMetric(nav, isPendingNav),
 		...toMetrics(figures, isPendingFigures),
 	]
 	const authorityRows = toAuthorityRows(authorities, isPendingAuthorities)

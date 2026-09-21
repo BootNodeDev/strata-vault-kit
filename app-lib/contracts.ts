@@ -4,6 +4,7 @@ import {
 	type MethodOptions,
 	type Option,
 	type i128,
+	type u64,
 } from "@stellar/stellar-sdk/contract"
 import { network, networkPassphrase, rpcUrl } from "./env"
 
@@ -38,6 +39,30 @@ export const connectAsyncVault = (
 	contractId: string,
 ): Promise<AsyncVaultViews> =>
 	Client.from<AsyncVaultViews>({
+		contractId,
+		rpcUrl,
+		networkPassphrase,
+		allowHttp: network.id === "local",
+	})
+
+export type OracleState =
+	| { tag: "Valid"; values: void }
+	| { tag: "Stale"; values: void }
+	| { tag: "Paused"; values: void }
+
+export interface NavReport {
+	nav_per_share: i128
+	expires_at: u64
+	timestamp: u64
+}
+
+export interface NavOracleViews {
+	state: (options?: MethodOptions) => Promise<AssembledTransaction<OracleState>>
+	latest: (options?: MethodOptions) => Promise<AssembledTransaction<NavReport>>
+}
+
+export const connectNavOracle = (contractId: string): Promise<NavOracleViews> =>
+	Client.from<NavOracleViews>({
 		contractId,
 		rpcUrl,
 		networkPassphrase,

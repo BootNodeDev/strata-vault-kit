@@ -41,21 +41,9 @@ describe("AboutVault", () => {
 		).toBe("https://explorer.test/CVAULTADDRESS1234")
 	})
 
-	it("renders an authority that was never set as Unavailable with no link", () => {
+	it("renders an unset or failed-to-read authority as Unavailable with no link", () => {
 		renderAboutVault([
 			{ title: "Authorities", rows: [{ label: "Custodian", address: null }] },
-		])
-
-		const [, authorities] = screen.getAllByRole("list")
-		const [row] = within(authorities!).getAllByRole("listitem")
-
-		expect(within(row!).getByText("Unavailable")).toBeTruthy()
-		expect(within(row!).queryByRole("link")).toBeNull()
-	})
-
-	it("renders an authority whose read failed identically to one never set", () => {
-		renderAboutVault([
-			{ title: "Authorities", rows: [{ label: "Guardian", address: null }] },
 		])
 
 		const [, authorities] = screen.getAllByRole("list")
