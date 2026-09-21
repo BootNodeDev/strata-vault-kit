@@ -21,7 +21,12 @@ const groups: AddressGroup[] = [
 
 describe("AboutVault", () => {
 	it("links a configured address to the explorer and leaves a placeholder unlinked", () => {
-		render(<AboutVault summary="What this vault is." groups={groups} />)
+		render(
+			<AboutVault
+				summary={["What this vault is.", "How a request settles."]}
+				groups={groups}
+			/>,
+		)
 
 		const [contracts, authorities] = screen.getAllByRole("list")
 		const [vault] = within(contracts!).getAllByRole("listitem")
@@ -33,5 +38,6 @@ describe("AboutVault", () => {
 				.getAttribute("href"),
 		).toBe("https://explorer.test/CVAULTADDRESS1234")
 		expect(within(governance!).queryByRole("link")).toBeNull()
+		expect(screen.getByText("How a request settles.")).toBeTruthy()
 	})
 })

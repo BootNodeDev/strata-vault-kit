@@ -3,7 +3,6 @@ import { expect, test } from "@playwright/test"
 const sections = [
 	{ link: "Requests", heading: "Your requests" },
 	{ link: "Position", heading: "Your position" },
-	{ link: "Lifecycle", heading: "How a request settles" },
 	{ link: "About", heading: "About this vault" },
 ]
 
