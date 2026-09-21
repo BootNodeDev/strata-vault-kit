@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_successful_deployment() {
+fn deployment_initialises_the_vault() {
     let f = setup();
 
     assert_eq!(f.vault.asset(), f.asset);

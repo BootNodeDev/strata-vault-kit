@@ -166,9 +166,7 @@ fn a_later_epochs_deposit_does_not_fund_an_earlier_exit() {
     let late = f.investor(1_000);
 
     // Move the vault's own cash out, so only the new deposit can cover the exit.
-    f.vault.set_custodian(&f.custodian, &f.admin);
-    let free = f.vault.free_reserve();
-    f.vault.deploy_to_custodian(&f.treasury, &free);
+    f.empty_reserve();
 
     f.vault.request_redeem(&a, &100);
     let exits = f.close_epoch();
@@ -199,9 +197,7 @@ fn an_epoch_prices_without_the_cash() {
     let f = setup();
     let a = f.holder(200);
 
-    f.vault.set_custodian(&f.custodian, &f.admin);
-    f.vault
-        .deploy_to_custodian(&f.treasury, &f.vault.free_reserve());
+    f.empty_reserve();
 
     f.vault.request_redeem(&a, &100);
     let epoch = f.close_epoch();
@@ -224,9 +220,7 @@ fn a_claim_waits_until_the_reserve_covers_it() {
     let f = setup();
     let a = f.holder(200);
 
-    f.vault.set_custodian(&f.custodian, &f.admin);
-    f.vault
-        .deploy_to_custodian(&f.treasury, &f.vault.free_reserve());
+    f.empty_reserve();
 
     f.vault.request_redeem(&a, &100);
     let epoch = f.close_epoch();
@@ -248,9 +242,7 @@ fn a_covered_claim_pays_while_a_larger_one_waits() {
     let big = f.holder(400);
     let small = f.holder(20);
 
-    f.vault.set_custodian(&f.custodian, &f.admin);
-    f.vault
-        .deploy_to_custodian(&f.treasury, &f.vault.free_reserve());
+    f.empty_reserve();
 
     f.vault.request_redeem(&big, &400);
     f.vault.request_redeem(&small, &20);

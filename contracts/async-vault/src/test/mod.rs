@@ -6,9 +6,11 @@ mod conversions;
 mod deposit;
 mod epochs;
 mod multi_epoch;
+mod notice;
 mod oracle_pricing;
 mod redeem;
 mod supply;
+mod timing;
 mod treasury;
 
 extern crate std;
@@ -27,7 +29,9 @@ pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
 
-pub(crate) use crate::{AsyncVault, AsyncVaultClient, EpochStatus, VaultRoles};
+pub(crate) use crate::{
+    AsyncVault, AsyncVaultClient, EpochStatus, VaultError, VaultRoles, MAX_NOTICE_SECS,
+};
 
 fn wad(whole: i128) -> i128 {
     whole * WAD_SCALE
@@ -112,6 +116,14 @@ impl Fixture<'_> {
         self.attest(nav_per_share);
         self.vault.fulfill_epoch(&epoch);
     }
+
+    fn empty_reserve(&self) {
+        self.vault.set_custodian(&self.custodian, &self.admin);
+        let free = self.vault.free_reserve();
+        if free > 0 {
+            self.vault.deploy_to_custodian(&self.treasury, &free);
+        }
+    }
 }
 
 pub(crate) fn distinct_roles(e: &Env) -> VaultRoles {
@@ -123,6 +135,16 @@ pub(crate) fn distinct_roles(e: &Env) -> VaultRoles {
         compliance: Address::generate(e),
         attester: Address::generate(e),
     }
+}
+
+/// Asserts a call was refused with exactly this error. Entrypoints panic
+/// rather than returning `Result`, so the client hands back the SDK's error
+/// type and the vault's variant converts into it.
+pub(crate) fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
+    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+    expected: crate::VaultError,
+) {
+    assert_eq!(result, Err(Ok(expected.into())));
 }
 
 pub(crate) fn register_with(e: &Env, roles: VaultRoles) -> Address {

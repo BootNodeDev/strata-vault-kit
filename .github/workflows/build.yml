@@ -65,6 +65,11 @@ jobs:
           else
             echo "stellar-scaffold already installed. Clear cache to force reinstall."
           fi
+      - name: Install stellar CLI
+        run: |
+          if ! command -v stellar &> /dev/null; then
+            cargo binstall --locked stellar-cli@27.0.0
+          fi
       - name: Start Stellar local network
         # No tagged releases upstream, so this pins main as read on 2026-08-14
         uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
@@ -123,3 +128,24 @@ jobs:
       - name: Run smoke tests
         run: npx playwright test
         working-directory: e2e
+      - name: Deploy the vault set to the local network
+        run: npm run deploy -w scripts/harness
+        env:
+          HARNESS_NETWORK: local
+      - name: Typecheck the harness workspace
+        run: npm run typecheck -w scripts/harness
+      - name: Run the vault happy path on the local network
+        run: npm run test:happy-path -w scripts/harness
+        env:
+          HARNESS_NETWORK: local
+      - name: Run the vault guards on the local network
+        run: npm run test:guards -w scripts/harness
+        env:
+          HARNESS_NETWORK: local
+      - name: Keep the harness report when it fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-runs
+          path: scripts/harness/runs/
+          if-no-files-found: ignore

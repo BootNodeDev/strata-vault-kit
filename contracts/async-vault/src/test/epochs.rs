@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn test_manager_can_fulfill_epoch_and_rotate() {
+fn fulfilling_an_epoch_prices_it_and_opens_the_next() {
     let f = setup();
 
     assert_eq!(f.fulfill_epoch(wad(2)), 1);
@@ -137,7 +137,7 @@ fn epochs_can_be_fulfilled_out_of_order_after_closing() {
 
 #[test]
 #[should_panic(expected = "#2000")]
-fn test_non_manager_cannot_close() {
+fn a_non_manager_cannot_close() {
     let f = setup();
     let impostor = Address::generate(&f.e);
 

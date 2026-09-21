@@ -9,13 +9,15 @@
     "lint": "npm run lint --workspaces --if-present",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
+    "build:clients": "npm run build:clients -w scripts/harness",
     "test": "vitest run"
   },
   "workspaces": [
     "app",
     "app-lib",
     "app-lib/clients/*",
-    "e2e"
+    "e2e",
+    "scripts/harness"
   ],
   "devDependencies": {
     "@testing-library/react": "16.3.3",
@@ -25,5 +27,9 @@
     "vitest": "4.1.11"
   },
   "prettier": "@theahaco/ts-config/prettier",
+  "overrides": {
+    "@stellar/stellar-sdk": "16.1.0",
+    "axios": "^1.18.0"
+  },
   "packageManager": "npm@11.7.0"
 }
