@@ -12,6 +12,7 @@ pub(crate) enum DataKey {
     Committed,
     CancellableEscrow,
     PendingMintShares,
+    PendingBurnShares,
     Epoch(u64),
     UserDeposit(u64, Address),
     UserRedeem(u64, Address),

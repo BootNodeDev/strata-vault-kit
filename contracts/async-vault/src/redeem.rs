@@ -75,6 +75,11 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     let assets = checked_mul_div_floor(e, &request.shares, &epoch.share_price, &WAD_SCALE)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
 
+    state::set_pending_burn_shares(
+        e,
+        state::pending_burn_shares(e).saturating_sub(request.shares),
+    );
+
     if assets == 0 {
         return_shares(e, caller, epoch_id, request.shares);
         return 0;

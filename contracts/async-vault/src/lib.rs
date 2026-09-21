@@ -136,6 +136,10 @@ impl AsyncVault {
         state::pending_mint_shares(e)
     }
 
+    pub fn pending_burn_shares(e: &Env) -> i128 {
+        state::pending_burn_shares(e)
+    }
+
     pub fn total_economic_supply(e: &Env) -> i128 {
         let share_token = state::get_addr(e, &DataKey::ShareToken);
         let client = ShareClient::new(e, &share_token);
@@ -181,8 +185,9 @@ impl AsyncVault {
         wind_down::activate(e);
     }
 
-    #[only_admin]
-    pub fn finalize_wind_down_round(e: &Env, _caller: Address) -> i128 {
+    /// Open to anyone once active, distributing the free reserve in proportion
+    /// to the supply snapshot.
+    pub fn finalize_wind_down_round(e: &Env) -> i128 {
         wind_down::finalize_round(e)
     }
 

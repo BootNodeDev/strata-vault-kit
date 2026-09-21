@@ -36,8 +36,8 @@ pub struct WindDownInfo {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WindDownPosition {
     pub entitlement: i128,
-    /// The accumulator this holder has already been paid up to.
-    pub watermark: i128,
+    /// Assets already paid against that entitlement.
+    pub paid: i128,
 }
 
 pub(crate) fn delay(e: &Env) -> u64 {
@@ -57,13 +57,17 @@ pub(crate) fn info(e: &Env) -> Option<WindDownInfo> {
 }
 
 pub(crate) fn is_active(e: &Env) -> bool {
-    matches!(
-        info(e),
+    match info(e) {
         Some(WindDownInfo {
             status: WindDownStatus::Active,
             ..
+        }) => true,
+        Some(WindDownInfo {
+            status: WindDownStatus::Proposed,
+            ..
         })
-    )
+        | None => false,
+    }
 }
 
 /// Called at the top of every entrypoint the wind-down closes.
@@ -74,8 +78,16 @@ pub(crate) fn refuse_if_active(e: &Env) {
 }
 
 pub(crate) fn propose(e: &Env) {
-    if info(e).is_some() {
-        panic_with_error!(e, VaultError::WindDownAlreadyProposed);
+    match info(e) {
+        Some(WindDownInfo {
+            status: WindDownStatus::Active,
+            ..
+        }) => panic_with_error!(e, VaultError::WindDownActive),
+        Some(WindDownInfo {
+            status: WindDownStatus::Proposed,
+            ..
+        }) => panic_with_error!(e, VaultError::WindDownAlreadyProposed),
+        None => {}
     }
 
     let active_at = e.ledger().timestamp().saturating_add(delay(e));
@@ -98,7 +110,10 @@ pub(crate) fn cancel_proposal(e: &Env) {
             status: WindDownStatus::Proposed,
             ..
         }) => {}
-        Some(_) => panic_with_error!(e, VaultError::WindDownActive),
+        Some(WindDownInfo {
+            status: WindDownStatus::Active,
+            ..
+        }) => panic_with_error!(e, VaultError::WindDownActive),
         None => panic_with_error!(e, VaultError::WindDownNotProposed),
     }
 
@@ -140,6 +155,7 @@ fn snapshot_supply(e: &Env) -> i128 {
     let share_token = state::get_addr(e, &DataKey::ShareToken);
     ShareClient::new(e, &share_token)
         .total_supply()
+        .saturating_sub(state::pending_burn_shares(e))
         .checked_add(state::pending_mint_shares(e))
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
 }
@@ -169,23 +185,33 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
         panic_with_error!(e, VaultError::NothingToDistribute);
     }
 
-    // What the accumulator actually promises, which is the pot less the dust the
-    // division dropped. The dust stays free and joins the next round.
-    let credited = checked_mul_div_floor(e, &delta, &snapshot, &WAD_SCALE)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-
-    let acc_per_share = acc(e)
+    let acc_before = acc(e);
+    let acc_per_share = acc_before
         .checked_add(delta)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+
+    // The most every holder together can ever claim is floor(supply * acc / WAD).
+    // Crediting the growth of that figure, rather than this round's own floor,
+    // keeps owed at or above every payout the accumulator can produce.
+    let promised = |acc_value: &i128| {
+        checked_mul_div_floor(e, &snapshot, acc_value, &WAD_SCALE)
+            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+    };
+    let credited = promised(&acc_per_share) - promised(&acc_before);
+
+    let owed_total = owed(e)
+        .checked_add(credited)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
     storage::set_instance(e, &DataKey::WindDownAcc, &acc_per_share);
-    storage::set_instance(e, &DataKey::WindDownOwed, &(owed(e) + credited));
+    storage::set_instance(e, &DataKey::WindDownOwed, &owed_total);
 
     wd.round += 1;
     storage::set_instance(e, &DataKey::WindDown, &wd);
 
     WindDownRoundFinalized {
         round: wd.round,
-        pot: credited,
+        pot,
+        credited,
         acc_per_share,
     }
     .publish(e);
@@ -197,7 +223,7 @@ pub(crate) fn position(e: &Env, holder: &Address) -> WindDownPosition {
     storage::get_persistent(e, &DataKey::WindDownPosition(holder.clone())).unwrap_or(
         WindDownPosition {
             entitlement: 0,
-            watermark: 0,
+            paid: 0,
         },
     )
 }
@@ -214,7 +240,9 @@ pub(crate) fn claimable(e: &Env, holder: &Address) -> i128 {
     let p = position(e, holder);
     let entitlement = p.entitlement.saturating_add(held);
 
-    checked_mul_div_floor(e, &entitlement, &(acc(e) - p.watermark), &WAD_SCALE).unwrap_or(0)
+    checked_mul_div_floor(e, &entitlement, &acc(e), &WAD_SCALE)
+        .map(|earned| earned - p.paid)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
 }
 
 pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
@@ -236,20 +264,15 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
         .checked_add(surrendered)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
 
-    let acc_per_share = acc(e);
-    let assets = checked_mul_div_floor(
-        e,
-        &p.entitlement,
-        &(acc_per_share - p.watermark),
-        &WAD_SCALE,
-    )
-    .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    let earned = checked_mul_div_floor(e, &p.entitlement, &acc(e), &WAD_SCALE)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    let assets = earned - p.paid;
 
     if surrendered == 0 && assets == 0 {
         panic_with_error!(e, VaultError::NoEntitlement);
     }
 
-    p.watermark = acc_per_share;
+    p.paid = earned;
     storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
 
     if surrendered > 0 {

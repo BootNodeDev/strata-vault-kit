@@ -114,6 +114,7 @@ pub struct WindDownRoundFinalized {
     #[topic]
     pub round: u32,
     pub pot: i128,
+    pub credited: i128,
     pub acc_per_share: i128,
 }
 

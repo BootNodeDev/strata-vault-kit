@@ -80,7 +80,7 @@ or legal solution, and not a vault for on-chain RWA tokens.
 | Treasury ops | treasury | Moves free reserve between the vault and the custodian |
 | Compliance | compliance | Maintains the allowlist; token interventions (freeze, forced transfer, recovery) |
 | Guardian | guardian | Pauses new requests, pricing and custodian transfers; can never block payable claims |
-| Governance | governance | Parameters, roles, custodian rotation, upgrades behind a timelock |
+| Governance | governance | Parameters, roles, custodian rotation, upgrades behind a timelock, wind-down proposal and cancellation |
 | Custodian | Not an authority | Off-chain party holding the real-world structure; a genesis-configured slot rotatable only by governance |
 
 Five authorities in code, held by native Stellar multisig accounts, assignable
@@ -303,7 +303,9 @@ batch boundary, though not the price it receives.
   valuation accepted at or after the close makes the price readable, because
   cancelling would be declining a price already seen. A sealed epoch whose price
   is not readable is still cancellable, which is what gives a deposit a way out
-  of an epoch that is stuck.
+  of an epoch that is stuck. Cancellation also remains open during an active
+  wind-down, allowing pending depositors to recover their escrowed assets when
+  pricing is closed.
 - Share claim: re-verifies the receiver and delivers the shares. If verification
   fails, the position remains shares and exits through the redemption lifecycle
   at the then-current price. No nominal refund exists after pricing.
@@ -311,6 +313,8 @@ batch boundary, though not the price it receives.
 #### Redemption
 
 - Request: moves shares into escrow, no admission limit.
+- Cancellation: atomic, and returns the escrowed shares under the same rules as
+  subscription cancellation; stays open during an active wind-down.
 - Pricing: the escrowed shares are burned and a fixed cash liability enters
   committed at the epoch's price. Priced claims are never re-priced.
 - Coverage: a priced claim is payable when the liquid reserve covers that
@@ -415,8 +419,8 @@ integrators read the oracle's own interface today.
   wind-down; once its delay has run, anyone may activate it, so the operator
   cannot announce a closure and then stall it. While it is active the vault takes
   no new requests, prices nothing and sends nothing to the custodian, while
-  cancellation, priced claims and funding all stay open. Governance then
-  distributes what the vault holds in rounds: each round takes the free reserve,
+  cancellation, priced claims and funding all stay open. Anyone may then
+  finalize distribution rounds: each round takes the free reserve,
   so priced exit liabilities and refundable subscription escrow are paid first,
   and holders pull their pro-rata share against a supply snapshot taken at the
   first round. Every payment rounds in the vault's favour and the remainder joins
@@ -433,10 +437,10 @@ integrators read the oracle's own interface today.
   only what it intends to distribute.
 - A wind-down never declares itself finished, because no holder can be made to
   claim. It is finished when three exposed figures read zero together: what the
-  rounds still owe holders, the share supply, and the free reserve. The owed
-  figure counts holders who have not claimed yet and falls only when one is
-  paid, so its reaching zero means every credit has been collected rather than
-  merely offered.
+  rounds still owe holders (zero up to rounding dust), the share supply, and the
+  free reserve. The owed figure counts holders who have not claimed yet and falls
+  only when one is paid, so its reaching zero up to rounding dust means every credit
+  has been collected rather than merely offered.
 
 ### 8.8 Reference interfaces
 
@@ -461,11 +465,11 @@ to exactly one authority, so the panel splits into five surfaces:
 
 | Surface       | Authority                             | Cadence             | Operations                                                                  |
 | ------------- | ------------------------------------- | ------------------- | --------------------------------------------------------------------------- |
-| Cycle         | attestation, treasury; anyone settles | Continuous          | Attestations, funding, transfers to and from the custodian, settlement      |
+| Cycle         | attestation, treasury; anyone settles | Continuous          | Attestations, funding, transfers to and from the custodian, settlement, wind-down round finalization |
 | Compliance    | compliance                            | Continuous          | Allowlist, freeze/unfreeze, forced transfer, recovery via Manager           |
 | Emergency     | guardian                              | Rare and urgent     | Vault pause, share-token pause                                              |
 | Configuration | governance                            | Rare and deliberate | Custodian slot, compliance module, parameters (bounds, freshness, timelock, wind-down delay) |
-| Governance    | governance                            | Very rare           | Roles, admin handover, upgrade, wind-down proposal, cancellation and distribution rounds     |
+| Governance    | governance                            | Very rare           | Roles, admin handover, upgrade, wind-down proposal and cancellation         |
 
 Every operation is shown in domain terms, with its conditions and resulting
 state, before a signature is requested; read-only by default. Signing runs
@@ -483,7 +487,8 @@ public surface given the vault address.
 | Compliance keys        | Wrongful delisting or freeze                   | Delisted investors keep the exit-only cash path; freezes require the Manager path and are auditable per operation                                                                                                                                                                                                                                                                                                                                                |
 | Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics; replaceable by governance without touching the token                                                                                                                                                                                                                                                                                                                                                                                      |
 | Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; declared risk of the chosen asset, verified and reported at genesis (auth flags)                                                                                                                                                                                                                                                                                                                                                       |
-| Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                              |
+| Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                                                          |
+| Wind-down distribution | Unfinalized rounds stall distribution          | Finalizing a round is permissionless: once treasury returns capital, anyone can finalize the round to credit holders; the operator cannot stall payouts after funding                                                                                                                                                                                                                                                                                           |
 
 Disclosed trust assumptions: the accuracy of the operator's KYC process, the
 quality of the data behind each attestation, and the operator's key ceremony.

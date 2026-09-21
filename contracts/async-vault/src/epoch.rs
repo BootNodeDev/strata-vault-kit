@@ -121,6 +121,13 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         state::set_pending_mint_shares(e, updated_pending_mint);
     }
 
+    if epoch.total_shares_redeeming > 0 {
+        let updated_pending_burn = state::pending_burn_shares(e)
+            .checked_add(epoch.total_shares_redeeming)
+            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+        state::set_pending_burn_shares(e, updated_pending_burn);
+    }
+
     state::set_cancellable_escrow(e, state::cancellable_escrow(e) - epoch.total_deposited);
 
     epoch.status = EpochStatus::Fulfilled;
