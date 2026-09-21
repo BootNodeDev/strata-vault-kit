@@ -146,6 +146,27 @@ describe("RequestList", () => {
 		},
 	)
 
+	it("moves focus onto the tab an arrow key selects", () => {
+		render(
+			<RequestList
+				heading="Your requests"
+				groups={baseGroups}
+				activeStage="ready"
+				onStageChange={() => {}}
+				openTooltipId={null}
+				onToggleTooltip={() => {}}
+			/>,
+		)
+
+		const ready = screen.getByRole("tab", { name: "Ready to claim 1" })
+		const waiting = screen.getByRole("tab", { name: "Waiting 3" })
+		ready.focus()
+
+		fireEvent.keyDown(ready, { key: "ArrowRight" })
+
+		expect(document.activeElement).toBe(waiting)
+	})
+
 	it("keeps only the selected tab in the roving tab order", () => {
 		render(
 			<RequestList
