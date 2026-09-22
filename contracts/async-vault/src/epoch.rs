@@ -7,6 +7,7 @@ use crate::event::{EpochClosed, EpochFulfilled};
 use crate::keys::DataKey;
 use crate::state::{self, EpochInfo, EpochStatus};
 use crate::timing::{FulfilmentTiming, StandardTiming};
+use crate::wind_down;
 
 /// The schedule this vault fulfils on.
 type Timing = StandardTiming;
@@ -55,6 +56,7 @@ pub(crate) fn is_priceable(e: &Env, epoch: &EpochInfo) -> bool {
 }
 
 pub(crate) fn close(e: &Env) -> u64 {
+    wind_down::refuse_if_active(e);
     let current = state::current_epoch(e);
     let mut epoch = state::get_epoch(e, current)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
@@ -88,6 +90,7 @@ pub(crate) fn close(e: &Env) -> u64 {
 }
 
 pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
+    wind_down::refuse_if_active(e);
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
 
@@ -116,6 +119,13 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
             .checked_add(shares_owed)
             .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
         state::set_pending_mint_shares(e, updated_pending_mint);
+    }
+
+    if epoch.total_shares_redeeming > 0 {
+        let updated_pending_burn = state::pending_burn_shares(e)
+            .checked_add(epoch.total_shares_redeeming)
+            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+        state::set_pending_burn_shares(e, updated_pending_burn);
     }
 
     state::set_cancellable_escrow(e, state::cancellable_escrow(e) - epoch.total_deposited);

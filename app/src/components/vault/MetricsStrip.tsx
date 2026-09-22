@@ -1,11 +1,13 @@
 import React from "react"
 import typeStyles from "../../styles/type.module.css"
+import Skeleton from "../Skeleton"
 import styles from "./MetricsStrip.module.css"
 
 export type Metric = {
 	label: string
 	value: string | null
 	note: string
+	pending?: boolean
 }
 
 type MetricsStripProps = {
@@ -19,9 +21,15 @@ const MetricsStrip: React.FC<MetricsStripProps> = ({ metrics }) => (
 				<span className={`${typeStyles.label} ${styles.label}`}>
 					{metric.label}
 				</span>
-				<span className={`${typeStyles.metric} ${styles.value}`}>
-					{metric.value ?? "—"}
-				</span>
+				{metric.pending ? (
+					<Skeleton
+						className={`${typeStyles.metric} ${styles.valueSkeleton}`}
+					/>
+				) : (
+					<span className={`${typeStyles.metric} ${styles.value}`}>
+						{metric.value ?? "—"}
+					</span>
+				)}
 				<span className={`${typeStyles.metricSub} ${styles.note}`}>
 					{metric.note}
 				</span>
