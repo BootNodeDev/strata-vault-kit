@@ -10,6 +10,7 @@ mod roles;
 mod state;
 mod timing;
 mod treasury;
+mod wind_down;
 
 use bindings::ShareClient;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
@@ -24,10 +25,12 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    NoticeSet, RedeemClaimed, RedeemRequested,
+    NoticeSet, RedeemClaimed, RedeemRequested, WindDownActivated, WindDownClaimed,
+    WindDownDelaySet, WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
+pub use wind_down::{WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY};
 
 /// Thirty days. Longer than any notice a real structure uses, short enough that
 /// setting it by mistake is survivable.
@@ -133,6 +136,10 @@ impl AsyncVault {
         state::pending_mint_shares(e)
     }
 
+    pub fn pending_burn_shares(e: &Env) -> i128 {
+        state::pending_burn_shares(e)
+    }
+
     pub fn total_economic_supply(e: &Env) -> i128 {
         let share_token = state::get_addr(e, &DataKey::ShareToken);
         let client = ShareClient::new(e, &share_token);
@@ -147,6 +154,63 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_custodian(e: &Env, custodian: Address, _caller: Address) {
         treasury::set_custodian(e, &custodian);
+    }
+
+    #[only_admin]
+    pub fn set_wind_down_delay(e: &Env, secs: u64, _caller: Address) {
+        wind_down::set_delay(e, secs);
+    }
+
+    pub fn wind_down_delay(e: &Env) -> u64 {
+        wind_down::delay(e)
+    }
+
+    pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
+        wind_down::info(e)
+    }
+
+    #[only_admin]
+    pub fn propose_wind_down(e: &Env, _caller: Address) {
+        wind_down::propose(e);
+    }
+
+    #[only_admin]
+    pub fn cancel_wind_down_proposal(e: &Env, _caller: Address) {
+        wind_down::cancel_proposal(e);
+    }
+
+    /// Open to anyone once the delay has passed, so the operator cannot stall
+    /// the wind-down it announced.
+    pub fn activate_wind_down(e: &Env) {
+        wind_down::activate(e);
+    }
+
+    /// Open to anyone once active, distributing the free reserve in proportion
+    /// to the supply snapshot.
+    pub fn finalize_wind_down_round(e: &Env) -> i128 {
+        wind_down::finalize_round(e)
+    }
+
+    pub fn wind_down_owed(e: &Env) -> i128 {
+        wind_down::owed(e)
+    }
+
+    pub fn wind_down_supply(e: &Env) -> i128 {
+        wind_down::supply_snapshot(e)
+    }
+
+    pub fn wind_down_acc(e: &Env) -> i128 {
+        wind_down::acc(e)
+    }
+
+    /// Surrenders whatever the holder holds and pays their share of every round
+    /// finalised since they last claimed.
+    pub fn claim_wind_down(e: &Env, holder: Address) -> i128 {
+        wind_down::claim(e, &holder)
+    }
+
+    pub fn wind_down_claimable(e: &Env, holder: Address) -> i128 {
+        wind_down::claimable(e, &holder)
     }
 
     #[only_admin]

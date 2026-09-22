@@ -162,3 +162,11 @@ pub(crate) fn set_pending_mint_shares(e: &Env, shares: i128) {
 pub(crate) fn pending_mint_shares(e: &Env) -> i128 {
     storage::get_instance(e, &DataKey::PendingMintShares).unwrap_or(0)
 }
+
+pub(crate) fn set_pending_burn_shares(e: &Env, shares: i128) {
+    storage::set_instance(e, &DataKey::PendingBurnShares, &shares);
+}
+
+pub(crate) fn pending_burn_shares(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::PendingBurnShares).unwrap_or(0)
+}
