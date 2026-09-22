@@ -45,7 +45,6 @@
 	justify-content: space-between;
 	align-items: baseline;
 	gap: 12px;
-	border-bottom: 1px solid var(--vault-surface-inset);
 	padding-bottom: 7px;
 }
 
@@ -85,4 +84,9 @@
 .placeholder {
 	color: var(--vault-text-muted);
 	white-space: nowrap;
+}
+
+.rowSkeleton {
+	height: 1em;
+	width: 11ch;
 }

@@ -1,7 +1,8 @@
 import { type Amount } from "@stellar-scaffold/app-lib"
 import { describe, expect, it } from "vitest"
+import { type VaultAuthorities } from "../hooks/useVaultAuthorities"
 import { type VaultFigures } from "../hooks/useVaultFigures"
-import { toMetrics } from "./vaultMetrics"
+import { toAuthorityRows, toMetrics, toSizeFigures } from "./vaultMetrics"
 
 const amount = (value: bigint): Amount => value as Amount
 
@@ -11,6 +12,14 @@ const readFigures: VaultFigures = {
 	uncovered: amount(0n),
 	economicSupply: amount(10000000000000n),
 	netDeployed: amount(0n),
+}
+
+const readAuthorities: VaultAuthorities = {
+	governance: "GGOVERNANCEADDRESS1234",
+	manager: null,
+	treasury: null,
+	guardian: null,
+	custodian: null,
 }
 
 describe("toMetrics", () => {
@@ -70,5 +79,54 @@ describe("toMetrics", () => {
 	it("notes uncovered as not-yet-known while pending", () => {
 		const [, , uncoveredMetric] = toMetrics(undefined, true)
 		expect(uncoveredMetric.note).toBe("TOKEN not covered")
+	})
+})
+
+describe("toAuthorityRows", () => {
+	it("maps a present address to a linkable row", () => {
+		const [governance] = toAuthorityRows(readAuthorities, false)
+		expect(governance).toEqual({
+			label: "Governance",
+			address: "GGOVERNANCEADDRESS1234",
+		})
+	})
+
+	it("maps a present-but-null authority and a missing record identically to null", () => {
+		const [, manager] = toAuthorityRows(readAuthorities, false)
+		expect(manager).toEqual({ label: "Manager", address: null })
+
+		const [, missingManager] = toAuthorityRows(undefined, false)
+		expect(missingManager).toEqual({ label: "Manager", address: null })
+	})
+
+	it("sets pending and never an address while loading", () => {
+		const rows = toAuthorityRows(undefined, true)
+		for (const row of rows) {
+			expect(row.pending).toBe(true)
+			expect(row.address).toBeNull()
+		}
+	})
+})
+
+describe("toSizeFigures", () => {
+	it("renders net deployed of zero, distinguishable from unavailable", () => {
+		const [, netDeployed] = toSizeFigures(readFigures, false)
+		expect(netDeployed).toEqual({ label: "Net deployed", value: "0.00" })
+	})
+
+	it("renders a size figure whose read failed with no value", () => {
+		const [economicSupply] = toSizeFigures(
+			{ ...readFigures, economicSupply: null },
+			false,
+		)
+		expect(economicSupply!.value).toBeNull()
+	})
+
+	it("sets pending and never a value while loading", () => {
+		const rows = toSizeFigures(undefined, true)
+		for (const row of rows) {
+			expect(row.pending).toBe(true)
+			expect(row.value).toBeNull()
+		}
 	})
 })

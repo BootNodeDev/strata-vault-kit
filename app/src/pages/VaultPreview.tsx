@@ -1,7 +1,7 @@
 import { formatAmount, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
 import Copy from "../components/icons/Copy"
-import AboutVault, { type AddressRow } from "../components/vault/AboutVault"
+import AboutVault, { type FigureGroup } from "../components/vault/AboutVault"
 import ActionPanel, {
 	type ActionPanelSide,
 } from "../components/vault/ActionPanel"
@@ -14,9 +14,10 @@ import {
 } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
+import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
 import { useVaultFigures } from "../hooks/useVaultFigures"
 import typeStyles from "../styles/type.module.css"
-import { toMetrics } from "./vaultMetrics"
+import { toAuthorityRows, toMetrics, toSizeFigures } from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
 
 const vaultName = "Operator vault name"
@@ -34,15 +35,6 @@ const sections: { id: string; label: string }[] = [
 const vaultSummary = [
 	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim becomes claimable once the reserve covers it in full, in any order rather than by queue position.",
 	"You may hold one request per side per batch, and one price applies to everyone in it. A share claim is claimable at once; a cash claim waits for the reserve to cover it in full. Shares need an allowlisted address to claim, cash does not.",
-]
-
-// TODO: read these from the vault, which exposes one public view per row.
-const authorityRows: AddressRow[] = [
-	{ label: "Governance", source: "placeholder" },
-	{ label: "Manager", source: "placeholder" },
-	{ label: "Treasury", source: "placeholder" },
-	{ label: "Guardian", source: "placeholder" },
-	{ label: "Custodian", source: "placeholder" },
 ]
 
 const parseAmount = (raw: string): number | null => {
@@ -158,10 +150,16 @@ const VaultPreview: React.FC = () => {
 	const [actionAmount, setActionAmount] = React.useState("")
 
 	const { figures, isPending: isPendingFigures } = useVaultFigures()
+	const { authorities, isPending: isPendingAuthorities } = useVaultAuthorities()
 	const metrics: [Metric, Metric, Metric, Metric] = [
 		sharePriceMetric,
 		...toMetrics(figures, isPendingFigures),
 	]
+	const authorityRows = toAuthorityRows(authorities, isPendingAuthorities)
+	const sizeFigures: FigureGroup = {
+		title: "Vault size",
+		rows: toSizeFigures(figures, isPendingFigures),
+	}
 
 	const toggleTooltip = (id: string | number) => {
 		setOpenTooltipId((current) => (current === id ? null : id))
@@ -256,6 +254,7 @@ const VaultPreview: React.FC = () => {
 					<div id="about" className={styles.anchor}>
 						<AboutVault
 							summary={vaultSummary}
+							figures={sizeFigures}
 							groups={[
 								{ title: "Contracts", rows: contractRows },
 								{ title: "Authorities", rows: authorityRows },

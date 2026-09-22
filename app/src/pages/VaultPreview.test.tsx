@@ -6,25 +6,30 @@ import { describe, expect, it, vi } from "vitest"
 import { type AddressRow } from "../components/vault/AboutVault"
 import VaultPreview from "./VaultPreview"
 
-const { mockVaultId } = vi.hoisted(() => ({
+const { mockVaultId, mockGovernanceAddress } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
+	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
 }))
 
 vi.mock("../config/contracts", () => {
-	const contractRows: AddressRow[] = [
-		{ label: "Vault", source: "config", address: mockVaultId },
-	]
+	const contractRows: AddressRow[] = [{ label: "Vault", address: mockVaultId }]
 	return { vaultContractId: mockVaultId, contractRows }
 })
 
 vi.mock("../config/clients", () => {
 	const figure = (result: bigint) => async () => ({ result })
+	const address = (result: string | undefined) => async () => ({ result })
 	const vault = {
 		liquid_reserve: figure(184000000000n),
 		committed: figure(62000000000n),
 		uncovered: figure(0n),
-		total_economic_supply: figure(0n),
-		net_deployed: figure(0n),
+		total_economic_supply: figure(100000000000000n),
+		net_deployed: figure(50000000000n),
+		governance: address(mockGovernanceAddress),
+		manager: address(undefined),
+		treasury: address(undefined),
+		guardian: address(undefined),
+		custodian: address(undefined),
 	}
 
 	return { asyncVault: async () => vault }
@@ -100,5 +105,21 @@ describe("VaultPreview", () => {
 		expect(await screen.findByText("18,400.00")).toBeTruthy()
 		expect(screen.getByText("6,200.00")).toBeTruthy()
 		expect(screen.getByText("0.00")).toBeTruthy()
+	})
+
+	it("renders the vault size figures in the explainer", async () => {
+		renderVaultPreview()
+
+		expect(await screen.findByText("10,000,000.00")).toBeTruthy()
+		expect(screen.getByText("5,000.00")).toBeTruthy()
+	})
+
+	it("renders the authority addresses the vault reports, or unavailable when unset", async () => {
+		renderVaultPreview()
+
+		expect(
+			await screen.findByText(shortAddress(mockGovernanceAddress)),
+		).toBeTruthy()
+		expect(screen.getAllByText("Unavailable")).toHaveLength(4)
 	})
 })

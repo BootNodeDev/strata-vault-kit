@@ -4,18 +4,10 @@ import { addresses } from "./addresses"
 export const vaultContractId: string = addresses.async_vault
 
 export const contractRows: AddressRow[] = [
-	{ label: "Vault", source: "config", address: addresses.async_vault },
-	{ label: "Share token", source: "config", address: addresses.share_token },
-	{ label: "NAV oracle", source: "config", address: addresses.nav_oracle },
-	{
-		label: "Identity verifier",
-		source: "config",
-		address: addresses.identity_verifier,
-	},
-	{ label: "Compliance", source: "config", address: addresses.compliance },
-	{
-		label: "Deposit asset (SAC)",
-		source: "config",
-		address: addresses.asset,
-	},
+	{ label: "Vault", address: addresses.async_vault },
+	{ label: "Share token", address: addresses.share_token },
+	{ label: "NAV oracle", address: addresses.nav_oracle },
+	{ label: "Identity verifier", address: addresses.identity_verifier },
+	{ label: "Compliance", address: addresses.compliance },
+	{ label: "Deposit asset (SAC)", address: addresses.asset },
 ]
