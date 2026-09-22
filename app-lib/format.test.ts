@@ -162,6 +162,18 @@ describe("formatDate", () => {
 		expect(nonUtcRendering).toBe("Sep 15, 2026")
 		expect(formatDate(timestamp)).not.toBe(nonUtcRendering)
 	})
+
+	it("does not throw for a saturated u64::MAX timestamp", () => {
+		expect(formatDate(18446744073709551615n)).toBe("—")
+	})
+
+	it("does not throw for a timestamp outside the Date range", () => {
+		expect(formatDate(-8640000000001n)).toBe("—")
+	})
+
+	it("formats the largest representable timestamp instead of rejecting it", () => {
+		expect(formatDate(8_640_000_000_000n)).toBe("13 Sep 275760")
+	})
 })
 
 it("rejects a Price formatted with AMOUNT_DECIMALS at compile time", () => {

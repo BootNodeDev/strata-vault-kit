@@ -8,42 +8,20 @@ import {
 } from "@stellar/stellar-sdk/contract"
 import { network, networkPassphrase, rpcUrl } from "./env"
 
-export interface AsyncVaultViews {
-	liquid_reserve: (
-		options?: MethodOptions,
-	) => Promise<AssembledTransaction<i128>>
-	committed: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>
-	uncovered: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>
-	total_economic_supply: (
-		options?: MethodOptions,
-	) => Promise<AssembledTransaction<i128>>
-	net_deployed: (options?: MethodOptions) => Promise<AssembledTransaction<i128>>
-	governance: (
-		options?: MethodOptions,
-	) => Promise<AssembledTransaction<Option<string>>>
-	manager: (
-		options?: MethodOptions,
-	) => Promise<AssembledTransaction<Option<string>>>
-	treasury: (
-		options?: MethodOptions,
-	) => Promise<AssembledTransaction<Option<string>>>
-	guardian: (
-		options?: MethodOptions,
-	) => Promise<AssembledTransaction<Option<string>>>
-	custodian: (
-		options?: MethodOptions,
-	) => Promise<AssembledTransaction<Option<string>>>
-}
+type View<T> = (options?: MethodOptions) => Promise<AssembledTransaction<T>>
 
-export const connectAsyncVault = (
-	contractId: string,
-): Promise<AsyncVaultViews> =>
-	Client.from<AsyncVaultViews>({
-		contractId,
-		rpcUrl,
-		networkPassphrase,
-		allowHttp: network.id === "local",
-	})
+export interface AsyncVaultViews {
+	liquid_reserve: View<i128>
+	committed: View<i128>
+	uncovered: View<i128>
+	total_economic_supply: View<i128>
+	net_deployed: View<i128>
+	governance: View<Option<string>>
+	manager: View<Option<string>>
+	treasury: View<Option<string>>
+	guardian: View<Option<string>>
+	custodian: View<Option<string>>
+}
 
 export type OracleState =
 	| { tag: "Valid"; values: void }
@@ -57,14 +35,21 @@ export interface NavReport {
 }
 
 export interface NavOracleViews {
-	state: (options?: MethodOptions) => Promise<AssembledTransaction<OracleState>>
-	latest: (options?: MethodOptions) => Promise<AssembledTransaction<NavReport>>
+	state: View<OracleState>
+	latest: View<NavReport>
 }
 
+const clientOptions = (contractId: string) => ({
+	contractId,
+	rpcUrl,
+	networkPassphrase,
+	allowHttp: network.id === "local",
+})
+
+export const connectAsyncVault = (
+	contractId: string,
+): Promise<AsyncVaultViews> =>
+	Client.from<AsyncVaultViews>(clientOptions(contractId))
+
 export const connectNavOracle = (contractId: string): Promise<NavOracleViews> =>
-	Client.from<NavOracleViews>({
-		contractId,
-		rpcUrl,
-		networkPassphrase,
-		allowHttp: network.id === "local",
-	})
+	Client.from<NavOracleViews>(clientOptions(contractId))

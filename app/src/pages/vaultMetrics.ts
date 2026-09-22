@@ -69,6 +69,21 @@ export function toAuthorityRows(
 	)
 }
 
+const priceNote = (nav: NavClassification | undefined): string => {
+	switch (nav?.status) {
+		case "valid":
+			return `Attested ${formatDate(nav.attestedAt)}`
+		case "stale":
+			return `Price expired ${formatDate(nav.expiresAt)}`
+		case "paused":
+			return "Oracle paused"
+		case "never":
+			return "No price attested yet"
+		default:
+			return "Could not read the oracle"
+	}
+}
+
 export function toPriceMetric(
 	nav: NavClassification | undefined,
 	isPending: boolean,
@@ -82,33 +97,13 @@ export function toPriceMetric(
 		}
 	}
 
-	switch (nav?.status) {
-		case "valid":
-			return {
-				label: "Share price",
-				value: formatScaled(nav.price, PRICE_DECIMALS, 4),
-				note: `Attested ${formatDate(nav.attestedAt)}`,
-			}
-		case "stale":
-			return {
-				label: "Share price",
-				value: null,
-				note: `Price expired ${formatDate(nav.expiresAt)}`,
-			}
-		case "paused":
-			return { label: "Share price", value: null, note: "Oracle paused" }
-		case "never":
-			return {
-				label: "Share price",
-				value: null,
-				note: "No price attested yet",
-			}
-		default:
-			return {
-				label: "Share price",
-				value: null,
-				note: "Could not read the oracle",
-			}
+	return {
+		label: "Share price",
+		value:
+			nav?.status === "valid"
+				? formatScaled(nav.price, PRICE_DECIMALS, 4)
+				: null,
+		note: priceNote(nav),
 	}
 }
 
