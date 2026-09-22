@@ -16,6 +16,7 @@
 	"include": [
 		"deploy.ts",
 		"build-clients.ts",
+		"seed.ts",
 		"lib/**/*.ts",
 		"*.test.ts",
 		"vitest.config.ts"
