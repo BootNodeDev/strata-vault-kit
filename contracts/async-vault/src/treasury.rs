@@ -4,6 +4,7 @@ use crate::error::VaultError;
 use crate::event::{CustodianSet, Deployed, Funded};
 use crate::keys::DataKey;
 use crate::state;
+use crate::wind_down;
 
 pub(crate) fn set_custodian(e: &Env, custodian: &Address) {
     state::set_addr(e, &DataKey::Custodian, custodian);
@@ -23,9 +24,10 @@ pub(crate) fn liquid_reserve(e: &Env) -> i128 {
     held(e) - state::cancellable_escrow(e)
 }
 
-/// Assets held on-chain that are not already owed to a priced redemption.
+/// What the vault holds that is not already owed: not to a priced exit, and not
+/// to a wind-down round a holder has yet to collect.
 pub(crate) fn free_reserve(e: &Env) -> i128 {
-    (liquid_reserve(e) - state::committed(e)).max(0)
+    (liquid_reserve(e) - state::committed(e) - wind_down::owed(e)).max(0)
 }
 
 /// Owed to holders beyond what the vault holds. Zero when every priced claim is
@@ -35,6 +37,7 @@ pub(crate) fn uncovered(e: &Env) -> i128 {
 }
 
 pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {
+    wind_down::refuse_if_active(e);
     if assets <= 0 {
         panic_with_error!(e, VaultError::InvalidAmount);
     }

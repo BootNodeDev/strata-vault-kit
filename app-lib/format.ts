@@ -124,6 +124,25 @@ export function formatUnits<D extends Decimals>(
 		: `${sign}${integerPart}`
 }
 
+export function formatScaled<D extends Decimals>(
+	value: Scaled<D>,
+	decimals: NoInfer<D>,
+	fractionDigits = 2,
+): string {
+	const [integer = "0", fraction] = formatUnits(
+		value,
+		decimals,
+		fractionDigits,
+	).split(".")
+	const negative = integer.startsWith("-")
+	const magnitude = negative ? integer.slice(1) : integer
+	const grouped = BigInt(magnitude).toLocaleString("en-US")
+	const sign = negative ? "-" : ""
+	return fraction === undefined
+		? `${sign}${grouped}`
+		: `${sign}${grouped}.${fraction}`
+}
+
 /**
  * Parse investor input into a scaled contract value. `null` for anything the
  * chain cannot represent exactly, including more fraction digits than
@@ -144,6 +163,25 @@ export function parseUnits<D extends Decimals>(
 	const digits = (integerPart || "0") + fractionPart.padEnd(decimals, "0")
 	const magnitude = BigInt(digits)
 	return (negative ? -magnitude : magnitude) as Scaled<D>
+}
+
+const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000
+
+export function formatDate(unixSeconds: bigint): string {
+	const milliseconds = Number(unixSeconds) * 1000
+	if (Math.abs(milliseconds) > MAX_DATE_MILLISECONDS) {
+		return "—"
+	}
+
+	const parts = new Intl.DateTimeFormat("en-US", {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		timeZone: "UTC",
+	}).formatToParts(new Date(milliseconds))
+	const value = (type: string) =>
+		parts.find((part) => part.type === type)?.value
+	return `${value("day")} ${value("month")} ${value("year")}`
 }
 
 /**

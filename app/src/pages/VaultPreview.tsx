@@ -1,7 +1,7 @@
 import { formatAmount, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
 import Copy from "../components/icons/Copy"
-import AboutVault, { type AddressRow } from "../components/vault/AboutVault"
+import AboutVault, { type FigureGroup } from "../components/vault/AboutVault"
 import ActionPanel, {
 	type ActionPanelSide,
 } from "../components/vault/ActionPanel"
@@ -14,7 +14,16 @@ import {
 } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
+import { useNavPrice } from "../hooks/useNavPrice"
+import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
+import { useVaultFigures } from "../hooks/useVaultFigures"
 import typeStyles from "../styles/type.module.css"
+import {
+	toAuthorityRows,
+	toMetrics,
+	toPriceMetric,
+	toSizeFigures,
+} from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
 
 const vaultName = "Operator vault name"
@@ -34,38 +43,10 @@ const vaultSummary = [
 	"You may hold one request per side per batch, and one price applies to everyone in it. A share claim is claimable at once; a cash claim waits for the reserve to cover it in full. Shares need an allowlisted address to claim, cash does not.",
 ]
 
-// TODO: read these from the vault, which exposes one public view per row.
-const authorityRows: AddressRow[] = [
-	{ label: "Governance", source: "placeholder" },
-	{ label: "Manager", source: "placeholder" },
-	{ label: "Treasury", source: "placeholder" },
-	{ label: "Guardian", source: "placeholder" },
-	{ label: "Custodian", source: "placeholder" },
-]
-
 const parseAmount = (raw: string): number | null => {
 	const value = Number(raw.replace(/,/g, ""))
 	return Number.isFinite(value) && value > 0 ? value : null
 }
-
-const metrics: [Metric, Metric, Metric, Metric] = [
-	{ label: "Share price", value: "1.0342", note: "NAV of 31 Aug 2026" },
-	{
-		label: "Liquid reserve",
-		value: "18,400.00",
-		note: "TOKEN the vault holds now",
-	},
-	{
-		label: "Committed",
-		value: "6,200.00",
-		note: "TOKEN owed on priced claims",
-	},
-	{
-		label: "Uncovered · vault",
-		value: "0.00",
-		note: "Every claim is covered",
-	},
-]
 
 const claimableEntry: RequestEntry = {
 	id: 4,
@@ -168,6 +149,19 @@ const VaultPreview: React.FC = () => {
 		React.useState<ActionPanelSide>("subscribe")
 	const [actionAmount, setActionAmount] = React.useState("")
 
+	const { figures, isPending: isPendingFigures } = useVaultFigures()
+	const { authorities, isPending: isPendingAuthorities } = useVaultAuthorities()
+	const { nav, isPending: isPendingNav } = useNavPrice()
+	const metrics: [Metric, Metric, Metric, Metric] = [
+		toPriceMetric(nav, isPendingNav),
+		...toMetrics(figures, isPendingFigures),
+	]
+	const authorityRows = toAuthorityRows(authorities, isPendingAuthorities)
+	const sizeFigures: FigureGroup = {
+		title: "Vault size",
+		rows: toSizeFigures(figures, isPendingFigures),
+	}
+
 	const toggleTooltip = (id: string | number) => {
 		setOpenTooltipId((current) => (current === id ? null : id))
 	}
@@ -261,6 +255,7 @@ const VaultPreview: React.FC = () => {
 					<div id="about" className={styles.anchor}>
 						<AboutVault
 							summary={vaultSummary}
+							figures={sizeFigures}
 							groups={[
 								{ title: "Contracts", rows: contractRows },
 								{ title: "Authorities", rows: authorityRows },

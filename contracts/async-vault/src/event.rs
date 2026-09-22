@@ -92,3 +92,60 @@ pub struct RedeemCancelled {
     pub epoch: u64,
     pub shares: i128,
 }
+
+#[contractevent]
+pub struct UpgradeProposed {
+    pub eta: u64,
+}
+
+#[contractevent]
+pub struct UpgradeDelayProposed {
+    pub secs: u64,
+    pub eta: u64,
+}
+
+#[contractevent]
+pub struct UpgradeCancelled {}
+
+#[contractevent]
+pub struct UpgradeDelaySet {
+    pub secs: u64,
+}
+
+#[contractevent]
+pub struct Upgraded {
+    pub schema_version: u32,
+}
+
+#[contractevent]
+pub struct WindDownDelaySet {
+    pub secs: u64,
+}
+
+#[contractevent]
+pub struct WindDownProposed {
+    pub active_at: u64,
+}
+
+#[contractevent]
+pub struct WindDownProposalCancelled {}
+
+#[contractevent]
+pub struct WindDownActivated {}
+
+#[contractevent]
+pub struct WindDownRoundFinalized {
+    #[topic]
+    pub round: u32,
+    pub pot: i128,
+    pub credited: i128,
+    pub acc_per_share: i128,
+}
+
+#[contractevent]
+pub struct WindDownClaimed {
+    #[topic]
+    pub holder: Address,
+    pub surrendered: i128,
+    pub assets: i128,
+}

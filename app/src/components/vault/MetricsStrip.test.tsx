@@ -43,4 +43,18 @@ describe("MetricsStrip", () => {
 
 		expect(screen.getAllByText("—")).toHaveLength(4)
 	})
+
+	it("distinguishes a pending cell from one that could not be read", () => {
+		const mixed: [Metric, Metric, Metric, Metric] = [
+			{ ...metrics[0], value: null, pending: true },
+			{ ...metrics[1], value: null },
+			metrics[2],
+			metrics[3],
+		]
+
+		render(<MetricsStrip metrics={mixed} />)
+
+		expect(screen.getByRole("progressbar")).toBeTruthy()
+		expect(screen.getByText("—")).toBeTruthy()
+	})
 })

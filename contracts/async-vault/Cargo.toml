@@ -25,3 +25,6 @@ share-token = { path = "../share-token" }
 compliance = { path = "../compliance" }
 identity-verifier = { path = "../identity-verifier" }
 proptest = "1"
+
+[features]
+upgrade_wasm = []

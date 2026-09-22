@@ -70,4 +70,43 @@ pub enum VaultError {
     /// The notice exceeds the longest the vault accepts. A notice no investor
     /// could outlive would strand their exit with no way to undo it.
     NoticeTooLong = 6045,
+    /// The vault is winding down. Entry, pricing and transfers to the custodian
+    /// are closed for the rest of its life.
+    WindDownActive = 6046,
+    /// No wind-down proposal stands.
+    WindDownNotProposed = 6047,
+    /// A proposal already stands. Re-proposing would let governance push the
+    /// activation date back indefinitely.
+    WindDownAlreadyProposed = 6048,
+    /// The announcement has not run its delay yet.
+    WindDownDelayNotElapsed = 6049,
+    /// The wind-down has not been activated, so there is nothing to distribute.
+    WindDownNotActive = 6050,
+    /// No round has been finalised, so there is no snapshot to claim against.
+    DistributionNotStarted = 6051,
+    /// The round would distribute nothing, or there is no supply to divide by.
+    NothingToDistribute = 6052,
+    /// The delay exceeds the longest the vault accepts. A delay nobody could
+    /// outlive would mean the vault never closes.
+    WindDownDelayTooLong = 6053,
+    /// Nothing to surrender and nothing owed. Claiming is idempotent by
+    /// rejection, as elsewhere in this contract.
+    NoEntitlement = 6054,
+    /// A proposal already stands. Replacing one means cancelling it first, so
+    /// the standing eta is never quietly moved.
+    UpgradeProposalExists = 6055,
+    /// No proposal stands.
+    UpgradeProposalNotFound = 6056,
+    /// The delay has not elapsed.
+    UpgradeDelayNotElapsed = 6057,
+    /// The delay is below the shortest the vault accepts.
+    UpgradeDelayTooShort = 6058,
+    /// The delay is shorter than the notice, so an investor could not complete
+    /// an exit before the change applies.
+    UpgradeDelayBelowNotice = 6059,
+    /// The delay exceeds the longest the vault accepts.
+    UpgradeDelayTooLong = 6060,
+    /// The notice exceeds the upgrade delay, so an investor could not complete
+    /// an exit before an upgrade lands.
+    NoticeAboveUpgradeDelay = 6061,
 }
