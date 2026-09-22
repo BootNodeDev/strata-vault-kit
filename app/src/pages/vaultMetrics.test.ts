@@ -1,8 +1,20 @@
-import { type Amount } from "@stellar-scaffold/app-lib"
+import {
+	type Amount,
+	formatDate,
+	formatScaled,
+	PRICE_DECIMALS,
+	type Price,
+} from "@stellar-scaffold/app-lib"
 import { describe, expect, it } from "vitest"
+import { type NavClassification } from "../hooks/useNavPrice"
 import { type VaultAuthorities } from "../hooks/useVaultAuthorities"
 import { type VaultFigures } from "../hooks/useVaultFigures"
-import { toAuthorityRows, toMetrics, toSizeFigures } from "./vaultMetrics"
+import {
+	toAuthorityRows,
+	toMetrics,
+	toPriceMetric,
+	toSizeFigures,
+} from "./vaultMetrics"
 
 const amount = (value: bigint): Amount => value as Amount
 
@@ -105,6 +117,65 @@ describe("toAuthorityRows", () => {
 			expect(row.pending).toBe(true)
 			expect(row.address).toBeNull()
 		}
+	})
+})
+
+describe("toPriceMetric", () => {
+	const attestedAt = BigInt(Date.UTC(2026, 8, 16) / 1000)
+	const expiresAt = BigInt(Date.UTC(2026, 8, 20) / 1000)
+	const price = 1500000000000000000n as Price
+
+	it("renders the attested price and attestation date when valid", () => {
+		const nav: NavClassification = { status: "valid", price, attestedAt }
+
+		expect(toPriceMetric(nav, false)).toEqual({
+			label: "Share price",
+			value: formatScaled(price, PRICE_DECIMALS, 4),
+			note: `Attested ${formatDate(attestedAt)}`,
+		})
+	})
+
+	it("renders no value and the expiry date when stale", () => {
+		const nav: NavClassification = { status: "stale", expiresAt }
+
+		expect(toPriceMetric(nav, false)).toEqual({
+			label: "Share price",
+			value: null,
+			note: `Price expired ${formatDate(expiresAt)}`,
+		})
+	})
+
+	it("renders no value when the oracle is paused", () => {
+		expect(toPriceMetric({ status: "paused" }, false)).toEqual({
+			label: "Share price",
+			value: null,
+			note: "Oracle paused",
+		})
+	})
+
+	it("renders no value when the oracle has never been attested", () => {
+		expect(toPriceMetric({ status: "never" }, false)).toEqual({
+			label: "Share price",
+			value: null,
+			note: "No price attested yet",
+		})
+	})
+
+	it("renders no value when the oracle read is unreadable", () => {
+		expect(toPriceMetric({ status: "unreadable" }, false)).toEqual({
+			label: "Share price",
+			value: null,
+			note: "Could not read the oracle",
+		})
+	})
+
+	it("sets pending and never a value while the oracle is still loading", () => {
+		expect(toPriceMetric(undefined, true)).toEqual({
+			label: "Share price",
+			value: null,
+			note: "Reading the oracle",
+			pending: true,
+		})
 	})
 })
 

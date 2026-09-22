@@ -1,4 +1,10 @@
-import { shortAddress } from "@stellar-scaffold/app-lib"
+import {
+	formatDate,
+	formatScaled,
+	PRICE_DECIMALS,
+	type Price,
+	shortAddress,
+} from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import type React from "react"
@@ -10,6 +16,9 @@ const { mockVaultId, mockGovernanceAddress } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
 }))
+
+const price = 1500000000000000000n as Price
+const attestedAt = 1757900000n
 
 vi.mock("../config/contracts", () => {
 	const contractRows: AddressRow[] = [{ label: "Vault", address: mockVaultId }]
@@ -31,8 +40,18 @@ vi.mock("../config/clients", () => {
 		guardian: address(undefined),
 		custodian: address(undefined),
 	}
+	const oracle = {
+		state: async () => ({ result: { tag: "Valid", values: undefined } }),
+		latest: async () => ({
+			result: {
+				nav_per_share: 1500000000000000000n,
+				expires_at: 1800000000n,
+				timestamp: 1757900000n,
+			},
+		}),
+	}
 
-	return { asyncVault: async () => vault }
+	return { asyncVault: async () => vault, navOracle: async () => oracle }
 })
 
 const renderVaultPreview = (): ReturnType<typeof render> => {
@@ -121,5 +140,14 @@ describe("VaultPreview", () => {
 			await screen.findByText(shortAddress(mockGovernanceAddress)),
 		).toBeTruthy()
 		expect(screen.getAllByText("Unavailable")).toHaveLength(4)
+	})
+
+	it("renders the share price the oracle attests once the NAV classifies as valid", async () => {
+		renderVaultPreview()
+
+		expect(
+			await screen.findByText(formatScaled(price, PRICE_DECIMALS, 4)),
+		).toBeTruthy()
+		expect(screen.getByText(`Attested ${formatDate(attestedAt)}`)).toBeTruthy()
 	})
 })

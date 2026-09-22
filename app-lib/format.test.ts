@@ -3,6 +3,7 @@ import { networkPassphrase } from "./env"
 import {
 	AMOUNT_DECIMALS,
 	type Amount,
+	formatDate,
 	formatNetworkName,
 	formatScaled,
 	formatUnits,
@@ -143,6 +144,35 @@ describe("formatScaled", () => {
 		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe(
 			"9,007,199,254,740,992.12",
 		)
+	})
+})
+
+describe("formatDate", () => {
+	it("renders a ledger timestamp in UTC, not the local calendar day", () => {
+		const timestamp = BigInt(Date.UTC(2026, 8, 16, 0, 30, 0) / 1000)
+
+		expect(formatDate(timestamp)).toBe("16 Sep 2026")
+
+		const nonUtcRendering = new Intl.DateTimeFormat("en-US", {
+			day: "numeric",
+			month: "short",
+			year: "numeric",
+			timeZone: "America/New_York",
+		}).format(new Date(Number(timestamp) * 1000))
+		expect(nonUtcRendering).toBe("Sep 15, 2026")
+		expect(formatDate(timestamp)).not.toBe(nonUtcRendering)
+	})
+
+	it("does not throw for a saturated u64::MAX timestamp", () => {
+		expect(formatDate(18446744073709551615n)).toBe("—")
+	})
+
+	it("does not throw for a timestamp outside the Date range", () => {
+		expect(formatDate(-8640000000001n)).toBe("—")
+	})
+
+	it("formats the largest representable timestamp instead of rejecting it", () => {
+		expect(formatDate(8_640_000_000_000n)).toBe("13 Sep 275760")
 	})
 })
 

@@ -1,6 +1,8 @@
 import {
 	connectAsyncVault,
+	connectNavOracle,
 	type AsyncVaultViews,
+	type NavOracleViews,
 } from "@stellar-scaffold/app-lib"
 import { addresses } from "./addresses"
 
@@ -12,4 +14,14 @@ export const asyncVault = (): Promise<AsyncVaultViews> => {
 		throw error
 	})
 	return vault
+}
+
+let oracle: Promise<NavOracleViews> | undefined
+
+export const navOracle = (): Promise<NavOracleViews> => {
+	oracle ??= connectNavOracle(addresses.nav_oracle).catch((error: unknown) => {
+		oracle = undefined
+		throw error
+	})
+	return oracle
 }

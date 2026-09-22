@@ -165,6 +165,25 @@ export function parseUnits<D extends Decimals>(
 	return (negative ? -magnitude : magnitude) as Scaled<D>
 }
 
+const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000
+
+export function formatDate(unixSeconds: bigint): string {
+	const milliseconds = Number(unixSeconds) * 1000
+	if (Math.abs(milliseconds) > MAX_DATE_MILLISECONDS) {
+		return "—"
+	}
+
+	const parts = new Intl.DateTimeFormat("en-US", {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		timeZone: "UTC",
+	}).formatToParts(new Date(milliseconds))
+	const value = (type: string) =>
+		parts.find((part) => part.type === type)?.value
+	return `${value("day")} ${value("month")} ${value("year")}`
+}
+
 /**
  * Narrow an `Amount` to a JS `number` for the rare display prop that requires
  * one. `null` when the integer part would lose precision above
