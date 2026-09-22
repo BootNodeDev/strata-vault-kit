@@ -1,7 +1,9 @@
 import {
 	connectAsyncVault,
+	connectIdentityVerifier,
 	connectNavOracle,
 	type AsyncVaultViews,
+	type IdentityVerifierViews,
 	type NavOracleViews,
 } from "@stellar-scaffold/app-lib"
 import { addresses } from "./addresses"
@@ -24,4 +26,16 @@ export const navOracle = (): Promise<NavOracleViews> => {
 		throw error
 	})
 	return oracle
+}
+
+let identityVerifierClient: Promise<IdentityVerifierViews> | undefined
+
+export const identityVerifier = (): Promise<IdentityVerifierViews> => {
+	identityVerifierClient ??= connectIdentityVerifier(
+		addresses.identity_verifier,
+	).catch((error: unknown) => {
+		identityVerifierClient = undefined
+		throw error
+	})
+	return identityVerifierClient
 }
