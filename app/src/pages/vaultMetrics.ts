@@ -17,6 +17,7 @@ import { type VaultFigures } from "../hooks/useVaultFigures"
 export function toMetrics(
 	figures: VaultFigures | undefined,
 	isPending: boolean,
+	tokenSymbol: string,
 ): [Metric, Metric, Metric] {
 	const metric = (label: string, raw: Amount | null, note: string): Metric =>
 		isPending
@@ -28,9 +29,11 @@ export function toMetrics(
 				}
 
 	const uncoveredNote = (uncovered: Amount | null): string => {
-		if (isPending) return "TOKEN not covered"
+		if (isPending) return `${tokenSymbol} not covered`
 		if (uncovered === null) return "Could not read the vault"
-		return uncovered > 0n ? "TOKEN still needed" : "Every claim is covered"
+		return uncovered > 0n
+			? `${tokenSymbol} still needed`
+			: "Every claim is covered"
 	}
 
 	const uncovered = figures?.uncovered ?? null
@@ -39,12 +42,12 @@ export function toMetrics(
 		metric(
 			"Liquid reserve",
 			figures?.liquidReserve ?? null,
-			"TOKEN the vault holds now",
+			`${tokenSymbol} the vault holds now`,
 		),
 		metric(
 			"Committed",
 			figures?.committed ?? null,
-			"TOKEN owed on priced claims",
+			`${tokenSymbol} owed on priced claims`,
 		),
 		metric("Uncovered · vault", uncovered, uncoveredNote(uncovered)),
 	]

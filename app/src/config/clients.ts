@@ -1,10 +1,14 @@
 import {
+	connectAsset,
 	connectAsyncVault,
 	connectIdentityVerifier,
 	connectNavOracle,
+	connectShareToken,
+	type AssetViews,
 	type AsyncVaultViews,
 	type IdentityVerifierViews,
 	type NavOracleViews,
+	type ShareTokenViews,
 } from "@stellar-scaffold/app-lib"
 import { addresses } from "./addresses"
 
@@ -38,4 +42,26 @@ export const identityVerifier = (): Promise<IdentityVerifierViews> => {
 		throw error
 	})
 	return identityVerifierClient
+}
+
+let shareTokenClient: Promise<ShareTokenViews> | undefined
+
+export const shareToken = (): Promise<ShareTokenViews> => {
+	shareTokenClient ??= connectShareToken(addresses.share_token).catch(
+		(error: unknown) => {
+			shareTokenClient = undefined
+			throw error
+		},
+	)
+	return shareTokenClient
+}
+
+let assetClient: Promise<AssetViews> | undefined
+
+export const asset = (): Promise<AssetViews> => {
+	assetClient ??= connectAsset(addresses.asset).catch((error: unknown) => {
+		assetClient = undefined
+		throw error
+	})
+	return assetClient
 }

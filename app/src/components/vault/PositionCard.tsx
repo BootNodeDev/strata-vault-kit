@@ -1,5 +1,6 @@
 import React from "react"
 import typeStyles from "../../styles/type.module.css"
+import Skeleton from "../Skeleton"
 import styles from "./PositionCard.module.css"
 
 export type PositionCardProps = {
@@ -8,6 +9,7 @@ export type PositionCardProps = {
 	value: string | null
 	sub: string
 	note?: string
+	pending?: boolean
 }
 
 const PositionCard: React.FC<PositionCardProps> = ({
@@ -16,14 +18,21 @@ const PositionCard: React.FC<PositionCardProps> = ({
 	value,
 	sub,
 	note,
+	pending,
 }) => (
 	<div className={styles.card}>
 		<h2 className={`${typeStyles.sectionHead} ${styles.heading}`}>{heading}</h2>
 		<span className={`${typeStyles.label} ${styles.label}`}>{label}</span>
 		<div className={styles.figure}>
-			<span className={`${typeStyles.position} ${styles.value}`}>
-				{value ?? "—"}
-			</span>
+			{pending ? (
+				<Skeleton
+					className={`${typeStyles.position} ${styles.valueSkeleton}`}
+				/>
+			) : (
+				<span className={`${typeStyles.position} ${styles.value}`}>
+					{value ?? "—"}
+				</span>
+			)}
 			<span className={`${typeStyles.railValue} ${styles.sub}`}>{sub}</span>
 		</div>
 		{note && <p className={`${typeStyles.footnote} ${styles.note}`}>{note}</p>}

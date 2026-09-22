@@ -18,6 +18,8 @@ import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
 import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
+import { useSharePosition } from "../hooks/useSharePosition"
+import { useTokenSymbols } from "../hooks/useTokenSymbols"
 import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
 import { useVaultFigures } from "../hooks/useVaultFigures"
 import { useWallet } from "../hooks/useWallet"
@@ -26,6 +28,7 @@ import {
 	deriveAccess,
 	emptyMessages,
 	toPanelBlock,
+	toPosition,
 	toPriceBlock,
 } from "./vaultAccess"
 import {
@@ -73,6 +76,8 @@ const VaultPreview: React.FC = () => {
 	const { nav, isPending: isPendingNav } = useNavPrice()
 	const { address, networkPassphrase } = useWallet()
 	const { allowance } = useIsAllowed()
+	const { position } = useSharePosition()
+	const { symbols } = useTokenSymbols()
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -104,7 +109,7 @@ const VaultPreview: React.FC = () => {
 
 	const metrics: [Metric, Metric, Metric, Metric] = [
 		toPriceMetric(nav, isPendingNav),
-		...toMetrics(figures, isPendingFigures),
+		...toMetrics(figures, isPendingFigures, symbols.token),
 	]
 	const authorityRows = toAuthorityRows(authorities, isPendingAuthorities)
 	const sizeFigures: FigureGroup = {
@@ -127,8 +132,8 @@ const VaultPreview: React.FC = () => {
 	}
 
 	const isSubscribe = actionSide === "subscribe"
-	const inTicker = isSubscribe ? "TOKEN" : "vTOKEN"
-	const outTicker = isSubscribe ? "vTOKEN" : "TOKEN"
+	const inTicker = isSubscribe ? symbols.token : symbols.shareToken
+	const outTicker = isSubscribe ? symbols.shareToken : symbols.token
 	const balance =
 		block === undefined ? (isSubscribe ? tokenBalance : shareBalance) : null
 	const balanceLabel =
@@ -202,9 +207,8 @@ const VaultPreview: React.FC = () => {
 						<PositionCard
 							heading="Your position"
 							label="Your shares"
-							value={null}
 							sub="In your wallet"
-							note="Connect a wallet to see your position."
+							{...toPosition(position, symbols.shareToken)}
 						/>
 					</section>
 

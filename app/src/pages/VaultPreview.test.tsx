@@ -17,10 +17,13 @@ import {
 } from "../providers/WalletProvider"
 import VaultPreview from "./VaultPreview"
 
-const { mockVaultId, mockGovernanceAddress } = vi.hoisted(() => ({
-	mockVaultId: "CMOCKVAULTADDRESS1234567890",
-	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
-}))
+const { mockVaultId, mockGovernanceAddress, mockShares, mockSymbols } =
+	vi.hoisted(() => ({
+		mockVaultId: "CMOCKVAULTADDRESS1234567890",
+		mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
+		mockShares: { balance: 500_0000000n },
+		mockSymbols: { token: "USDC", shareToken: "vUSDC" },
+	}))
 
 const price = 1500000000000000000n as Price
 const attestedAt = 1757900000n
@@ -56,11 +59,20 @@ vi.mock("../config/clients", () => {
 		}),
 	}
 	const identity = { is_allowed: async () => ({ result: true }) }
+	const shares = {
+		balance: async () => ({ result: mockShares.balance }),
+		symbol: async () => ({ result: mockSymbols.shareToken }),
+	}
+	const depositAsset = {
+		symbol: async () => ({ result: mockSymbols.token }),
+	}
 
 	return {
 		asyncVault: async () => vault,
 		navOracle: async () => oracle,
 		identityVerifier: async () => identity,
+		shareToken: async () => shares,
+		asset: async () => depositAsset,
 	}
 })
 
@@ -132,6 +144,21 @@ describe("VaultPreview", () => {
 		expect(
 			await screen.findByRole("button", { name: "Subscribe" }),
 		).toBeTruthy()
+	})
+
+	it("reads and renders the connected address's share balance, using the share token's own reported symbol", async () => {
+		mockShares.balance = 500_0000000n
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByText("500.00 vUSDC")).toBeTruthy()
+	})
+
+	it("renders a genuine zero balance as a formatted zero, not the absence indicator", async () => {
+		mockShares.balance = 0n
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByText("0.00 vUSDC")).toBeTruthy()
+		expect(screen.queryByText("—")).toBeNull()
 	})
 
 	it("shows a switch-network control, distinct from connect, when the wallet is on the wrong network", async () => {

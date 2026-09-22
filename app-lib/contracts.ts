@@ -47,6 +47,15 @@ export interface IdentityVerifierViews {
 	is_allowed: ViewOf<{ account: string }, boolean>
 }
 
+export interface ShareTokenViews {
+	balance: ViewOf<{ account: string }, i128>
+	symbol: View<string>
+}
+
+export interface AssetViews {
+	symbol: View<string>
+}
+
 const clientOptions = (contractId: string) => ({
 	contractId,
 	rpcUrl,
@@ -66,3 +75,11 @@ export const connectIdentityVerifier = (
 	contractId: string,
 ): Promise<IdentityVerifierViews> =>
 	Client.from<IdentityVerifierViews>(clientOptions(contractId))
+
+export const connectShareToken = (
+	contractId: string,
+): Promise<ShareTokenViews> =>
+	Client.from<ShareTokenViews>(clientOptions(contractId))
+
+export const connectAsset = (contractId: string): Promise<AssetViews> =>
+	Client.from<AssetViews>(clientOptions(contractId))
