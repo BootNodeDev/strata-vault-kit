@@ -17,4 +17,5 @@ pub(crate) enum DataKey {
     UserRedeem(u64, Address),
     UpgradeDelay,
     UpgradeProposal,
+    PausedAt,
 }

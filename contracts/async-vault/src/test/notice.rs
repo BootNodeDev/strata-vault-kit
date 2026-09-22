@@ -156,8 +156,24 @@ fn a_notice_beyond_the_maximum_is_refused() {
 }
 
 #[test]
+fn a_notice_above_the_upgrade_delay_is_refused() {
+    let f = setup();
+
+    refused(
+        f.vault.try_set_notice(&(MIN_UPGRADE_DELAY + 1), &f.admin),
+        VaultError::NoticeAboveUpgradeDelay,
+    );
+    assert_eq!(f.vault.notice(), 0);
+}
+
+#[test]
 fn a_notice_at_the_maximum_is_accepted() {
     let f = setup();
+
+    // The delay must be raised first, since notice cannot outgrow the upgrade delay.
+    f.vault.propose_upgrade_delay(&MAX_NOTICE_SECS, &f.admin);
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_upgrade(&f.admin);
 
     f.vault.set_notice(&MAX_NOTICE_SECS, &f.admin);
 

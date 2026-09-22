@@ -31,7 +31,7 @@ pub use event::{
 };
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
-pub use upgrade::{UpgradeAction, UpgradeProposal, MIN_UPGRADE_DELAY};
+pub use upgrade::{UpgradeAction, UpgradeProposal, MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
 
 /// Thirty days. Longer than any notice a real structure uses, short enough that
 /// setting it by mistake is survivable.
@@ -159,6 +159,9 @@ impl AsyncVault {
         if secs > MAX_NOTICE_SECS {
             panic_with_error!(e, VaultError::NoticeTooLong);
         }
+        if secs > upgrade::delay(e) {
+            panic_with_error!(e, VaultError::NoticeAboveUpgradeDelay);
+        }
         state::set_notice(e, secs);
         NoticeSet { secs }.publish(e);
     }
@@ -179,6 +182,7 @@ impl AsyncVault {
     }
 
     #[only_admin]
+    #[when_not_paused]
     pub fn apply_upgrade(e: &Env, _caller: Address) {
         upgrade::apply(e);
     }
@@ -286,11 +290,13 @@ impl Pausable for AsyncVault {
     #[only_role(caller, "guardian")]
     fn pause(e: &Env, caller: Address) {
         pausable::pause(e);
+        upgrade::on_pause(e);
     }
 
     #[only_admin]
     fn unpause(e: &Env, _caller: Address) {
         pausable::unpause(e);
+        upgrade::on_unpause(e);
     }
 }
 

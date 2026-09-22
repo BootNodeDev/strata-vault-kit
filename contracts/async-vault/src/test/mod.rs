@@ -32,7 +32,7 @@ pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
 
 pub(crate) use crate::{
     AsyncVault, AsyncVaultClient, EpochStatus, UpgradeAction, VaultError, VaultRoles,
-    MAX_NOTICE_SECS, MIN_UPGRADE_DELAY,
+    MAX_NOTICE_SECS, MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY,
 };
 
 fn wad(whole: i128) -> i128 {

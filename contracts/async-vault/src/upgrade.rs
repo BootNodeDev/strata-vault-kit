@@ -1,13 +1,18 @@
 use soroban_sdk::{contracttype, panic_with_error, BytesN, Env};
 
 use crate::error::VaultError;
-use crate::event::{UpgradeCancelled, UpgradeDelayProposed, UpgradeProposed, Upgraded};
+use crate::event::{
+    UpgradeCancelled, UpgradeDelayProposed, UpgradeDelaySet, UpgradeProposed, Upgraded,
+};
 use crate::keys::DataKey;
 use crate::state;
 
 /// Seven days. Short enough to fix a defect in a week, long enough that an
 /// investor who dislikes the change has time to act on it.
 pub const MIN_UPGRADE_DELAY: u64 = 7 * 24 * 60 * 60;
+/// Ninety days. Prevents setting a delay that effectively brick-walls the vault
+/// against future upgrades.
+pub const MAX_UPGRADE_DELAY: u64 = 90 * 24 * 60 * 60;
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -36,6 +41,9 @@ fn check_delay(e: &Env, secs: u64) {
     if secs < MIN_UPGRADE_DELAY {
         panic_with_error!(e, VaultError::UpgradeDelayTooShort);
     }
+    if secs > MAX_UPGRADE_DELAY {
+        panic_with_error!(e, VaultError::UpgradeDelayTooLong);
+    }
     if secs < state::notice(e) {
         panic_with_error!(e, VaultError::UpgradeDelayBelowNotice);
     }
@@ -51,7 +59,31 @@ fn queue(e: &Env, action: UpgradeAction) -> u64 {
         &DataKey::UpgradeProposal,
         &UpgradeProposal { action, eta },
     );
+    if stellar_contract_utils::pausable::paused(e) {
+        storage::set_instance(e, &DataKey::PausedAt, &e.ledger().timestamp());
+    }
     eta
+}
+
+pub(crate) fn on_pause(e: &Env) {
+    let paused_at: Option<u64> = storage::get_instance(e, &DataKey::PausedAt);
+    if paused_at.is_none() {
+        storage::set_instance(e, &DataKey::PausedAt, &e.ledger().timestamp());
+    }
+}
+
+pub(crate) fn on_unpause(e: &Env) {
+    let paused_at: Option<u64> = storage::get_instance(e, &DataKey::PausedAt);
+    if let Some(paused_at) = paused_at {
+        let duration = e.ledger().timestamp().saturating_sub(paused_at);
+        if duration > 0 {
+            if let Some(mut p) = proposal(e) {
+                p.eta = p.eta.saturating_add(duration);
+                storage::set_instance(e, &DataKey::UpgradeProposal, &p);
+            }
+        }
+        e.storage().instance().remove(&DataKey::PausedAt);
+    }
 }
 
 pub(crate) fn propose_wasm(e: &Env, wasm_hash: BytesN<32>) {
@@ -74,6 +106,13 @@ pub(crate) fn cancel(e: &Env) {
 }
 
 pub(crate) fn apply(e: &Env) {
+    if stellar_contract_utils::pausable::paused(e) {
+        panic_with_error!(
+            e,
+            stellar_contract_utils::pausable::PausableError::EnforcedPause
+        );
+    }
+
     let p =
         proposal(e).unwrap_or_else(|| panic_with_error!(e, VaultError::UpgradeProposalNotFound));
 
@@ -87,6 +126,7 @@ pub(crate) fn apply(e: &Env) {
             check_delay(e, *secs);
             storage::set_instance(e, &DataKey::UpgradeDelay, secs);
             e.storage().instance().remove(&DataKey::UpgradeProposal);
+            UpgradeDelaySet { secs: *secs }.publish(e);
         }
         UpgradeAction::Wasm(hash) => {
             e.storage().instance().remove(&DataKey::UpgradeProposal);

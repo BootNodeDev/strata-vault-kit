@@ -108,6 +108,11 @@ pub struct UpgradeDelayProposed {
 pub struct UpgradeCancelled {}
 
 #[contractevent]
+pub struct UpgradeDelaySet {
+    pub secs: u64,
+}
+
+#[contractevent]
 pub struct Upgraded {
     pub schema_version: u32,
 }

@@ -82,6 +82,9 @@ pub enum VaultError {
     /// The delay is shorter than the notice, so an investor could not complete
     /// an exit before the change applies.
     UpgradeDelayBelowNotice = 6059,
-    /// The storage has already been migrated to this schema version.
-    AlreadyMigrated = 6060,
+    /// The delay exceeds the longest the vault accepts.
+    UpgradeDelayTooLong = 6060,
+    /// The notice exceeds the upgrade delay, so an investor could not complete
+    /// an exit before an upgrade lands.
+    NoticeAboveUpgradeDelay = 6061,
 }
