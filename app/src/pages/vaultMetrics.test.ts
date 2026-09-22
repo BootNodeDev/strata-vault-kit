@@ -11,6 +11,7 @@ import { type VaultAuthorities } from "../hooks/useVaultAuthorities"
 import { type VaultFigures } from "../hooks/useVaultFigures"
 import {
 	toAuthorityRows,
+	toEstimate,
 	toMetrics,
 	toPriceMetric,
 	toSizeFigures,
@@ -186,6 +187,39 @@ describe("toPriceMetric", () => {
 			pending: true,
 		})
 	})
+})
+
+describe("toEstimate", () => {
+	const valid: NavClassification = {
+		status: "valid",
+		price: (2n * 10n ** BigInt(PRICE_DECIMALS)) as Price,
+		attestedAt: 0n,
+	}
+
+	it("estimates shares received from tokens in, using the attested price", () => {
+		expect(toEstimate(valid, 100, true, "vUSDC")).toBe("≈ 50.00 vUSDC")
+	})
+
+	it("estimates tokens received from shares in, using the attested price", () => {
+		expect(toEstimate(valid, 100, false, "USDC")).toBe("≈ 200.00 USDC")
+	})
+
+	it("cannot estimate with no amount entered", () => {
+		expect(toEstimate(valid, null, true, "vUSDC")).toBeNull()
+	})
+
+	it.each([
+		["paused", { status: "paused" }],
+		["stale", { status: "stale", expiresAt: 0n }],
+		["never", { status: "never" }],
+		["unreadable", { status: "unreadable" }],
+		["not yet read", undefined],
+	] satisfies [string, NavClassification | undefined][])(
+		"cannot estimate while the price is not valid (%s)",
+		(_label, nav) => {
+			expect(toEstimate(nav, 100, true, "vUSDC")).toBeNull()
+		},
+	)
 })
 
 describe("toSizeFigures", () => {

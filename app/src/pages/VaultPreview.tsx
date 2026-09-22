@@ -16,6 +16,7 @@ import PositionCard from "../components/vault/PositionCard"
 import { type RequestStage } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
+import { useDepositBalance } from "../hooks/useDepositBalance"
 import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
 import { useSharePosition } from "../hooks/useSharePosition"
@@ -27,23 +28,19 @@ import typeStyles from "../styles/type.module.css"
 import {
 	deriveAccess,
 	emptyMessages,
+	toActionBalance,
 	toPanelBlock,
 	toPosition,
 	toPriceBlock,
 } from "./vaultAccess"
 import {
 	toAuthorityRows,
+	toEstimate,
 	toMetrics,
 	toPriceMetric,
 	toSizeFigures,
 } from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
-
-const vaultName = "Operator vault name"
-
-const shareNav = 1.0342
-const tokenBalance = 2450
-const shareBalance = 1000
 
 const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
@@ -77,6 +74,7 @@ const VaultPreview: React.FC = () => {
 	const { address, networkPassphrase } = useWallet()
 	const { allowance } = useIsAllowed()
 	const { position } = useSharePosition()
+	const { balance: deposit } = useDepositBalance()
 	const { symbols } = useTokenSymbols()
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
@@ -134,19 +132,18 @@ const VaultPreview: React.FC = () => {
 	const isSubscribe = actionSide === "subscribe"
 	const inTicker = isSubscribe ? symbols.token : symbols.shareToken
 	const outTicker = isSubscribe ? symbols.shareToken : symbols.token
-	const balance =
-		block === undefined ? (isSubscribe ? tokenBalance : shareBalance) : null
+	const balance = toActionBalance(
+		isSubscribe,
+		block !== undefined,
+		deposit,
+		position,
+	)
 	const balanceLabel =
 		balance === null
 			? "Balance unavailable"
 			: `Balance ${formatAmount(balance)}`
 	const parsedAmount = parseAmount(actionAmount)
-	const estimateValue =
-		parsedAmount === null
-			? "≈ —"
-			: `≈ ${formatAmount(
-					isSubscribe ? parsedAmount / shareNav : parsedAmount * shareNav,
-				)} ${outTicker}`
+	const estimateValue = toEstimate(nav, parsedAmount, isSubscribe, outTicker)
 	const copyAddress = async () => {
 		try {
 			await navigator.clipboard.writeText(vaultContractId)
@@ -160,7 +157,7 @@ const VaultPreview: React.FC = () => {
 	return (
 		<div className={styles.page}>
 			<div className={styles.identity}>
-				<h1 className={typeStyles.vaultName}>{vaultName}</h1>
+				<h1 className={typeStyles.vaultName}>{symbols.vaultName}</h1>
 				<div className={styles.address}>
 					<span className={`${typeStyles.railValue} ${styles.addressValue}`}>
 						{shortAddress(vaultContractId)}

@@ -7,9 +7,9 @@ import {
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { render, screen } from "@testing-library/react"
+import { fireEvent, render, screen } from "@testing-library/react"
 import type React from "react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type AddressRow } from "../components/vault/AboutVault"
 import {
 	WalletContext,
@@ -17,13 +17,33 @@ import {
 } from "../providers/WalletProvider"
 import VaultPreview from "./VaultPreview"
 
-const { mockVaultId, mockGovernanceAddress, mockShares, mockSymbols } =
-	vi.hoisted(() => ({
-		mockVaultId: "CMOCKVAULTADDRESS1234567890",
-		mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
-		mockShares: { balance: 500_0000000n },
-		mockSymbols: { token: "USDC", shareToken: "vUSDC" },
-	}))
+const {
+	mockVaultId,
+	mockGovernanceAddress,
+	mockShares,
+	mockDeposit,
+	mockSymbols,
+} = vi.hoisted(() => ({
+	mockVaultId: "CMOCKVAULTADDRESS1234567890",
+	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
+	mockShares: { balance: 500_0000000n },
+	mockDeposit: { balance: 3200_0000000n },
+	mockSymbols: {
+		token: "USDC",
+		shareToken: "vUSDC",
+		vaultName: "Strata Vault",
+	},
+}))
+
+beforeEach(() => {
+	mockShares.balance = 500_0000000n
+	mockDeposit.balance = 3200_0000000n
+})
+
+afterEach(() => {
+	mockShares.balance = 500_0000000n
+	mockDeposit.balance = 3200_0000000n
+})
 
 const price = 1500000000000000000n as Price
 const attestedAt = 1757900000n
@@ -62,9 +82,11 @@ vi.mock("../config/clients", () => {
 	const shares = {
 		balance: async () => ({ result: mockShares.balance }),
 		symbol: async () => ({ result: mockSymbols.shareToken }),
+		name: async () => ({ result: mockSymbols.vaultName }),
 	}
 	const depositAsset = {
 		symbol: async () => ({ result: mockSymbols.token }),
+		balance: async () => ({ result: mockDeposit.balance }),
 	}
 
 	return {
@@ -135,7 +157,16 @@ describe("VaultPreview", () => {
 			screen.getByText("Connect a wallet to see your position."),
 		).toBeTruthy()
 		expect(screen.queryByText("1,000.00 vTOKEN")).toBeNull()
+		expect(screen.queryByText("Operator vault name")).toBeNull()
 		expect(screen.getByRole("button", { name: "Connect Wallet" })).toBeTruthy()
+	})
+
+	it("renders the vault name read from the share token's own contract, not a fabricated one", async () => {
+		renderVaultPreview()
+
+		expect(
+			await screen.findByRole("heading", { name: mockSymbols.vaultName }),
+		).toBeTruthy()
 	})
 
 	it("reaches subscribe once connected, allowlisted, on the right network and priced", async () => {
@@ -147,7 +178,6 @@ describe("VaultPreview", () => {
 	})
 
 	it("reads and renders the connected address's share balance, using the share token's own reported symbol", async () => {
-		mockShares.balance = 500_0000000n
 		renderVaultPreview(connectedWallet)
 
 		expect(await screen.findByText("500.00 vUSDC")).toBeTruthy()
@@ -159,6 +189,31 @@ describe("VaultPreview", () => {
 
 		expect(await screen.findByText("0.00 vUSDC")).toBeTruthy()
 		expect(screen.queryByText("—")).toBeNull()
+	})
+
+	it("reads and renders the connected address's deposit asset balance for the subscribe side", async () => {
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByText("Balance 3,200.00")).toBeTruthy()
+	})
+
+	it("reads and renders the connected address's share balance for the redeem side", async () => {
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+
+		expect(await screen.findByText("Balance 500.00")).toBeTruthy()
+	})
+
+	it("computes the subscribe estimate from the oracle's own attested price, not a fabricated one", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+
+		fireEvent.change(input, { target: { value: "150" } })
+
+		expect(await screen.findByText("≈ 100.00 vUSDC")).toBeTruthy()
 	})
 
 	it("shows a switch-network control, distinct from connect, when the wallet is on the wrong network", async () => {

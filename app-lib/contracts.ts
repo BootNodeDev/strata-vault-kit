@@ -50,10 +50,12 @@ export interface IdentityVerifierViews {
 export interface ShareTokenViews {
 	balance: ViewOf<{ account: string }, i128>
 	symbol: View<string>
+	name: View<string>
 }
 
 export interface AssetViews {
 	symbol: View<string>
+	balance: ViewOf<{ id: string }, i128>
 }
 
 const clientOptions = (contractId: string) => ({

@@ -4,12 +4,14 @@ import {
 	type NetworkState,
 } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
+import { type DepositBalance } from "../hooks/useDepositBalance"
 import { type Allowance } from "../hooks/useIsAllowed"
 import { type NavClassification } from "../hooks/useNavPrice"
 import { type SharePosition } from "../hooks/useSharePosition"
 import {
 	deriveAccess,
 	emptyMessages,
+	toActionBalance,
 	toPanelBlock,
 	toPosition,
 	toPriceBlock,
@@ -216,6 +218,46 @@ describe("toPosition", () => {
 			shares: (500n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount,
 		}
 		expect(toPosition(position, "vUSDC")).toEqual({ value: "500.00 vUSDC" })
+	})
+})
+
+describe("toActionBalance", () => {
+	const held: SharePosition = {
+		status: "held",
+		shares: (500n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount,
+	}
+	const depositHeld: DepositBalance = {
+		status: "held",
+		amount: (250n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount,
+	}
+
+	it("reads the deposit asset's balance on the subscribe side", () => {
+		expect(
+			toActionBalance(true, false, depositHeld, { status: "checking" }),
+		).toBe(250)
+	})
+
+	it("reads the share position's balance on the redeem side", () => {
+		expect(toActionBalance(false, false, { status: "checking" }, held)).toBe(
+			500,
+		)
+	})
+
+	it("returns no balance while the panel is blocked, on either side", () => {
+		expect(toActionBalance(true, true, depositHeld, held)).toBeNull()
+		expect(toActionBalance(false, true, depositHeld, held)).toBeNull()
+	})
+
+	it("returns no balance while the relevant read has not resolved to a value", () => {
+		expect(
+			toActionBalance(true, false, { status: "checking" }, held),
+		).toBeNull()
+		expect(
+			toActionBalance(true, false, { status: "unreadable" }, held),
+		).toBeNull()
+		expect(
+			toActionBalance(false, false, depositHeld, { status: "disconnected" }),
+		).toBeNull()
 	})
 })
 

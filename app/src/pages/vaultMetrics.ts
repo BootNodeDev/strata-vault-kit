@@ -1,6 +1,7 @@
 import {
 	AMOUNT_DECIMALS,
 	type Amount,
+	formatAmount,
 	formatDate,
 	formatScaled,
 	PRICE_DECIMALS,
@@ -108,6 +109,18 @@ export function toPriceMetric(
 				: null,
 		note: priceNote(nav),
 	}
+}
+
+export function toEstimate(
+	nav: NavClassification | undefined,
+	parsedAmount: number | null,
+	isSubscribe: boolean,
+	outTicker: string,
+): string | null {
+	if (nav?.status !== "valid" || parsedAmount === null) return null
+	const price = Number(nav.price) / 10 ** PRICE_DECIMALS
+	const result = isSubscribe ? parsedAmount / price : parsedAmount * price
+	return `≈ ${formatAmount(result)} ${outTicker}`
 }
 
 export function toSizeFigures(

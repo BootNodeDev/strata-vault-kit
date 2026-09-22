@@ -202,7 +202,11 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 						<span className={`${typeStyles.label} ${styles.estimateLabel}`}>
 							{estimate.label}
 						</span>
-						<span className={`${typeStyles.estimate} ${styles.estimateValue}`}>
+						<span
+							className={`${
+								estimate.value === null ? typeStyles.body : typeStyles.estimate
+							} ${styles.estimateValue}`}
+						>
 							{estimate.value ?? "Estimate unavailable"}
 						</span>
 					</div>
