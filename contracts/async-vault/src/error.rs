@@ -92,4 +92,21 @@ pub enum VaultError {
     /// Nothing to surrender and nothing owed. Claiming is idempotent by
     /// rejection, as elsewhere in this contract.
     NoEntitlement = 6054,
+    /// A proposal already stands. Replacing one means cancelling it first, so
+    /// the standing eta is never quietly moved.
+    UpgradeProposalExists = 6055,
+    /// No proposal stands.
+    UpgradeProposalNotFound = 6056,
+    /// The delay has not elapsed.
+    UpgradeDelayNotElapsed = 6057,
+    /// The delay is below the shortest the vault accepts.
+    UpgradeDelayTooShort = 6058,
+    /// The delay is shorter than the notice, so an investor could not complete
+    /// an exit before the change applies.
+    UpgradeDelayBelowNotice = 6059,
+    /// The delay exceeds the longest the vault accepts.
+    UpgradeDelayTooLong = 6060,
+    /// The notice exceeds the upgrade delay, so an investor could not complete
+    /// an exit before an upgrade lands.
+    NoticeAboveUpgradeDelay = 6061,
 }

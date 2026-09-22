@@ -94,6 +94,30 @@ pub struct RedeemCancelled {
 }
 
 #[contractevent]
+pub struct UpgradeProposed {
+    pub eta: u64,
+}
+
+#[contractevent]
+pub struct UpgradeDelayProposed {
+    pub secs: u64,
+    pub eta: u64,
+}
+
+#[contractevent]
+pub struct UpgradeCancelled {}
+
+#[contractevent]
+pub struct UpgradeDelaySet {
+    pub secs: u64,
+}
+
+#[contractevent]
+pub struct Upgraded {
+    pub schema_version: u32,
+}
+
+#[contractevent]
 pub struct WindDownDelaySet {
     pub secs: u64,
 }

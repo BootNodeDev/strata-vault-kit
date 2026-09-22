@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*", "contracts/*"]
+exclude = ["fixtures/upgrade-target"]
 
 [workspace.package]
 edition = "2021"

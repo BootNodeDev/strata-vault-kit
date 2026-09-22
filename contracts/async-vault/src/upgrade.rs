@@ -1,0 +1,140 @@
+use soroban_sdk::{contracttype, panic_with_error, BytesN, Env};
+
+use crate::error::VaultError;
+use crate::event::{
+    UpgradeCancelled, UpgradeDelayProposed, UpgradeDelaySet, UpgradeProposed, Upgraded,
+};
+use crate::keys::DataKey;
+use crate::state;
+
+/// Seven days. Short enough to fix a defect in a week, long enough that an
+/// investor who dislikes the change has time to act on it.
+pub const MIN_UPGRADE_DELAY: u64 = 7 * 24 * 60 * 60;
+/// Ninety days. Prevents setting a delay that effectively brick-walls the vault
+/// against future upgrades.
+pub const MAX_UPGRADE_DELAY: u64 = 90 * 24 * 60 * 60;
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum UpgradeAction {
+    Wasm(BytesN<32>),
+    Delay(u64),
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UpgradeProposal {
+    pub action: UpgradeAction,
+    pub eta: u64,
+}
+
+pub(crate) fn delay(e: &Env) -> u64 {
+    storage::get_instance(e, &DataKey::UpgradeDelay).unwrap_or(MIN_UPGRADE_DELAY)
+}
+
+pub(crate) fn proposal(e: &Env) -> Option<UpgradeProposal> {
+    storage::get_instance(e, &DataKey::UpgradeProposal)
+}
+
+/// An exit takes a full notice, so a delay shorter than one is not a window.
+fn check_delay(e: &Env, secs: u64) {
+    if secs < MIN_UPGRADE_DELAY {
+        panic_with_error!(e, VaultError::UpgradeDelayTooShort);
+    }
+    if secs > MAX_UPGRADE_DELAY {
+        panic_with_error!(e, VaultError::UpgradeDelayTooLong);
+    }
+    if secs < state::notice(e) {
+        panic_with_error!(e, VaultError::UpgradeDelayBelowNotice);
+    }
+}
+
+fn queue(e: &Env, action: UpgradeAction) -> u64 {
+    if proposal(e).is_some() {
+        panic_with_error!(e, VaultError::UpgradeProposalExists);
+    }
+    let eta = e.ledger().timestamp().saturating_add(delay(e));
+    storage::set_instance(
+        e,
+        &DataKey::UpgradeProposal,
+        &UpgradeProposal { action, eta },
+    );
+    if stellar_contract_utils::pausable::paused(e) {
+        storage::set_instance(e, &DataKey::PausedAt, &e.ledger().timestamp());
+    }
+    eta
+}
+
+pub(crate) fn on_pause(e: &Env) {
+    let paused_at: Option<u64> = storage::get_instance(e, &DataKey::PausedAt);
+    if paused_at.is_none() {
+        storage::set_instance(e, &DataKey::PausedAt, &e.ledger().timestamp());
+    }
+}
+
+pub(crate) fn on_unpause(e: &Env) {
+    let paused_at: Option<u64> = storage::get_instance(e, &DataKey::PausedAt);
+    if let Some(paused_at) = paused_at {
+        let duration = e.ledger().timestamp().saturating_sub(paused_at);
+        if duration > 0 {
+            if let Some(mut p) = proposal(e) {
+                p.eta = p.eta.saturating_add(duration);
+                storage::set_instance(e, &DataKey::UpgradeProposal, &p);
+            }
+        }
+        e.storage().instance().remove(&DataKey::PausedAt);
+    }
+}
+
+pub(crate) fn propose_wasm(e: &Env, wasm_hash: BytesN<32>) {
+    let eta = queue(e, UpgradeAction::Wasm(wasm_hash));
+    UpgradeProposed { eta }.publish(e);
+}
+
+pub(crate) fn propose_delay(e: &Env, secs: u64) {
+    check_delay(e, secs);
+    let eta = queue(e, UpgradeAction::Delay(secs));
+    UpgradeDelayProposed { secs, eta }.publish(e);
+}
+
+pub(crate) fn cancel(e: &Env) {
+    if proposal(e).is_none() {
+        panic_with_error!(e, VaultError::UpgradeProposalNotFound);
+    }
+    e.storage().instance().remove(&DataKey::UpgradeProposal);
+    UpgradeCancelled {}.publish(e);
+}
+
+pub(crate) fn apply(e: &Env) {
+    if stellar_contract_utils::pausable::paused(e) {
+        panic_with_error!(
+            e,
+            stellar_contract_utils::pausable::PausableError::EnforcedPause
+        );
+    }
+
+    let p =
+        proposal(e).unwrap_or_else(|| panic_with_error!(e, VaultError::UpgradeProposalNotFound));
+
+    if e.ledger().timestamp() < p.eta {
+        panic_with_error!(e, VaultError::UpgradeDelayNotElapsed);
+    }
+
+    match &p.action {
+        UpgradeAction::Delay(secs) => {
+            // The notice may have moved since the proposal; this check decides.
+            check_delay(e, *secs);
+            storage::set_instance(e, &DataKey::UpgradeDelay, secs);
+            e.storage().instance().remove(&DataKey::UpgradeProposal);
+            UpgradeDelaySet { secs: *secs }.publish(e);
+        }
+        UpgradeAction::Wasm(hash) => {
+            e.storage().instance().remove(&DataKey::UpgradeProposal);
+            stellar_contract_utils::upgradeable::upgrade(e, hash);
+            Upgraded {
+                schema_version: stellar_contract_utils::upgradeable::get_schema_version(e),
+            }
+            .publish(e);
+        }
+    }
+}
