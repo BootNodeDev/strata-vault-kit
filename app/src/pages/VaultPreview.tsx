@@ -14,7 +14,9 @@ import {
 } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
+import { useVaultFigures } from "../hooks/useVaultFigures"
 import typeStyles from "../styles/type.module.css"
+import { toMetrics } from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
 
 const vaultName = "Operator vault name"
@@ -48,24 +50,11 @@ const parseAmount = (raw: string): number | null => {
 	return Number.isFinite(value) && value > 0 ? value : null
 }
 
-const metrics: [Metric, Metric, Metric, Metric] = [
-	{ label: "Share price", value: "1.0342", note: "NAV of 31 Aug 2026" },
-	{
-		label: "Liquid reserve",
-		value: "18,400.00",
-		note: "TOKEN the vault holds now",
-	},
-	{
-		label: "Committed",
-		value: "6,200.00",
-		note: "TOKEN owed on priced claims",
-	},
-	{
-		label: "Uncovered · vault",
-		value: "0.00",
-		note: "Every claim is covered",
-	},
-]
+const sharePriceMetric: Metric = {
+	label: "Share price",
+	value: "1.0342",
+	note: "NAV of 31 Aug 2026",
+}
 
 const claimableEntry: RequestEntry = {
 	id: 4,
@@ -167,6 +156,12 @@ const VaultPreview: React.FC = () => {
 	const [actionSide, setActionSide] =
 		React.useState<ActionPanelSide>("subscribe")
 	const [actionAmount, setActionAmount] = React.useState("")
+
+	const { figures, isPending: isPendingFigures } = useVaultFigures()
+	const metrics: [Metric, Metric, Metric, Metric] = [
+		sharePriceMetric,
+		...toMetrics(figures, isPendingFigures),
+	]
 
 	const toggleTooltip = (id: string | number) => {
 		setOpenTooltipId((current) => (current === id ? null : id))

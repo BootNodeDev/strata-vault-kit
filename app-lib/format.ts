@@ -124,6 +124,25 @@ export function formatUnits<D extends Decimals>(
 		: `${sign}${integerPart}`
 }
 
+export function formatScaled<D extends Decimals>(
+	value: Scaled<D>,
+	decimals: NoInfer<D>,
+	fractionDigits = 2,
+): string {
+	const [integer = "0", fraction] = formatUnits(
+		value,
+		decimals,
+		fractionDigits,
+	).split(".")
+	const negative = integer.startsWith("-")
+	const magnitude = negative ? integer.slice(1) : integer
+	const grouped = BigInt(magnitude).toLocaleString("en-US")
+	const sign = negative ? "-" : ""
+	return fraction === undefined
+		? `${sign}${grouped}`
+		: `${sign}${grouped}.${fraction}`
+}
+
 /**
  * Parse investor input into a scaled contract value. `null` for anything the
  * chain cannot represent exactly, including more fraction digits than

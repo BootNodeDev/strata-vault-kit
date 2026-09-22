@@ -4,6 +4,7 @@ import {
 	AMOUNT_DECIMALS,
 	type Amount,
 	formatNetworkName,
+	formatScaled,
 	formatUnits,
 	networkStatus,
 	parseUnits,
@@ -118,6 +119,30 @@ describe("toSafeNumber", () => {
 		const aboveBoundary = ((BigInt(Number.MAX_SAFE_INTEGER) + 1n) *
 			10n ** BigInt(AMOUNT_DECIMALS)) as Amount
 		expect(toSafeNumber(aboveBoundary)).toBeNull()
+	})
+})
+
+describe("formatScaled", () => {
+	it("groups the integer part with thousands separators", () => {
+		const value = 184000000000n as Amount
+		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe("18,400.00")
+	})
+
+	it("splits the sign, groups the magnitude, then re-prefixes it", () => {
+		const value = -25000000n as Amount
+		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe("-2.50")
+	})
+
+	it("keeps the sign when the magnitude is smaller than one whole unit", () => {
+		const value = -5000000n as Amount
+		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe("-0.50")
+	})
+
+	it("stays exact above Number.MAX_SAFE_INTEGER", () => {
+		const value = 90071992547409921234567n as Amount
+		expect(formatScaled(value, AMOUNT_DECIMALS)).toBe(
+			"9,007,199,254,740,992.12",
+		)
 	})
 })
 
