@@ -1,6 +1,6 @@
 # Compliance & Freeze Matrix Across Vault Lifecycle
 
-This document is the authoritative specification of identity, allowlist, and freeze behavior across all Strata vault lifecycle operations. It consolidates architectural decisions (#48, #94) and formally defines the interaction between the asynchronous vault, the SEP-57 compliant share token, and the on-chain identity verifier.
+This document is the authoritative specification of identity, allowlist, and freeze behavior across all Strata vault lifecycle operations. It formally defines the interaction between the asynchronous vault, the SEP-57 compliant share token, and the on-chain identity verifier.
 
 ---
 
