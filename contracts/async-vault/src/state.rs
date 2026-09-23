@@ -170,3 +170,14 @@ pub(crate) fn set_pending_burn_shares(e: &Env, shares: i128) {
 pub(crate) fn pending_burn_shares(e: &Env) -> i128 {
     storage::get_instance(e, &DataKey::PendingBurnShares).unwrap_or(0)
 }
+
+pub(crate) fn deposit_cap(e: &Env) -> Option<i128> {
+    storage::get_instance(e, &DataKey::DepositCap)
+}
+
+pub(crate) fn set_deposit_cap(e: &Env, cap: Option<i128>) {
+    match cap {
+        Some(val) => storage::set_instance(e, &DataKey::DepositCap, &val),
+        None => e.storage().instance().remove(&DataKey::DepositCap),
+    }
+}

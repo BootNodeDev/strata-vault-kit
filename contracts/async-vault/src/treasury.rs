@@ -36,6 +36,14 @@ pub(crate) fn uncovered(e: &Env) -> i128 {
     (state::committed(e) - liquid_reserve(e)).max(0)
 }
 
+/// Total economic assets governed by the vault:
+/// cash held in the contract plus net deployed to the custodian, less cash committed to priced exits.
+pub(crate) fn total_economic_assets(e: &Env) -> i128 {
+    (held(e) + state::net_deployed(e))
+        .saturating_sub(state::committed(e))
+        .max(0)
+}
+
 pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {
     wind_down::refuse_if_active(e);
     if assets <= 0 {

@@ -17,6 +17,16 @@ pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
         panic_with_error!(e, VaultError::InvalidAmount);
     }
 
+    if let Some(cap) = state::deposit_cap(e) {
+        let current_assets = treasury::total_economic_assets(e);
+        let new_total = current_assets
+            .checked_add(amount)
+            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+        if new_total > cap {
+            panic_with_error!(e, VaultError::DepositCapExceeded);
+        }
+    }
+
     let epoch_id = state::current_epoch(e);
 
     if state::get_deposit_request(e, epoch_id, from).is_some() {
