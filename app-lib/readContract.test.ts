@@ -52,14 +52,8 @@ describe("readContract", () => {
 
 	it("is archived when the simulation carries a restore preamble, never touching result", async () => {
 		const restoreSimulation = {
-			id: "1",
-			latestLedger: 100,
-			events: [],
-			_parsed: true,
 			transactionData: {},
-			minResourceFee: "100",
-			result: { auth: [], retval: {} },
-			restorePreamble: { minResourceFee: "100", transactionData: {} },
+			restorePreamble: { transactionData: {} },
 		} as unknown as Api.SimulateTransactionResponse
 
 		const read = await readContract(() =>

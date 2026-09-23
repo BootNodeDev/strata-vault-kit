@@ -40,8 +40,7 @@ const RequestList: React.FC<RequestListProps> = ({
 	}
 
 	const groupAt = (index: number): RequestGroup =>
-		groups[((index % groups.length) + groups.length) % groups.length] ??
-		groups[0]
+		groups.at(index % groups.length) ?? groups[0]
 
 	const onTabKeyDown = (
 		event: React.KeyboardEvent<HTMLButtonElement>,

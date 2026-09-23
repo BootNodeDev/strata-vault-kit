@@ -5,21 +5,35 @@ import {
 	type EpochInfo,
 	type Price,
 	type RedeemRequest,
+	networkPassphrase,
 } from "@stellar-scaffold/app-lib"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { act, renderHook, waitFor } from "@testing-library/react"
+import { createElement, type ReactNode } from "react"
 import { describe, expect, it, vi } from "vitest"
-import { classifyRequest, fetchInvestorRequests } from "./useInvestorRequests"
+import {
+	WalletContext,
+	type WalletContextType,
+} from "../providers/WalletProvider"
+import {
+	classifyRequest,
+	fetchInvestorRequests,
+	useInvestorRequests,
+} from "./useInvestorRequests"
 
-const { vaultMock } = vi.hoisted(() => ({
+const { vaultMock, asyncVaultMock } = vi.hoisted(() => ({
 	vaultMock: {
 		current_epoch: vi.fn(),
 		get_epoch: vi.fn(),
 		get_deposit_request: vi.fn(),
 		get_redeem_request: vi.fn(),
 	},
+	asyncVaultMock: vi.fn(),
 }))
+asyncVaultMock.mockResolvedValue(vaultMock)
 
 vi.mock("../config/clients", () => ({
-	asyncVault: async () => vaultMock,
+	asyncVault: asyncVaultMock,
 }))
 
 const controller = "GCONTROLLER1234567890"
@@ -365,5 +379,120 @@ describe("fetchInvestorRequests", () => {
 		const result = await fetchInvestorRequests(controller)
 
 		expect(result).toEqual({ status: "unreadable" })
+	})
+
+	it("marks both sides unreadable on a genuine None epoch, without losing a readable epoch elsewhere", async () => {
+		vaultMock.current_epoch.mockResolvedValue({ result: 2n })
+		vaultMock.get_epoch.mockImplementation(
+			async ({ epoch_id }: { epoch_id: bigint }) => ({
+				result: epoch_id === 1n ? undefined : openEpoch,
+			}),
+		)
+		vaultMock.get_deposit_request.mockImplementation(
+			async ({ epoch_id }: { epoch_id: bigint }) => ({
+				result:
+					epoch_id === 2n ? { amount: 10_0000000n, claimed: false } : undefined,
+			}),
+		)
+		vaultMock.get_redeem_request.mockResolvedValue({ result: undefined })
+
+		const result = await fetchInvestorRequests(controller)
+
+		expect(result).toEqual({
+			status: "loaded",
+			requests: [
+				{
+					epochId: 2n,
+					side: "deposit",
+					epochStatus: openEpoch.status,
+					sharePrice: openEpoch.share_price as Price,
+					amount: 10_0000000n as Amount,
+					claimed: false,
+				},
+			],
+			archived: [],
+			unreadable: [
+				{ epochId: 1n, side: "deposit" },
+				{ epochId: 1n, side: "redeem" },
+			],
+		})
+	})
+})
+
+describe("useInvestorRequests", () => {
+	const investorAddress = "GINVESTORADDRESS1234567890"
+
+	const wallet: WalletContextType = {
+		address: investorAddress,
+		networkPassphrase,
+		balances: {},
+		isPending: false,
+		updateBalances: async () => {},
+		signTransaction: vi.fn() as WalletContextType["signTransaction"],
+	}
+
+	const renderInvestorRequests = () => {
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		})
+		const wrapper = ({ children }: { children: ReactNode }) =>
+			createElement(
+				QueryClientProvider,
+				{ client: queryClient },
+				createElement(WalletContext, { value: wallet }, children),
+			)
+		return {
+			...renderHook(() => useInvestorRequests(), { wrapper }),
+			queryClient,
+		}
+	}
+
+	it("surfaces unreadable, not an endless checking state, when the vault client fails to connect", async () => {
+		asyncVaultMock.mockRejectedValueOnce(new Error("could not connect"))
+
+		const { result } = renderInvestorRequests()
+
+		await waitFor(() => {
+			expect(result.current.requests).toEqual({ status: "unreadable" })
+		})
+	})
+
+	it("keeps a loaded list on screen when a later background refetch fails", async () => {
+		asyncVaultMock.mockResolvedValue(vaultMock)
+		vaultMock.current_epoch.mockResolvedValue({ result: 1n })
+		vaultMock.get_epoch.mockResolvedValue({ result: openEpoch })
+		vaultMock.get_deposit_request.mockResolvedValue({ result: undefined })
+		vaultMock.get_redeem_request.mockResolvedValue({ result: undefined })
+
+		const { result, queryClient } = renderInvestorRequests()
+
+		await waitFor(() => {
+			expect(result.current.requests).toEqual({
+				status: "loaded",
+				requests: [],
+				archived: [],
+				unreadable: [],
+			})
+		})
+
+		asyncVaultMock.mockRejectedValueOnce(new Error("could not connect"))
+		await act(() =>
+			queryClient.refetchQueries({
+				queryKey: ["investor", "requests", investorAddress],
+			}),
+		)
+
+		await waitFor(() => {
+			expect(
+				queryClient.getQueryState(["investor", "requests", investorAddress])
+					?.status,
+			).toBe("error")
+		})
+		expect(result.current.requests).toEqual({
+			status: "loaded",
+			requests: [],
+			archived: [],
+			unreadable: [],
+		})
 	})
 })

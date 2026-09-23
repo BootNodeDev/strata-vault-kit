@@ -111,7 +111,15 @@ export async function fetchInvestorRequests(
 			),
 		])
 
-		if (epochRead.kind !== "value" || epochRead.value === undefined) {
+		if (epochRead.kind !== "value") {
+			unreadable.push({ epochId, side: "deposit" })
+			unreadable.push({ epochId, side: "redeem" })
+			continue
+		}
+		if (epochRead.value === undefined) {
+			console.error(
+				`epoch ${epochId} has no get_epoch entry though current_epoch() reports ${currentEpoch.value}`,
+			)
 			unreadable.push({ epochId, side: "deposit" })
 			unreadable.push({ epochId, side: "redeem" })
 			continue
@@ -119,14 +127,13 @@ export async function fetchInvestorRequests(
 		const epoch = epochRead.value
 
 		const deposit = classifyRequest(depositRead, "deposit", epochId, epoch)
-		if (deposit.kind === "present") requests.push(deposit.request)
-		if (deposit.kind === "archived") archived.push(deposit.request)
-		if (deposit.kind === "unreadable") unreadable.push(deposit.request)
-
 		const redeem = classifyRequest(redeemRead, "redeem", epochId, epoch)
-		if (redeem.kind === "present") requests.push(redeem.request)
-		if (redeem.kind === "archived") archived.push(redeem.request)
-		if (redeem.kind === "unreadable") unreadable.push(redeem.request)
+		for (const classified of [deposit, redeem]) {
+			if (classified.kind === "present") requests.push(classified.request)
+			else if (classified.kind === "archived") archived.push(classified.request)
+			else if (classified.kind === "unreadable")
+				unreadable.push(classified.request)
+		}
 	}
 
 	return { status: "loaded", requests, archived, unreadable }
@@ -134,7 +141,7 @@ export async function fetchInvestorRequests(
 
 export function useInvestorRequests(): { requests: InvestorRequestsRead } {
 	const { address } = useWallet()
-	const { data } = useQuery({
+	const { data, isError } = useQuery({
 		queryKey: ["investor", "requests", address],
 		queryFn:
 			address === undefined ? skipToken : () => fetchInvestorRequests(address),
@@ -142,5 +149,7 @@ export function useInvestorRequests(): { requests: InvestorRequestsRead } {
 	})
 
 	if (address === undefined) return { requests: { status: "disconnected" } }
-	return { requests: data ?? { status: "checking" } }
+	if (data !== undefined) return { requests: data }
+	if (isError) return { requests: { status: "unreadable" } }
+	return { requests: { status: "checking" } }
 }
