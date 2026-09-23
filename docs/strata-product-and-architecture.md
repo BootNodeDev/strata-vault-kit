@@ -407,6 +407,9 @@ integrators read the oracle's own interface today.
 - Token interventions (freeze, unfreeze, forced transfer, recovery) are
   compliance operations via the Manager, available even while the vault is
   paused.
+- The complete specification of investor states (Allowlisted, De-listed, Frozen)
+  and the exit-only cash path across all vault lifecycle operations is detailed in
+  [`docs/COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md).
 
 ### 8.7 Treasury and custodian
 
