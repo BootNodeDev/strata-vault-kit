@@ -247,6 +247,56 @@ describe("VaultPreview", () => {
 		).toBeNull()
 	})
 
+	it("clears an open tooltip when another tab is clicked", async () => {
+		mockRequests.currentEpoch = 3n
+		mockRequests.epochs.set(3n, {
+			status: { tag: "Fulfilled" },
+			share_price: 0n,
+		})
+		mockRequests.deposits.set(3n, { amount: 500_0000000n, claimed: false })
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Not claimable 1" }))
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Why you cannot claim this yet",
+			}),
+		)
+		expect(screen.getByRole("tooltip")).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("tab", { name: "Ready to claim 0" }))
+		fireEvent.click(screen.getByRole("tab", { name: "Not claimable 1" }))
+
+		expect(screen.queryByRole("tooltip")).toBeNull()
+	})
+
+	it("clears an open tooltip when another tab is selected with the keyboard", async () => {
+		mockRequests.currentEpoch = 3n
+		mockRequests.epochs.set(3n, {
+			status: { tag: "Fulfilled" },
+			share_price: 0n,
+		})
+		mockRequests.deposits.set(3n, { amount: 500_0000000n, claimed: false })
+		renderVaultPreview(connectedWallet)
+
+		const blockedTab = await screen.findByRole("tab", {
+			name: "Not claimable 1",
+		})
+		fireEvent.click(blockedTab)
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Why you cannot claim this yet",
+			}),
+		)
+		expect(screen.getByRole("tooltip")).toBeTruthy()
+
+		fireEvent.keyDown(blockedTab, { key: "Home" })
+		const readyTab = screen.getByRole("tab", { name: "Ready to claim 0" })
+		fireEvent.keyDown(readyTab, { key: "End" })
+
+		expect(screen.queryByRole("tooltip")).toBeNull()
+	})
+
 	it("renders the vault name read from the share token's own contract, not a fabricated one", async () => {
 		renderVaultPreview()
 
