@@ -1,12 +1,12 @@
 # Authorization & Access Control Matrix
 
-This document provides the complete authorization and role model specification for the Strata Vault Kit across all four contracts (`AsyncVault`, `ShareToken`, `NavOracle`, and `IdentityVerifier`), satisfying the audit requirements of Issue #78.
+This document provides the complete authorization and role model specification for the Strata Vault Kit across all four contracts (`AsyncVault`, `ShareToken`, `NavOracle`, and `IdentityVerifier`).
 
 ---
 
 ## 1. Architectural Principles
 
-1. **Direct Role Membership Checks ($O(1)$)**: Role membership is checked directly via `has_role(e, &caller, &role)` or `stellar_macros::only_role` / `only_admin`, never by enumerating members.
+1. **Direct Role Membership Checks**: Role membership is checked directly via `has_role(e, &caller, &role)` or `stellar_macros::only_role` / `only_admin`, never by enumerating members.
 2. **Strict Caller Authentication**: No entrypoint takes a caller argument that it does not authenticate. Every function accepting a `caller: Address` executes `caller.require_auth()`.
 3. **Exit-Only Guarantee**: A covered redemption claim always pays out cash, regardless of pause, staleness, or allowlist status. Delisted or frozen investors exit through the cash path and are prevented from re-entering share circulation.
 4. **Five Separate Authorities**:
