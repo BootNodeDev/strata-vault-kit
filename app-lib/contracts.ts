@@ -9,6 +9,10 @@ import {
 import { network, networkPassphrase, rpcUrl } from "./env"
 
 type View<T> = (options?: MethodOptions) => Promise<AssembledTransaction<T>>
+type ViewOf<A, T> = (
+	args: A,
+	options?: MethodOptions,
+) => Promise<AssembledTransaction<T>>
 
 export interface AsyncVaultViews {
 	liquid_reserve: View<i128>
@@ -39,6 +43,21 @@ export interface NavOracleViews {
 	latest: View<NavReport>
 }
 
+export interface IdentityVerifierViews {
+	is_allowed: ViewOf<{ account: string }, boolean>
+}
+
+export interface ShareTokenViews {
+	balance: ViewOf<{ account: string }, i128>
+	symbol: View<string>
+	name: View<string>
+}
+
+export interface AssetViews {
+	symbol: View<string>
+	balance: ViewOf<{ id: string }, i128>
+}
+
 const clientOptions = (contractId: string) => ({
 	contractId,
 	rpcUrl,
@@ -53,3 +72,16 @@ export const connectAsyncVault = (
 
 export const connectNavOracle = (contractId: string): Promise<NavOracleViews> =>
 	Client.from<NavOracleViews>(clientOptions(contractId))
+
+export const connectIdentityVerifier = (
+	contractId: string,
+): Promise<IdentityVerifierViews> =>
+	Client.from<IdentityVerifierViews>(clientOptions(contractId))
+
+export const connectShareToken = (
+	contractId: string,
+): Promise<ShareTokenViews> =>
+	Client.from<ShareTokenViews>(clientOptions(contractId))
+
+export const connectAsset = (contractId: string): Promise<AssetViews> =>
+	Client.from<AssetViews>(clientOptions(contractId))

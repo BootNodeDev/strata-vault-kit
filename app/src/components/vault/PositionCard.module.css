@@ -25,6 +25,11 @@
 	color: var(--vault-ink);
 }
 
+.valueSkeleton {
+	height: 1em;
+	width: 10ch;
+}
+
 .sub {
 	color: var(--vault-text-muted);
 }

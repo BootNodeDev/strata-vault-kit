@@ -10,6 +10,20 @@ export type ActionPanelEstimate = {
 	value: string | null
 }
 
+export type ActionBlock = {
+	kind: "action"
+	reason: string
+	label: string
+	onPress: () => void
+}
+
+export type MessageBlock = {
+	kind: "message"
+	reason: string
+}
+
+export type ActionPanelBlock = ActionBlock | MessageBlock
+
 export type ActionPanelProps = {
 	side: ActionPanelSide
 	onSideChange: (side: ActionPanelSide) => void
@@ -19,17 +33,70 @@ export type ActionPanelProps = {
 	onAmountChange: (amount: string) => void
 	amountLabel: string
 	ticker: string
-	balance: number
+	balance: number | null
 	balanceLabel: string
 	estimate: ActionPanelEstimate
 	submitLabel: string
 	onSubmit: () => void
-	blockedReason?: string
+	block?: ActionPanelBlock
 }
 
 const parseAmount = (raw: string): number | null => {
 	const value = Number(raw.replace(/,/g, ""))
 	return Number.isFinite(value) && value > 0 ? value : null
+}
+
+const PanelActions: React.FC<{
+	block: ActionBlock | undefined
+	overBalance: string | undefined
+	submitLabel: string
+	canSubmit: boolean
+	onSubmit: () => void
+	onFillMax: () => void
+}> = ({ block, overBalance, submitLabel, canSubmit, onSubmit, onFillMax }) => {
+	if (block) {
+		return (
+			<div className={styles.actions}>
+				<button
+					type="button"
+					className={styles.actionPrimary}
+					onClick={block.onPress}
+				>
+					{block.label}
+				</button>
+			</div>
+		)
+	}
+
+	if (overBalance !== undefined) {
+		return (
+			<div className={styles.actions}>
+				<button
+					type="button"
+					className={styles.actionPrimary}
+					onClick={onFillMax}
+				>
+					{`Use ${overBalance}`}
+				</button>
+				<button type="button" className={styles.actionUnavailable} disabled>
+					{submitLabel}
+				</button>
+			</div>
+		)
+	}
+
+	return (
+		<div className={styles.actions}>
+			<button
+				type="button"
+				className={canSubmit ? styles.actionPrimary : styles.actionUnavailable}
+				disabled={!canSubmit}
+				onClick={onSubmit}
+			>
+				{submitLabel}
+			</button>
+		</div>
+	)
 }
 
 const ActionPanel: React.FC<ActionPanelProps> = ({
@@ -46,12 +113,18 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 	estimate,
 	submitLabel,
 	onSubmit,
-	blockedReason,
+	block,
 }) => {
 	const parsedAmount = parseAmount(amount)
-	const isOverBalance = parsedAmount !== null && parsedAmount > balance
+	const isOverBalance =
+		parsedAmount !== null && balance !== null && parsedAmount > balance
 	const canSubmit = parsedAmount !== null && !isOverBalance
-	const fillMax = () => onAmountChange(formatAmount(balance))
+	const overBalance =
+		isOverBalance && balance !== null ? formatAmount(balance) : undefined
+	const fillMax = () => {
+		if (balance !== null) onAmountChange(formatAmount(balance))
+	}
+	const actionBlock = block?.kind === "action" ? block : undefined
 
 	return (
 		<div className={styles.panel}>
@@ -59,12 +132,16 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 				{heading}
 			</h2>
 			{note && <p className={`${typeStyles.body} ${styles.note}`}>{note}</p>}
-			{blockedReason ? (
-				<p className={`${typeStyles.body} ${styles.blocked}`}>
-					{blockedReason}
-				</p>
+			{block?.kind === "message" ? (
+				<p className={`${typeStyles.body} ${styles.blocked}`}>{block.reason}</p>
 			) : (
 				<>
+					{actionBlock && (
+						<p className={`${typeStyles.body} ${styles.blocked}`}>
+							{actionBlock.reason}
+						</p>
+					)}
+
 					<div className={styles.tabs} role="tablist">
 						<button
 							type="button"
@@ -104,13 +181,15 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 								inputMode="decimal"
 							/>
 							<span className={styles.ticker}>{ticker}</span>
-							<button
-								type="button"
-								className={styles.maxButton}
-								onClick={fillMax}
-							>
-								MAX
-							</button>
+							{balance !== null && (
+								<button
+									type="button"
+									className={styles.maxButton}
+									onClick={fillMax}
+								>
+									MAX
+								</button>
+							)}
 						</div>
 						<div className={styles.balanceRow}>
 							<span className={`${typeStyles.footnote} ${styles.balanceLabel}`}>
@@ -123,48 +202,29 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 						<span className={`${typeStyles.label} ${styles.estimateLabel}`}>
 							{estimate.label}
 						</span>
-						<span className={`${typeStyles.estimate} ${styles.estimateValue}`}>
+						<span
+							className={`${
+								estimate.value === null ? typeStyles.body : typeStyles.estimate
+							} ${styles.estimateValue}`}
+						>
 							{estimate.value ?? "Estimate unavailable"}
 						</span>
 					</div>
 
-					{isOverBalance && (
+					{overBalance !== undefined && (
 						<p className={`${typeStyles.body} ${styles.errorMessage}`}>
-							{`You have ${formatAmount(balance)} ${ticker}. Enter ${formatAmount(balance)} or less.`}
+							{`You have ${overBalance} ${ticker}. Enter ${overBalance} or less.`}
 						</p>
 					)}
 
-					<div className={styles.actions}>
-						{isOverBalance ? (
-							<>
-								<button
-									type="button"
-									className={styles.actionPrimary}
-									onClick={fillMax}
-								>
-									{`Use ${formatAmount(balance)}`}
-								</button>
-								<button
-									type="button"
-									className={styles.actionUnavailable}
-									disabled
-								>
-									{submitLabel}
-								</button>
-							</>
-						) : (
-							<button
-								type="button"
-								className={
-									canSubmit ? styles.actionPrimary : styles.actionUnavailable
-								}
-								disabled={!canSubmit}
-								onClick={onSubmit}
-							>
-								{submitLabel}
-							</button>
-						)}
-					</div>
+					<PanelActions
+						block={actionBlock}
+						overBalance={overBalance}
+						submitLabel={submitLabel}
+						canSubmit={canSubmit}
+						onSubmit={onSubmit}
+						onFillMax={fillMax}
+					/>
 				</>
 			)}
 		</div>

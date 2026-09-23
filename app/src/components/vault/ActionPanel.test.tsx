@@ -53,4 +53,64 @@ describe("ActionPanel", () => {
 
 		expect(screen.getByText("Estimate unavailable")).toBeTruthy()
 	})
+
+	it("renders the form with a single actionable control for an action block", () => {
+		const onPress = vi.fn()
+		const onSubmit = vi.fn()
+		render(
+			<ActionPanel
+				{...baseProps}
+				balance={null}
+				onSubmit={onSubmit}
+				block={{
+					kind: "action",
+					reason: "Connect a wallet to subscribe or redeem.",
+					label: "Connect Wallet",
+					onPress,
+				}}
+			/>,
+		)
+
+		expect(screen.getByRole("tablist")).toBeTruthy()
+		expect(
+			screen.getByText("Connect a wallet to subscribe or redeem."),
+		).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
+
+		fireEvent.click(screen.getByRole("button", { name: "Connect Wallet" }))
+
+		expect(onPress).toHaveBeenCalledOnce()
+		expect(onSubmit).not.toHaveBeenCalled()
+	})
+
+	it("hides the form and shows only the reason for a message block", () => {
+		render(
+			<ActionPanel
+				{...baseProps}
+				balance={null}
+				block={{
+					kind: "message",
+					reason: "This address is not on the vault's allowlist.",
+				}}
+			/>,
+		)
+
+		expect(screen.queryByRole("tablist")).toBeNull()
+		expect(screen.queryByRole("textbox")).toBeNull()
+		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
+		expect(
+			screen.getByText("This address is not on the vault's allowlist."),
+		).toBeTruthy()
+	})
+
+	it("hides MAX and cannot reach the over-balance state when balance is null", () => {
+		render(<ActionPanel {...baseProps} balance={null} amount="999999999" />)
+
+		expect(screen.queryByRole("button", { name: "MAX" })).toBeNull()
+		expect(screen.queryByText(/Enter .* or less/)).toBeNull()
+		const button = screen.getByRole("button", {
+			name: "Subscribe",
+		}) as HTMLButtonElement
+		expect(button.disabled).toBe(false)
+	})
 })

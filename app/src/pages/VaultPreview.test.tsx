@@ -1,6 +1,7 @@
 import {
 	formatDate,
 	formatScaled,
+	networkPassphrase,
 	PRICE_DECIMALS,
 	type Price,
 	shortAddress,
@@ -8,14 +9,41 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen } from "@testing-library/react"
 import type React from "react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type AddressRow } from "../components/vault/AboutVault"
+import {
+	WalletContext,
+	type WalletContextType,
+} from "../providers/WalletProvider"
 import VaultPreview from "./VaultPreview"
 
-const { mockVaultId, mockGovernanceAddress } = vi.hoisted(() => ({
+const {
+	mockVaultId,
+	mockGovernanceAddress,
+	mockShares,
+	mockDeposit,
+	mockSymbols,
+} = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
+	mockShares: { balance: 500_0000000n },
+	mockDeposit: { balance: 3200_0000000n },
+	mockSymbols: {
+		token: "USDC",
+		shareToken: "vUSDC",
+		vaultName: "Strata Vault",
+	},
 }))
+
+beforeEach(() => {
+	mockShares.balance = 500_0000000n
+	mockDeposit.balance = 3200_0000000n
+})
+
+afterEach(() => {
+	mockShares.balance = 500_0000000n
+	mockDeposit.balance = 3200_0000000n
+})
 
 const price = 1500000000000000000n as Price
 const attestedAt = 1757900000n
@@ -50,17 +78,56 @@ vi.mock("../config/clients", () => {
 			},
 		}),
 	}
+	const identity = { is_allowed: async () => ({ result: true }) }
+	const shares = {
+		balance: async () => ({ result: mockShares.balance }),
+		symbol: async () => ({ result: mockSymbols.shareToken }),
+		name: async () => ({ result: mockSymbols.vaultName }),
+	}
+	const depositAsset = {
+		symbol: async () => ({ result: mockSymbols.token }),
+		balance: async () => ({ result: mockDeposit.balance }),
+	}
 
-	return { asyncVault: async () => vault, navOracle: async () => oracle }
+	return {
+		asyncVault: async () => vault,
+		navOracle: async () => oracle,
+		identityVerifier: async () => identity,
+		shareToken: async () => shares,
+		asset: async () => depositAsset,
+	}
 })
 
-const renderVaultPreview = (): ReturnType<typeof render> => {
+const investorAddress = "GINVESTORADDRESS1234567890"
+
+const connectedWallet: WalletContextType = {
+	address: investorAddress,
+	networkPassphrase,
+	balances: {},
+	isPending: false,
+	updateBalances: async () => {},
+	signTransaction: vi.fn() as WalletContextType["signTransaction"],
+}
+
+const wrongNetworkWallet: WalletContextType = {
+	...connectedWallet,
+	networkPassphrase: "different-passphrase",
+}
+
+const renderVaultPreview = (
+	wallet?: WalletContextType,
+): ReturnType<typeof render> => {
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
 	})
-	const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-	)
+	const wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) =>
+		wallet ? (
+			<QueryClientProvider client={queryClient}>
+				<WalletContext value={wallet}>{children}</WalletContext>
+			</QueryClientProvider>
+		) : (
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		)
 	return render(<VaultPreview />, { wrapper })
 }
 
@@ -81,35 +148,81 @@ describe("VaultPreview", () => {
 		expect(screen.getAllByText(shortAddress(mockVaultId))).toHaveLength(2)
 	})
 
-	it("shows both stage tab counts and switches which requests are shown", () => {
+	it("shows no fabricated requests, position, or balance while disconnected", () => {
 		renderVaultPreview()
 
-		expect(screen.getByRole("tab", { name: "Ready to claim 1" })).toBeTruthy()
-		expect(screen.getByRole("tab", { name: "Waiting 3" })).toBeTruthy()
-
-		expect(screen.getByText("966.93 vTOKEN")).toBeTruthy()
-		expect(screen.queryByText("12,348.00 TOKEN")).toBeNull()
-
-		fireEvent.click(screen.getByRole("tab", { name: "Waiting 3" }))
-
-		expect(screen.getByText("12,348.00 TOKEN")).toBeTruthy()
-		expect(screen.queryByText("966.93 vTOKEN")).toBeNull()
+		expect(screen.getByRole("tab", { name: "Ready to claim 0" })).toBeTruthy()
+		expect(screen.getByRole("tab", { name: "Waiting 0" })).toBeTruthy()
+		expect(
+			screen.getByText("Connect a wallet to see your position."),
+		).toBeTruthy()
+		expect(screen.queryByText("1,000.00 vTOKEN")).toBeNull()
+		expect(screen.queryByText("Operator vault name")).toBeNull()
+		expect(screen.getByRole("button", { name: "Connect Wallet" })).toBeTruthy()
 	})
 
-	it("closes an open tooltip when the stage changes and does not restore it", () => {
+	it("renders the vault name read from the share token's own contract, not a fabricated one", async () => {
 		renderVaultPreview()
 
-		fireEvent.click(screen.getByRole("tab", { name: "Waiting 3" }))
-		fireEvent.click(
-			screen.getByRole("button", { name: "Why you cannot claim this yet" }),
-		)
-		expect(screen.getByRole("tooltip")).toBeTruthy()
+		expect(
+			await screen.findByRole("heading", { name: mockSymbols.vaultName }),
+		).toBeTruthy()
+	})
 
-		fireEvent.click(screen.getByRole("tab", { name: "Ready to claim 1" }))
-		expect(screen.queryByRole("tooltip")).toBeNull()
+	it("reaches subscribe once connected, allowlisted, on the right network and priced", async () => {
+		renderVaultPreview(connectedWallet)
 
-		fireEvent.click(screen.getByRole("tab", { name: "Waiting 3" }))
-		expect(screen.queryByRole("tooltip")).toBeNull()
+		expect(
+			await screen.findByRole("button", { name: "Subscribe" }),
+		).toBeTruthy()
+	})
+
+	it("reads and renders the connected address's share balance, using the share token's own reported symbol", async () => {
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByText("500.00 vUSDC")).toBeTruthy()
+	})
+
+	it("renders a genuine zero balance as a formatted zero, not the absence indicator", async () => {
+		mockShares.balance = 0n
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByText("0.00 vUSDC")).toBeTruthy()
+		expect(screen.queryByText("—")).toBeNull()
+	})
+
+	it("reads and renders the connected address's deposit asset balance for the subscribe side", async () => {
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByText("Balance 3,200.00")).toBeTruthy()
+	})
+
+	it("reads and renders the connected address's share balance for the redeem side", async () => {
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+
+		expect(await screen.findByText("Balance 500.00")).toBeTruthy()
+	})
+
+	it("computes the subscribe estimate from the oracle's own attested price, not a fabricated one", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+
+		fireEvent.change(input, { target: { value: "150" } })
+
+		expect(await screen.findByText("≈ 100.00 vUSDC")).toBeTruthy()
+	})
+
+	it("shows a switch-network control, distinct from connect, when the wallet is on the wrong network", async () => {
+		renderVaultPreview(wrongNetworkWallet)
+
+		expect(
+			await screen.findByRole("button", { name: /Switch to/ }),
+		).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Connect Wallet" })).toBeNull()
 	})
 
 	it("states one of the four batch-settlement rules in the vault explainer", () => {
