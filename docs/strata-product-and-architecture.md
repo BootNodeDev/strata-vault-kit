@@ -86,6 +86,8 @@ or legal solution, and not a vault for on-chain RWA tokens.
 Five authorities in code, held by native Stellar multisig accounts, assignable
 at deploy; one account may hold several.
 
+For the exhaustive access control matrix, dual `manager` role distinction, and entrypoint-level test mapping, see [`docs/AUTHORIZATION_MATRIX.md`](./AUTHORIZATION_MATRIX.md).
+
 ## 6. How it works
 
 1. Compliance allowlists a verified investor.
