@@ -111,7 +111,7 @@ The share token conforms to SEP-57 and the OpenZeppelin RWA token standard:
 
 ## 5. Automated Test Coverage
 
-The behavior specified in this matrix is verified by on-chain automated test suites in [`contracts/async-vault/src/test/compliance.rs`](file:///Users/hpmaxi/repos/bootnode/open-rwa-vault-20/contracts/async-vault/src/test/compliance.rs):
+The behavior specified in this matrix is verified by on-chain automated test suites in [`contracts/async-vault/src/test/compliance.rs`](../contracts/async-vault/src/test/compliance.rs):
 
 * `a_non_allowlisted_investor_cannot_claim_shares`: Verifies unallowlisted caller cannot mint shares on claim.
 * `allowlisting_after_the_fact_lets_the_claim_through`: Verifies KYC restoration unblocks claim.
