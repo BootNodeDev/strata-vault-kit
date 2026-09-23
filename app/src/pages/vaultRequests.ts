@@ -52,6 +52,8 @@ const owedAmount = (side: RequestSide, amount: Amount, price: Price): Amount =>
 		? (amount * WAD) / price
 		: (amount * price) / WAD) as Amount
 
+const hasValidPrice = (price: Price): boolean => price > 0n
+
 const readyNote = (side: RequestSide): string =>
 	side === "deposit"
 		? "Claiming is not guaranteed to succeed — compliance is checked when you sign."
@@ -62,6 +64,7 @@ export function assignStage(
 	refusal: ClaimRefusal | undefined,
 ): RequestStage {
 	if (request.epochStatus.tag !== "Fulfilled") return "waiting"
+	if (!hasValidPrice(request.sharePrice)) return "blocked"
 	return refusal === undefined ? "ready" : "blocked"
 }
 
@@ -124,6 +127,23 @@ function blockedEntry(
 	}
 }
 
+function invalidPriceEntry(
+	request: InvestorRequest,
+	tokens: RequestTokens,
+): RequestEntry {
+	return {
+		...baseEntry(request, tokens),
+		outAmount: "Not readable",
+		outTone: "word",
+		state: "Invalid price",
+		tone: stageTone.blocked,
+		tooltip: {
+			label: "Why you cannot claim this yet",
+			text: "The vault reported an invalid price for this epoch.",
+		},
+	}
+}
+
 export function toPresentEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
@@ -131,6 +151,8 @@ export function toPresentEntry(
 ): RequestEntry {
 	const stage = assignStage(request, refusal)
 	if (stage === "waiting") return waitingEntry(request, tokens)
+	if (!hasValidPrice(request.sharePrice))
+		return invalidPriceEntry(request, tokens)
 	if (stage === "blocked" && refusal !== undefined)
 		return blockedEntry(request, tokens, refusal)
 	return readyEntry(request, tokens)

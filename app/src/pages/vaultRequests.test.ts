@@ -55,6 +55,18 @@ describe("assignStage", () => {
 			"blocked",
 		)
 	})
+
+	it("puts an unpriced epoch in waiting even when a refusal is also present", () => {
+		const unpriced = { ...deposit, epochStatus: open }
+		expect(assignStage(unpriced, { reason: "The vault is paused." })).toBe(
+			"waiting",
+		)
+	})
+
+	it("puts a fulfilled epoch with an invalid price in blocked", () => {
+		const brokenPrice = { ...deposit, sharePrice: price(0n) }
+		expect(assignStage(brokenPrice, undefined)).toBe("blocked")
+	})
 })
 
 describe("toRequestEntriesByStage", () => {
@@ -205,6 +217,58 @@ describe("toRequestEntriesByStage", () => {
 				},
 			},
 		])
+	})
+
+	it("floors the owed amount rather than rounding it", () => {
+		const uneven: InvestorRequest = {
+			...deposit,
+			amount: amount(10000199999n),
+			sharePrice: price(2_100000000000000000n),
+		}
+		const result = toRequestEntriesByStage(
+			{ requests: [uneven], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.ready[0]?.outAmount).toBe("476.19 vUSDC")
+	})
+
+	it("blocks a fulfilled request with an invalid price instead of throwing", () => {
+		const brokenPrice: InvestorRequest = { ...deposit, sharePrice: price(0n) }
+		const result = toRequestEntriesByStage(
+			{ requests: [brokenPrice], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.blocked).toEqual([
+			{
+				id: "deposit-1",
+				inLabel: "Subscription",
+				inAmount: "100.00 USDC",
+				inMeta: "Epoch 1",
+				outLabel: "Owed to you",
+				outAmount: "Not readable",
+				outTone: "word",
+				state: "Invalid price",
+				tone: "blocked",
+				actions: [],
+				tooltip: {
+					label: "Why you cannot claim this yet",
+					text: "The vault reported an invalid price for this epoch.",
+				},
+			},
+		])
+	})
+
+	it("keeps every other entry when one request has an invalid price", () => {
+		const brokenPrice: InvestorRequest = { ...redeem, sharePrice: price(0n) }
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit, brokenPrice], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.ready).toHaveLength(1)
+		expect(result.blocked).toHaveLength(1)
 	})
 
 	it("places an unreadable request in blocked, distinguishable from an archived one", () => {
