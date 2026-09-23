@@ -17,6 +17,7 @@ import { type RequestStage } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
 import { useDepositBalance } from "../hooks/useDepositBalance"
+import { useInvestorRequests } from "../hooks/useInvestorRequests"
 import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
 import { useSharePosition } from "../hooks/useSharePosition"
@@ -41,6 +42,7 @@ import {
 	toSizeFigures,
 } from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
+import { toRequestEntriesByStage } from "./vaultRequests"
 
 const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
@@ -76,6 +78,7 @@ const VaultPreview: React.FC = () => {
 	const { position } = useSharePosition()
 	const { balance: deposit } = useDepositBalance()
 	const { symbols } = useTokenSymbols()
+	const { requests } = useInvestorRequests()
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -88,20 +91,29 @@ const VaultPreview: React.FC = () => {
 	const block =
 		toPanelBlock(access, connectWallet, profileModal) ??
 		toPriceBlock(nav, isPendingNav)
-	const connected = address !== undefined
-	const messages = emptyMessages(connected)
+	const messages = emptyMessages(requests.status)
+	const entriesByStage =
+		requests.status === "loaded"
+			? toRequestEntriesByStage(requests, symbols)
+			: undefined
 	const requestGroups: [RequestGroup, ...RequestGroup[]] = [
 		{
 			id: "ready",
 			label: "Ready to claim",
-			entries: [],
+			entries: entriesByStage?.ready ?? [],
 			emptyMessage: messages.ready,
 		},
 		{
 			id: "waiting",
 			label: "Waiting",
-			entries: [],
+			entries: entriesByStage?.waiting ?? [],
 			emptyMessage: messages.waiting,
+		},
+		{
+			id: "blocked",
+			label: "Not claimable",
+			entries: entriesByStage?.blocked ?? [],
+			emptyMessage: messages.blocked,
 		},
 	]
 

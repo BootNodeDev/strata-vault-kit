@@ -23,6 +23,7 @@ const {
 	mockShares,
 	mockDeposit,
 	mockSymbols,
+	mockRequests,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
@@ -33,16 +34,44 @@ const {
 		shareToken: "vUSDC",
 		vaultName: "Strata Vault",
 	},
+	mockRequests: {
+		readable: true,
+		currentEpoch: 2n,
+		epochs: new Map<bigint, { status: { tag: string }; share_price: bigint }>([
+			[
+				1n,
+				{ status: { tag: "Fulfilled" }, share_price: 1_000000000000000000n },
+			],
+			[2n, { status: { tag: "Open" }, share_price: 0n }],
+		]),
+		deposits: new Map<
+			bigint,
+			{ amount: bigint; claimed: boolean } | undefined
+		>(),
+		redeems: new Map<
+			bigint,
+			{ shares: bigint; claimed: boolean } | undefined
+		>(),
+	},
 }))
+
+const resetMockRequests = () => {
+	mockRequests.readable = true
+	mockRequests.currentEpoch = 2n
+	mockRequests.deposits.clear()
+	mockRequests.redeems.clear()
+}
 
 beforeEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
+	resetMockRequests()
 })
 
 afterEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
+	resetMockRequests()
 })
 
 const price = 1500000000000000000n as Price
@@ -67,6 +96,19 @@ vi.mock("../config/clients", () => {
 		treasury: address(undefined),
 		guardian: address(undefined),
 		custodian: address(undefined),
+		current_epoch: async () => {
+			if (!mockRequests.readable) throw new Error("boom")
+			return { result: mockRequests.currentEpoch }
+		},
+		get_epoch: async ({ epoch_id }: { epoch_id: bigint }) => ({
+			result: mockRequests.epochs.get(epoch_id),
+		}),
+		get_deposit_request: async ({ epoch_id }: { epoch_id: bigint }) => ({
+			result: mockRequests.deposits.get(epoch_id),
+		}),
+		get_redeem_request: async ({ epoch_id }: { epoch_id: bigint }) => ({
+			result: mockRequests.redeems.get(epoch_id),
+		}),
 	}
 	const oracle = {
 		state: async () => ({ result: { tag: "Valid", values: undefined } }),
@@ -153,12 +195,56 @@ describe("VaultPreview", () => {
 
 		expect(screen.getByRole("tab", { name: "Ready to claim 0" })).toBeTruthy()
 		expect(screen.getByRole("tab", { name: "Waiting 0" })).toBeTruthy()
+		expect(screen.getByRole("tab", { name: "Not claimable 0" })).toBeTruthy()
 		expect(
 			screen.getByText("Connect a wallet to see your position."),
 		).toBeTruthy()
 		expect(screen.queryByText("1,000.00 vTOKEN")).toBeNull()
 		expect(screen.queryByText("Operator vault name")).toBeNull()
 		expect(screen.getByRole("button", { name: "Connect Wallet" })).toBeTruthy()
+	})
+
+	it("shows a checking message before the investor's requests resolve", () => {
+		renderVaultPreview(connectedWallet)
+
+		expect(screen.getByText("Checking your requests.")).toBeTruthy()
+	})
+
+	it("shows the loaded empty message once a connected investor has no pending requests", async () => {
+		renderVaultPreview(connectedWallet)
+
+		expect(
+			await screen.findByText(
+				"Nothing to claim yet. A request appears here once it is priced, and for cash, once the reserve covers it in full.",
+			),
+		).toBeTruthy()
+	})
+
+	it("renders a connected investor's live request under Waiting", async () => {
+		mockRequests.redeems.set(2n, { shares: 1000_0000000n, claimed: false })
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+
+		expect(await screen.findByText("Redemption")).toBeTruthy()
+		expect(screen.getByText("1,000.00 vUSDC")).toBeTruthy()
+		expect(screen.getByRole("tab", { name: "Waiting 1" })).toBeTruthy()
+	})
+
+	it("shows a failed request read distinctly from a genuine empty one", async () => {
+		mockRequests.readable = false
+		renderVaultPreview(connectedWallet)
+
+		expect(
+			await screen.findByText(
+				"Could not read your requests. Try again shortly.",
+			),
+		).toBeTruthy()
+		expect(
+			screen.queryByText(
+				"Nothing to claim yet. A request appears here once it is priced, and for cash, once the reserve covers it in full.",
+			),
+		).toBeNull()
 	})
 
 	it("renders the vault name read from the share token's own contract, not a fabricated one", async () => {

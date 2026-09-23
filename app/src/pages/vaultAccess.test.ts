@@ -263,15 +263,33 @@ describe("toActionBalance", () => {
 
 describe("emptyMessages", () => {
 	it("names the missing wallet while disconnected", () => {
-		const messages = emptyMessages(false)
+		const messages = emptyMessages("disconnected")
 		expect(messages.ready).toMatch(/wallet/i)
 		expect(messages.waiting).toMatch(/wallet/i)
+		expect(messages.blocked).toMatch(/wallet/i)
 	})
 
-	it("uses distinct copy once connected", () => {
-		const disconnected = emptyMessages(false)
-		const connected = emptyMessages(true)
-		expect(connected.ready).not.toBe(disconnected.ready)
-		expect(connected.waiting).not.toBe(disconnected.waiting)
+	it("uses distinct copy once loaded", () => {
+		const disconnected = emptyMessages("disconnected")
+		const loaded = emptyMessages("loaded")
+		expect(loaded.ready).not.toBe(disconnected.ready)
+		expect(loaded.waiting).not.toBe(disconnected.waiting)
+		expect(loaded.blocked).not.toBe(disconnected.blocked)
+	})
+
+	it("distinguishes a failed read from a genuine empty one", () => {
+		const unreadable = emptyMessages("unreadable")
+		const loaded = emptyMessages("loaded")
+		expect(unreadable.ready).not.toBe(loaded.ready)
+		expect(unreadable.waiting).not.toBe(loaded.waiting)
+		expect(unreadable.blocked).not.toBe(loaded.blocked)
+	})
+
+	it("distinguishes checking from both loaded and unreadable", () => {
+		const checking = emptyMessages("checking")
+		const loaded = emptyMessages("loaded")
+		const unreadable = emptyMessages("unreadable")
+		expect(checking.ready).not.toBe(loaded.ready)
+		expect(checking.ready).not.toBe(unreadable.ready)
 	})
 })
