@@ -15,4 +15,33 @@ describe("PositionCard", () => {
 
 		expect(screen.getByText("—")).toBeTruthy()
 	})
+
+	it("renders a loading indicator, not a value, while pending", () => {
+		render(
+			<PositionCard
+				heading="Your position"
+				label="Your shares"
+				value={null}
+				sub="In your wallet"
+				pending
+			/>,
+		)
+
+		expect(screen.getByRole("progressbar")).toBeTruthy()
+		expect(screen.queryByText("—")).toBeNull()
+	})
+
+	it("renders a genuine zero as itself, distinguishable from the em dash", () => {
+		render(
+			<PositionCard
+				heading="Your position"
+				label="Your shares"
+				value="0.00 vTOKEN"
+				sub="In your wallet"
+			/>,
+		)
+
+		expect(screen.getByText("0.00 vTOKEN")).toBeTruthy()
+		expect(screen.queryByText("—")).toBeNull()
+	})
 })

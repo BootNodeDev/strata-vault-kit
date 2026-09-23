@@ -1,11 +1,19 @@
-import { type NetworkState } from "@stellar-scaffold/app-lib"
+import {
+	AMOUNT_DECIMALS,
+	type Amount,
+	type NetworkState,
+} from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
+import { type DepositBalance } from "../hooks/useDepositBalance"
 import { type Allowance } from "../hooks/useIsAllowed"
 import { type NavClassification } from "../hooks/useNavPrice"
+import { type SharePosition } from "../hooks/useSharePosition"
 import {
 	deriveAccess,
 	emptyMessages,
+	toActionBalance,
 	toPanelBlock,
+	toPosition,
 	toPriceBlock,
 	type InvestorAccess,
 } from "./vaultAccess"
@@ -171,6 +179,85 @@ describe("toPriceBlock", () => {
 			attestedAt: 0n,
 		}
 		expect(toPriceBlock(valid, false)).toBeUndefined()
+	})
+})
+
+describe("toPosition", () => {
+	it("shows no value and connect copy while disconnected", () => {
+		expect(toPosition({ status: "disconnected" }, "vUSDC")).toEqual({
+			value: null,
+			note: "Connect a wallet to see your position.",
+		})
+	})
+
+	it("shows pending, and no value, while the read is in flight", () => {
+		expect(toPosition({ status: "checking" }, "vUSDC")).toEqual({
+			value: null,
+			pending: true,
+		})
+	})
+
+	it("shows no value and a distinct note when the read fails", () => {
+		expect(toPosition({ status: "unreadable" }, "vUSDC")).toEqual({
+			value: null,
+			note: "Could not read your share balance.",
+		})
+	})
+
+	it("renders a genuine zero as a formatted zero, not the absence indicator", () => {
+		const position: SharePosition = {
+			status: "held",
+			shares: 0n as Amount,
+		}
+		expect(toPosition(position, "vUSDC")).toEqual({ value: "0.00 vUSDC" })
+	})
+
+	it("renders a non-zero holding using the reported share symbol", () => {
+		const position: SharePosition = {
+			status: "held",
+			shares: (500n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount,
+		}
+		expect(toPosition(position, "vUSDC")).toEqual({ value: "500.00 vUSDC" })
+	})
+})
+
+describe("toActionBalance", () => {
+	const held: SharePosition = {
+		status: "held",
+		shares: (500n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount,
+	}
+	const depositHeld: DepositBalance = {
+		status: "held",
+		amount: (250n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount,
+	}
+
+	it("reads the deposit asset's balance on the subscribe side", () => {
+		expect(
+			toActionBalance(true, false, depositHeld, { status: "checking" }),
+		).toBe(250)
+	})
+
+	it("reads the share position's balance on the redeem side", () => {
+		expect(toActionBalance(false, false, { status: "checking" }, held)).toBe(
+			500,
+		)
+	})
+
+	it("returns no balance while the panel is blocked, on either side", () => {
+		expect(toActionBalance(true, true, depositHeld, held)).toBeNull()
+		expect(toActionBalance(false, true, depositHeld, held)).toBeNull()
+	})
+
+	it("returns no balance while the relevant read has not resolved to a value", () => {
+		expect(
+			toActionBalance(true, false, { status: "checking" }, held),
+		).toBeNull()
+		expect(
+			toActionBalance(true, false, { status: "unreadable" }, held),
+		).toBeNull()
+		expect(
+			toActionBalance(false, false, depositHeld, { status: "disconnected" }),
+		).toBeNull()
 	})
 })
 

@@ -1,7 +1,14 @@
-import { type NetworkState } from "@stellar-scaffold/app-lib"
+import {
+	AMOUNT_DECIMALS,
+	formatScaled,
+	toSafeNumber,
+	type NetworkState,
+} from "@stellar-scaffold/app-lib"
 import { type ActionPanelBlock } from "../components/vault/ActionPanel"
+import { type DepositBalance } from "../hooks/useDepositBalance"
 import { type Allowance } from "../hooks/useIsAllowed"
 import { type NavClassification } from "../hooks/useNavPrice"
+import { type SharePosition } from "../hooks/useSharePosition"
 
 export type InvestorAccess =
 	| { status: "disconnected" }
@@ -87,6 +94,41 @@ export function toPriceBlock(
 		reason:
 			"The vault's price is not valid right now, so subscribing and redeeming are closed.",
 	}
+}
+
+export function toPosition(
+	position: SharePosition,
+	shareSymbol: string,
+): {
+	value: string | null
+	note?: string
+	pending?: boolean
+} {
+	switch (position.status) {
+		case "disconnected":
+			return { value: null, note: "Connect a wallet to see your position." }
+		case "checking":
+			return { value: null, pending: true }
+		case "unreadable":
+			return { value: null, note: "Could not read your share balance." }
+		case "held":
+			return {
+				value: `${formatScaled(position.shares, AMOUNT_DECIMALS)} ${shareSymbol}`,
+			}
+	}
+}
+
+export function toActionBalance(
+	isSubscribe: boolean,
+	blocked: boolean,
+	deposit: DepositBalance,
+	shares: SharePosition,
+): number | null {
+	if (blocked) return null
+	if (isSubscribe) {
+		return deposit.status === "held" ? toSafeNumber(deposit.amount) : null
+	}
+	return shares.status === "held" ? toSafeNumber(shares.shares) : null
 }
 
 export function emptyMessages(connected: boolean): {

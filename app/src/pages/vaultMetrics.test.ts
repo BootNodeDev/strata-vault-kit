@@ -11,6 +11,7 @@ import { type VaultAuthorities } from "../hooks/useVaultAuthorities"
 import { type VaultFigures } from "../hooks/useVaultFigures"
 import {
 	toAuthorityRows,
+	toEstimate,
 	toMetrics,
 	toPriceMetric,
 	toSizeFigures,
@@ -35,18 +36,22 @@ const readAuthorities: VaultAuthorities = {
 }
 
 describe("toMetrics", () => {
-	it("renders the three liquidity metrics from readable figures", () => {
-		const [liquidReserve, committed, uncovered] = toMetrics(readFigures, false)
+	it("renders the three liquidity metrics from readable figures, using the reported token symbol", () => {
+		const [liquidReserve, committed, uncovered] = toMetrics(
+			readFigures,
+			false,
+			"USDC",
+		)
 
 		expect(liquidReserve).toEqual({
 			label: "Liquid reserve",
 			value: "18,400.00",
-			note: "TOKEN the vault holds now",
+			note: "USDC the vault holds now",
 		})
 		expect(committed).toEqual({
 			label: "Committed",
 			value: "6,200.00",
-			note: "TOKEN owed on priced claims",
+			note: "USDC owed on priced claims",
 		})
 		expect(uncovered).toEqual({
 			label: "Uncovered · vault",
@@ -56,13 +61,17 @@ describe("toMetrics", () => {
 	})
 
 	it("renders an unavailable figure as no value at all", () => {
-		const [, committed] = toMetrics({ ...readFigures, committed: null }, false)
+		const [, committed] = toMetrics(
+			{ ...readFigures, committed: null },
+			false,
+			"USDC",
+		)
 
 		expect(committed.value).toBeNull()
 	})
 
 	it("sets pending and never a value while the figures are still loading", () => {
-		const metrics = toMetrics(undefined, true)
+		const metrics = toMetrics(undefined, true, "USDC")
 
 		for (const metric of metrics) {
 			expect(metric.pending).toBe(true)
@@ -72,7 +81,7 @@ describe("toMetrics", () => {
 
 	it.each([
 		[0n, "Every claim is covered"],
-		[500000000n, "TOKEN still needed"],
+		[500000000n, "USDC still needed"],
 		[null, "Could not read the vault"],
 	])(
 		"derives the uncovered note from the read value (%s)",
@@ -83,14 +92,15 @@ describe("toMetrics", () => {
 					uncovered: uncovered === null ? null : amount(uncovered),
 				},
 				false,
+				"USDC",
 			)
 			expect(uncoveredMetric.note).toBe(note)
 		},
 	)
 
-	it("notes uncovered as not-yet-known while pending", () => {
-		const [, , uncoveredMetric] = toMetrics(undefined, true)
-		expect(uncoveredMetric.note).toBe("TOKEN not covered")
+	it("notes uncovered as not-yet-known while pending, using the reported token symbol", () => {
+		const [, , uncoveredMetric] = toMetrics(undefined, true, "USDC")
+		expect(uncoveredMetric.note).toBe("USDC not covered")
 	})
 })
 
@@ -177,6 +187,39 @@ describe("toPriceMetric", () => {
 			pending: true,
 		})
 	})
+})
+
+describe("toEstimate", () => {
+	const valid: NavClassification = {
+		status: "valid",
+		price: (2n * 10n ** BigInt(PRICE_DECIMALS)) as Price,
+		attestedAt: 0n,
+	}
+
+	it("estimates shares received from tokens in, using the attested price", () => {
+		expect(toEstimate(valid, 100, true, "vUSDC")).toBe("≈ 50.00 vUSDC")
+	})
+
+	it("estimates tokens received from shares in, using the attested price", () => {
+		expect(toEstimate(valid, 100, false, "USDC")).toBe("≈ 200.00 USDC")
+	})
+
+	it("cannot estimate with no amount entered", () => {
+		expect(toEstimate(valid, null, true, "vUSDC")).toBeNull()
+	})
+
+	it.each([
+		["paused", { status: "paused" }],
+		["stale", { status: "stale", expiresAt: 0n }],
+		["never", { status: "never" }],
+		["unreadable", { status: "unreadable" }],
+		["not yet read", undefined],
+	] satisfies [string, NavClassification | undefined][])(
+		"cannot estimate while the price is not valid (%s)",
+		(_label, nav) => {
+			expect(toEstimate(nav, 100, true, "vUSDC")).toBeNull()
+		},
+	)
 })
 
 describe("toSizeFigures", () => {
