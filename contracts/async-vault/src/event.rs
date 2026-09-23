@@ -149,3 +149,9 @@ pub struct WindDownClaimed {
     pub surrendered: i128,
     pub assets: i128,
 }
+
+#[contractevent]
+pub struct DepositCapUpdated {
+    pub old_cap: Option<i128>,
+    pub new_cap: Option<i128>,
+}
