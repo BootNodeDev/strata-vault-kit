@@ -2,7 +2,6 @@ import {
 	Client,
 	type AssembledTransaction,
 	type MethodOptions,
-	type Option,
 	type i128,
 	type u64,
 } from "@stellar/stellar-sdk/contract"
@@ -13,6 +12,8 @@ type ViewOf<A, T> = (
 	args: A,
 	options?: MethodOptions,
 ) => Promise<AssembledTransaction<T>>
+
+export type Option<T> = T | null
 
 export interface AsyncVaultViews {
 	liquid_reserve: View<i128>
