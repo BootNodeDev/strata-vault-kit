@@ -15,7 +15,7 @@ export type RequestGroup = {
 
 type RequestListProps = {
 	heading: string
-	groups: [RequestGroup, RequestGroup]
+	groups: [RequestGroup, ...RequestGroup[]]
 	activeStage: RequestStage
 	onStageChange: (stage: RequestStage) => void
 	openTooltipId: string | number | null
@@ -30,7 +30,6 @@ const RequestList: React.FC<RequestListProps> = ({
 	openTooltipId,
 	onToggleTooltip,
 }) => {
-	const [first, last] = groups
 	const instanceId = React.useId()
 	const tabId = (stage: RequestStage) => `${instanceId}-tab-${stage}`
 	const panelId = (stage: RequestStage) => `${instanceId}-panel-${stage}`
@@ -40,27 +39,37 @@ const RequestList: React.FC<RequestListProps> = ({
 		document.getElementById(tabId(group.id))?.focus()
 	}
 
+	const groupAt = (index: number): RequestGroup =>
+		groups[((index % groups.length) + groups.length) % groups.length] ??
+		groups[0]
+
 	const onTabKeyDown = (
 		event: React.KeyboardEvent<HTMLButtonElement>,
-		group: RequestGroup,
+		index: number,
 	) => {
-		if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+		if (event.key === "ArrowRight") {
 			event.preventDefault()
-			selectTab(group === first ? last : first)
+			selectTab(groupAt(index + 1))
+			return
+		}
+		if (event.key === "ArrowLeft") {
+			event.preventDefault()
+			selectTab(groupAt(index - 1))
 			return
 		}
 		if (event.key === "Home") {
 			event.preventDefault()
-			selectTab(first)
+			selectTab(groups[0])
 			return
 		}
 		if (event.key === "End") {
 			event.preventDefault()
-			selectTab(last)
+			selectTab(groupAt(-1))
 		}
 	}
 
-	const activeGroup = first.id === activeStage ? first : last
+	const activeGroup =
+		groups.find((group) => group.id === activeStage) ?? groups[0]
 
 	return (
 		<div className={styles.list}>
@@ -68,7 +77,7 @@ const RequestList: React.FC<RequestListProps> = ({
 				{heading}
 			</h3>
 			<div role="tablist" aria-label="Request stages" className={styles.tabs}>
-				{groups.map((group) => {
+				{groups.map((group, index) => {
 					const isActive = group.id === activeStage
 					return (
 						<button
@@ -81,7 +90,7 @@ const RequestList: React.FC<RequestListProps> = ({
 							tabIndex={isActive ? 0 : -1}
 							className={`${styles.tab} ${isActive ? styles.tabActive : ""}`}
 							onClick={() => selectTab(group)}
-							onKeyDown={(event) => onTabKeyDown(event, group)}
+							onKeyDown={(event) => onTabKeyDown(event, index)}
 						>
 							{group.label}{" "}
 							<span className={styles.tabCount}>{group.entries.length}</span>

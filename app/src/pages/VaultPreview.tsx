@@ -90,7 +90,7 @@ const VaultPreview: React.FC = () => {
 		toPriceBlock(nav, isPendingNav)
 	const connected = address !== undefined
 	const messages = emptyMessages(connected)
-	const requestGroups: [RequestGroup, RequestGroup] = [
+	const requestGroups: [RequestGroup, ...RequestGroup[]] = [
 		{
 			id: "ready",
 			label: "Ready to claim",
