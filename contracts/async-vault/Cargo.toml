@@ -28,3 +28,4 @@ proptest = "1"
 
 [features]
 upgrade_wasm = []
+kani = []
