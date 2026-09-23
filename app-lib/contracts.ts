@@ -25,6 +25,40 @@ export interface AsyncVaultViews {
 	treasury: View<Option<string>>
 	guardian: View<Option<string>>
 	custodian: View<Option<string>>
+	current_epoch: View<u64>
+	get_epoch: ViewOf<{ epoch_id: u64 }, Option<EpochInfo>>
+	get_deposit_request: ViewOf<
+		{ epoch_id: u64; controller: string },
+		Option<DepositRequest>
+	>
+	get_redeem_request: ViewOf<
+		{ epoch_id: u64; controller: string },
+		Option<RedeemRequest>
+	>
+}
+
+export type EpochStatus =
+	| { tag: "Open"; values: void }
+	| { tag: "Pending"; values: void }
+	| { tag: "Fulfilled"; values: void }
+
+export interface EpochInfo {
+	status: EpochStatus
+	total_deposited: i128
+	total_shares_redeeming: i128
+	share_price: i128
+	closed_at: u64
+	priceable_at: u64
+}
+
+export interface DepositRequest {
+	amount: i128
+	claimed: boolean
+}
+
+export interface RedeemRequest {
+	shares: i128
+	claimed: boolean
 }
 
 export type OracleState =

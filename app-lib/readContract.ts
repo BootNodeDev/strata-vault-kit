@@ -3,6 +3,7 @@ import { Api } from "@stellar/stellar-sdk/rpc"
 export type ContractRead<T> =
 	| { kind: "value"; value: T }
 	| { kind: "contract-error"; code: number }
+	| { kind: "archived" }
 	| { kind: "unreadable" }
 
 const CONTRACT_ERROR = /Error\(Contract, #(\d+)\)/
@@ -24,6 +25,9 @@ export async function readContract<T>(
 ): Promise<ContractRead<T>> {
 	try {
 		const tx = await call()
+		if (tx.simulation !== undefined && Api.isSimulationRestore(tx.simulation)) {
+			return { kind: "archived" }
+		}
 		const code = parseErrorCode(tx.simulation)
 		return code !== null
 			? { kind: "contract-error", code }
