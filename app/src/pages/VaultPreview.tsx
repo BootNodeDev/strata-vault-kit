@@ -1,4 +1,10 @@
-import { formatAmount, shortAddress } from "@stellar-scaffold/app-lib"
+import {
+	connectWallet,
+	formatAmount,
+	networkStatus,
+	profileModal,
+	shortAddress,
+} from "@stellar-scaffold/app-lib"
 import React from "react"
 import Copy from "../components/icons/Copy"
 import AboutVault, { type FigureGroup } from "../components/vault/AboutVault"
@@ -7,17 +13,21 @@ import ActionPanel, {
 } from "../components/vault/ActionPanel"
 import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
-import {
-	partitionByStage,
-	type RequestEntry,
-	type RequestStage,
-} from "../components/vault/RequestCard"
+import { type RequestStage } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import { contractRows, vaultContractId } from "../config/contracts"
+import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
 import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
 import { useVaultFigures } from "../hooks/useVaultFigures"
+import { useWallet } from "../hooks/useWallet"
 import typeStyles from "../styles/type.module.css"
+import {
+	deriveAccess,
+	emptyMessages,
+	toPanelBlock,
+	toPriceBlock,
+} from "./vaultAccess"
 import {
 	toAuthorityRows,
 	toMetrics,
@@ -48,102 +58,11 @@ const parseAmount = (raw: string): number | null => {
 	return Number.isFinite(value) && value > 0 ? value : null
 }
 
-const claimableEntry: RequestEntry = {
-	id: 4,
-	inLabel: "Subscription",
-	inAmount: "1,000.00 TOKEN",
-	inMeta: "Requested 5 Sep 2026",
-	outLabel: "You claim",
-	outAmount: "966.93 vTOKEN",
-	outMeta: "Priced 5 Sep 2026",
-	outTone: "ok",
-	state: "Claimable",
-	tone: "claimable",
-	actions: [{ label: "Claim", kind: "primary", onPress: () => {} }],
-}
-
-const waitingEntry: RequestEntry = {
-	id: 3,
-	inLabel: "Redemption",
-	inAmount: "12,000.00 vTOKEN",
-	inMeta: "Requested 28 Aug 2026",
-	outLabel: "Owed to you",
-	outAmount: "12,348.00 TOKEN",
-	outMeta: "Priced 5 Sep 2026",
-	state: "Priced",
-	tone: "blocked",
-	actions: [{ label: "Claim", kind: "unavailable", onPress: () => {} }],
-	tooltip: {
-		label: "Why you cannot claim this yet",
-		text: "Your price will not change. A claim becomes claimable once the reserve covers its full amount: it covers 4,200.00 TOKEN of this claim and 8,148.00 TOKEN is still needed. The reserve is not held for this claim: the first uncovered claim submitted takes it. Awaiting a top-up, with no date promised.",
-	},
-}
-
-const openEntries: RequestEntry[] = [
-	{
-		id: 1,
-		inLabel: "Subscription",
-		inAmount: "1,000.00 TOKEN",
-		inMeta: "Requested 10 Sep 2026",
-		outLabel: "",
-		outAmount: "≈ 966.93 vTOKEN",
-		outTone: "word",
-		state: "Request",
-		tone: "pending",
-		actions: [{ label: "Cancel request", kind: "ordinary", onPress: () => {} }],
-	},
-	{
-		id: 2,
-		inLabel: "Redemption",
-		inAmount: "500.00 vTOKEN",
-		inMeta: "Requested —",
-		outLabel: "",
-		outAmount: "≈ 517.10 TOKEN",
-		outTone: "word",
-		state: "Request",
-		tone: "pending",
-		actions: [
-			{ label: "Cancelling ended", kind: "unavailable", onPress: () => {} },
-		],
-	},
-]
-
-const requestEntries: RequestEntry[] = [
-	claimableEntry,
-	waitingEntry,
-	...openEntries,
-]
-
-const stagedRequests = partitionByStage(requestEntries)
-
-const initialStage: RequestStage =
-	stagedRequests.ready.length === 0 && stagedRequests.waiting.length > 0
-		? "waiting"
-		: "ready"
-
-const requestGroups: [RequestGroup, RequestGroup] = [
-	{
-		id: "ready",
-		label: "Ready to claim",
-		entries: stagedRequests.ready,
-		emptyMessage:
-			"Nothing to claim yet. A request appears here once it is priced, and for cash, once the reserve covers it in full.",
-	},
-	{
-		id: "waiting",
-		label: "Waiting",
-		entries: stagedRequests.waiting,
-		emptyMessage:
-			"Nothing is waiting. A request you make appears here until it is claimable.",
-	},
-]
-
 const VaultPreview: React.FC = () => {
 	const [openTooltipId, setOpenTooltipId] = React.useState<
 		string | number | null
 	>(null)
-	const [activeStage, setActiveStage] =
-		React.useState<RequestStage>(initialStage)
+	const [activeStage, setActiveStage] = React.useState<RequestStage>("ready")
 	const [copied, setCopied] = React.useState(false)
 	const [actionSide, setActionSide] =
 		React.useState<ActionPanelSide>("subscribe")
@@ -152,6 +71,37 @@ const VaultPreview: React.FC = () => {
 	const { figures, isPending: isPendingFigures } = useVaultFigures()
 	const { authorities, isPending: isPendingAuthorities } = useVaultAuthorities()
 	const { nav, isPending: isPendingNav } = useNavPrice()
+	const { address, networkPassphrase } = useWallet()
+	const { allowance } = useIsAllowed()
+	const { state, appNetwork, walletNetwork } = networkStatus(
+		address,
+		networkPassphrase,
+	)
+	const access = deriveAccess({
+		address,
+		network: { state, appNetwork, walletNetwork },
+		allowance,
+	})
+	const block =
+		toPanelBlock(access, connectWallet, profileModal) ??
+		toPriceBlock(nav, isPendingNav)
+	const connected = address !== undefined
+	const messages = emptyMessages(connected)
+	const requestGroups: [RequestGroup, RequestGroup] = [
+		{
+			id: "ready",
+			label: "Ready to claim",
+			entries: [],
+			emptyMessage: messages.ready,
+		},
+		{
+			id: "waiting",
+			label: "Waiting",
+			entries: [],
+			emptyMessage: messages.waiting,
+		},
+	]
+
 	const metrics: [Metric, Metric, Metric, Metric] = [
 		toPriceMetric(nav, isPendingNav),
 		...toMetrics(figures, isPendingFigures),
@@ -179,7 +129,12 @@ const VaultPreview: React.FC = () => {
 	const isSubscribe = actionSide === "subscribe"
 	const inTicker = isSubscribe ? "TOKEN" : "vTOKEN"
 	const outTicker = isSubscribe ? "vTOKEN" : "TOKEN"
-	const balance = isSubscribe ? tokenBalance : shareBalance
+	const balance =
+		block === undefined ? (isSubscribe ? tokenBalance : shareBalance) : null
+	const balanceLabel =
+		balance === null
+			? "Balance unavailable"
+			: `Balance ${formatAmount(balance)}`
 	const parsedAmount = parseAmount(actionAmount)
 	const estimateValue =
 		parsedAmount === null
@@ -247,8 +202,9 @@ const VaultPreview: React.FC = () => {
 						<PositionCard
 							heading="Your position"
 							label="Your shares"
-							value="1,000.00 vTOKEN"
+							value={null}
 							sub="In your wallet"
+							note="Connect a wallet to see your position."
 						/>
 					</section>
 
@@ -279,13 +235,14 @@ const VaultPreview: React.FC = () => {
 						}
 						ticker={inTicker}
 						balance={balance}
-						balanceLabel={`Balance ${formatAmount(balance)}`}
+						balanceLabel={balanceLabel}
 						estimate={{
 							label: isSubscribe ? "Estimated shares" : "Estimated proceeds",
 							value: estimateValue,
 						}}
 						submitLabel={isSubscribe ? "Subscribe" : "Redeem"}
 						onSubmit={() => setActionAmount("")}
+						block={block}
 					/>
 				</aside>
 			</div>
