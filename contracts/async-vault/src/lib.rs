@@ -165,10 +165,6 @@ impl AsyncVault {
             .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
     }
 
-    pub fn total_economic_assets(e: &Env) -> i128 {
-        treasury::total_economic_assets(e)
-    }
-
     pub fn deposit_cap(e: &Env) -> Option<i128> {
         state::deposit_cap(e)
     }
