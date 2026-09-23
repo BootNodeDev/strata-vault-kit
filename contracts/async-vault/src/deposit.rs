@@ -1,13 +1,15 @@
 use bindings::ShareClient;
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
-use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
 use crate::error::VaultError;
 use crate::event::{DepositCancelled, DepositClaimed, DepositRequested};
 use crate::keys::DataKey;
+use crate::pricing::{DirectUnitPricing, PricingScheme};
 use crate::state::{self, DepositRequest, EpochStatus};
 use crate::treasury;
 use crate::wind_down;
+
+type Pricing = DirectUnitPricing;
 
 pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     wind_down::refuse_if_active(e);
@@ -73,8 +75,8 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         panic_with_error!(e, VaultError::AlreadyClaimed);
     }
 
-    let shares = checked_mul_div_floor(e, &request.amount, &WAD_SCALE, &epoch.share_price)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    let shares = Pricing::deposit_shares(e, request.amount, epoch.share_price)
+        .unwrap_or_else(|err| panic_with_error!(e, err));
 
     if shares == 0 {
         // Pricing already released this epoch's escrow into the reserve, so a
