@@ -58,7 +58,9 @@ const NETWORKS: Record<NetworkName, Network> = {
 }
 
 export function network(): Network {
-	const wanted = process.env["HARNESS_NETWORK"] ?? "local"
+	const argIdx = process.argv.indexOf("--network")
+	const argVal = argIdx !== -1 ? process.argv[argIdx + 1] : undefined
+	const wanted = process.env["HARNESS_NETWORK"] ?? argVal ?? "local"
 	if (!Object.hasOwn(NETWORKS, wanted)) {
 		throw new Error(
 			`unknown HARNESS_NETWORK ${wanted}; expected ${Object.keys(NETWORKS).join(" or ")}`,
