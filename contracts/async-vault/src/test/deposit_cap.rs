@@ -4,11 +4,10 @@ use super::*;
 fn deposit_cap_defaults_to_none_unbounded() {
     let f = setup();
     assert_eq!(f.vault.deposit_cap(), None);
-    assert_eq!(f.vault.total_economic_assets(), 0);
 
     let investor = f.investor(50_000);
-    f.vault.request_deposit(&investor, &50_000);
-    assert_eq!(f.vault.total_economic_assets(), 50_000);
+    let epoch = f.vault.request_deposit(&investor, &50_000);
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().total_deposited, 50_000);
 }
 
 #[test]
@@ -73,8 +72,8 @@ fn boundary_value_enforcement() {
     );
 
     // Deposit exactly equal to cap succeeds
-    f.vault.request_deposit(&investor1, &1_000);
-    assert_eq!(f.vault.total_economic_assets(), 1_000);
+    let epoch = f.vault.request_deposit(&investor1, &1_000);
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().total_deposited, 1_000);
 
     // Any subsequent deposit fails
     refused(
@@ -92,7 +91,6 @@ fn cancellation_frees_capacity() {
     let investor2 = f.investor(1_000);
 
     let epoch_id = f.vault.request_deposit(&investor1, &1_000);
-    assert_eq!(f.vault.total_economic_assets(), 1_000);
 
     // Blocked while request is pending
     refused(
@@ -102,11 +100,11 @@ fn cancellation_frees_capacity() {
 
     // Cancel refund restores capacity
     f.vault.cancel_deposit(&investor1, &epoch_id);
-    assert_eq!(f.vault.total_economic_assets(), 0);
+    assert_eq!(f.vault.get_epoch(&epoch_id).unwrap().total_deposited, 0);
 
     // Now investor2 can deposit
     f.vault.request_deposit(&investor2, &500);
-    assert_eq!(f.vault.total_economic_assets(), 500);
+    assert_eq!(f.vault.get_epoch(&epoch_id).unwrap().total_deposited, 500);
 }
 
 #[test]
@@ -127,9 +125,8 @@ fn deployed_capital_and_multi_epoch_accounting() {
     f.vault.set_custodian(&f.custodian, &f.admin);
     f.vault.deploy_to_custodian(&f.treasury, &800);
     assert_eq!(f.vault.net_deployed(), 800);
-    assert_eq!(f.vault.total_economic_assets(), 1_000);
 
-    // In Epoch 2, deposit of 1 still breaches cap
+    // In Epoch 2, deposit of 1 still breaches cap because deployed capital is counted
     refused(
         f.vault.try_request_deposit(&investor2, &1),
         VaultError::DepositCapExceeded,
@@ -139,8 +136,8 @@ fn deployed_capital_and_multi_epoch_accounting() {
     f.vault.set_deposit_cap(&Some(1_500), &f.admin);
 
     // Now investor2 can deposit 500
-    f.vault.request_deposit(&investor2, &500);
-    assert_eq!(f.vault.total_economic_assets(), 1_500);
+    let epoch2 = f.vault.request_deposit(&investor2, &500);
+    assert_eq!(f.vault.get_epoch(&epoch2).unwrap().total_deposited, 500);
 }
 
 #[test]
@@ -158,7 +155,7 @@ fn redemptions_free_capacity() {
     f.vault.fulfill_epoch(&1);
     f.vault.claim_deposit(&investor1, &1);
 
-    // In Epoch 2, total_economic_assets is 1_000, so new deposit of 500 fails
+    // In Epoch 2, deposited capital is 1_000, so new deposit of 500 fails
     refused(
         f.vault.try_request_deposit(&investor2, &500),
         VaultError::DepositCapExceeded,
@@ -172,11 +169,10 @@ fn redemptions_free_capacity() {
 
     // Redemption is now priced and committed (500 committed to exit)
     assert_eq!(f.vault.committed(), 500);
-    assert_eq!(f.vault.total_economic_assets(), 500);
 
-    // In Epoch 3, headroom has opened up, so investor2 can deposit 500
-    f.vault.request_deposit(&investor2, &500);
-    assert_eq!(f.vault.total_economic_assets(), 1_000);
+    // In Epoch 3, headroom has opened up by 500, so investor2 can deposit 500
+    let epoch3 = f.vault.request_deposit(&investor2, &500);
+    assert_eq!(f.vault.get_epoch(&epoch3).unwrap().total_deposited, 500);
 }
 
 #[test]

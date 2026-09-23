@@ -9,6 +9,19 @@ use crate::state::{self, DepositRequest, EpochStatus};
 use crate::treasury;
 use crate::wind_down;
 
+fn refuse_if_exceeds_cap(e: &Env, amount: i128) {
+    let Some(cap) = state::deposit_cap(e) else {
+        return;
+    };
+    let current = treasury::deposited_capital(e);
+    let new_total = current
+        .checked_add(amount)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    if new_total > cap {
+        panic_with_error!(e, VaultError::DepositCapExceeded);
+    }
+}
+
 pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     wind_down::refuse_if_active(e);
     from.require_auth();
@@ -16,16 +29,7 @@ pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     if amount <= 0 {
         panic_with_error!(e, VaultError::InvalidAmount);
     }
-
-    if let Some(cap) = state::deposit_cap(e) {
-        let current_assets = treasury::total_economic_assets(e);
-        let new_total = current_assets
-            .checked_add(amount)
-            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-        if new_total > cap {
-            panic_with_error!(e, VaultError::DepositCapExceeded);
-        }
-    }
+    refuse_if_exceeds_cap(e, amount);
 
     let epoch_id = state::current_epoch(e);
 
