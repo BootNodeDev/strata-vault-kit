@@ -9,6 +9,7 @@ import {
 	type IdentityVerifierViews,
 	type NavOracleViews,
 	type ShareTokenViews,
+	type Signer,
 } from "@stellar-scaffold/app-lib"
 import { addresses } from "./addresses"
 
@@ -20,6 +21,25 @@ export const asyncVault = (): Promise<AsyncVaultViews> => {
 		throw error
 	})
 	return vault
+}
+
+let vaultWriter:
+	{ publicKey: string; client: Promise<AsyncVaultViews> } | undefined
+
+export const asyncVaultWriter = (signer: Signer): Promise<AsyncVaultViews> => {
+	if (vaultWriter?.publicKey !== signer.publicKey) {
+		vaultWriter = {
+			publicKey: signer.publicKey,
+			client: connectAsyncVault(addresses.async_vault, signer).catch(
+				(error: unknown) => {
+					if (vaultWriter?.publicKey === signer.publicKey)
+						vaultWriter = undefined
+					throw error
+				},
+			),
+		}
+	}
+	return vaultWriter.client
 }
 
 let oracle: Promise<NavOracleViews> | undefined

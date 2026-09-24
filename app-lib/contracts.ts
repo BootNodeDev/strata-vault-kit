@@ -2,6 +2,7 @@ import {
 	Client,
 	type AssembledTransaction,
 	type MethodOptions,
+	type SignTransaction,
 	type i128,
 	type u64,
 } from "@stellar/stellar-sdk/contract"
@@ -14,6 +15,11 @@ type ViewOf<A, T> = (
 ) => Promise<AssembledTransaction<T>>
 
 export type Option<T> = T | null
+
+export interface Signer {
+	publicKey: string
+	signTransaction: SignTransaction
+}
 
 export interface AsyncVaultViews {
 	liquid_reserve: View<i128>
@@ -36,6 +42,8 @@ export interface AsyncVaultViews {
 		{ epoch_id: u64; controller: string },
 		Option<RedeemRequest>
 	>
+	request_deposit: ViewOf<{ from: string; amount: i128 }, u64>
+	cancel_deposit: ViewOf<{ from: string; epoch_id: u64 }, i128>
 }
 
 export type EpochStatus =
@@ -93,17 +101,19 @@ export interface AssetViews {
 	balance: ViewOf<{ id: string }, i128>
 }
 
-const clientOptions = (contractId: string) => ({
+const clientOptions = (contractId: string, signer?: Signer) => ({
 	contractId,
 	rpcUrl,
 	networkPassphrase,
 	allowHttp: network.id === "local",
+	...signer,
 })
 
 export const connectAsyncVault = (
 	contractId: string,
+	signer?: Signer,
 ): Promise<AsyncVaultViews> =>
-	Client.from<AsyncVaultViews>(clientOptions(contractId))
+	Client.from<AsyncVaultViews>(clientOptions(contractId, signer))
 
 export const connectNavOracle = (contractId: string): Promise<NavOracleViews> =>
 	Client.from<NavOracleViews>(clientOptions(contractId))
