@@ -23,21 +23,28 @@ export const asyncVault = (): Promise<AsyncVaultApi> => {
 	return vault
 }
 
-let vaultWriter:
-	{ publicKey: string; client: Promise<AsyncVaultApi> } | undefined
+interface VaultWriterEntry {
+	signer: Signer
+	client: Promise<AsyncVaultApi>
+}
+
+let vaultWriter: VaultWriterEntry | undefined
+
+const sameSigner = (a: Signer, b: Signer) =>
+	a.publicKey === b.publicKey && a.signTransaction === b.signTransaction
 
 export const asyncVaultWriter = (signer: Signer): Promise<AsyncVaultApi> => {
-	if (vaultWriter?.publicKey !== signer.publicKey) {
-		vaultWriter = {
-			publicKey: signer.publicKey,
+	if (!vaultWriter || !sameSigner(vaultWriter.signer, signer)) {
+		const entry: VaultWriterEntry = {
+			signer,
 			client: connectAsyncVault(addresses.async_vault, signer).catch(
 				(error: unknown) => {
-					if (vaultWriter?.publicKey === signer.publicKey)
-						vaultWriter = undefined
+					if (vaultWriter === entry) vaultWriter = undefined
 					throw error
 				},
 			),
 		}
+		vaultWriter = entry
 	}
 	return vaultWriter.client
 }

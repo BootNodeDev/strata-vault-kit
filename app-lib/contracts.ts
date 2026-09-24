@@ -106,7 +106,8 @@ const clientOptions = (contractId: string, signer?: Signer) => ({
 	rpcUrl,
 	networkPassphrase,
 	allowHttp: network.id === "local",
-	...signer,
+	publicKey: signer?.publicKey,
+	signTransaction: signer?.signTransaction,
 })
 
 export const connectAsyncVault = (

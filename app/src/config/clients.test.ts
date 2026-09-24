@@ -68,4 +68,61 @@ describe("asyncVaultWriter", () => {
 
 		expect(connectAsyncVaultMock).toHaveBeenCalledTimes(1)
 	})
+
+	it("does not hand back a client built with a stale signTransaction once the same address reconnects with a new one", async () => {
+		const clientOne = {}
+		const clientTwo = {}
+		connectAsyncVaultMock
+			.mockResolvedValueOnce(clientOne)
+			.mockResolvedValueOnce(clientTwo)
+		const { asyncVaultWriter } = await import("./clients")
+
+		const first = await asyncVaultWriter({
+			publicKey: "GONE",
+			signTransaction: vi.fn(),
+		})
+		const second = await asyncVaultWriter({
+			publicKey: "GONE",
+			signTransaction: vi.fn(),
+		})
+
+		expect(first).toBe(clientOne)
+		expect(second).toBe(clientTwo)
+		expect(connectAsyncVaultMock).toHaveBeenCalledTimes(2)
+	})
+
+	it("does not let a superseded connect's rejection evict a newer entry for the same address", async () => {
+		const deferredOne = deferred<AppLib.AsyncVaultApi>()
+		const clientThree = {}
+		connectAsyncVaultMock
+			.mockReturnValueOnce(deferredOne.promise)
+			.mockResolvedValueOnce({})
+			.mockResolvedValueOnce(clientThree)
+		const { asyncVaultWriter } = await import("./clients")
+		const signerA = { publicKey: "GONE", signTransaction: vi.fn() }
+		const signerB = { publicKey: "GTWO", signTransaction: vi.fn() }
+
+		const first = asyncVaultWriter(signerA)
+		first.catch(() => {})
+		await asyncVaultWriter(signerB)
+		const third = await asyncVaultWriter(signerA)
+
+		deferredOne.reject(new Error("stale"))
+		await Promise.resolve()
+		const fourth = await asyncVaultWriter(signerA)
+
+		expect(third).toBe(clientThree)
+		expect(fourth).toBe(clientThree)
+		expect(connectAsyncVaultMock).toHaveBeenCalledTimes(3)
+	})
 })
+
+const deferred = <T>() => {
+	let resolve!: (value: T) => void
+	let reject!: (reason: unknown) => void
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res
+		reject = rej
+	})
+	return { promise, resolve, reject }
+}
