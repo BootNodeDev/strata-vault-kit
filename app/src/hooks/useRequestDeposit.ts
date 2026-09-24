@@ -6,6 +6,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query"
 import { useCallback, useRef, useState } from "react"
 import { asyncVaultWriter } from "../config/clients"
+import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { useWallet } from "./useWallet"
 
@@ -81,6 +82,9 @@ export function useRequestDeposit(): UseRequestDeposit {
 				applyStatus({ status: "confirmed", epochId: sent.result, hash })
 				void queryClient.invalidateQueries({
 					queryKey: investorRequestsKey(address),
+				})
+				void queryClient.invalidateQueries({
+					queryKey: depositBalanceKey(address),
 				})
 			} catch (error) {
 				applyStatus({

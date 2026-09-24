@@ -13,6 +13,9 @@ export type DepositBalance =
 	| { status: "unreadable" }
 	| { status: "held"; amount: Amount }
 
+export const depositBalanceKey = (address: string | undefined) =>
+	["deposit", "balance", address] as const
+
 export function classifyDepositBalance(
 	read: ContractRead<bigint>,
 ): DepositBalance {
@@ -28,7 +31,7 @@ async function fetchDepositBalance(id: string): Promise<DepositBalance> {
 export function useDepositBalance(): { balance: DepositBalance } {
 	const { address } = useWallet()
 	const { data } = useQuery({
-		queryKey: ["deposit", "balance", address],
+		queryKey: depositBalanceKey(address),
 		queryFn:
 			address === undefined ? skipToken : () => fetchDepositBalance(address),
 		staleTime: 30_000,

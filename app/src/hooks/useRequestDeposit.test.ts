@@ -12,6 +12,7 @@ import {
 	WalletContext,
 	type WalletContextType,
 } from "../providers/WalletProvider"
+import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { useRequestDeposit } from "./useRequestDeposit"
 
@@ -123,7 +124,25 @@ describe("useRequestDeposit", () => {
 		})
 	})
 
-	it("does not touch the investor's cached requests on a failed deposit", async () => {
+	it("invalidates the investor's cached deposit balance once the deposit confirms", async () => {
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi.fn().mockResolvedValue({
+				getTransactionResponse: { status: "SUCCESS" },
+				result: 7n,
+			}),
+		})
+		const { result, queryClient } = renderRequestDeposit()
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+		await act(() => result.current.submit(amount))
+
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: depositBalanceKey(investorAddress),
+		})
+	})
+
+	it("does not touch the investor's cached requests or balance on a failed deposit", async () => {
 		vaultMock.request_deposit.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6009)" },
 			signAndSend: vi.fn(),

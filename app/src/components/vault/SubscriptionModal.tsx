@@ -1,10 +1,12 @@
-import { shortAddress } from "@stellar-scaffold/app-lib"
+import { explorerTransaction, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
 import {
 	type RequestDepositFailure,
 	type RequestDepositStatus,
 } from "../../hooks/useRequestDeposit"
 import typeStyles from "../../styles/type.module.css"
+import Close from "../icons/Close"
+import ExternalLink from "../icons/ExternalLink"
 import styles from "./SubscriptionModal.module.css"
 
 export type SubscriptionModalProps = {
@@ -47,7 +49,7 @@ const describeFailure = (
 		case "unknown":
 			return {
 				heading: "Something went wrong",
-				body: "We could not confirm whether this reached the network. Check your requests before doing anything else — we don't yet know if it went through.",
+				body: "We could not confirm whether this reached the network. We don't yet know if it went through, so check your requests before doing anything else.",
 			}
 	}
 }
@@ -63,24 +65,107 @@ const describeStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This request moves ${amount} ${ticker} into escrow. Nothing is exchanged today — your shares are set once this batch is priced.`,
+				body: `This request moves ${amount} ${ticker} into escrow. Nothing is exchanged today, and your shares are set once this batch is priced.`,
 			}
 		case "submitted":
 			return {
 				heading: "Sending your request",
-				body: "Your request is on its way to the network. This should only take a moment — pricing comes later and takes longer. Closing this window will not cancel it.",
+				body: "Your request is on its way to the network. This should only take a moment, while pricing comes later and takes longer. Closing this window will not cancel it.",
 				hash: status.hash,
 			}
 		case "confirmed":
 			return {
 				heading: "Request locked in",
-				body: `${amount} ${ticker} is now locked in escrow for Epoch ${status.epochId}. It prices at the next attestation.`,
+				body: `${amount} ${ticker} is now locked in escrow for Batch ${status.epochId}. It prices at the next attestation.`,
 				hash: status.hash,
 			}
 		case "failed":
 			return { ...describeFailure(status.failure), hash: status.hash }
 	}
 }
+
+type StepId = "signature" | "network" | "recorded"
+type StepState = "done" | "current" | "upcoming" | "failed"
+type Step = { id: StepId; label: string; state: StepState }
+
+const STEP_ORDER: StepId[] = ["signature", "network", "recorded"]
+
+const stepLabel: Record<StepId, string> = {
+	signature: "Approved in your wallet",
+	network: "Sent to the network",
+	recorded: "Recorded",
+}
+
+const buildSteps = (state: (id: StepId) => StepState): Step[] =>
+	STEP_ORDER.map((id) => ({ id, label: stepLabel[id], state: state(id) }))
+
+const failureSteps = (
+	failure: RequestDepositFailure,
+	hash: string | undefined,
+): Step[] => {
+	if (failure.kind === "unknown" && hash !== undefined) {
+		return buildSteps((id) => (id === "recorded" ? "failed" : "done"))
+	}
+	if (failure.kind === "unknown") {
+		return buildSteps((id) =>
+			id === "signature" ? "done" : id === "network" ? "failed" : "upcoming",
+		)
+	}
+	return buildSteps((id) => (id === "signature" ? "failed" : "upcoming"))
+}
+
+const computeSteps = (status: RequestDepositStatus): Step[] | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "awaiting-signature":
+			return buildSteps((id) => (id === "signature" ? "current" : "upcoming"))
+		case "submitted":
+			return buildSteps((id) =>
+				id === "signature" ? "done" : id === "network" ? "current" : "upcoming",
+			)
+		case "confirmed":
+			return buildSteps(() => "done")
+		case "failed":
+			return failureSteps(status.failure, status.hash)
+	}
+}
+
+const stepStateClassName: Record<StepState, string> = {
+	done: `${styles.stepDone}`,
+	current: `${styles.stepCurrent}`,
+	failed: `${styles.stepFailed}`,
+	upcoming: `${styles.stepUpcoming}`,
+}
+
+const stepAnnouncement: Record<StepState, string> = {
+	done: "done",
+	current: "in progress",
+	failed: "failed",
+	upcoming: "",
+}
+
+const Steps: React.FC<{ steps: Step[] }> = ({ steps }) => (
+	<ol className={styles.steps} aria-label="Subscription progress">
+		{steps.map((step) => (
+			<li
+				key={step.id}
+				className={`${styles.step} ${stepStateClassName[step.state]}`}
+				aria-current={step.state === "current" ? "step" : undefined}
+			>
+				<span className={styles.stepMarker} aria-hidden="true" />
+				<span className={`${typeStyles.footnote} ${styles.stepLabel}`}>
+					{step.label}
+					{stepAnnouncement[step.state] && (
+						<span className={styles.srOnly}>
+							, {stepAnnouncement[step.state]}
+						</span>
+					)}
+				</span>
+			</li>
+		))}
+	</ol>
+)
 
 const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 	status,
@@ -98,6 +183,10 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 	const content = describeStatus(status, amount, ticker)
 	if (content === undefined) return null
 
+	const steps = computeSteps(status)
+	const isConfirmed = status.status === "confirmed"
+	const explorer =
+		content.hash === undefined ? null : explorerTransaction(content.hash)
 	const offersRetry =
 		status.status === "failed" && status.failure.kind === "declined"
 	const headingId = "subscription-modal-heading"
@@ -108,6 +197,37 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 			onClose()
 		}
 	}
+
+	const headingClassName = isConfirmed
+		? `${typeStyles.vaultName} ${styles.heading} ${styles.headingConfirmed}`
+		: `${typeStyles.sectionHead} ${styles.heading}`
+
+	const body = (
+		<>
+			<h2 id={headingId} className={headingClassName}>
+				{content.heading}
+			</h2>
+			<p className={`${typeStyles.body} ${styles.body}`}>{content.body}</p>
+			{content.hash !== undefined && (
+				<p className={`${typeStyles.railValue} ${styles.hash}`}>
+					Transaction{" "}
+					{explorer === null ? (
+						shortAddress(content.hash)
+					) : (
+						<a
+							className={styles.hashLink}
+							href={explorer}
+							target="_blank"
+							rel="noreferrer"
+						>
+							{shortAddress(content.hash)}
+							<ExternalLink className={styles.hashIcon} />
+						</a>
+					)}
+				</p>
+			)}
+		</>
+	)
 
 	return (
 		<div className={styles.overlay}>
@@ -126,19 +246,15 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 					aria-label="Close"
 					onClick={onClose}
 				>
-					Close
+					<Close className={styles.closeIcon} />
 				</button>
-				<h2
-					id={headingId}
-					className={`${typeStyles.sectionHead} ${styles.heading}`}
-				>
-					{content.heading}
-				</h2>
-				<p className={`${typeStyles.body} ${styles.body}`}>{content.body}</p>
-				{content.hash !== undefined && (
-					<p className={`${typeStyles.railValue} ${styles.hash}`}>
-						Transaction {shortAddress(content.hash)}
-					</p>
+				{steps !== undefined && <Steps steps={steps} />}
+				{isConfirmed ? (
+					<div className={styles.arrival} role="status">
+						{body}
+					</div>
+				) : (
+					body
 				)}
 				{offersRetry && (
 					<div className={styles.actions}>
