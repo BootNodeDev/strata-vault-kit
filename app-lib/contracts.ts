@@ -8,8 +8,8 @@ import {
 } from "@stellar/stellar-sdk/contract"
 import { network, networkPassphrase, rpcUrl } from "./env"
 
-type View<T> = (options?: MethodOptions) => Promise<AssembledTransaction<T>>
-type ViewOf<A, T> = (
+type Call<T> = (options?: MethodOptions) => Promise<AssembledTransaction<T>>
+type CallOf<A, T> = (
 	args: A,
 	options?: MethodOptions,
 ) => Promise<AssembledTransaction<T>>
@@ -21,29 +21,29 @@ export interface Signer {
 	signTransaction: SignTransaction
 }
 
-export interface AsyncVaultViews {
-	liquid_reserve: View<i128>
-	committed: View<i128>
-	uncovered: View<i128>
-	total_economic_supply: View<i128>
-	net_deployed: View<i128>
-	governance: View<Option<string>>
-	manager: View<Option<string>>
-	treasury: View<Option<string>>
-	guardian: View<Option<string>>
-	custodian: View<Option<string>>
-	current_epoch: View<u64>
-	get_epoch: ViewOf<{ epoch_id: u64 }, Option<EpochInfo>>
-	get_deposit_request: ViewOf<
+export interface AsyncVaultApi {
+	liquid_reserve: Call<i128>
+	committed: Call<i128>
+	uncovered: Call<i128>
+	total_economic_supply: Call<i128>
+	net_deployed: Call<i128>
+	governance: Call<Option<string>>
+	manager: Call<Option<string>>
+	treasury: Call<Option<string>>
+	guardian: Call<Option<string>>
+	custodian: Call<Option<string>>
+	current_epoch: Call<u64>
+	get_epoch: CallOf<{ epoch_id: u64 }, Option<EpochInfo>>
+	get_deposit_request: CallOf<
 		{ epoch_id: u64; controller: string },
 		Option<DepositRequest>
 	>
-	get_redeem_request: ViewOf<
+	get_redeem_request: CallOf<
 		{ epoch_id: u64; controller: string },
 		Option<RedeemRequest>
 	>
-	request_deposit: ViewOf<{ from: string; amount: i128 }, u64>
-	cancel_deposit: ViewOf<{ from: string; epoch_id: u64 }, i128>
+	request_deposit: CallOf<{ from: string; amount: i128 }, u64>
+	cancel_deposit: CallOf<{ from: string; epoch_id: u64 }, i128>
 }
 
 export type EpochStatus =
@@ -81,24 +81,24 @@ export interface NavReport {
 	timestamp: u64
 }
 
-export interface NavOracleViews {
-	state: View<OracleState>
-	latest: View<NavReport>
+export interface NavOracleApi {
+	state: Call<OracleState>
+	latest: Call<NavReport>
 }
 
-export interface IdentityVerifierViews {
-	is_allowed: ViewOf<{ account: string }, boolean>
+export interface IdentityVerifierApi {
+	is_allowed: CallOf<{ account: string }, boolean>
 }
 
-export interface ShareTokenViews {
-	balance: ViewOf<{ account: string }, i128>
-	symbol: View<string>
-	name: View<string>
+export interface ShareTokenApi {
+	balance: CallOf<{ account: string }, i128>
+	symbol: Call<string>
+	name: Call<string>
 }
 
-export interface AssetViews {
-	symbol: View<string>
-	balance: ViewOf<{ id: string }, i128>
+export interface AssetApi {
+	symbol: Call<string>
+	balance: CallOf<{ id: string }, i128>
 }
 
 const clientOptions = (contractId: string, signer?: Signer) => ({
@@ -112,21 +112,19 @@ const clientOptions = (contractId: string, signer?: Signer) => ({
 export const connectAsyncVault = (
 	contractId: string,
 	signer?: Signer,
-): Promise<AsyncVaultViews> =>
-	Client.from<AsyncVaultViews>(clientOptions(contractId, signer))
+): Promise<AsyncVaultApi> =>
+	Client.from<AsyncVaultApi>(clientOptions(contractId, signer))
 
-export const connectNavOracle = (contractId: string): Promise<NavOracleViews> =>
-	Client.from<NavOracleViews>(clientOptions(contractId))
+export const connectNavOracle = (contractId: string): Promise<NavOracleApi> =>
+	Client.from<NavOracleApi>(clientOptions(contractId))
 
 export const connectIdentityVerifier = (
 	contractId: string,
-): Promise<IdentityVerifierViews> =>
-	Client.from<IdentityVerifierViews>(clientOptions(contractId))
+): Promise<IdentityVerifierApi> =>
+	Client.from<IdentityVerifierApi>(clientOptions(contractId))
 
-export const connectShareToken = (
-	contractId: string,
-): Promise<ShareTokenViews> =>
-	Client.from<ShareTokenViews>(clientOptions(contractId))
+export const connectShareToken = (contractId: string): Promise<ShareTokenApi> =>
+	Client.from<ShareTokenApi>(clientOptions(contractId))
 
-export const connectAsset = (contractId: string): Promise<AssetViews> =>
-	Client.from<AssetViews>(clientOptions(contractId))
+export const connectAsset = (contractId: string): Promise<AssetApi> =>
+	Client.from<AssetApi>(clientOptions(contractId))
