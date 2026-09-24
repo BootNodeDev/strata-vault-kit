@@ -2,6 +2,7 @@ import {
 	connectWallet,
 	formatAmount,
 	networkStatus,
+	parseAmount,
 	profileModal,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
@@ -54,11 +55,6 @@ const vaultSummary = [
 	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim becomes claimable once the reserve covers it in full, in any order rather than by queue position.",
 	"You may hold one request per side per batch, and one price applies to everyone in it. A share claim is claimable at once; a cash claim waits for the reserve to cover it in full. Shares need an allowlisted address to claim, cash does not.",
 ]
-
-const parseAmount = (raw: string): number | null => {
-	const value = Number(raw.replace(/,/g, ""))
-	return Number.isFinite(value) && value > 0 ? value : null
-}
 
 const VaultPreview: React.FC = () => {
 	const [openTooltipId, setOpenTooltipId] = React.useState<
@@ -155,7 +151,7 @@ const VaultPreview: React.FC = () => {
 			? "Balance unavailable"
 			: `Balance ${formatAmount(balance)}`
 	const parsedAmount = parseAmount(actionAmount)
-	const estimateValue = toEstimate(nav, parsedAmount, isSubscribe, outTicker)
+	const estimate = toEstimate(nav, parsedAmount, isSubscribe, outTicker)
 	const copyAddress = async () => {
 		try {
 			await navigator.clipboard.writeText(vaultContractId)
@@ -249,10 +245,7 @@ const VaultPreview: React.FC = () => {
 						ticker={inTicker}
 						balance={balance}
 						balanceLabel={balanceLabel}
-						estimate={{
-							label: isSubscribe ? "Estimated shares" : "Estimated proceeds",
-							value: estimateValue,
-						}}
+						estimate={estimate}
 						submitLabel={isSubscribe ? "Subscribe" : "Redeem"}
 						onSubmit={() => setActionAmount("")}
 						block={block}

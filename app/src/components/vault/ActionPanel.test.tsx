@@ -13,7 +13,7 @@ const baseProps: ActionPanelProps = {
 	ticker: "TOKEN",
 	balance: 18400,
 	balanceLabel: "Balance 18,400.00",
-	estimate: { label: "Estimated shares", value: "≈ —" },
+	estimate: { label: "Estimated shares", status: "ready", value: "≈ —" },
 	submitLabel: "Subscribe",
 	onSubmit: () => {},
 }
@@ -39,6 +39,25 @@ describe("ActionPanel", () => {
 		expect(onAmountChange).toHaveBeenCalledWith("18,400.00")
 	})
 
+	it("asks for an amount, not that the estimate is unavailable, when the field is empty", () => {
+		render(
+			<ActionPanel
+				{...baseProps}
+				amount=""
+				estimate={{
+					label: "Estimated shares",
+					status: "empty",
+					reason: "Enter an amount to see the estimate.",
+				}}
+			/>,
+		)
+
+		expect(
+			screen.getByText("Enter an amount to see the estimate."),
+		).toBeTruthy()
+		expect(screen.queryByText("Estimate unavailable")).toBeNull()
+	})
+
 	it("renders the unavailable text instead of a figure when no fresh price exists", () => {
 		render(
 			<ActionPanel
@@ -46,12 +65,29 @@ describe("ActionPanel", () => {
 				amount="1000"
 				estimate={{
 					label: "Estimated shares",
-					value: null,
+					status: "unavailable",
+					reason: "Estimate unavailable",
 				}}
 			/>,
 		)
 
 		expect(screen.getByText("Estimate unavailable")).toBeTruthy()
+	})
+
+	it("renders the computed figure when the estimate is ready", () => {
+		render(
+			<ActionPanel
+				{...baseProps}
+				amount="1000"
+				estimate={{
+					label: "Estimated shares",
+					status: "ready",
+					value: "≈ 500.00 vUSDC",
+				}}
+			/>,
+		)
+
+		expect(screen.getByText("≈ 500.00 vUSDC")).toBeTruthy()
 	})
 
 	it("renders the form with a single actionable control for an action block", () => {
