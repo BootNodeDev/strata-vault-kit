@@ -1,6 +1,6 @@
 import {
+	AssembledTransaction,
 	Client,
-	type AssembledTransaction,
 	type MethodOptions,
 	type SignTransaction,
 	type i128,
@@ -115,6 +115,9 @@ export const connectAsyncVault = (
 	signer?: Signer,
 ): Promise<AsyncVaultApi> =>
 	Client.from<AsyncVaultApi>(clientOptions(contractId, signer))
+
+export const isUserRejection = (error: unknown): boolean =>
+	error instanceof AssembledTransaction.Errors.UserRejected
 
 export const connectNavOracle = (contractId: string): Promise<NavOracleApi> =>
 	Client.from<NavOracleApi>(clientOptions(contractId))
