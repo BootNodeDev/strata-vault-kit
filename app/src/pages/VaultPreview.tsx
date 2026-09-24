@@ -1,8 +1,11 @@
 import {
+	AMOUNT_DECIMALS,
+	type Amount,
 	connectWallet,
 	formatAmount,
 	networkStatus,
 	parseAmount,
+	parseUnits,
 	profileModal,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
@@ -16,11 +19,13 @@ import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
 import { type RequestStage } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
+import SubscriptionModal from "../components/vault/SubscriptionModal"
 import { contractRows, vaultContractId } from "../config/contracts"
 import { useDepositBalance } from "../hooks/useDepositBalance"
 import { useInvestorRequests } from "../hooks/useInvestorRequests"
 import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
+import { useRequestDeposit } from "../hooks/useRequestDeposit"
 import { useSharePosition } from "../hooks/useSharePosition"
 import { useTokenSymbols } from "../hooks/useTokenSymbols"
 import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
@@ -75,6 +80,13 @@ const VaultPreview: React.FC = () => {
 	const { balance: deposit } = useDepositBalance()
 	const { symbols } = useTokenSymbols()
 	const { requests } = useInvestorRequests()
+	const {
+		status: requestDepositStatus,
+		submit: submitRequestDeposit,
+		reset: resetRequestDeposit,
+	} = useRequestDeposit()
+	const [pendingAmountLabel, setPendingAmountLabel] = React.useState("")
+	const [pendingAmount, setPendingAmount] = React.useState<Amount | null>(null)
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -152,6 +164,29 @@ const VaultPreview: React.FC = () => {
 			: `Balance ${formatAmount(balance)}`
 	const parsedAmount = parseAmount(actionAmount)
 	const estimate = toEstimate(nav, parsedAmount, isSubscribe, outTicker)
+
+	const submitAction = () => {
+		if (!isSubscribe) {
+			setActionAmount("")
+			return
+		}
+		if (parsedAmount === null) return
+		const amount = parseUnits(actionAmount, AMOUNT_DECIMALS)
+		if (amount === null) return
+		setPendingAmountLabel(formatAmount(parsedAmount))
+		setPendingAmount(amount)
+		void submitRequestDeposit(amount)
+	}
+
+	const retryRequestDeposit = () => {
+		if (pendingAmount === null) return
+		void submitRequestDeposit(pendingAmount)
+	}
+
+	React.useEffect(() => {
+		if (requestDepositStatus.status === "confirmed") setActionAmount("")
+	}, [requestDepositStatus])
+
 	const copyAddress = async () => {
 		try {
 			await navigator.clipboard.writeText(vaultContractId)
@@ -247,11 +282,21 @@ const VaultPreview: React.FC = () => {
 						balanceLabel={balanceLabel}
 						estimate={estimate}
 						submitLabel={isSubscribe ? "Subscribe" : "Redeem"}
-						onSubmit={() => setActionAmount("")}
+						onSubmit={submitAction}
 						block={block}
 					/>
 				</aside>
 			</div>
+
+			{requestDepositStatus.status !== "idle" && (
+				<SubscriptionModal
+					status={requestDepositStatus}
+					amount={pendingAmountLabel}
+					ticker={inTicker}
+					onClose={resetRequestDeposit}
+					onRetry={retryRequestDeposit}
+				/>
+			)}
 		</div>
 	)
 }

@@ -19,6 +19,7 @@ import {
 import {
 	classifyRequest,
 	fetchInvestorRequests,
+	investorRequestsKey,
 	useInvestorRequests,
 } from "./useInvestorRequests"
 
@@ -525,5 +526,15 @@ describe("useInvestorRequests", () => {
 			archived: [],
 			unreadable: [],
 		})
+	})
+})
+
+describe("investorRequestsKey", () => {
+	it("matches the key useInvestorRequests queries under", () => {
+		expect(investorRequestsKey("GINVESTORADDRESS1234567890")).toEqual([
+			"investor",
+			"requests",
+			"GINVESTORADDRESS1234567890",
+		])
 	})
 })

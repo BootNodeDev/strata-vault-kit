@@ -4,6 +4,7 @@ import {
 	type Amount,
 	networkPassphrase,
 } from "@stellar-scaffold/app-lib"
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { createElement, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -11,6 +12,7 @@ import {
 	WalletContext,
 	type WalletContextType,
 } from "../providers/WalletProvider"
+import { investorRequestsKey } from "./useInvestorRequests"
 import { useRequestDeposit } from "./useRequestDeposit"
 
 const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
@@ -36,9 +38,16 @@ const wallet: WalletContextType = {
 }
 
 const renderRequestDeposit = () => {
+	const queryClient = new QueryClient({
+		defaultOptions: { queries: { retry: false } },
+	})
 	const wrapper = ({ children }: { children: ReactNode }) =>
-		createElement(WalletContext, { value: wallet }, children)
-	return renderHook(() => useRequestDeposit(), { wrapper })
+		createElement(
+			QueryClientProvider,
+			{ client: queryClient },
+			createElement(WalletContext, { value: wallet }, children),
+		)
+	return { ...renderHook(() => useRequestDeposit(), { wrapper }), queryClient }
 }
 
 const deferred = <T>() => {
@@ -94,6 +103,37 @@ describe("useRequestDeposit", () => {
 		)
 
 		expect(signAndSend).toHaveBeenCalledTimes(1)
+	})
+
+	it("invalidates the investor's cached requests once the deposit confirms", async () => {
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi.fn().mockResolvedValue({
+				getTransactionResponse: { status: "SUCCESS" },
+				result: 7n,
+			}),
+		})
+		const { result, queryClient } = renderRequestDeposit()
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+		await act(() => result.current.submit(amount))
+
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: investorRequestsKey(investorAddress),
+		})
+	})
+
+	it("does not touch the investor's cached requests on a failed deposit", async () => {
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: { error: "HostError: Error(Contract, #6009)" },
+			signAndSend: vi.fn(),
+		})
+		const { result, queryClient } = renderRequestDeposit()
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+		await act(() => result.current.submit(amount))
+
+		expect(invalidateQueries).not.toHaveBeenCalled()
 	})
 
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
@@ -161,6 +201,94 @@ describe("useRequestDeposit", () => {
 		)
 	})
 
+	it("carries the transaction hash from submission through to confirmation", async () => {
+		const confirmGate = deferred<void>()
+		const signAndSend = vi.fn(
+			async ({
+				watcher,
+			}: {
+				watcher: { onSubmitted: (response: { hash: string }) => void }
+			}) => {
+				watcher.onSubmitted({ hash: "a".repeat(64) })
+				await confirmGate.promise
+				return { getTransactionResponse: { status: "SUCCESS" }, result: 7n }
+			},
+		)
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend,
+		})
+		const { result } = renderRequestDeposit()
+
+		void result.current.submit(amount)
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "submitted",
+				hash: "a".repeat(64),
+			}),
+		)
+
+		confirmGate.resolve()
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "confirmed",
+				epochId: 7n,
+				hash: "a".repeat(64),
+			}),
+		)
+	})
+
+	it("carries the transaction hash on a failure discovered after submission", async () => {
+		const signAndSend = vi.fn(
+			async ({
+				watcher,
+			}: {
+				watcher: { onSubmitted: (response: { hash: string }) => void }
+			}) => {
+				watcher.onSubmitted({ hash: "b".repeat(64) })
+				return { getTransactionResponse: { status: "FAILED" }, result: 7n }
+			},
+		)
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend,
+		})
+		const { result } = renderRequestDeposit()
+
+		await act(() => result.current.submit(amount))
+
+		expect(result.current.status).toEqual({
+			status: "failed",
+			failure: { kind: "unknown" },
+			hash: "b".repeat(64),
+		})
+	})
+
+	it("carries no transaction hash on a failure that never reached the network", async () => {
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi
+				.fn()
+				.mockRejectedValue(
+					new AssembledTransaction.Errors.UserRejected("User declined access"),
+				),
+		})
+		const { result } = renderRequestDeposit()
+
+		await act(() => result.current.submit(amount))
+
+		expect(result.current.status).toEqual({
+			status: "failed",
+			failure: { kind: "declined" },
+		})
+		expect(
+			result.current.status.status === "failed"
+				? result.current.status.hash
+				: "not a failure",
+		).toBeUndefined()
+	})
+
 	it("ignores a second submission while one is already in flight", async () => {
 		const gate = deferred<void>()
 		const signAndSend = vi.fn(async () => {
@@ -184,5 +312,38 @@ describe("useRequestDeposit", () => {
 		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
 
 		expect(vaultMock.request_deposit).toHaveBeenCalledTimes(1)
+	})
+
+	it("reconnects a dismissed caller to a still-settling submission instead of ignoring it", async () => {
+		const gate = deferred<void>()
+		const signAndSend = vi.fn(
+			async ({ watcher }: { watcher: { onSubmitted: () => void } }) => {
+				watcher.onSubmitted()
+				await gate.promise
+				return { getTransactionResponse: { status: "SUCCESS" }, result: 7n }
+			},
+		)
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend,
+		})
+		const { result } = renderRequestDeposit()
+
+		void result.current.submit(amount)
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "submitted" }),
+		)
+
+		act(() => result.current.reset())
+		expect(result.current.status).toEqual({ status: "idle" })
+
+		void result.current.submit(amount)
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "submitted" }),
+		)
+		expect(vaultMock.request_deposit).toHaveBeenCalledTimes(1)
+
+		gate.resolve()
+		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
 	})
 })

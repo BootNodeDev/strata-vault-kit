@@ -1,3 +1,4 @@
+import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import {
 	formatDate,
 	formatScaled,
@@ -7,7 +8,7 @@ import {
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type AddressRow } from "../components/vault/AboutVault"
@@ -24,6 +25,7 @@ const {
 	mockDeposit,
 	mockSymbols,
 	mockRequests,
+	requestDepositMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
@@ -53,13 +55,37 @@ const {
 			{ shares: bigint; claimed: boolean } | undefined
 		>(),
 	},
+	requestDepositMock: vi.fn(),
 }))
+
+const defaultRequestDepositImpl = async ({
+	amount,
+}: {
+	from: string
+	amount: bigint
+}) => {
+	const epochId = mockRequests.currentEpoch
+	return {
+		simulation: undefined,
+		signAndSend: async ({
+			watcher,
+		}: {
+			watcher: { onSubmitted: () => void }
+		}) => {
+			watcher.onSubmitted()
+			mockRequests.deposits.set(epochId, { amount, claimed: false })
+			return { getTransactionResponse: { status: "SUCCESS" }, result: epochId }
+		},
+	}
+}
 
 const resetMockRequests = () => {
 	mockRequests.readable = true
 	mockRequests.currentEpoch = 2n
 	mockRequests.deposits.clear()
 	mockRequests.redeems.clear()
+	requestDepositMock.mockReset()
+	requestDepositMock.mockImplementation(defaultRequestDepositImpl)
 }
 
 beforeEach(() => {
@@ -109,6 +135,7 @@ vi.mock("../config/clients", () => {
 		get_redeem_request: async ({ epoch_id }: { epoch_id: bigint }) => ({
 			result: mockRequests.redeems.get(epoch_id),
 		}),
+		request_deposit: requestDepositMock,
 	}
 	const oracle = {
 		state: async () => ({ result: { tag: "Valid", values: undefined } }),
@@ -133,6 +160,7 @@ vi.mock("../config/clients", () => {
 
 	return {
 		asyncVault: async () => vault,
+		asyncVaultWriter: async () => vault,
 		navOracle: async () => oracle,
 		identityVerifier: async () => identity,
 		shareToken: async () => shares,
@@ -398,5 +426,209 @@ describe("VaultPreview", () => {
 			await screen.findByText(formatScaled(price, PRICE_DECIMALS, 4)),
 		).toBeTruthy()
 		expect(screen.getByText(`Attested ${formatDate(attestedAt)}`)).toBeTruthy()
+	})
+
+	it("reaches the vault with the amount the investor entered when Subscribe is pressed", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1))
+		expect(requestDepositMock).toHaveBeenCalledWith({
+			from: investorAddress,
+			amount: 150_0000000n,
+		})
+	})
+
+	it("reflects a confirmed subscription in the request list without a manual refresh", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Request locked in" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		expect(await screen.findByText("Subscription")).toBeTruthy()
+		expect(screen.getByText("150.00 USDC")).toBeTruthy()
+	})
+
+	it("does not cancel anything when the modal is dismissed mid-flight, and the request still confirms", async () => {
+		let resolveSend!: () => void
+		const gate = new Promise<void>((resolve) => {
+			resolveSend = resolve
+		})
+		requestDepositMock.mockImplementationOnce(
+			async ({ amount }: { from: string; amount: bigint }) => ({
+				simulation: undefined,
+				signAndSend: async ({
+					watcher,
+				}: {
+					watcher: { onSubmitted: () => void }
+				}) => {
+					watcher.onSubmitted()
+					await gate
+					mockRequests.deposits.set(mockRequests.currentEpoch, {
+						amount,
+						claimed: false,
+					})
+					return {
+						getTransactionResponse: { status: "SUCCESS" },
+						result: mockRequests.currentEpoch,
+					}
+				},
+			}),
+		)
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Sending your request" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(screen.queryByRole("dialog")).toBeNull()
+
+		resolveSend()
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		expect(await screen.findByText("Subscription")).toBeTruthy()
+		expect(screen.getByText("150.00 USDC")).toBeTruthy()
+		expect(requestDepositMock).toHaveBeenCalledTimes(1)
+		expect(screen.queryByRole("dialog")).toBeNull()
+	})
+
+	it("reconnects to a still-settling submission instead of leaving Subscribe dead after a mid-flight dismissal", async () => {
+		let resolveSend!: () => void
+		const gate = new Promise<void>((resolve) => {
+			resolveSend = resolve
+		})
+		requestDepositMock.mockImplementationOnce(
+			async ({ amount }: { from: string; amount: bigint }) => ({
+				simulation: undefined,
+				signAndSend: async ({
+					watcher,
+				}: {
+					watcher: { onSubmitted: () => void }
+				}) => {
+					watcher.onSubmitted()
+					await gate
+					mockRequests.deposits.set(mockRequests.currentEpoch, {
+						amount,
+						claimed: false,
+					})
+					return {
+						getTransactionResponse: { status: "SUCCESS" },
+						result: mockRequests.currentEpoch,
+					}
+				},
+			}),
+		)
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Sending your request" }),
+		).toBeTruthy()
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(screen.queryByRole("dialog")).toBeNull()
+
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Sending your request" }),
+		).toBeTruthy()
+		expect(requestDepositMock).toHaveBeenCalledTimes(1)
+
+		resolveSend()
+	})
+
+	it("retries with the amount actually submitted, not a since-edited field", async () => {
+		requestDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: vi
+				.fn()
+				.mockRejectedValue(
+					new AssembledTransaction.Errors.UserRejected("User declined access"),
+				),
+		}))
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "You declined the request" }),
+		).toBeTruthy()
+
+		fireEvent.change(input, { target: { value: "999" } })
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(2))
+		expect(requestDepositMock).toHaveBeenLastCalledWith({
+			from: investorAddress,
+			amount: 150_0000000n,
+		})
+	})
+
+	it("clears the amount field once the subscription confirms, so a second press cannot duplicate it", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = (await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})) as HTMLInputElement
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Request locked in" }),
+		).toBeTruthy()
+		expect(input.value).toBe("")
+	})
+
+	it("reads a declined signature as a choice and offers to try again", async () => {
+		requestDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: vi
+				.fn()
+				.mockRejectedValue(
+					new AssembledTransaction.Errors.UserRejected("User declined access"),
+				),
+		}))
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", {
+				name: "You declined the request",
+			}),
+		).toBeTruthy()
+		expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
 	})
 })
