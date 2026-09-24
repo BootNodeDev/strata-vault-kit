@@ -6,6 +6,7 @@ import {
 } from "@stellar-scaffold/app-lib"
 import { type ActionPanelBlock } from "../components/vault/ActionPanel"
 import { type DepositBalance } from "../hooks/useDepositBalance"
+import { type InvestorRequestsRead } from "../hooks/useInvestorRequests"
 import { type Allowance } from "../hooks/useIsAllowed"
 import { type NavClassification } from "../hooks/useNavPrice"
 import { type SharePosition } from "../hooks/useSharePosition"
@@ -131,19 +132,38 @@ export function toActionBalance(
 	return shares.status === "held" ? toSafeNumber(shares.shares) : null
 }
 
-export function emptyMessages(connected: boolean): {
+export function emptyMessages(status: InvestorRequestsRead["status"]): {
 	ready: string
 	waiting: string
+	blocked: string
 } {
-	return connected
-		? {
+	switch (status) {
+		case "disconnected":
+			return {
+				ready: "Connect a wallet to see requests you can claim.",
+				waiting: "Connect a wallet to see requests that are waiting.",
+				blocked: "Connect a wallet to see requests that cannot be claimed.",
+			}
+		case "checking":
+			return {
+				ready: "Checking your requests.",
+				waiting: "Checking your requests.",
+				blocked: "Checking your requests.",
+			}
+		case "unreadable":
+			return {
+				ready: "Could not read your requests. Try again shortly.",
+				waiting: "Could not read your requests. Try again shortly.",
+				blocked: "Could not read your requests. Try again shortly.",
+			}
+		case "loaded":
+			return {
 				ready:
 					"Nothing to claim yet. A request appears here once it is priced, and for cash, once the reserve covers it in full.",
 				waiting:
 					"Nothing is waiting. A request you make appears here until it is claimable.",
+				blocked:
+					"Nothing is blocked. A request appears here if it is priced but cannot be claimed, or its record can no longer be read.",
 			}
-		: {
-				ready: "Connect a wallet to see requests you can claim.",
-				waiting: "Connect a wallet to see requests that are waiting.",
-			}
+	}
 }

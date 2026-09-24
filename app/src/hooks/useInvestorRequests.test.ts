@@ -3,6 +3,7 @@ import {
 	type ContractRead,
 	type DepositRequest,
 	type EpochInfo,
+	type Option,
 	type Price,
 	type RedeemRequest,
 	networkPassphrase,
@@ -65,26 +66,26 @@ const fulfilledEpoch: EpochInfo = {
 	priceable_at: 1_700_003_600n,
 }
 
-const depositPresent: ContractRead<DepositRequest | undefined> = {
+const depositPresent: ContractRead<Option<DepositRequest>> = {
 	kind: "value",
 	value: { amount: 100_0000000n, claimed: false },
 }
-const depositClaimed: ContractRead<DepositRequest | undefined> = {
+const depositClaimed: ContractRead<Option<DepositRequest>> = {
 	kind: "value",
 	value: { amount: 100_0000000n, claimed: true },
 }
-const depositAbsent: ContractRead<DepositRequest | undefined> = {
+const depositAbsent: ContractRead<Option<DepositRequest>> = {
 	kind: "value",
-	value: undefined,
+	value: null,
 }
-const depositUnreadable: ContractRead<DepositRequest | undefined> = {
+const depositUnreadable: ContractRead<Option<DepositRequest>> = {
 	kind: "unreadable",
 }
-const depositArchived: ContractRead<DepositRequest | undefined> = {
+const depositArchived: ContractRead<Option<DepositRequest>> = {
 	kind: "archived",
 }
 
-const redeemPresent: ContractRead<RedeemRequest | undefined> = {
+const redeemPresent: ContractRead<Option<RedeemRequest>> = {
 	kind: "value",
 	value: { shares: 20_0000000n, claimed: false },
 }
@@ -379,6 +380,36 @@ describe("fetchInvestorRequests", () => {
 		const result = await fetchInvestorRequests(controller)
 
 		expect(result).toEqual({ status: "unreadable" })
+	})
+
+	it("renders a request from an epoch where the SDK decodes the other side's absence as null", async () => {
+		vaultMock.current_epoch.mockResolvedValue({ result: 2n })
+		vaultMock.get_epoch.mockResolvedValue({ result: pendingEpoch })
+		vaultMock.get_deposit_request.mockResolvedValue({ result: null })
+		vaultMock.get_redeem_request.mockImplementation(
+			async ({ epoch_id }: { epoch_id: bigint }) => ({
+				result:
+					epoch_id === 2n ? { shares: 10_0000000n, claimed: false } : null,
+			}),
+		)
+
+		const result = await fetchInvestorRequests(controller)
+
+		expect(result).toEqual({
+			status: "loaded",
+			requests: [
+				{
+					epochId: 2n,
+					side: "redeem",
+					epochStatus: pendingEpoch.status,
+					sharePrice: pendingEpoch.share_price as Price,
+					amount: 10_0000000n as Amount,
+					claimed: false,
+				},
+			],
+			archived: [],
+			unreadable: [],
+		})
 	})
 
 	it("marks both sides unreadable on a genuine None epoch, without losing a readable epoch elsewhere", async () => {

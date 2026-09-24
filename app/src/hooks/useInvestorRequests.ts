@@ -4,6 +4,7 @@ import {
 	type DepositRequest,
 	type EpochInfo,
 	type EpochStatus,
+	type Option,
 	type Price,
 	type RedeemRequest,
 	readContract,
@@ -44,7 +45,7 @@ export type ClassifiedRequest =
 	| { kind: "archived"; request: ArchivedRequest }
 
 export function classifyRequest(
-	read: ContractRead<DepositRequest | RedeemRequest | undefined>,
+	read: ContractRead<Option<DepositRequest | RedeemRequest>>,
 	side: RequestSide,
 	epochId: bigint,
 	epoch: EpochInfo,
@@ -62,7 +63,7 @@ export function classifyRequest(
 	}
 	if (read.kind !== "value")
 		return { kind: "unreadable", request: { epochId, side } }
-	if (read.value === undefined) return { kind: "absent" }
+	if (read.value == null) return { kind: "absent" }
 
 	const amount = "amount" in read.value ? read.value.amount : read.value.shares
 
@@ -116,7 +117,7 @@ export async function fetchInvestorRequests(
 			unreadable.push({ epochId, side: "redeem" })
 			continue
 		}
-		if (epochRead.value === undefined) {
+		if (epochRead.value == null) {
 			console.error(
 				`epoch ${epochId} has no get_epoch entry though current_epoch() reports ${currentEpoch.value}`,
 			)
