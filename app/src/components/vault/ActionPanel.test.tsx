@@ -119,7 +119,7 @@ describe("ActionPanel", () => {
 		expect(onSubmit).not.toHaveBeenCalled()
 	})
 
-	it("hides the form and shows only the reason for a message block", () => {
+	it("hides the whole panel, tabs included, for a message block that covers both sides", () => {
 		render(
 			<ActionPanel
 				{...baseProps}
@@ -127,6 +127,7 @@ describe("ActionPanel", () => {
 				block={{
 					kind: "message",
 					reason: "This address is not on the vault's allowlist.",
+					sides: ["subscribe", "redeem"],
 				}}
 			/>,
 		)
@@ -137,6 +138,49 @@ describe("ActionPanel", () => {
 		expect(
 			screen.getByText("This address is not on the vault's allowlist."),
 		).toBeTruthy()
+	})
+
+	it("keeps the tabs reachable for a message block scoped to the current side only", () => {
+		render(
+			<ActionPanel
+				{...baseProps}
+				balance={null}
+				block={{
+					kind: "message",
+					reason: "The vault is not accepting new requests right now.",
+					sides: ["subscribe"],
+				}}
+			/>,
+		)
+
+		expect(screen.getByRole("tablist")).toBeTruthy()
+		expect(screen.queryByRole("textbox")).toBeNull()
+		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
+		expect(
+			screen.getByText("The vault is not accepting new requests right now."),
+		).toBeTruthy()
+	})
+
+	it("leaves the other side's form untouched by a block scoped to the current side", () => {
+		render(
+			<ActionPanel
+				{...baseProps}
+				side="redeem"
+				submitLabel="Redeem"
+				block={{
+					kind: "message",
+					reason: "The vault is not accepting new requests right now.",
+					sides: ["subscribe"],
+				}}
+			/>,
+		)
+
+		expect(screen.getByRole("tablist")).toBeTruthy()
+		expect(screen.getByRole("textbox")).toBeTruthy()
+		expect(screen.getByRole("button", { name: "Redeem" })).toBeTruthy()
+		expect(
+			screen.queryByText("The vault is not accepting new requests right now."),
+		).toBeNull()
 	})
 
 	it("hides MAX and cannot reach the over-balance state when balance is null", () => {
