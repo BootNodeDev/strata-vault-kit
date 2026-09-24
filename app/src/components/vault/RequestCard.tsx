@@ -31,23 +31,7 @@ export type RequestEntry = {
 	note?: string
 }
 
-export type RequestStage = "ready" | "waiting"
-
-// `tone` is presentational, but it is the only field that separates a claim you
-// can take from one still in flight. Issue #84 replaces this map with the real
-// request state.
-const stageByTone: Record<RequestTone, RequestStage> = {
-	pending: "waiting",
-	claimable: "ready",
-	blocked: "waiting",
-}
-
-export const partitionByStage = (
-	entries: RequestEntry[],
-): Record<RequestStage, RequestEntry[]> => ({
-	ready: entries.filter((entry) => stageByTone[entry.tone] === "ready"),
-	waiting: entries.filter((entry) => stageByTone[entry.tone] === "waiting"),
-})
+export type RequestStage = "ready" | "blocked" | "waiting"
 
 type RequestCardProps = {
 	entry: RequestEntry
