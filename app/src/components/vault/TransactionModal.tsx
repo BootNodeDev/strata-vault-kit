@@ -1,23 +1,37 @@
-import { explorerTransaction, shortAddress } from "@stellar-scaffold/app-lib"
-import React from "react"
 import {
-	type RequestDepositFailure,
-	type RequestDepositStatus,
-} from "../../hooks/useRequestDeposit"
+	AMOUNT_DECIMALS,
+	explorerTransaction,
+	formatScaled,
+	shortAddress,
+} from "@stellar-scaffold/app-lib"
+import React from "react"
+import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
+import { type TransactionFailure } from "../../hooks/useContractTransaction"
+import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import typeStyles from "../../styles/type.module.css"
 import Close from "../icons/Close"
 import ExternalLink from "../icons/ExternalLink"
-import styles from "./SubscriptionModal.module.css"
+import styles from "./TransactionModal.module.css"
 
-export type SubscriptionModalProps = {
-	status: RequestDepositStatus
-	amount: string
-	ticker: string
-	onClose: () => void
-	onRetry: () => void
-}
+export type TransactionModalProps =
+	| {
+			action: "subscribe"
+			status: RequestDepositStatus
+			amount: string
+			ticker: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "cancel"
+			status: CancelDepositStatus
+			amount: string
+			ticker: string
+			onClose: () => void
+			onRetry: () => void
+	  }
 
-const contractErrorReason = (code: number): string => {
+const subscribeContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6007:
 			return "Enter an amount greater than zero."
@@ -32,8 +46,24 @@ const contractErrorReason = (code: number): string => {
 	}
 }
 
+const cancelContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6001:
+			return "This request no longer exists to cancel."
+		case 6029:
+			return "This batch could not be found."
+		case 6039:
+			return "This batch has already been priced. Claim your shares instead of cancelling."
+		case 6041:
+			return "A price is available for this batch, so this request can no longer be cancelled. The batch will be priced shortly, and your shares are claimable once it is."
+		default:
+			return `The vault declined this request (reason ${code}).`
+	}
+}
+
 const describeFailure = (
-	failure: RequestDepositFailure,
+	failure: TransactionFailure,
+	contractErrorReason: (code: number) => string,
 ): { heading: string; body: string } => {
 	switch (failure.kind) {
 		case "declined":
@@ -59,7 +89,7 @@ const describeFailure = (
 	}
 }
 
-const describeStatus = (
+const describeSubscribeStatus = (
 	status: RequestDepositStatus,
 	amount: string,
 	ticker: string,
@@ -90,9 +120,57 @@ const describeStatus = (
 				hash: status.hash,
 			}
 		case "failed":
-			return { ...describeFailure(status.failure), hash: status.hash }
+			return {
+				...describeFailure(status.failure, subscribeContractErrorReason),
+				hash: status.hash,
+			}
 	}
 }
+
+const describeCancelStatus = (
+	status: CancelDepositStatus,
+	amount: string,
+	ticker: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your cancellation",
+				body: "We are getting your cancellation ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `This returns ${amount} ${ticker} from escrow to your wallet. This request is withdrawn, not priced.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending your cancellation",
+				body: "Your cancellation is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: "Request cancelled",
+				body: `${formatScaled(status.refundedAmount, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(status.failure, cancelContractErrorReason),
+				hash: status.hash,
+			}
+	}
+}
+
+const describeStatus = (
+	props: TransactionModalProps,
+): { heading: string; body: string; hash?: string } | undefined =>
+	props.action === "subscribe"
+		? describeSubscribeStatus(props.status, props.amount, props.ticker)
+		: describeCancelStatus(props.status, props.amount, props.ticker)
 
 type StepId = "signature" | "network" | "recorded"
 type StepState = "done" | "current" | "upcoming" | "failed"
@@ -106,7 +184,7 @@ const stepLabel: Record<StepId, string> = {
 }
 
 const computeSteps = (
-	status: RequestDepositStatus,
+	status: RequestDepositStatus | CancelDepositStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":
@@ -147,20 +225,15 @@ const stepAnnouncement: Partial<Record<StepState, string>> = {
 	failed: "failed",
 }
 
-const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
-	status,
-	amount,
-	ticker,
-	onClose,
-	onRetry,
-}) => {
+const TransactionModal: React.FC<TransactionModalProps> = (props) => {
+	const { status, onClose, onRetry } = props
 	const dialogRef = React.useRef<HTMLDivElement>(null)
 
 	React.useEffect(() => {
 		dialogRef.current?.focus()
 	}, [])
 
-	const content = describeStatus(status, amount, ticker)
+	const content = describeStatus(props)
 	if (content === undefined) return null
 
 	const steps = computeSteps(status)
@@ -169,7 +242,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 		content.hash === undefined ? null : explorerTransaction(content.hash)
 	const offersRetry =
 		status.status === "failed" && status.failure.kind === "declined"
-	const headingId = "subscription-modal-heading"
+	const headingId = "transaction-modal-heading"
 
 	const onKeyDown = (event: React.KeyboardEvent) => {
 		if (event.key === "Escape") {
@@ -229,7 +302,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 					<Close className={styles.closeIcon} />
 				</button>
 				{steps !== undefined && (
-					<ol className={styles.steps} aria-label="Subscription progress">
+					<ol className={styles.steps} aria-label="Transaction progress">
 						{STEP_ORDER.map((id) => {
 							const state = steps[id]
 							const announcement = stepAnnouncement[state]
@@ -272,4 +345,4 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 	)
 }
 
-export default SubscriptionModal
+export default TransactionModal
