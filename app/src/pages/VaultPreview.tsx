@@ -20,7 +20,7 @@ import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
 import { type RequestStage } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
-import SubscriptionModal from "../components/vault/SubscriptionModal"
+import TransactionModal from "../components/vault/TransactionModal"
 import { contractRows, vaultContractId } from "../config/contracts"
 import { useCancelDeposit } from "../hooks/useCancelDeposit"
 import { useDepositBalance } from "../hooks/useDepositBalance"
@@ -320,7 +320,7 @@ const VaultPreview: React.FC = () => {
 			</div>
 
 			{requestDepositStatus.status !== "idle" && (
-				<SubscriptionModal
+				<TransactionModal
 					action="subscribe"
 					status={requestDepositStatus}
 					amount={pendingAmountLabel}
@@ -330,7 +330,7 @@ const VaultPreview: React.FC = () => {
 				/>
 			)}
 			{cancelDepositStatus.status !== "idle" && (
-				<SubscriptionModal
+				<TransactionModal
 					action="cancel"
 					status={cancelDepositStatus}
 					amount={pendingCancelAmountLabel}
