@@ -250,6 +250,18 @@ fn set_config_rejects_a_zero_freshness_duration() {
 }
 
 #[test]
+fn only_admin_can_set_config() {
+    let f = setup();
+    let cfg = config();
+
+    f.e.set_auths(&[]);
+    assert!(f.oracle.try_set_config(&cfg).is_err());
+
+    f.e.mock_all_auths();
+    f.oracle.set_config(&cfg);
+}
+
+#[test]
 fn the_guardian_raises_the_ripcord_but_lowering_needs_governance() {
     let f = setup();
     let r = report(&f.e, SCALE, 1, 1_000_000);
@@ -377,6 +389,20 @@ fn the_record_clears_only_while_the_ripcord_is_raised() {
     let far = report(&f.e, SCALE * 50, 2, 1_000_000);
     f.oracle.attest(&far, &f.attester);
     assert_eq!(f.oracle.nav_per_share(), SCALE * 50);
+}
+
+#[test]
+fn only_admin_can_clear_latest() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    let r = report(&f.e, SCALE, 1, 1_000_000);
+    f.oracle.attest(&r, &f.attester);
+    f.oracle.raise_ripcord(&f.guardian);
+
+    f.e.set_auths(&[]);
+    assert!(f.oracle.try_clear_latest(&stranger).is_err());
+    assert!(f.oracle.try_clear_latest(&f.attester).is_err());
+    assert!(f.oracle.try_clear_latest(&f.guardian).is_err());
 }
 
 #[test]

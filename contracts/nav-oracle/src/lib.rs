@@ -214,7 +214,8 @@ impl NavOracleContract {
     }
 
     #[only_admin]
-    pub fn set_ripcord(e: &Env, paused: bool, _caller: Address) {
+    pub fn set_ripcord(e: &Env, paused: bool, caller: Address) {
+        caller.require_auth();
         state::set_ripcord(e, paused);
         RipcordSet { paused }.publish(e);
     }
@@ -223,7 +224,8 @@ impl NavOracleContract {
     /// its distance from the last. Only while the ripcord is raised, so
     /// resuming is always a deliberate second act.
     #[only_admin]
-    pub fn clear_latest(e: &Env, _caller: Address) {
+    pub fn clear_latest(e: &Env, caller: Address) {
+        caller.require_auth();
         if !ripcord_raised(e) {
             panic_with_error!(e, OracleError::RipcordNotRaised);
         }

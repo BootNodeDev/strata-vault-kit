@@ -34,11 +34,13 @@ impl ShareToken {
 #[contractimpl(contracttrait)]
 impl Pausable for ShareToken {
     #[only_admin]
-    fn pause(e: &Env, _caller: Address) {
+    fn pause(e: &Env, caller: Address) {
+        caller.require_auth();
         pausable::pause(e);
     }
     #[only_admin]
-    fn unpause(e: &Env, _caller: Address) {
+    fn unpause(e: &Env, caller: Address) {
+        caller.require_auth();
         pausable::unpause(e);
     }
 }
