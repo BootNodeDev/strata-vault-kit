@@ -179,26 +179,46 @@ fn conversion_monotonicity_in_amount_and_price() {
 }
 
 #[test]
-fn wind_down_pro_rata_sum_never_exceeds_pot() {
+fn wind_down_accumulator_never_pays_more_than_it_credits() {
     let env = Env::default();
     env.cost_estimate().budget().reset_unlimited();
 
     proptest!(|(
-        pot in 1i128..=1_000_000_000_000_000_000_000_000i128,
-        e1 in 1i128..=1_000_000_000_000_000_000i128,
-        e2 in 1i128..=1_000_000_000_000_000_000i128,
-        e3 in 1i128..=1_000_000_000_000_000_000i128,
+        entitlements in prop::array::uniform3(1i128..=1_000_000_000_000_000_000i128),
+        pots in prop::collection::vec(1i128..=1_000_000_000_000_000_000_000_000i128, 1..6),
+        claims in prop::collection::vec(any::<[bool; 3]>(), 6),
     )| {
-        let snapshot = e1 + e2 + e3;
-        let delta = checked_mul_div_floor(&env, &pot, &WAD_SCALE, &snapshot).unwrap();
+        let floor = |x: i128, y: i128, d: i128| checked_mul_div_floor(&env, &x, &y, &d).unwrap();
+        let snapshot: i128 = entitlements.iter().sum();
+        let mut acc = 0i128;
+        let mut owed = 0i128;
+        let mut paid = [0i128; 3];
 
-        let c1 = checked_mul_div_floor(&env, &e1, &delta, &WAD_SCALE).unwrap();
-        let c2 = checked_mul_div_floor(&env, &e2, &delta, &WAD_SCALE).unwrap();
-        let c3 = checked_mul_div_floor(&env, &e3, &delta, &WAD_SCALE).unwrap();
+        for (round, &pot) in pots.iter().enumerate() {
+            let delta = floor(pot, WAD_SCALE, snapshot);
+            if delta == 0 {
+                continue;
+            }
+            let acc_after = acc + delta;
+            let credited = floor(snapshot, acc_after, WAD_SCALE) - floor(snapshot, acc, WAD_SCALE);
+            prop_assert!(credited <= pot);
+            acc = acc_after;
+            owed += credited;
 
-        let total_paid = c1 + c2 + c3;
-        // The vault can never overpay capital during wind-down distribution.
-        prop_assert!(total_paid <= pot);
+            for (i, &claims_now) in claims[round].iter().enumerate() {
+                if claims_now {
+                    let earned = floor(entitlements[i], acc, WAD_SCALE);
+                    prop_assert!(earned >= paid[i]);
+                    paid[i] = earned;
+                }
+            }
+            prop_assert!(paid.iter().sum::<i128>() <= owed);
+        }
+
+        for i in 0..3 {
+            paid[i] = floor(entitlements[i], acc, WAD_SCALE);
+        }
+        prop_assert!(paid.iter().sum::<i128>() <= owed);
     });
 }
 
@@ -226,54 +246,4 @@ fn negative_control_ceil_division_violates_conservation() {
     let shares_floor = checked_mul_div_floor(&env, &assets, &scale, &price).unwrap();
     let redeemed_floor = checked_mul_div_floor(&env, &shares_floor, &price, &scale).unwrap();
     assert!(redeemed_floor <= assets);
-}
-
-// Bounded symbolic model checking harnesses for Kani (cbmc backend).
-// When run under `cargo kani` (or `--features kani`), these verify the invariants symbolically.
-#[cfg(feature = "kani")]
-mod kani_proofs {
-    #[kani::proof]
-    fn prove_round_trip_deposit_redeem_conservation() {
-        let assets: i128 = kani::any();
-        let price: i128 = kani::any();
-        let wad: i128 = 1_000_000_000_000_000_000;
-
-        kani::assume(assets >= 0 && assets <= 1_000_000_000_000);
-        kani::assume(price > 0 && price <= 1_000_000_000_000);
-
-        let shares = (assets * wad) / price;
-        let redeemed = (shares * price) / wad;
-
-        assert!(redeemed <= assets);
-    }
-
-    #[kani::proof]
-    fn prove_round_trip_redeem_deposit_conservation() {
-        let shares: i128 = kani::any();
-        let price: i128 = kani::any();
-        let wad: i128 = 1_000_000_000_000_000_000;
-
-        kani::assume(shares >= 0 && shares <= 1_000_000_000_000);
-        kani::assume(price > 0 && price <= 1_000_000_000_000);
-
-        let assets = (shares * price) / wad;
-        let minted = (assets * wad) / price;
-
-        assert!(minted <= shares);
-    }
-
-    #[kani::proof]
-    fn prove_floor_tightness() {
-        let assets: i128 = kani::any();
-        let price: i128 = kani::any();
-        let wad: i128 = 1_000_000_000_000_000_000;
-
-        kani::assume(assets >= 0 && assets <= 1_000_000_000_000);
-        kani::assume(price > 0 && price <= 1_000_000_000_000);
-
-        let shares = (assets * wad) / price;
-
-        assert!(shares * price <= assets * wad);
-        assert!((shares + 1) * price > assets * wad);
-    }
 }

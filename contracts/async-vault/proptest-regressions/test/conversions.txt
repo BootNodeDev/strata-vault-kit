@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4d14c32ed3dd0df31ca20a986ba42cc3ce1721d2f02745dc8f4d0f7146813253 # shrinks to entitlements = [142643168002378746, 489350658678829759, 832474737339641506], pots = [542590092922923427742683, 58710666963727846758920], claims = [[false, false, false], [false, false, false], [false, false, false], [false, false, false], [false, false, false], [false, false, false]]
