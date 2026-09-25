@@ -32,6 +32,7 @@ export interface AsyncVaultApi {
 	treasury: Call<Option<string>>
 	guardian: Call<Option<string>>
 	custodian: Call<Option<string>>
+	paused: Call<boolean>
 	current_epoch: Call<u64>
 	get_epoch: CallOf<{ epoch_id: u64 }, Option<EpochInfo>>
 	get_deposit_request: CallOf<
