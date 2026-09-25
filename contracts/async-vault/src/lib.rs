@@ -27,10 +27,11 @@ use state::FIRST_EPOCH;
 
 pub use error::VaultError;
 pub use event::{
-    CustodianSet, Deployed, DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded,
-    NoticeSet, RedeemClaimed, RedeemRequested, UpgradeCancelled, UpgradeDelayProposed,
-    UpgradeDelaySet, UpgradeProposed, Upgraded, WindDownActivated, WindDownClaimed,
-    WindDownDelaySet, WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
+    CustodianSet, Deployed, DepositCapUpdated, DepositClaimed, DepositRequested, EpochClosed,
+    EpochFulfilled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, UpgradeCancelled,
+    UpgradeDelayProposed, UpgradeDelaySet, UpgradeProposed, Upgraded, WindDownActivated,
+    WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled, WindDownProposed,
+    WindDownRoundFinalized,
 };
 pub use pricing::{DirectUnitPricing, PricingScheme};
 pub use roles::VaultRoles;
@@ -162,6 +163,27 @@ impl AsyncVault {
         circulating
             .checked_add(state::pending_mint_shares(e))
             .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+    }
+
+    pub fn deposit_cap(e: &Env) -> Option<i128> {
+        state::deposit_cap(e)
+    }
+
+    #[only_admin]
+    pub fn set_deposit_cap(e: &Env, cap: Option<i128>, caller: Address) {
+        caller.require_auth();
+        if let Some(c) = cap {
+            if c < 0 {
+                panic_with_error!(e, VaultError::InvalidAmount);
+            }
+        }
+        let old_cap = state::deposit_cap(e);
+        state::set_deposit_cap(e, cap);
+        DepositCapUpdated {
+            old_cap,
+            new_cap: cap,
+        }
+        .publish(e);
     }
 
     #[only_admin]

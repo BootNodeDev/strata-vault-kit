@@ -36,6 +36,12 @@ pub(crate) fn uncovered(e: &Env) -> i128 {
     (state::committed(e) - liquid_reserve(e)).max(0)
 }
 
+/// Capital in the vault and deployed to the custodian, less liabilities already
+/// committed to priced exits. Used to evaluate headroom against the deposit cap.
+pub(crate) fn deposited_capital(e: &Env) -> i128 {
+    (held(e) + state::net_deployed(e)).saturating_sub(state::committed(e))
+}
+
 pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {
     wind_down::refuse_if_active(e);
     if assets <= 0 {
