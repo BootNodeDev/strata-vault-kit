@@ -35,6 +35,16 @@ describe("SubscriptionModal", () => {
 		expect(screen.queryByRole("dialog")).toBeNull()
 	})
 
+	it("opens with a preparing state before any signature has been requested", () => {
+		renderModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing your request" }),
+		).toBeTruthy()
+		expect(screen.queryByText(/Transaction/)).toBeNull()
+		expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+	})
+
 	it("tells the investor what they are signing and the amount going in", () => {
 		renderModal({ status: "awaiting-signature" })
 
@@ -124,6 +134,11 @@ describe("SubscriptionModal", () => {
 	})
 
 	it.each<[string, RequestDepositStatus, string[]]>([
+		[
+			"preparing, before any signature is requested",
+			{ status: "preparing" },
+			["Approved in your wallet", "Sent to the network", "Recorded"],
+		],
 		[
 			"awaiting a signature",
 			{ status: "awaiting-signature" },

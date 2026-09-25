@@ -18,6 +18,7 @@ export type RequestDepositFailure =
 
 export type RequestDepositStatus =
 	| { status: "idle" }
+	| { status: "preparing" }
 	| { status: "awaiting-signature" }
 	| { status: "submitted"; hash?: string }
 	| { status: "confirmed"; epochId: bigint; hash?: string }
@@ -47,13 +48,22 @@ export function useRequestDeposit(): UseRequestDeposit {
 			}
 			submitting.current = true
 			dismissed.current = false
-			lastStatus.current = { status: "idle" }
 			let hash: string | undefined
 			let signatureRequested = false
+			let reachedNetwork = false
 			const applyStatus = (next: RequestDepositStatus) => {
 				lastStatus.current = next
 				if (!dismissed.current) setStatus(next)
 			}
+			const invalidateRequestData = (owner: string) => {
+				void queryClient.invalidateQueries({
+					queryKey: investorRequestsKey(owner),
+				})
+				void queryClient.invalidateQueries({
+					queryKey: depositBalanceKey(owner),
+				})
+			}
+			applyStatus({ status: "preparing" })
 			try {
 				const vault = await asyncVaultWriter({
 					publicKey: address,
@@ -74,6 +84,7 @@ export function useRequestDeposit(): UseRequestDeposit {
 					watcher: {
 						onSubmitted: (response) => {
 							hash = response?.hash
+							reachedNetwork = true
 							applyStatus({ status: "submitted", hash })
 						},
 						onProgress: () => {},
@@ -81,15 +92,11 @@ export function useRequestDeposit(): UseRequestDeposit {
 				})
 				if (sent.getTransactionResponse?.status !== "SUCCESS") {
 					applyStatus({ status: "failed", failure: { kind: "unknown" }, hash })
+					invalidateRequestData(address)
 					return
 				}
 				applyStatus({ status: "confirmed", epochId: sent.result, hash })
-				void queryClient.invalidateQueries({
-					queryKey: investorRequestsKey(address),
-				})
-				void queryClient.invalidateQueries({
-					queryKey: depositBalanceKey(address),
-				})
+				invalidateRequestData(address)
 			} catch (error) {
 				applyStatus({
 					status: "failed",
@@ -100,6 +107,7 @@ export function useRequestDeposit(): UseRequestDeposit {
 							: { kind: "interrupted" },
 					hash,
 				})
+				if (reachedNetwork) invalidateRequestData(address)
 			} finally {
 				submitting.current = false
 			}

@@ -464,6 +464,20 @@ describe("VaultPreview", () => {
 		expect(screen.getByText("150.00 USDC")).toBeTruthy()
 	})
 
+	it("opens the modal before the wallet is ever asked to sign, so the Subscribe button cannot be pressed again", async () => {
+		requestDepositMock.mockImplementationOnce(() => new Promise(() => {}))
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Preparing your request" }),
+		).toBeTruthy()
+	})
+
 	it("does not cancel anything when the modal is dismissed mid-flight, and the request still confirms", async () => {
 		let resolveSend!: () => void
 		const gate = new Promise<void>((resolve) => {
@@ -560,6 +574,10 @@ describe("VaultPreview", () => {
 		expect(requestDepositMock).toHaveBeenCalledTimes(1)
 
 		resolveSend()
+
+		expect(
+			await screen.findByRole("heading", { name: "Request locked in" }),
+		).toBeTruthy()
 	})
 
 	it("retries with the amount actually submitted, not a since-edited field", async () => {

@@ -366,7 +366,7 @@ describe("useRequestDeposit", () => {
 		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
 	})
 
-	it("clears the previous terminal status when a fresh submission begins, so a mid-flight reconnect cannot replay it", async () => {
+	it("clears the previous terminal status when a fresh submission begins, so a mid-flight reconnect replays preparing, not idle", async () => {
 		vaultMock.request_deposit.mockResolvedValueOnce({
 			simulation: undefined,
 			signAndSend: vi.fn().mockResolvedValue({
@@ -386,10 +386,115 @@ describe("useRequestDeposit", () => {
 		asyncVaultWriterMock.mockReturnValueOnce(clientGate.promise)
 
 		void result.current.submit(amount)
-		expect(result.current.status).toEqual({ status: "idle" })
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "preparing" }),
+		)
 
 		void result.current.submit(amount)
-		expect(result.current.status).toEqual({ status: "idle" })
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "preparing" }),
+		)
+	})
+
+	it("shows preparing the instant the first press happens, before any network call resolves", async () => {
+		const clientGate = deferred<typeof vaultMock>()
+		asyncVaultWriterMock.mockReturnValueOnce(clientGate.promise)
+		const { result } = renderRequestDeposit()
+
+		void result.current.submit(amount)
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "preparing" }),
+		)
+		expect(vaultMock.request_deposit).not.toHaveBeenCalled()
+	})
+
+	it("replays preparing, not a silent no-op, when a second press lands before the wallet was ever reached", async () => {
+		const clientGate = deferred<typeof vaultMock>()
+		asyncVaultWriterMock.mockReturnValueOnce(clientGate.promise)
+		const { result } = renderRequestDeposit()
+
+		void result.current.submit(amount)
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "preparing" }),
+		)
+
+		void result.current.submit(amount)
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "preparing" }),
+		)
+
+		expect(asyncVaultWriterMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("invalidates cached requests and balance for an unknown outcome that reached the network but never confirmed", async () => {
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi.fn().mockResolvedValue({
+				getTransactionResponse: { status: "FAILED" },
+				result: 7n,
+			}),
+		})
+		const { result, queryClient } = renderRequestDeposit()
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+		await act(() => result.current.submit(amount))
+
+		expect(result.current.status).toEqual({
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: investorRequestsKey(investorAddress),
+		})
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: depositBalanceKey(investorAddress),
+		})
+	})
+
+	it("invalidates cached requests when the network drops after the transaction was already submitted", async () => {
+		const signAndSend = vi.fn(
+			async ({ watcher }: { watcher: { onSubmitted: () => void } }) => {
+				watcher.onSubmitted()
+				throw new Error("network error")
+			},
+		)
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend,
+		})
+		const { result, queryClient } = renderRequestDeposit()
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+		await act(() => result.current.submit(amount))
+
+		expect(result.current.status).toEqual({
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: investorRequestsKey(investorAddress),
+		})
+	})
+
+	it("does not invalidate anything when the failure happened before the transaction ever reached the network", async () => {
+		const signAndSend = vi
+			.fn()
+			.mockRejectedValue(new Error("could not broadcast"))
+		vaultMock.request_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend,
+		})
+		const { result, queryClient } = renderRequestDeposit()
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+		await act(() => result.current.submit(amount))
+
+		expect(result.current.status).toEqual({
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+		expect(invalidateQueries).not.toHaveBeenCalled()
 	})
 
 	it("marks a wallet connection failure that happens before any signature is requested as interrupted, not unknown", async () => {

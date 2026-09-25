@@ -67,6 +67,11 @@ const describeStatus = (
 	switch (status.status) {
 		case "idle":
 			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your request",
+				body: "We are getting your request ready. Your wallet will ask you to approve it next.",
+			}
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
@@ -106,6 +111,12 @@ const computeSteps = (
 	switch (status.status) {
 		case "idle":
 			return undefined
+		case "preparing":
+			return {
+				signature: "upcoming",
+				network: "upcoming",
+				recorded: "upcoming",
+			}
 		case "awaiting-signature":
 			return { signature: "current", network: "upcoming", recorded: "upcoming" }
 		case "submitted":
