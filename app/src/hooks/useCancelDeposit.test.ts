@@ -24,6 +24,7 @@ vi.mock("../config/clients", () => ({
 
 const investorAddress = "GINVESTORADDRESS1234567890"
 const epochId = 3n
+const otherEpochId = 4n
 
 const wallet: WalletContextType = {
 	address: investorAddress,
@@ -304,6 +305,85 @@ describe("useCancelDeposit", () => {
 		expect(vaultMock.cancel_deposit).toHaveBeenCalledTimes(1)
 
 		gate.resolve()
+		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
+	})
+
+	it("submits a different request instead of replaying the one already in flight", async () => {
+		const gate = deferred<void>()
+		const signAndSend = vi.fn(
+			async ({ watcher }: { watcher: { onSubmitted: () => void } }) => {
+				watcher.onSubmitted()
+				await gate.promise
+				return {
+					getTransactionResponse: { status: "SUCCESS" },
+					result: 100_0000000n,
+				}
+			},
+		)
+		vaultMock.cancel_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend,
+		})
+		const { result } = renderCancelDeposit()
+
+		void result.current.submit(epochId)
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "submitted" }),
+		)
+
+		act(() => result.current.reset())
+		void result.current.submit(otherEpochId)
+
+		await waitFor(() =>
+			expect(vaultMock.cancel_deposit).toHaveBeenCalledWith({
+				from: investorAddress,
+				epoch_id: otherEpochId,
+			}),
+		)
+
+		gate.resolve()
+	})
+
+	it("keeps a superseded submission from narrating over the request pressed after it", async () => {
+		const gates = new Map<bigint, ReturnType<typeof deferred<void>>>()
+		vaultMock.cancel_deposit.mockImplementation(
+			({ epoch_id }: { epoch_id: bigint }) => {
+				const gate = deferred<void>()
+				gates.set(epoch_id, gate)
+				return Promise.resolve({
+					simulation: undefined,
+					signAndSend: async ({
+						watcher,
+					}: {
+						watcher: { onSubmitted: () => void }
+					}) => {
+						watcher.onSubmitted()
+						await gate.promise
+						return {
+							getTransactionResponse: { status: "SUCCESS" },
+							result: 100_0000000n,
+						}
+					},
+				})
+			},
+		)
+		const { result } = renderCancelDeposit()
+
+		const first = result.current.submit(epochId)
+		await waitFor(() =>
+			expect(result.current.status).toEqual({ status: "submitted" }),
+		)
+
+		act(() => result.current.reset())
+		void result.current.submit(otherEpochId)
+		await waitFor(() => expect(gates.has(otherEpochId)).toBe(true))
+
+		gates.get(epochId)?.resolve()
+		await act(() => first)
+
+		expect(result.current.status).toEqual({ status: "submitted" })
+
+		gates.get(otherEpochId)?.resolve()
 		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
 	})
 
