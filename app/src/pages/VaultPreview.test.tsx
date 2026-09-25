@@ -680,6 +680,28 @@ describe("VaultPreview", () => {
 		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
 	})
 
+	it("clears the amount field once the subscription confirms, so a second press cannot duplicate it", async () => {
+		requestDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: async () => ({
+				getTransactionResponse: { status: "SUCCESS" },
+				result: mockRequests.currentEpoch,
+			}),
+		}))
+		renderVaultPreview(connectedWallet)
+		const input = (await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})) as HTMLInputElement
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Request locked in" }),
+		).toBeTruthy()
+		await waitFor(() => expect(input.value).toBe(""))
+	})
+
 	it("reads a declined signature as a choice and offers to try again", async () => {
 		requestDepositMock.mockImplementationOnce(async () => ({
 			simulation: undefined,
