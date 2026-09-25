@@ -5,6 +5,7 @@ mod epoch;
 mod error;
 mod event;
 mod keys;
+mod pricing;
 mod redeem;
 mod roles;
 mod state;
@@ -31,6 +32,7 @@ pub use event::{
     UpgradeDelaySet, UpgradeProposed, Upgraded, WindDownActivated, WindDownClaimed,
     WindDownDelaySet, WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
+pub use pricing::{DirectUnitPricing, PricingScheme};
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
 pub use upgrade::{UpgradeAction, UpgradeProposal, MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
