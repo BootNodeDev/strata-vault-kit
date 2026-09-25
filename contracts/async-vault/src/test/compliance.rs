@@ -53,3 +53,76 @@ fn a_delisted_holder_can_still_claim_their_exit() {
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
     assert_eq!(f.balance(&user), 400);
 }
+
+#[test]
+fn a_delisted_investor_can_cancel_deposit_and_receive_asset() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+
+    // Investor gets delisted
+    f.identity.allow(&investor, &false, &f.admin);
+
+    // Delisted investor can still cancel deposit and receive settlement asset
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+    assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn a_delisted_holder_cannot_cancel_redemption_back_to_shares() {
+    let f = setup();
+    let user = f.holder(500);
+    let epoch = f.vault.request_redeem(&user, &200);
+
+    // Delisted before pricing
+    f.identity.allow(&user, &false, &f.admin);
+
+    // Cannot return shares to a delisted account (refused by share transfer compliance)
+    assert!(f.vault.try_cancel_redeem(&user, &epoch).is_err());
+    assert_eq!(f.shares(&user), 300);
+
+    // Exit proceeds through cash claim once fulfilled
+    f.fulfill_epoch(wad(2));
+    assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
+    assert_eq!(f.balance(&user), 400);
+}
+
+#[test]
+fn a_frozen_holder_cannot_cancel_redemption_back_to_shares() {
+    let f = setup();
+    let user = f.holder(500);
+    let epoch = f.vault.request_redeem(&user, &200);
+
+    // Freeze address
+    f.share.set_address_frozen(&user, &true, &f.admin);
+    assert!(f.share.is_frozen(&user));
+
+    // Cannot return shares to a frozen account
+    assert!(f.vault.try_cancel_redeem(&user, &epoch).is_err());
+    assert_eq!(f.shares(&user), 300);
+
+    // Exit proceeds through cash claim once fulfilled
+    f.fulfill_epoch(wad(2));
+    assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
+    assert_eq!(f.balance(&user), 400);
+}
+
+#[test]
+fn a_frozen_or_delisted_holder_cannot_transfer_shares() {
+    let f = setup();
+    let user = f.holder(500);
+    let recipient = f.investor(0);
+
+    // Transfer works when both allowlisted
+    f.share.transfer(&user, &recipient, &100);
+    assert_eq!(f.shares(&recipient), 100);
+
+    // Delisted sender cannot transfer
+    f.identity.allow(&user, &false, &f.admin);
+    assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
+
+    // Restore allowlist, then freeze sender
+    f.identity.allow(&user, &true, &f.admin);
+    f.share.set_address_frozen(&user, &true, &f.admin);
+    assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
+}
