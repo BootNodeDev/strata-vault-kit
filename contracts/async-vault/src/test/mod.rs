@@ -147,7 +147,7 @@ pub(crate) fn distinct_roles(e: &Env) -> VaultRoles {
 /// type and the vault's variant converts into it.
 pub(crate) fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
     result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
-    expected: crate::VaultError,
+    expected: VaultError,
 ) {
     assert_eq!(result, Err(Ok(expected.into())));
 }

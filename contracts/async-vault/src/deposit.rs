@@ -1,6 +1,7 @@
 use bindings::ShareClient;
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
+use crate::epoch;
 use crate::error::VaultError;
 use crate::event::{DepositCancelled, DepositClaimed, DepositRequested};
 use crate::keys::DataKey;
@@ -140,7 +141,7 @@ pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
     // sealed epoch, the price is knowable and the only way out is to take it.
     // Fulfilment is closed during a wind-down, so this epoch will never take a
     // price. There is nothing to decline.
-    if !wind_down::is_active(e) && crate::epoch::is_priceable(e, &epoch) {
+    if !wind_down::is_active(e) && epoch::is_priceable(e, &epoch) {
         panic_with_error!(e, VaultError::PriceAvailable);
     }
 

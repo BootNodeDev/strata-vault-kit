@@ -1,11 +1,13 @@
 use bindings::ShareClient;
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
+use crate::epoch;
 use crate::error::VaultError;
 use crate::event::{RedeemCancelled, RedeemClaimed, RedeemRequested};
 use crate::keys::DataKey;
 use crate::pricing::{Pricing, PricingScheme};
 use crate::state::{self, EpochStatus, RedeemRequest};
+use crate::treasury;
 use crate::wind_down;
 
 pub(crate) fn request(e: &Env, from: &Address, shares: i128) -> u64 {
@@ -87,7 +89,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
 
     // Against liquid reserve, not the raw balance: escrow a depositor can still
     // cancel is not available to pay an exit.
-    if crate::treasury::liquid_reserve(e) < assets {
+    if treasury::liquid_reserve(e) < assets {
         panic_with_error!(e, VaultError::ClaimNotCovered);
     }
 
@@ -153,7 +155,7 @@ pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
     // sealed epoch, the price is knowable and the only way out is to take it.
     // Fulfilment is closed during a wind-down, so this epoch will never take a
     // price. There is nothing to decline.
-    if !wind_down::is_active(e) && crate::epoch::is_priceable(e, &epoch) {
+    if !wind_down::is_active(e) && epoch::is_priceable(e, &epoch) {
         panic_with_error!(e, VaultError::PriceAvailable);
     }
 
