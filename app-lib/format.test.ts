@@ -8,6 +8,7 @@ import {
 	formatScaled,
 	formatUnits,
 	networkStatus,
+	parseAmount,
 	parseUnits,
 	type Price,
 	shortAddress,
@@ -94,6 +95,20 @@ describe("parseUnits", () => {
 
 	it("rejects more fraction digits than decimals instead of silently truncating", () => {
 		expect(parseUnits("1.12345678", AMOUNT_DECIMALS)).toBeNull()
+	})
+})
+
+describe("parseAmount", () => {
+	it("strips commas and parses a positive number", () => {
+		expect(parseAmount("1,234.50")).toBe(1234.5)
+	})
+
+	it("rejects an empty field", () => {
+		expect(parseAmount("")).toBeNull()
+	})
+
+	it.each(["abc", "-5", "0", "NaN"])("rejects %j as unparseable", (input) => {
+		expect(parseAmount(input)).toBeNull()
 	})
 })
 

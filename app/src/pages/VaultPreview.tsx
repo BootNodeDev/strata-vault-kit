@@ -1,7 +1,11 @@
 import {
+	AMOUNT_DECIMALS,
+	type Amount,
 	connectWallet,
 	formatAmount,
 	networkStatus,
+	parseAmount,
+	parseUnits,
 	profileModal,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
@@ -15,10 +19,13 @@ import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
 import { type RequestStage } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
+import SubscriptionModal from "../components/vault/SubscriptionModal"
 import { contractRows, vaultContractId } from "../config/contracts"
 import { useDepositBalance } from "../hooks/useDepositBalance"
+import { useInvestorRequests } from "../hooks/useInvestorRequests"
 import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
+import { useRequestDeposit } from "../hooks/useRequestDeposit"
 import { useSharePosition } from "../hooks/useSharePosition"
 import { useTokenSymbols } from "../hooks/useTokenSymbols"
 import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
@@ -41,6 +48,7 @@ import {
 	toSizeFigures,
 } from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
+import { toRequestEntriesByStage } from "./vaultRequests"
 
 const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
@@ -52,11 +60,6 @@ const vaultSummary = [
 	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim becomes claimable once the reserve covers it in full, in any order rather than by queue position.",
 	"You may hold one request per side per batch, and one price applies to everyone in it. A share claim is claimable at once; a cash claim waits for the reserve to cover it in full. Shares need an allowlisted address to claim, cash does not.",
 ]
-
-const parseAmount = (raw: string): number | null => {
-	const value = Number(raw.replace(/,/g, ""))
-	return Number.isFinite(value) && value > 0 ? value : null
-}
 
 const VaultPreview: React.FC = () => {
 	const [openTooltipId, setOpenTooltipId] = React.useState<
@@ -76,6 +79,14 @@ const VaultPreview: React.FC = () => {
 	const { position } = useSharePosition()
 	const { balance: deposit } = useDepositBalance()
 	const { symbols } = useTokenSymbols()
+	const { requests } = useInvestorRequests()
+	const {
+		status: requestDepositStatus,
+		submit: submitRequestDeposit,
+		reset: resetRequestDeposit,
+	} = useRequestDeposit()
+	const [pendingAmountLabel, setPendingAmountLabel] = React.useState("")
+	const [pendingAmount, setPendingAmount] = React.useState<Amount | null>(null)
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -88,20 +99,29 @@ const VaultPreview: React.FC = () => {
 	const block =
 		toPanelBlock(access, connectWallet, profileModal) ??
 		toPriceBlock(nav, isPendingNav)
-	const connected = address !== undefined
-	const messages = emptyMessages(connected)
-	const requestGroups: [RequestGroup, RequestGroup] = [
+	const messages = emptyMessages(requests.status)
+	const entriesByStage =
+		requests.status === "loaded"
+			? toRequestEntriesByStage(requests, symbols)
+			: undefined
+	const requestGroups: [RequestGroup, ...RequestGroup[]] = [
 		{
 			id: "ready",
 			label: "Ready to claim",
-			entries: [],
+			entries: entriesByStage?.ready ?? [],
 			emptyMessage: messages.ready,
 		},
 		{
 			id: "waiting",
 			label: "Waiting",
-			entries: [],
+			entries: entriesByStage?.waiting ?? [],
 			emptyMessage: messages.waiting,
+		},
+		{
+			id: "blocked",
+			label: "Not claimable",
+			entries: entriesByStage?.blocked ?? [],
+			emptyMessage: messages.blocked,
 		},
 	]
 
@@ -143,7 +163,30 @@ const VaultPreview: React.FC = () => {
 			? "Balance unavailable"
 			: `Balance ${formatAmount(balance)}`
 	const parsedAmount = parseAmount(actionAmount)
-	const estimateValue = toEstimate(nav, parsedAmount, isSubscribe, outTicker)
+	const estimate = toEstimate(nav, parsedAmount, isSubscribe, outTicker)
+
+	const submitAction = () => {
+		if (!isSubscribe) {
+			setActionAmount("")
+			return
+		}
+		if (parsedAmount === null) return
+		const amount = parseUnits(actionAmount, AMOUNT_DECIMALS)
+		if (amount === null) return
+		setPendingAmountLabel(formatAmount(parsedAmount))
+		setPendingAmount(amount)
+		void submitRequestDeposit(amount)
+	}
+
+	const retryRequestDeposit = () => {
+		if (pendingAmount === null) return
+		void submitRequestDeposit(pendingAmount)
+	}
+
+	React.useEffect(() => {
+		if (requestDepositStatus.status === "confirmed") setActionAmount("")
+	}, [requestDepositStatus])
+
 	const copyAddress = async () => {
 		try {
 			await navigator.clipboard.writeText(vaultContractId)
@@ -237,16 +280,23 @@ const VaultPreview: React.FC = () => {
 						ticker={inTicker}
 						balance={balance}
 						balanceLabel={balanceLabel}
-						estimate={{
-							label: isSubscribe ? "Estimated shares" : "Estimated proceeds",
-							value: estimateValue,
-						}}
+						estimate={estimate}
 						submitLabel={isSubscribe ? "Subscribe" : "Redeem"}
-						onSubmit={() => setActionAmount("")}
+						onSubmit={submitAction}
 						block={block}
 					/>
 				</aside>
 			</div>
+
+			{requestDepositStatus.status !== "idle" && (
+				<SubscriptionModal
+					status={requestDepositStatus}
+					amount={pendingAmountLabel}
+					ticker={inTicker}
+					onClose={resetRequestDeposit}
+					onRetry={retryRequestDeposit}
+				/>
+			)}
 		</div>
 	)
 }

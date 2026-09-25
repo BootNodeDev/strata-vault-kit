@@ -1,10 +1,10 @@
 use bindings::ShareClient;
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
-use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
 use crate::error::VaultError;
 use crate::event::{RedeemCancelled, RedeemClaimed, RedeemRequested};
 use crate::keys::DataKey;
+use crate::pricing::{Pricing, PricingScheme};
 use crate::state::{self, EpochStatus, RedeemRequest};
 use crate::wind_down;
 
@@ -72,8 +72,8 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         panic_with_error!(e, VaultError::AlreadyClaimed);
     }
 
-    let assets = checked_mul_div_floor(e, &request.shares, &epoch.share_price, &WAD_SCALE)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    let assets = Pricing::redeem_assets(e, request.shares, epoch.share_price)
+        .unwrap_or_else(|err| panic_with_error!(e, err));
 
     state::set_pending_burn_shares(
         e,

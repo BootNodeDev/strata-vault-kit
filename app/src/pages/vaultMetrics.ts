@@ -7,6 +7,7 @@ import {
 	PRICE_DECIMALS,
 } from "@stellar-scaffold/app-lib"
 import { type AddressRow, type FigureRow } from "../components/vault/AboutVault"
+import { type ActionPanelEstimate } from "../components/vault/ActionPanel"
 import { type Metric } from "../components/vault/MetricsStrip"
 import { type NavClassification } from "../hooks/useNavPrice"
 import {
@@ -116,11 +117,25 @@ export function toEstimate(
 	parsedAmount: number | null,
 	isSubscribe: boolean,
 	outTicker: string,
-): string | null {
-	if (nav?.status !== "valid" || parsedAmount === null) return null
+): ActionPanelEstimate {
+	const label = isSubscribe ? "Estimated shares" : "Estimated proceeds"
+	if (parsedAmount === null) {
+		return {
+			label,
+			status: "empty",
+			reason: "Enter an amount to see the estimate.",
+		}
+	}
+	if (nav?.status !== "valid") {
+		return { label, status: "unavailable", reason: "Estimate unavailable" }
+	}
 	const price = Number(nav.price) / 10 ** PRICE_DECIMALS
 	const result = isSubscribe ? parsedAmount / price : parsedAmount * price
-	return `≈ ${formatAmount(result)} ${outTicker}`
+	return {
+		label,
+		status: "ready",
+		value: `≈ ${formatAmount(result)} ${outTicker}`,
+	}
 }
 
 export function toSizeFigures(

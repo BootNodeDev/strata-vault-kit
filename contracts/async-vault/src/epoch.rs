@@ -1,10 +1,10 @@
 use bindings::{OracleFeedClient, OracleState};
 use soroban_sdk::{panic_with_error, Env};
-use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
 
 use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};
 use crate::keys::DataKey;
+use crate::pricing::{Pricing, PricingScheme};
 use crate::state::{self, EpochInfo, EpochStatus};
 use crate::timing::{FulfilmentTiming, StandardTiming};
 use crate::wind_down;
@@ -98,23 +98,19 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         panic_with_error!(e, refusal);
     }
 
-    let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
-    let share_price = feed.nav_per_share();
-    if share_price <= 0 {
-        panic_with_error!(e, VaultError::InvalidSharePrice);
-    }
+    let share_price =
+        Pricing::resolve_share_price(e).unwrap_or_else(|err| panic_with_error!(e, err));
 
-    let owed = checked_mul_div_floor(e, &epoch.total_shares_redeeming, &share_price, &WAD_SCALE)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    let owed = Pricing::redeem_assets(e, epoch.total_shares_redeeming, share_price)
+        .unwrap_or_else(|err| panic_with_error!(e, err));
     let committed = state::committed(e)
         .checked_add(owed)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
     state::set_committed(e, committed);
 
     if epoch.total_deposited > 0 {
-        let shares_owed =
-            checked_mul_div_floor(e, &epoch.total_deposited, &WAD_SCALE, &share_price)
-                .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+        let shares_owed = Pricing::deposit_shares(e, epoch.total_deposited, share_price)
+            .unwrap_or_else(|err| panic_with_error!(e, err));
         let updated_pending_mint = state::pending_mint_shares(e)
             .checked_add(shares_owed)
             .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
