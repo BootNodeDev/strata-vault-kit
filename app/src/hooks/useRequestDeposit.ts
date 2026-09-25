@@ -10,7 +10,7 @@ export type RequestDepositStatus = TransactionStatus<{ epochId: bigint }>
 
 export interface UseRequestDeposit {
 	status: RequestDepositStatus
-	submit: (amount: Amount) => Promise<void>
+	submit: (amount: Amount) => Promise<boolean>
 	reset: () => void
 }
 

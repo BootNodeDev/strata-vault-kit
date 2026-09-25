@@ -122,9 +122,11 @@ const VaultPreview: React.FC = () => {
 			hasOpenSubscription: isSubscriptionOpen(requests),
 		}) ?? toPriceBlock(nav, isPendingNav)
 	const cancelDeposit = (request: InvestorRequest) => {
-		setPendingCancelEpochId(request.epochId)
-		setPendingCancelAmountLabel(formatScaled(request.amount, AMOUNT_DECIMALS))
-		void submitCancelDeposit(request.epochId)
+		void submitCancelDeposit(request.epochId).then((started) => {
+			if (!started) return
+			setPendingCancelEpochId(request.epochId)
+			setPendingCancelAmountLabel(formatScaled(request.amount, AMOUNT_DECIMALS))
+		})
 	}
 	const retryCancelDeposit = () => {
 		if (pendingCancelEpochId === null) return
@@ -204,9 +206,11 @@ const VaultPreview: React.FC = () => {
 		if (parsedAmount === null) return
 		const amount = parseUnits(actionAmount, AMOUNT_DECIMALS)
 		if (amount === null) return
-		setPendingAmountLabel(formatAmount(parsedAmount))
-		setPendingAmount(amount)
-		void submitRequestDeposit(amount)
+		void submitRequestDeposit(amount).then((started) => {
+			if (!started) return
+			setPendingAmountLabel(formatAmount(parsedAmount))
+			setPendingAmount(amount)
+		})
 	}
 
 	const retryRequestDeposit = () => {
@@ -319,7 +323,7 @@ const VaultPreview: React.FC = () => {
 				</aside>
 			</div>
 
-			{requestDepositStatus.status !== "idle" && (
+			{requestDepositStatus.status !== "idle" ? (
 				<TransactionModal
 					action="subscribe"
 					status={requestDepositStatus}
@@ -328,16 +332,17 @@ const VaultPreview: React.FC = () => {
 					onClose={resetRequestDeposit}
 					onRetry={retryRequestDeposit}
 				/>
-			)}
-			{cancelDepositStatus.status !== "idle" && (
-				<TransactionModal
-					action="cancel"
-					status={cancelDepositStatus}
-					amount={pendingCancelAmountLabel}
-					ticker={symbols.token}
-					onClose={resetCancelDeposit}
-					onRetry={retryCancelDeposit}
-				/>
+			) : (
+				cancelDepositStatus.status !== "idle" && (
+					<TransactionModal
+						action="cancel"
+						status={cancelDepositStatus}
+						amount={pendingCancelAmountLabel}
+						ticker={symbols.token}
+						onClose={resetCancelDeposit}
+						onRetry={retryCancelDeposit}
+					/>
+				)
 			)}
 		</div>
 	)

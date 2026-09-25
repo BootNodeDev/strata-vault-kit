@@ -10,7 +10,7 @@ export type CancelDepositStatus = TransactionStatus<{ refundedAmount: Amount }>
 
 export interface UseCancelDeposit {
 	status: CancelDepositStatus
-	submit: (epochId: bigint) => Promise<void>
+	submit: (epochId: bigint) => Promise<boolean>
 	reset: () => void
 }
 

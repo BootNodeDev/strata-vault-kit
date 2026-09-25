@@ -26,7 +26,7 @@ export type TransactionStatus<TConfirmed extends object> =
 
 export interface UseContractTransaction<TArg, TConfirmed extends object> {
 	status: TransactionStatus<TConfirmed>
-	submit: (arg: TArg) => Promise<void>
+	submit: (arg: TArg) => Promise<boolean>
 	reset: () => void
 }
 
@@ -44,30 +44,19 @@ export function useContractTransaction<
 		status: "idle",
 	})
 	const submitting = useRef(false)
-	const inFlightArg = useRef<TArg | undefined>(undefined)
 	const dismissed = useRef(false)
 	const lastStatus = useRef<TransactionStatus<TConfirmed>>({ status: "idle" })
 
-	const submit = useCallback(
-		async (arg: TArg) => {
-			if (address === undefined) return
-			if (submitting.current && inFlightArg.current === arg) {
-				dismissed.current = false
-				setStatus(lastStatus.current)
-				return
-			}
-			submitting.current = true
-			inFlightArg.current = arg
-			dismissed.current = false
+	const runSubmission = useCallback(
+		async (arg: TArg, owner: string) => {
 			let hash: string | undefined
 			let signatureRequested = false
 			let reachedNetwork = false
 			const applyStatus = (next: TransactionStatus<TConfirmed>) => {
-				if (inFlightArg.current !== arg) return
 				lastStatus.current = next
 				if (!dismissed.current) setStatus(next)
 			}
-			const invalidateRequestData = (owner: string) => {
+			const invalidateRequestData = () => {
 				void queryClient.invalidateQueries({
 					queryKey: investorRequestsKey(owner),
 				})
@@ -77,7 +66,7 @@ export function useContractTransaction<
 			}
 			applyStatus({ status: "preparing" })
 			try {
-				const tx = await call({ publicKey: address, signTransaction }, arg)
+				const tx = await call({ publicKey: owner, signTransaction }, arg)
 				const code = parseErrorCode(tx.simulation)
 				if (code !== null) {
 					applyStatus({
@@ -100,7 +89,7 @@ export function useContractTransaction<
 				})
 				if (sent.getTransactionResponse?.status !== "SUCCESS") {
 					applyStatus({ status: "failed", failure: { kind: "unknown" }, hash })
-					invalidateRequestData(address)
+					invalidateRequestData()
 					return
 				}
 				applyStatus({
@@ -108,7 +97,7 @@ export function useContractTransaction<
 					...toConfirmed(sent.result),
 					hash,
 				} as TransactionStatus<TConfirmed>)
-				invalidateRequestData(address)
+				invalidateRequestData()
 			} catch (error) {
 				applyStatus({
 					status: "failed",
@@ -119,12 +108,28 @@ export function useContractTransaction<
 							: { kind: "interrupted" },
 					hash,
 				})
-				if (reachedNetwork) invalidateRequestData(address)
+				if (reachedNetwork) invalidateRequestData()
 			} finally {
-				if (inFlightArg.current === arg) submitting.current = false
+				submitting.current = false
 			}
 		},
-		[address, signTransaction, call, toConfirmed, queryClient],
+		[signTransaction, call, toConfirmed, queryClient],
+	)
+
+	const submit = useCallback(
+		(arg: TArg): Promise<boolean> => {
+			if (address === undefined) return Promise.resolve(false)
+			if (submitting.current) {
+				dismissed.current = false
+				setStatus(lastStatus.current)
+				return Promise.resolve(false)
+			}
+			submitting.current = true
+			dismissed.current = false
+			void runSubmission(arg, address)
+			return Promise.resolve(true)
+		},
+		[address, runSubmission],
 	)
 
 	const reset = useCallback(() => {

@@ -821,6 +821,32 @@ describe("VaultPreview", () => {
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
 
 		resolveSend()
+		await screen.findByRole("heading", { name: "Request cancelled" })
+	})
+
+	it("never mounts more than one transaction dialog at once", async () => {
+		mockRequests.epochs.set(1n, { status: { tag: "Pending" }, share_price: 0n })
+		mockRequests.deposits.set(1n, { amount: 150_0000000n, claimed: false })
+		requestDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: () => new Promise<never>(() => {}),
+		}))
+		renderVaultPreview(connectedWallet)
+
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		expect(screen.getAllByRole("dialog")).toHaveLength(1)
 	})
 
 	it("removes a cancelled request from the list without a manual refresh", async () => {
