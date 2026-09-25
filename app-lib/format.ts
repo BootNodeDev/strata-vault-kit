@@ -165,6 +165,11 @@ export function parseUnits<D extends Decimals>(
 	return (negative ? -magnitude : magnitude) as Scaled<D>
 }
 
+export const parseAmount = (raw: string): number | null => {
+	const value = Number(raw.replace(/,/g, ""))
+	return Number.isFinite(value) && value > 0 ? value : null
+}
+
 const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000
 
 export function formatDate(unixSeconds: bigint): string {

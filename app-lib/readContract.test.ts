@@ -49,4 +49,22 @@ describe("readContract", () => {
 
 		expect(read).toEqual({ kind: "unreadable" })
 	})
+
+	it("is archived when the simulation carries a restore preamble, never touching result", async () => {
+		const restoreSimulation = {
+			transactionData: {},
+			restorePreamble: { transactionData: {} },
+		} as unknown as Api.SimulateTransactionResponse
+
+		const read = await readContract(() =>
+			Promise.resolve({
+				simulation: restoreSimulation,
+				get result(): bigint {
+					throw new Error("You need to restore some contract state first")
+				},
+			}),
+		)
+
+		expect(read).toEqual({ kind: "archived" })
+	})
 })

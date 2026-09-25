@@ -57,6 +57,18 @@ export const explorerContract = (contractId: string): string | null => {
 	}
 }
 
+/** Explorer page for a transaction, or null on a network with no public one. */
+export const explorerTransaction = (hash: string): string | null => {
+	switch (stellarNetwork) {
+		case "PUBLIC":
+			return `https://stellar.expert/explorer/public/tx/${hash}`
+		case "TESTNET":
+			return `https://stellar.expert/explorer/testnet/tx/${hash}`
+		default:
+			return null
+	}
+}
+
 export const labPrefix = () => {
 	switch (stellarNetwork) {
 		case "LOCAL":

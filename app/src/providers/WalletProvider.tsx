@@ -65,7 +65,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	}, [address])
 
 	// Refetch on address change (via `updateBalances`' identity) and on network
-	// change — the same address holds different balances per network.
+	// change, since the same address holds different balances per network.
 	useEffect(() => {
 		void updateBalances()
 	}, [updateBalances, networkPassphrase])
