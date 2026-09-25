@@ -83,10 +83,14 @@ or legal solution, and not a vault for on-chain RWA tokens.
 | Governance | governance | Parameters, roles, custodian rotation, upgrades behind a timelock, wind-down proposal and proposal cancellation |
 | Custodian | Not an authority | Off-chain party holding the real-world structure; a genesis-configured slot rotatable only by governance |
 
-Four authorities reside on the vault and one (`attestation`) on the oracle, held
-by native Stellar multisig accounts assignable at deploy. Separation of concerns
-is enforced at construction: treasury cannot equal guardian or governance, and
-compliance cannot equal governance or treasury.
+The authorities are native Stellar multisig accounts assigned at deploy, and
+each contract grants its own roles to them. The vault makes governance its admin
+and grants the treasury and guardian roles. At construction it refuses a
+treasury equal to guardian or governance, and a compliance equal to governance or
+treasury. The oracle has its own admin, attester and guardian roles, set in its
+own constructor. The attestation authority holds the attester role. The deploy
+scripts give the oracle's admin and guardian to the governance and guardian
+accounts, but no code ties the oracle's roles to the vault's.
 
 ## 6. How it works
 
@@ -273,7 +277,7 @@ number with a proof reference.
 | **Share token**       | OZ SEP-41 + SEP-57 RWA extensions: freeze, forced transfer, recovery, identity and compliance checks on every transfer, independent transfer pause                                                        | Manager role held by authorized accounts and the vault for mint/burn/escrow operations, never an unverified human key                                                                                         |
 | **Manager**           | Access-control role: privileged token and verifier operations require the manager role checked directly via native access control                                                                          | Role-gated                                                                                                                                                                    |
 | **Compliance module** | Implements the SEP-57 identity and rules interfaces the share token consults, with the allowlist as its only rule                                                                                         | Managed by the compliance authority via direct role access; replaceable by OZ's identity verifier and compliance contracts (with RWA Wizard modules) without touching the token |
-| **Authorities**       | governance (parameters, roles, timelocked upgrades), compliance (allowlist, token interventions), attestation (valuation only), treasury (reserve movements only), guardian (pause; never payable claims) | Four authorities on the vault and one (`attestation`) on the oracle; treasury and guardian distinct, treasury and governance distinct, compliance distinct from governance and treasury |
+| **Authorities**       | governance (parameters, roles, timelocked upgrades), compliance (allowlist, token interventions), attestation (valuation only), treasury (reserve movements only), guardian (pause; never payable claims) | Each contract grants its own roles; the oracle's admin, attester and guardian are independent of the vault's; treasury and guardian distinct, treasury and governance distinct, compliance distinct from governance and treasury |
 | **Custodian**         | Off-chain party holding the real-world structure; a genesis-configured slot rotatable only by governance                                                                                                  | Not an on-chain authority                                                                                                                                                     |
 
 Each authority's threshold is sized to the quorum that authority requires.
