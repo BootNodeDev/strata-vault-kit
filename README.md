@@ -16,8 +16,10 @@ Two rules the contracts enforce:
 
 ## Documentation
 
-[Product and architecture](./docs/strata-product-and-architecture.md) — what
-the protocol does, why it is asynchronous, and how the pieces fit together.
+- [Product and architecture](./docs/strata-product-and-architecture.md) — what
+  the protocol does, why it is asynchronous, and how the pieces fit together.
+- [Kit specification](./docs/kit-spec.md) — invariants, deploy-time
+  parameters, and complete role matrix.
 
 ## Status
 
