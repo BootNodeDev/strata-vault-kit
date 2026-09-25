@@ -5,6 +5,7 @@ import {
 	type Price,
 } from "@stellar-scaffold/app-lib"
 import {
+	type RequestAction,
 	type RequestEntry,
 	type RequestStage,
 	type RequestTone,
@@ -83,12 +84,25 @@ const baseEntry = (
 	actions: [],
 })
 
+function cancelAction(
+	request: InvestorRequest,
+	onCancel: (request: InvestorRequest) => void,
+): RequestAction {
+	return { label: "Cancel", kind: "ordinary", onPress: () => onCancel(request) }
+}
+
 function waitingEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
+	onCancel: ((request: InvestorRequest) => void) | undefined,
 ): RequestEntry {
+	const actions =
+		onCancel !== undefined && request.side === "deposit"
+			? [cancelAction(request, onCancel)]
+			: []
 	return {
 		...baseEntry(request, tokens),
+		actions,
 		outAmount: "Not yet priced",
 		outTone: "word",
 		state: request.epochStatus.tag,
@@ -148,9 +162,10 @@ export function toPresentEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
 	refusal: ClaimRefusal | undefined,
+	onCancel?: (request: InvestorRequest) => void,
 ): RequestEntry {
 	const stage = assignStage(request, refusal)
-	if (stage === "waiting") return waitingEntry(request, tokens)
+	if (stage === "waiting") return waitingEntry(request, tokens, onCancel)
 	if (!hasValidPrice(request.sharePrice))
 		return invalidPriceEntry(request, tokens)
 	if (stage === "blocked" && refusal !== undefined)
@@ -201,6 +216,7 @@ export function toRequestEntriesByStage(
 	tokens: RequestTokens,
 	refusalFor: (request: InvestorRequest) => ClaimRefusal | undefined = () =>
 		undefined,
+	onCancel?: (request: InvestorRequest) => void,
 ): EntriesByStage {
 	const entries: EntriesByStage = { ready: [], blocked: [], waiting: [] }
 
@@ -208,7 +224,7 @@ export function toRequestEntriesByStage(
 		if (request.claimed) continue
 		const refusal = refusalFor(request)
 		entries[assignStage(request, refusal)].push(
-			toPresentEntry(request, tokens, refusal),
+			toPresentEntry(request, tokens, refusal, onCancel),
 		)
 	}
 	for (const request of loaded.archived) {

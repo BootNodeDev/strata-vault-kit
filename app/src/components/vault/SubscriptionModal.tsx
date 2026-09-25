@@ -1,6 +1,10 @@
 import { explorerTransaction, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
 import {
+	type CancelDepositFailure,
+	type CancelDepositStatus,
+} from "../../hooks/useCancelDeposit"
+import {
 	type RequestDepositFailure,
 	type RequestDepositStatus,
 } from "../../hooks/useRequestDeposit"
@@ -9,15 +13,25 @@ import Close from "../icons/Close"
 import ExternalLink from "../icons/ExternalLink"
 import styles from "./SubscriptionModal.module.css"
 
-export type SubscriptionModalProps = {
-	status: RequestDepositStatus
-	amount: string
-	ticker: string
-	onClose: () => void
-	onRetry: () => void
-}
+export type SubscriptionModalProps =
+	| {
+			action: "subscribe"
+			status: RequestDepositStatus
+			amount: string
+			ticker: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "cancel"
+			status: CancelDepositStatus
+			amount: string
+			ticker: string
+			onClose: () => void
+			onRetry: () => void
+	  }
 
-const contractErrorReason = (code: number): string => {
+const subscribeContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6007:
 			return "Enter an amount greater than zero."
@@ -32,8 +46,24 @@ const contractErrorReason = (code: number): string => {
 	}
 }
 
+const cancelContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6001:
+			return "This request no longer exists to cancel."
+		case 6029:
+			return "This batch could not be found."
+		case 6039:
+			return "This batch has already been priced. Claim your shares instead of cancelling."
+		case 6041:
+			return "A price is now available for this batch. Claim your shares instead of cancelling."
+		default:
+			return `The vault declined this request (reason ${code}).`
+	}
+}
+
 const describeFailure = (
-	failure: RequestDepositFailure,
+	failure: RequestDepositFailure | CancelDepositFailure,
+	contractErrorReason: (code: number) => string,
 ): { heading: string; body: string } => {
 	switch (failure.kind) {
 		case "declined":
@@ -59,7 +89,7 @@ const describeFailure = (
 	}
 }
 
-const describeStatus = (
+const describeSubscribeStatus = (
 	status: RequestDepositStatus,
 	amount: string,
 	ticker: string,
@@ -90,9 +120,57 @@ const describeStatus = (
 				hash: status.hash,
 			}
 		case "failed":
-			return { ...describeFailure(status.failure), hash: status.hash }
+			return {
+				...describeFailure(status.failure, subscribeContractErrorReason),
+				hash: status.hash,
+			}
 	}
 }
+
+const describeCancelStatus = (
+	status: CancelDepositStatus,
+	amount: string,
+	ticker: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your cancellation",
+				body: "We are getting your cancellation ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `This returns ${amount} ${ticker} from escrow to your wallet. This request is withdrawn, not priced.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending your cancellation",
+				body: "Your cancellation is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: "Request cancelled",
+				body: `${amount} ${ticker} has been returned to your wallet.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(status.failure, cancelContractErrorReason),
+				hash: status.hash,
+			}
+	}
+}
+
+const describeStatus = (
+	props: SubscriptionModalProps,
+): { heading: string; body: string; hash?: string } | undefined =>
+	props.action === "subscribe"
+		? describeSubscribeStatus(props.status, props.amount, props.ticker)
+		: describeCancelStatus(props.status, props.amount, props.ticker)
 
 type StepId = "signature" | "network" | "recorded"
 type StepState = "done" | "current" | "upcoming" | "failed"
@@ -106,7 +184,7 @@ const stepLabel: Record<StepId, string> = {
 }
 
 const computeSteps = (
-	status: RequestDepositStatus,
+	status: RequestDepositStatus | CancelDepositStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":
@@ -147,20 +225,15 @@ const stepAnnouncement: Partial<Record<StepState, string>> = {
 	failed: "failed",
 }
 
-const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
-	status,
-	amount,
-	ticker,
-	onClose,
-	onRetry,
-}) => {
+const SubscriptionModal: React.FC<SubscriptionModalProps> = (props) => {
+	const { status, onClose, onRetry } = props
 	const dialogRef = React.useRef<HTMLDivElement>(null)
 
 	React.useEffect(() => {
 		dialogRef.current?.focus()
 	}, [])
 
-	const content = describeStatus(status, amount, ticker)
+	const content = describeStatus(props)
 	if (content === undefined) return null
 
 	const steps = computeSteps(status)

@@ -1,5 +1,7 @@
+import { type Amount } from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import SubscriptionModal from "./SubscriptionModal"
 
@@ -18,6 +20,23 @@ const renderModal = (status: RequestDepositStatus) => {
 	const onRetry = vi.fn()
 	const view = render(
 		<SubscriptionModal
+			action="subscribe"
+			status={status}
+			amount="150.00"
+			ticker="USDC"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderCancelModal = (status: CancelDepositStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<SubscriptionModal
+			action="cancel"
 			status={status}
 			amount="150.00"
 			ticker="USDC"
@@ -306,5 +325,135 @@ describe("SubscriptionModal", () => {
 
 		expect(onClose).toHaveBeenCalledTimes(1)
 		expect(onRetry).not.toHaveBeenCalled()
+	})
+})
+
+describe("SubscriptionModal, cancelling", () => {
+	it("opens with a preparing state naming the cancellation, not the request", () => {
+		renderCancelModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing your cancellation" }),
+		).toBeTruthy()
+	})
+
+	it("tells the investor their deposit returns to their wallet, honestly, without escrow or pricing language", () => {
+		renderCancelModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+		expect(screen.getByText(/from escrow/)).toBeTruthy()
+		expect(screen.queryByText(/into escrow/)).toBeNull()
+	})
+
+	it("tells the investor the cancellation is on its way, distinct from the subscribe copy", () => {
+		renderCancelModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending your cancellation" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("shows the returned amount once confirmed, with no batch or pricing claim", () => {
+		renderCancelModal({
+			status: "confirmed",
+			refundedAmount: 150_0000000n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Request cancelled" }),
+		).toBeTruthy()
+		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+		expect(screen.queryByText(/Batch/)).toBeNull()
+		expect(screen.queryByText(/attestation/)).toBeNull()
+		expect(screen.queryByText(/Epoch/)).toBeNull()
+	})
+
+	it("names the vault's own reason for a cancel-specific contract refusal, distinct from subscribe's codes", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6039 },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(/already been priced. Claim your shares instead/),
+		).toBeTruthy()
+	})
+
+	it("names PriceAvailable distinctly from AlreadyPriced", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6041 },
+		})
+
+		expect(
+			screen.getByText(/price is now available for this batch/),
+		).toBeTruthy()
+	})
+
+	it("names RequestNotFound for a cancellation of a request that no longer exists", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6001 },
+		})
+
+		expect(screen.getByText(/no longer exists to cancel/)).toBeTruthy()
+	})
+
+	it("names EpochNotFound as a batch that could not be found", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6029 },
+		})
+
+		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+	})
+
+	it("falls back to the raw code for a cancel refusal it does not recognize", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+	})
+
+	it("reads a declined cancellation as a choice, not a failure, and offers to try again", () => {
+		const { onRetry } = renderCancelModal({
+			status: "failed",
+			failure: { kind: "declined" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "You declined the request" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+
+	it("shows the same step progress machinery for a cancellation in flight", () => {
+		renderCancelModal({ status: "awaiting-signature" })
+
+		const steps = screen.getAllByRole("listitem")
+		expect(steps.map((step) => step.textContent)).toEqual([
+			"Approved in your wallet, in progress",
+			"Sent to the network",
+			"Recorded",
+		])
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderCancelModal({ status: "awaiting-signature" })
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
 	})
 })
