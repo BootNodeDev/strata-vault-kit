@@ -1,4 +1,9 @@
-import { explorerTransaction, shortAddress } from "@stellar-scaffold/app-lib"
+import {
+	AMOUNT_DECIMALS,
+	explorerTransaction,
+	formatScaled,
+	shortAddress,
+} from "@stellar-scaffold/app-lib"
 import React from "react"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type TransactionFailure } from "../../hooks/useContractTransaction"
@@ -50,7 +55,7 @@ const cancelContractErrorReason = (code: number): string => {
 		case 6039:
 			return "This batch has already been priced. Claim your shares instead of cancelling."
 		case 6041:
-			return "A price is now available for this batch. Claim your shares instead of cancelling."
+			return "A price is available for this batch, so this request can no longer be cancelled. The batch will be priced shortly, and your shares are claimable once it is."
 		default:
 			return `The vault declined this request (reason ${code}).`
 	}
@@ -149,7 +154,7 @@ const describeCancelStatus = (
 		case "confirmed":
 			return {
 				heading: "Request cancelled",
-				body: `${amount} ${ticker} has been returned to your wallet.`,
+				body: `${formatScaled(status.refundedAmount, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
 				hash: status.hash,
 			}
 		case "failed":

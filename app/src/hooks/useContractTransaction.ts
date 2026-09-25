@@ -44,23 +44,26 @@ export function useContractTransaction<
 		status: "idle",
 	})
 	const submitting = useRef(false)
+	const inFlightArg = useRef<TArg | undefined>(undefined)
 	const dismissed = useRef(false)
 	const lastStatus = useRef<TransactionStatus<TConfirmed>>({ status: "idle" })
 
 	const submit = useCallback(
 		async (arg: TArg) => {
 			if (address === undefined) return
-			if (submitting.current) {
+			if (submitting.current && inFlightArg.current === arg) {
 				dismissed.current = false
 				setStatus(lastStatus.current)
 				return
 			}
 			submitting.current = true
+			inFlightArg.current = arg
 			dismissed.current = false
 			let hash: string | undefined
 			let signatureRequested = false
 			let reachedNetwork = false
 			const applyStatus = (next: TransactionStatus<TConfirmed>) => {
+				if (inFlightArg.current !== arg) return
 				lastStatus.current = next
 				if (!dismissed.current) setStatus(next)
 			}
@@ -118,7 +121,7 @@ export function useContractTransaction<
 				})
 				if (reachedNetwork) invalidateRequestData(address)
 			} finally {
-				submitting.current = false
+				if (inFlightArg.current === arg) submitting.current = false
 			}
 		},
 		[address, signTransaction, call, toConfirmed, queryClient],

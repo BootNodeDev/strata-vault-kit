@@ -1,4 +1,5 @@
 import { type Amount } from "@stellar-scaffold/app-lib"
+import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
@@ -9,7 +10,8 @@ const { explorerTransactionMock } = vi.hoisted(() => ({
 	explorerTransactionMock: vi.fn(() => null as string | null),
 }))
 
-vi.mock("@stellar-scaffold/app-lib", () => ({
+vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
+	...(await importOriginal<typeof AppLib>()),
 	shortAddress: (address: string) =>
 		`${address.slice(0, 4)}...${address.slice(-4)}`,
 	explorerTransaction: explorerTransactionMock,
@@ -373,6 +375,17 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.queryByText(/Epoch/)).toBeNull()
 	})
 
+	it("reports the amount the vault returned, not the one captured when the investor pressed cancel", () => {
+		renderCancelModal({
+			status: "confirmed",
+			refundedAmount: 275_5000000n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByText(/275\.50 USDC/)).toBeTruthy()
+		expect(screen.queryByText(/150\.00/)).toBeNull()
+	})
+
 	it("names the vault's own reason for a cancel-specific contract refusal, distinct from subscribe's codes", () => {
 		renderCancelModal({
 			status: "failed",
@@ -387,15 +400,15 @@ describe("TransactionModal, cancelling", () => {
 		).toBeTruthy()
 	})
 
-	it("names PriceAvailable distinctly from AlreadyPriced", () => {
+	it("names PriceAvailable distinctly from AlreadyPriced, without sending the investor to claim yet", () => {
 		renderCancelModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6041 },
 		})
 
-		expect(
-			screen.getByText(/price is now available for this batch/),
-		).toBeTruthy()
+		expect(screen.getByText(/A price is available for this batch/)).toBeTruthy()
+		expect(screen.getByText(/claimable once it is/)).toBeTruthy()
+		expect(screen.queryByText(/Claim your shares instead/)).toBeNull()
 	})
 
 	it("names RequestNotFound for a cancellation of a request that no longer exists", () => {
