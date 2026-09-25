@@ -88,18 +88,19 @@ describe("SubscriptionModal", () => {
 		expect(screen.queryByText(/Epoch/)).toBeNull()
 	})
 
-	it("gives the confirmed moment the weight of an arrival, announced to assistive tech", () => {
-		renderModal({ status: "confirmed", epochId: 7n, hash: "b".repeat(64) })
-
+	it("gives only the confirmed moment the weight of an arrival, announced to assistive tech", () => {
+		const confirmed = renderModal({
+			status: "confirmed",
+			epochId: 7n,
+			hash: "b".repeat(64),
+		})
 		const arrival = screen.getByRole("status")
 		expect(
 			within(arrival).getByRole("heading", { name: "Request locked in" }),
 		).toBeTruthy()
-	})
+		confirmed.unmount()
 
-	it("does not mark any other state as an arrival", () => {
 		renderModal({ status: "submitted", hash: "a".repeat(64) })
-
 		expect(screen.queryByRole("status")).toBeNull()
 	})
 
@@ -122,91 +123,75 @@ describe("SubscriptionModal", () => {
 		expect(screen.getByText(/aaaa\.\.\.aaaa/)).toBeTruthy()
 	})
 
-	it("shows the approval step as current while awaiting a signature, and the rest ahead", () => {
-		renderModal({ status: "awaiting-signature" })
+	it.each<[string, RequestDepositStatus, string[]]>([
+		[
+			"awaiting a signature",
+			{ status: "awaiting-signature" },
+			[
+				"Approved in your wallet, in progress",
+				"Sent to the network",
+				"Recorded",
+			],
+		],
+		[
+			"submitted",
+			{ status: "submitted", hash: "a".repeat(64) },
+			[
+				"Approved in your wallet, done",
+				"Sent to the network, in progress",
+				"Recorded",
+			],
+		],
+		[
+			"confirmed",
+			{ status: "confirmed", epochId: 7n },
+			[
+				"Approved in your wallet, done",
+				"Sent to the network, done",
+				"Recorded, done",
+			],
+		],
+		[
+			"declined",
+			{ status: "failed", failure: { kind: "declined" } },
+			["Approved in your wallet, failed", "Sent to the network", "Recorded"],
+		],
+		[
+			"refused by the vault before any signature is asked for",
+			{ status: "failed", failure: { kind: "contract-error", code: 6009 } },
+			["Approved in your wallet, failed", "Sent to the network", "Recorded"],
+		],
+		[
+			"an unknown outcome that reached the network",
+			{ status: "failed", failure: { kind: "unknown" }, hash: "c".repeat(64) },
+			[
+				"Approved in your wallet, done",
+				"Sent to the network, done",
+				"Recorded, failed",
+			],
+		],
+		[
+			"an unknown outcome that never reached the network",
+			{ status: "failed", failure: { kind: "unknown" } },
+			[
+				"Approved in your wallet, done",
+				"Sent to the network, failed",
+				"Recorded",
+			],
+		],
+	])("shows the right step progress when %s", (_label, status, expected) => {
+		renderModal(status)
 
 		const steps = screen.getAllByRole("listitem")
-		expect(steps.map((step) => step.textContent)).toEqual([
-			"Approved in your wallet, in progress",
-			"Sent to the network",
-			"Recorded",
-		])
+		expect(steps.map((step) => step.textContent)).toEqual(expected)
+	})
+
+	it("marks the approval step current while awaiting a signature", () => {
+		renderModal({ status: "awaiting-signature" })
+
 		expect(screen.getByRole("listitem", { current: "step" }).textContent).toBe(
 			"Approved in your wallet, in progress",
 		)
-	})
-
-	it("marks approval done and sending current once submitted", () => {
-		renderModal({ status: "submitted", hash: "a".repeat(64) })
-
-		const steps = screen.getAllByRole("listitem")
-		expect(steps.map((step) => step.textContent)).toEqual([
-			"Approved in your wallet, done",
-			"Sent to the network, in progress",
-			"Recorded",
-		])
-	})
-
-	it("marks every step done once confirmed", () => {
-		renderModal({ status: "confirmed", epochId: 7n })
-
-		const steps = screen.getAllByRole("listitem")
-		expect(steps.map((step) => step.textContent)).toEqual([
-			"Approved in your wallet, done",
-			"Sent to the network, done",
-			"Recorded, done",
-		])
-	})
-
-	it("interrupts the approval step, not a fourth step, when the investor declines", () => {
-		renderModal({ status: "failed", failure: { kind: "declined" } })
-
-		const steps = screen.getAllByRole("listitem")
-		expect(steps.map((step) => step.textContent)).toEqual([
-			"Approved in your wallet, failed",
-			"Sent to the network",
-			"Recorded",
-		])
-	})
-
-	it("interrupts the approval step when the vault refuses before any signature is asked for", () => {
-		renderModal({
-			status: "failed",
-			failure: { kind: "contract-error", code: 6009 },
-		})
-
-		const steps = screen.getAllByRole("listitem")
-		expect(steps.map((step) => step.textContent)).toEqual([
-			"Approved in your wallet, failed",
-			"Sent to the network",
-			"Recorded",
-		])
-	})
-
-	it("interrupts recording, not sending, when a submitted transaction cannot be confirmed", () => {
-		renderModal({
-			status: "failed",
-			failure: { kind: "unknown" },
-			hash: "c".repeat(64),
-		})
-
-		const steps = screen.getAllByRole("listitem")
-		expect(steps.map((step) => step.textContent)).toEqual([
-			"Approved in your wallet, done",
-			"Sent to the network, done",
-			"Recorded, failed",
-		])
-	})
-
-	it("interrupts sending, not recording, when an unknown failure never reached the network", () => {
-		renderModal({ status: "failed", failure: { kind: "unknown" } })
-
-		const steps = screen.getAllByRole("listitem")
-		expect(steps.map((step) => step.textContent)).toEqual([
-			"Approved in your wallet, done",
-			"Sent to the network, failed",
-			"Recorded",
-		])
 	})
 
 	it("reads a declined signature as a choice, not a failure, and offers to try again", () => {

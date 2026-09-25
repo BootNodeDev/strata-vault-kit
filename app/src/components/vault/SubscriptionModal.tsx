@@ -86,7 +86,6 @@ const describeStatus = (
 
 type StepId = "signature" | "network" | "recorded"
 type StepState = "done" | "current" | "upcoming" | "failed"
-type Step = { id: StepId; label: string; state: StepState }
 
 const STEP_ORDER: StepId[] = ["signature", "network", "recorded"]
 
@@ -96,76 +95,41 @@ const stepLabel: Record<StepId, string> = {
 	recorded: "Recorded",
 }
 
-const buildSteps = (state: (id: StepId) => StepState): Step[] =>
-	STEP_ORDER.map((id) => ({ id, label: stepLabel[id], state: state(id) }))
-
-const failureSteps = (
-	failure: RequestDepositFailure,
-	hash: string | undefined,
-): Step[] => {
-	if (failure.kind === "unknown" && hash !== undefined) {
-		return buildSteps((id) => (id === "recorded" ? "failed" : "done"))
-	}
-	if (failure.kind === "unknown") {
-		return buildSteps((id) =>
-			id === "signature" ? "done" : id === "network" ? "failed" : "upcoming",
-		)
-	}
-	return buildSteps((id) => (id === "signature" ? "failed" : "upcoming"))
-}
-
-const computeSteps = (status: RequestDepositStatus): Step[] | undefined => {
+const computeSteps = (
+	status: RequestDepositStatus,
+): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":
 			return undefined
 		case "awaiting-signature":
-			return buildSteps((id) => (id === "signature" ? "current" : "upcoming"))
+			return { signature: "current", network: "upcoming", recorded: "upcoming" }
 		case "submitted":
-			return buildSteps((id) =>
-				id === "signature" ? "done" : id === "network" ? "current" : "upcoming",
-			)
+			return { signature: "done", network: "current", recorded: "upcoming" }
 		case "confirmed":
-			return buildSteps(() => "done")
+			return { signature: "done", network: "done", recorded: "done" }
 		case "failed":
-			return failureSteps(status.failure, status.hash)
+			if (status.failure.kind === "unknown" && status.hash !== undefined) {
+				return { signature: "done", network: "done", recorded: "failed" }
+			}
+			if (status.failure.kind === "unknown") {
+				return { signature: "done", network: "failed", recorded: "upcoming" }
+			}
+			return { signature: "failed", network: "upcoming", recorded: "upcoming" }
 	}
 }
 
-const stepStateClassName: Record<StepState, string> = {
-	done: `${styles.stepDone}`,
-	current: `${styles.stepCurrent}`,
-	failed: `${styles.stepFailed}`,
-	upcoming: `${styles.stepUpcoming}`,
+const stepStateClassName: Record<StepState, string | undefined> = {
+	done: styles.stepDone,
+	current: styles.stepCurrent,
+	failed: styles.stepFailed,
+	upcoming: styles.stepUpcoming,
 }
 
-const stepAnnouncement: Record<StepState, string> = {
+const stepAnnouncement: Partial<Record<StepState, string>> = {
 	done: "done",
 	current: "in progress",
 	failed: "failed",
-	upcoming: "",
 }
-
-const Steps: React.FC<{ steps: Step[] }> = ({ steps }) => (
-	<ol className={styles.steps} aria-label="Subscription progress">
-		{steps.map((step) => (
-			<li
-				key={step.id}
-				className={`${styles.step} ${stepStateClassName[step.state]}`}
-				aria-current={step.state === "current" ? "step" : undefined}
-			>
-				<span className={styles.stepMarker} aria-hidden="true" />
-				<span className={`${typeStyles.footnote} ${styles.stepLabel}`}>
-					{step.label}
-					{stepAnnouncement[step.state] && (
-						<span className={styles.srOnly}>
-							, {stepAnnouncement[step.state]}
-						</span>
-					)}
-				</span>
-			</li>
-		))}
-	</ol>
-)
 
 const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 	status,
@@ -248,7 +212,31 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = ({
 				>
 					<Close className={styles.closeIcon} />
 				</button>
-				{steps !== undefined && <Steps steps={steps} />}
+				{steps !== undefined && (
+					<ol className={styles.steps} aria-label="Subscription progress">
+						{STEP_ORDER.map((id) => {
+							const state = steps[id]
+							const announcement = stepAnnouncement[state]
+							return (
+								<li
+									key={id}
+									className={`${styles.step} ${stepStateClassName[state]}`}
+									aria-current={state === "current" ? "step" : undefined}
+								>
+									<span className={styles.stepMarker} aria-hidden="true" />
+									<span
+										className={`${typeStyles.footnote} ${styles.stepLabel}`}
+									>
+										{stepLabel[id]}
+										{announcement !== undefined && (
+											<span className={styles.srOnly}>, {announcement}</span>
+										)}
+									</span>
+								</li>
+							)
+						})}
+					</ol>
+				)}
 				{isConfirmed ? (
 					<div className={styles.arrival} role="status">
 						{body}
