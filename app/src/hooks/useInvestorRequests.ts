@@ -15,6 +15,9 @@ import { useWallet } from "./useWallet"
 
 const FIRST_EPOCH = 1n
 
+export const investorRequestsKey = (address: string | undefined) =>
+	["investor", "requests", address] as const
+
 export type RequestSide = "deposit" | "redeem"
 
 export type InvestorRequest = {
@@ -143,7 +146,7 @@ export async function fetchInvestorRequests(
 export function useInvestorRequests(): { requests: InvestorRequestsRead } {
 	const { address } = useWallet()
 	const { data, isError } = useQuery({
-		queryKey: ["investor", "requests", address],
+		queryKey: investorRequestsKey(address),
 		queryFn:
 			address === undefined ? skipToken : () => fetchInvestorRequests(address),
 		staleTime: 30_000,

@@ -1,6 +1,6 @@
 import { type Amount, type ContractRead } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
-import { classifyDepositBalance } from "./useDepositBalance"
+import { classifyDepositBalance, depositBalanceKey } from "./useDepositBalance"
 
 vi.mock("../config/clients", () => ({
 	asset: async () => ({
@@ -39,5 +39,15 @@ describe("classifyDepositBalance", () => {
 
 	it("classifies an unreadable read as unreadable", () => {
 		expect(classifyDepositBalance(unreadable)).toEqual({ status: "unreadable" })
+	})
+})
+
+describe("depositBalanceKey", () => {
+	it("matches the key useDepositBalance queries under", () => {
+		expect(depositBalanceKey("GINVESTORADDRESS1234567890")).toEqual([
+			"deposit",
+			"balance",
+			"GINVESTORADDRESS1234567890",
+		])
 	})
 })

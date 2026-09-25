@@ -8,7 +8,7 @@ export type ContractRead<T> =
 
 const CONTRACT_ERROR = /Error\(Contract, #(\d+)\)/
 
-function parseErrorCode(
+export function parseErrorCode(
 	simulation: Api.SimulateTransactionResponse | undefined,
 ): number | null {
 	if (simulation === undefined || !Api.isSimulationError(simulation))

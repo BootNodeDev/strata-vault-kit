@@ -56,8 +56,8 @@ const hasValidPrice = (price: Price): boolean => price > 0n
 
 const readyNote = (side: RequestSide): string =>
 	side === "deposit"
-		? "Claiming is not guaranteed to succeed — compliance is checked when you sign."
-		: "Claiming is not guaranteed to succeed — the reserve is checked when you sign."
+		? "Claiming is not guaranteed to succeed. Compliance is checked when you sign."
+		: "Claiming is not guaranteed to succeed. The reserve is checked when you sign."
 
 export function assignStage(
 	request: InvestorRequest,
@@ -78,7 +78,7 @@ const baseEntry = (
 	id: `${request.side}-${request.epochId}`,
 	inLabel: sideLabel[request.side],
 	inAmount: `${formatScaled(request.amount, AMOUNT_DECIMALS)} ${inTicker(request.side, tokens)}`,
-	inMeta: `Epoch ${request.epochId}`,
+	inMeta: `Batch ${request.epochId}`,
 	outLabel: "Owed to you",
 	actions: [],
 })
@@ -139,7 +139,7 @@ function invalidPriceEntry(
 		tone: stageTone.blocked,
 		tooltip: {
 			label: "Why you cannot claim this yet",
-			text: "The vault reported an invalid price for this epoch.",
+			text: "The vault reported an invalid price for this batch.",
 		},
 	}
 }
@@ -163,7 +163,7 @@ function archivedEntry(request: ArchivedRequest): RequestEntry {
 		id: `${request.side}-${request.epochId}`,
 		inLabel: sideLabel[request.side],
 		inAmount: "Unknown amount",
-		inMeta: `Epoch ${request.epochId}`,
+		inMeta: `Batch ${request.epochId}`,
 		outLabel: "Owed to you",
 		outAmount: "Not readable",
 		outTone: "word",
@@ -182,7 +182,7 @@ function unreadableEntry(request: UnreadableRequest): RequestEntry {
 		id: `${request.side}-${request.epochId}`,
 		inLabel: sideLabel[request.side],
 		inAmount: "Unknown amount",
-		inMeta: `Epoch ${request.epochId}`,
+		inMeta: `Batch ${request.epochId}`,
 		outLabel: "Owed to you",
 		outAmount: "Not readable",
 		outTone: "word",

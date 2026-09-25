@@ -11,6 +11,7 @@
     "format:check": "prettier . --check",
     "build:clients": "npm run build:clients -w scripts/harness",
     "seed": "npm run seed -w scripts/harness --",
+    "pretest": "node scripts/generate-addresses.mjs",
     "test": "vitest run"
   },
   "workspaces": [

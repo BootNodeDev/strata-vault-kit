@@ -4,17 +4,18 @@ import {
 	connectIdentityVerifier,
 	connectNavOracle,
 	connectShareToken,
-	type AssetViews,
-	type AsyncVaultViews,
-	type IdentityVerifierViews,
-	type NavOracleViews,
-	type ShareTokenViews,
+	type AssetApi,
+	type AsyncVaultApi,
+	type IdentityVerifierApi,
+	type NavOracleApi,
+	type ShareTokenApi,
+	type Signer,
 } from "@stellar-scaffold/app-lib"
 import { addresses } from "./addresses"
 
-let vault: Promise<AsyncVaultViews> | undefined
+let vault: Promise<AsyncVaultApi> | undefined
 
-export const asyncVault = (): Promise<AsyncVaultViews> => {
+export const asyncVault = (): Promise<AsyncVaultApi> => {
 	vault ??= connectAsyncVault(addresses.async_vault).catch((error: unknown) => {
 		vault = undefined
 		throw error
@@ -22,9 +23,35 @@ export const asyncVault = (): Promise<AsyncVaultViews> => {
 	return vault
 }
 
-let oracle: Promise<NavOracleViews> | undefined
+interface VaultWriterEntry {
+	signer: Signer
+	client: Promise<AsyncVaultApi>
+}
 
-export const navOracle = (): Promise<NavOracleViews> => {
+let vaultWriter: VaultWriterEntry | undefined
+
+const sameSigner = (a: Signer, b: Signer) =>
+	a.publicKey === b.publicKey && a.signTransaction === b.signTransaction
+
+export const asyncVaultWriter = (signer: Signer): Promise<AsyncVaultApi> => {
+	if (!vaultWriter || !sameSigner(vaultWriter.signer, signer)) {
+		const entry: VaultWriterEntry = {
+			signer,
+			client: connectAsyncVault(addresses.async_vault, signer).catch(
+				(error: unknown) => {
+					if (vaultWriter === entry) vaultWriter = undefined
+					throw error
+				},
+			),
+		}
+		vaultWriter = entry
+	}
+	return vaultWriter.client
+}
+
+let oracle: Promise<NavOracleApi> | undefined
+
+export const navOracle = (): Promise<NavOracleApi> => {
 	oracle ??= connectNavOracle(addresses.nav_oracle).catch((error: unknown) => {
 		oracle = undefined
 		throw error
@@ -32,9 +59,9 @@ export const navOracle = (): Promise<NavOracleViews> => {
 	return oracle
 }
 
-let identityVerifierClient: Promise<IdentityVerifierViews> | undefined
+let identityVerifierClient: Promise<IdentityVerifierApi> | undefined
 
-export const identityVerifier = (): Promise<IdentityVerifierViews> => {
+export const identityVerifier = (): Promise<IdentityVerifierApi> => {
 	identityVerifierClient ??= connectIdentityVerifier(
 		addresses.identity_verifier,
 	).catch((error: unknown) => {
@@ -44,9 +71,9 @@ export const identityVerifier = (): Promise<IdentityVerifierViews> => {
 	return identityVerifierClient
 }
 
-let shareTokenClient: Promise<ShareTokenViews> | undefined
+let shareTokenClient: Promise<ShareTokenApi> | undefined
 
-export const shareToken = (): Promise<ShareTokenViews> => {
+export const shareToken = (): Promise<ShareTokenApi> => {
 	shareTokenClient ??= connectShareToken(addresses.share_token).catch(
 		(error: unknown) => {
 			shareTokenClient = undefined
@@ -56,9 +83,9 @@ export const shareToken = (): Promise<ShareTokenViews> => {
 	return shareTokenClient
 }
 
-let assetClient: Promise<AssetViews> | undefined
+let assetClient: Promise<AssetApi> | undefined
 
-export const asset = (): Promise<AssetViews> => {
+export const asset = (): Promise<AssetApi> => {
 	assetClient ??= connectAsset(addresses.asset).catch((error: unknown) => {
 		assetClient = undefined
 		throw error

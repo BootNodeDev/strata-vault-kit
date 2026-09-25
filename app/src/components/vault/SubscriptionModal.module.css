@@ -1,0 +1,197 @@
+.overlay {
+	position: fixed;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: rgba(0, 0, 0, 0.5);
+	z-index: 100;
+}
+
+.dialog {
+	container-type: inline-size;
+	display: flex;
+	flex-direction: column;
+	gap: 15px;
+	width: 100%;
+	max-width: 420px;
+	padding: 24px;
+	border: 1px solid var(--vault-ink);
+	background: var(--vault-surface-card);
+}
+
+.dialog:focus {
+	outline: none;
+}
+
+.close {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	align-self: flex-end;
+	min-height: 32px;
+	min-width: 32px;
+	padding: 0;
+	border: 1px solid var(--vault-border-hairline);
+	border-radius: 0;
+	background: var(--vault-surface-card);
+	color: var(--vault-text-muted);
+}
+
+.close:hover {
+	background: var(--vault-action-ring);
+	border-color: var(--vault-action);
+	color: var(--vault-action);
+}
+
+.closeIcon {
+	width: 13px;
+	height: 13px;
+}
+
+.steps {
+	display: flex;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.step {
+	position: relative;
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	align-items: center;
+	gap: 6px;
+	text-align: center;
+}
+
+.step:not(:first-child)::before {
+	content: "";
+	position: absolute;
+	top: 5px;
+	left: -50%;
+	width: 100%;
+	height: 1px;
+	background: var(--vault-border-hairline);
+}
+
+.stepDone:not(:first-child)::before,
+.stepCurrent:not(:first-child)::before,
+.stepFailed:not(:first-child)::before {
+	background: var(--vault-ink);
+}
+
+.stepMarker {
+	z-index: 1;
+	width: 11px;
+	height: 11px;
+	border: 1px solid var(--vault-border-inactive);
+	background: var(--vault-surface-card);
+}
+
+.stepDone .stepMarker {
+	border-color: var(--vault-ink);
+	background: var(--vault-ink);
+}
+
+.stepCurrent .stepMarker {
+	border-color: var(--vault-action);
+	background: var(--vault-action);
+}
+
+.stepFailed .stepMarker {
+	border-color: var(--vault-danger);
+	background: var(--vault-danger);
+}
+
+.stepLabel {
+	color: var(--vault-text-muted);
+}
+
+.stepDone .stepLabel,
+.stepCurrent .stepLabel {
+	color: var(--vault-ink);
+}
+
+.stepFailed .stepLabel {
+	color: var(--vault-danger);
+}
+
+.srOnly {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+}
+
+.heading {
+	color: var(--vault-ink);
+}
+
+.body {
+	color: var(--vault-text-body);
+}
+
+.hash {
+	color: var(--vault-text-muted);
+	user-select: all;
+}
+
+.hashLink {
+	color: var(--vault-text-muted);
+	text-decoration: none;
+	border-bottom: 1px solid transparent;
+}
+
+.hashLink:hover {
+	border-bottom-color: var(--vault-text-muted);
+}
+
+.hashIcon {
+	width: 12px;
+	height: 12px;
+	margin-left: 4px;
+	vertical-align: -1px;
+}
+
+.arrival {
+	display: flex;
+	flex-direction: column;
+	gap: 15px;
+	border: 1px solid var(--vault-success);
+	background: var(--vault-success-fill);
+	padding: 16px;
+}
+
+.headingConfirmed {
+	color: var(--vault-success);
+}
+
+.actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.retry {
+	flex: 1;
+	min-width: 160px;
+	min-height: 48px;
+	padding: 13px 18px;
+	border: 1px solid var(--vault-action);
+	border-radius: 0;
+	background: var(--vault-action);
+	color: var(--vault-surface-card);
+	font-family: var(--vault-font-sans);
+	font-size: 15.5px;
+	font-weight: 500;
+}
+
+.retry:hover {
+	background: var(--vault-action-ring);
+	border-color: var(--vault-action);
+	color: var(--vault-action);
+}

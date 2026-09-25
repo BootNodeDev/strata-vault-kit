@@ -1,14 +1,15 @@
-import { formatAmount } from "@stellar-scaffold/app-lib"
+import { formatAmount, parseAmount } from "@stellar-scaffold/app-lib"
 import React from "react"
 import typeStyles from "../../styles/type.module.css"
 import styles from "./ActionPanel.module.css"
 
 export type ActionPanelSide = "subscribe" | "redeem"
 
-export type ActionPanelEstimate = {
-	label: string
-	value: string | null
-}
+export type ActionPanelEstimate = { label: string } & (
+	| { status: "empty"; reason: string }
+	| { status: "unavailable"; reason: string }
+	| { status: "ready"; value: string }
+)
 
 export type ActionBlock = {
 	kind: "action"
@@ -39,11 +40,6 @@ export type ActionPanelProps = {
 	submitLabel: string
 	onSubmit: () => void
 	block?: ActionPanelBlock
-}
-
-const parseAmount = (raw: string): number | null => {
-	const value = Number(raw.replace(/,/g, ""))
-	return Number.isFinite(value) && value > 0 ? value : null
 }
 
 const PanelActions: React.FC<{
@@ -204,10 +200,12 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 						</span>
 						<span
 							className={`${
-								estimate.value === null ? typeStyles.body : typeStyles.estimate
+								estimate.status === "ready"
+									? typeStyles.estimate
+									: typeStyles.body
 							} ${styles.estimateValue}`}
 						>
-							{estimate.value ?? "Estimate unavailable"}
+							{estimate.status === "ready" ? estimate.value : estimate.reason}
 						</span>
 					</div>
 

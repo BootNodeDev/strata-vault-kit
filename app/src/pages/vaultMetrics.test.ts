@@ -197,15 +197,27 @@ describe("toEstimate", () => {
 	}
 
 	it("estimates shares received from tokens in, using the attested price", () => {
-		expect(toEstimate(valid, 100, true, "vUSDC")).toBe("≈ 50.00 vUSDC")
+		expect(toEstimate(valid, 100, true, "vUSDC")).toEqual({
+			label: "Estimated shares",
+			status: "ready",
+			value: "≈ 50.00 vUSDC",
+		})
 	})
 
 	it("estimates tokens received from shares in, using the attested price", () => {
-		expect(toEstimate(valid, 100, false, "USDC")).toBe("≈ 200.00 USDC")
+		expect(toEstimate(valid, 100, false, "USDC")).toEqual({
+			label: "Estimated proceeds",
+			status: "ready",
+			value: "≈ 200.00 USDC",
+		})
 	})
 
-	it("cannot estimate with no amount entered", () => {
-		expect(toEstimate(valid, null, true, "vUSDC")).toBeNull()
+	it("asks for an amount when the field is empty, distinct from an unavailable price", () => {
+		expect(toEstimate(valid, null, true, "vUSDC")).toEqual({
+			label: "Estimated shares",
+			status: "empty",
+			reason: "Enter an amount to see the estimate.",
+		})
 	})
 
 	it.each([
@@ -215,9 +227,13 @@ describe("toEstimate", () => {
 		["unreadable", { status: "unreadable" }],
 		["not yet read", undefined],
 	] satisfies [string, NavClassification | undefined][])(
-		"cannot estimate while the price is not valid (%s)",
+		"reads as unavailable, not as an empty field, while the price is not valid (%s)",
 		(_label, nav) => {
-			expect(toEstimate(nav, 100, true, "vUSDC")).toBeNull()
+			expect(toEstimate(nav, 100, true, "vUSDC")).toEqual({
+				label: "Estimated shares",
+				status: "unavailable",
+				reason: "Estimate unavailable",
+			})
 		},
 	)
 })
