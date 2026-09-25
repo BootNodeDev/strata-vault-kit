@@ -1,19 +1,14 @@
 import { explorerTransaction, shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
-import {
-	type CancelDepositFailure,
-	type CancelDepositStatus,
-} from "../../hooks/useCancelDeposit"
-import {
-	type RequestDepositFailure,
-	type RequestDepositStatus,
-} from "../../hooks/useRequestDeposit"
+import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
+import { type TransactionFailure } from "../../hooks/useContractTransaction"
+import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import typeStyles from "../../styles/type.module.css"
 import Close from "../icons/Close"
 import ExternalLink from "../icons/ExternalLink"
-import styles from "./SubscriptionModal.module.css"
+import styles from "./TransactionModal.module.css"
 
-export type SubscriptionModalProps =
+export type TransactionModalProps =
 	| {
 			action: "subscribe"
 			status: RequestDepositStatus
@@ -62,7 +57,7 @@ const cancelContractErrorReason = (code: number): string => {
 }
 
 const describeFailure = (
-	failure: RequestDepositFailure | CancelDepositFailure,
+	failure: TransactionFailure,
 	contractErrorReason: (code: number) => string,
 ): { heading: string; body: string } => {
 	switch (failure.kind) {
@@ -166,7 +161,7 @@ const describeCancelStatus = (
 }
 
 const describeStatus = (
-	props: SubscriptionModalProps,
+	props: TransactionModalProps,
 ): { heading: string; body: string; hash?: string } | undefined =>
 	props.action === "subscribe"
 		? describeSubscribeStatus(props.status, props.amount, props.ticker)
@@ -225,7 +220,7 @@ const stepAnnouncement: Partial<Record<StepState, string>> = {
 	failed: "failed",
 }
 
-const SubscriptionModal: React.FC<SubscriptionModalProps> = (props) => {
+const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 	const { status, onClose, onRetry } = props
 	const dialogRef = React.useRef<HTMLDivElement>(null)
 
@@ -242,7 +237,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = (props) => {
 		content.hash === undefined ? null : explorerTransaction(content.hash)
 	const offersRetry =
 		status.status === "failed" && status.failure.kind === "declined"
-	const headingId = "subscription-modal-heading"
+	const headingId = "transaction-modal-heading"
 
 	const onKeyDown = (event: React.KeyboardEvent) => {
 		if (event.key === "Escape") {
@@ -302,7 +297,7 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = (props) => {
 					<Close className={styles.closeIcon} />
 				</button>
 				{steps !== undefined && (
-					<ol className={styles.steps} aria-label="Subscription progress">
+					<ol className={styles.steps} aria-label="Transaction progress">
 						{STEP_ORDER.map((id) => {
 							const state = steps[id]
 							const announcement = stepAnnouncement[state]
@@ -345,4 +340,4 @@ const SubscriptionModal: React.FC<SubscriptionModalProps> = (props) => {
 	)
 }
 
-export default SubscriptionModal
+export default TransactionModal

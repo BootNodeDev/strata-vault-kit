@@ -3,7 +3,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
-import SubscriptionModal from "./SubscriptionModal"
+import TransactionModal from "./TransactionModal"
 
 const { explorerTransactionMock } = vi.hoisted(() => ({
 	explorerTransactionMock: vi.fn(() => null as string | null),
@@ -19,7 +19,7 @@ const renderModal = (status: RequestDepositStatus) => {
 	const onClose = vi.fn()
 	const onRetry = vi.fn()
 	const view = render(
-		<SubscriptionModal
+		<TransactionModal
 			action="subscribe"
 			status={status}
 			amount="150.00"
@@ -35,7 +35,7 @@ const renderCancelModal = (status: CancelDepositStatus) => {
 	const onClose = vi.fn()
 	const onRetry = vi.fn()
 	const view = render(
-		<SubscriptionModal
+		<TransactionModal
 			action="cancel"
 			status={status}
 			amount="150.00"
@@ -47,7 +47,7 @@ const renderCancelModal = (status: CancelDepositStatus) => {
 	return { ...view, onClose, onRetry }
 }
 
-describe("SubscriptionModal", () => {
+describe("TransactionModal", () => {
 	it("renders nothing while idle", () => {
 		renderModal({ status: "idle" })
 
@@ -328,7 +328,7 @@ describe("SubscriptionModal", () => {
 	})
 })
 
-describe("SubscriptionModal, cancelling", () => {
+describe("TransactionModal, cancelling", () => {
 	it("opens with a preparing state naming the cancellation, not the request", () => {
 		renderCancelModal({ status: "preparing" })
 
