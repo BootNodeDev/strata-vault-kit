@@ -365,4 +365,56 @@ describe("useRequestDeposit", () => {
 		gate.resolve()
 		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
 	})
+
+	it("clears the previous terminal status when a fresh submission begins, so a mid-flight reconnect cannot replay it", async () => {
+		vaultMock.request_deposit.mockResolvedValueOnce({
+			simulation: undefined,
+			signAndSend: vi.fn().mockResolvedValue({
+				getTransactionResponse: { status: "SUCCESS" },
+				result: 7n,
+			}),
+		})
+		const { result } = renderRequestDeposit()
+
+		await act(() => result.current.submit(amount))
+		expect(result.current.status).toEqual({ status: "confirmed", epochId: 7n })
+
+		act(() => result.current.reset())
+		expect(result.current.status).toEqual({ status: "idle" })
+
+		const clientGate = deferred<typeof vaultMock>()
+		asyncVaultWriterMock.mockReturnValueOnce(clientGate.promise)
+
+		void result.current.submit(amount)
+		expect(result.current.status).toEqual({ status: "idle" })
+
+		void result.current.submit(amount)
+		expect(result.current.status).toEqual({ status: "idle" })
+	})
+
+	it("marks a wallet connection failure that happens before any signature is requested as interrupted, not unknown", async () => {
+		asyncVaultWriterMock.mockRejectedValueOnce(new Error("could not connect"))
+		const { result } = renderRequestDeposit()
+
+		await act(() => result.current.submit(amount))
+
+		expect(result.current.status).toEqual({
+			status: "failed",
+			failure: { kind: "interrupted" },
+		})
+	})
+
+	it("marks a request_deposit failure at simulation time as interrupted when it is not a contract refusal", async () => {
+		vaultMock.request_deposit.mockRejectedValueOnce(
+			new Error("RPC unavailable"),
+		)
+		const { result } = renderRequestDeposit()
+
+		await act(() => result.current.submit(amount))
+
+		expect(result.current.status).toEqual({
+			status: "failed",
+			failure: { kind: "interrupted" },
+		})
+	})
 })

@@ -179,6 +179,11 @@ describe("SubscriptionModal", () => {
 				"Recorded",
 			],
 		],
+		[
+			"interrupted before any signature was requested",
+			{ status: "failed", failure: { kind: "interrupted" } },
+			["Approved in your wallet, failed", "Sent to the network", "Recorded"],
+		],
 	])("shows the right step progress when %s", (_label, status, expected) => {
 		renderModal(status)
 
@@ -254,6 +259,19 @@ describe("SubscriptionModal", () => {
 		})
 
 		expect(screen.getByText(/cccc\.\.\.cccc/)).toBeTruthy()
+	})
+
+	it("never implies a signature was requested when the failure happened before one was asked for", () => {
+		renderModal({ status: "failed", failure: { kind: "interrupted" } })
+
+		expect(
+			screen.getByRole("heading", { name: "We couldn't reach the vault" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(/Nothing was requested from your wallet/),
+		).toBeTruthy()
+		expect(screen.queryByText(/Transaction/)).toBeNull()
+		expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
 	})
 
 	it("is reachable as a dialog and dismissible by its close control", () => {

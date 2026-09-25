@@ -46,6 +46,11 @@ const describeFailure = (
 				heading: "The vault refused this request",
 				body: contractErrorReason(failure.code),
 			}
+		case "interrupted":
+			return {
+				heading: "We couldn't reach the vault",
+				body: "Nothing was requested from your wallet. Try again when you're ready.",
+			}
 		case "unknown":
 			return {
 				heading: "Something went wrong",

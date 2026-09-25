@@ -13,6 +13,7 @@ import { useWallet } from "./useWallet"
 export type RequestDepositFailure =
 	| { kind: "declined" }
 	| { kind: "contract-error"; code: number }
+	| { kind: "interrupted" }
 	| { kind: "unknown" }
 
 export type RequestDepositStatus =
@@ -46,7 +47,9 @@ export function useRequestDeposit(): UseRequestDeposit {
 			}
 			submitting.current = true
 			dismissed.current = false
+			lastStatus.current = { status: "idle" }
 			let hash: string | undefined
+			let signatureRequested = false
 			const applyStatus = (next: RequestDepositStatus) => {
 				lastStatus.current = next
 				if (!dismissed.current) setStatus(next)
@@ -65,6 +68,7 @@ export function useRequestDeposit(): UseRequestDeposit {
 					})
 					return
 				}
+				signatureRequested = true
 				applyStatus({ status: "awaiting-signature" })
 				const sent = await tx.signAndSend({
 					watcher: {
@@ -91,7 +95,9 @@ export function useRequestDeposit(): UseRequestDeposit {
 					status: "failed",
 					failure: isUserRejection(error)
 						? { kind: "declined" }
-						: { kind: "unknown" },
+						: signatureRequested
+							? { kind: "unknown" }
+							: { kind: "interrupted" },
 					hash,
 				})
 			} finally {
