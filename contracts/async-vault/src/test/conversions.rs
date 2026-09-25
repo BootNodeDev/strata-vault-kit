@@ -76,3 +76,174 @@ fn conversion_arithmetic_holds_its_rounding_direction() {
         prop_assert!(back <= shares);
     });
 }
+
+#[test]
+fn deposit_and_redeem_round_trip_never_manufactures_assets() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    // Property holds across massive scale (up to 10^30), handled via I256 scaling.
+    proptest!(|(
+        assets in 0i128..=1_000_000_000_000_000_000_000_000_000_000i128,
+        price in 1i128..=1_000_000_000_000_000_000_000_000_000_000i128,
+    )| {
+        if let Some(shares) = checked_mul_div_floor(&env, &assets, &WAD_SCALE, &price) {
+            if let Some(back_assets) = checked_mul_div_floor(&env, &shares, &price, &WAD_SCALE) {
+                // Invariant: round-trip through shares can never yield more assets than started.
+                prop_assert!(back_assets <= assets);
+            }
+        }
+    });
+}
+
+#[test]
+fn redeem_and_deposit_round_trip_never_manufactures_shares() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    proptest!(|(
+        shares in 0i128..=1_000_000_000_000_000_000_000_000_000_000i128,
+        price in 1i128..=1_000_000_000_000_000_000_000_000_000_000i128,
+    )| {
+        if let Some(assets) = checked_mul_div_floor(&env, &shares, &price, &WAD_SCALE) {
+            if let Some(back_shares) = checked_mul_div_floor(&env, &assets, &WAD_SCALE, &price) {
+                // Invariant: round-trip through assets can never yield more shares than started.
+                prop_assert!(back_shares <= shares);
+            }
+        }
+    });
+}
+
+#[test]
+fn deposit_floor_is_strictly_tight() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    proptest!(|(
+        assets in 0i128..=1_000_000_000_000_000i128,
+        price in 1i128..=1_000_000_000_000_000i128,
+    )| {
+        let shares = checked_mul_div_floor(&env, &assets, &WAD_SCALE, &price).unwrap();
+
+        // Never mints more shares than backed by assets.
+        prop_assert!(shares * price <= assets * WAD_SCALE);
+        // Floor is tight: not a single additional share could be minted.
+        prop_assert!((shares + 1) * price > assets * WAD_SCALE);
+    });
+}
+
+#[test]
+fn conversion_monotonicity_in_amount_and_price() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    proptest!(|(
+        a1 in 0i128..=1_000_000_000_000_000_000_000i128,
+        a2 in 0i128..=1_000_000_000_000_000_000_000i128,
+        p1 in 1i128..=1_000_000_000_000_000_000_000i128,
+        p2 in 1i128..=1_000_000_000_000_000_000_000i128,
+    )| {
+        let (amin, amax) = if a1 <= a2 { (a1, a2) } else { (a2, a1) };
+        let (pmin, pmax) = if p1 <= p2 { (p1, p2) } else { (p2, p1) };
+
+        // Monotonic in amount:
+        if let (Some(s_low), Some(s_high)) = (
+            checked_mul_div_floor(&env, &amin, &WAD_SCALE, &pmin),
+            checked_mul_div_floor(&env, &amax, &WAD_SCALE, &pmin),
+        ) {
+            prop_assert!(s_low <= s_high);
+        }
+
+        if let (Some(a_low), Some(a_high)) = (
+            checked_mul_div_floor(&env, &amin, &pmin, &WAD_SCALE),
+            checked_mul_div_floor(&env, &amax, &pmin, &WAD_SCALE),
+        ) {
+            prop_assert!(a_low <= a_high);
+        }
+
+        // Monotonic in price:
+        if let (Some(s_cheap), Some(s_dear)) = (
+            checked_mul_div_floor(&env, &amax, &WAD_SCALE, &pmin),
+            checked_mul_div_floor(&env, &amax, &WAD_SCALE, &pmax),
+        ) {
+            prop_assert!(s_dear <= s_cheap);
+        }
+
+        if let (Some(a_cheap), Some(a_dear)) = (
+            checked_mul_div_floor(&env, &amax, &pmin, &WAD_SCALE),
+            checked_mul_div_floor(&env, &amax, &pmax, &WAD_SCALE),
+        ) {
+            prop_assert!(a_cheap <= a_dear);
+        }
+    });
+}
+
+#[test]
+fn wind_down_accumulator_never_pays_more_than_it_credits() {
+    let env = Env::default();
+    env.cost_estimate().budget().reset_unlimited();
+
+    proptest!(|(
+        entitlements in prop::array::uniform3(1i128..=1_000_000_000_000_000_000i128),
+        pots in prop::collection::vec(1i128..=1_000_000_000_000_000_000_000_000i128, 1..6),
+        claims in prop::collection::vec(any::<[bool; 3]>(), 6),
+    )| {
+        let floor = |x: i128, y: i128, d: i128| checked_mul_div_floor(&env, &x, &y, &d).unwrap();
+        let snapshot: i128 = entitlements.iter().sum();
+        let mut acc = 0i128;
+        let mut owed = 0i128;
+        let mut paid = [0i128; 3];
+
+        for (round, &pot) in pots.iter().enumerate() {
+            let delta = floor(pot, WAD_SCALE, snapshot);
+            if delta == 0 {
+                continue;
+            }
+            let acc_after = acc + delta;
+            let credited = floor(snapshot, acc_after, WAD_SCALE) - floor(snapshot, acc, WAD_SCALE);
+            prop_assert!(credited <= pot);
+            acc = acc_after;
+            owed += credited;
+
+            for (i, &claims_now) in claims[round].iter().enumerate() {
+                if claims_now {
+                    let earned = floor(entitlements[i], acc, WAD_SCALE);
+                    prop_assert!(earned >= paid[i]);
+                    paid[i] = earned;
+                }
+            }
+            prop_assert!(paid.iter().sum::<i128>() <= owed);
+        }
+
+        for i in 0..3 {
+            paid[i] = floor(entitlements[i], acc, WAD_SCALE);
+        }
+        prop_assert!(paid.iter().sum::<i128>() <= owed);
+    });
+}
+
+#[test]
+fn negative_control_ceil_division_violates_conservation() {
+    // Demonstration that ceiling division allows arbitrage (value creation).
+    // If an investor deposits 100 assets at price 3, ceil gives ceil(100 * 10 / 3) = 334.
+    // Redeeming 334 shares at price 3 with ceil gives ceil(334 * 3 / 10) = 101 > 100!
+    fn ceil_div(x: i128, y: i128) -> i128 {
+        (x + y - 1) / y
+    }
+
+    let assets: i128 = 100;
+    let price: i128 = 3;
+    let scale: i128 = 10;
+
+    let shares_ceil = ceil_div(assets * scale, price);
+    let redeemed_ceil = ceil_div(shares_ceil * price, scale);
+
+    // Ceil manufactures an extra asset unit (101 > 100):
+    assert!(redeemed_ceil > assets);
+
+    // In contrast, floor division guarantees non-inflationary conservation:
+    let env = Env::default();
+    let shares_floor = checked_mul_div_floor(&env, &assets, &scale, &price).unwrap();
+    let redeemed_floor = checked_mul_div_floor(&env, &shares_floor, &price, &scale).unwrap();
+    assert!(redeemed_floor <= assets);
+}
