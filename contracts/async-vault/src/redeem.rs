@@ -4,11 +4,9 @@ use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 use crate::error::VaultError;
 use crate::event::{RedeemCancelled, RedeemClaimed, RedeemRequested};
 use crate::keys::DataKey;
-use crate::pricing::{DirectUnitPricing, PricingScheme};
+use crate::pricing::{Pricing, PricingScheme};
 use crate::state::{self, EpochStatus, RedeemRequest};
 use crate::wind_down;
-
-type Pricing = DirectUnitPricing;
 
 pub(crate) fn request(e: &Env, from: &Address, shares: i128) -> u64 {
     wind_down::refuse_if_active(e);

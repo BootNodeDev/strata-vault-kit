@@ -5,7 +5,6 @@ use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad:
 use crate::error::VaultError;
 use crate::keys::DataKey;
 use crate::state;
-use crate::treasury;
 
 /// Defines the pricing interface for epoch share price resolution and conversions.
 /// A deployment or vault variant selects or implements a scheme conforming to this trait.
@@ -39,6 +38,9 @@ pub trait PricingScheme {
 /// off-chain fund accounting attested via the oracle feed.
 pub struct DirectUnitPricing;
 
+/// The pricing scheme this vault resolves and converts on.
+pub(crate) type Pricing = DirectUnitPricing;
+
 impl PricingScheme for DirectUnitPricing {
     fn resolve_share_price(e: &Env) -> Result<i128, VaultError> {
         let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
@@ -47,53 +49,5 @@ impl PricingScheme for DirectUnitPricing {
             return Err(VaultError::InvalidSharePrice);
         }
         Ok(share_price)
-    }
-}
-
-/// Derived net-asset pricing scheme: derives the unit share price from attested
-/// off-chain deployed assets plus liquid reserve minus liabilities, divided by
-/// total economic supply:
-///
-///   NAV = (attested_assets + balance - liabilities) * WAD_SCALE / supply
-pub struct DerivedNetAssetPricing;
-
-impl DerivedNetAssetPricing {
-    /// Pure calculation of derived share price given components.
-    pub fn calculate_share_price(
-        e: &Env,
-        attested_assets: i128,
-        balance: i128,
-        liabilities: i128,
-        supply: i128,
-    ) -> Result<i128, VaultError> {
-        if supply <= 0 {
-            return Ok(WAD_SCALE);
-        }
-        let total_assets = attested_assets
-            .checked_add(balance)
-            .ok_or(VaultError::AmountTooLarge)?;
-        let net_assets = total_assets
-            .checked_sub(liabilities)
-            .ok_or(VaultError::AmountTooLarge)?;
-        if net_assets <= 0 {
-            return Err(VaultError::InvalidSharePrice);
-        }
-        let price = checked_mul_div_floor(e, &net_assets, &WAD_SCALE, &supply)
-            .ok_or(VaultError::AmountTooLarge)?;
-        if price <= 0 {
-            return Err(VaultError::InvalidSharePrice);
-        }
-        Ok(price)
-    }
-}
-
-impl PricingScheme for DerivedNetAssetPricing {
-    fn resolve_share_price(e: &Env) -> Result<i128, VaultError> {
-        let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
-        let attested_assets = feed.nav_per_share();
-        let balance = treasury::liquid_reserve(e);
-        let liabilities = state::committed(e);
-        let supply = crate::AsyncVault::total_economic_supply(e);
-        Self::calculate_share_price(e, attested_assets, balance, liabilities, supply)
     }
 }

@@ -4,16 +4,13 @@ use soroban_sdk::{panic_with_error, Env};
 use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};
 use crate::keys::DataKey;
-use crate::pricing::{DirectUnitPricing, PricingScheme};
+use crate::pricing::{Pricing, PricingScheme};
 use crate::state::{self, EpochInfo, EpochStatus};
 use crate::timing::{FulfilmentTiming, StandardTiming};
 use crate::wind_down;
 
 /// The schedule this vault fulfils on.
 type Timing = StandardTiming;
-
-/// The pricing scheme this vault resolves on.
-type Pricing = DirectUnitPricing;
 
 pub(crate) fn open(total_deposited: i128) -> EpochInfo {
     EpochInfo {
