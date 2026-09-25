@@ -32,7 +32,7 @@ The symbol `"manager"` names two completely distinct roles living on separate co
 In `scripts/harness/deploy.ts` and automated deployment scripts, the separation is enforced structurally:
 - The vault's constructor receives `roles.manager = accounts.manager.publicKey()`.
 - The share token role is granted to the deployed vault contract: `token.grant_role({ account: asyncVault.address, role: "manager", caller: governance })`.
-- A misconfiguration attempting to grant `accounts.manager` the token manager role is prevented by verification assertions checking `token.has_role({ account: vault, role: "manager" }) == true`.
+- After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. It does not check that no other account holds it.
 
 ---
 
@@ -56,7 +56,7 @@ The following entrypoints are open to any caller on purpose:
 | **`AsyncVault`** | `fulfill_epoch` | Open (Any caller) | Pricing is deterministic once an epoch is closed and the oracle publishes a valid attestation. Permissionless fulfillment prevents a malicious operator from stalling pricing or censoring settlements. Guarded by `#[when_not_paused]` and oracle validity. |
 | **`AsyncVault`** | `activate_wind_down` | Open (Any caller) | Once governance announces wind-down and the timelock expires, anyone (including investors) can trigger activation. This ensures an operator cannot propose wind-down to block deposits and then stall activation indefinitely. |
 | **`AsyncVault`** | `finalize_wind_down_round` | Open (Any caller) | Distributing returned capital pro-rata across the supply snapshot is deterministic. Making finalisation open ensures investors or keepers can trigger payout rounds immediately when funds arrive. |
-| **`AsyncVault`** | `claim_wind_down` | Open (for `holder`) | Callable by the holder or a third-party keeper acting on the holder's behalf; payouts always go directly to `holder`. |
+| **`AsyncVault`** | `claim_wind_down` | `holder.require_auth()` | The holder signs their own claim; a keeper cannot claim for them. The payout goes to `holder`. |
 | **`AsyncVault`** | `request_deposit` | `from.require_auth()` | Investor entrypoint. Deposits escrowed cash; guarded by `when_not_paused` and not winding down. |
 | **`AsyncVault`** | `claim_deposit` | `caller.require_auth()` | Investor entrypoint. Claims shares once epoch fulfilled; gated by SEP-57 receiver check on `mint`. |
 | **`AsyncVault`** | `cancel_deposit` | `from.require_auth()` | Investor exit before epoch pricing. Single-step refund. |
@@ -72,9 +72,9 @@ The following entrypoints are open to any caller on purpose:
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
-| `close_epoch` | `#[only_role(caller, "manager")]` | Epoch must be open | `test::epochs::admin_cannot_close_epoch`, `test::epochs::unauthorized_close_epoch_fails` |
-| `deploy_to_custodian` | `#[only_role(caller, "treasury")]` | `assets <= free_reserve`, not winding down | `test::treasury::deploying_without_treasury_role_is_refused` |
-| `pause` | `#[only_role(caller, "guardian")]` | Contract not already paused | `test::controls::the_guardian_pauses_and_unauthorised_cannot` |
+| `close_epoch` | `#[only_role(caller, "manager")]` | Epoch must be open | `test::epochs::a_non_manager_cannot_close` |
+| `deploy_to_custodian` | `#[only_role(caller, "treasury")]` | `assets <= free_reserve`, not winding down | `test::treasury::deploying_needs_the_treasury_role` |
+| `pause` | `#[only_role(caller, "guardian")]` | Contract not already paused | `test::controls::only_the_guardian_pauses` |
 | `unpause` | `#[only_admin]`, `caller.require_auth()` | Contract must be paused | `test::controls::the_guardian_pauses_but_only_governance_unpauses` |
 | `set_custodian` | `#[only_admin]`, `caller.require_auth()` | None | `test::treasury::setting_the_custodian_needs_the_admin_signature` |
 | `set_notice` | `#[only_admin]`, `caller.require_auth()` | `secs <= MAX_NOTICE_SECS`, `secs <= upgrade_delay` | `test::notice::setting_the_notice_needs_governance_authorisation` |
@@ -85,7 +85,7 @@ The following entrypoints are open to any caller on purpose:
 | `propose_upgrade_delay` | `#[only_admin]`, `caller.require_auth()` | `secs in [MIN, MAX]`, `secs >= notice` | `test::upgrade::only_governance_proposes_and_cancels` |
 | `cancel_upgrade` | `#[only_admin]`, `caller.require_auth()` | Proposal must stand | `test::upgrade::only_governance_proposes_and_cancels` |
 | `apply_upgrade` | `#[only_admin]`, `caller.require_auth()` | Timelock expired, `when_not_paused` | `test::upgrade::only_governance_applies` |
-| `renounce_admin` | Refused always (`VaultError::AdminRequired`) | None | `test::upgrade::the_vault_admin_cannot_renounce` |
+| `renounce_admin` | Refused always (`VaultError::AdminRequired`) | None | `test::controls::governance_cannot_renounce_itself_out_of_the_vault` |
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
@@ -102,6 +102,7 @@ The following entrypoints are open to any caller on purpose:
 | `recover_balance` | `#[only_role(operator, "manager")]` | Target allowlisted | `test::unauthorized_caller_cannot_freeze_or_recover` |
 | `set_compliance` | `#[only_role(operator, "manager")]` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier` |
 | `set_identity_verifier` | `#[only_role(operator, "manager")]` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier` |
+| `renounce_admin` | OZ default: the admin can renounce | None | None. Unlike the vault and the oracle, the token does not refuse it; a paused token whose admin renounced could never be unpaused. |
 
 ### 5.3 NavOracle (`contracts/nav-oracle`)
 
@@ -111,7 +112,7 @@ The following entrypoints are open to any caller on purpose:
 | `raise_ripcord` | `#[only_role(caller, "guardian")]` | None | `test::raising_the_ripcord_is_limited_to_the_guardian` |
 | `set_ripcord` | `#[only_admin]`, `caller.require_auth()` | None | `test::the_guardian_raises_the_ripcord_but_lowering_needs_governance` |
 | `clear_latest` | `#[only_admin]`, `caller.require_auth()` | Ripcord must be raised | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_ripcord_is_raised` |
-| `set_config` | `#[only_admin]`, `caller.require_auth()` | Valid bounds | `test::only_admin_can_set_config` |
+| `set_config` | `#[only_admin]` (no caller argument; the stored admin signs) | Valid bounds | `test::only_admin_can_set_config` |
 | `renounce_admin` | Refused always (`OracleError::AdminRequired`) | None | `test::the_oracle_admin_cannot_renounce_itself_away` |
 
 ### 5.4 IdentityVerifier (`contracts/identity-verifier`)
