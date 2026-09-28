@@ -10,6 +10,7 @@ import { type InvestorRequestsRead } from "../hooks/useInvestorRequests"
 import { type Allowance } from "../hooks/useIsAllowed"
 import { type NavClassification } from "../hooks/useNavPrice"
 import { type SharePosition } from "../hooks/useSharePosition"
+import { type PauseState } from "../hooks/useVaultPaused"
 
 export type InvestorAccess =
 	| { status: "disconnected" }
@@ -40,10 +41,53 @@ export function deriveAccess(input: {
 	return { status: "allowed" }
 }
 
+export type SubscribeGate = {
+	isSubscribe: boolean
+	pause: PauseState
+	hasOpenSubscription: boolean
+}
+
+function toSubscribeGateBlock(
+	gate: SubscribeGate,
+): ActionPanelBlock | undefined {
+	if (!gate.isSubscribe) return undefined
+	if (gate.pause === "checking") {
+		return {
+			kind: "message",
+			reason: "Checking whether the vault is accepting requests.",
+			sides: ["subscribe"],
+		}
+	}
+	if (gate.pause === "unreadable") {
+		return {
+			kind: "message",
+			reason:
+				"Could not check whether the vault is accepting requests. Try again shortly.",
+			sides: ["subscribe"],
+		}
+	}
+	if (gate.pause === "paused") {
+		return {
+			kind: "message",
+			reason: "The vault is not accepting new requests right now.",
+			sides: ["subscribe"],
+		}
+	}
+	if (gate.hasOpenSubscription) {
+		return {
+			kind: "message",
+			reason: "You already have a subscription request open in this batch.",
+			sides: ["subscribe"],
+		}
+	}
+	return undefined
+}
+
 export function toPanelBlock(
 	access: InvestorAccess,
 	onConnect: () => void,
 	onOpenWallet: () => void,
+	subscribeGate: SubscribeGate,
 ): ActionPanelBlock | undefined {
 	switch (access.status) {
 		case "disconnected":
@@ -64,22 +108,33 @@ export function toPanelBlock(
 			return {
 				kind: "message",
 				reason: "Checking whether this address may subscribe.",
+				sides: ["subscribe", "redeem"],
 			}
 		case "not-allowed":
 			return {
 				kind: "message",
 				reason:
 					"This address is not on the vault's allowlist. The vault's operator grants access.",
+				sides: ["subscribe", "redeem"],
 			}
 		case "unreadable":
 			return {
 				kind: "message",
 				reason:
 					"Could not check whether this address may subscribe. Try again shortly.",
+				sides: ["subscribe", "redeem"],
 			}
 		case "allowed":
-			return undefined
+			return toSubscribeGateBlock(subscribeGate)
 	}
+}
+
+export function isSubscriptionOpen(requests: InvestorRequestsRead): boolean {
+	if (requests.status !== "loaded") return false
+	return requests.requests.some(
+		(request) =>
+			request.side === "deposit" && request.epochStatus.tag === "Open",
+	)
 }
 
 export function toPriceBlock(
@@ -87,13 +142,18 @@ export function toPriceBlock(
 	isPending: boolean,
 ): ActionPanelBlock | undefined {
 	if (isPending) {
-		return { kind: "message", reason: "Reading the vault's price." }
+		return {
+			kind: "message",
+			reason: "Reading the vault's price.",
+			sides: ["subscribe", "redeem"],
+		}
 	}
 	if (nav?.status === "valid") return undefined
 	return {
 		kind: "message",
 		reason:
 			"The vault's price is not valid right now, so subscribing and redeeming are closed.",
+		sides: ["subscribe", "redeem"],
 	}
 }
 

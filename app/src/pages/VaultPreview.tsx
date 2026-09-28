@@ -30,11 +30,13 @@ import { useSharePosition } from "../hooks/useSharePosition"
 import { useTokenSymbols } from "../hooks/useTokenSymbols"
 import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
 import { useVaultFigures } from "../hooks/useVaultFigures"
+import { useVaultPaused } from "../hooks/useVaultPaused"
 import { useWallet } from "../hooks/useWallet"
 import typeStyles from "../styles/type.module.css"
 import {
 	deriveAccess,
 	emptyMessages,
+	isSubscriptionOpen,
 	toActionBalance,
 	toPanelBlock,
 	toPosition,
@@ -80,6 +82,7 @@ const VaultPreview: React.FC = () => {
 	const { balance: deposit } = useDepositBalance()
 	const { symbols } = useTokenSymbols()
 	const { requests } = useInvestorRequests()
+	const { pause } = useVaultPaused()
 	const {
 		status: requestDepositStatus,
 		submit: submitRequestDeposit,
@@ -96,9 +99,13 @@ const VaultPreview: React.FC = () => {
 		network: { state, appNetwork, walletNetwork },
 		allowance,
 	})
+	const isSubscribe = actionSide === "subscribe"
 	const block =
-		toPanelBlock(access, connectWallet, profileModal) ??
-		toPriceBlock(nav, isPendingNav)
+		toPanelBlock(access, connectWallet, profileModal, {
+			isSubscribe,
+			pause,
+			hasOpenSubscription: isSubscriptionOpen(requests),
+		}) ?? toPriceBlock(nav, isPendingNav)
 	const messages = emptyMessages(requests.status)
 	const entriesByStage =
 		requests.status === "loaded"
@@ -149,7 +156,6 @@ const VaultPreview: React.FC = () => {
 		setOpenTooltipId(null)
 	}
 
-	const isSubscribe = actionSide === "subscribe"
 	const inTicker = isSubscribe ? symbols.token : symbols.shareToken
 	const outTicker = isSubscribe ? symbols.shareToken : symbols.token
 	const balance = toActionBalance(

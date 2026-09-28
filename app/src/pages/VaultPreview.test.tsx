@@ -25,12 +25,14 @@ const {
 	mockDeposit,
 	mockSymbols,
 	mockRequests,
+	mockVault,
 	requestDepositMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
 	mockShares: { balance: 500_0000000n },
 	mockDeposit: { balance: 3200_0000000n },
+	mockVault: { paused: false },
 	mockSymbols: {
 		token: "USDC",
 		shareToken: "vUSDC",
@@ -91,12 +93,14 @@ const resetMockRequests = () => {
 beforeEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
+	mockVault.paused = false
 	resetMockRequests()
 })
 
 afterEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
+	mockVault.paused = false
 	resetMockRequests()
 })
 
@@ -135,6 +139,7 @@ vi.mock("../config/clients", () => {
 		get_redeem_request: async ({ epoch_id }: { epoch_id: bigint }) => ({
 			result: mockRequests.redeems.get(epoch_id),
 		}),
+		paused: async () => ({ result: mockVault.paused }),
 		request_deposit: requestDepositMock,
 	}
 	const oracle = {
@@ -339,6 +344,48 @@ describe("VaultPreview", () => {
 		expect(
 			await screen.findByRole("button", { name: "Subscribe" }),
 		).toBeTruthy()
+	})
+
+	it("blocks subscribing before signing while the vault is paused", async () => {
+		mockVault.paused = true
+		renderVaultPreview(connectedWallet)
+
+		expect(
+			await screen.findByText(
+				"The vault is not accepting new requests right now.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
+	})
+
+	it("reaches the Redeem tab while the vault is paused", async () => {
+		mockVault.paused = true
+		renderVaultPreview(connectedWallet)
+
+		await screen.findByText(
+			"The vault is not accepting new requests right now.",
+		)
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+
+		expect(await screen.findByRole("button", { name: "Redeem" })).toBeTruthy()
+		expect(
+			screen.queryByText("The vault is not accepting new requests right now."),
+		).toBeNull()
+	})
+
+	it("blocks subscribing before signing with a subscription already open in the current batch", async () => {
+		mockRequests.deposits.set(mockRequests.currentEpoch, {
+			amount: 100_0000000n,
+			claimed: false,
+		})
+		renderVaultPreview(connectedWallet)
+
+		expect(
+			await screen.findByText(
+				"You already have a subscription request open in this batch.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
 	})
 
 	it("reads and renders the connected address's share balance, using the share token's own reported symbol", async () => {
@@ -610,7 +657,37 @@ describe("VaultPreview", () => {
 		})
 	})
 
+	it("blocks a second subscription once the first confirms, so a second press cannot duplicate it", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Request locked in" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+
+		expect(
+			await screen.findByText(
+				"You already have a subscription request open in this batch.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
+	})
+
 	it("clears the amount field once the subscription confirms, so a second press cannot duplicate it", async () => {
+		requestDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: async () => ({
+				getTransactionResponse: { status: "SUCCESS" },
+				result: mockRequests.currentEpoch,
+			}),
+		}))
 		renderVaultPreview(connectedWallet)
 		const input = (await screen.findByRole("textbox", {
 			name: "Amount to subscribe",
@@ -622,7 +699,7 @@ describe("VaultPreview", () => {
 		expect(
 			await screen.findByRole("heading", { name: "Request locked in" }),
 		).toBeTruthy()
-		expect(input.value).toBe("")
+		await waitFor(() => expect(input.value).toBe(""))
 	})
 
 	it("reads a declined signature as a choice and offers to try again", async () => {

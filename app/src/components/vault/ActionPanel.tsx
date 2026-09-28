@@ -21,6 +21,7 @@ export type ActionBlock = {
 export type MessageBlock = {
 	kind: "message"
 	reason: string
+	sides: ActionPanelSide[]
 }
 
 export type ActionPanelBlock = ActionBlock | MessageBlock
@@ -121,6 +122,13 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 		if (balance !== null) onAmountChange(formatAmount(balance))
 	}
 	const actionBlock = block?.kind === "action" ? block : undefined
+	const messageBlock = block?.kind === "message" ? block : undefined
+	const blocksEverySide =
+		messageBlock !== undefined &&
+		messageBlock.sides.includes("subscribe") &&
+		messageBlock.sides.includes("redeem")
+	const blocksThisSide =
+		messageBlock !== undefined && messageBlock.sides.includes(side)
 
 	return (
 		<div className={styles.panel}>
@@ -128,10 +136,17 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 				{heading}
 			</h2>
 			{note && <p className={`${typeStyles.body} ${styles.note}`}>{note}</p>}
-			{block?.kind === "message" ? (
-				<p className={`${typeStyles.body} ${styles.blocked}`}>{block.reason}</p>
+			{blocksEverySide ? (
+				<p className={`${typeStyles.body} ${styles.blocked}`}>
+					{messageBlock.reason}
+				</p>
 			) : (
 				<>
+					{blocksThisSide && (
+						<p className={`${typeStyles.body} ${styles.blocked}`}>
+							{messageBlock.reason}
+						</p>
+					)}
 					{actionBlock && (
 						<p className={`${typeStyles.body} ${styles.blocked}`}>
 							{actionBlock.reason}
@@ -163,66 +178,77 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 						</button>
 					</div>
 
-					<div className={isOverBalance ? styles.fieldOver : styles.field}>
-						<div className={styles.amountRow}>
-							<label htmlFor="action-panel-amount" className={styles.srOnly}>
-								{amountLabel}
-							</label>
-							<input
-								id="action-panel-amount"
-								className={`${typeStyles.amountInput} ${styles.amountInput}`}
-								value={amount}
-								onChange={(event) => onAmountChange(event.target.value)}
-								placeholder="0.00"
-								inputMode="decimal"
-							/>
-							<span className={styles.ticker}>{ticker}</span>
-							{balance !== null && (
-								<button
-									type="button"
-									className={styles.maxButton}
-									onClick={fillMax}
+					{!blocksThisSide && (
+						<>
+							<div className={isOverBalance ? styles.fieldOver : styles.field}>
+								<div className={styles.amountRow}>
+									<label
+										htmlFor="action-panel-amount"
+										className={styles.srOnly}
+									>
+										{amountLabel}
+									</label>
+									<input
+										id="action-panel-amount"
+										className={`${typeStyles.amountInput} ${styles.amountInput}`}
+										value={amount}
+										onChange={(event) => onAmountChange(event.target.value)}
+										placeholder="0.00"
+										inputMode="decimal"
+									/>
+									<span className={styles.ticker}>{ticker}</span>
+									{balance !== null && (
+										<button
+											type="button"
+											className={styles.maxButton}
+											onClick={fillMax}
+										>
+											MAX
+										</button>
+									)}
+								</div>
+								<div className={styles.balanceRow}>
+									<span
+										className={`${typeStyles.footnote} ${styles.balanceLabel}`}
+									>
+										{balanceLabel}
+									</span>
+								</div>
+							</div>
+
+							<div className={styles.estimate}>
+								<span className={`${typeStyles.label} ${styles.estimateLabel}`}>
+									{estimate.label}
+								</span>
+								<span
+									className={`${
+										estimate.status === "ready"
+											? typeStyles.estimate
+											: typeStyles.body
+									} ${styles.estimateValue}`}
 								>
-									MAX
-								</button>
+									{estimate.status === "ready"
+										? estimate.value
+										: estimate.reason}
+								</span>
+							</div>
+
+							{overBalance !== undefined && (
+								<p className={`${typeStyles.body} ${styles.errorMessage}`}>
+									{`You have ${overBalance} ${ticker}. Enter ${overBalance} or less.`}
+								</p>
 							)}
-						</div>
-						<div className={styles.balanceRow}>
-							<span className={`${typeStyles.footnote} ${styles.balanceLabel}`}>
-								{balanceLabel}
-							</span>
-						</div>
-					</div>
 
-					<div className={styles.estimate}>
-						<span className={`${typeStyles.label} ${styles.estimateLabel}`}>
-							{estimate.label}
-						</span>
-						<span
-							className={`${
-								estimate.status === "ready"
-									? typeStyles.estimate
-									: typeStyles.body
-							} ${styles.estimateValue}`}
-						>
-							{estimate.status === "ready" ? estimate.value : estimate.reason}
-						</span>
-					</div>
-
-					{overBalance !== undefined && (
-						<p className={`${typeStyles.body} ${styles.errorMessage}`}>
-							{`You have ${overBalance} ${ticker}. Enter ${overBalance} or less.`}
-						</p>
+							<PanelActions
+								block={actionBlock}
+								overBalance={overBalance}
+								submitLabel={submitLabel}
+								canSubmit={canSubmit}
+								onSubmit={onSubmit}
+								onFillMax={fillMax}
+							/>
+						</>
 					)}
-
-					<PanelActions
-						block={actionBlock}
-						overBalance={overBalance}
-						submitLabel={submitLabel}
-						canSubmit={canSubmit}
-						onSubmit={onSubmit}
-						onFillMax={fillMax}
-					/>
 				</>
 			)}
 		</div>
