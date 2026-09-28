@@ -27,6 +27,7 @@ const {
 	mockRequests,
 	mockVault,
 	requestDepositMock,
+	cancelDepositMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
@@ -58,7 +59,33 @@ const {
 		>(),
 	},
 	requestDepositMock: vi.fn(),
+	cancelDepositMock: vi.fn(),
 }))
+
+const defaultCancelDepositImpl = async ({
+	epoch_id,
+}: {
+	from: string
+	epoch_id: bigint
+}) => {
+	const request = mockRequests.deposits.get(epoch_id)
+	const refunded = request?.amount ?? 0n
+	return {
+		simulation: undefined,
+		signAndSend: async ({
+			watcher,
+		}: {
+			watcher: { onSubmitted: () => void }
+		}) => {
+			watcher.onSubmitted()
+			mockRequests.deposits.delete(epoch_id)
+			return {
+				getTransactionResponse: { status: "SUCCESS" },
+				result: refunded,
+			}
+		},
+	}
+}
 
 const defaultRequestDepositImpl = async ({
 	amount,
@@ -88,6 +115,8 @@ const resetMockRequests = () => {
 	mockRequests.redeems.clear()
 	requestDepositMock.mockReset()
 	requestDepositMock.mockImplementation(defaultRequestDepositImpl)
+	cancelDepositMock.mockReset()
+	cancelDepositMock.mockImplementation(defaultCancelDepositImpl)
 }
 
 beforeEach(() => {
@@ -141,6 +170,7 @@ vi.mock("../config/clients", () => {
 		}),
 		paused: async () => ({ result: mockVault.paused }),
 		request_deposit: requestDepositMock,
+		cancel_deposit: cancelDepositMock,
 	}
 	const oracle = {
 		state: async () => ({ result: { tag: "Valid", values: undefined } }),
@@ -725,5 +755,116 @@ describe("VaultPreview", () => {
 			}),
 		).toBeTruthy()
 		expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy()
+	})
+
+	it("offers a Cancel action on a waiting subscription", async () => {
+		mockRequests.deposits.set(mockRequests.currentEpoch, {
+			amount: 150_0000000n,
+			claimed: false,
+		})
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+
+		expect(await screen.findByRole("button", { name: "Cancel" })).toBeTruthy()
+	})
+
+	it("reaches cancel_deposit with the request's own batch when Cancel is pressed", async () => {
+		mockRequests.deposits.set(mockRequests.currentEpoch, {
+			amount: 150_0000000n,
+			claimed: false,
+		})
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		await waitFor(() => expect(cancelDepositMock).toHaveBeenCalledTimes(1))
+		expect(cancelDepositMock).toHaveBeenCalledWith({
+			from: investorAddress,
+			epoch_id: mockRequests.currentEpoch,
+		})
+	})
+
+	it("shows the cancellation modal with the request's own amount while it is in flight", async () => {
+		mockRequests.deposits.set(mockRequests.currentEpoch, {
+			amount: 150_0000000n,
+			claimed: false,
+		})
+		let resolveSend!: () => void
+		const gate = new Promise<void>((resolve) => {
+			resolveSend = resolve
+		})
+		cancelDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: async ({
+				watcher,
+			}: {
+				watcher: { onSubmitted: () => void }
+			}) => {
+				watcher.onSubmitted()
+				await gate
+				return {
+					getTransactionResponse: { status: "SUCCESS" },
+					result: 150_0000000n,
+				}
+			},
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Sending your cancellation" }),
+		).toBeTruthy()
+		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+
+		resolveSend()
+		await screen.findByRole("heading", { name: "Request cancelled" })
+	})
+
+	it("never mounts more than one transaction dialog at once", async () => {
+		mockRequests.epochs.set(1n, { status: { tag: "Pending" }, share_price: 0n })
+		mockRequests.deposits.set(1n, { amount: 150_0000000n, claimed: false })
+		requestDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: () => new Promise<never>(() => {}),
+		}))
+		renderVaultPreview(connectedWallet)
+
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		expect(screen.getAllByRole("dialog")).toHaveLength(1)
+	})
+
+	it("removes a cancelled request from the list without a manual refresh", async () => {
+		mockRequests.deposits.set(mockRequests.currentEpoch, {
+			amount: 150_0000000n,
+			claimed: false,
+		})
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Request cancelled" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+
+		expect(await screen.findByRole("tab", { name: "Waiting 0" })).toBeTruthy()
 	})
 })

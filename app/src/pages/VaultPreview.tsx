@@ -3,6 +3,7 @@ import {
 	type Amount,
 	connectWallet,
 	formatAmount,
+	formatScaled,
 	networkStatus,
 	parseAmount,
 	parseUnits,
@@ -19,10 +20,14 @@ import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
 import { type RequestStage } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
-import SubscriptionModal from "../components/vault/SubscriptionModal"
+import TransactionModal from "../components/vault/TransactionModal"
 import { contractRows, vaultContractId } from "../config/contracts"
+import { useCancelDeposit } from "../hooks/useCancelDeposit"
 import { useDepositBalance } from "../hooks/useDepositBalance"
-import { useInvestorRequests } from "../hooks/useInvestorRequests"
+import {
+	type InvestorRequest,
+	useInvestorRequests,
+} from "../hooks/useInvestorRequests"
 import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
 import { useRequestDeposit } from "../hooks/useRequestDeposit"
@@ -90,6 +95,16 @@ const VaultPreview: React.FC = () => {
 	} = useRequestDeposit()
 	const [pendingAmountLabel, setPendingAmountLabel] = React.useState("")
 	const [pendingAmount, setPendingAmount] = React.useState<Amount | null>(null)
+	const {
+		status: cancelDepositStatus,
+		submit: submitCancelDeposit,
+		reset: resetCancelDeposit,
+	} = useCancelDeposit()
+	const [pendingCancelAmountLabel, setPendingCancelAmountLabel] =
+		React.useState("")
+	const [pendingCancelEpochId, setPendingCancelEpochId] = React.useState<
+		bigint | null
+	>(null)
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -106,10 +121,22 @@ const VaultPreview: React.FC = () => {
 			pause,
 			hasOpenSubscription: isSubscriptionOpen(requests),
 		}) ?? toPriceBlock(nav, isPendingNav)
+	const cancelDeposit = (request: InvestorRequest) => {
+		void submitCancelDeposit(request.epochId).then((started) => {
+			if (!started) return
+			setPendingCancelEpochId(request.epochId)
+			setPendingCancelAmountLabel(formatScaled(request.amount, AMOUNT_DECIMALS))
+		})
+	}
+	const retryCancelDeposit = () => {
+		if (pendingCancelEpochId === null) return
+		void submitCancelDeposit(pendingCancelEpochId)
+	}
+
 	const messages = emptyMessages(requests.status)
 	const entriesByStage =
 		requests.status === "loaded"
-			? toRequestEntriesByStage(requests, symbols)
+			? toRequestEntriesByStage(requests, symbols, undefined, cancelDeposit)
 			: undefined
 	const requestGroups: [RequestGroup, ...RequestGroup[]] = [
 		{
@@ -179,9 +206,11 @@ const VaultPreview: React.FC = () => {
 		if (parsedAmount === null) return
 		const amount = parseUnits(actionAmount, AMOUNT_DECIMALS)
 		if (amount === null) return
-		setPendingAmountLabel(formatAmount(parsedAmount))
-		setPendingAmount(amount)
-		void submitRequestDeposit(amount)
+		void submitRequestDeposit(amount).then((started) => {
+			if (!started) return
+			setPendingAmountLabel(formatAmount(parsedAmount))
+			setPendingAmount(amount)
+		})
 	}
 
 	const retryRequestDeposit = () => {
@@ -294,14 +323,26 @@ const VaultPreview: React.FC = () => {
 				</aside>
 			</div>
 
-			{requestDepositStatus.status !== "idle" && (
-				<SubscriptionModal
+			{requestDepositStatus.status !== "idle" ? (
+				<TransactionModal
+					action="subscribe"
 					status={requestDepositStatus}
 					amount={pendingAmountLabel}
 					ticker={inTicker}
 					onClose={resetRequestDeposit}
 					onRetry={retryRequestDeposit}
 				/>
+			) : (
+				cancelDepositStatus.status !== "idle" && (
+					<TransactionModal
+						action="cancel"
+						status={cancelDepositStatus}
+						amount={pendingCancelAmountLabel}
+						ticker={symbols.token}
+						onClose={resetCancelDeposit}
+						onRetry={retryCancelDeposit}
+					/>
+				)
 			)}
 		</div>
 	)
