@@ -126,3 +126,40 @@ fn a_frozen_or_delisted_holder_cannot_transfer_shares() {
     f.share.set_address_frozen(&user, &true, &f.admin);
     assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
 }
+
+#[test]
+fn a_frozen_investor_on_the_allowlist_is_still_minted() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+
+    f.share.set_address_frozen(&investor, &true, &f.admin);
+
+    assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
+    assert_eq!(f.shares(&investor), 200);
+}
+
+#[test]
+fn a_frozen_holder_can_still_queue_an_exit() {
+    let f = setup();
+    let user = f.holder(500);
+    let epoch = f.vault.current_epoch();
+
+    f.share.set_address_frozen(&user, &true, &f.admin);
+
+    assert_eq!(f.vault.request_redeem(&user, &200), epoch);
+    assert_eq!(f.shares(&f.vault.address), 200);
+}
+
+#[test]
+fn queueing_an_exit_releases_a_partial_freeze() {
+    let f = setup();
+    let user = f.holder(500);
+    f.share.freeze_partial_tokens(&user, &400, &f.admin);
+
+    f.vault.request_redeem(&user, &300);
+
+    assert_eq!(f.shares(&user), 200);
+    assert_eq!(f.share.get_frozen_tokens(&user), 200);
+}
