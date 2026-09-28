@@ -30,7 +30,8 @@ impl IdentityVerifier {
 
     /// Adds or removes an account from the allowlist.
     #[only_admin]
-    pub fn allow(e: &Env, account: Address, allowed: bool, _caller: Address) {
+    pub fn allow(e: &Env, account: Address, allowed: bool, caller: Address) {
+        caller.require_auth();
         e.storage()
             .persistent()
             .set(&DataKey::Allowed(account), &allowed);
@@ -69,3 +70,6 @@ impl identity_verification::IdentityVerifier for IdentityVerifier {
     ) {
     }
 }
+
+#[cfg(test)]
+mod test;
