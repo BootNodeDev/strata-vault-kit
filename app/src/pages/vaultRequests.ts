@@ -91,6 +91,13 @@ function cancelAction(
 	return { label: "Cancel", kind: "ordinary", onPress: () => onCancel(request) }
 }
 
+function claimAction(
+	request: InvestorRequest,
+	onClaim: (request: InvestorRequest) => void,
+): RequestAction {
+	return { label: "Claim", kind: "primary", onPress: () => onClaim(request) }
+}
+
 function waitingEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
@@ -113,10 +120,16 @@ function waitingEntry(
 function readyEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
+	onClaim: ((request: InvestorRequest) => void) | undefined,
 ): RequestEntry {
 	const owed = owedAmount(request.side, request.amount, request.sharePrice)
+	const actions =
+		onClaim !== undefined && request.side === "deposit"
+			? [claimAction(request, onClaim)]
+			: []
 	return {
 		...baseEntry(request, tokens),
+		actions,
 		outAmount: `${formatScaled(owed, AMOUNT_DECIMALS)} ${outTicker(request.side, tokens)}`,
 		outTone: "ok",
 		state: "Priced",
@@ -163,6 +176,7 @@ export function toPresentEntry(
 	tokens: RequestTokens,
 	refusal: ClaimRefusal | undefined,
 	onCancel?: (request: InvestorRequest) => void,
+	onClaim?: (request: InvestorRequest) => void,
 ): RequestEntry {
 	const stage = assignStage(request, refusal)
 	if (stage === "waiting") return waitingEntry(request, tokens, onCancel)
@@ -170,7 +184,7 @@ export function toPresentEntry(
 		return invalidPriceEntry(request, tokens)
 	if (stage === "blocked" && refusal !== undefined)
 		return blockedEntry(request, tokens, refusal)
-	return readyEntry(request, tokens)
+	return readyEntry(request, tokens, onClaim)
 }
 
 function archivedEntry(request: ArchivedRequest): RequestEntry {
@@ -217,6 +231,7 @@ export function toRequestEntriesByStage(
 	refusalFor: (request: InvestorRequest) => ClaimRefusal | undefined = () =>
 		undefined,
 	onCancel?: (request: InvestorRequest) => void,
+	onClaim?: (request: InvestorRequest) => void,
 ): EntriesByStage {
 	const entries: EntriesByStage = { ready: [], blocked: [], waiting: [] }
 
@@ -224,7 +239,7 @@ export function toRequestEntriesByStage(
 		if (request.claimed) continue
 		const refusal = refusalFor(request)
 		entries[assignStage(request, refusal)].push(
-			toPresentEntry(request, tokens, refusal, onCancel),
+			toPresentEntry(request, tokens, refusal, onCancel, onClaim),
 		)
 	}
 	for (const request of loaded.archived) {

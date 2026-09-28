@@ -335,6 +335,58 @@ describe("toRequestEntriesByStage", () => {
 		expect(result.ready[0]?.actions).toEqual([])
 	})
 
+	it("offers no claim action on a ready deposit when no handler is given", () => {
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.ready[0]?.actions).toEqual([])
+	})
+
+	it("offers a claim action on a ready deposit when a handler is given", () => {
+		const onClaim = () => {}
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			undefined,
+			onClaim,
+		)
+
+		expect(result.ready[0]?.actions).toEqual([
+			{ label: "Claim", kind: "primary", onPress: expect.any(Function) },
+		])
+	})
+
+	it("presses the claim action with the exact request it belongs to", () => {
+		const onClaim = vi.fn()
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			undefined,
+			onClaim,
+		)
+
+		result.ready[0]?.actions[0]?.onPress()
+
+		expect(onClaim).toHaveBeenCalledWith(deposit)
+	})
+
+	it("offers no claim action on a ready redemption, since claim_deposit is deposit-only", () => {
+		const onClaim = () => {}
+		const result = toRequestEntriesByStage(
+			{ requests: [redeem], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			undefined,
+			onClaim,
+		)
+
+		expect(result.ready[0]?.actions).toEqual([])
+	})
+
 	it("places an unreadable request in blocked, distinguishable from an archived one", () => {
 		const unreadable: UnreadableRequest = { epochId: 4n, side: "redeem" }
 		const result = toRequestEntriesByStage(
