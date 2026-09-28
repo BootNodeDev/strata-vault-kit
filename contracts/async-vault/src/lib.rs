@@ -61,6 +61,12 @@ impl AsyncVault {
         oracle: Address,
         roles: VaultRoles,
     ) {
+        // The vault kit white-label topology specifies five distinct authorities:
+        // governance, manager, treasury, guardian, compliance, and attester.
+        // Although compliance is enforced on the identity verifier and attestation
+        // on the NAV oracle, the vault checks pairwise distinctness at construction
+        // time to prevent role misconfiguration across the kit ecosystem. Neither
+        // compliance nor attester is granted a direct role on the vault contract itself.
         if roles.treasury == roles.guardian
             || roles.treasury == roles.governance
             || roles.compliance == roles.governance
@@ -159,12 +165,14 @@ impl AsyncVault {
     }
 
     #[only_admin]
-    pub fn set_custodian(e: &Env, custodian: Address, _caller: Address) {
+    pub fn set_custodian(e: &Env, custodian: Address, caller: Address) {
+        caller.require_auth();
         treasury::set_custodian(e, &custodian);
     }
 
     #[only_admin]
-    pub fn set_wind_down_delay(e: &Env, secs: u64, _caller: Address) {
+    pub fn set_wind_down_delay(e: &Env, secs: u64, caller: Address) {
+        caller.require_auth();
         wind_down::set_delay(e, secs);
     }
 
@@ -177,12 +185,14 @@ impl AsyncVault {
     }
 
     #[only_admin]
-    pub fn propose_wind_down(e: &Env, _caller: Address) {
+    pub fn propose_wind_down(e: &Env, caller: Address) {
+        caller.require_auth();
         wind_down::propose(e);
     }
 
     #[only_admin]
-    pub fn cancel_wind_down_proposal(e: &Env, _caller: Address) {
+    pub fn cancel_wind_down_proposal(e: &Env, caller: Address) {
+        caller.require_auth();
         wind_down::cancel_proposal(e);
     }
 
@@ -221,7 +231,8 @@ impl AsyncVault {
     }
 
     #[only_admin]
-    pub fn set_notice(e: &Env, secs: u64, _caller: Address) {
+    pub fn set_notice(e: &Env, secs: u64, caller: Address) {
+        caller.require_auth();
         if secs > MAX_NOTICE_SECS {
             panic_with_error!(e, VaultError::NoticeTooLong);
         }
@@ -233,23 +244,27 @@ impl AsyncVault {
     }
 
     #[only_admin]
-    pub fn propose_upgrade(e: &Env, wasm_hash: BytesN<32>, _caller: Address) {
+    pub fn propose_upgrade(e: &Env, wasm_hash: BytesN<32>, caller: Address) {
+        caller.require_auth();
         upgrade::propose_wasm(e, wasm_hash);
     }
 
     #[only_admin]
-    pub fn propose_upgrade_delay(e: &Env, secs: u64, _caller: Address) {
+    pub fn propose_upgrade_delay(e: &Env, secs: u64, caller: Address) {
+        caller.require_auth();
         upgrade::propose_delay(e, secs);
     }
 
     #[only_admin]
-    pub fn cancel_upgrade(e: &Env, _caller: Address) {
+    pub fn cancel_upgrade(e: &Env, caller: Address) {
+        caller.require_auth();
         upgrade::cancel(e);
     }
 
     #[only_admin]
     #[when_not_paused]
-    pub fn apply_upgrade(e: &Env, _caller: Address) {
+    pub fn apply_upgrade(e: &Env, caller: Address) {
+        caller.require_auth();
         upgrade::apply(e);
     }
 
@@ -360,7 +375,8 @@ impl Pausable for AsyncVault {
     }
 
     #[only_admin]
-    fn unpause(e: &Env, _caller: Address) {
+    fn unpause(e: &Env, caller: Address) {
+        caller.require_auth();
         pausable::unpause(e);
         upgrade::on_unpause(e);
     }

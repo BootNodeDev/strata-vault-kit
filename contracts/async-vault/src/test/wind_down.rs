@@ -107,6 +107,13 @@ fn governance_cancels_a_proposal_before_activation() {
     f.vault.set_wind_down_delay(&WEEK, &f.admin);
     f.vault.propose_wind_down(&f.admin);
 
+    let stranger = Address::generate(&f.e);
+    f.e.set_auths(&[]);
+    assert!(f.vault.try_cancel_wind_down_proposal(&stranger).is_err());
+    assert!(f.vault.try_cancel_wind_down_proposal(&f.manager).is_err());
+    assert!(f.vault.try_cancel_wind_down_proposal(&f.guardian).is_err());
+
+    f.e.mock_all_auths();
     f.vault.cancel_wind_down_proposal(&f.admin);
     assert_eq!(f.vault.wind_down(), None);
 
