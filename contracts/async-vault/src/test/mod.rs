@@ -4,6 +4,7 @@ mod constructor;
 mod controls;
 mod conversions;
 mod deposit;
+mod deposit_cap;
 mod epochs;
 mod multi_epoch;
 mod notice;

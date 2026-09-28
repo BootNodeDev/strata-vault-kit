@@ -109,4 +109,6 @@ pub enum VaultError {
     /// The notice exceeds the upgrade delay, so an investor could not complete
     /// an exit before an upgrade lands.
     NoticeAboveUpgradeDelay = 6061,
+    /// A deposit request would breach the vault's configured deposit cap.
+    DepositCapExceeded = 6062,
 }
