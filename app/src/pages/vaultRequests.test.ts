@@ -3,7 +3,7 @@ import {
 	type EpochStatus,
 	type Price,
 } from "@stellar-scaffold/app-lib"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
 	type ArchivedRequest,
 	type InvestorRequest,
@@ -269,6 +269,70 @@ describe("toRequestEntriesByStage", () => {
 
 		expect(result.ready).toHaveLength(1)
 		expect(result.blocked).toHaveLength(1)
+	})
+
+	it("offers no cancel action on a waiting deposit when no handler is given", () => {
+		const waiting: InvestorRequest = { ...deposit, epochStatus: open }
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.waiting[0]?.actions).toEqual([])
+	})
+
+	it("offers a cancel action on a waiting deposit when a handler is given", () => {
+		const waiting: InvestorRequest = { ...deposit, epochStatus: open }
+		const onCancel = () => {}
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			onCancel,
+		)
+
+		expect(result.waiting[0]?.actions).toEqual([
+			{ label: "Cancel", kind: "ordinary", onPress: expect.any(Function) },
+		])
+	})
+
+	it("presses the cancel action with the exact request it belongs to", () => {
+		const waiting: InvestorRequest = { ...deposit, epochStatus: open }
+		const onCancel = vi.fn()
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			onCancel,
+		)
+
+		result.waiting[0]?.actions[0]?.onPress()
+
+		expect(onCancel).toHaveBeenCalledWith(waiting)
+	})
+
+	it("offers no cancel action on a waiting redemption, since cancel_deposit is deposit-only", () => {
+		const waiting: InvestorRequest = { ...redeem, epochStatus: open }
+		const onCancel = () => {}
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			onCancel,
+		)
+
+		expect(result.waiting[0]?.actions).toEqual([])
+	})
+
+	it("offers no cancel action once a deposit is priced and no longer waiting", () => {
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			() => {},
+		)
+
+		expect(result.ready[0]?.actions).toEqual([])
 	})
 
 	it("places an unreadable request in blocked, distinguishable from an archived one", () => {

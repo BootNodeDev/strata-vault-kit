@@ -2,20 +2,24 @@ import {
 	AMOUNT_DECIMALS,
 	type Amount,
 	type NetworkState,
+	type Price,
 } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
 import { type DepositBalance } from "../hooks/useDepositBalance"
+import { type InvestorRequestsRead } from "../hooks/useInvestorRequests"
 import { type Allowance } from "../hooks/useIsAllowed"
 import { type NavClassification } from "../hooks/useNavPrice"
 import { type SharePosition } from "../hooks/useSharePosition"
 import {
 	deriveAccess,
 	emptyMessages,
+	isSubscriptionOpen,
 	toActionBalance,
 	toPanelBlock,
 	toPosition,
 	toPriceBlock,
 	type InvestorAccess,
+	type SubscribeGate,
 } from "./vaultAccess"
 
 const address = "GINVESTORADDRESS1234567890"
@@ -89,12 +93,18 @@ describe("deriveAccess", () => {
 describe("toPanelBlock", () => {
 	const onConnect = vi.fn()
 	const onOpenWallet = vi.fn()
+	const openGate: SubscribeGate = {
+		isSubscribe: true,
+		pause: "open",
+		hasOpenSubscription: false,
+	}
 
 	it("offers a connect action while disconnected", () => {
 		const block = toPanelBlock(
 			{ status: "disconnected" },
 			onConnect,
 			onOpenWallet,
+			openGate,
 		)
 
 		expect(block?.kind).toBe("action")
@@ -113,6 +123,7 @@ describe("toPanelBlock", () => {
 			},
 			onConnect,
 			onOpenWallet,
+			openGate,
 		)
 
 		expect(block?.kind).toBe("action")
@@ -124,10 +135,16 @@ describe("toPanelBlock", () => {
 	})
 
 	it("shows a checking message distinguishable from a failure or a denial", () => {
-		const block = toPanelBlock({ status: "checking" }, onConnect, onOpenWallet)
+		const block = toPanelBlock(
+			{ status: "checking" },
+			onConnect,
+			onOpenWallet,
+			openGate,
+		)
 		expect(block).toEqual({
 			kind: "message",
 			reason: "Checking whether this address may subscribe.",
+			sides: ["subscribe", "redeem"],
 		})
 	})
 
@@ -136,6 +153,7 @@ describe("toPanelBlock", () => {
 			{ status: "unreadable" },
 			onConnect,
 			onOpenWallet,
+			openGate,
 		)
 		expect(block?.kind).toBe("message")
 		expect(block?.reason).not.toMatch(/not allowed/i)
@@ -146,15 +164,183 @@ describe("toPanelBlock", () => {
 			{ status: "not-allowed" },
 			onConnect,
 			onOpenWallet,
+			openGate,
 		)
 		expect(block?.kind).toBe("message")
 		expect(block?.reason).toMatch(/allowlist/i)
 	})
 
-	it("returns no block once allowed", () => {
+	it("returns no block once allowed, unpaused, and with no open subscription", () => {
 		expect(
-			toPanelBlock({ status: "allowed" }, onConnect, onOpenWallet),
+			toPanelBlock({ status: "allowed" }, onConnect, onOpenWallet, openGate),
 		).toBeUndefined()
+	})
+
+	it("states a genuine not-allowed before either subscribe gate reason", () => {
+		const block = toPanelBlock(
+			{ status: "not-allowed" },
+			onConnect,
+			onOpenWallet,
+			{ isSubscribe: true, pause: "paused", hasOpenSubscription: true },
+		)
+		expect(block?.reason).toMatch(/allowlist/i)
+	})
+
+	describe("subscribe gate", () => {
+		it("blocks with a checking message while the pause read is in flight", () => {
+			const block = toPanelBlock(
+				{ status: "allowed" },
+				onConnect,
+				onOpenWallet,
+				{ ...openGate, pause: "checking" },
+			)
+			expect(block).toEqual({
+				kind: "message",
+				reason: "Checking whether the vault is accepting requests.",
+				sides: ["subscribe"],
+			})
+		})
+
+		it("blocks with a distinct message when the pause read fails", () => {
+			const block = toPanelBlock(
+				{ status: "allowed" },
+				onConnect,
+				onOpenWallet,
+				{ ...openGate, pause: "unreadable" },
+			)
+			expect(block).toEqual({
+				kind: "message",
+				reason:
+					"Could not check whether the vault is accepting requests. Try again shortly.",
+				sides: ["subscribe"],
+			})
+		})
+
+		it("blocks while the vault is paused", () => {
+			const block = toPanelBlock(
+				{ status: "allowed" },
+				onConnect,
+				onOpenWallet,
+				{ ...openGate, pause: "paused" },
+			)
+			expect(block).toEqual({
+				kind: "message",
+				reason: "The vault is not accepting new requests right now.",
+				sides: ["subscribe"],
+			})
+		})
+
+		it("blocks while a subscription is already open in the current batch", () => {
+			const block = toPanelBlock(
+				{ status: "allowed" },
+				onConnect,
+				onOpenWallet,
+				{ ...openGate, hasOpenSubscription: true },
+			)
+			expect(block).toEqual({
+				kind: "message",
+				reason: "You already have a subscription request open in this batch.",
+				sides: ["subscribe"],
+			})
+		})
+
+		it("scopes the pause block to the subscribe side only, so the redeem side stays reachable", () => {
+			const block = toPanelBlock(
+				{ status: "allowed" },
+				onConnect,
+				onOpenWallet,
+				{ ...openGate, pause: "paused" },
+			)
+			expect(block?.kind).toBe("message")
+			if (block?.kind === "message") {
+				expect(block.sides).toEqual(["subscribe"])
+			}
+		})
+
+		it("states the pause reason before the open-subscription reason when both apply", () => {
+			const block = toPanelBlock(
+				{ status: "allowed" },
+				onConnect,
+				onOpenWallet,
+				{ isSubscribe: true, pause: "paused", hasOpenSubscription: true },
+			)
+			expect(block?.reason).toMatch(/accepting new requests/i)
+		})
+
+		it("never gates the redeem side on pause or an open subscription", () => {
+			const block = toPanelBlock(
+				{ status: "allowed" },
+				onConnect,
+				onOpenWallet,
+				{ isSubscribe: false, pause: "paused", hasOpenSubscription: true },
+			)
+			expect(block).toBeUndefined()
+		})
+	})
+})
+
+describe("isSubscriptionOpen", () => {
+	const checking: InvestorRequestsRead = { status: "checking" }
+
+	it("is false before the investor's requests resolve", () => {
+		expect(isSubscriptionOpen(checking)).toBe(false)
+	})
+
+	it("is true when a deposit request is open in the current batch", () => {
+		const requests: InvestorRequestsRead = {
+			status: "loaded",
+			requests: [
+				{
+					epochId: 2n,
+					side: "deposit",
+					epochStatus: { tag: "Open", values: undefined },
+					sharePrice: 0n as Price,
+					amount: 100_0000000n as Amount,
+					claimed: false,
+				},
+			],
+			archived: [],
+			unreadable: [],
+		}
+		expect(isSubscriptionOpen(requests)).toBe(true)
+	})
+
+	it("is false when only a redemption is open in the current batch", () => {
+		const requests: InvestorRequestsRead = {
+			status: "loaded",
+			requests: [
+				{
+					epochId: 2n,
+					side: "redeem",
+					epochStatus: { tag: "Open", values: undefined },
+					sharePrice: 0n as Price,
+					amount: 500_0000000n as Amount,
+					claimed: false,
+				},
+			],
+			archived: [],
+			unreadable: [],
+		}
+		expect(isSubscriptionOpen(requests)).toBe(false)
+	})
+
+	it("is false for a deposit request left over from a closed batch", () => {
+		const requests: InvestorRequestsRead = {
+			status: "loaded",
+			requests: [
+				{
+					epochId: 1n,
+					side: "deposit",
+					epochStatus: { tag: "Pending", values: undefined },
+					sharePrice: 0n as Price,
+					amount: 100_0000000n as Amount,
+					claimed: false,
+				},
+			],
+			archived: [],
+			unreadable: [],
+		}
+		expect(isSubscriptionOpen(requests)).toBe(false)
 	})
 })
 
@@ -163,13 +349,17 @@ describe("toPriceBlock", () => {
 		expect(toPriceBlock(undefined, true)).toEqual({
 			kind: "message",
 			reason: "Reading the vault's price.",
+			sides: ["subscribe", "redeem"],
 		})
 	})
 
-	it("blocks on any non-valid price once resolved", () => {
+	it("blocks on any non-valid price once resolved, on both sides", () => {
 		const notValid: NavClassification = { status: "paused" }
 		const block = toPriceBlock(notValid, false)
 		expect(block?.kind).toBe("message")
+		if (block?.kind === "message") {
+			expect(block.sides).toEqual(["subscribe", "redeem"])
+		}
 	})
 
 	it("returns no block once the price is valid", () => {
