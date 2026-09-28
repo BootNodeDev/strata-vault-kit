@@ -25,4 +25,5 @@ pub(crate) enum DataKey {
     WindDownAcc,
     WindDownOwed,
     WindDownPosition(Address),
+    DepositCap,
 }
