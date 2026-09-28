@@ -11,14 +11,16 @@ It covers:
 
 ## 1. Protocol Invariants & Testable Properties
 
-The contracts enforce a set of mathematical and state-machine invariants across all operations. Each invariant is stated below as a formal, testable property matching the on-chain test suite and the TLA+ formal specifications in `spec/`.
+The contracts enforce a set of mathematical and state-machine invariants across all operations. Each invariant is stated below as a formal, testable property matching the on-chain test suite.
 
-### Invariant 1: Reserve Solvency
-- **Definition**: The vault's on-chain asset balance must cover all pending cancellable subscription escrow and all committed redemption liabilities.
+### Invariant 1: Escrow Stays, Only Free Reserve Moves
+- **Definition**: Cancellable subscription escrow never leaves the vault, and only the free reserve can move to the custodian. Priced redemption liabilities (`committed`) may exceed the liquid reserve; the shortfall is reported as `uncovered`, not refused. Here $\text{held}$ is the vault's balance of the settlement asset.
 - **Mathematical Statement**:
-  $$\text{liquid\_reserve} \ge \text{committed} + \text{cancellable\_escrow}$$
-- **Testable Property**: For every state transition, the contract's actual balance held in the Stellar Asset Contract (SAC) is strictly $\ge \text{committed} + \text{cancellable\_escrow}$. The free reserve ($\text{liquid\_reserve} - \text{committed} - \text{cancellable\_escrow}$) cannot be negative.
-- **Enforcement**: Outbound custodian transfers (`deploy_to_custodian`) check that only uncommitted, non-escrowed free reserve is movable.
+  $$\text{liquid\_reserve} = \text{held} - \text{cancellable\_escrow}$$
+  $$\text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)$$
+  $$\text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)$$
+- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $\text{assets} > \text{free\_reserve}$, so after every operation $\text{held} \ge \text{cancellable\_escrow}$. While $\text{uncovered} > 0$, the free reserve is zero and nothing leaves for the custodian.
+- **Enforcement**: `deploy_to_custodian` is the only outbound path to the custodian, and it moves at most the free reserve.
 
 ### Invariant 2: Notice Period Respected
 - **Definition**: An epoch cannot be fulfilled or priced until its standing notice period has fully elapsed.
@@ -31,20 +33,20 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Definition**: An epoch is never priced against a valuation accepted before that epoch closed.
 - **Mathematical Statement**:
   $$\text{attested\_at} \ge \text{closed\_at}$$
-- **Testable Property**: If the latest oracle attestation timestamp precedes `closed_at`, `fulfill_epoch` is rejected with `ValuationPredatesClose`. A valuation accepted in the exact closing ledger timestamp or later is accepted.
+- **Testable Property**: If the latest oracle attestation timestamp precedes `closed_at`, `fulfill_epoch` is rejected with `AttestationBeforeClose`. A valuation accepted in the exact closing ledger timestamp or later is accepted.
 
 ### Invariant 4: Covered Claims Always Pay (Exit Guarantee)
 - **Definition**: Once an exit is priced and covered by the liquid reserve, its cash payout cannot be blocked by an administrative pause, oracle staleness, or an investor's compliance delisting.
 - **Testable Property**: If `liquid_reserve >= assets_owed`, `claim_redeem` succeeds when:
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or ripcord is raised.
-  3. The caller has been de-listed or frozen in the `IdentityVerifier`.
-  Priced claims are never re-priced and never identity-gated.
+  3. The caller has been de-listed in the `IdentityVerifier`.
+  Priced claims are never re-priced and never identity-gated. A frozen investor is outside this guarantee (design document §8.1).
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
 - **Definition**: Investors cannot be trapped in the vault by an administrative pause.
 - **Testable Property**: When `paused == true`:
-  - `request_deposit` is refused (`VaultError::ContractPaused`).
+  - `request_deposit` is refused by `#[when_not_paused]` (`PausableError::EnforcedPause`).
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
 
@@ -61,14 +63,14 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   $$\text{assets\_to\_shares}(a) = \lfloor (a \cdot \text{SCALE}) / \text{NAV} \rfloor$$
   $$\text{shares\_to\_assets}(s) = \lfloor (s \cdot \text{NAV}) / \text{SCALE} \rfloor$$
   $$\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s$$
-- **Testable Property**: For all values of $a, s \in [1, 10^{30}]$ and $\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]$, round-trip conversion produces zero net value. Remainder satisfies:
+- **Testable Property**: For all values of $a, s \in [1, 10^{30}]$ and $\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]$, a round-trip conversion never creates value. Remainder satisfies:
   $$(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}$$
 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
 - **Testable Property**:
   - Upgrade delay $\in [7 \text{ days}, 90 \text{ days}]$ and $\text{delay} \ge \text{notice}$.
-  - Wind-down delay $\le 14 \text{ days}$.
+  - Wind-down delay $\le 90 \text{ days}$.
   - Applying an upgrade before $\text{proposed\_time} + \text{delay}$ reverts with `UpgradeDelayNotElapsed`.
   - Pausing freezes the upgrade timelock clock and pushes the ETA by the duration paused.
   - Renouncing admin is permanently refused (`AdminRequired`).
@@ -129,10 +131,10 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 | Parameter | Method | Authority | Constraints & Defaults |
 |---|---|---|---|
-| **Standing Notice** | `set_notice(secs: u64)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $\text{secs} \le \text{upgrade\_delay}$ and $\text{secs} \le 14 \text{ days}$. |
+| **Standing Notice** | `set_notice(secs: u64)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $\text{secs} \le \text{upgrade\_delay}$ and $\text{secs} \le 30 \text{ days}$ (`MAX_NOTICE_SECS`). |
 | **Custodian Address** | `set_custodian(custodian: Address)` | Governance | Recipient address for off-chain capital deployment. Required before `deploy_to_custodian`. |
 | **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital. `None` = unbounded. Refuses negative cap. |
-| **Wind-Down Delay** | `set_wind_down_delay(secs: u64)` | Governance | Minimum notice before wind-down activation. Default: `0`. Capped at 14 days (`MAX_WIND_DOWN_DELAY`). |
+| **Wind-Down Delay** | `set_wind_down_delay(secs: u64)` | Governance | Minimum notice before wind-down activation. Default: `0`. Capped at 90 days (`MAX_WIND_DOWN_DELAY`). |
 | **Upgrade Delay** | `propose_upgrade_delay(secs: u64)` | Governance | Timelock delay for wasm upgrades. Must be $\ge 7 \text{ days}$, $\le 90 \text{ days}$, and $\ge \text{notice}$. |
 | **Oracle Configuration** | `set_config(config: OracleConfig)` | Governance | Updates oracle parameters. Follows same validation rules as constructor. |
 
