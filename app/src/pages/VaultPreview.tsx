@@ -56,7 +56,7 @@ import {
 	toSizeFigures,
 } from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
-import { toRequestEntriesByStage } from "./vaultRequests"
+import { allowlistRefusalFor, toRequestEntriesByStage } from "./vaultRequests"
 
 const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
@@ -157,7 +157,7 @@ const VaultPreview: React.FC = () => {
 			? toRequestEntriesByStage(
 					requests,
 					symbols,
-					undefined,
+					allowlistRefusalFor(allowance),
 					cancelDeposit,
 					claimDeposit,
 				)

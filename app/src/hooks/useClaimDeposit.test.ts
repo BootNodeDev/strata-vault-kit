@@ -62,12 +62,20 @@ describe("useClaimDeposit", () => {
 		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
-	it("reports whether the submission was accepted synchronously, not through a promise", () => {
+	it("reports whether the submission was accepted synchronously, not through a promise", async () => {
+		vaultMock.claim_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi.fn().mockResolvedValue({
+				getTransactionResponse: { status: "SUCCESS" },
+				result: 50_0000000n,
+			}),
+		})
 		const { result } = renderClaimDeposit()
 
 		const accepted = result.current.submit(epochId)
 
 		expect(accepted).toBe(true)
+		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed with the shares minted, in order", async () => {

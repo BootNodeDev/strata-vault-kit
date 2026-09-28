@@ -16,6 +16,7 @@ import {
 	type RequestSide,
 	type UnreadableRequest,
 } from "../hooks/useInvestorRequests"
+import { type Allowance } from "../hooks/useIsAllowed"
 
 export type RequestTokens = { token: string; shareToken: string }
 
@@ -59,6 +60,19 @@ const readyNote = (side: RequestSide): string =>
 	side === "deposit"
 		? "Claiming is not guaranteed to succeed. Compliance is checked when you sign."
 		: "Claiming is not guaranteed to succeed. The reserve is checked when you sign."
+
+export function allowlistRefusalFor(
+	allowance: Allowance,
+): (request: InvestorRequest) => ClaimRefusal | undefined {
+	return (request) => {
+		if (request.side !== "deposit") return undefined
+		if (allowance !== "not-allowed") return undefined
+		return {
+			reason:
+				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
+		}
+	}
+}
 
 export function assignStage(
 	request: InvestorRequest,

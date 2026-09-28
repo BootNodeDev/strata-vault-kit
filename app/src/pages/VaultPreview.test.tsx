@@ -26,6 +26,7 @@ const {
 	mockSymbols,
 	mockRequests,
 	mockVault,
+	mockIdentity,
 	requestDepositMock,
 	cancelDepositMock,
 	claimDepositMock,
@@ -35,6 +36,7 @@ const {
 	mockShares: { balance: 500_0000000n },
 	mockDeposit: { balance: 3200_0000000n },
 	mockVault: { paused: false },
+	mockIdentity: { allowed: true },
 	mockSymbols: {
 		token: "USDC",
 		shareToken: "vUSDC",
@@ -158,6 +160,7 @@ beforeEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
+	mockIdentity.allowed = true
 	resetMockRequests()
 })
 
@@ -165,6 +168,7 @@ afterEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
+	mockIdentity.allowed = true
 	resetMockRequests()
 })
 
@@ -218,7 +222,9 @@ vi.mock("../config/clients", () => {
 			},
 		}),
 	}
-	const identity = { is_allowed: async () => ({ result: true }) }
+	const identity = {
+		is_allowed: async () => ({ result: mockIdentity.allowed }),
+	}
 	const shares = {
 		balance: async () => ({ result: mockShares.balance }),
 		symbol: async () => ({ result: mockSymbols.shareToken }),
@@ -1038,5 +1044,27 @@ describe("VaultPreview", () => {
 			await screen.findByRole("heading", { name: "Deposit returned" }),
 		).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+	})
+
+	it("blocks claiming a ready deposit when the investor is no longer allowlisted", async () => {
+		setReadyDeposit()
+		mockIdentity.allowed = false
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Not claimable 1" }))
+
+		expect(screen.queryByRole("button", { name: "Claim" })).toBeNull()
+
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Why you cannot claim this yet",
+			}),
+		)
+
+		expect(
+			screen.getByText(
+				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
+			),
+		).toBeTruthy()
 	})
 })
