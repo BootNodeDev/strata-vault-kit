@@ -118,9 +118,7 @@ function waitingEntry(
 	onCancel: ((request: InvestorRequest) => void) | undefined,
 ): RequestEntry {
 	const actions =
-		onCancel !== undefined && request.side === "deposit"
-			? [cancelAction(request, onCancel)]
-			: []
+		onCancel !== undefined ? [cancelAction(request, onCancel)] : []
 	return {
 		...baseEntry(request, tokens),
 		actions,

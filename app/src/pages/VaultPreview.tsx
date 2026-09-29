@@ -23,6 +23,7 @@ import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import TransactionModal from "../components/vault/TransactionModal"
 import { contractRows, vaultContractId } from "../config/contracts"
 import { useCancelDeposit } from "../hooks/useCancelDeposit"
+import { useCancelRedeem } from "../hooks/useCancelRedeem"
 import { useClaimDeposit } from "../hooks/useClaimDeposit"
 import { useDepositBalance } from "../hooks/useDepositBalance"
 import {
@@ -126,6 +127,15 @@ const VaultPreview: React.FC = () => {
 		React.useState("")
 	const [pendingRedeemAmount, setPendingRedeemAmount] =
 		React.useState<Amount | null>(null)
+	const {
+		status: cancelRedeemStatus,
+		submit: submitCancelRedeem,
+		reset: resetCancelRedeem,
+	} = useCancelRedeem()
+	const [pendingCancelRedeemAmountLabel, setPendingCancelRedeemAmountLabel] =
+		React.useState("")
+	const [pendingCancelRedeemEpochId, setPendingCancelRedeemEpochId] =
+		React.useState<bigint | null>(null)
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -151,6 +161,24 @@ const VaultPreview: React.FC = () => {
 		if (pendingCancelEpochId === null) return
 		submitCancelDeposit(pendingCancelEpochId)
 	}
+	const cancelRedeem = (request: InvestorRequest) => {
+		if (!submitCancelRedeem(request.epochId)) return
+		setPendingCancelRedeemEpochId(request.epochId)
+		setPendingCancelRedeemAmountLabel(
+			formatScaled(request.amount, AMOUNT_DECIMALS),
+		)
+	}
+	const retryCancelRedeem = () => {
+		if (pendingCancelRedeemEpochId === null) return
+		submitCancelRedeem(pendingCancelRedeemEpochId)
+	}
+	const cancelRequest = (request: InvestorRequest) => {
+		if (request.side === "deposit") {
+			cancelDeposit(request)
+			return
+		}
+		cancelRedeem(request)
+	}
 	const claimDeposit = (request: InvestorRequest) => {
 		if (!submitClaimDeposit(request.epochId)) return
 		setPendingClaimEpochId(request.epochId)
@@ -168,7 +196,7 @@ const VaultPreview: React.FC = () => {
 					requests,
 					symbols,
 					allowlistRefusalFor(allowance),
-					cancelDeposit,
+					cancelRequest,
 					claimDeposit,
 				)
 			: undefined
@@ -392,6 +420,15 @@ const VaultPreview: React.FC = () => {
 					ticker={symbols.token}
 					onClose={resetCancelDeposit}
 					onRetry={retryCancelDeposit}
+				/>
+			) : cancelRedeemStatus.status !== "idle" ? (
+				<TransactionModal
+					action="cancel-redeem"
+					status={cancelRedeemStatus}
+					amount={pendingCancelRedeemAmountLabel}
+					ticker={symbols.shareToken}
+					onClose={resetCancelRedeem}
+					onRetry={retryCancelRedeem}
 				/>
 			) : (
 				claimDepositStatus.status !== "idle" && (

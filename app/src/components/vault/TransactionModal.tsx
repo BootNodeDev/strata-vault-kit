@@ -6,6 +6,7 @@ import {
 } from "@stellar-scaffold/app-lib"
 import React from "react"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
+import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type TransactionFailure } from "../../hooks/useContractTransaction"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
@@ -27,6 +28,14 @@ export type TransactionModalProps =
 	| {
 			action: "cancel"
 			status: CancelDepositStatus
+			amount: string
+			ticker: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "cancel-redeem"
+			status: CancelRedeemStatus
 			amount: string
 			ticker: string
 			onClose: () => void
@@ -78,6 +87,13 @@ const cancelContractErrorReason = (code: number): string => {
 		default:
 			return `The vault declined this request (reason ${code}).`
 	}
+}
+
+const cancelRedeemContractErrorReason = (code: number): string => {
+	if (code === 304) {
+		return "Your address is no longer allowlisted, so these shares cannot be returned to you. Once this batch is priced, claim the cash it owes you instead."
+	}
+	return cancelContractErrorReason(code)
 }
 
 const claimContractErrorReason = (code: number): string => {
@@ -222,6 +238,44 @@ const describeCancelStatus = (
 	}
 }
 
+const describeCancelRedeemStatus = (
+	status: CancelRedeemStatus,
+	amount: string,
+	ticker: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your cancellation",
+				body: "We are getting your cancellation ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `This returns ${amount} ${ticker} from escrow to your wallet. This request is withdrawn, not priced.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending your cancellation",
+				body: "Your cancellation is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: "Request cancelled",
+				body: `${formatScaled(status.returnedShares, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(status.failure, cancelRedeemContractErrorReason),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeClaimStatus = (
 	status: ClaimDepositStatus,
 	amount: string,
@@ -313,6 +367,12 @@ const describeStatus = (
 			return describeSubscribeStatus(props.status, props.amount, props.ticker)
 		case "cancel":
 			return describeCancelStatus(props.status, props.amount, props.ticker)
+		case "cancel-redeem":
+			return describeCancelRedeemStatus(
+				props.status,
+				props.amount,
+				props.ticker,
+			)
 		case "claim":
 			return describeClaimStatus(
 				props.status,
@@ -340,6 +400,7 @@ const computeSteps = (
 	status:
 		| RequestDepositStatus
 		| CancelDepositStatus
+		| CancelRedeemStatus
 		| ClaimDepositStatus
 		| RequestRedeemStatus,
 ): Record<StepId, StepState> | undefined => {

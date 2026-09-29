@@ -3,6 +3,7 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
+import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
@@ -44,6 +45,22 @@ const renderCancelModal = (status: CancelDepositStatus) => {
 			status={status}
 			amount="150.00"
 			ticker="USDC"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderCancelRedeemModal = (status: CancelRedeemStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="cancel-redeem"
+			status={status}
+			amount="100.00"
+			ticker="vUSDC"
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -473,6 +490,16 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.getByText(/reason 9999/)).toBeTruthy()
 	})
 
+	it("falls back to the raw code for 304 on a deposit cancellation, since only the share token's identity check can raise it", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 304 },
+		})
+
+		expect(screen.getByText(/reason 304/)).toBeTruthy()
+		expect(screen.queryByText(/shares cannot be returned/)).toBeNull()
+	})
+
 	it("reads a declined cancellation as a choice, not a failure, and offers to try again", () => {
 		const { onRetry } = renderCancelModal({
 			status: "failed",
@@ -500,6 +527,81 @@ describe("TransactionModal, cancelling", () => {
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
 		const { onClose } = renderCancelModal({ status: "awaiting-signature" })
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, cancelling a redemption", () => {
+	it("opens with a preparing state naming the cancellation", () => {
+		renderCancelRedeemModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing your cancellation" }),
+		).toBeTruthy()
+	})
+
+	it("tells the investor their shares return to their wallet, honestly, without escrow or pricing language", () => {
+		renderCancelRedeemModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
+		expect(screen.getByText(/from escrow/)).toBeTruthy()
+		expect(screen.queryByText(/into escrow/)).toBeNull()
+	})
+
+	it("shows the returned shares, in the share ticker, once confirmed", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 100_0000000n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Request cancelled" }),
+		).toBeTruthy()
+		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
+		expect(screen.queryByText(/Batch/)).toBeNull()
+	})
+
+	it("names the vault's own reason for a cancel-specific contract refusal, reusing the same table as cancelling a deposit", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6039 },
+		})
+
+		expect(
+			screen.getByText(/already been priced. Claim your shares instead/),
+		).toBeTruthy()
+	})
+
+	it("names a delisted controller as unable to receive its shares back, distinct from the claim wording for the same code", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 304 },
+		})
+
+		expect(screen.getByText(/shares cannot be returned/)).toBeTruthy()
+		expect(screen.getByText(/claim the cash/i)).toBeTruthy()
+		expect(screen.queryByText(/cannot receive shares/)).toBeNull()
+	})
+
+	it("falls back to the raw code for a cancel-redeem refusal it does not recognize", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderCancelRedeemModal({
+			status: "awaiting-signature",
+		})
 
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 		expect(onClose).toHaveBeenCalledTimes(1)

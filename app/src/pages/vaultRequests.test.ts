@@ -343,7 +343,7 @@ describe("toRequestEntriesByStage", () => {
 		expect(onCancel).toHaveBeenCalledWith(waiting)
 	})
 
-	it("offers no cancel action on a waiting redemption, since cancel_deposit is deposit-only", () => {
+	it("offers a cancel action on a waiting redemption when a handler is given", () => {
 		const waiting: InvestorRequest = { ...redeem, epochStatus: open }
 		const onCancel = () => {}
 		const result = toRequestEntriesByStage(
@@ -353,7 +353,24 @@ describe("toRequestEntriesByStage", () => {
 			onCancel,
 		)
 
-		expect(result.waiting[0]?.actions).toEqual([])
+		expect(result.waiting[0]?.actions).toEqual([
+			{ label: "Cancel", kind: "ordinary", onPress: expect.any(Function) },
+		])
+	})
+
+	it("presses the cancel action with the exact redemption request it belongs to", () => {
+		const waiting: InvestorRequest = { ...redeem, epochStatus: open }
+		const onCancel = vi.fn()
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			onCancel,
+		)
+
+		result.waiting[0]?.actions[0]?.onPress()
+
+		expect(onCancel).toHaveBeenCalledWith(waiting)
 	})
 
 	it("offers no cancel action once a deposit is priced and no longer waiting", () => {
