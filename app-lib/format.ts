@@ -172,21 +172,36 @@ export const parseAmount = (raw: string): number | null => {
 
 const MAX_DATE_MILLISECONDS = 8_640_000_000_000_000
 
-export function formatDate(unixSeconds: bigint): string {
+function dateParts(
+	unixSeconds: bigint,
+	options: Intl.DateTimeFormatOptions,
+): ((type: string) => string | undefined) | null {
 	const milliseconds = Number(unixSeconds) * 1000
 	if (Math.abs(milliseconds) > MAX_DATE_MILLISECONDS) {
-		return "—"
+		return null
 	}
 
 	const parts = new Intl.DateTimeFormat("en-US", {
+		...options,
+		timeZone: "UTC",
+	}).formatToParts(new Date(milliseconds))
+	return (type: string) => parts.find((part) => part.type === type)?.value
+}
+
+export function formatDate(unixSeconds: bigint): string {
+	const value = dateParts(unixSeconds, {
 		day: "numeric",
 		month: "short",
 		year: "numeric",
-		timeZone: "UTC",
-	}).formatToParts(new Date(milliseconds))
-	const value = (type: string) =>
-		parts.find((part) => part.type === type)?.value
+	})
+	if (value === null) return "—"
 	return `${value("day")} ${value("month")} ${value("year")}`
+}
+
+export function formatDayMonth(unixSeconds: bigint): string {
+	const value = dateParts(unixSeconds, { day: "numeric", month: "short" })
+	if (value === null) return "—"
+	return `${value("day")} ${value("month")}`
 }
 
 /**

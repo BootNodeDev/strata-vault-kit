@@ -19,7 +19,7 @@ export type RequestEntry = {
 	id: string | number
 	inLabel: string
 	inAmount: string
-	inMeta: string
+	inMeta?: string
 	outLabel: string
 	outAmount: string
 	outMeta?: string
@@ -74,9 +74,11 @@ const RequestCard: React.FC<RequestCardProps> = ({
 			<div className={styles.column}>
 				<span className={styles.inLabel}>{entry.inLabel}</span>
 				<span className={typeStyles.railValue}>{entry.inAmount}</span>
-				<span className={`${typeStyles.metricSub} ${styles.muted}`}>
-					{entry.inMeta}
-				</span>
+				{entry.inMeta && (
+					<span className={`${typeStyles.metricSub} ${styles.muted}`}>
+						{entry.inMeta}
+					</span>
+				)}
 			</div>
 			<div className={styles.column}>
 				{entry.outLabel && (

@@ -32,6 +32,7 @@ const deposit: InvestorRequest = {
 	sharePrice: price(2_000_000_000_000_000_000n),
 	amount: amount(100_0000000n),
 	claimed: false,
+	priceableAt: 1_700_003_600n,
 }
 
 const redeem: InvestorRequest = {
@@ -41,6 +42,7 @@ const redeem: InvestorRequest = {
 	sharePrice: price(2_000_000_000_000_000_000n),
 	amount: amount(100_0000000n),
 	claimed: false,
+	priceableAt: 1_700_003_600n,
 }
 
 describe("assignStage", () => {
@@ -135,7 +137,6 @@ describe("toRequestEntriesByStage", () => {
 				id: "deposit-1",
 				inLabel: "Subscription",
 				inAmount: "100.00 USDC",
-				inMeta: "Batch 1",
 				outLabel: "Owed to you",
 				outAmount: "Not yet priced",
 				outTone: "word",
@@ -144,6 +145,30 @@ describe("toRequestEntriesByStage", () => {
 				actions: [],
 			},
 		])
+	})
+
+	it("names the floor a closed, unpriced deposit can be priced from", () => {
+		const waiting: InvestorRequest = { ...deposit, epochStatus: pending }
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.waiting[0]?.inMeta).toBe("Prices from 14 Nov")
+	})
+
+	it("shows no floor for a closed, unpriced deposit with no priceableAt yet", () => {
+		const waiting: InvestorRequest = {
+			...deposit,
+			epochStatus: pending,
+			priceableAt: 0n,
+		}
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.waiting[0]?.inMeta).toBeUndefined()
 	})
 
 	it("prices a ready deposit's owed shares and notes claiming is not guaranteed", () => {
@@ -157,7 +182,6 @@ describe("toRequestEntriesByStage", () => {
 				id: "deposit-1",
 				inLabel: "Subscription",
 				inAmount: "100.00 USDC",
-				inMeta: "Batch 1",
 				outLabel: "Owed to you",
 				outAmount: "50.00 vUSDC",
 				outTone: "ok",
@@ -180,7 +204,6 @@ describe("toRequestEntriesByStage", () => {
 				id: "redeem-2",
 				inLabel: "Redemption",
 				inAmount: "100.00 vUSDC",
-				inMeta: "Batch 2",
 				outLabel: "Owed to you",
 				outAmount: "200.00 USDC",
 				outTone: "ok",
@@ -204,7 +227,6 @@ describe("toRequestEntriesByStage", () => {
 				id: "redeem-2",
 				inLabel: "Redemption",
 				inAmount: "100.00 vUSDC",
-				inMeta: "Batch 2",
 				outLabel: "Owed to you",
 				outAmount: "200.00 USDC",
 				outTone: "stop",
@@ -236,7 +258,6 @@ describe("toRequestEntriesByStage", () => {
 				id: "deposit-3",
 				inLabel: "Subscription",
 				inAmount: "Unknown amount",
-				inMeta: "Batch 3",
 				outLabel: "Owed to you",
 				outAmount: "Not readable",
 				outTone: "word",
@@ -277,7 +298,6 @@ describe("toRequestEntriesByStage", () => {
 				id: "deposit-1",
 				inLabel: "Subscription",
 				inAmount: "100.00 USDC",
-				inMeta: "Batch 1",
 				outLabel: "Owed to you",
 				outAmount: "Not readable",
 				outTone: "word",
@@ -448,7 +468,6 @@ describe("toRequestEntriesByStage", () => {
 				id: "redeem-4",
 				inLabel: "Redemption",
 				inAmount: "Unknown amount",
-				inMeta: "Batch 4",
 				outLabel: "Owed to you",
 				outAmount: "Not readable",
 				outTone: "word",

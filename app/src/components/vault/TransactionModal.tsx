@@ -64,9 +64,9 @@ const subscribeContractErrorReason = (code: number): string => {
 		case 6007:
 			return "Enter an amount greater than zero."
 		case 6009:
-			return "You already have a subscription request open in this batch."
+			return "You already have a subscription request open."
 		case 6014:
-			return "That amount is too large for this batch to hold."
+			return "That amount is too large for the vault to accept."
 		case 6046:
 			return "The vault is winding down and is not accepting new subscriptions."
 		default:
@@ -79,11 +79,11 @@ const cancelContractErrorReason = (code: number): string => {
 		case 6001:
 			return "This request no longer exists to cancel."
 		case 6029:
-			return "This batch could not be found."
+			return "This request could not be found."
 		case 6039:
-			return "This batch has already been priced. Claim your shares instead of cancelling."
+			return "This request has already been priced. Claim your shares instead of cancelling."
 		case 6041:
-			return "A price is available for this batch, so this request can no longer be cancelled. The batch will be priced shortly, and your shares are claimable once it is."
+			return "A price is available, so this request can no longer be cancelled. It will be priced shortly, and your shares are claimable once it is."
 		default:
 			return `The vault declined this request (reason ${code}).`
 	}
@@ -91,7 +91,7 @@ const cancelContractErrorReason = (code: number): string => {
 
 const cancelRedeemContractErrorReason = (code: number): string => {
 	if (code === 304) {
-		return "Your address is no longer allowlisted, so these shares cannot be returned to you. Once this batch is priced, claim the cash it owes you instead."
+		return "Your address is no longer allowlisted, so these shares cannot be returned to you. Once priced, claim the cash it owes you instead."
 	}
 	return cancelContractErrorReason(code)
 }
@@ -99,13 +99,13 @@ const cancelRedeemContractErrorReason = (code: number): string => {
 const claimContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6001:
-			return "You have no request to claim in this batch."
+			return "You have no request to claim."
 		case 6014:
 			return "The share conversion for this claim is too large to complete."
 		case 6029:
-			return "This batch could not be found."
+			return "This request could not be found."
 		case 6031:
-			return "The vault has not published a valid price for this batch yet."
+			return "The vault has not published a valid price for this request yet."
 		case 6035:
 			return "This request has already been claimed."
 		case 6037:
@@ -122,11 +122,11 @@ const redeemContractErrorReason = (code: number): string => {
 		case 6007:
 			return "Enter an amount greater than zero."
 		case 6009:
-			return "You already have a redemption request open in this batch."
+			return "You already have a redemption request open."
 		case 6014:
-			return "That amount is too large for this batch to hold."
+			return "That amount is too large for the vault to accept."
 		case 6029:
-			return "This batch could not be found."
+			return "This request could not be found."
 		case 6046:
 			return "The vault is winding down and is not accepting new redemptions."
 		default:
@@ -189,7 +189,7 @@ const describeSubscribeStatus = (
 		case "confirmed":
 			return {
 				heading: "Request locked in",
-				body: `${amount} ${ticker} is now locked in escrow for Batch ${status.epochId}. It prices at the next attestation.`,
+				body: `${amount} ${ticker} is now locked in escrow. It prices at the next attestation.`,
 				hash: status.hash,
 			}
 		case "failed":
@@ -348,7 +348,7 @@ const describeRedeemStatus = (
 		case "confirmed":
 			return {
 				heading: "Redemption request locked in",
-				body: `${amount} ${ticker} is now locked in escrow for Batch ${status.epochId}. It prices at the next attestation.`,
+				body: `${amount} ${ticker} is now locked in escrow. It prices at the next attestation.`,
 				hash: status.hash,
 			}
 		case "failed":

@@ -117,7 +117,6 @@ describe("useRequestRedeem", () => {
 		await waitFor(() =>
 			expect(result.current.status).toEqual({
 				status: "confirmed",
-				epochId: 7n,
 			}),
 		)
 
@@ -270,7 +269,6 @@ describe("useRequestRedeem", () => {
 		await waitFor(() =>
 			expect(result.current.status).toEqual({
 				status: "confirmed",
-				epochId: 7n,
 				hash: "a".repeat(64),
 			}),
 		)

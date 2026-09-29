@@ -47,12 +47,19 @@ const {
 	mockRequests: {
 		readable: true,
 		currentEpoch: 2n,
-		epochs: new Map<bigint, { status: { tag: string }; share_price: bigint }>([
+		epochs: new Map<
+			bigint,
+			{ status: { tag: string }; share_price: bigint; priceable_at: bigint }
+		>([
 			[
 				1n,
-				{ status: { tag: "Fulfilled" }, share_price: 1_000000000000000000n },
+				{
+					status: { tag: "Fulfilled" },
+					share_price: 1_000000000000000000n,
+					priceable_at: 1_700_003_600n,
+				},
 			],
-			[2n, { status: { tag: "Open" }, share_price: 0n }],
+			[2n, { status: { tag: "Open" }, share_price: 0n, priceable_at: 0n }],
 		]),
 		deposits: new Map<
 			bigint,
@@ -413,6 +420,7 @@ describe("VaultPreview", () => {
 		mockRequests.epochs.set(3n, {
 			status: { tag: "Fulfilled" },
 			share_price: 0n,
+			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.deposits.set(3n, { amount: 500_0000000n, claimed: false })
 		renderVaultPreview(connectedWallet)
@@ -436,6 +444,7 @@ describe("VaultPreview", () => {
 		mockRequests.epochs.set(3n, {
 			status: { tag: "Fulfilled" },
 			share_price: 0n,
+			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.deposits.set(3n, { amount: 500_0000000n, claimed: false })
 		renderVaultPreview(connectedWallet)
@@ -1012,7 +1021,11 @@ describe("VaultPreview", () => {
 	})
 
 	it("never mounts more than one transaction dialog at once", async () => {
-		mockRequests.epochs.set(1n, { status: { tag: "Pending" }, share_price: 0n })
+		mockRequests.epochs.set(1n, {
+			status: { tag: "Pending" },
+			share_price: 0n,
+			priceable_at: 1_700_003_600n,
+		})
 		mockRequests.deposits.set(1n, { amount: 150_0000000n, claimed: false })
 		requestDepositMock.mockImplementationOnce(async () => ({
 			simulation: undefined,
@@ -1148,6 +1161,7 @@ describe("VaultPreview", () => {
 		mockRequests.epochs.set(readyDepositEpoch, {
 			status: { tag: "Fulfilled" },
 			share_price: 1_000000000000000000n,
+			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.deposits.set(readyDepositEpoch, {
 			amount: 150_0000000n,
@@ -1253,6 +1267,7 @@ describe("VaultPreview", () => {
 		mockRequests.epochs.set(4n, {
 			status: { tag: "Fulfilled" },
 			share_price: 1_000000000000000000n,
+			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.deposits.set(4n, { amount: 150_0000000n, claimed: false })
 		claimDepositMock.mockImplementationOnce(async () => ({

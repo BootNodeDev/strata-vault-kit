@@ -153,20 +153,20 @@ describe("TransactionModal", () => {
 		expect(screen.queryByText(/Transaction/)).toBeNull()
 	})
 
-	it("shows the locked amount, batch and transaction hash once confirmed", () => {
-		renderModal({ status: "confirmed", epochId: 7n, hash: "b".repeat(64) })
+	it("shows the locked amount and transaction hash once confirmed", () => {
+		renderModal({ status: "confirmed", hash: "b".repeat(64) })
 
 		expect(
 			screen.getByRole("heading", { name: "Request locked in" }),
 		).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
-		expect(screen.getByText(/Batch 7/)).toBeTruthy()
+		expect(screen.queryByText(/Batch/)).toBeNull()
 		expect(screen.getByText(/next attestation/)).toBeTruthy()
 		expect(screen.getByText(/bbbb\.\.\.bbbb/)).toBeTruthy()
 	})
 
 	it("never names the contract's epoch to the investor", () => {
-		renderModal({ status: "confirmed", epochId: 7n, hash: "b".repeat(64) })
+		renderModal({ status: "confirmed", hash: "b".repeat(64) })
 
 		expect(screen.queryByText(/Epoch/)).toBeNull()
 	})
@@ -174,7 +174,6 @@ describe("TransactionModal", () => {
 	it("gives only the confirmed moment the weight of an arrival, announced to assistive tech", () => {
 		const confirmed = renderModal({
 			status: "confirmed",
-			epochId: 7n,
 			hash: "b".repeat(64),
 		})
 		const arrival = screen.getByRole("status")
@@ -232,7 +231,7 @@ describe("TransactionModal", () => {
 		],
 		[
 			"confirmed",
-			{ status: "confirmed", epochId: 7n },
+			{ status: "confirmed" },
 			[
 				"Approved in your wallet, done",
 				"Sent to the network, done",
@@ -458,7 +457,7 @@ describe("TransactionModal, cancelling", () => {
 			failure: { kind: "contract-error", code: 6041 },
 		})
 
-		expect(screen.getByText(/A price is available for this batch/)).toBeTruthy()
+		expect(screen.getByText(/A price is available/)).toBeTruthy()
 		expect(screen.getByText(/claimable once it is/)).toBeTruthy()
 		expect(screen.queryByText(/Claim your shares instead/)).toBeNull()
 	})
@@ -472,13 +471,13 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.getByText(/no longer exists to cancel/)).toBeTruthy()
 	})
 
-	it("names EpochNotFound as a batch that could not be found", () => {
+	it("names EpochNotFound as a request that could not be found", () => {
 		renderCancelModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6029 },
 		})
 
-		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
 	})
 
 	it("falls back to the raw code for a cancel refusal it does not recognize", () => {
@@ -667,7 +666,7 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.queryByText(/vUSDC/)).toBeNull()
 	})
 
-	it("names RequestNotFound for a claim with no request in this batch", () => {
+	it("names RequestNotFound for a claim with no matching request", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6001 },
@@ -676,13 +675,13 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.getByText(/no request to claim/)).toBeTruthy()
 	})
 
-	it("names EpochNotFound as a batch that could not be found", () => {
+	it("names EpochNotFound as a request that could not be found", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6029 },
 		})
 
-		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
 	})
 
 	it("names InvalidSharePrice as no valid price published yet", () => {
@@ -804,10 +803,9 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
 	})
 
-	it("shows the escrowed shares, batch and transaction hash once confirmed", () => {
+	it("shows the escrowed shares and transaction hash once confirmed", () => {
 		renderRedeemModal({
 			status: "confirmed",
-			epochId: 9n,
 			hash: "b".repeat(64),
 		})
 
@@ -815,7 +813,7 @@ describe("TransactionModal, redeeming", () => {
 			screen.getByRole("heading", { name: "Redemption request locked in" }),
 		).toBeTruthy()
 		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
-		expect(screen.getByText(/Batch 9/)).toBeTruthy()
+		expect(screen.queryByText(/Batch/)).toBeNull()
 		expect(screen.getByText(/next attestation/)).toBeTruthy()
 		expect(screen.getByText(/bbbb\.\.\.bbbb/)).toBeTruthy()
 	})
@@ -829,7 +827,7 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/amount greater than zero/)).toBeTruthy()
 	})
 
-	it("names RequestOutstanding as a redemption already open in this batch, distinct from subscribe's wording", () => {
+	it("names RequestOutstanding as a redemption request already open, distinct from subscribe's wording", () => {
 		renderRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6009 },
@@ -840,22 +838,22 @@ describe("TransactionModal, redeeming", () => {
 		).toBeTruthy()
 	})
 
-	it("names AmountTooLarge as the batch unable to hold this much", () => {
+	it("names AmountTooLarge as too large for the vault to accept", () => {
 		renderRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6014 },
 		})
 
-		expect(screen.getByText(/too large for this batch to hold/)).toBeTruthy()
+		expect(screen.getByText(/too large for the vault to accept/)).toBeTruthy()
 	})
 
-	it("names EpochNotFound as a batch that could not be found", () => {
+	it("names EpochNotFound as a request that could not be found", () => {
 		renderRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6029 },
 		})
 
-		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
 	})
 
 	it("names WindDownActive as the vault not accepting new redemptions", () => {
