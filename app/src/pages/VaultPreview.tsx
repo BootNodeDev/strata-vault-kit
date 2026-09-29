@@ -32,6 +32,7 @@ import {
 import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
 import { useRequestDeposit } from "../hooks/useRequestDeposit"
+import { useRequestRedeem } from "../hooks/useRequestRedeem"
 import { useSharePosition } from "../hooks/useSharePosition"
 import { useTokenSymbols } from "../hooks/useTokenSymbols"
 import { useVaultAuthorities } from "../hooks/useVaultAuthorities"
@@ -116,6 +117,15 @@ const VaultPreview: React.FC = () => {
 	const [pendingClaimEpochId, setPendingClaimEpochId] = React.useState<
 		bigint | null
 	>(null)
+	const {
+		status: requestRedeemStatus,
+		submit: submitRequestRedeem,
+		reset: resetRequestRedeem,
+	} = useRequestRedeem()
+	const [pendingRedeemAmountLabel, setPendingRedeemAmountLabel] =
+		React.useState("")
+	const [pendingRedeemAmount, setPendingRedeemAmount] =
+		React.useState<Amount | null>(null)
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -223,16 +233,18 @@ const VaultPreview: React.FC = () => {
 	const estimate = toEstimate(nav, parsedAmount, isSubscribe, outTicker)
 
 	const submitAction = () => {
-		if (!isSubscribe) {
-			setActionAmount("")
-			return
-		}
 		if (parsedAmount === null) return
 		const amount = parseUnits(actionAmount, AMOUNT_DECIMALS)
 		if (amount === null) return
-		if (!submitRequestDeposit(amount)) return
-		setPendingAmountLabel(formatAmount(parsedAmount))
-		setPendingAmount(amount)
+		if (isSubscribe) {
+			if (!submitRequestDeposit(amount)) return
+			setPendingAmountLabel(formatAmount(parsedAmount))
+			setPendingAmount(amount)
+			return
+		}
+		if (!submitRequestRedeem(amount)) return
+		setPendingRedeemAmountLabel(formatAmount(parsedAmount))
+		setPendingRedeemAmount(amount)
 	}
 
 	const retryRequestDeposit = () => {
@@ -240,9 +252,18 @@ const VaultPreview: React.FC = () => {
 		submitRequestDeposit(pendingAmount)
 	}
 
+	const retryRequestRedeem = () => {
+		if (pendingRedeemAmount === null) return
+		submitRequestRedeem(pendingRedeemAmount)
+	}
+
 	React.useEffect(() => {
 		if (requestDepositStatus.status === "confirmed") setActionAmount("")
 	}, [requestDepositStatus])
+
+	React.useEffect(() => {
+		if (requestRedeemStatus.status === "confirmed") setActionAmount("")
+	}, [requestRedeemStatus])
 
 	const copyAddress = async () => {
 		try {
@@ -353,6 +374,15 @@ const VaultPreview: React.FC = () => {
 					ticker={inTicker}
 					onClose={resetRequestDeposit}
 					onRetry={retryRequestDeposit}
+				/>
+			) : requestRedeemStatus.status !== "idle" ? (
+				<TransactionModal
+					action="redeem"
+					status={requestRedeemStatus}
+					amount={pendingRedeemAmountLabel}
+					ticker={symbols.shareToken}
+					onClose={resetRequestRedeem}
+					onRetry={retryRequestRedeem}
 				/>
 			) : cancelDepositStatus.status !== "idle" ? (
 				<TransactionModal

@@ -9,6 +9,7 @@ import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type TransactionFailure } from "../../hooks/useContractTransaction"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
+import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import typeStyles from "../../styles/type.module.css"
 import Close from "../icons/Close"
 import ExternalLink from "../icons/ExternalLink"
@@ -37,6 +38,14 @@ export type TransactionModalProps =
 			amount: string
 			ticker: string
 			shareTicker: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "redeem"
+			status: RequestRedeemStatus
+			amount: string
+			ticker: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -87,6 +96,23 @@ const claimContractErrorReason = (code: number): string => {
 			return "The vault does not yet hold enough in reserve to cover this claim. Try again shortly."
 		case 304:
 			return "Your address is no longer allowlisted, so it cannot receive shares."
+		default:
+			return `The vault declined this request (reason ${code}).`
+	}
+}
+
+const redeemContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6007:
+			return "Enter an amount greater than zero."
+		case 6009:
+			return "You already have a redemption request open in this batch."
+		case 6014:
+			return "That amount is too large for this batch to hold."
+		case 6029:
+			return "This batch could not be found."
+		case 6046:
+			return "The vault is winding down and is not accepting new redemptions."
 		default:
 			return `The vault declined this request (reason ${code}).`
 	}
@@ -241,6 +267,44 @@ const describeClaimStatus = (
 	}
 }
 
+const describeRedeemStatus = (
+	status: RequestRedeemStatus,
+	amount: string,
+	ticker: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your redemption request",
+				body: "We are getting your redemption request ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `This request moves ${amount} ${ticker} into escrow. Nothing is exchanged today, and what you are owed is set once this batch is priced.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending your redemption request",
+				body: "Your redemption request is on its way to the network. This should only take a moment, while pricing comes later and takes longer. Closing this window will not cancel it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: "Redemption request locked in",
+				body: `${amount} ${ticker} is now locked in escrow for Batch ${status.epochId}. It prices at the next attestation.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(status.failure, redeemContractErrorReason),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeStatus = (
 	props: TransactionModalProps,
 ): { heading: string; body: string; hash?: string } | undefined => {
@@ -256,6 +320,8 @@ const describeStatus = (
 				props.ticker,
 				props.shareTicker,
 			)
+		case "redeem":
+			return describeRedeemStatus(props.status, props.amount, props.ticker)
 	}
 }
 
@@ -271,7 +337,11 @@ const stepLabel: Record<StepId, string> = {
 }
 
 const computeSteps = (
-	status: RequestDepositStatus | CancelDepositStatus | ClaimDepositStatus,
+	status:
+		| RequestDepositStatus
+		| CancelDepositStatus
+		| ClaimDepositStatus
+		| RequestRedeemStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":
