@@ -1,6 +1,9 @@
+use crate::error::ShareTokenError;
 use crate::roles::MANAGER_ROLE;
 
-use soroban_sdk::{contract, contractimpl, Address, Env, MuxedAddress, String, Symbol, Vec};
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, Address, Env, MuxedAddress, String, Symbol, Vec,
+};
 use stellar_access::access_control::{self as access_control, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_macros::{only_admin, only_role};
@@ -51,7 +54,14 @@ impl FungibleToken for ShareToken {
 }
 
 #[contractimpl(contracttrait)]
-impl AccessControl for ShareToken {}
+impl AccessControl for ShareToken {
+    /// Refused. A token without an admin could never be unpaused, never rotate
+    /// the manager role and never replace the vault that holds it.
+    /// `transfer_admin_role` and `accept_admin_transfer` are the way out.
+    fn renounce_admin(e: &Env) {
+        panic_with_error!(e, ShareTokenError::AdminRequired);
+    }
+}
 
 #[contractimpl(contracttrait)]
 impl RWAToken for ShareToken {

@@ -197,3 +197,40 @@ fn unauthorized_caller_cannot_set_compliance_or_verifier() {
         .try_set_identity_verifier(&new_verifier, &stranger)
         .is_err());
 }
+
+#[test]
+fn the_admin_cannot_renounce_itself_out_of_the_token() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let f = setup_fixture(&e);
+
+    assert!(f.token.try_renounce_admin().is_err());
+
+    // Still governed: the admin-only paths keep working.
+    f.token.pause(&f.admin);
+    f.token.unpause(&f.admin);
+    assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
+}
+
+#[test]
+fn admin_handover_in_two_steps_still_works() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let f = setup_fixture(&e);
+    let new_admin = Address::generate(&e);
+    let live_until_ledger = e.ledger().sequence() + 100;
+
+    f.token.transfer_admin_role(&new_admin, &live_until_ledger);
+    // Nothing moves until the new admin accepts.
+    assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
+
+    f.token.accept_admin_transfer();
+    assert_eq!(f.token.get_admin(), Some(new_admin.clone()));
+
+    // The old admin no longer administers; the new one does.
+    e.set_auths(&[]);
+    assert!(f.token.try_pause(&f.admin).is_err());
+    e.mock_all_auths();
+    f.token.pause(&new_admin);
+    assert!(f.token.paused());
+}
