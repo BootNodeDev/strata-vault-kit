@@ -30,6 +30,8 @@ const {
 	requestDepositMock,
 	cancelDepositMock,
 	claimDepositMock,
+	requestRedeemMock,
+	cancelRedeemMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
@@ -64,6 +66,8 @@ const {
 	requestDepositMock: vi.fn(),
 	cancelDepositMock: vi.fn(),
 	claimDepositMock: vi.fn(),
+	requestRedeemMock: vi.fn(),
+	cancelRedeemMock: vi.fn(),
 }))
 
 const defaultCancelDepositImpl = async ({
@@ -112,6 +116,52 @@ const defaultRequestDepositImpl = async ({
 	}
 }
 
+const defaultRequestRedeemImpl = async ({
+	shares,
+}: {
+	from: string
+	shares: bigint
+}) => {
+	const epochId = mockRequests.currentEpoch
+	return {
+		simulation: undefined,
+		signAndSend: async ({
+			watcher,
+		}: {
+			watcher: { onSubmitted: () => void }
+		}) => {
+			watcher.onSubmitted()
+			mockRequests.redeems.set(epochId, { shares, claimed: false })
+			return { getTransactionResponse: { status: "SUCCESS" }, result: epochId }
+		},
+	}
+}
+
+const defaultCancelRedeemImpl = async ({
+	epoch_id,
+}: {
+	from: string
+	epoch_id: bigint
+}) => {
+	const request = mockRequests.redeems.get(epoch_id)
+	const returnedShares = request?.shares ?? 0n
+	return {
+		simulation: undefined,
+		signAndSend: async ({
+			watcher,
+		}: {
+			watcher: { onSubmitted: () => void }
+		}) => {
+			watcher.onSubmitted()
+			mockRequests.redeems.delete(epoch_id)
+			return {
+				getTransactionResponse: { status: "SUCCESS" },
+				result: returnedShares,
+			}
+		},
+	}
+}
+
 const WAD_SCALE = 1_000000000000000000n
 
 const defaultClaimDepositImpl = async ({
@@ -154,6 +204,10 @@ const resetMockRequests = () => {
 	cancelDepositMock.mockImplementation(defaultCancelDepositImpl)
 	claimDepositMock.mockReset()
 	claimDepositMock.mockImplementation(defaultClaimDepositImpl)
+	requestRedeemMock.mockReset()
+	requestRedeemMock.mockImplementation(defaultRequestRedeemImpl)
+	cancelRedeemMock.mockReset()
+	cancelRedeemMock.mockImplementation(defaultCancelRedeemImpl)
 }
 
 beforeEach(() => {
@@ -211,6 +265,8 @@ vi.mock("../config/clients", () => {
 		request_deposit: requestDepositMock,
 		cancel_deposit: cancelDepositMock,
 		claim_deposit: claimDepositMock,
+		request_redeem: requestRedeemMock,
+		cancel_redeem: cancelRedeemMock,
 	}
 	const oracle = {
 		state: async () => ({ result: { tag: "Valid", values: undefined } }),
@@ -499,6 +555,64 @@ describe("VaultPreview", () => {
 		expect(await screen.findByText("≈ 100.00 vUSDC")).toBeTruthy()
 	})
 
+	it("reaches the vault with the shares the investor entered when Redeem is pressed", async () => {
+		renderVaultPreview(connectedWallet)
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to redeem",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Redeem" }))
+
+		await waitFor(() => expect(requestRedeemMock).toHaveBeenCalledTimes(1))
+		expect(requestRedeemMock).toHaveBeenCalledWith({
+			from: investorAddress,
+			shares: 150_0000000n,
+		})
+	})
+
+	it("reflects a confirmed redemption request in the request list without a manual refresh", async () => {
+		renderVaultPreview(connectedWallet)
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to redeem",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Redeem" }))
+
+		expect(
+			await screen.findByRole("heading", {
+				name: "Redemption request locked in",
+			}),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		expect(await screen.findByText("Redemption")).toBeTruthy()
+		expect(screen.getByText("150.00 vUSDC")).toBeTruthy()
+	})
+
+	it("clears the amount field once the redemption request confirms, so a second press cannot duplicate it", async () => {
+		renderVaultPreview(connectedWallet)
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+		const input = (await screen.findByRole("textbox", {
+			name: "Amount to redeem",
+		})) as HTMLInputElement
+		fireEvent.change(input, { target: { value: "150" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Redeem" }))
+
+		expect(
+			await screen.findByRole("heading", {
+				name: "Redemption request locked in",
+			}),
+		).toBeTruthy()
+		await waitFor(() => expect(input.value).toBe(""))
+	})
+
 	it("shows a switch-network control, distinct from connect, when the wallet is on the wrong network", async () => {
 		renderVaultPreview(wrongNetworkWallet)
 
@@ -729,6 +843,37 @@ describe("VaultPreview", () => {
 		})
 	})
 
+	it("retries redemption with the shares actually submitted, not a since-edited field", async () => {
+		requestRedeemMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: vi
+				.fn()
+				.mockRejectedValue(
+					new AssembledTransaction.Errors.UserRejected("User declined access"),
+				),
+		}))
+		renderVaultPreview(connectedWallet)
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to redeem",
+		})
+		fireEvent.change(input, { target: { value: "150" } })
+		fireEvent.click(await screen.findByRole("button", { name: "Redeem" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "You declined the request" }),
+		).toBeTruthy()
+
+		fireEvent.change(input, { target: { value: "999" } })
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+
+		await waitFor(() => expect(requestRedeemMock).toHaveBeenCalledTimes(2))
+		expect(requestRedeemMock).toHaveBeenLastCalledWith({
+			from: investorAddress,
+			shares: 150_0000000n,
+		})
+	})
+
 	it("blocks a second subscription once the first confirms, so a second press cannot duplicate it", async () => {
 		renderVaultPreview(connectedWallet)
 		const input = await screen.findByRole("textbox", {
@@ -894,6 +1039,92 @@ describe("VaultPreview", () => {
 	it("removes a cancelled request from the list without a manual refresh", async () => {
 		mockRequests.deposits.set(mockRequests.currentEpoch, {
 			amount: 150_0000000n,
+			claimed: false,
+		})
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Request cancelled" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+
+		expect(await screen.findByRole("tab", { name: "Waiting 0" })).toBeTruthy()
+	})
+
+	it("offers a Cancel action on a waiting redemption", async () => {
+		mockRequests.redeems.set(mockRequests.currentEpoch, {
+			shares: 150_0000000n,
+			claimed: false,
+		})
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+
+		expect(await screen.findByRole("button", { name: "Cancel" })).toBeTruthy()
+	})
+
+	it("reaches cancel_redeem with the request's own batch when Cancel is pressed on a redemption", async () => {
+		mockRequests.redeems.set(mockRequests.currentEpoch, {
+			shares: 150_0000000n,
+			claimed: false,
+		})
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		await waitFor(() => expect(cancelRedeemMock).toHaveBeenCalledTimes(1))
+		expect(cancelRedeemMock).toHaveBeenCalledWith({
+			from: investorAddress,
+			epoch_id: mockRequests.currentEpoch,
+		})
+	})
+
+	it("shows the redemption cancellation modal with the request's own shares, in the share ticker, while it is in flight", async () => {
+		mockRequests.redeems.set(mockRequests.currentEpoch, {
+			shares: 150_0000000n,
+			claimed: false,
+		})
+		let resolveSend!: () => void
+		const gate = new Promise<void>((resolve) => {
+			resolveSend = resolve
+		})
+		cancelRedeemMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: async ({
+				watcher,
+			}: {
+				watcher: { onSubmitted: () => void }
+			}) => {
+				watcher.onSubmitted()
+				await gate
+				return {
+					getTransactionResponse: { status: "SUCCESS" },
+					result: 150_0000000n,
+				}
+			},
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: /^Waiting/ }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Sending your cancellation" }),
+		).toBeTruthy()
+		expect(screen.getByText(/150\.00 vUSDC/)).toBeTruthy()
+
+		resolveSend()
+		await screen.findByRole("heading", { name: "Request cancelled" })
+	})
+
+	it("removes a cancelled redemption from the list without a manual refresh", async () => {
+		mockRequests.redeems.set(mockRequests.currentEpoch, {
+			shares: 150_0000000n,
 			claimed: false,
 		})
 		renderVaultPreview(connectedWallet)

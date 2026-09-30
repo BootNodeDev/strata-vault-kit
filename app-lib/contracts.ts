@@ -46,6 +46,8 @@ export interface AsyncVaultApi {
 	request_deposit: CallOf<{ from: string; amount: i128 }, u64>
 	cancel_deposit: CallOf<{ from: string; epoch_id: u64 }, i128>
 	claim_deposit: CallOf<{ caller: string; epoch_id: u64 }, i128>
+	request_redeem: CallOf<{ from: string; shares: i128 }, u64>
+	cancel_redeem: CallOf<{ from: string; epoch_id: u64 }, i128>
 }
 
 export type EpochStatus =

@@ -3,8 +3,10 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
+import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
+import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import TransactionModal from "./TransactionModal"
 
 const { explorerTransactionMock } = vi.hoisted(() => ({
@@ -50,6 +52,22 @@ const renderCancelModal = (status: CancelDepositStatus) => {
 	return { ...view, onClose, onRetry }
 }
 
+const renderCancelRedeemModal = (status: CancelRedeemStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="cancel-redeem"
+			status={status}
+			amount="100.00"
+			ticker="vUSDC"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
 const renderClaimModal = (status: ClaimDepositStatus) => {
 	const onClose = vi.fn()
 	const onRetry = vi.fn()
@@ -60,6 +78,22 @@ const renderClaimModal = (status: ClaimDepositStatus) => {
 			amount="150.00"
 			ticker="USDC"
 			shareTicker="vUSDC"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderRedeemModal = (status: RequestRedeemStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="redeem"
+			status={status}
+			amount="100.00"
+			ticker="vUSDC"
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -456,6 +490,16 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.getByText(/reason 9999/)).toBeTruthy()
 	})
 
+	it("falls back to the raw code for 304 on a deposit cancellation, since only the share token's identity check can raise it", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 304 },
+		})
+
+		expect(screen.getByText(/reason 304/)).toBeTruthy()
+		expect(screen.queryByText(/shares cannot be returned/)).toBeNull()
+	})
+
 	it("reads a declined cancellation as a choice, not a failure, and offers to try again", () => {
 		const { onRetry } = renderCancelModal({
 			status: "failed",
@@ -483,6 +527,81 @@ describe("TransactionModal, cancelling", () => {
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
 		const { onClose } = renderCancelModal({ status: "awaiting-signature" })
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, cancelling a redemption", () => {
+	it("opens with a preparing state naming the cancellation", () => {
+		renderCancelRedeemModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing your cancellation" }),
+		).toBeTruthy()
+	})
+
+	it("tells the investor their shares return to their wallet, honestly, without escrow or pricing language", () => {
+		renderCancelRedeemModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
+		expect(screen.getByText(/from escrow/)).toBeTruthy()
+		expect(screen.queryByText(/into escrow/)).toBeNull()
+	})
+
+	it("shows the returned shares, in the share ticker, once confirmed", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 100_0000000n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Request cancelled" }),
+		).toBeTruthy()
+		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
+		expect(screen.queryByText(/Batch/)).toBeNull()
+	})
+
+	it("names the vault's own reason for a cancel-specific contract refusal, reusing the same table as cancelling a deposit", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6039 },
+		})
+
+		expect(
+			screen.getByText(/already been priced. Claim your shares instead/),
+		).toBeTruthy()
+	})
+
+	it("names a delisted controller as unable to receive its shares back, distinct from the claim wording for the same code", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 304 },
+		})
+
+		expect(screen.getByText(/shares cannot be returned/)).toBeTruthy()
+		expect(screen.getByText(/claim the cash/i)).toBeTruthy()
+		expect(screen.queryByText(/cannot receive shares/)).toBeNull()
+	})
+
+	it("falls back to the raw code for a cancel-redeem refusal it does not recognize", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderCancelRedeemModal({
+			status: "awaiting-signature",
+		})
 
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 		expect(onClose).toHaveBeenCalledTimes(1)
@@ -647,6 +766,143 @@ describe("TransactionModal, claiming", () => {
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
 		const { onClose } = renderClaimModal({ status: "awaiting-signature" })
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, redeeming", () => {
+	it("opens with a preparing state naming the redemption request", () => {
+		renderRedeemModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", {
+				name: "Preparing your redemption request",
+			}),
+		).toBeTruthy()
+	})
+
+	it("tells the investor their shares move into escrow, in share terms, without naming an epoch", () => {
+		renderRedeemModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
+		expect(screen.getByText(/into escrow/)).toBeTruthy()
+		expect(screen.queryByText(/Epoch/)).toBeNull()
+		expect(screen.queryByText(/epoch/)).toBeNull()
+	})
+
+	it("tells the investor the redemption request is on its way, distinct from subscribe copy", () => {
+		renderRedeemModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending your redemption request" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("shows the escrowed shares, batch and transaction hash once confirmed", () => {
+		renderRedeemModal({
+			status: "confirmed",
+			epochId: 9n,
+			hash: "b".repeat(64),
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Redemption request locked in" }),
+		).toBeTruthy()
+		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
+		expect(screen.getByText(/Batch 9/)).toBeTruthy()
+		expect(screen.getByText(/next attestation/)).toBeTruthy()
+		expect(screen.getByText(/bbbb\.\.\.bbbb/)).toBeTruthy()
+	})
+
+	it("names InvalidAmount for a non-positive share amount", () => {
+		renderRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6007 },
+		})
+
+		expect(screen.getByText(/amount greater than zero/)).toBeTruthy()
+	})
+
+	it("names RequestOutstanding as a redemption already open in this batch, distinct from subscribe's wording", () => {
+		renderRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6009 },
+		})
+
+		expect(
+			screen.getByText(/already have a redemption request open/),
+		).toBeTruthy()
+	})
+
+	it("names AmountTooLarge as the batch unable to hold this much", () => {
+		renderRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6014 },
+		})
+
+		expect(screen.getByText(/too large for this batch to hold/)).toBeTruthy()
+	})
+
+	it("names EpochNotFound as a batch that could not be found", () => {
+		renderRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6029 },
+		})
+
+		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+	})
+
+	it("names WindDownActive as the vault not accepting new redemptions", () => {
+		renderRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6046 },
+		})
+
+		expect(screen.getByText(/not accepting new redemptions/)).toBeTruthy()
+	})
+
+	it("falls back to the raw code for a redeem refusal it does not recognize", () => {
+		renderRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+	})
+
+	it("reads a declined redemption request as a choice, not a failure, and offers to try again", () => {
+		const { onRetry } = renderRedeemModal({
+			status: "failed",
+			failure: { kind: "declined" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "You declined the request" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+
+	it("shows the same step progress machinery for a redemption request in flight", () => {
+		renderRedeemModal({ status: "awaiting-signature" })
+
+		const steps = screen.getAllByRole("listitem")
+		expect(steps.map((step) => step.textContent)).toEqual([
+			"Approved in your wallet, in progress",
+			"Sent to the network",
+			"Recorded",
+		])
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderRedeemModal({ status: "awaiting-signature" })
 
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 		expect(onClose).toHaveBeenCalledTimes(1)
