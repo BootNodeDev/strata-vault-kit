@@ -387,6 +387,31 @@ describe("TransactionModal", () => {
 		expect(onClose).toHaveBeenCalledTimes(1)
 		expect(onRetry).not.toHaveBeenCalled()
 	})
+
+	it("logs the contract error once, not again on every re-render of the same failure", () => {
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+		const status: RequestDepositStatus = {
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		}
+		const { rerender } = renderModal(status)
+
+		rerender(
+			<TransactionModal
+				action="subscribe"
+				status={status}
+				amount="150.00"
+				ticker="USDC"
+				onClose={() => {}}
+				onRetry={() => {}}
+			/>,
+		)
+
+		expect(consoleError).toHaveBeenCalledTimes(1)
+		expect(consoleError).toHaveBeenCalledWith("Vault contract error 9999")
+
+		consoleError.mockRestore()
+	})
 })
 
 describe("TransactionModal, cancelling", () => {

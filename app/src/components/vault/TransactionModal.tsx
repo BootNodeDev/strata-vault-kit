@@ -62,11 +62,6 @@ export type TransactionModalProps =
 const GENERIC_REFUSAL =
 	"The vault refused this request. Try again, and contact support if it keeps happening."
 
-const fallbackReason = (code: number): string => {
-	console.error(`Vault contract error ${code}`)
-	return GENERIC_REFUSAL
-}
-
 const subscribeContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6007:
@@ -78,7 +73,7 @@ const subscribeContractErrorReason = (code: number): string => {
 		case 6046:
 			return "The vault is winding down and is not accepting new subscriptions."
 		default:
-			return fallbackReason(code)
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -93,7 +88,7 @@ const cancelContractErrorReason = (code: number): string => {
 		case 6041:
 			return "A price is available, so this request can no longer be cancelled. It will be priced shortly, and your shares are claimable once it is."
 		default:
-			return fallbackReason(code)
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -121,7 +116,7 @@ const claimContractErrorReason = (code: number): string => {
 		case 304:
 			return "Your address is no longer allowlisted, so it cannot receive shares."
 		default:
-			return fallbackReason(code)
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -138,7 +133,7 @@ const redeemContractErrorReason = (code: number): string => {
 		case 6046:
 			return "The vault is winding down and is not accepting new redemptions."
 		default:
-			return fallbackReason(code)
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -458,6 +453,17 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 	React.useEffect(() => {
 		dialogRef.current?.focus()
 	}, [])
+
+	const contractErrorCode =
+		status.status === "failed" && status.failure.kind === "contract-error"
+			? status.failure.code
+			: undefined
+
+	React.useEffect(() => {
+		if (contractErrorCode !== undefined) {
+			console.error(`Vault contract error ${contractErrorCode}`)
+		}
+	}, [contractErrorCode])
 
 	const content = describeStatus(props)
 	if (content === undefined) return null
