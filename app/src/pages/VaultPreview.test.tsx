@@ -363,7 +363,7 @@ describe("VaultPreview", () => {
 
 		expect(screen.getByRole("tab", { name: "Ready to claim 0" })).toBeTruthy()
 		expect(screen.getByRole("tab", { name: "Waiting 0" })).toBeTruthy()
-		expect(screen.getByRole("tab", { name: "Not claimable 0" })).toBeTruthy()
+		expect(screen.getByRole("tab", { name: "Blocked 0" })).toBeTruthy()
 		expect(
 			screen.getByText("Connect a wallet to see your position."),
 		).toBeTruthy()
@@ -425,7 +425,7 @@ describe("VaultPreview", () => {
 		mockRequests.deposits.set(3n, { amount: 500_0000000n, claimed: false })
 		renderVaultPreview(connectedWallet)
 
-		fireEvent.click(await screen.findByRole("tab", { name: "Not claimable 1" }))
+		fireEvent.click(await screen.findByRole("tab", { name: "Blocked 1" }))
 		fireEvent.click(
 			await screen.findByRole("button", {
 				name: "Why you cannot claim this yet",
@@ -434,7 +434,7 @@ describe("VaultPreview", () => {
 		expect(screen.getByRole("tooltip")).toBeTruthy()
 
 		fireEvent.click(screen.getByRole("tab", { name: "Ready to claim 0" }))
-		fireEvent.click(screen.getByRole("tab", { name: "Not claimable 1" }))
+		fireEvent.click(screen.getByRole("tab", { name: "Blocked 1" }))
 
 		expect(screen.queryByRole("tooltip")).toBeNull()
 	})
@@ -450,7 +450,7 @@ describe("VaultPreview", () => {
 		renderVaultPreview(connectedWallet)
 
 		const blockedTab = await screen.findByRole("tab", {
-			name: "Not claimable 1",
+			name: "Blocked 1",
 		})
 		fireEvent.click(blockedTab)
 		fireEvent.click(
@@ -518,9 +518,7 @@ describe("VaultPreview", () => {
 		renderVaultPreview(connectedWallet)
 
 		expect(
-			await screen.findByText(
-				"You already have a subscription request open in this batch.",
-			),
+			await screen.findByText("You already have a subscription request open."),
 		).toBeTruthy()
 		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
 	})
@@ -631,10 +629,11 @@ describe("VaultPreview", () => {
 		expect(screen.queryByRole("button", { name: "Connect Wallet" })).toBeNull()
 	})
 
-	it("states one of the four batch-settlement rules in the vault explainer", () => {
+	it("states the settlement rules in the vault explainer, with no batch language", () => {
 		renderVaultPreview()
 
-		expect(screen.getByText(/one request per side per batch/i)).toBeTruthy()
+		expect(screen.getByText(/one open request per side/i)).toBeTruthy()
+		expect(screen.queryByText(/batch/i)).toBeNull()
 	})
 
 	it("renders the liquidity figures the vault reports, scaled and grouped", async () => {
@@ -899,9 +898,7 @@ describe("VaultPreview", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 
 		expect(
-			await screen.findByText(
-				"You already have a subscription request open in this batch.",
-			),
+			await screen.findByText("You already have a subscription request open."),
 		).toBeTruthy()
 		expect(screen.queryByRole("button", { name: "Subscribe" })).toBeNull()
 	})
@@ -1297,7 +1294,7 @@ describe("VaultPreview", () => {
 		mockIdentity.allowed = false
 		renderVaultPreview(connectedWallet)
 
-		fireEvent.click(await screen.findByRole("tab", { name: "Not claimable 1" }))
+		fireEvent.click(await screen.findByRole("tab", { name: "Blocked 1" }))
 
 		expect(screen.queryByRole("button", { name: "Claim" })).toBeNull()
 

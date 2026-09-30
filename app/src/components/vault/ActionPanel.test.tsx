@@ -6,7 +6,7 @@ const baseProps: ActionPanelProps = {
 	side: "subscribe",
 	onSideChange: () => {},
 	heading: "Request a subscription",
-	note: "Your request joins the batch that is currently open.",
+	note: "Your request prices at the next attestation.",
 	amount: "",
 	onAmountChange: () => {},
 	amountLabel: "Amount to subscribe",

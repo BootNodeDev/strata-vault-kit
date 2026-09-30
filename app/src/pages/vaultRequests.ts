@@ -179,13 +179,13 @@ function invalidPriceEntry(
 ): RequestEntry {
 	return {
 		...baseEntry(request, tokens),
-		outAmount: "Not readable",
+		outAmount: "Could not read",
 		outTone: "word",
 		state: "Invalid price",
 		tone: stageTone.blocked,
 		tooltip: {
 			label: "Why you cannot claim this yet",
-			text: "The vault reported an invalid price for this batch.",
+			text: "The vault reported an invalid price for this request.",
 		},
 	}
 }
@@ -212,7 +212,7 @@ function archivedEntry(request: ArchivedRequest): RequestEntry {
 		inLabel: sideLabel[request.side],
 		inAmount: "Unknown amount",
 		outLabel: "Owed to you",
-		outAmount: "Not readable",
+		outAmount: "Could not read",
 		outTone: "word",
 		state: "Expired",
 		tone: stageTone.blocked,
@@ -230,9 +230,9 @@ function unreadableEntry(request: UnreadableRequest): RequestEntry {
 		inLabel: sideLabel[request.side],
 		inAmount: "Unknown amount",
 		outLabel: "Owed to you",
-		outAmount: "Not readable",
+		outAmount: "Could not read",
 		outTone: "word",
-		state: "Unreadable",
+		state: "Could not read",
 		tone: stageTone.blocked,
 		actions: [],
 		tooltip: {

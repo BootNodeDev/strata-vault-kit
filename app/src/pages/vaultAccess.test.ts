@@ -239,7 +239,7 @@ describe("toPanelBlock", () => {
 			)
 			expect(block).toEqual({
 				kind: "message",
-				reason: "You already have a subscription request open in this batch.",
+				reason: "You already have a subscription request open.",
 				sides: ["subscribe"],
 			})
 		})

@@ -125,8 +125,9 @@ describe("TransactionModal", () => {
 			screen.getByRole("heading", { name: "Confirm in your wallet" }),
 		).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
-		expect(screen.getByText(/into escrow/)).toBeTruthy()
-		expect(screen.getByText(/once this batch is priced/)).toBeTruthy()
+		expect(screen.getByText(/in escrow/)).toBeTruthy()
+		expect(screen.getByText(/not today/)).toBeTruthy()
+		expect(screen.queryByText(/batch/i)).toBeNull()
 	})
 
 	it("tells the investor the network wait is short and distinct from pricing", () => {
@@ -318,13 +319,14 @@ describe("TransactionModal", () => {
 		expect(screen.queryByText(/Transaction/)).toBeNull()
 	})
 
-	it("falls back to the raw code for a contract refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a contract error it does not recognize, without the raw code", () => {
 		renderModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
 	it("never tells an unknown outcome whether it went through", () => {
@@ -399,6 +401,7 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
 		expect(screen.getByText(/from escrow/)).toBeTruthy()
 		expect(screen.queryByText(/into escrow/)).toBeNull()
+		expect(screen.getByText(/withdrawn, not priced/)).toBeTruthy()
 	})
 
 	it("tells the investor the cancellation is on its way, distinct from the subscribe copy", () => {
@@ -480,22 +483,24 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
 	})
 
-	it("falls back to the raw code for a cancel refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a cancel error it does not recognize, without the raw code", () => {
 		renderCancelModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
-	it("falls back to the raw code for 304 on a deposit cancellation, since only the share token's identity check can raise it", () => {
+	it("falls back to a generic refusal for 304 on a deposit cancellation, since only the share token's identity check can raise it", () => {
 		renderCancelModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/reason 304/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/304/)).toBeNull()
 		expect(screen.queryByText(/shares cannot be returned/)).toBeNull()
 	})
 
@@ -550,6 +555,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
 		expect(screen.getByText(/from escrow/)).toBeTruthy()
 		expect(screen.queryByText(/into escrow/)).toBeNull()
+		expect(screen.getByText(/withdrawn, not priced/)).toBeTruthy()
 	})
 
 	it("shows the returned shares, in the share ticker, once confirmed", () => {
@@ -588,13 +594,14 @@ describe("TransactionModal, cancelling a redemption", () => {
 		expect(screen.queryByText(/cannot receive shares/)).toBeNull()
 	})
 
-	it("falls back to the raw code for a cancel-redeem refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a cancel-redeem error it does not recognize, without the raw code", () => {
 		renderCancelRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
@@ -624,7 +631,7 @@ describe("TransactionModal, claiming", () => {
 		).toBeTruthy()
 		expect(
 			screen.getByText(
-				"This claims what your priced request is owed. If the price leaves no shares to claim, 150.00 USDC is returned to your wallet instead.",
+				"You receive what you're owed. If the price leaves no shares to claim, 150.00 USDC returns to your wallet instead.",
 			),
 		).toBeTruthy()
 		expect(screen.queryByText(/Epoch/)).toBeNull()
@@ -729,13 +736,14 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.getByText(/no longer allowlisted/)).toBeTruthy()
 	})
 
-	it("falls back to the raw code for a claim refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a claim error it does not recognize, without the raw code", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
 	it("reads a declined claim as a choice, not a failure, and offers to try again", () => {
@@ -782,16 +790,18 @@ describe("TransactionModal, redeeming", () => {
 		).toBeTruthy()
 	})
 
-	it("tells the investor their shares move into escrow, in share terms, without naming an epoch", () => {
+	it("tells the investor their shares are locked in escrow, in share terms, without naming an epoch", () => {
 		renderRedeemModal({ status: "awaiting-signature" })
 
 		expect(
 			screen.getByRole("heading", { name: "Confirm in your wallet" }),
 		).toBeTruthy()
 		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
-		expect(screen.getByText(/into escrow/)).toBeTruthy()
+		expect(screen.getByText(/in escrow/)).toBeTruthy()
+		expect(screen.getByText(/not today/)).toBeTruthy()
 		expect(screen.queryByText(/Epoch/)).toBeNull()
 		expect(screen.queryByText(/epoch/)).toBeNull()
+		expect(screen.queryByText(/batch/i)).toBeNull()
 	})
 
 	it("tells the investor the redemption request is on its way, distinct from subscribe copy", () => {
@@ -865,13 +875,14 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/not accepting new redemptions/)).toBeTruthy()
 	})
 
-	it("falls back to the raw code for a redeem refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a redeem error it does not recognize, without the raw code", () => {
 		renderRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
 	it("reads a declined redemption request as a choice, not a failure, and offers to try again", () => {

@@ -76,7 +76,7 @@ function toSubscribeGateBlock(
 	if (gate.hasOpenSubscription) {
 		return {
 			kind: "message",
-			reason: "You already have a subscription request open in this batch.",
+			reason: "You already have a subscription request open.",
 			sides: ["subscribe"],
 		}
 	}

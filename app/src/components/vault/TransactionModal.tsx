@@ -59,6 +59,14 @@ export type TransactionModalProps =
 			onRetry: () => void
 	  }
 
+const GENERIC_REFUSAL =
+	"The vault refused this request. Try again, and contact support if it keeps happening."
+
+const fallbackReason = (code: number): string => {
+	console.error(`Vault contract error ${code}`)
+	return GENERIC_REFUSAL
+}
+
 const subscribeContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6007:
@@ -70,7 +78,7 @@ const subscribeContractErrorReason = (code: number): string => {
 		case 6046:
 			return "The vault is winding down and is not accepting new subscriptions."
 		default:
-			return `The vault declined this request (reason ${code}).`
+			return fallbackReason(code)
 	}
 }
 
@@ -85,7 +93,7 @@ const cancelContractErrorReason = (code: number): string => {
 		case 6041:
 			return "A price is available, so this request can no longer be cancelled. It will be priced shortly, and your shares are claimable once it is."
 		default:
-			return `The vault declined this request (reason ${code}).`
+			return fallbackReason(code)
 	}
 }
 
@@ -113,7 +121,7 @@ const claimContractErrorReason = (code: number): string => {
 		case 304:
 			return "Your address is no longer allowlisted, so it cannot receive shares."
 		default:
-			return `The vault declined this request (reason ${code}).`
+			return fallbackReason(code)
 	}
 }
 
@@ -130,7 +138,7 @@ const redeemContractErrorReason = (code: number): string => {
 		case 6046:
 			return "The vault is winding down and is not accepting new redemptions."
 		default:
-			return `The vault declined this request (reason ${code}).`
+			return fallbackReason(code)
 	}
 }
 
@@ -178,7 +186,7 @@ const describeSubscribeStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This request moves ${amount} ${ticker} into escrow. Nothing is exchanged today, and your shares are set once this batch is priced.`,
+				body: `Your shares are set once the vault prices your request, not today. Signing locks ${amount} ${ticker} in escrow until then.`,
 			}
 		case "submitted":
 			return {
@@ -216,7 +224,7 @@ const describeCancelStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This returns ${amount} ${ticker} from escrow to your wallet. This request is withdrawn, not priced.`,
+				body: `Your request is withdrawn, not priced. Signing returns ${amount} ${ticker} from escrow to your wallet.`,
 			}
 		case "submitted":
 			return {
@@ -254,7 +262,7 @@ const describeCancelRedeemStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This returns ${amount} ${ticker} from escrow to your wallet. This request is withdrawn, not priced.`,
+				body: `Your request is withdrawn, not priced. Signing returns ${amount} ${ticker} from escrow to your wallet.`,
 			}
 		case "submitted":
 			return {
@@ -293,7 +301,7 @@ const describeClaimStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This claims what your priced request is owed. If the price leaves no shares to claim, ${amount} ${ticker} is returned to your wallet instead.`,
+				body: `You receive what you're owed. If the price leaves no shares to claim, ${amount} ${ticker} returns to your wallet instead.`,
 			}
 		case "submitted":
 			return {
@@ -337,7 +345,7 @@ const describeRedeemStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This request moves ${amount} ${ticker} into escrow. Nothing is exchanged today, and what you are owed is set once this batch is priced.`,
+				body: `What you're owed is set once the vault prices your request, not today. Signing locks ${amount} ${ticker} in escrow until then.`,
 			}
 		case "submitted":
 			return {
