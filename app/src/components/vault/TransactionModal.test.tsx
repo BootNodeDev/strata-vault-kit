@@ -154,16 +154,22 @@ describe("TransactionModal", () => {
 		expect(screen.queryByText(/Transaction/)).toBeNull()
 	})
 
-	it("shows the locked amount and transaction hash once confirmed", () => {
+	it("shows the confirmed amount and transaction hash once confirmed", () => {
 		renderModal({ status: "confirmed", hash: "b".repeat(64) })
 
 		expect(
-			screen.getByRole("heading", { name: "Request locked in" }),
+			screen.getByRole("heading", { name: "Request submitted" }),
 		).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
 		expect(screen.queryByText(/Batch/)).toBeNull()
-		expect(screen.getByText(/next attestation/)).toBeTruthy()
 		expect(screen.getByText(/bbbb\.\.\.bbbb/)).toBeTruthy()
+	})
+
+	it("never mentions locking or attestation once confirmed", () => {
+		renderModal({ status: "confirmed", hash: "b".repeat(64) })
+
+		expect(screen.queryByText(/locked/i)).toBeNull()
+		expect(screen.queryByText(/attestation/i)).toBeNull()
 	})
 
 	it("never names the contract's epoch to the investor", () => {
@@ -179,7 +185,7 @@ describe("TransactionModal", () => {
 		})
 		const arrival = screen.getByRole("status")
 		expect(
-			within(arrival).getByRole("heading", { name: "Request locked in" }),
+			within(arrival).getByRole("heading", { name: "Request submitted" }),
 		).toBeTruthy()
 		confirmed.unmount()
 
@@ -813,19 +819,25 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
 	})
 
-	it("shows the escrowed shares and transaction hash once confirmed", () => {
+	it("shows the confirmed shares and transaction hash once confirmed", () => {
 		renderRedeemModal({
 			status: "confirmed",
 			hash: "b".repeat(64),
 		})
 
 		expect(
-			screen.getByRole("heading", { name: "Redemption request locked in" }),
+			screen.getByRole("heading", { name: "Redemption request submitted" }),
 		).toBeTruthy()
 		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
 		expect(screen.queryByText(/Batch/)).toBeNull()
-		expect(screen.getByText(/next attestation/)).toBeTruthy()
 		expect(screen.getByText(/bbbb\.\.\.bbbb/)).toBeTruthy()
+	})
+
+	it("never mentions locking or attestation once confirmed", () => {
+		renderRedeemModal({ status: "confirmed", hash: "b".repeat(64) })
+
+		expect(screen.queryByText(/locked/i)).toBeNull()
+		expect(screen.queryByText(/attestation/i)).toBeNull()
 	})
 
 	it("names InvalidAmount for a non-positive share amount", () => {

@@ -196,8 +196,8 @@ const describeSubscribeStatus = (
 			}
 		case "confirmed":
 			return {
-				heading: "Request locked in",
-				body: `${amount} ${ticker} is now locked in escrow. It prices at the next attestation.`,
+				heading: "Request submitted",
+				body: `${amount} ${ticker} prices at the vault's next update.`,
 				hash: status.hash,
 			}
 		case "failed":
@@ -355,8 +355,8 @@ const describeRedeemStatus = (
 			}
 		case "confirmed":
 			return {
-				heading: "Redemption request locked in",
-				body: `${amount} ${ticker} is now locked in escrow. It prices at the next attestation.`,
+				heading: "Redemption request submitted",
+				body: `${amount} ${ticker} prices at the vault's next update.`,
 				hash: status.hash,
 			}
 		case "failed":

@@ -377,7 +377,7 @@ const VaultPreview: React.FC = () => {
 						heading={
 							isSubscribe ? "Request a subscription" : "Request a redemption"
 						}
-						note="Your request prices at the next attestation."
+						note="Your request prices at the vault's next update."
 						amount={actionAmount}
 						onAmountChange={setActionAmount}
 						amountLabel={

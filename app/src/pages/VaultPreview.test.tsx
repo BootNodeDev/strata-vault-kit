@@ -352,6 +352,15 @@ describe("VaultPreview", () => {
 		expect(side.childElementCount).toBeGreaterThan(0)
 	})
 
+	it("shows the action panel's pricing note, with no attestation language", () => {
+		renderVaultPreview()
+
+		expect(
+			screen.getByText("Your request prices at the vault's next update."),
+		).toBeTruthy()
+		expect(screen.queryByText(/attestation/i)).toBeNull()
+	})
+
 	it("renders the header and the Vault row from the same configured address", () => {
 		renderVaultPreview()
 
@@ -591,7 +600,7 @@ describe("VaultPreview", () => {
 
 		expect(
 			await screen.findByRole("heading", {
-				name: "Redemption request locked in",
+				name: "Redemption request submitted",
 			}),
 		).toBeTruthy()
 
@@ -614,7 +623,7 @@ describe("VaultPreview", () => {
 
 		expect(
 			await screen.findByRole("heading", {
-				name: "Redemption request locked in",
+				name: "Redemption request submitted",
 			}),
 		).toBeTruthy()
 		await waitFor(() => expect(input.value).toBe(""))
@@ -695,7 +704,7 @@ describe("VaultPreview", () => {
 		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
 
 		expect(
-			await screen.findByRole("heading", { name: "Request locked in" }),
+			await screen.findByRole("heading", { name: "Request submitted" }),
 		).toBeTruthy()
 
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
@@ -817,7 +826,7 @@ describe("VaultPreview", () => {
 		resolveSend()
 
 		expect(
-			await screen.findByRole("heading", { name: "Request locked in" }),
+			await screen.findByRole("heading", { name: "Request submitted" }),
 		).toBeTruthy()
 	})
 
@@ -892,7 +901,7 @@ describe("VaultPreview", () => {
 		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
 
 		expect(
-			await screen.findByRole("heading", { name: "Request locked in" }),
+			await screen.findByRole("heading", { name: "Request submitted" }),
 		).toBeTruthy()
 
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
@@ -920,7 +929,7 @@ describe("VaultPreview", () => {
 		fireEvent.click(await screen.findByRole("button", { name: "Subscribe" }))
 
 		expect(
-			await screen.findByRole("heading", { name: "Request locked in" }),
+			await screen.findByRole("heading", { name: "Request submitted" }),
 		).toBeTruthy()
 		await waitFor(() => expect(input.value).toBe(""))
 	})
