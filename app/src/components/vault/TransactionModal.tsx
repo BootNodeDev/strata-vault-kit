@@ -6,6 +6,7 @@ import {
 } from "@stellar-scaffold/app-lib"
 import React from "react"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
+import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type TransactionFailure } from "../../hooks/useContractTransaction"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import typeStyles from "../../styles/type.module.css"
@@ -27,6 +28,15 @@ export type TransactionModalProps =
 			status: CancelDepositStatus
 			amount: string
 			ticker: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "claim"
+			status: ClaimDepositStatus
+			amount: string
+			ticker: string
+			shareTicker: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -56,6 +66,27 @@ const cancelContractErrorReason = (code: number): string => {
 			return "This batch has already been priced. Claim your shares instead of cancelling."
 		case 6041:
 			return "A price is available for this batch, so this request can no longer be cancelled. The batch will be priced shortly, and your shares are claimable once it is."
+		default:
+			return `The vault declined this request (reason ${code}).`
+	}
+}
+
+const claimContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6001:
+			return "You have no request to claim in this batch."
+		case 6014:
+			return "The share conversion for this claim is too large to complete."
+		case 6029:
+			return "This batch could not be found."
+		case 6031:
+			return "The vault has not published a valid price for this batch yet."
+		case 6035:
+			return "This request has already been claimed."
+		case 6037:
+			return "The vault does not yet hold enough in reserve to cover this claim. Try again shortly."
+		case 304:
+			return "Your address is no longer allowlisted, so it cannot receive shares."
 		default:
 			return `The vault declined this request (reason ${code}).`
 	}
@@ -165,12 +196,68 @@ const describeCancelStatus = (
 	}
 }
 
+const describeClaimStatus = (
+	status: ClaimDepositStatus,
+	amount: string,
+	ticker: string,
+	shareTicker: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your claim",
+				body: "We are getting your claim ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `This claims what your priced request is owed. If the price leaves no shares to claim, ${amount} ${ticker} is returned to your wallet instead.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending your claim",
+				body: "Your claim is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return status.sharesMinted > 0n
+				? {
+						heading: "Shares claimed",
+						body: `${formatScaled(status.sharesMinted, AMOUNT_DECIMALS)} ${shareTicker} has been added to your wallet.`,
+						hash: status.hash,
+					}
+				: {
+						heading: "Deposit returned",
+						body: `The price left no shares to claim, so ${amount} ${ticker} has been returned to your wallet instead.`,
+						hash: status.hash,
+					}
+		case "failed":
+			return {
+				...describeFailure(status.failure, claimContractErrorReason),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeStatus = (
 	props: TransactionModalProps,
-): { heading: string; body: string; hash?: string } | undefined =>
-	props.action === "subscribe"
-		? describeSubscribeStatus(props.status, props.amount, props.ticker)
-		: describeCancelStatus(props.status, props.amount, props.ticker)
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (props.action) {
+		case "subscribe":
+			return describeSubscribeStatus(props.status, props.amount, props.ticker)
+		case "cancel":
+			return describeCancelStatus(props.status, props.amount, props.ticker)
+		case "claim":
+			return describeClaimStatus(
+				props.status,
+				props.amount,
+				props.ticker,
+				props.shareTicker,
+			)
+	}
+}
 
 type StepId = "signature" | "network" | "recorded"
 type StepState = "done" | "current" | "upcoming" | "failed"
@@ -184,7 +271,7 @@ const stepLabel: Record<StepId, string> = {
 }
 
 const computeSteps = (
-	status: RequestDepositStatus | CancelDepositStatus,
+	status: RequestDepositStatus | CancelDepositStatus | ClaimDepositStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":

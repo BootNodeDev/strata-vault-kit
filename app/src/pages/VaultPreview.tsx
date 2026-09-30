@@ -23,6 +23,7 @@ import RequestList, { type RequestGroup } from "../components/vault/RequestList"
 import TransactionModal from "../components/vault/TransactionModal"
 import { contractRows, vaultContractId } from "../config/contracts"
 import { useCancelDeposit } from "../hooks/useCancelDeposit"
+import { useClaimDeposit } from "../hooks/useClaimDeposit"
 import { useDepositBalance } from "../hooks/useDepositBalance"
 import {
 	type InvestorRequest,
@@ -55,7 +56,7 @@ import {
 	toSizeFigures,
 } from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
-import { toRequestEntriesByStage } from "./vaultRequests"
+import { allowlistRefusalFor, toRequestEntriesByStage } from "./vaultRequests"
 
 const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
@@ -105,6 +106,16 @@ const VaultPreview: React.FC = () => {
 	const [pendingCancelEpochId, setPendingCancelEpochId] = React.useState<
 		bigint | null
 	>(null)
+	const {
+		status: claimDepositStatus,
+		submit: submitClaimDeposit,
+		reset: resetClaimDeposit,
+	} = useClaimDeposit()
+	const [pendingClaimAmountLabel, setPendingClaimAmountLabel] =
+		React.useState("")
+	const [pendingClaimEpochId, setPendingClaimEpochId] = React.useState<
+		bigint | null
+	>(null)
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -122,21 +133,34 @@ const VaultPreview: React.FC = () => {
 			hasOpenSubscription: isSubscriptionOpen(requests),
 		}) ?? toPriceBlock(nav, isPendingNav)
 	const cancelDeposit = (request: InvestorRequest) => {
-		void submitCancelDeposit(request.epochId).then((started) => {
-			if (!started) return
-			setPendingCancelEpochId(request.epochId)
-			setPendingCancelAmountLabel(formatScaled(request.amount, AMOUNT_DECIMALS))
-		})
+		if (!submitCancelDeposit(request.epochId)) return
+		setPendingCancelEpochId(request.epochId)
+		setPendingCancelAmountLabel(formatScaled(request.amount, AMOUNT_DECIMALS))
 	}
 	const retryCancelDeposit = () => {
 		if (pendingCancelEpochId === null) return
-		void submitCancelDeposit(pendingCancelEpochId)
+		submitCancelDeposit(pendingCancelEpochId)
+	}
+	const claimDeposit = (request: InvestorRequest) => {
+		if (!submitClaimDeposit(request.epochId)) return
+		setPendingClaimEpochId(request.epochId)
+		setPendingClaimAmountLabel(formatScaled(request.amount, AMOUNT_DECIMALS))
+	}
+	const retryClaimDeposit = () => {
+		if (pendingClaimEpochId === null) return
+		submitClaimDeposit(pendingClaimEpochId)
 	}
 
 	const messages = emptyMessages(requests.status)
 	const entriesByStage =
 		requests.status === "loaded"
-			? toRequestEntriesByStage(requests, symbols, undefined, cancelDeposit)
+			? toRequestEntriesByStage(
+					requests,
+					symbols,
+					allowlistRefusalFor(allowance),
+					cancelDeposit,
+					claimDeposit,
+				)
 			: undefined
 	const requestGroups: [RequestGroup, ...RequestGroup[]] = [
 		{
@@ -206,16 +230,14 @@ const VaultPreview: React.FC = () => {
 		if (parsedAmount === null) return
 		const amount = parseUnits(actionAmount, AMOUNT_DECIMALS)
 		if (amount === null) return
-		void submitRequestDeposit(amount).then((started) => {
-			if (!started) return
-			setPendingAmountLabel(formatAmount(parsedAmount))
-			setPendingAmount(amount)
-		})
+		if (!submitRequestDeposit(amount)) return
+		setPendingAmountLabel(formatAmount(parsedAmount))
+		setPendingAmount(amount)
 	}
 
 	const retryRequestDeposit = () => {
 		if (pendingAmount === null) return
-		void submitRequestDeposit(pendingAmount)
+		submitRequestDeposit(pendingAmount)
 	}
 
 	React.useEffect(() => {
@@ -332,15 +354,25 @@ const VaultPreview: React.FC = () => {
 					onClose={resetRequestDeposit}
 					onRetry={retryRequestDeposit}
 				/>
+			) : cancelDepositStatus.status !== "idle" ? (
+				<TransactionModal
+					action="cancel"
+					status={cancelDepositStatus}
+					amount={pendingCancelAmountLabel}
+					ticker={symbols.token}
+					onClose={resetCancelDeposit}
+					onRetry={retryCancelDeposit}
+				/>
 			) : (
-				cancelDepositStatus.status !== "idle" && (
+				claimDepositStatus.status !== "idle" && (
 					<TransactionModal
-						action="cancel"
-						status={cancelDepositStatus}
-						amount={pendingCancelAmountLabel}
+						action="claim"
+						status={claimDepositStatus}
+						amount={pendingClaimAmountLabel}
 						ticker={symbols.token}
-						onClose={resetCancelDeposit}
-						onRetry={retryCancelDeposit}
+						shareTicker={symbols.shareToken}
+						onClose={resetClaimDeposit}
+						onRetry={retryClaimDeposit}
 					/>
 				)
 			)}

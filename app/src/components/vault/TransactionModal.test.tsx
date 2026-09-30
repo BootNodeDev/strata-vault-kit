@@ -3,6 +3,7 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
+import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import TransactionModal from "./TransactionModal"
 
@@ -42,6 +43,23 @@ const renderCancelModal = (status: CancelDepositStatus) => {
 			status={status}
 			amount="150.00"
 			ticker="USDC"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderClaimModal = (status: ClaimDepositStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="claim"
+			status={status}
+			amount="150.00"
+			ticker="USDC"
+			shareTicker="vUSDC"
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -465,6 +483,170 @@ describe("TransactionModal, cancelling", () => {
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
 		const { onClose } = renderCancelModal({ status: "awaiting-signature" })
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, claiming", () => {
+	it("opens with a preparing state naming the claim", () => {
+		renderClaimModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing your claim" }),
+		).toBeTruthy()
+	})
+
+	it("tells the investor what claiming means before they sign, including the refund path, without naming an epoch", () => {
+		renderClaimModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"This claims what your priced request is owed. If the price leaves no shares to claim, 150.00 USDC is returned to your wallet instead.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByText(/Epoch/)).toBeNull()
+		expect(screen.queryByText(/epoch/)).toBeNull()
+	})
+
+	it("tells the investor the claim is on its way, distinct from subscribe and cancel copy", () => {
+		renderClaimModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending your claim" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("shows the shares minted in the share token, not the deposit token, once confirmed", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 100_0000000n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByRole("heading", { name: "Shares claimed" })).toBeTruthy()
+		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
+		expect(screen.queryByText(/150\.00 USDC/)).toBeNull()
+	})
+
+	it("tells the investor their deposit came back, not that shares were issued, on a zero result", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 0n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Deposit returned" }),
+		).toBeTruthy()
+		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+		expect(screen.queryByText(/vUSDC/)).toBeNull()
+	})
+
+	it("names RequestNotFound for a claim with no request in this batch", () => {
+		renderClaimModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6001 },
+		})
+
+		expect(screen.getByText(/no request to claim/)).toBeTruthy()
+	})
+
+	it("names EpochNotFound as a batch that could not be found", () => {
+		renderClaimModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6029 },
+		})
+
+		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+	})
+
+	it("names InvalidSharePrice as no valid price published yet", () => {
+		renderClaimModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6031 },
+		})
+
+		expect(screen.getByText(/not published a valid price/)).toBeTruthy()
+	})
+
+	it("names AlreadyClaimed distinctly", () => {
+		renderClaimModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6035 },
+		})
+
+		expect(screen.getByText(/already been claimed/)).toBeTruthy()
+	})
+
+	it("names ClaimNotCovered as the reserve not yet covering this claim", () => {
+		renderClaimModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6037 },
+		})
+
+		expect(screen.getByText(/not yet hold enough in reserve/)).toBeTruthy()
+	})
+
+	it("names AmountTooLarge as the conversion overflowing", () => {
+		renderClaimModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6014 },
+		})
+
+		expect(screen.getByText(/too large to complete/)).toBeTruthy()
+	})
+
+	it("names the identity verifier's cross-contract refusal as no longer allowlisted, distinct from every other code", () => {
+		renderClaimModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 304 },
+		})
+
+		expect(screen.getByText(/no longer allowlisted/)).toBeTruthy()
+	})
+
+	it("falls back to the raw code for a claim refusal it does not recognize", () => {
+		renderClaimModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+	})
+
+	it("reads a declined claim as a choice, not a failure, and offers to try again", () => {
+		const { onRetry } = renderClaimModal({
+			status: "failed",
+			failure: { kind: "declined" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "You declined the request" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+
+	it("shows the same step progress machinery for a claim in flight", () => {
+		renderClaimModal({ status: "awaiting-signature" })
+
+		const steps = screen.getAllByRole("listitem")
+		expect(steps.map((step) => step.textContent)).toEqual([
+			"Approved in your wallet, in progress",
+			"Sent to the network",
+			"Recorded",
+		])
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderClaimModal({ status: "awaiting-signature" })
 
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 		expect(onClose).toHaveBeenCalledTimes(1)

@@ -6,24 +6,24 @@ import {
 	type TransactionStatus,
 } from "./useContractTransaction"
 
-export type CancelDepositStatus = TransactionStatus<{ refundedAmount: Amount }>
+export type ClaimDepositStatus = TransactionStatus<{ sharesMinted: Amount }>
 
-export interface UseCancelDeposit {
-	status: CancelDepositStatus
+export interface UseClaimDeposit {
+	status: ClaimDepositStatus
 	submit: (epochId: bigint) => boolean
 	reset: () => void
 }
 
-export function useCancelDeposit(): UseCancelDeposit {
+export function useClaimDeposit(): UseClaimDeposit {
 	const call = useCallback(
 		(signer: Signer, epochId: bigint) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.cancel_deposit({ from: signer.publicKey, epoch_id: epochId }),
+				vault.claim_deposit({ caller: signer.publicKey, epoch_id: epochId }),
 			),
 		[],
 	)
 	const toConfirmed = useCallback(
-		(refundedAmount: bigint) => ({ refundedAmount: refundedAmount as Amount }),
+		(sharesMinted: bigint) => ({ sharesMinted: sharesMinted as Amount }),
 		[],
 	)
 	return useContractTransaction(call, toConfirmed)

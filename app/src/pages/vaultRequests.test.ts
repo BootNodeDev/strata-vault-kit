@@ -9,7 +9,12 @@ import {
 	type InvestorRequest,
 	type UnreadableRequest,
 } from "../hooks/useInvestorRequests"
-import { assignStage, toRequestEntriesByStage } from "./vaultRequests"
+import { type Allowance } from "../hooks/useIsAllowed"
+import {
+	allowlistRefusalFor,
+	assignStage,
+	toRequestEntriesByStage,
+} from "./vaultRequests"
 
 const amount = (value: bigint): Amount => value as Amount
 const price = (value: bigint): Price => value as Price
@@ -66,6 +71,33 @@ describe("assignStage", () => {
 	it("puts a fulfilled epoch with an invalid price in blocked", () => {
 		const brokenPrice = { ...deposit, sharePrice: price(0n) }
 		expect(assignStage(brokenPrice, undefined)).toBe("blocked")
+	})
+})
+
+describe("allowlistRefusalFor", () => {
+	it("refuses a deposit request when the address is not on the allowlist", () => {
+		expect(allowlistRefusalFor("not-allowed")(deposit)).toEqual({
+			reason:
+				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
+		})
+	})
+
+	it("does not refuse a deposit request when the address is allowed", () => {
+		expect(allowlistRefusalFor("allowed")(deposit)).toBeUndefined()
+	})
+
+	it.each([
+		["checking", "checking" as Allowance],
+		["unreadable", "unreadable" as Allowance],
+	])(
+		"does not refuse a deposit request while the allowlist read is %s, rather than guessing",
+		(_label, allowance) => {
+			expect(allowlistRefusalFor(allowance)(deposit)).toBeUndefined()
+		},
+	)
+
+	it("never refuses a redemption request, since claim_deposit is deposit-only", () => {
+		expect(allowlistRefusalFor("not-allowed")(redeem)).toBeUndefined()
 	})
 })
 
@@ -330,6 +362,58 @@ describe("toRequestEntriesByStage", () => {
 			tokens,
 			undefined,
 			() => {},
+		)
+
+		expect(result.ready[0]?.actions).toEqual([])
+	})
+
+	it("offers no claim action on a ready deposit when no handler is given", () => {
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.ready[0]?.actions).toEqual([])
+	})
+
+	it("offers a claim action on a ready deposit when a handler is given", () => {
+		const onClaim = () => {}
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			undefined,
+			onClaim,
+		)
+
+		expect(result.ready[0]?.actions).toEqual([
+			{ label: "Claim", kind: "primary", onPress: expect.any(Function) },
+		])
+	})
+
+	it("presses the claim action with the exact request it belongs to", () => {
+		const onClaim = vi.fn()
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			undefined,
+			onClaim,
+		)
+
+		result.ready[0]?.actions[0]?.onPress()
+
+		expect(onClaim).toHaveBeenCalledWith(deposit)
+	})
+
+	it("offers no claim action on a ready redemption, since claim_deposit is deposit-only", () => {
+		const onClaim = () => {}
+		const result = toRequestEntriesByStage(
+			{ requests: [redeem], archived: [], unreadable: [] },
+			tokens,
+			undefined,
+			undefined,
+			onClaim,
 		)
 
 		expect(result.ready[0]?.actions).toEqual([])

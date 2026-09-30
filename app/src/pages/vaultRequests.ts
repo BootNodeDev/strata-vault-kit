@@ -16,6 +16,7 @@ import {
 	type RequestSide,
 	type UnreadableRequest,
 } from "../hooks/useInvestorRequests"
+import { type Allowance } from "../hooks/useIsAllowed"
 
 export type RequestTokens = { token: string; shareToken: string }
 
@@ -60,6 +61,19 @@ const readyNote = (side: RequestSide): string =>
 		? "Claiming is not guaranteed to succeed. Compliance is checked when you sign."
 		: "Claiming is not guaranteed to succeed. The reserve is checked when you sign."
 
+export function allowlistRefusalFor(
+	allowance: Allowance,
+): (request: InvestorRequest) => ClaimRefusal | undefined {
+	return (request) => {
+		if (request.side !== "deposit") return undefined
+		if (allowance !== "not-allowed") return undefined
+		return {
+			reason:
+				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
+		}
+	}
+}
+
 export function assignStage(
 	request: InvestorRequest,
 	refusal: ClaimRefusal | undefined,
@@ -91,6 +105,13 @@ function cancelAction(
 	return { label: "Cancel", kind: "ordinary", onPress: () => onCancel(request) }
 }
 
+function claimAction(
+	request: InvestorRequest,
+	onClaim: (request: InvestorRequest) => void,
+): RequestAction {
+	return { label: "Claim", kind: "primary", onPress: () => onClaim(request) }
+}
+
 function waitingEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
@@ -113,10 +134,16 @@ function waitingEntry(
 function readyEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
+	onClaim: ((request: InvestorRequest) => void) | undefined,
 ): RequestEntry {
 	const owed = owedAmount(request.side, request.amount, request.sharePrice)
+	const actions =
+		onClaim !== undefined && request.side === "deposit"
+			? [claimAction(request, onClaim)]
+			: []
 	return {
 		...baseEntry(request, tokens),
+		actions,
 		outAmount: `${formatScaled(owed, AMOUNT_DECIMALS)} ${outTicker(request.side, tokens)}`,
 		outTone: "ok",
 		state: "Priced",
@@ -163,6 +190,7 @@ export function toPresentEntry(
 	tokens: RequestTokens,
 	refusal: ClaimRefusal | undefined,
 	onCancel?: (request: InvestorRequest) => void,
+	onClaim?: (request: InvestorRequest) => void,
 ): RequestEntry {
 	const stage = assignStage(request, refusal)
 	if (stage === "waiting") return waitingEntry(request, tokens, onCancel)
@@ -170,7 +198,7 @@ export function toPresentEntry(
 		return invalidPriceEntry(request, tokens)
 	if (stage === "blocked" && refusal !== undefined)
 		return blockedEntry(request, tokens, refusal)
-	return readyEntry(request, tokens)
+	return readyEntry(request, tokens, onClaim)
 }
 
 function archivedEntry(request: ArchivedRequest): RequestEntry {
@@ -217,6 +245,7 @@ export function toRequestEntriesByStage(
 	refusalFor: (request: InvestorRequest) => ClaimRefusal | undefined = () =>
 		undefined,
 	onCancel?: (request: InvestorRequest) => void,
+	onClaim?: (request: InvestorRequest) => void,
 ): EntriesByStage {
 	const entries: EntriesByStage = { ready: [], blocked: [], waiting: [] }
 
@@ -224,7 +253,7 @@ export function toRequestEntriesByStage(
 		if (request.claimed) continue
 		const refusal = refusalFor(request)
 		entries[assignStage(request, refusal)].push(
-			toPresentEntry(request, tokens, refusal, onCancel),
+			toPresentEntry(request, tokens, refusal, onCancel, onClaim),
 		)
 	}
 	for (const request of loaded.archived) {

@@ -8,6 +8,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useCallback, useRef, useState } from "react"
 import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
+import { sharePositionKey } from "./useSharePosition"
 import { useWallet } from "./useWallet"
 
 export type TransactionFailure =
@@ -26,7 +27,7 @@ export type TransactionStatus<TConfirmed extends object> =
 
 export interface UseContractTransaction<TArg, TConfirmed extends object> {
 	status: TransactionStatus<TConfirmed>
-	submit: (arg: TArg) => Promise<boolean>
+	submit: (arg: TArg) => boolean
 	reset: () => void
 }
 
@@ -62,6 +63,9 @@ export function useContractTransaction<
 				})
 				void queryClient.invalidateQueries({
 					queryKey: depositBalanceKey(owner),
+				})
+				void queryClient.invalidateQueries({
+					queryKey: sharePositionKey(owner),
 				})
 			}
 			applyStatus({ status: "preparing" })
@@ -117,17 +121,17 @@ export function useContractTransaction<
 	)
 
 	const submit = useCallback(
-		(arg: TArg): Promise<boolean> => {
-			if (address === undefined) return Promise.resolve(false)
+		(arg: TArg): boolean => {
+			if (address === undefined) return false
 			if (submitting.current) {
 				dismissed.current = false
 				setStatus(lastStatus.current)
-				return Promise.resolve(false)
+				return false
 			}
 			submitting.current = true
 			dismissed.current = false
 			void runSubmission(arg, address)
-			return Promise.resolve(true)
+			return true
 		},
 		[address, runSubmission],
 	)

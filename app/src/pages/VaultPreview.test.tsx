@@ -26,14 +26,17 @@ const {
 	mockSymbols,
 	mockRequests,
 	mockVault,
+	mockIdentity,
 	requestDepositMock,
 	cancelDepositMock,
+	claimDepositMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
 	mockShares: { balance: 500_0000000n },
 	mockDeposit: { balance: 3200_0000000n },
 	mockVault: { paused: false },
+	mockIdentity: { allowed: true },
 	mockSymbols: {
 		token: "USDC",
 		shareToken: "vUSDC",
@@ -60,6 +63,7 @@ const {
 	},
 	requestDepositMock: vi.fn(),
 	cancelDepositMock: vi.fn(),
+	claimDepositMock: vi.fn(),
 }))
 
 const defaultCancelDepositImpl = async ({
@@ -108,6 +112,37 @@ const defaultRequestDepositImpl = async ({
 	}
 }
 
+const WAD_SCALE = 1_000000000000000000n
+
+const defaultClaimDepositImpl = async ({
+	epoch_id,
+}: {
+	caller: string
+	epoch_id: bigint
+}) => {
+	const request = mockRequests.deposits.get(epoch_id)
+	const sharePrice = mockRequests.epochs.get(epoch_id)?.share_price ?? 0n
+	const shares =
+		request !== undefined && sharePrice > 0n
+			? (request.amount * WAD_SCALE) / sharePrice
+			: 0n
+	return {
+		simulation: undefined,
+		signAndSend: async ({
+			watcher,
+		}: {
+			watcher: { onSubmitted: () => void }
+		}) => {
+			watcher.onSubmitted()
+			if (request !== undefined) {
+				mockRequests.deposits.set(epoch_id, { ...request, claimed: true })
+			}
+			mockShares.balance += shares
+			return { getTransactionResponse: { status: "SUCCESS" }, result: shares }
+		},
+	}
+}
+
 const resetMockRequests = () => {
 	mockRequests.readable = true
 	mockRequests.currentEpoch = 2n
@@ -117,12 +152,15 @@ const resetMockRequests = () => {
 	requestDepositMock.mockImplementation(defaultRequestDepositImpl)
 	cancelDepositMock.mockReset()
 	cancelDepositMock.mockImplementation(defaultCancelDepositImpl)
+	claimDepositMock.mockReset()
+	claimDepositMock.mockImplementation(defaultClaimDepositImpl)
 }
 
 beforeEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
+	mockIdentity.allowed = true
 	resetMockRequests()
 })
 
@@ -130,6 +168,7 @@ afterEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
+	mockIdentity.allowed = true
 	resetMockRequests()
 })
 
@@ -171,6 +210,7 @@ vi.mock("../config/clients", () => {
 		paused: async () => ({ result: mockVault.paused }),
 		request_deposit: requestDepositMock,
 		cancel_deposit: cancelDepositMock,
+		claim_deposit: claimDepositMock,
 	}
 	const oracle = {
 		state: async () => ({ result: { tag: "Valid", values: undefined } }),
@@ -182,7 +222,9 @@ vi.mock("../config/clients", () => {
 			},
 		}),
 	}
-	const identity = { is_allowed: async () => ({ result: true }) }
+	const identity = {
+		is_allowed: async () => ({ result: mockIdentity.allowed }),
+	}
 	const shares = {
 		balance: async () => ({ result: mockShares.balance }),
 		symbol: async () => ({ result: mockSymbols.shareToken }),
@@ -866,5 +908,163 @@ describe("VaultPreview", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 
 		expect(await screen.findByRole("tab", { name: "Waiting 0" })).toBeTruthy()
+	})
+
+	const readyDepositEpoch = 5n
+
+	const setReadyDeposit = () => {
+		mockRequests.currentEpoch = readyDepositEpoch
+		mockRequests.epochs.set(readyDepositEpoch, {
+			status: { tag: "Fulfilled" },
+			share_price: 1_000000000000000000n,
+		})
+		mockRequests.deposits.set(readyDepositEpoch, {
+			amount: 150_0000000n,
+			claimed: false,
+		})
+	}
+
+	it("offers a Claim action on a ready, priced deposit", async () => {
+		setReadyDeposit()
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByRole("button", { name: "Claim" })).toBeTruthy()
+	})
+
+	it("reaches claim_deposit with the request's own batch when Claim is pressed", async () => {
+		setReadyDeposit()
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		await waitFor(() => expect(claimDepositMock).toHaveBeenCalledTimes(1))
+		expect(claimDepositMock).toHaveBeenCalledWith({
+			caller: investorAddress,
+			epoch_id: readyDepositEpoch,
+		})
+	})
+
+	it("shows the claim modal with the shares minted once confirmed", async () => {
+		setReadyDeposit()
+		let resolveSend!: () => void
+		const gate = new Promise<void>((resolve) => {
+			resolveSend = resolve
+		})
+		claimDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: async ({
+				watcher,
+			}: {
+				watcher: { onSubmitted: () => void }
+			}) => {
+				watcher.onSubmitted()
+				await gate
+				mockRequests.deposits.set(readyDepositEpoch, {
+					amount: 150_0000000n,
+					claimed: true,
+				})
+				mockShares.balance += 150_0000000n
+				return {
+					getTransactionResponse: { status: "SUCCESS" },
+					result: 150_0000000n,
+				}
+			},
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Sending your claim" }),
+		).toBeTruthy()
+
+		resolveSend()
+		expect(
+			await screen.findByRole("heading", { name: "Shares claimed" }),
+		).toBeTruthy()
+		expect(screen.getByText(/150\.00 vUSDC/)).toBeTruthy()
+	})
+
+	it("removes a claimed request from the ready list without a manual refresh", async () => {
+		setReadyDeposit()
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Shares claimed" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+
+		expect(
+			await screen.findByRole("tab", { name: "Ready to claim 0" }),
+		).toBeTruthy()
+	})
+
+	it("reflects the newly minted shares in the position without a manual refresh", async () => {
+		setReadyDeposit()
+		renderVaultPreview(connectedWallet)
+		expect(await screen.findByText("500.00 vUSDC")).toBeTruthy()
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+		expect(
+			await screen.findByRole("heading", { name: "Shares claimed" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+
+		expect(await screen.findByText("650.00 vUSDC")).toBeTruthy()
+	})
+
+	it("tells the investor their deposit was returned instead of shares issued on a zero-share claim", async () => {
+		mockRequests.currentEpoch = 4n
+		mockRequests.epochs.set(4n, {
+			status: { tag: "Fulfilled" },
+			share_price: 1_000000000000000000n,
+		})
+		mockRequests.deposits.set(4n, { amount: 150_0000000n, claimed: false })
+		claimDepositMock.mockImplementationOnce(async () => ({
+			simulation: undefined,
+			signAndSend: async ({
+				watcher,
+			}: {
+				watcher: { onSubmitted: () => void }
+			}) => {
+				watcher.onSubmitted()
+				mockRequests.deposits.set(4n, { amount: 150_0000000n, claimed: true })
+				return { getTransactionResponse: { status: "SUCCESS" }, result: 0n }
+			},
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "Deposit returned" }),
+		).toBeTruthy()
+		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+	})
+
+	it("blocks claiming a ready deposit when the investor is no longer allowlisted", async () => {
+		setReadyDeposit()
+		mockIdentity.allowed = false
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Not claimable 1" }))
+
+		expect(screen.queryByRole("button", { name: "Claim" })).toBeNull()
+
+		fireEvent.click(
+			await screen.findByRole("button", {
+				name: "Why you cannot claim this yet",
+			}),
+		)
+
+		expect(
+			screen.getByText(
+				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
+			),
+		).toBeTruthy()
 	})
 })

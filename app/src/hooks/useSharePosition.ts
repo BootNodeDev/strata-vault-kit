@@ -13,6 +13,9 @@ export type SharePosition =
 	| { status: "unreadable" }
 	| { status: "held"; shares: Amount }
 
+export const sharePositionKey = (address: string | undefined) =>
+	["share", "balance", address] as const
+
 export function classifyShares(read: ContractRead<bigint>): SharePosition {
 	if (read.kind !== "value") return { status: "unreadable" }
 	return { status: "held", shares: read.value as Amount }
@@ -28,7 +31,7 @@ async function fetchSharePosition(account: string): Promise<SharePosition> {
 export function useSharePosition(): { position: SharePosition } {
 	const { address } = useWallet()
 	const { data } = useQuery({
-		queryKey: ["share", "balance", address],
+		queryKey: sharePositionKey(address),
 		queryFn:
 			address === undefined ? skipToken : () => fetchSharePosition(address),
 		staleTime: 30_000,
