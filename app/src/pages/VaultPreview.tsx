@@ -67,8 +67,8 @@ const sections: { id: string; label: string }[] = [
 ]
 
 const vaultSummary = [
-	"Shares in this vault are a claim on an off-chain asset whose NAV is published on chain by an oracle. No price exists at the moment you act, so entry and exit are requests: what you put in is locked, and its batch is priced once the oracle can price it. Pricing does not wait for cash. The debt is recorded at the attested price, and each claim becomes claimable once the reserve covers it in full, in any order rather than by queue position.",
-	"You may hold one request per side per batch, and one price applies to everyone in it. A share claim is claimable at once; a cash claim waits for the reserve to cover it in full. Shares need an allowlisted address to claim, cash does not.",
+	"Shares in this vault are a claim on an off-chain asset priced by an oracle. Subscribing or redeeming opens a request that becomes claimable once the oracle prices it.",
+	"A share claim is ready the moment it prices. A cash claim waits until the vault's reserve can cover it in full. You may hold one open request per side, and only share claims need an allowlisted address.",
 ]
 
 const VaultPreview: React.FC = () => {
@@ -215,7 +215,7 @@ const VaultPreview: React.FC = () => {
 		},
 		{
 			id: "blocked",
-			label: "Not claimable",
+			label: "Blocked",
 			entries: entriesByStage?.blocked ?? [],
 			emptyMessage: messages.blocked,
 		},
@@ -377,7 +377,7 @@ const VaultPreview: React.FC = () => {
 						heading={
 							isSubscribe ? "Request a subscription" : "Request a redemption"
 						}
-						note="Your request joins the batch that is currently open."
+						note="Your request prices at the vault's next update."
 						amount={actionAmount}
 						onAmountChange={setActionAmount}
 						amountLabel={

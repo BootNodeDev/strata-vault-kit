@@ -6,7 +6,7 @@ import {
 	type TransactionStatus,
 } from "./useContractTransaction"
 
-export type RequestRedeemStatus = TransactionStatus<{ epochId: bigint }>
+export type RequestRedeemStatus = TransactionStatus
 
 export interface UseRequestRedeem {
 	status: RequestRedeemStatus
@@ -22,6 +22,6 @@ export function useRequestRedeem(): UseRequestRedeem {
 			),
 		[],
 	)
-	const toConfirmed = useCallback((epochId: bigint) => ({ epochId }), [])
+	const toConfirmed = useCallback(() => ({}), [])
 	return useContractTransaction(call, toConfirmed)
 }

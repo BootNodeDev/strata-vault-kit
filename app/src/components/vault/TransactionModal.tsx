@@ -59,18 +59,21 @@ export type TransactionModalProps =
 			onRetry: () => void
 	  }
 
+const GENERIC_REFUSAL =
+	"The vault refused this request. Try again, and contact support if it keeps happening."
+
 const subscribeContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6007:
 			return "Enter an amount greater than zero."
 		case 6009:
-			return "You already have a subscription request open in this batch."
+			return "You already have a subscription request open."
 		case 6014:
-			return "That amount is too large for this batch to hold."
+			return "That amount is too large for the vault to accept."
 		case 6046:
 			return "The vault is winding down and is not accepting new subscriptions."
 		default:
-			return `The vault declined this request (reason ${code}).`
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -79,19 +82,19 @@ const cancelContractErrorReason = (code: number): string => {
 		case 6001:
 			return "This request no longer exists to cancel."
 		case 6029:
-			return "This batch could not be found."
+			return "This request could not be found."
 		case 6039:
-			return "This batch has already been priced. Claim your shares instead of cancelling."
+			return "This request has already been priced. Claim your shares instead of cancelling."
 		case 6041:
-			return "A price is available for this batch, so this request can no longer be cancelled. The batch will be priced shortly, and your shares are claimable once it is."
+			return "A price is available, so this request can no longer be cancelled. It will be priced shortly, and your shares are claimable once it is."
 		default:
-			return `The vault declined this request (reason ${code}).`
+			return GENERIC_REFUSAL
 	}
 }
 
 const cancelRedeemContractErrorReason = (code: number): string => {
 	if (code === 304) {
-		return "Your address is no longer allowlisted, so these shares cannot be returned to you. Once this batch is priced, claim the cash it owes you instead."
+		return "Your address is no longer allowlisted, so these shares cannot be returned to you. Once priced, claim the cash it owes you instead."
 	}
 	return cancelContractErrorReason(code)
 }
@@ -99,13 +102,13 @@ const cancelRedeemContractErrorReason = (code: number): string => {
 const claimContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6001:
-			return "You have no request to claim in this batch."
+			return "You have no request to claim."
 		case 6014:
 			return "The share conversion for this claim is too large to complete."
 		case 6029:
-			return "This batch could not be found."
+			return "This request could not be found."
 		case 6031:
-			return "The vault has not published a valid price for this batch yet."
+			return "The vault has not published a valid price for this request yet."
 		case 6035:
 			return "This request has already been claimed."
 		case 6037:
@@ -113,7 +116,7 @@ const claimContractErrorReason = (code: number): string => {
 		case 304:
 			return "Your address is no longer allowlisted, so it cannot receive shares."
 		default:
-			return `The vault declined this request (reason ${code}).`
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -122,15 +125,15 @@ const redeemContractErrorReason = (code: number): string => {
 		case 6007:
 			return "Enter an amount greater than zero."
 		case 6009:
-			return "You already have a redemption request open in this batch."
+			return "You already have a redemption request open."
 		case 6014:
-			return "That amount is too large for this batch to hold."
+			return "That amount is too large for the vault to accept."
 		case 6029:
-			return "This batch could not be found."
+			return "This request could not be found."
 		case 6046:
 			return "The vault is winding down and is not accepting new redemptions."
 		default:
-			return `The vault declined this request (reason ${code}).`
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -178,7 +181,7 @@ const describeSubscribeStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This request moves ${amount} ${ticker} into escrow. Nothing is exchanged today, and your shares are set once this batch is priced.`,
+				body: `Your shares are set once the vault prices your request, not today. Signing locks ${amount} ${ticker} in escrow until then.`,
 			}
 		case "submitted":
 			return {
@@ -188,8 +191,8 @@ const describeSubscribeStatus = (
 			}
 		case "confirmed":
 			return {
-				heading: "Request locked in",
-				body: `${amount} ${ticker} is now locked in escrow for Batch ${status.epochId}. It prices at the next attestation.`,
+				heading: "Request submitted",
+				body: `${amount} ${ticker} prices at the vault's next update.`,
 				hash: status.hash,
 			}
 		case "failed":
@@ -216,7 +219,7 @@ const describeCancelStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This returns ${amount} ${ticker} from escrow to your wallet. This request is withdrawn, not priced.`,
+				body: `Your request is withdrawn, not priced. Signing returns ${amount} ${ticker} from escrow to your wallet.`,
 			}
 		case "submitted":
 			return {
@@ -254,7 +257,7 @@ const describeCancelRedeemStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This returns ${amount} ${ticker} from escrow to your wallet. This request is withdrawn, not priced.`,
+				body: `Your request is withdrawn, not priced. Signing returns ${amount} ${ticker} from escrow to your wallet.`,
 			}
 		case "submitted":
 			return {
@@ -293,7 +296,7 @@ const describeClaimStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This claims what your priced request is owed. If the price leaves no shares to claim, ${amount} ${ticker} is returned to your wallet instead.`,
+				body: `You receive what you're owed. If the price leaves no shares to claim, ${amount} ${ticker} returns to your wallet instead.`,
 			}
 		case "submitted":
 			return {
@@ -337,7 +340,7 @@ const describeRedeemStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `This request moves ${amount} ${ticker} into escrow. Nothing is exchanged today, and what you are owed is set once this batch is priced.`,
+				body: `What you're owed is set once the vault prices your request, not today. Signing locks ${amount} ${ticker} in escrow until then.`,
 			}
 		case "submitted":
 			return {
@@ -347,8 +350,8 @@ const describeRedeemStatus = (
 			}
 		case "confirmed":
 			return {
-				heading: "Redemption request locked in",
-				body: `${amount} ${ticker} is now locked in escrow for Batch ${status.epochId}. It prices at the next attestation.`,
+				heading: "Redemption request submitted",
+				body: `${amount} ${ticker} prices at the vault's next update.`,
 				hash: status.hash,
 			}
 		case "failed":
@@ -450,6 +453,17 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 	React.useEffect(() => {
 		dialogRef.current?.focus()
 	}, [])
+
+	const contractErrorCode =
+		status.status === "failed" && status.failure.kind === "contract-error"
+			? status.failure.code
+			: undefined
+
+	React.useEffect(() => {
+		if (contractErrorCode !== undefined) {
+			console.error(`Vault contract error ${contractErrorCode}`)
+		}
+	}, [contractErrorCode])
 
 	const content = describeStatus(props)
 	if (content === undefined) return null

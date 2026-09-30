@@ -99,7 +99,6 @@ describe("useRequestDeposit", () => {
 		await waitFor(() =>
 			expect(result.current.status).toEqual({
 				status: "confirmed",
-				epochId: 7n,
 			}),
 		)
 
@@ -252,7 +251,6 @@ describe("useRequestDeposit", () => {
 		await waitFor(() =>
 			expect(result.current.status).toEqual({
 				status: "confirmed",
-				epochId: 7n,
 				hash: "a".repeat(64),
 			}),
 		)
@@ -377,7 +375,7 @@ describe("useRequestDeposit", () => {
 		const { result } = renderRequestDeposit()
 
 		await act(() => result.current.submit(amount))
-		expect(result.current.status).toEqual({ status: "confirmed", epochId: 7n })
+		expect(result.current.status).toEqual({ status: "confirmed" })
 
 		act(() => result.current.reset())
 		expect(result.current.status).toEqual({ status: "idle" })

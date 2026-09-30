@@ -125,8 +125,9 @@ describe("TransactionModal", () => {
 			screen.getByRole("heading", { name: "Confirm in your wallet" }),
 		).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
-		expect(screen.getByText(/into escrow/)).toBeTruthy()
-		expect(screen.getByText(/once this batch is priced/)).toBeTruthy()
+		expect(screen.getByText(/in escrow/)).toBeTruthy()
+		expect(screen.getByText(/not today/)).toBeTruthy()
+		expect(screen.queryByText(/batch/i)).toBeNull()
 	})
 
 	it("tells the investor the network wait is short and distinct from pricing", () => {
@@ -153,20 +154,26 @@ describe("TransactionModal", () => {
 		expect(screen.queryByText(/Transaction/)).toBeNull()
 	})
 
-	it("shows the locked amount, batch and transaction hash once confirmed", () => {
-		renderModal({ status: "confirmed", epochId: 7n, hash: "b".repeat(64) })
+	it("shows the confirmed amount and transaction hash once confirmed", () => {
+		renderModal({ status: "confirmed", hash: "b".repeat(64) })
 
 		expect(
-			screen.getByRole("heading", { name: "Request locked in" }),
+			screen.getByRole("heading", { name: "Request submitted" }),
 		).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
-		expect(screen.getByText(/Batch 7/)).toBeTruthy()
-		expect(screen.getByText(/next attestation/)).toBeTruthy()
+		expect(screen.queryByText(/Batch/)).toBeNull()
 		expect(screen.getByText(/bbbb\.\.\.bbbb/)).toBeTruthy()
 	})
 
+	it("never mentions locking or attestation once confirmed", () => {
+		renderModal({ status: "confirmed", hash: "b".repeat(64) })
+
+		expect(screen.queryByText(/locked/i)).toBeNull()
+		expect(screen.queryByText(/attestation/i)).toBeNull()
+	})
+
 	it("never names the contract's epoch to the investor", () => {
-		renderModal({ status: "confirmed", epochId: 7n, hash: "b".repeat(64) })
+		renderModal({ status: "confirmed", hash: "b".repeat(64) })
 
 		expect(screen.queryByText(/Epoch/)).toBeNull()
 	})
@@ -174,12 +181,11 @@ describe("TransactionModal", () => {
 	it("gives only the confirmed moment the weight of an arrival, announced to assistive tech", () => {
 		const confirmed = renderModal({
 			status: "confirmed",
-			epochId: 7n,
 			hash: "b".repeat(64),
 		})
 		const arrival = screen.getByRole("status")
 		expect(
-			within(arrival).getByRole("heading", { name: "Request locked in" }),
+			within(arrival).getByRole("heading", { name: "Request submitted" }),
 		).toBeTruthy()
 		confirmed.unmount()
 
@@ -232,7 +238,7 @@ describe("TransactionModal", () => {
 		],
 		[
 			"confirmed",
-			{ status: "confirmed", epochId: 7n },
+			{ status: "confirmed" },
 			[
 				"Approved in your wallet, done",
 				"Sent to the network, done",
@@ -319,13 +325,14 @@ describe("TransactionModal", () => {
 		expect(screen.queryByText(/Transaction/)).toBeNull()
 	})
 
-	it("falls back to the raw code for a contract refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a contract error it does not recognize, without the raw code", () => {
 		renderModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
 	it("never tells an unknown outcome whether it went through", () => {
@@ -380,6 +387,31 @@ describe("TransactionModal", () => {
 		expect(onClose).toHaveBeenCalledTimes(1)
 		expect(onRetry).not.toHaveBeenCalled()
 	})
+
+	it("logs the contract error once, not again on every re-render of the same failure", () => {
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+		const status: RequestDepositStatus = {
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		}
+		const { rerender } = renderModal(status)
+
+		rerender(
+			<TransactionModal
+				action="subscribe"
+				status={status}
+				amount="150.00"
+				ticker="USDC"
+				onClose={() => {}}
+				onRetry={() => {}}
+			/>,
+		)
+
+		expect(consoleError).toHaveBeenCalledTimes(1)
+		expect(consoleError).toHaveBeenCalledWith("Vault contract error 9999")
+
+		consoleError.mockRestore()
+	})
 })
 
 describe("TransactionModal, cancelling", () => {
@@ -400,6 +432,7 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
 		expect(screen.getByText(/from escrow/)).toBeTruthy()
 		expect(screen.queryByText(/into escrow/)).toBeNull()
+		expect(screen.getByText(/withdrawn, not priced/)).toBeTruthy()
 	})
 
 	it("tells the investor the cancellation is on its way, distinct from the subscribe copy", () => {
@@ -458,7 +491,7 @@ describe("TransactionModal, cancelling", () => {
 			failure: { kind: "contract-error", code: 6041 },
 		})
 
-		expect(screen.getByText(/A price is available for this batch/)).toBeTruthy()
+		expect(screen.getByText(/A price is available/)).toBeTruthy()
 		expect(screen.getByText(/claimable once it is/)).toBeTruthy()
 		expect(screen.queryByText(/Claim your shares instead/)).toBeNull()
 	})
@@ -472,31 +505,33 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.getByText(/no longer exists to cancel/)).toBeTruthy()
 	})
 
-	it("names EpochNotFound as a batch that could not be found", () => {
+	it("names EpochNotFound as a request that could not be found", () => {
 		renderCancelModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6029 },
 		})
 
-		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
 	})
 
-	it("falls back to the raw code for a cancel refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a cancel error it does not recognize, without the raw code", () => {
 		renderCancelModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
-	it("falls back to the raw code for 304 on a deposit cancellation, since only the share token's identity check can raise it", () => {
+	it("falls back to a generic refusal for 304 on a deposit cancellation, since only the share token's identity check can raise it", () => {
 		renderCancelModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/reason 304/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/304/)).toBeNull()
 		expect(screen.queryByText(/shares cannot be returned/)).toBeNull()
 	})
 
@@ -551,6 +586,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
 		expect(screen.getByText(/from escrow/)).toBeTruthy()
 		expect(screen.queryByText(/into escrow/)).toBeNull()
+		expect(screen.getByText(/withdrawn, not priced/)).toBeTruthy()
 	})
 
 	it("shows the returned shares, in the share ticker, once confirmed", () => {
@@ -589,13 +625,14 @@ describe("TransactionModal, cancelling a redemption", () => {
 		expect(screen.queryByText(/cannot receive shares/)).toBeNull()
 	})
 
-	it("falls back to the raw code for a cancel-redeem refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a cancel-redeem error it does not recognize, without the raw code", () => {
 		renderCancelRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
@@ -625,7 +662,7 @@ describe("TransactionModal, claiming", () => {
 		).toBeTruthy()
 		expect(
 			screen.getByText(
-				"This claims what your priced request is owed. If the price leaves no shares to claim, 150.00 USDC is returned to your wallet instead.",
+				"You receive what you're owed. If the price leaves no shares to claim, 150.00 USDC returns to your wallet instead.",
 			),
 		).toBeTruthy()
 		expect(screen.queryByText(/Epoch/)).toBeNull()
@@ -667,7 +704,7 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.queryByText(/vUSDC/)).toBeNull()
 	})
 
-	it("names RequestNotFound for a claim with no request in this batch", () => {
+	it("names RequestNotFound for a claim with no matching request", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6001 },
@@ -676,13 +713,13 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.getByText(/no request to claim/)).toBeTruthy()
 	})
 
-	it("names EpochNotFound as a batch that could not be found", () => {
+	it("names EpochNotFound as a request that could not be found", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6029 },
 		})
 
-		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
 	})
 
 	it("names InvalidSharePrice as no valid price published yet", () => {
@@ -730,13 +767,14 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.getByText(/no longer allowlisted/)).toBeTruthy()
 	})
 
-	it("falls back to the raw code for a claim refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a claim error it does not recognize, without the raw code", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
 	it("reads a declined claim as a choice, not a failure, and offers to try again", () => {
@@ -783,16 +821,18 @@ describe("TransactionModal, redeeming", () => {
 		).toBeTruthy()
 	})
 
-	it("tells the investor their shares move into escrow, in share terms, without naming an epoch", () => {
+	it("tells the investor their shares are locked in escrow, in share terms, without naming an epoch", () => {
 		renderRedeemModal({ status: "awaiting-signature" })
 
 		expect(
 			screen.getByRole("heading", { name: "Confirm in your wallet" }),
 		).toBeTruthy()
 		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
-		expect(screen.getByText(/into escrow/)).toBeTruthy()
+		expect(screen.getByText(/in escrow/)).toBeTruthy()
+		expect(screen.getByText(/not today/)).toBeTruthy()
 		expect(screen.queryByText(/Epoch/)).toBeNull()
 		expect(screen.queryByText(/epoch/)).toBeNull()
+		expect(screen.queryByText(/batch/i)).toBeNull()
 	})
 
 	it("tells the investor the redemption request is on its way, distinct from subscribe copy", () => {
@@ -804,20 +844,25 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
 	})
 
-	it("shows the escrowed shares, batch and transaction hash once confirmed", () => {
+	it("shows the confirmed shares and transaction hash once confirmed", () => {
 		renderRedeemModal({
 			status: "confirmed",
-			epochId: 9n,
 			hash: "b".repeat(64),
 		})
 
 		expect(
-			screen.getByRole("heading", { name: "Redemption request locked in" }),
+			screen.getByRole("heading", { name: "Redemption request submitted" }),
 		).toBeTruthy()
 		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
-		expect(screen.getByText(/Batch 9/)).toBeTruthy()
-		expect(screen.getByText(/next attestation/)).toBeTruthy()
+		expect(screen.queryByText(/Batch/)).toBeNull()
 		expect(screen.getByText(/bbbb\.\.\.bbbb/)).toBeTruthy()
+	})
+
+	it("never mentions locking or attestation once confirmed", () => {
+		renderRedeemModal({ status: "confirmed", hash: "b".repeat(64) })
+
+		expect(screen.queryByText(/locked/i)).toBeNull()
+		expect(screen.queryByText(/attestation/i)).toBeNull()
 	})
 
 	it("names InvalidAmount for a non-positive share amount", () => {
@@ -829,7 +874,7 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/amount greater than zero/)).toBeTruthy()
 	})
 
-	it("names RequestOutstanding as a redemption already open in this batch, distinct from subscribe's wording", () => {
+	it("names RequestOutstanding as a redemption request already open, distinct from subscribe's wording", () => {
 		renderRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6009 },
@@ -840,22 +885,22 @@ describe("TransactionModal, redeeming", () => {
 		).toBeTruthy()
 	})
 
-	it("names AmountTooLarge as the batch unable to hold this much", () => {
+	it("names AmountTooLarge as too large for the vault to accept", () => {
 		renderRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6014 },
 		})
 
-		expect(screen.getByText(/too large for this batch to hold/)).toBeTruthy()
+		expect(screen.getByText(/too large for the vault to accept/)).toBeTruthy()
 	})
 
-	it("names EpochNotFound as a batch that could not be found", () => {
+	it("names EpochNotFound as a request that could not be found", () => {
 		renderRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 6029 },
 		})
 
-		expect(screen.getByText(/batch could not be found/)).toBeTruthy()
+		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
 	})
 
 	it("names WindDownActive as the vault not accepting new redemptions", () => {
@@ -867,13 +912,14 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/not accepting new redemptions/)).toBeTruthy()
 	})
 
-	it("falls back to the raw code for a redeem refusal it does not recognize", () => {
+	it("falls back to a generic refusal for a redeem error it does not recognize, without the raw code", () => {
 		renderRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 9999 },
 		})
 
-		expect(screen.getByText(/reason 9999/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 
 	it("reads a declined redemption request as a choice, not a failure, and offers to try again", () => {

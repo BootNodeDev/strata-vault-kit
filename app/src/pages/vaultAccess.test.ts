@@ -239,7 +239,7 @@ describe("toPanelBlock", () => {
 			)
 			expect(block).toEqual({
 				kind: "message",
-				reason: "You already have a subscription request open in this batch.",
+				reason: "You already have a subscription request open.",
 				sides: ["subscribe"],
 			})
 		})
@@ -297,6 +297,7 @@ describe("isSubscriptionOpen", () => {
 					sharePrice: 0n as Price,
 					amount: 100_0000000n as Amount,
 					claimed: false,
+					priceableAt: 0n,
 				},
 			],
 			archived: [],
@@ -316,6 +317,7 @@ describe("isSubscriptionOpen", () => {
 					sharePrice: 0n as Price,
 					amount: 500_0000000n as Amount,
 					claimed: false,
+					priceableAt: 0n,
 				},
 			],
 			archived: [],
@@ -335,6 +337,7 @@ describe("isSubscriptionOpen", () => {
 					sharePrice: 0n as Price,
 					amount: 100_0000000n as Amount,
 					claimed: false,
+					priceableAt: 1_700_003_600n,
 				},
 			],
 			archived: [],
