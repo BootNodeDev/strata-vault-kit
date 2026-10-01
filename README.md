@@ -25,6 +25,22 @@ Two rules the contracts enforce:
 
 Pre-release, testnet only. Nothing here is audited or production-ready.
 
+## Deployed addresses
+
+Testnet only. The deploy script rewrites the table below on every testnet
+deploy from `environments.toml` → `[staging.contracts]`, which is the record.
+
+<!-- deployed-addresses:start -->
+| Contract | Address |
+| --- | --- |
+| `async_vault` | `CCYHYTZ25MJSFWSKOUEQTYEVOLSA7QEWHSQGJSR2BT64AOBRIQTNJM4U` |
+| `nav_oracle` | `CDM7GHC4GBZVVEFBP4XCMX6EIPW67ZEOSBS7X6JQWKJCT6F7KP2KU7OF` |
+| `share_token` | `CDMZCOCFE6YXKZ2RG4DMPKIMDV7YHV7G3G2OD76CYNHO4YLDOL5R3ZWX` |
+| `identity_verifier` | `CBFF4YFKUT4A462LQN4APHQXZPRPT4GGE2VTHBRIK4YS4CTRFGSYQZNY` |
+| `compliance` | `CBLVQHCKL3GNB6HZSDAJMLYHZASJRNNLJ57FQ3HRRSZ4XITZBBFU2MF2` |
+| `asset` | `CDOC5UPUPG7UMZBO35JONIGPUDB6PUVR4HBPAMJ4OG2QJEGZO42KDWNG` |
+<!-- deployed-addresses:end -->
+
 ## Development
 
 Two ways to get a working toolchain.
