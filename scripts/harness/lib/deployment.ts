@@ -34,6 +34,49 @@ export function deploymentFile(network: NetworkName): string {
 	return join(PACKAGE_ROOT, `deployed.${network}.json`)
 }
 
+const README_START = "<!-- deployed-addresses:start -->"
+const README_END = "<!-- deployed-addresses:end -->"
+
+// The README lists the IDs as text (grant measure); the deploy keeps the list
+// in sync with environments.toml rather than relying on a hand edit.
+export function renderAddressesTable(record: Deployment): string {
+	const rows: Array<[string, string]> = [
+		["async_vault", record.contracts.async_vault],
+		["nav_oracle", record.contracts.nav_oracle],
+		["share_token", record.contracts.share_token],
+		["identity_verifier", record.contracts.identity_verifier],
+		["compliance", record.contracts.compliance],
+		["asset", record.asset.contract],
+	]
+	return [
+		"| Contract | Address |",
+		"| --- | --- |",
+		...rows.map(([name, id]) => `| \`${name}\` | \`${id}\` |`),
+	].join("\n")
+}
+
+export function replaceAddressesBlock(content: string, table: string): string {
+	const start = content.indexOf(README_START)
+	const end = content.indexOf(README_END)
+	if (start === -1 || end === -1 || end < start) {
+		throw new Error("README.md is missing the deployed-addresses markers")
+	}
+	return (
+		content.slice(0, start + README_START.length) +
+		`\n${table}\n` +
+		content.slice(end)
+	)
+}
+
+function syncReadmeAddresses(record: Deployment): void {
+	const readmePath = join(REPO_ROOT, "README.md")
+	const content = readFileSync(readmePath, "utf8")
+	writeFileSync(
+		readmePath,
+		replaceAddressesBlock(content, renderAddressesTable(record)),
+	)
+}
+
 export function syncEnvironmentsStaging(record: Deployment): void {
 	if (record.network !== "testnet") return
 	const envPath = join(REPO_ROOT, "environments.toml")
@@ -66,6 +109,7 @@ export function saveDeployment(record: Deployment): void {
 	)
 	if (record.network === "testnet") {
 		syncEnvironmentsStaging(record)
+		syncReadmeAddresses(record)
 	}
 }
 
