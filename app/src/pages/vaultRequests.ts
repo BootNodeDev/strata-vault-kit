@@ -50,7 +50,11 @@ const inTicker = (side: RequestSide, tokens: RequestTokens): string =>
 const outTicker = (side: RequestSide, tokens: RequestTokens): string =>
 	side === "deposit" ? tokens.shareToken : tokens.token
 
-const owedAmount = (side: RequestSide, amount: Amount, price: Price): Amount =>
+export const owedAmount = (
+	side: RequestSide,
+	amount: Amount,
+	price: Price,
+): Amount =>
 	(side === "deposit"
 		? (amount * WAD) / price
 		: (amount * price) / WAD) as Amount
@@ -142,10 +146,7 @@ function readyEntry(
 	onClaim: ((request: InvestorRequest) => void) | undefined,
 ): RequestEntry {
 	const owed = owedAmount(request.side, request.amount, request.sharePrice)
-	const actions =
-		onClaim !== undefined && request.side === "deposit"
-			? [claimAction(request, onClaim)]
-			: []
+	const actions = onClaim !== undefined ? [claimAction(request, onClaim)] : []
 	return {
 		...baseEntry(request, tokens),
 		actions,

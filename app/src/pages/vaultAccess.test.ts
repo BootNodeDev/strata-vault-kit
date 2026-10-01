@@ -485,4 +485,15 @@ describe("emptyMessages", () => {
 		expect(checking.ready).not.toBe(loaded.ready)
 		expect(checking.ready).not.toBe(unreadable.ready)
 	})
+
+	it("names the deposit asset's ticker in the ready message once it is known", () => {
+		const loaded = emptyMessages("loaded", "USDC")
+		expect(loaded.ready).toContain("USDC")
+	})
+
+	it("does not invent a ticker in the ready message while it is still unknown", () => {
+		const loaded = emptyMessages("loaded")
+		expect(loaded.ready).not.toMatch(/\bTOKEN\b/)
+		expect(loaded.ready).not.toMatch(/\bcash\b/i)
+	})
 })

@@ -1,10 +1,12 @@
 import { type Amount } from "@stellar-scaffold/app-lib"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
+import { StrictMode } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
+import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import TransactionModal from "./TransactionModal"
@@ -61,6 +63,7 @@ const renderCancelRedeemModal = (status: CancelRedeemStatus) => {
 			status={status}
 			amount="100.00"
 			ticker="vUSDC"
+			assetTicker="USDC"
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -94,6 +97,22 @@ const renderRedeemModal = (status: RequestRedeemStatus) => {
 			status={status}
 			amount="100.00"
 			ticker="vUSDC"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderClaimRedeemModal = (status: ClaimRedeemStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="claim-redeem"
+			status={status}
+			amount="100.00"
+			ticker="USDC"
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -379,13 +398,39 @@ describe("TransactionModal", () => {
 		expect(onClose).toHaveBeenCalledTimes(1)
 	})
 
-	it("dismisses on Escape without calling anything but onClose", () => {
+	it("dismisses on the cancel event the browser fires for the native Escape default action, without calling anything but onClose", () => {
 		const { onClose, onRetry } = renderModal({ status: "submitted" })
 
-		fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+		fireEvent(
+			screen.getByRole("dialog"),
+			new Event("cancel", { cancelable: true }),
+		)
 
 		expect(onClose).toHaveBeenCalledTimes(1)
 		expect(onRetry).not.toHaveBeenCalled()
+	})
+
+	it("survives StrictMode's double-invoked mount effect without reopening an already open dialog", () => {
+		const showModalSpy = vi.spyOn(HTMLDialogElement.prototype, "showModal")
+
+		expect(() =>
+			render(
+				<StrictMode>
+					<TransactionModal
+						action="subscribe"
+						status={{ status: "preparing" }}
+						amount="150.00"
+						ticker="USDC"
+						onClose={() => {}}
+						onRetry={() => {}}
+					/>
+				</StrictMode>,
+			),
+		).not.toThrow()
+
+		expect(showModalSpy).toHaveBeenCalledTimes(1)
+
+		showModalSpy.mockRestore()
 	})
 
 	it("logs the contract error once, not again on every re-render of the same failure", () => {
@@ -621,7 +666,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		})
 
 		expect(screen.getByText(/shares cannot be returned/)).toBeTruthy()
-		expect(screen.getByText(/claim the cash/i)).toBeTruthy()
+		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
 		expect(screen.queryByText(/cannot receive shares/)).toBeNull()
 	})
 
@@ -949,6 +994,155 @@ describe("TransactionModal, redeeming", () => {
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
 		const { onClose } = renderRedeemModal({ status: "awaiting-signature" })
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, claiming a redemption", () => {
+	it("opens with a preparing state naming the claim", () => {
+		renderClaimRedeemModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing your claim" }),
+		).toBeTruthy()
+	})
+
+	it("tells the investor what claiming sends them, without naming an epoch", () => {
+		renderClaimRedeemModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"You receive what you're owed. Signing sends 100.00 USDC to your wallet.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByText(/Epoch/)).toBeNull()
+		expect(screen.queryByText(/epoch/)).toBeNull()
+	})
+
+	it("tells the investor the claim is on its way to the network", () => {
+		renderClaimRedeemModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending your claim" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("shows the claimed asset, in its own ticker, once confirmed", () => {
+		renderClaimRedeemModal({
+			status: "confirmed",
+			assetsClaimed: 150_0000000n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByRole("heading", { name: "USDC claimed" })).toBeTruthy()
+		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+	})
+
+	it("tells the investor their shares came back, not that an asset was claimed, on a zero result", () => {
+		renderClaimRedeemModal({
+			status: "confirmed",
+			assetsClaimed: 0n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Shares returned" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"The price left nothing to claim, so your shares have been returned to your wallet instead.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByText(/USDC claimed/)).toBeNull()
+	})
+
+	it("names EpochNotFulfilled as not yet priced", () => {
+		renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6034 },
+		})
+
+		expect(screen.getByText(/has not priced yet/)).toBeTruthy()
+	})
+
+	it("names ClaimNotCovered with the deposit asset's ticker, distinct from the untickered claim wording for the same code", () => {
+		renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6037 },
+		})
+
+		expect(screen.getByText(/enough USDC in reserve/)).toBeTruthy()
+	})
+
+	it("names a delisted controller as unable to receive the shares the zero-price branch tried to return, distinct from the claim and cancel-redeem wording for the same code", () => {
+		renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 304 },
+		})
+
+		expect(screen.getByText(/tried to return your shares instead/)).toBeTruthy()
+		expect(
+			screen.queryByText(
+				/^Your address is no longer allowlisted, so it cannot receive shares\.$/,
+			),
+		).toBeNull()
+		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
+	})
+
+	it("names AlreadyClaimed by delegating to the shared claim wording", () => {
+		renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6035 },
+		})
+
+		expect(screen.getByText(/already been claimed/)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for a claim-redeem error it does not recognize, without the raw code", () => {
+		renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
+	})
+
+	it("reads a declined claim as a choice, not a failure, and offers to try again", () => {
+		const { onRetry } = renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "declined" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "You declined the request" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+
+	it("shows the same step progress machinery for a claim in flight", () => {
+		renderClaimRedeemModal({ status: "awaiting-signature" })
+
+		const steps = screen.getAllByRole("listitem")
+		expect(steps.map((step) => step.textContent)).toEqual([
+			"Approved in your wallet, in progress",
+			"Sent to the network",
+			"Recorded",
+		])
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderClaimRedeemModal({
+			status: "awaiting-signature",
+		})
 
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 		expect(onClose).toHaveBeenCalledTimes(1)

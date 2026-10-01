@@ -35,12 +35,12 @@ async function fetchTokenSymbols(): Promise<TokenSymbols> {
 	return toSymbols(token, share, name)
 }
 
-export function useTokenSymbols(): { symbols: TokenSymbols } {
+export function useTokenSymbols(): { symbols: TokenSymbols | undefined } {
 	const { data } = useQuery({
 		queryKey: ["token", "symbols"],
 		queryFn: fetchTokenSymbols,
 		staleTime: 30_000,
 	})
 
-	return { symbols: data ?? FALLBACK }
+	return { symbols: data }
 }
