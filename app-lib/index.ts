@@ -8,5 +8,4 @@ export * from "./env" // rpcUrl, networkPassphrase, stellarNetwork, horizonUrl, 
 export * from "./format" // shortAddress, formatNetworkName, networkStatus, NetworkState
 export * from "./friendbot" // getFriendbotUrl
 export * from "./readContract" // ContractRead, readContract
-export * from "./subscription" // subscribeToEvents
 export * from "./wallet" // connectWallet, disconnectWallet, profileModal, signTransaction, onWalletChange, fetchBalances, wallet, MappedBalances, WalletState
