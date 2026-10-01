@@ -17,7 +17,9 @@ export type TransactionFailure =
 	| { kind: "interrupted" }
 	| { kind: "unknown" }
 
-export type TransactionStatus<TConfirmed extends object> =
+export type TransactionStatus<
+	TConfirmed extends object = Record<never, never>,
+> =
 	| { status: "idle" }
 	| { status: "preparing" }
 	| { status: "awaiting-signature" }

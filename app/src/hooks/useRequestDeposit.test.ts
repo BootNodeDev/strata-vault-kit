@@ -1,17 +1,8 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
-import {
-	AMOUNT_DECIMALS,
-	type Amount,
-	networkPassphrase,
-} from "@stellar-scaffold/app-lib"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, renderHook, waitFor } from "@testing-library/react"
-import { createElement, type ReactNode } from "react"
+import { AMOUNT_DECIMALS, type Amount } from "@stellar-scaffold/app-lib"
+import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	WalletContext,
-	type WalletContextType,
-} from "../providers/WalletProvider"
+import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { useRequestDeposit } from "./useRequestDeposit"
@@ -26,40 +17,9 @@ vi.mock("../config/clients", () => ({
 	asyncVaultWriter: asyncVaultWriterMock,
 }))
 
-const investorAddress = "GINVESTORADDRESS1234567890"
 const amount = (100n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount
 
-const wallet: WalletContextType = {
-	address: investorAddress,
-	networkPassphrase,
-	balances: {},
-	isPending: false,
-	updateBalances: async () => {},
-	signTransaction: vi.fn() as WalletContextType["signTransaction"],
-}
-
-const renderRequestDeposit = () => {
-	const queryClient = new QueryClient({
-		defaultOptions: { queries: { retry: false } },
-	})
-	const wrapper = ({ children }: { children: ReactNode }) =>
-		createElement(
-			QueryClientProvider,
-			{ client: queryClient },
-			createElement(WalletContext, { value: wallet }, children),
-		)
-	return { ...renderHook(() => useRequestDeposit(), { wrapper }), queryClient }
-}
-
-const deferred = <T>() => {
-	let resolve!: (value: T) => void
-	let reject!: (reason: unknown) => void
-	const promise = new Promise<T>((res, rej) => {
-		resolve = res
-		reject = rej
-	})
-	return { promise, resolve, reject }
-}
+const renderRequestDeposit = () => renderWithWallet(useRequestDeposit)
 
 describe("useRequestDeposit", () => {
 	beforeEach(() => {
@@ -99,7 +59,6 @@ describe("useRequestDeposit", () => {
 		await waitFor(() =>
 			expect(result.current.status).toEqual({
 				status: "confirmed",
-				epochId: 7n,
 			}),
 		)
 
@@ -252,7 +211,6 @@ describe("useRequestDeposit", () => {
 		await waitFor(() =>
 			expect(result.current.status).toEqual({
 				status: "confirmed",
-				epochId: 7n,
 				hash: "a".repeat(64),
 			}),
 		)
@@ -377,7 +335,7 @@ describe("useRequestDeposit", () => {
 		const { result } = renderRequestDeposit()
 
 		await act(() => result.current.submit(amount))
-		expect(result.current.status).toEqual({ status: "confirmed", epochId: 7n })
+		expect(result.current.status).toEqual({ status: "confirmed" })
 
 		act(() => result.current.reset())
 		expect(result.current.status).toEqual({ status: "idle" })

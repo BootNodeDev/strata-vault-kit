@@ -102,6 +102,7 @@ describe("classifyRequest", () => {
 				sharePrice: openEpoch.share_price as Price,
 				amount: 100_0000000n as Amount,
 				claimed: false,
+				priceableAt: openEpoch.priceable_at,
 			},
 		})
 	})
@@ -118,6 +119,7 @@ describe("classifyRequest", () => {
 				sharePrice: fulfilledEpoch.share_price as Price,
 				amount: 100_0000000n as Amount,
 				claimed: true,
+				priceableAt: fulfilledEpoch.priceable_at,
 			},
 		})
 	})
@@ -134,6 +136,7 @@ describe("classifyRequest", () => {
 				sharePrice: fulfilledEpoch.share_price as Price,
 				amount: 20_0000000n as Amount,
 				claimed: false,
+				priceableAt: fulfilledEpoch.priceable_at,
 			},
 		})
 	})
@@ -207,6 +210,7 @@ describe("fetchInvestorRequests", () => {
 					sharePrice: openEpoch.share_price as Price,
 					amount: 100_0000000n as Amount,
 					claimed: false,
+					priceableAt: openEpoch.priceable_at,
 				},
 				{
 					epochId: 3n,
@@ -215,6 +219,7 @@ describe("fetchInvestorRequests", () => {
 					sharePrice: fulfilledEpoch.share_price as Price,
 					amount: 50_0000000n as Amount,
 					claimed: true,
+					priceableAt: fulfilledEpoch.priceable_at,
 				},
 				{
 					epochId: 3n,
@@ -223,6 +228,7 @@ describe("fetchInvestorRequests", () => {
 					sharePrice: fulfilledEpoch.share_price as Price,
 					amount: 20_0000000n as Amount,
 					claimed: false,
+					priceableAt: fulfilledEpoch.priceable_at,
 				},
 			],
 			archived: [],
@@ -289,6 +295,7 @@ describe("fetchInvestorRequests", () => {
 					sharePrice: pendingEpoch.share_price as Price,
 					amount: 30_0000000n as Amount,
 					claimed: false,
+					priceableAt: pendingEpoch.priceable_at,
 				},
 			],
 			archived: [],
@@ -338,6 +345,7 @@ describe("fetchInvestorRequests", () => {
 					sharePrice: pendingEpoch.share_price as Price,
 					amount: 30_0000000n as Amount,
 					claimed: false,
+					priceableAt: pendingEpoch.priceable_at,
 				},
 			],
 			archived: [],
@@ -368,6 +376,7 @@ describe("fetchInvestorRequests", () => {
 					sharePrice: openEpoch.share_price as Price,
 					amount: 10_0000000n as Amount,
 					claimed: false,
+					priceableAt: openEpoch.priceable_at,
 				},
 			],
 			archived: [],
@@ -406,6 +415,7 @@ describe("fetchInvestorRequests", () => {
 					sharePrice: pendingEpoch.share_price as Price,
 					amount: 10_0000000n as Amount,
 					claimed: false,
+					priceableAt: pendingEpoch.priceable_at,
 				},
 			],
 			archived: [],
@@ -440,6 +450,7 @@ describe("fetchInvestorRequests", () => {
 					sharePrice: openEpoch.share_price as Price,
 					amount: 10_0000000n as Amount,
 					claimed: false,
+					priceableAt: openEpoch.priceable_at,
 				},
 			],
 			archived: [],

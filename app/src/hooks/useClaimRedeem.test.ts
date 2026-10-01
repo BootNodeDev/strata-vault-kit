@@ -2,13 +2,13 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
-import { useClaimDeposit } from "./useClaimDeposit"
+import { useClaimRedeem } from "./useClaimRedeem"
 import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { sharePositionKey } from "./useSharePosition"
 
 const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { claim_deposit: vi.fn() },
+	vaultMock: { claim_redeem: vi.fn() },
 	asyncVaultWriterMock: vi.fn(),
 }))
 asyncVaultWriterMock.mockResolvedValue(vaultMock)
@@ -19,23 +19,23 @@ vi.mock("../config/clients", () => ({
 
 const epochId = 3n
 
-const renderClaimDeposit = () => renderWithWallet(useClaimDeposit)
+const renderClaimRedeem = () => renderWithWallet(useClaimRedeem)
 
-describe("useClaimDeposit", () => {
+describe("useClaimRedeem", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("reports whether the submission was accepted synchronously, not through a promise", async () => {
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: undefined,
 			signAndSend: vi.fn().mockResolvedValue({
 				getTransactionResponse: { status: "SUCCESS" },
 				result: 50_0000000n,
 			}),
 		})
-		const { result } = renderClaimDeposit()
+		const { result } = renderClaimRedeem()
 
 		const accepted = result.current.submit(epochId)
 
@@ -43,7 +43,7 @@ describe("useClaimDeposit", () => {
 		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
 	})
 
-	it("moves through awaiting signature, submitted, then confirmed with the shares minted, in order", async () => {
+	it("moves through awaiting signature, submitted, then confirmed with the assets claimed, in order", async () => {
 		const signingGate = deferred<void>()
 		const confirmGate = deferred<void>()
 		const signAndSend = vi.fn(
@@ -57,11 +57,11 @@ describe("useClaimDeposit", () => {
 				}
 			},
 		)
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: undefined,
 			signAndSend,
 		})
-		const { result } = renderClaimDeposit()
+		const { result } = renderClaimRedeem()
 
 		void result.current.submit(epochId)
 
@@ -78,43 +78,43 @@ describe("useClaimDeposit", () => {
 		await waitFor(() =>
 			expect(result.current.status).toEqual({
 				status: "confirmed",
-				sharesMinted: 50_0000000n,
+				assetsClaimed: 50_0000000n,
 			}),
 		)
 
-		expect(vaultMock.claim_deposit).toHaveBeenCalledWith({
+		expect(vaultMock.claim_redeem).toHaveBeenCalledWith({
 			caller: investorAddress,
 			epoch_id: epochId,
 		})
 	})
 
 	it("carries a zero result through as confirmed, not as a failure", async () => {
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: undefined,
 			signAndSend: vi.fn().mockResolvedValue({
 				getTransactionResponse: { status: "SUCCESS" },
 				result: 0n,
 			}),
 		})
-		const { result } = renderClaimDeposit()
+		const { result } = renderClaimRedeem()
 
 		await act(() => result.current.submit(epochId))
 
 		expect(result.current.status).toEqual({
 			status: "confirmed",
-			sharesMinted: 0n,
+			assetsClaimed: 0n,
 		})
 	})
 
 	it("invalidates the investor's cached requests, deposit balance and share position once the claim confirms", async () => {
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: undefined,
 			signAndSend: vi.fn().mockResolvedValue({
 				getTransactionResponse: { status: "SUCCESS" },
 				result: 50_0000000n,
 			}),
 		})
-		const { result, queryClient } = renderClaimDeposit()
+		const { result, queryClient } = renderClaimRedeem()
 		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
 
 		await act(() => result.current.submit(epochId))
@@ -131,11 +131,11 @@ describe("useClaimDeposit", () => {
 	})
 
 	it("does not touch cached requests, balance or share position when the vault refuses at simulation", async () => {
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6035)" },
 			signAndSend: vi.fn(),
 		})
-		const { result, queryClient } = renderClaimDeposit()
+		const { result, queryClient } = renderClaimRedeem()
 		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
 
 		await act(() => result.current.submit(epochId))
@@ -145,11 +145,11 @@ describe("useClaimDeposit", () => {
 
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6035)" },
 			signAndSend,
 		})
-		const { result } = renderClaimDeposit()
+		const { result } = renderClaimRedeem()
 
 		await act(() => result.current.submit(epochId))
 
@@ -161,11 +161,11 @@ describe("useClaimDeposit", () => {
 	})
 
 	it("refuses at simulation with the identity verifier's cross-contract code", async () => {
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #304)" },
 			signAndSend: vi.fn(),
 		})
-		const { result } = renderClaimDeposit()
+		const { result } = renderClaimRedeem()
 
 		await act(() => result.current.submit(epochId))
 
@@ -176,7 +176,7 @@ describe("useClaimDeposit", () => {
 	})
 
 	it("tells a declined signature apart from a failure", async () => {
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: undefined,
 			signAndSend: vi
 				.fn()
@@ -184,7 +184,7 @@ describe("useClaimDeposit", () => {
 					new AssembledTransaction.Errors.UserRejected("User declined access"),
 				),
 		})
-		const { result } = renderClaimDeposit()
+		const { result } = renderClaimRedeem()
 
 		await act(() => result.current.submit(epochId))
 
@@ -209,11 +209,11 @@ describe("useClaimDeposit", () => {
 				result: 50_0000000n,
 			}
 		})
-		vaultMock.claim_deposit.mockResolvedValue({
+		vaultMock.claim_redeem.mockResolvedValue({
 			simulation: undefined,
 			signAndSend,
 		})
-		const { result } = renderClaimDeposit()
+		const { result } = renderClaimRedeem()
 
 		void result.current.submit(epochId)
 		await waitFor(() =>
@@ -225,6 +225,6 @@ describe("useClaimDeposit", () => {
 		gate.resolve()
 		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
 
-		expect(vaultMock.claim_deposit).toHaveBeenCalledTimes(1)
+		expect(vaultMock.claim_redeem).toHaveBeenCalledTimes(1)
 	})
 })

@@ -27,6 +27,7 @@ export type InvestorRequest = {
 	sharePrice: Price
 	amount: Amount
 	claimed: boolean
+	priceableAt: bigint
 }
 
 export type ArchivedRequest = {
@@ -79,6 +80,7 @@ export function classifyRequest(
 			sharePrice: epoch.share_price as Price,
 			amount: amount as Amount,
 			claimed: read.value.claimed,
+			priceableAt: epoch.priceable_at,
 		},
 	}
 }

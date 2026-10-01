@@ -4,6 +4,7 @@ import {
 	AMOUNT_DECIMALS,
 	type Amount,
 	formatDate,
+	formatDayMonth,
 	formatNetworkName,
 	formatScaled,
 	formatUnits,
@@ -188,6 +189,17 @@ describe("formatDate", () => {
 
 	it("formats the largest representable timestamp instead of rejecting it", () => {
 		expect(formatDate(8_640_000_000_000n)).toBe("13 Sep 275760")
+	})
+})
+
+describe("formatDayMonth", () => {
+	it("renders a ledger timestamp's day and month in UTC", () => {
+		const timestamp = BigInt(Date.UTC(2026, 8, 16, 0, 30, 0) / 1000)
+		expect(formatDayMonth(timestamp)).toBe("16 Sep")
+	})
+
+	it("does not throw for a saturated u64::MAX timestamp", () => {
+		expect(formatDayMonth(18446744073709551615n)).toBe("—")
 	})
 })
 

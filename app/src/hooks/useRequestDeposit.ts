@@ -6,7 +6,7 @@ import {
 	type TransactionStatus,
 } from "./useContractTransaction"
 
-export type RequestDepositStatus = TransactionStatus<{ epochId: bigint }>
+export type RequestDepositStatus = TransactionStatus
 
 export interface UseRequestDeposit {
 	status: RequestDepositStatus
@@ -22,6 +22,6 @@ export function useRequestDeposit(): UseRequestDeposit {
 			),
 		[],
 	)
-	const toConfirmed = useCallback((epochId: bigint) => ({ epochId }), [])
+	const toConfirmed = useCallback(() => ({}), [])
 	return useContractTransaction(call, toConfirmed)
 }
