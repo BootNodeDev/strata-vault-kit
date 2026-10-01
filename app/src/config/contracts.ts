@@ -9,5 +9,5 @@ export const contractRows: AddressRow[] = [
 	{ label: "NAV oracle", address: addresses.nav_oracle },
 	{ label: "Identity verifier", address: addresses.identity_verifier },
 	{ label: "Compliance", address: addresses.compliance },
-	{ label: "Deposit asset (SAC)", address: addresses.asset },
+	{ label: "Deposit asset", address: addresses.asset },
 ]

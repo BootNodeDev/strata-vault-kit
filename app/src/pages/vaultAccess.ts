@@ -76,7 +76,7 @@ function toSubscribeGateBlock(
 	if (gate.hasOpenSubscription) {
 		return {
 			kind: "message",
-			reason: "You already have a subscription request open in this batch.",
+			reason: "You already have a subscription request open.",
 			sides: ["subscribe"],
 		}
 	}
@@ -192,7 +192,10 @@ export function toActionBalance(
 	return shares.status === "held" ? toSafeNumber(shares.shares) : null
 }
 
-export function emptyMessages(status: InvestorRequestsRead["status"]): {
+export function emptyMessages(
+	status: InvestorRequestsRead["status"],
+	token?: string,
+): {
 	ready: string
 	waiting: string
 	blocked: string
@@ -219,7 +222,9 @@ export function emptyMessages(status: InvestorRequestsRead["status"]): {
 		case "loaded":
 			return {
 				ready:
-					"Nothing to claim yet. A request appears here once it is priced, and for cash, once the reserve covers it in full.",
+					token === undefined
+						? "Nothing to claim yet. A request appears here once it is priced, and once the reserve covers it in full."
+						: `Nothing to claim yet. A request appears here once it is priced, and for ${token}, once the reserve covers it in full.`,
 				waiting:
 					"Nothing is waiting. A request you make appears here until it is claimable.",
 				blocked:

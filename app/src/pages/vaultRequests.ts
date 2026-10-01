@@ -1,6 +1,7 @@
 import {
 	AMOUNT_DECIMALS,
 	type Amount,
+	formatDayMonth,
 	formatScaled,
 	type Price,
 } from "@stellar-scaffold/app-lib"
@@ -49,12 +50,19 @@ const inTicker = (side: RequestSide, tokens: RequestTokens): string =>
 const outTicker = (side: RequestSide, tokens: RequestTokens): string =>
 	side === "deposit" ? tokens.shareToken : tokens.token
 
-const owedAmount = (side: RequestSide, amount: Amount, price: Price): Amount =>
+export const owedAmount = (
+	side: RequestSide,
+	amount: Amount,
+	price: Price,
+): Amount =>
 	(side === "deposit"
 		? (amount * WAD) / price
 		: (amount * price) / WAD) as Amount
 
 const hasValidPrice = (price: Price): boolean => price > 0n
+
+const priceableFrom = (priceableAt: bigint): string =>
+	`Prices from ${formatDayMonth(priceableAt)}`
 
 const readyNote = (side: RequestSide): string =>
 	side === "deposit"
@@ -88,12 +96,11 @@ const baseEntry = (
 	tokens: RequestTokens,
 ): Pick<
 	RequestEntry,
-	"id" | "inLabel" | "inAmount" | "inMeta" | "outLabel" | "actions"
+	"id" | "inLabel" | "inAmount" | "outLabel" | "actions"
 > => ({
 	id: `${request.side}-${request.epochId}`,
 	inLabel: sideLabel[request.side],
 	inAmount: `${formatScaled(request.amount, AMOUNT_DECIMALS)} ${inTicker(request.side, tokens)}`,
-	inMeta: `Batch ${request.epochId}`,
 	outLabel: "Owed to you",
 	actions: [],
 })
@@ -121,6 +128,10 @@ function waitingEntry(
 		onCancel !== undefined ? [cancelAction(request, onCancel)] : []
 	return {
 		...baseEntry(request, tokens),
+		inMeta:
+			request.epochStatus.tag === "Pending" && request.priceableAt !== 0n
+				? priceableFrom(request.priceableAt)
+				: undefined,
 		actions,
 		outAmount: "Not yet priced",
 		outTone: "word",
@@ -135,10 +146,7 @@ function readyEntry(
 	onClaim: ((request: InvestorRequest) => void) | undefined,
 ): RequestEntry {
 	const owed = owedAmount(request.side, request.amount, request.sharePrice)
-	const actions =
-		onClaim !== undefined && request.side === "deposit"
-			? [claimAction(request, onClaim)]
-			: []
+	const actions = onClaim !== undefined ? [claimAction(request, onClaim)] : []
 	return {
 		...baseEntry(request, tokens),
 		actions,
@@ -172,13 +180,13 @@ function invalidPriceEntry(
 ): RequestEntry {
 	return {
 		...baseEntry(request, tokens),
-		outAmount: "Not readable",
+		outAmount: "Could not read",
 		outTone: "word",
 		state: "Invalid price",
 		tone: stageTone.blocked,
 		tooltip: {
 			label: "Why you cannot claim this yet",
-			text: "The vault reported an invalid price for this batch.",
+			text: "The vault reported an invalid price for this request.",
 		},
 	}
 }
@@ -204,9 +212,8 @@ function archivedEntry(request: ArchivedRequest): RequestEntry {
 		id: `${request.side}-${request.epochId}`,
 		inLabel: sideLabel[request.side],
 		inAmount: "Unknown amount",
-		inMeta: `Batch ${request.epochId}`,
 		outLabel: "Owed to you",
-		outAmount: "Not readable",
+		outAmount: "Could not read",
 		outTone: "word",
 		state: "Expired",
 		tone: stageTone.blocked,
@@ -223,11 +230,10 @@ function unreadableEntry(request: UnreadableRequest): RequestEntry {
 		id: `${request.side}-${request.epochId}`,
 		inLabel: sideLabel[request.side],
 		inAmount: "Unknown amount",
-		inMeta: `Batch ${request.epochId}`,
 		outLabel: "Owed to you",
-		outAmount: "Not readable",
+		outAmount: "Could not read",
 		outTone: "word",
-		state: "Unreadable",
+		state: "Could not read",
 		tone: stageTone.blocked,
 		actions: [],
 		tooltip: {
