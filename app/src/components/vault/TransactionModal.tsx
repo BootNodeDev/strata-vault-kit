@@ -8,6 +8,7 @@ import React from "react"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
+import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
 import { type TransactionFailure } from "../../hooks/useContractTransaction"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
@@ -38,6 +39,7 @@ export type TransactionModalProps =
 			status: CancelRedeemStatus
 			amount: string
 			ticker: string
+			assetTicker: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -55,6 +57,15 @@ export type TransactionModalProps =
 			status: RequestRedeemStatus
 			amount: string
 			ticker: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "claim-redeem"
+			status: ClaimRedeemStatus
+			amount: string
+			ticker: string
+			uncovered?: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -92,9 +103,12 @@ const cancelContractErrorReason = (code: number): string => {
 	}
 }
 
-const cancelRedeemContractErrorReason = (code: number): string => {
+const cancelRedeemContractErrorReason = (
+	code: number,
+	assetTicker: string,
+): string => {
 	if (code === 304) {
-		return "Your address is no longer allowlisted, so these shares cannot be returned to you. Once priced, claim the cash it owes you instead."
+		return `Your address is no longer allowlisted, so these shares cannot be returned to you. Once priced, claim the ${assetTicker} it owes you instead.`
 	}
 	return cancelContractErrorReason(code)
 }
@@ -134,6 +148,25 @@ const redeemContractErrorReason = (code: number): string => {
 			return "The vault is winding down and is not accepting new redemptions."
 		default:
 			return GENERIC_REFUSAL
+	}
+}
+
+const claimRedeemContractErrorReason = (
+	code: number,
+	ticker: string,
+	uncovered?: string,
+): string => {
+	switch (code) {
+		case 6034:
+			return "This request has not priced yet. Check back after the vault's next update."
+		case 6037:
+			return uncovered !== undefined
+				? `The vault is ${uncovered} short of covering every priced claim. Try again once the reserve catches up.`
+				: `The vault does not yet hold enough ${ticker} in reserve to cover this claim. Try again shortly.`
+		case 304:
+			return "The price left nothing to claim, so the vault tried to return your shares instead. Your address is no longer allowlisted to receive them."
+		default:
+			return claimContractErrorReason(code)
 	}
 }
 
@@ -245,6 +278,7 @@ const describeCancelRedeemStatus = (
 	status: CancelRedeemStatus,
 	amount: string,
 	ticker: string,
+	assetTicker: string,
 ): { heading: string; body: string; hash?: string } | undefined => {
 	switch (status.status) {
 		case "idle":
@@ -273,7 +307,9 @@ const describeCancelRedeemStatus = (
 			}
 		case "failed":
 			return {
-				...describeFailure(status.failure, cancelRedeemContractErrorReason),
+				...describeFailure(status.failure, (code) =>
+					cancelRedeemContractErrorReason(code, assetTicker),
+				),
 				hash: status.hash,
 			}
 	}
@@ -362,6 +398,53 @@ const describeRedeemStatus = (
 	}
 }
 
+const describeClaimRedeemStatus = (
+	status: ClaimRedeemStatus,
+	amount: string,
+	ticker: string,
+	uncovered?: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your claim",
+				body: "We are getting your claim ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `You receive what you're owed. Signing sends ${amount} ${ticker} to your wallet.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending your claim",
+				body: "Your claim is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return status.assetsClaimed > 0n
+				? {
+						heading: `${ticker} claimed`,
+						body: `${formatScaled(status.assetsClaimed, AMOUNT_DECIMALS)} ${ticker} has been added to your wallet.`,
+						hash: status.hash,
+					}
+				: {
+						heading: "Shares returned",
+						body: "The price left nothing to claim, so your shares have been returned to your wallet instead.",
+						hash: status.hash,
+					}
+		case "failed":
+			return {
+				...describeFailure(status.failure, (code) =>
+					claimRedeemContractErrorReason(code, ticker, uncovered),
+				),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeStatus = (
 	props: TransactionModalProps,
 ): { heading: string; body: string; hash?: string } | undefined => {
@@ -375,6 +458,7 @@ const describeStatus = (
 				props.status,
 				props.amount,
 				props.ticker,
+				props.assetTicker,
 			)
 		case "claim":
 			return describeClaimStatus(
@@ -385,6 +469,13 @@ const describeStatus = (
 			)
 		case "redeem":
 			return describeRedeemStatus(props.status, props.amount, props.ticker)
+		case "claim-redeem":
+			return describeClaimRedeemStatus(
+				props.status,
+				props.amount,
+				props.ticker,
+				props.uncovered,
+			)
 	}
 }
 
@@ -405,7 +496,8 @@ const computeSteps = (
 		| CancelDepositStatus
 		| CancelRedeemStatus
 		| ClaimDepositStatus
-		| RequestRedeemStatus,
+		| RequestRedeemStatus
+		| ClaimRedeemStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":
@@ -448,10 +540,12 @@ const stepAnnouncement: Partial<Record<StepState, string>> = {
 
 const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 	const { status, onClose, onRetry } = props
-	const dialogRef = React.useRef<HTMLDivElement>(null)
+	const dialogRef = React.useRef<HTMLDialogElement>(null)
 
 	React.useEffect(() => {
-		dialogRef.current?.focus()
+		if (dialogRef.current !== null && !dialogRef.current.open) {
+			dialogRef.current.showModal()
+		}
 	}, [])
 
 	const contractErrorCode =
@@ -475,13 +569,6 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 	const offersRetry =
 		status.status === "failed" && status.failure.kind === "declined"
 	const headingId = "transaction-modal-heading"
-
-	const onKeyDown = (event: React.KeyboardEvent) => {
-		if (event.key === "Escape") {
-			event.preventDefault()
-			onClose()
-		}
-	}
 
 	const headingClassName = isConfirmed
 		? `${typeStyles.vaultName} ${styles.heading} ${styles.headingConfirmed}`
@@ -515,65 +602,59 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 	)
 
 	return (
-		<div className={styles.overlay}>
-			<div
-				ref={dialogRef}
-				role="dialog"
-				aria-modal="true"
-				aria-labelledby={headingId}
-				tabIndex={-1}
-				className={styles.dialog}
-				onKeyDown={onKeyDown}
+		<dialog
+			ref={dialogRef}
+			aria-modal="true"
+			aria-labelledby={headingId}
+			className={styles.dialog}
+			onCancel={onClose}
+		>
+			<button
+				type="button"
+				className={styles.close}
+				aria-label="Close"
+				onClick={onClose}
 			>
-				<button
-					type="button"
-					className={styles.close}
-					aria-label="Close"
-					onClick={onClose}
-				>
-					<Close className={styles.closeIcon} />
-				</button>
-				{steps !== undefined && (
-					<ol className={styles.steps} aria-label="Transaction progress">
-						{STEP_ORDER.map((id) => {
-							const state = steps[id]
-							const announcement = stepAnnouncement[state]
-							return (
-								<li
-									key={id}
-									className={`${styles.step} ${stepStateClassName[state]}`}
-									aria-current={state === "current" ? "step" : undefined}
-								>
-									<span className={styles.stepMarker} aria-hidden="true" />
-									<span
-										className={`${typeStyles.footnote} ${styles.stepLabel}`}
-									>
-										{stepLabel[id]}
-										{announcement !== undefined && (
-											<span className={styles.srOnly}>, {announcement}</span>
-										)}
-									</span>
-								</li>
-							)
-						})}
-					</ol>
-				)}
-				{isConfirmed ? (
-					<div className={styles.arrival} role="status">
-						{body}
-					</div>
-				) : (
-					body
-				)}
-				{offersRetry && (
-					<div className={styles.actions}>
-						<button type="button" className={styles.retry} onClick={onRetry}>
-							Try again
-						</button>
-					</div>
-				)}
-			</div>
-		</div>
+				<Close className={styles.closeIcon} />
+			</button>
+			{steps !== undefined && (
+				<ol className={styles.steps} aria-label="Transaction progress">
+					{STEP_ORDER.map((id) => {
+						const state = steps[id]
+						const announcement = stepAnnouncement[state]
+						return (
+							<li
+								key={id}
+								className={`${styles.step} ${stepStateClassName[state]}`}
+								aria-current={state === "current" ? "step" : undefined}
+							>
+								<span className={styles.stepMarker} aria-hidden="true" />
+								<span className={`${typeStyles.footnote} ${styles.stepLabel}`}>
+									{stepLabel[id]}
+									{announcement !== undefined && (
+										<span className={styles.srOnly}>, {announcement}</span>
+									)}
+								</span>
+							</li>
+						)
+					})}
+				</ol>
+			)}
+			{isConfirmed ? (
+				<div className={styles.arrival} role="status">
+					{body}
+				</div>
+			) : (
+				body
+			)}
+			{offersRetry && (
+				<div className={styles.actions}>
+					<button type="button" className={styles.retry} onClick={onRetry}>
+						Try again
+					</button>
+				</div>
+			)}
+		</dialog>
 	)
 }
 

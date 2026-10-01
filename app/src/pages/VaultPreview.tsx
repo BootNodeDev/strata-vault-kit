@@ -1,6 +1,5 @@
 import {
 	AMOUNT_DECIMALS,
-	type Amount,
 	connectWallet,
 	formatAmount,
 	formatScaled,
@@ -20,11 +19,14 @@ import MetricsStrip, { type Metric } from "../components/vault/MetricsStrip"
 import PositionCard from "../components/vault/PositionCard"
 import { type RequestStage } from "../components/vault/RequestCard"
 import RequestList, { type RequestGroup } from "../components/vault/RequestList"
-import TransactionModal from "../components/vault/TransactionModal"
+import TransactionModal, {
+	type TransactionModalProps,
+} from "../components/vault/TransactionModal"
 import { contractRows, vaultContractId } from "../config/contracts"
 import { useCancelDeposit } from "../hooks/useCancelDeposit"
 import { useCancelRedeem } from "../hooks/useCancelRedeem"
 import { useClaimDeposit } from "../hooks/useClaimDeposit"
+import { useClaimRedeem } from "../hooks/useClaimRedeem"
 import { useDepositBalance } from "../hooks/useDepositBalance"
 import {
 	type InvestorRequest,
@@ -32,6 +34,7 @@ import {
 } from "../hooks/useInvestorRequests"
 import { useIsAllowed } from "../hooks/useIsAllowed"
 import { useNavPrice } from "../hooks/useNavPrice"
+import { usePendingTransaction } from "../hooks/usePendingTransaction"
 import { useRequestDeposit } from "../hooks/useRequestDeposit"
 import { useRequestRedeem } from "../hooks/useRequestRedeem"
 import { useSharePosition } from "../hooks/useSharePosition"
@@ -58,7 +61,11 @@ import {
 	toSizeFigures,
 } from "./vaultMetrics"
 import styles from "./VaultPreview.module.css"
-import { allowlistRefusalFor, toRequestEntriesByStage } from "./vaultRequests"
+import {
+	allowlistRefusalFor,
+	owedAmount,
+	toRequestEntriesByStage,
+} from "./vaultRequests"
 
 const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
@@ -66,10 +73,13 @@ const sections: { id: string; label: string }[] = [
 	{ id: "about", label: "About" },
 ]
 
-const vaultSummary = [
-	"Shares in this vault are a claim on an off-chain asset priced by an oracle. Subscribing or redeeming opens a request that becomes claimable once the oracle prices it.",
-	"A share claim is ready the moment it prices. A cash claim waits until the vault's reserve can cover it in full. You may hold one open request per side, and only share claims need an allowlisted address.",
-]
+function vaultSummary(token: string | undefined): string[] {
+	const claimWord = token ?? "redemption"
+	return [
+		"Shares in this vault are a claim on an off-chain asset priced by an oracle. Subscribing or redeeming opens a request that becomes claimable once the oracle prices it.",
+		`A share claim is ready the moment it prices. A ${claimWord} claim waits until the vault's reserve can cover it in full. You may hold one open request per side, and only share claims need an allowlisted address.`,
+	]
+}
 
 const VaultPreview: React.FC = () => {
 	const [openTooltipId, setOpenTooltipId] = React.useState<
@@ -89,53 +99,16 @@ const VaultPreview: React.FC = () => {
 	const { position } = useSharePosition()
 	const { balance: deposit } = useDepositBalance()
 	const { symbols } = useTokenSymbols()
+	const tokenSymbol = symbols?.token ?? ""
+	const shareTokenSymbol = symbols?.shareToken ?? ""
 	const { requests } = useInvestorRequests()
 	const { pause } = useVaultPaused()
-	const {
-		status: requestDepositStatus,
-		submit: submitRequestDeposit,
-		reset: resetRequestDeposit,
-	} = useRequestDeposit()
-	const [pendingAmountLabel, setPendingAmountLabel] = React.useState("")
-	const [pendingAmount, setPendingAmount] = React.useState<Amount | null>(null)
-	const {
-		status: cancelDepositStatus,
-		submit: submitCancelDeposit,
-		reset: resetCancelDeposit,
-	} = useCancelDeposit()
-	const [pendingCancelAmountLabel, setPendingCancelAmountLabel] =
-		React.useState("")
-	const [pendingCancelEpochId, setPendingCancelEpochId] = React.useState<
-		bigint | null
-	>(null)
-	const {
-		status: claimDepositStatus,
-		submit: submitClaimDeposit,
-		reset: resetClaimDeposit,
-	} = useClaimDeposit()
-	const [pendingClaimAmountLabel, setPendingClaimAmountLabel] =
-		React.useState("")
-	const [pendingClaimEpochId, setPendingClaimEpochId] = React.useState<
-		bigint | null
-	>(null)
-	const {
-		status: requestRedeemStatus,
-		submit: submitRequestRedeem,
-		reset: resetRequestRedeem,
-	} = useRequestRedeem()
-	const [pendingRedeemAmountLabel, setPendingRedeemAmountLabel] =
-		React.useState("")
-	const [pendingRedeemAmount, setPendingRedeemAmount] =
-		React.useState<Amount | null>(null)
-	const {
-		status: cancelRedeemStatus,
-		submit: submitCancelRedeem,
-		reset: resetCancelRedeem,
-	} = useCancelRedeem()
-	const [pendingCancelRedeemAmountLabel, setPendingCancelRedeemAmountLabel] =
-		React.useState("")
-	const [pendingCancelRedeemEpochId, setPendingCancelRedeemEpochId] =
-		React.useState<bigint | null>(null)
+	const requestDeposit = usePendingTransaction(useRequestDeposit())
+	const cancelDepositTx = usePendingTransaction(useCancelDeposit())
+	const claimDepositTx = usePendingTransaction(useClaimDeposit())
+	const requestRedeem = usePendingTransaction(useRequestRedeem())
+	const cancelRedeemTx = usePendingTransaction(useCancelRedeem())
+	const claimRedeemTx = usePendingTransaction(useClaimRedeem())
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -153,24 +126,16 @@ const VaultPreview: React.FC = () => {
 			hasOpenSubscription: isSubscriptionOpen(requests),
 		}) ?? toPriceBlock(nav, isPendingNav)
 	const cancelDeposit = (request: InvestorRequest) => {
-		if (!submitCancelDeposit(request.epochId)) return
-		setPendingCancelEpochId(request.epochId)
-		setPendingCancelAmountLabel(formatScaled(request.amount, AMOUNT_DECIMALS))
-	}
-	const retryCancelDeposit = () => {
-		if (pendingCancelEpochId === null) return
-		submitCancelDeposit(pendingCancelEpochId)
-	}
-	const cancelRedeem = (request: InvestorRequest) => {
-		if (!submitCancelRedeem(request.epochId)) return
-		setPendingCancelRedeemEpochId(request.epochId)
-		setPendingCancelRedeemAmountLabel(
+		cancelDepositTx.submit(
+			request.epochId,
 			formatScaled(request.amount, AMOUNT_DECIMALS),
 		)
 	}
-	const retryCancelRedeem = () => {
-		if (pendingCancelRedeemEpochId === null) return
-		submitCancelRedeem(pendingCancelRedeemEpochId)
+	const cancelRedeem = (request: InvestorRequest) => {
+		cancelRedeemTx.submit(
+			request.epochId,
+			formatScaled(request.amount, AMOUNT_DECIMALS),
+		)
 	}
 	const cancelRequest = (request: InvestorRequest) => {
 		if (request.side === "deposit") {
@@ -179,25 +144,32 @@ const VaultPreview: React.FC = () => {
 		}
 		cancelRedeem(request)
 	}
-	const claimDeposit = (request: InvestorRequest) => {
-		if (!submitClaimDeposit(request.epochId)) return
-		setPendingClaimEpochId(request.epochId)
-		setPendingClaimAmountLabel(formatScaled(request.amount, AMOUNT_DECIMALS))
-	}
-	const retryClaimDeposit = () => {
-		if (pendingClaimEpochId === null) return
-		submitClaimDeposit(pendingClaimEpochId)
+	const claimRequest = (request: InvestorRequest) => {
+		if (request.side === "deposit") {
+			claimDepositTx.submit(
+				request.epochId,
+				formatScaled(request.amount, AMOUNT_DECIMALS),
+			)
+			return
+		}
+		claimRedeemTx.submit(
+			request.epochId,
+			formatScaled(
+				owedAmount(request.side, request.amount, request.sharePrice),
+				AMOUNT_DECIMALS,
+			),
+		)
 	}
 
-	const messages = emptyMessages(requests.status)
+	const messages = emptyMessages(requests.status, symbols?.token)
 	const entriesByStage =
 		requests.status === "loaded"
 			? toRequestEntriesByStage(
 					requests,
-					symbols,
+					{ token: tokenSymbol, shareToken: shareTokenSymbol },
 					allowlistRefusalFor(allowance),
 					cancelRequest,
-					claimDeposit,
+					claimRequest,
 				)
 			: undefined
 	const requestGroups: [RequestGroup, ...RequestGroup[]] = [
@@ -223,7 +195,7 @@ const VaultPreview: React.FC = () => {
 
 	const metrics: [Metric, Metric, Metric, Metric] = [
 		toPriceMetric(nav, isPendingNav),
-		...toMetrics(figures, isPendingFigures, symbols.token),
+		...toMetrics(figures, isPendingFigures, tokenSymbol),
 	]
 	const authorityRows = toAuthorityRows(authorities, isPendingAuthorities)
 	const sizeFigures: FigureGroup = {
@@ -245,8 +217,8 @@ const VaultPreview: React.FC = () => {
 		setOpenTooltipId(null)
 	}
 
-	const inTicker = isSubscribe ? symbols.token : symbols.shareToken
-	const outTicker = isSubscribe ? symbols.shareToken : symbols.token
+	const inTicker = isSubscribe ? tokenSymbol : shareTokenSymbol
+	const outTicker = isSubscribe ? shareTokenSymbol : tokenSymbol
 	const balance = toActionBalance(
 		isSubscribe,
 		block !== undefined,
@@ -264,34 +236,81 @@ const VaultPreview: React.FC = () => {
 		if (parsedAmount === null) return
 		const amount = parseUnits(actionAmount, AMOUNT_DECIMALS)
 		if (amount === null) return
+		const amountLabel = formatAmount(parsedAmount)
 		if (isSubscribe) {
-			if (!submitRequestDeposit(amount)) return
-			setPendingAmountLabel(formatAmount(parsedAmount))
-			setPendingAmount(amount)
+			requestDeposit.submit(amount, amountLabel)
 			return
 		}
-		if (!submitRequestRedeem(amount)) return
-		setPendingRedeemAmountLabel(formatAmount(parsedAmount))
-		setPendingRedeemAmount(amount)
-	}
-
-	const retryRequestDeposit = () => {
-		if (pendingAmount === null) return
-		submitRequestDeposit(pendingAmount)
-	}
-
-	const retryRequestRedeem = () => {
-		if (pendingRedeemAmount === null) return
-		submitRequestRedeem(pendingRedeemAmount)
+		requestRedeem.submit(amount, amountLabel)
 	}
 
 	React.useEffect(() => {
-		if (requestDepositStatus.status === "confirmed") setActionAmount("")
-	}, [requestDepositStatus])
+		if (requestDeposit.status.status === "confirmed") setActionAmount("")
+	}, [requestDeposit.status])
 
 	React.useEffect(() => {
-		if (requestRedeemStatus.status === "confirmed") setActionAmount("")
-	}, [requestRedeemStatus])
+		if (requestRedeem.status.status === "confirmed") setActionAmount("")
+	}, [requestRedeem.status])
+
+	const uncovered =
+		!isPendingFigures && figures !== undefined && figures.uncovered !== null
+			? `${formatScaled(figures.uncovered, AMOUNT_DECIMALS)} ${tokenSymbol}`
+			: undefined
+
+	const modalFlows: TransactionModalProps[] = [
+		{
+			action: "subscribe",
+			status: requestDeposit.status,
+			amount: requestDeposit.amountLabel,
+			ticker: inTicker,
+			onClose: requestDeposit.reset,
+			onRetry: requestDeposit.retry,
+		},
+		{
+			action: "redeem",
+			status: requestRedeem.status,
+			amount: requestRedeem.amountLabel,
+			ticker: shareTokenSymbol,
+			onClose: requestRedeem.reset,
+			onRetry: requestRedeem.retry,
+		},
+		{
+			action: "cancel",
+			status: cancelDepositTx.status,
+			amount: cancelDepositTx.amountLabel,
+			ticker: tokenSymbol,
+			onClose: cancelDepositTx.reset,
+			onRetry: cancelDepositTx.retry,
+		},
+		{
+			action: "cancel-redeem",
+			status: cancelRedeemTx.status,
+			amount: cancelRedeemTx.amountLabel,
+			ticker: shareTokenSymbol,
+			assetTicker: tokenSymbol,
+			onClose: cancelRedeemTx.reset,
+			onRetry: cancelRedeemTx.retry,
+		},
+		{
+			action: "claim",
+			status: claimDepositTx.status,
+			amount: claimDepositTx.amountLabel,
+			ticker: tokenSymbol,
+			shareTicker: shareTokenSymbol,
+			onClose: claimDepositTx.reset,
+			onRetry: claimDepositTx.retry,
+		},
+		{
+			action: "claim-redeem",
+			status: claimRedeemTx.status,
+			amount: claimRedeemTx.amountLabel,
+			ticker: tokenSymbol,
+			uncovered,
+			onClose: claimRedeemTx.reset,
+			onRetry: claimRedeemTx.retry,
+		},
+	]
+	const activeModal = modalFlows.find((flow) => flow.status.status !== "idle")
 
 	const copyAddress = async () => {
 		try {
@@ -306,7 +325,9 @@ const VaultPreview: React.FC = () => {
 	return (
 		<div className={styles.page}>
 			<div className={styles.identity}>
-				<h1 className={typeStyles.vaultName}>{symbols.vaultName}</h1>
+				<h1 className={typeStyles.vaultName}>
+					{symbols?.vaultName ?? "Vault"}
+				</h1>
 				<div className={styles.address}>
 					<span className={`${typeStyles.railValue} ${styles.addressValue}`}>
 						{shortAddress(vaultContractId)}
@@ -354,13 +375,13 @@ const VaultPreview: React.FC = () => {
 							heading="Your position"
 							label="Your shares"
 							sub="In your wallet"
-							{...toPosition(position, symbols.shareToken)}
+							{...toPosition(position, shareTokenSymbol)}
 						/>
 					</section>
 
 					<div id="about" className={styles.anchor}>
 						<AboutVault
-							summary={vaultSummary}
+							summary={vaultSummary(symbols?.token)}
 							figures={sizeFigures}
 							groups={[
 								{ title: "Contracts", rows: contractRows },
@@ -394,55 +415,7 @@ const VaultPreview: React.FC = () => {
 				</aside>
 			</div>
 
-			{requestDepositStatus.status !== "idle" ? (
-				<TransactionModal
-					action="subscribe"
-					status={requestDepositStatus}
-					amount={pendingAmountLabel}
-					ticker={inTicker}
-					onClose={resetRequestDeposit}
-					onRetry={retryRequestDeposit}
-				/>
-			) : requestRedeemStatus.status !== "idle" ? (
-				<TransactionModal
-					action="redeem"
-					status={requestRedeemStatus}
-					amount={pendingRedeemAmountLabel}
-					ticker={symbols.shareToken}
-					onClose={resetRequestRedeem}
-					onRetry={retryRequestRedeem}
-				/>
-			) : cancelDepositStatus.status !== "idle" ? (
-				<TransactionModal
-					action="cancel"
-					status={cancelDepositStatus}
-					amount={pendingCancelAmountLabel}
-					ticker={symbols.token}
-					onClose={resetCancelDeposit}
-					onRetry={retryCancelDeposit}
-				/>
-			) : cancelRedeemStatus.status !== "idle" ? (
-				<TransactionModal
-					action="cancel-redeem"
-					status={cancelRedeemStatus}
-					amount={pendingCancelRedeemAmountLabel}
-					ticker={symbols.shareToken}
-					onClose={resetCancelRedeem}
-					onRetry={retryCancelRedeem}
-				/>
-			) : (
-				claimDepositStatus.status !== "idle" && (
-					<TransactionModal
-						action="claim"
-						status={claimDepositStatus}
-						amount={pendingClaimAmountLabel}
-						ticker={symbols.token}
-						shareTicker={symbols.shareToken}
-						onClose={resetClaimDeposit}
-						onRetry={retryClaimDeposit}
-					/>
-				)
-			)}
+			{activeModal !== undefined && <TransactionModal {...activeModal} />}
 		</div>
 	)
 }

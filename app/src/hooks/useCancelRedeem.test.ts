@@ -1,13 +1,7 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
-import { networkPassphrase } from "@stellar-scaffold/app-lib"
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { act, renderHook, waitFor } from "@testing-library/react"
-import { createElement, type ReactNode } from "react"
+import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	WalletContext,
-	type WalletContextType,
-} from "../providers/WalletProvider"
+import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { useCancelRedeem } from "./useCancelRedeem"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { sharePositionKey } from "./useSharePosition"
@@ -22,39 +16,10 @@ vi.mock("../config/clients", () => ({
 	asyncVaultWriter: asyncVaultWriterMock,
 }))
 
-const investorAddress = "GINVESTORADDRESS1234567890"
 const epochId = 3n
 const otherEpochId = 4n
 
-const wallet: WalletContextType = {
-	address: investorAddress,
-	networkPassphrase,
-	balances: {},
-	isPending: false,
-	updateBalances: async () => {},
-	signTransaction: vi.fn() as WalletContextType["signTransaction"],
-}
-
-const renderCancelRedeem = () => {
-	const queryClient = new QueryClient({
-		defaultOptions: { queries: { retry: false } },
-	})
-	const wrapper = ({ children }: { children: ReactNode }) =>
-		createElement(
-			QueryClientProvider,
-			{ client: queryClient },
-			createElement(WalletContext, { value: wallet }, children),
-		)
-	return { ...renderHook(() => useCancelRedeem(), { wrapper }), queryClient }
-}
-
-const deferred = <T>() => {
-	let resolve!: (value: T) => void
-	const promise = new Promise<T>((res) => {
-		resolve = res
-	})
-	return { promise, resolve }
-}
+const renderCancelRedeem = () => renderWithWallet(useCancelRedeem)
 
 describe("useCancelRedeem", () => {
 	beforeEach(() => {

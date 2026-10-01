@@ -26,18 +26,21 @@ const {
 	mockSymbols,
 	mockRequests,
 	mockVault,
+	mockFigures,
 	mockIdentity,
 	requestDepositMock,
 	cancelDepositMock,
 	claimDepositMock,
 	requestRedeemMock,
 	cancelRedeemMock,
+	claimRedeemMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
 	mockShares: { balance: 500_0000000n },
 	mockDeposit: { balance: 3200_0000000n },
 	mockVault: { paused: false },
+	mockFigures: { uncovered: 0n as bigint | null },
 	mockIdentity: { allowed: true },
 	mockSymbols: {
 		token: "USDC",
@@ -75,6 +78,7 @@ const {
 	claimDepositMock: vi.fn(),
 	requestRedeemMock: vi.fn(),
 	cancelRedeemMock: vi.fn(),
+	claimRedeemMock: vi.fn(),
 }))
 
 const defaultCancelDepositImpl = async ({
@@ -200,6 +204,33 @@ const defaultClaimDepositImpl = async ({
 	}
 }
 
+const defaultClaimRedeemImpl = async ({
+	epoch_id,
+}: {
+	caller: string
+	epoch_id: bigint
+}) => {
+	const request = mockRequests.redeems.get(epoch_id)
+	const sharePrice = mockRequests.epochs.get(epoch_id)?.share_price ?? 0n
+	const assets =
+		request !== undefined ? (request.shares * sharePrice) / WAD_SCALE : 0n
+	return {
+		simulation: undefined,
+		signAndSend: async ({
+			watcher,
+		}: {
+			watcher: { onSubmitted: () => void }
+		}) => {
+			watcher.onSubmitted()
+			if (request !== undefined) {
+				mockRequests.redeems.set(epoch_id, { ...request, claimed: true })
+			}
+			mockDeposit.balance += assets
+			return { getTransactionResponse: { status: "SUCCESS" }, result: assets }
+		},
+	}
+}
+
 const resetMockRequests = () => {
 	mockRequests.readable = true
 	mockRequests.currentEpoch = 2n
@@ -215,12 +246,15 @@ const resetMockRequests = () => {
 	requestRedeemMock.mockImplementation(defaultRequestRedeemImpl)
 	cancelRedeemMock.mockReset()
 	cancelRedeemMock.mockImplementation(defaultCancelRedeemImpl)
+	claimRedeemMock.mockReset()
+	claimRedeemMock.mockImplementation(defaultClaimRedeemImpl)
 }
 
 beforeEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
+	mockFigures.uncovered = 0n
 	mockIdentity.allowed = true
 	resetMockRequests()
 })
@@ -229,6 +263,7 @@ afterEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
+	mockFigures.uncovered = 0n
 	mockIdentity.allowed = true
 	resetMockRequests()
 })
@@ -247,7 +282,10 @@ vi.mock("../config/clients", () => {
 	const vault = {
 		liquid_reserve: figure(184000000000n),
 		committed: figure(62000000000n),
-		uncovered: figure(0n),
+		uncovered: async () => {
+			if (mockFigures.uncovered === null) throw new Error("boom")
+			return { result: mockFigures.uncovered }
+		},
 		total_economic_supply: figure(100000000000000n),
 		net_deployed: figure(50000000000n),
 		governance: address(mockGovernanceAddress),
@@ -274,6 +312,7 @@ vi.mock("../config/clients", () => {
 		claim_deposit: claimDepositMock,
 		request_redeem: requestRedeemMock,
 		cancel_redeem: cancelRedeemMock,
+		claim_redeem: claimRedeemMock,
 	}
 	const oracle = {
 		state: async () => ({ result: { tag: "Valid", values: undefined } }),
@@ -367,6 +406,22 @@ describe("VaultPreview", () => {
 		expect(screen.getAllByText(shortAddress(mockVaultId))).toHaveLength(2)
 	})
 
+	it("does not render a placeholder ticker in the vault summary before the token symbols resolve", () => {
+		renderVaultPreview()
+
+		expect(screen.queryByText(/\bTOKEN\b/)).toBeNull()
+	})
+
+	it("names the deposit asset's ticker in the vault summary once it resolves", async () => {
+		renderVaultPreview()
+
+		expect(
+			await screen.findByText(
+				"A share claim is ready the moment it prices. A USDC claim waits until the vault's reserve can cover it in full. You may hold one open request per side, and only share claims need an allowlisted address.",
+			),
+		).toBeTruthy()
+	})
+
 	it("shows no fabricated requests, position, or balance while disconnected", () => {
 		renderVaultPreview()
 
@@ -392,7 +447,7 @@ describe("VaultPreview", () => {
 
 		expect(
 			await screen.findByText(
-				"Nothing to claim yet. A request appears here once it is priced, and for cash, once the reserve covers it in full.",
+				"Nothing to claim yet. A request appears here once it is priced, and for USDC, once the reserve covers it in full.",
 			),
 		).toBeTruthy()
 	})
@@ -419,7 +474,7 @@ describe("VaultPreview", () => {
 		).toBeTruthy()
 		expect(
 			screen.queryByText(
-				"Nothing to claim yet. A request appears here once it is priced, and for cash, once the reserve covers it in full.",
+				"Nothing to claim yet. A request appears here once it is priced, and for USDC, once the reserve covers it in full.",
 			),
 		).toBeNull()
 	})
@@ -1316,6 +1371,110 @@ describe("VaultPreview", () => {
 		expect(
 			screen.getByText(
 				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
+			),
+		).toBeTruthy()
+	})
+
+	const readyRedeemEpoch = 7n
+
+	const setReadyRedeem = () => {
+		mockRequests.currentEpoch = readyRedeemEpoch
+		mockRequests.epochs.set(readyRedeemEpoch, {
+			status: { tag: "Fulfilled" },
+			share_price: 1_000000000000000000n,
+			priceable_at: 1_700_003_600n,
+		})
+		mockRequests.redeems.set(readyRedeemEpoch, {
+			shares: 150_0000000n,
+			claimed: false,
+		})
+	}
+
+	it("offers a Claim action on a ready, priced redemption", async () => {
+		setReadyRedeem()
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByRole("button", { name: "Claim" })).toBeTruthy()
+	})
+
+	it("reaches claim_redeem with the request's own epoch when Claim is pressed", async () => {
+		setReadyRedeem()
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		await waitFor(() => expect(claimRedeemMock).toHaveBeenCalledTimes(1))
+		expect(claimRedeemMock).toHaveBeenCalledWith({
+			caller: investorAddress,
+			epoch_id: readyRedeemEpoch,
+		})
+	})
+
+	it("shows the claim-redeem modal with the asset amount and ticker once confirmed", async () => {
+		setReadyRedeem()
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "USDC claimed" }),
+		).toBeTruthy()
+		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+	})
+
+	it("removes a claimed redemption from the ready list without a manual refresh", async () => {
+		setReadyRedeem()
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "USDC claimed" }),
+		).toBeTruthy()
+
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+
+		expect(
+			await screen.findByRole("tab", { name: "Ready to claim 0" }),
+		).toBeTruthy()
+	})
+
+	it("names the vault's own shortfall on a 6037 refusal when it can read it", async () => {
+		setReadyRedeem()
+		mockFigures.uncovered = 5000_0000000n
+		claimRedeemMock.mockImplementationOnce(async () => ({
+			simulation: { error: "HostError: Error(Contract, #6037)" },
+			signAndSend: async () => {
+				throw new Error("should not sign a refused simulation")
+			},
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(
+			await screen.findByText(
+				"The vault is 5,000.00 USDC short of covering every priced claim. Try again once the reserve catches up.",
+			),
+		).toBeTruthy()
+	})
+
+	it("keeps the untickered 6037 refusal when the vault's shortfall cannot be read", async () => {
+		setReadyRedeem()
+		mockFigures.uncovered = null
+		claimRedeemMock.mockImplementationOnce(async () => ({
+			simulation: { error: "HostError: Error(Contract, #6037)" },
+			signAndSend: async () => {
+				throw new Error("should not sign a refused simulation")
+			},
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(
+			await screen.findByText(
+				"The vault does not yet hold enough USDC in reserve to cover this claim. Try again shortly.",
 			),
 		).toBeTruthy()
 	})

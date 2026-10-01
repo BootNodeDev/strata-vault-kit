@@ -443,7 +443,7 @@ describe("toRequestEntriesByStage", () => {
 		expect(onClaim).toHaveBeenCalledWith(deposit)
 	})
 
-	it("offers no claim action on a ready redemption, since claim_deposit is deposit-only", () => {
+	it("offers a claim action on a ready redemption, now that claim_redeem is reachable", () => {
 		const onClaim = () => {}
 		const result = toRequestEntriesByStage(
 			{ requests: [redeem], archived: [], unreadable: [] },
@@ -453,7 +453,9 @@ describe("toRequestEntriesByStage", () => {
 			onClaim,
 		)
 
-		expect(result.ready[0]?.actions).toEqual([])
+		expect(result.ready[0]?.actions).toEqual([
+			{ label: "Claim", kind: "primary", onPress: expect.any(Function) },
+		])
 	})
 
 	it("places an unreadable request in blocked, distinguishable from an archived one", () => {
