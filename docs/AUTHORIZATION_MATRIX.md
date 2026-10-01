@@ -102,7 +102,7 @@ The following entrypoints are open to any caller on purpose:
 | `recover_balance` | `#[only_role(operator, "manager")]` | Target allowlisted | `test::unauthorized_caller_cannot_freeze_or_recover` |
 | `set_compliance` | `#[only_role(operator, "manager")]` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier` |
 | `set_identity_verifier` | `#[only_role(operator, "manager")]` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier` |
-| `renounce_admin` | OZ default: the admin can renounce | None | None. Unlike the vault and the oracle, the token does not refuse it; a paused token whose admin renounced could never be unpaused. |
+| `renounce_admin` | Refused always (`ShareTokenError::AdminRequired`) | None | `test::the_admin_cannot_renounce_itself_out_of_the_token`; `test::admin_handover_in_two_steps_still_works`. A token without an admin could never be unpaused or rotate its manager; hand over through `transfer_admin_role` and `accept_admin_transfer`. |
 
 ### 5.3 NavOracle (`contracts/nav-oracle`)
 
