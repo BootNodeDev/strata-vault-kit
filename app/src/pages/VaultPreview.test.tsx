@@ -7,6 +7,7 @@ import {
 	type Price,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
+import type * as AppLib from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type React from "react"
@@ -34,6 +35,7 @@ const {
 	requestRedeemMock,
 	cancelRedeemMock,
 	claimRedeemMock,
+	readEpochRequestsMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
@@ -79,6 +81,12 @@ const {
 	requestRedeemMock: vi.fn(),
 	cancelRedeemMock: vi.fn(),
 	claimRedeemMock: vi.fn(),
+	readEpochRequestsMock: vi.fn(),
+}))
+
+vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
+	...(await importOriginal<typeof AppLib>()),
+	readEpochRequests: readEpochRequestsMock,
 }))
 
 const defaultCancelDepositImpl = async ({
@@ -231,6 +239,28 @@ const defaultClaimRedeemImpl = async ({
 	}
 }
 
+const defaultReadEpochRequestsImpl = async (
+	contractId: string,
+	controller: string,
+	epochIds: bigint[],
+) => {
+	const reads = new Map<bigint, unknown>()
+	for (const epochId of epochIds) {
+		reads.set(epochId, {
+			epoch: { kind: "value", value: mockRequests.epochs.get(epochId) ?? null },
+			deposit: {
+				kind: "value",
+				value: mockRequests.deposits.get(epochId) ?? null,
+			},
+			redeem: {
+				kind: "value",
+				value: mockRequests.redeems.get(epochId) ?? null,
+			},
+		})
+	}
+	return reads
+}
+
 const resetMockRequests = () => {
 	mockRequests.readable = true
 	mockRequests.currentEpoch = 2n
@@ -248,6 +278,8 @@ const resetMockRequests = () => {
 	cancelRedeemMock.mockImplementation(defaultCancelRedeemImpl)
 	claimRedeemMock.mockReset()
 	claimRedeemMock.mockImplementation(defaultClaimRedeemImpl)
+	readEpochRequestsMock.mockReset()
+	readEpochRequestsMock.mockImplementation(defaultReadEpochRequestsImpl)
 }
 
 beforeEach(() => {
@@ -297,15 +329,6 @@ vi.mock("../config/clients", () => {
 			if (!mockRequests.readable) throw new Error("boom")
 			return { result: mockRequests.currentEpoch }
 		},
-		get_epoch: async ({ epoch_id }: { epoch_id: bigint }) => ({
-			result: mockRequests.epochs.get(epoch_id),
-		}),
-		get_deposit_request: async ({ epoch_id }: { epoch_id: bigint }) => ({
-			result: mockRequests.deposits.get(epoch_id),
-		}),
-		get_redeem_request: async ({ epoch_id }: { epoch_id: bigint }) => ({
-			result: mockRequests.redeems.get(epoch_id),
-		}),
 		paused: async () => ({ result: mockVault.paused }),
 		request_deposit: requestDepositMock,
 		cancel_deposit: cancelDepositMock,
