@@ -8,8 +8,10 @@ import {
 	type Price,
 	type RedeemRequest,
 	readContract,
+	readEpochRequests,
 } from "@stellar-scaffold/app-lib"
 import { skipToken, useQuery } from "@tanstack/react-query"
+import { addresses } from "../config/addresses"
 import { asyncVault } from "../config/clients"
 import { useWallet } from "./useWallet"
 
@@ -103,37 +105,42 @@ export async function fetchInvestorRequests(
 	const currentEpoch = await readContract(() => vault.current_epoch())
 	if (currentEpoch.kind !== "value") return { status: "unreadable" }
 
+	const epochIds: bigint[] = []
+	for (let epochId = FIRST_EPOCH; epochId <= currentEpoch.value; epochId++)
+		epochIds.push(epochId)
+
+	const epochReads = await readEpochRequests(
+		addresses.async_vault,
+		controller,
+		epochIds,
+	)
+
 	const requests: InvestorRequest[] = []
 	const archived: ArchivedRequest[] = []
 	const unreadable: UnreadableRequest[] = []
-	for (let epochId = FIRST_EPOCH; epochId <= currentEpoch.value; epochId++) {
-		const [epochRead, depositRead, redeemRead] = await Promise.all([
-			readContract(() => vault.get_epoch({ epoch_id: epochId })),
-			readContract(() =>
-				vault.get_deposit_request({ epoch_id: epochId, controller }),
-			),
-			readContract(() =>
-				vault.get_redeem_request({ epoch_id: epochId, controller }),
-			),
-		])
-
-		if (epochRead.kind !== "value") {
+	for (const epochId of epochIds) {
+		const read = epochReads.get(epochId)
+		if (read === undefined) {
 			unreadable.push({ epochId, side: "deposit" })
 			unreadable.push({ epochId, side: "redeem" })
 			continue
 		}
-		if (epochRead.value == null) {
-			console.error(
-				`epoch ${epochId} has no get_epoch entry though current_epoch() reports ${currentEpoch.value}`,
-			)
+		if (read.epoch.kind === "archived") continue
+
+		if (read.epoch.kind !== "value" || read.epoch.value == null) {
+			if (read.epoch.kind === "value") {
+				console.error(
+					`epoch ${epochId} has no Epoch entry though current_epoch() reports ${currentEpoch.value}`,
+				)
+			}
 			unreadable.push({ epochId, side: "deposit" })
 			unreadable.push({ epochId, side: "redeem" })
 			continue
 		}
-		const epoch = epochRead.value
+		const epoch = read.epoch.value
 
-		const deposit = classifyRequest(depositRead, "deposit", epochId, epoch)
-		const redeem = classifyRequest(redeemRead, "redeem", epochId, epoch)
+		const deposit = classifyRequest(read.deposit, "deposit", epochId, epoch)
+		const redeem = classifyRequest(read.redeem, "redeem", epochId, epoch)
 		for (const classified of [deposit, redeem]) {
 			if (classified.kind === "present") requests.push(classified.request)
 			else if (classified.kind === "archived") archived.push(classified.request)
