@@ -23,8 +23,16 @@ const holders = [
 	c.keys["holder-3"],
 ] as const
 const [first, second, third] = holders
-const { governance, manager, treasury, guardian, custodian, outsider, issuer } =
-	c.keys
+const {
+	governance,
+	compliance,
+	manager,
+	treasury,
+	guardian,
+	custodian,
+	outsider,
+	issuer,
+} = c.keys
 
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
@@ -43,7 +51,7 @@ const fulfill = (id: bigint) =>
 
 beforeAll(async () => {
 	decimals = (await shareToken(c, outsider).decimals()).result
-	const verifier = identityVerifier(c, governance)
+	const verifier = identityVerifier(c, compliance)
 	for (const holder of [...holders, custodian]) {
 		await trustline(c.net, c.server, holder, c.asset)
 	}
@@ -53,7 +61,7 @@ beforeAll(async () => {
 			verifier.allow({
 				account: holder.publicKey(),
 				allowed: true,
-				caller: governance.publicKey(),
+				caller: compliance.publicKey(),
 			}),
 		)
 	}
@@ -148,6 +156,61 @@ describe("an account with no role", () => {
 		const config = (await feed.config()).result
 		await expect(
 			send(oracle(c, outsider).set_config({ config })),
+		).rejects.toThrow(/signatures/)
+	})
+})
+
+describe("the compliance authority's reach", () => {
+	const holder = () => first.publicKey()
+
+	it("governance cannot write the allowlist", async () => {
+		await expect(
+			send(
+				identityVerifier(c, governance).allow({
+					account: outsider.publicKey(),
+					allowed: true,
+					caller: governance.publicKey(),
+				}),
+			),
+		).rejects.toThrow(/signatures/)
+	})
+
+	it("governance and the vault manager cannot freeze a holder", async () => {
+		for (const who of [governance, manager]) {
+			const token = shareToken(c, who)
+			expectRefused(
+				await token.set_address_frozen({
+					user_address: holder(),
+					freeze: true,
+					operator: who.publicKey(),
+				}),
+				token,
+				"Unauthorized",
+			)
+		}
+	})
+
+	it("compliance cannot mint shares", async () => {
+		const token = shareToken(c, compliance)
+		expectRefused(
+			await token.mint({
+				to: compliance.publicKey(),
+				amount: 1n,
+				operator: compliance.publicKey(),
+			}),
+			token,
+			"Unauthorized",
+		)
+	})
+
+	it("compliance cannot swap the identity verifier", async () => {
+		await expect(
+			send(
+				shareToken(c, compliance).set_identity_verifier({
+					identity_verifier: c.deployment.contracts.compliance,
+					operator: compliance.publicKey(),
+				}),
+			),
 		).rejects.toThrow(/signatures/)
 	})
 })
@@ -380,10 +443,10 @@ describe("a de-listed holder", () => {
 			vault(c, first).request_redeem({ from, shares: redeeming }),
 		)
 		await send(
-			identityVerifier(c, governance).allow({
+			identityVerifier(c, compliance).allow({
 				account: first.publicKey(),
 				allowed: false,
-				caller: governance.publicKey(),
+				caller: compliance.publicKey(),
 			}),
 		)
 		expectRefused(
@@ -410,10 +473,10 @@ describe("a de-listed holder", () => {
 
 	it("is allowlisted again", async () => {
 		await send(
-			identityVerifier(c, governance).allow({
+			identityVerifier(c, compliance).allow({
 				account: first.publicKey(),
 				allowed: true,
-				caller: governance.publicKey(),
+				caller: compliance.publicKey(),
 			}),
 		)
 		expect(

@@ -96,7 +96,7 @@ async function ensureAllowlist(
 	holder: Keypair,
 	name: string,
 ): Promise<void> {
-	const verifier = identityVerifier(c, c.keys.governance)
+	const verifier = identityVerifier(c, c.keys.compliance)
 	const allowed = (await verifier.is_allowed({ account: holder.publicKey() }))
 		.result
 	if (!allowed) {
@@ -105,7 +105,7 @@ async function ensureAllowlist(
 			verifier.allow({
 				account: holder.publicKey(),
 				allowed: true,
-				caller: c.keys.governance.publicKey(),
+				caller: c.keys.compliance.publicKey(),
 			}),
 		)
 		console.log(`  ✓ ${name} allowlisted`)
