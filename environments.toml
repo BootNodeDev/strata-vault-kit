@@ -32,7 +32,7 @@ constructor_args = "--admin me"
 
 [development.contracts.share_token]
 client = true
-constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --manager me --compliance compliance --identity_verifier identity_verifier'
+constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --compliance_authority me --compliance compliance --identity_verifier identity_verifier'
 
 # `--config` takes the OracleConfig struct as JSON. The values mirror the
 # contract's own tests: a one-hour freshness window, a one-minute cooldown, a

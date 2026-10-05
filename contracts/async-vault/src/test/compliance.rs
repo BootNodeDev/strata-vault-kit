@@ -23,7 +23,7 @@ fn allowlisting_after_the_fact_lets_the_claim_through() {
     f.fulfill_epoch(wad(2));
     assert!(f.vault.try_claim_deposit(&investor, &1).is_err());
 
-    f.identity.allow(&investor, &true, &f.admin);
+    f.identity.allow(&investor, &true, &f.compliance);
 
     assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
     assert_eq!(f.shares(&investor), 200);
@@ -35,7 +35,7 @@ fn a_delisted_holder_can_still_queue_an_exit() {
     let user = f.holder(500);
     let epoch = f.vault.current_epoch();
 
-    f.identity.allow(&user, &false, &f.admin);
+    f.identity.allow(&user, &false, &f.compliance);
 
     assert_eq!(f.vault.request_redeem(&user, &200), epoch);
     assert_eq!(f.shares(&f.vault.address), 200);
@@ -48,7 +48,7 @@ fn a_delisted_holder_can_still_claim_their_exit() {
     let epoch = f.vault.request_redeem(&user, &200);
     f.fulfill_epoch(wad(2));
 
-    f.identity.allow(&user, &false, &f.admin);
+    f.identity.allow(&user, &false, &f.compliance);
 
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
     assert_eq!(f.balance(&user), 400);
@@ -61,7 +61,7 @@ fn a_delisted_investor_can_cancel_deposit_and_receive_asset() {
     let epoch = f.vault.request_deposit(&investor, &400);
 
     // Investor gets delisted
-    f.identity.allow(&investor, &false, &f.admin);
+    f.identity.allow(&investor, &false, &f.compliance);
 
     // Delisted investor can still cancel deposit and receive settlement asset
     assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
@@ -75,7 +75,7 @@ fn a_delisted_holder_cannot_cancel_redemption_back_to_shares() {
     let epoch = f.vault.request_redeem(&user, &200);
 
     // Delisted before pricing
-    f.identity.allow(&user, &false, &f.admin);
+    f.identity.allow(&user, &false, &f.compliance);
 
     // Cannot return shares to a delisted account (refused by share transfer compliance)
     assert!(f.vault.try_cancel_redeem(&user, &epoch).is_err());
@@ -94,7 +94,7 @@ fn a_frozen_holder_cannot_cancel_redemption_back_to_shares() {
     let epoch = f.vault.request_redeem(&user, &200);
 
     // Freeze address
-    f.share.set_address_frozen(&user, &true, &f.admin);
+    f.share.set_address_frozen(&user, &true, &f.compliance);
     assert!(f.share.is_frozen(&user));
 
     // Cannot return shares to a frozen account
@@ -118,12 +118,12 @@ fn a_frozen_or_delisted_holder_cannot_transfer_shares() {
     assert_eq!(f.shares(&recipient), 100);
 
     // Delisted sender cannot transfer
-    f.identity.allow(&user, &false, &f.admin);
+    f.identity.allow(&user, &false, &f.compliance);
     assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
 
     // Restore allowlist, then freeze sender
-    f.identity.allow(&user, &true, &f.admin);
-    f.share.set_address_frozen(&user, &true, &f.admin);
+    f.identity.allow(&user, &true, &f.compliance);
+    f.share.set_address_frozen(&user, &true, &f.compliance);
     assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
 }
 
@@ -134,7 +134,7 @@ fn a_frozen_investor_on_the_allowlist_is_still_minted() {
     f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
 
-    f.share.set_address_frozen(&investor, &true, &f.admin);
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
 
     assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
     assert_eq!(f.shares(&investor), 200);
@@ -146,7 +146,7 @@ fn a_frozen_holder_can_still_queue_an_exit() {
     let user = f.holder(500);
     let epoch = f.vault.current_epoch();
 
-    f.share.set_address_frozen(&user, &true, &f.admin);
+    f.share.set_address_frozen(&user, &true, &f.compliance);
 
     assert_eq!(f.vault.request_redeem(&user, &200), epoch);
     assert_eq!(f.shares(&f.vault.address), 200);
@@ -156,7 +156,7 @@ fn a_frozen_holder_can_still_queue_an_exit() {
 fn queueing_an_exit_releases_a_partial_freeze() {
     let f = setup();
     let user = f.holder(500);
-    f.share.freeze_partial_tokens(&user, &400, &f.admin);
+    f.share.freeze_partial_tokens(&user, &400, &f.compliance);
 
     f.vault.request_redeem(&user, &300);
 
