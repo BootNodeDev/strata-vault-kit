@@ -70,17 +70,49 @@ Formatting and secret-scanning run on commit via a `prek` hook — see
 
 ### Integration & On-Chain Tests
 
-To generate TypeScript client bindings from contract WASMs:
+From a fresh clone to a vault set deployed on a local network. Run these inside
+`nix develop`, or with the toolchain from "Without Nix" plus Node 22 and Docker.
 
 ```sh
-stellar contract build
-npm run build:clients
+# A local Stellar network, RPC at http://localhost:8000/rpc
+docker run --rm -d -p 8000:8000 --name stellar-local \
+  stellar/quickstart --local --enable core,rpc
+
+npm ci                                         # JS dependencies, including the harness
+stellar contract build                         # contract wasms
+npm run build:clients                          # TypeScript clients from the wasms
+HARNESS_NETWORK=local npm run deploy -w scripts/harness
 ```
 
-To deploy contracts and run integration test suites against a network:
+`HARNESS_NETWORK` defaults to `local`; `testnet` deploys to testnet and rewrites
+the addresses table above. The local deploy funds its accounts from the
+quickstart root key, so it needs no `stellar keys` identity.
+
+Output of a real run from a fresh clone. Contract IDs differ on every run.
+
+```text
+> @strata-vault-kit/harness@0.1.0 deploy
+> tsx deploy.ts
+
+deploying to local (http://localhost:8000/rpc)
+funded 13 accounts
+asset contract CB7IYQNW5Z5NY4RLR3PRNDAI6DNCEXD6I7NRWQZSGBNQ6YFANFPZ7ZSE
+compliance CBNEUKZOUMYIGZYCCEKNVRMLPBOCMRSE32XRGEL64QKYAHOAQTL4R2I4
+identity_verifier CBZC4FWQD33HC4TKOIODFLX7H527XVP6RL346LPYSLE2GUKMFN7HT6TZ
+share_token CD6ISWB4DFY6XQEXS4ECBWA3TDGOUTK7SEACMVBUEQ3JFW65XMG43QFV
+nav_oracle CCAMOCE2U5LBMEYDNXAMOZZSGDTX6A5DNQRXCYMUIYFTPRKZS6QUCDKD
+async_vault CAZPVYS3JITMZYE2CYBOKJ2FBQ46RK4E4NBDHA53RSV7ICUXFZOOJJYR
+clients generated
+vault holds share_token manager role
+vault is allowlisted
+share_token bound to compliance
+wrote deployed.local.json
+```
+
+The addresses land in `scripts/harness/deployed.local.json`. Then run the
+integration suites against that deployment:
 
 ```sh
-npm run deploy -w scripts/harness
 npm run test:happy-path -w scripts/harness
 npm run test:guards -w scripts/harness
 ```
