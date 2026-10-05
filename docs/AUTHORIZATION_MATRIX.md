@@ -89,6 +89,8 @@ The following entrypoints are open to any caller on purpose:
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
+The token's `admin` is governance. `pause` and `unpause` are admin-gated; the guardian holds no role on the token.
+
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
 | `pause` | `#[only_admin]`, `caller.require_auth()` | Not paused | `test::unauthorized_caller_cannot_pause_or_unpause` |
