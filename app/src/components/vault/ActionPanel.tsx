@@ -1,4 +1,9 @@
-import { formatAmount, parseAmount } from "@stellar-scaffold/app-lib"
+import {
+	AMOUNT_DECIMALS,
+	type Amount,
+	formatExact,
+	parseUnits,
+} from "@stellar-scaffold/app-lib"
 import React from "react"
 import typeStyles from "../../styles/type.module.css"
 import styles from "./ActionPanel.module.css"
@@ -35,7 +40,7 @@ export type ActionPanelProps = {
 	onAmountChange: (amount: string) => void
 	amountLabel: string
 	ticker: string
-	balance: number | null
+	balance: Amount | null
 	balanceLabel: string
 	estimate: ActionPanelEstimate
 	submitLabel: string
@@ -112,14 +117,19 @@ const ActionPanel: React.FC<ActionPanelProps> = ({
 	onSubmit,
 	block,
 }) => {
-	const parsedAmount = parseAmount(amount)
+	const parsedAmount = parseUnits(amount, AMOUNT_DECIMALS)
 	const isOverBalance =
-		parsedAmount !== null && balance !== null && parsedAmount > balance
-	const canSubmit = parsedAmount !== null && !isOverBalance
+		parsedAmount !== null &&
+		parsedAmount > 0n &&
+		balance !== null &&
+		parsedAmount > balance
+	const canSubmit = parsedAmount !== null && parsedAmount > 0n && !isOverBalance
 	const overBalance =
-		isOverBalance && balance !== null ? formatAmount(balance) : undefined
+		isOverBalance && balance !== null
+			? formatExact(balance, AMOUNT_DECIMALS)
+			: undefined
 	const fillMax = () => {
-		if (balance !== null) onAmountChange(formatAmount(balance))
+		if (balance !== null) onAmountChange(formatExact(balance, AMOUNT_DECIMALS))
 	}
 	const actionBlock = block?.kind === "action" ? block : undefined
 	const messageBlock = block?.kind === "message" ? block : undefined
