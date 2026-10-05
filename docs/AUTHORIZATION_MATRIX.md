@@ -70,6 +70,8 @@ The following entrypoints are open to any caller on purpose:
 
 ### 5.1 AsyncVault (`contracts/async-vault`)
 
+Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs), [`notice.rs`](../contracts/async-vault/src/test/notice.rs), [`treasury.rs`](../contracts/async-vault/src/test/treasury.rs), [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) and [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) in [`contracts/async-vault/src/test/`](../contracts/async-vault/src/test/).
+
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
 | `close_epoch` | `#[only_role(caller, "manager")]` | Epoch must be open | `test::epochs::a_non_manager_cannot_close` |
@@ -89,6 +91,8 @@ The following entrypoints are open to any caller on purpose:
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
+Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs).
+
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
 | `pause` | `#[only_admin]`, `caller.require_auth()` | Not paused | `test::unauthorized_caller_cannot_pause_or_unpause` |
@@ -106,6 +110,8 @@ The following entrypoints are open to any caller on purpose:
 
 ### 5.3 NavOracle (`contracts/nav-oracle`)
 
+Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
+
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
 | `attest` | `#[only_role(caller, "attester")]` | Cooldown, deviation cap, bounds `[min, max]` | `test::attest_is_role_gated` |
@@ -116,6 +122,8 @@ The following entrypoints are open to any caller on purpose:
 | `renounce_admin` | Refused always (`OracleError::AdminRequired`) | None | `test::the_oracle_admin_cannot_renounce_itself_away` |
 
 ### 5.4 IdentityVerifier (`contracts/identity-verifier`)
+
+Tests: [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs).
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
