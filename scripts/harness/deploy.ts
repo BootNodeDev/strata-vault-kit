@@ -71,7 +71,7 @@ async function deployContracts(
 		net,
 		wasmOf("identity_verifier"),
 		deployer,
-		{ admin: governance },
+		{ admin: pk("compliance") },
 	)
 	console.log("identity_verifier", identityVerifier)
 
@@ -83,7 +83,7 @@ async function deployContracts(
 			name: "Strata Vault USDC",
 			symbol: "bvUSDC",
 			admin: governance,
-			manager: governance,
+			compliance_authority: pk("compliance"),
 			compliance,
 			identity_verifier: identityVerifier,
 		},
@@ -151,7 +151,8 @@ async function grantAndVerify(
 	).signAndSend()
 	const role = (await token.has_role({ account: vault, role: "manager" }))
 		.result
-	if (role === undefined)
+	// The binding types a missing role as undefined; the SDK returns null.
+	if (typeof role !== "number")
 		throw new Error("the vault did not receive the share token's manager role")
 	console.log("vault holds share_token manager role")
 
@@ -159,10 +160,14 @@ async function grantAndVerify(
 		clientEntry("identity_verifier")
 	)) as typeof IdentityVerifierModule
 	const verifier = new IdentityVerifier(
-		clientOptions(net, contracts.identity_verifier, governance),
+		clientOptions(net, contracts.identity_verifier, accounts.compliance),
 	)
 	await (
-		await verifier.allow({ account: vault, allowed: true, caller })
+		await verifier.allow({
+			account: vault,
+			allowed: true,
+			caller: accounts.compliance.publicKey(),
+		})
 	).signAndSend()
 	const allowed = (await verifier.is_allowed({ account: vault })).result
 	if (allowed !== true)
