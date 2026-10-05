@@ -20,6 +20,8 @@ Two rules the contracts enforce:
   the protocol does, why it is asynchronous, and how the pieces fit together.
 - [Kit specification](./docs/kit-spec.md) — invariants, deploy-time
   parameters, and complete role matrix.
+- [Testing](./docs/TESTING.md) — which tests cover storage and TTL, auth,
+  ledger time, events and calls between contracts.
 
 ## Status
 
