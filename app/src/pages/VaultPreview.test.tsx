@@ -711,9 +711,7 @@ describe("VaultPreview", () => {
 			}),
 		).toBeTruthy()
 		expect(
-			screen.getByText(
-				"95.2380952 vUSDC prices at the vault's next update.",
-			),
+			screen.getByText("95.2380952 vUSDC prices at the vault's next update."),
 		).toBeTruthy()
 		expect(screen.queryByText(/95\.24/)).toBeNull()
 	})
