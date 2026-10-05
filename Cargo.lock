@@ -1031,6 +1031,7 @@ dependencies = [
  "stellar-access",
  "stellar-macros",
  "stellar-tokens",
+ "storage",
 ]
 
 [[package]]
