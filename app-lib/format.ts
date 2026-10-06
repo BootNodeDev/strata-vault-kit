@@ -143,6 +143,24 @@ export function formatScaled<D extends Decimals>(
 		: `${sign}${grouped}.${fraction}`
 }
 
+export function formatExact<D extends Decimals>(
+	value: Scaled<D>,
+	decimals: NoInfer<D>,
+): string {
+	const [integer = "0", fraction = ""] = formatUnits(
+		value,
+		decimals,
+		decimals,
+	).split(".")
+	const negative = integer.startsWith("-")
+	const magnitude = negative ? integer.slice(1) : integer
+	const grouped = BigInt(magnitude).toLocaleString("en-US")
+	const sign = negative ? "-" : ""
+	const trimmed = fraction.replace(/0+$/, "")
+	const minFraction = trimmed.length < 2 ? fraction.slice(0, 2) : trimmed
+	return `${sign}${grouped}.${minFraction}`
+}
+
 /**
  * Parse investor input into a scaled contract value. `null` for anything the
  * chain cannot represent exactly, including more fraction digits than
@@ -202,28 +220,4 @@ export function formatDayMonth(unixSeconds: bigint): string {
 	const value = dateParts(unixSeconds, { day: "numeric", month: "short" })
 	if (value === null) return "—"
 	return `${value("day")} ${value("month")}`
-}
-
-/**
- * Narrow an `Amount` to a JS `number` for the rare display prop that requires
- * one. `null` when the integer part would lose precision above
- * `Number.MAX_SAFE_INTEGER`. Takes no `decimals` on purpose: a `Price` (18
- * decimals) has no safe caller here, so narrowing one is a type error, not a
- * convention to remember.
- */
-export function toSafeNumber(value: Amount): number | null {
-	const negative = value < 0n
-	const magnitude = negative ? -value : value
-	const divisor = 10n ** BigInt(AMOUNT_DECIMALS)
-	const integerPart = magnitude / divisor
-	const remainder = magnitude % divisor
-	// At the boundary the integer part is representable but adding any fraction
-	// rounds past it, so a non-zero remainder there is still a loss.
-	const limit = BigInt(Number.MAX_SAFE_INTEGER)
-	if (integerPart > limit || (integerPart === limit && remainder !== 0n)) {
-		return null
-	}
-
-	const result = Number(integerPart) + Number(remainder) / Number(divisor)
-	return negative ? -result : result
 }

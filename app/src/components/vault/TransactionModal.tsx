@@ -1,7 +1,7 @@
 import {
 	AMOUNT_DECIMALS,
 	explorerTransaction,
-	formatScaled,
+	formatExact,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
 import React from "react"
@@ -263,7 +263,7 @@ const describeCancelStatus = (
 		case "confirmed":
 			return {
 				heading: "Request cancelled",
-				body: `${formatScaled(status.refundedAmount, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
+				body: `${formatExact(status.refundedAmount, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
 				hash: status.hash,
 			}
 		case "failed":
@@ -302,7 +302,7 @@ const describeCancelRedeemStatus = (
 		case "confirmed":
 			return {
 				heading: "Request cancelled",
-				body: `${formatScaled(status.returnedShares, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
+				body: `${formatExact(status.returnedShares, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
 				hash: status.hash,
 			}
 		case "failed":
@@ -344,7 +344,7 @@ const describeClaimStatus = (
 			return status.sharesMinted > 0n
 				? {
 						heading: "Shares claimed",
-						body: `${formatScaled(status.sharesMinted, AMOUNT_DECIMALS)} ${shareTicker} has been added to your wallet.`,
+						body: `${formatExact(status.sharesMinted, AMOUNT_DECIMALS)} ${shareTicker} has been added to your wallet.`,
 						hash: status.hash,
 					}
 				: {
@@ -427,7 +427,7 @@ const describeClaimRedeemStatus = (
 			return status.assetsClaimed > 0n
 				? {
 						heading: `${ticker} claimed`,
-						body: `${formatScaled(status.assetsClaimed, AMOUNT_DECIMALS)} ${ticker} has been added to your wallet.`,
+						body: `${formatExact(status.assetsClaimed, AMOUNT_DECIMALS)} ${ticker} has been added to your wallet.`,
 						hash: status.hash,
 					}
 				: {
