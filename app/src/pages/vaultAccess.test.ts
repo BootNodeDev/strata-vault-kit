@@ -427,12 +427,12 @@ describe("toActionBalance", () => {
 	it("reads the deposit asset's balance on the subscribe side", () => {
 		expect(
 			toActionBalance(true, false, depositHeld, { status: "checking" }),
-		).toBe(250)
+		).toBe(depositHeld.amount)
 	})
 
 	it("reads the share position's balance on the redeem side", () => {
 		expect(toActionBalance(false, false, { status: "checking" }, held)).toBe(
-			500,
+			held.shares,
 		)
 	})
 
