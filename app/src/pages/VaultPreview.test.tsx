@@ -7,6 +7,7 @@ import {
 	type Price,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
+import type * as AppLib from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type React from "react"
@@ -34,6 +35,7 @@ const {
 	requestRedeemMock,
 	cancelRedeemMock,
 	claimRedeemMock,
+	readEpochRequestsMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
@@ -79,6 +81,12 @@ const {
 	requestRedeemMock: vi.fn(),
 	cancelRedeemMock: vi.fn(),
 	claimRedeemMock: vi.fn(),
+	readEpochRequestsMock: vi.fn(),
+}))
+
+vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
+	...(await importOriginal<typeof AppLib>()),
+	readEpochRequests: readEpochRequestsMock,
 }))
 
 const defaultCancelDepositImpl = async ({
@@ -231,6 +239,28 @@ const defaultClaimRedeemImpl = async ({
 	}
 }
 
+const defaultReadEpochRequestsImpl = async (
+	contractId: string,
+	controller: string,
+	epochIds: bigint[],
+) => {
+	const reads = new Map<bigint, unknown>()
+	for (const epochId of epochIds) {
+		reads.set(epochId, {
+			epoch: { kind: "value", value: mockRequests.epochs.get(epochId) ?? null },
+			deposit: {
+				kind: "value",
+				value: mockRequests.deposits.get(epochId) ?? null,
+			},
+			redeem: {
+				kind: "value",
+				value: mockRequests.redeems.get(epochId) ?? null,
+			},
+		})
+	}
+	return reads
+}
+
 const resetMockRequests = () => {
 	mockRequests.readable = true
 	mockRequests.currentEpoch = 2n
@@ -248,6 +278,8 @@ const resetMockRequests = () => {
 	cancelRedeemMock.mockImplementation(defaultCancelRedeemImpl)
 	claimRedeemMock.mockReset()
 	claimRedeemMock.mockImplementation(defaultClaimRedeemImpl)
+	readEpochRequestsMock.mockReset()
+	readEpochRequestsMock.mockImplementation(defaultReadEpochRequestsImpl)
 }
 
 beforeEach(() => {
@@ -297,15 +329,6 @@ vi.mock("../config/clients", () => {
 			if (!mockRequests.readable) throw new Error("boom")
 			return { result: mockRequests.currentEpoch }
 		},
-		get_epoch: async ({ epoch_id }: { epoch_id: bigint }) => ({
-			result: mockRequests.epochs.get(epoch_id),
-		}),
-		get_deposit_request: async ({ epoch_id }: { epoch_id: bigint }) => ({
-			result: mockRequests.deposits.get(epoch_id),
-		}),
-		get_redeem_request: async ({ epoch_id }: { epoch_id: bigint }) => ({
-			result: mockRequests.redeems.get(epoch_id),
-		}),
 		paused: async () => ({ result: mockVault.paused }),
 		request_deposit: requestDepositMock,
 		cancel_deposit: cancelDepositMock,
@@ -615,6 +638,17 @@ describe("VaultPreview", () => {
 		expect(await screen.findByText("Balance 500.00")).toBeTruthy()
 	})
 
+	it("shows the same exact balance in the position card and the balance label", async () => {
+		mockShares.balance = 952380952n
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByText("95.2380952 vUSDC")).toBeTruthy()
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+
+		expect(await screen.findByText("Balance 95.2380952")).toBeTruthy()
+	})
+
 	it("computes the subscribe estimate from the oracle's own attested price, not a fabricated one", async () => {
 		renderVaultPreview(connectedWallet)
 		const input = await screen.findByRole("textbox", {
@@ -682,6 +716,27 @@ describe("VaultPreview", () => {
 			}),
 		).toBeTruthy()
 		await waitFor(() => expect(input.value).toBe(""))
+	})
+
+	it("shows the exact amount it signed in the modal, not a rounded one", async () => {
+		renderVaultPreview(connectedWallet)
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to redeem",
+		})
+		fireEvent.change(input, { target: { value: "95.2380952" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Redeem" }))
+
+		expect(
+			await screen.findByRole("heading", {
+				name: "Redemption request submitted",
+			}),
+		).toBeTruthy()
+		expect(
+			screen.getByText("95.2380952 vUSDC prices at the vault's next update."),
+		).toBeTruthy()
+		expect(screen.queryByText(/95\.24/)).toBeNull()
 	})
 
 	it("shows a switch-network control, distinct from connect, when the wallet is on the wrong network", async () => {
@@ -1420,6 +1475,22 @@ describe("VaultPreview", () => {
 			await screen.findByRole("heading", { name: "USDC claimed" }),
 		).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+	})
+
+	it("shows the exact amount owed in the claim-redeem modal, not rounded to two decimals", async () => {
+		const epoch = 9n
+		mockRequests.currentEpoch = epoch
+		mockRequests.epochs.set(epoch, {
+			status: { tag: "Fulfilled" },
+			share_price: 1_000000000000000000n,
+			priceable_at: 1_700_003_600n,
+		})
+		mockRequests.redeems.set(epoch, { shares: 952380952n, claimed: false })
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(await screen.findByText(/95\.2380952 USDC/)).toBeTruthy()
 	})
 
 	it("removes a claimed redemption from the ready list without a manual refresh", async () => {

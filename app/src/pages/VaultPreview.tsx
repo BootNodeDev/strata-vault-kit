@@ -1,7 +1,7 @@
 import {
 	AMOUNT_DECIMALS,
 	connectWallet,
-	formatAmount,
+	formatExact,
 	formatScaled,
 	networkStatus,
 	parseAmount,
@@ -128,13 +128,13 @@ const VaultPreview: React.FC = () => {
 	const cancelDeposit = (request: InvestorRequest) => {
 		cancelDepositTx.submit(
 			request.epochId,
-			formatScaled(request.amount, AMOUNT_DECIMALS),
+			formatExact(request.amount, AMOUNT_DECIMALS),
 		)
 	}
 	const cancelRedeem = (request: InvestorRequest) => {
 		cancelRedeemTx.submit(
 			request.epochId,
-			formatScaled(request.amount, AMOUNT_DECIMALS),
+			formatExact(request.amount, AMOUNT_DECIMALS),
 		)
 	}
 	const cancelRequest = (request: InvestorRequest) => {
@@ -148,13 +148,13 @@ const VaultPreview: React.FC = () => {
 		if (request.side === "deposit") {
 			claimDepositTx.submit(
 				request.epochId,
-				formatScaled(request.amount, AMOUNT_DECIMALS),
+				formatExact(request.amount, AMOUNT_DECIMALS),
 			)
 			return
 		}
 		claimRedeemTx.submit(
 			request.epochId,
-			formatScaled(
+			formatExact(
 				owedAmount(request.side, request.amount, request.sharePrice),
 				AMOUNT_DECIMALS,
 			),
@@ -228,7 +228,7 @@ const VaultPreview: React.FC = () => {
 	const balanceLabel =
 		balance === null
 			? "Balance unavailable"
-			: `Balance ${formatAmount(balance)}`
+			: `Balance ${formatExact(balance, AMOUNT_DECIMALS)}`
 	const parsedAmount = parseAmount(actionAmount)
 	const estimate = toEstimate(nav, parsedAmount, isSubscribe, outTicker)
 
@@ -236,7 +236,7 @@ const VaultPreview: React.FC = () => {
 		if (parsedAmount === null) return
 		const amount = parseUnits(actionAmount, AMOUNT_DECIMALS)
 		if (amount === null) return
-		const amountLabel = formatAmount(parsedAmount)
+		const amountLabel = formatExact(amount, AMOUNT_DECIMALS)
 		if (isSubscribe) {
 			requestDeposit.submit(amount, amountLabel)
 			return

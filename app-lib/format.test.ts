@@ -5,6 +5,7 @@ import {
 	type Amount,
 	formatDate,
 	formatDayMonth,
+	formatExact,
 	formatNetworkName,
 	formatScaled,
 	formatUnits,
@@ -13,7 +14,6 @@ import {
 	parseUnits,
 	type Price,
 	shortAddress,
-	toSafeNumber,
 } from "./format"
 
 describe("shortAddress", () => {
@@ -113,29 +113,20 @@ describe("parseAmount", () => {
 	})
 })
 
-describe("toSafeNumber", () => {
-	it("is sign-symmetric", () => {
-		expect(toSafeNumber(25000000n as Amount)).toBe(2.5)
-		expect(toSafeNumber(-25000000n as Amount)).toBe(-2.5)
+describe("formatExact", () => {
+	it("groups the integer part and pads a round value to two fraction digits", () => {
+		const value = 2500_0000000n as Amount
+		expect(formatExact(value, AMOUNT_DECIMALS)).toBe("2,500.00")
 	})
 
-	it("returns the value at the MAX_SAFE_INTEGER boundary", () => {
-		const atBoundary = (BigInt(Number.MAX_SAFE_INTEGER) *
-			10n ** BigInt(AMOUNT_DECIMALS)) as Amount
-		expect(toSafeNumber(atBoundary)).toBe(Number.MAX_SAFE_INTEGER)
+	it("keeps every significant fraction digit instead of rounding", () => {
+		const value = 952380952n as Amount
+		expect(formatExact(value, AMOUNT_DECIMALS)).toBe("95.2380952")
 	})
 
-	it("returns null at the boundary when a fraction would round past it", () => {
-		const atBoundaryWithFraction = (BigInt(Number.MAX_SAFE_INTEGER) *
-			10n ** BigInt(AMOUNT_DECIMALS) +
-			5000000n) as Amount
-		expect(toSafeNumber(atBoundaryWithFraction)).toBeNull()
-	})
-
-	it("returns null when the integer part exceeds MAX_SAFE_INTEGER", () => {
-		const aboveBoundary = ((BigInt(Number.MAX_SAFE_INTEGER) + 1n) *
-			10n ** BigInt(AMOUNT_DECIMALS)) as Amount
-		expect(toSafeNumber(aboveBoundary)).toBeNull()
+	it("keeps the sign for a negative value smaller than one whole unit", () => {
+		const value = -5n as Amount
+		expect(formatExact(value, AMOUNT_DECIMALS)).toBe("-0.0000005")
 	})
 })
 
