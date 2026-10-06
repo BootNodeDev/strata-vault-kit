@@ -638,6 +638,17 @@ describe("VaultPreview", () => {
 		expect(await screen.findByText("Balance 500.00")).toBeTruthy()
 	})
 
+	it("shows the same exact balance in the position card and the balance label", async () => {
+		mockShares.balance = 952380952n
+		renderVaultPreview(connectedWallet)
+
+		expect(await screen.findByText("95.2380952 vUSDC")).toBeTruthy()
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+
+		expect(await screen.findByText("Balance 95.2380952")).toBeTruthy()
+	})
+
 	it("computes the subscribe estimate from the oracle's own attested price, not a fabricated one", async () => {
 		renderVaultPreview(connectedWallet)
 		const input = await screen.findByRole("textbox", {
@@ -705,6 +716,27 @@ describe("VaultPreview", () => {
 			}),
 		).toBeTruthy()
 		await waitFor(() => expect(input.value).toBe(""))
+	})
+
+	it("shows the exact amount it signed in the modal, not a rounded one", async () => {
+		renderVaultPreview(connectedWallet)
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to redeem",
+		})
+		fireEvent.change(input, { target: { value: "95.2380952" } })
+
+		fireEvent.click(await screen.findByRole("button", { name: "Redeem" }))
+
+		expect(
+			await screen.findByRole("heading", {
+				name: "Redemption request submitted",
+			}),
+		).toBeTruthy()
+		expect(
+			screen.getByText("95.2380952 vUSDC prices at the vault's next update."),
+		).toBeTruthy()
+		expect(screen.queryByText(/95\.24/)).toBeNull()
 	})
 
 	it("shows a switch-network control, distinct from connect, when the wallet is on the wrong network", async () => {
@@ -1443,6 +1475,22 @@ describe("VaultPreview", () => {
 			await screen.findByRole("heading", { name: "USDC claimed" }),
 		).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+	})
+
+	it("shows the exact amount owed in the claim-redeem modal, not rounded to two decimals", async () => {
+		const epoch = 9n
+		mockRequests.currentEpoch = epoch
+		mockRequests.epochs.set(epoch, {
+			status: { tag: "Fulfilled" },
+			share_price: 1_000000000000000000n,
+			priceable_at: 1_700_003_600n,
+		})
+		mockRequests.redeems.set(epoch, { shares: 952380952n, claimed: false })
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("button", { name: "Claim" }))
+
+		expect(await screen.findByText(/95\.2380952 USDC/)).toBeTruthy()
 	})
 
 	it("removes a claimed redemption from the ready list without a manual refresh", async () => {

@@ -1,3 +1,4 @@
+import { type Amount } from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import ActionPanel, { type ActionPanelProps } from "./ActionPanel"
@@ -11,7 +12,7 @@ const baseProps: ActionPanelProps = {
 	onAmountChange: () => {},
 	amountLabel: "Amount to subscribe",
 	ticker: "TOKEN",
-	balance: 18400,
+	balance: 18400_0000000n as Amount,
 	balanceLabel: "Balance 18,400.00",
 	estimate: { label: "Estimated shares", status: "ready", value: "≈ —" },
 	submitLabel: "Subscribe",
@@ -37,6 +38,48 @@ describe("ActionPanel", () => {
 		fireEvent.click(screen.getByRole("button", { name: "MAX" }))
 
 		expect(onAmountChange).toHaveBeenCalledWith("18,400.00")
+	})
+
+	it("fills MAX with the exact balance, not a rounded display value", () => {
+		const onAmountChange = vi.fn()
+		render(
+			<ActionPanel
+				{...baseProps}
+				balance={952380952n as Amount}
+				amount=""
+				onAmountChange={onAmountChange}
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole("button", { name: "MAX" }))
+
+		expect(onAmountChange).toHaveBeenCalledWith("95.2380952")
+	})
+
+	it("accepts the exact balance amount without flagging it as over-balance", () => {
+		render(
+			<ActionPanel
+				{...baseProps}
+				balance={952380952n as Amount}
+				amount="95.2380952"
+			/>,
+		)
+
+		expect(screen.queryByText(/Enter .* or less/)).toBeNull()
+	})
+
+	it("states the exact balance, not the display-rounded one, in the over-balance message", () => {
+		render(
+			<ActionPanel
+				{...baseProps}
+				balance={952380952n as Amount}
+				amount="95.24"
+			/>,
+		)
+
+		expect(
+			screen.getByText("You have 95.2380952 TOKEN. Enter 95.2380952 or less."),
+		).toBeTruthy()
 	})
 
 	it("asks for an amount, not that the estimate is unavailable, when the field is empty", () => {

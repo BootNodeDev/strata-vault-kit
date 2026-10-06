@@ -2,7 +2,7 @@ import {
 	AMOUNT_DECIMALS,
 	type Amount,
 	formatDayMonth,
-	formatScaled,
+	formatExact,
 	type Price,
 } from "@stellar-scaffold/app-lib"
 import {
@@ -100,7 +100,7 @@ const baseEntry = (
 > => ({
 	id: `${request.side}-${request.epochId}`,
 	inLabel: sideLabel[request.side],
-	inAmount: `${formatScaled(request.amount, AMOUNT_DECIMALS)} ${inTicker(request.side, tokens)}`,
+	inAmount: `${formatExact(request.amount, AMOUNT_DECIMALS)} ${inTicker(request.side, tokens)}`,
 	outLabel: "Owed to you",
 	actions: [],
 })
@@ -150,7 +150,7 @@ function readyEntry(
 	return {
 		...baseEntry(request, tokens),
 		actions,
-		outAmount: `${formatScaled(owed, AMOUNT_DECIMALS)} ${outTicker(request.side, tokens)}`,
+		outAmount: `${formatExact(owed, AMOUNT_DECIMALS)} ${outTicker(request.side, tokens)}`,
 		outTone: "ok",
 		state: "Priced",
 		tone: stageTone.ready,
@@ -166,7 +166,7 @@ function blockedEntry(
 	const owed = owedAmount(request.side, request.amount, request.sharePrice)
 	return {
 		...baseEntry(request, tokens),
-		outAmount: `${formatScaled(owed, AMOUNT_DECIMALS)} ${outTicker(request.side, tokens)}`,
+		outAmount: `${formatExact(owed, AMOUNT_DECIMALS)} ${outTicker(request.side, tokens)}`,
 		outTone: "stop",
 		state: "Blocked",
 		tone: stageTone.blocked,
