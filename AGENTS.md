@@ -75,11 +75,15 @@ apply as the corresponding code lands here.
   clone builds the client before the app, or `tsc` cannot resolve the module.
 - `app-lib/clients/index.ts` is auto-generated and rewritten on every build or
   redeploy. Do not hand-edit it; customize by importing the client under `app/`.
-- `app/` never imports the generated barrel — it constructs its own contract
-  clients at runtime with `contract.Client.from` (`app-lib/contracts.ts`),
-  bound to addresses `app/src/config/addresses.ts` generates offline. A fresh
-  clone can build and run `app` with no cargo, no stellar CLI, no scaffold,
-  and no local network.
+- `app/` never imports the generated barrel. `app/`'s `prebuild` runs
+  `scripts/generate-clients.mjs`, which reads the contract ids and RPC URL of
+  `ADDRESSES_ENV` (default `staging`) from `environments.toml` and writes
+  `app-lib/clients/<contract>/` from each contract's on-chain spec, with Node
+  alone. Those generated types are the only contract types; `app-lib/contracts.ts`
+  re-exports them and builds the runtime clients with `contract.Client.from`.
+  A fresh clone builds `app` with no cargo, no stellar CLI and no local network,
+  but needs RPC access to the selected network at build time. A local scaffold
+  build writes the same directory from the WASM.
 - When a tool must drive `cargo` directly rather than the CLI, set
   `SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1`. The build script fails
   without it and its error names neither the variable nor this way out, so
