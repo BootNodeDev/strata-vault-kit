@@ -196,7 +196,7 @@ flowchart TB
             OR["Valuation oracle ·<br/>guardrails · NAV"]:::strata
             SA["Split accounting ·<br/>uncovered exposure"]:::strata
             RQ["Covered redemption claims<br/>· exit-only path"]:::strata
-            MGR["Manager ·<br/>token authority"]:::strata
+            MGR["Token roles ·<br/>manager · compliance"]:::strata
             IVC["Compliance module<br/>SEP-57 identity + rules"]
         end
         AUTH["Role framework<br/>5 multisig authorities"]
@@ -249,7 +249,7 @@ flowchart LR
     subgraph Soroban["Soroban contracts (the kit)"]
         V[Vault<br/>requests, pricing,<br/>reserve accounting]
         ST[Share token<br/>OZ SEP-41 + SEP-57 ext]
-        MGR[Manager<br/>token authority passthrough]
+        MGR[Token roles<br/>manager: the vault<br/>compliance: interventions]
         CM[Compliance module<br/>SEP-57 identity + rules,<br/>allowlist]
     end
 
@@ -260,7 +260,7 @@ flowchart LR
     VAL --> ATT
     GOV & CMP & ATT & TRE & GRD --> OPS --> V
     OPS --> MGR --> ST
-    CMP -->|writes via Manager| CM
+    CMP -->|writes the allowlist| CM
     ST -.->|identity + transfer rules| CM
     TRE -.->|free reserve only,<br/>nothing uncovered| CUST
     V ---|SAC interface| USDC[Deposit asset]
@@ -276,8 +276,8 @@ number with a proof reference.
 | Component             | Role                                                                                                                                                                                                      | Controls                                                                                                                                                                      |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Vault**             | Request lifecycle, pricing, split reserve accounting, custodian transfers, upgrade control                                                                                                                | One authority per privileged entrypoint; upgrades behind a governance timelock no shorter than the notice, bounded between 7 and 90 days. Administrative handover follows a strict two-step transfer pattern; renouncing admin is permanently refused (`AdminRequired`) |
-| **Share token**       | OZ SEP-41 + SEP-57 RWA extensions: freeze, forced transfer, recovery, identity and compliance checks on every transfer, independent transfer pause                                                        | Manager role held by authorized accounts and the vault for mint/burn/escrow operations, never an unverified human key                                                                                         |
-| **Manager**           | Access-control role: privileged token and verifier operations require the manager role checked directly via native access control                                                                          | Role-gated                                                                                                                                                                    |
+| **Share token**       | OZ SEP-41 + SEP-57 RWA extensions: freeze, forced transfer, recovery, identity and compliance checks on every transfer, independent transfer pause (admin-gated to governance)                                                        | Manager role held only by the vault, for mint, burn and escrow; compliance role held by the compliance authority, for freeze, forced transfer and recovery; swapping the compliance or identity-verifier contract needs the admin                                                                                         |
+| **Token roles**       | Access-control roles on the share token, checked directly via native access control: `manager` mints, burns and escrows; `compliance` freezes, forces transfers and recovers                            | Granted and revoked by the token admin (governance)                                                                                                                                                                    |
 | **Compliance module** | Implements the SEP-57 identity and rules interfaces the share token consults, with the allowlist as its only rule                                                                                         | Managed by the compliance authority via direct role access; replaceable by OZ's identity verifier and compliance contracts (with RWA Wizard modules) without touching the token |
 | **Authorities**       | governance (parameters, roles, timelocked upgrades), compliance (allowlist, token interventions), attestation (valuation only), treasury (reserve movements only), guardian (pause; never payable claims) | Each contract grants its own roles; the oracle's admin, attester and guardian are independent of the vault's; treasury and guardian distinct, treasury and governance distinct, compliance distinct from governance and treasury |
 | **Custodian**         | Off-chain party holding the real-world structure; a genesis-configured slot rotatable only by governance                                                                                                  | Not an on-chain authority                                                                                                                                                     |
@@ -380,6 +380,14 @@ that does not condition on oracle freshness, preventing deadlock if the feed is
 halted or stale. Paused and stale are independent: freshness lapses on its own,
 the pause is an administrative decision.
 
+**The share token's pause is separate.** The token has its own transfer pause,
+gated on the token's admin (governance) and never on the guardian. While active
+it refuses SEP-41 transfers and the vault's escrowed-share return
+(`cancel_redeem`); pricing, share and cash claims, mint, burn and forced
+transfer are unaffected. It is a transfer-restriction control, not an emergency
+stop for the vault, and only governance lifts it: pending cancellations resume
+when it does.
+
 **Integrator surface:** the oracle exposes the attested share price directly, as
 the latest report with its proof reference and acceptance time (`nav_per_share`).
 The SEP-40 feed named in section 4 is an adapter over that surface scheduled for
@@ -393,9 +401,9 @@ interface today.
   both, with the allowlist as its only rule; an operator needing richer rules
   replaces it with OZ's contracts without touching the token.
 - KYC happens wherever the operator runs it; the chain sees only its output. The
-  compliance authority writes allowlist entries via the Manager.
+  compliance authority writes allowlist entries on the identity verifier.
 - Token interventions (freeze, unfreeze, forced transfer, recovery) are
-  compliance operations via the Manager, available even while the vault is
+  compliance operations through the share token's `compliance` role, available even while the vault is
   paused.
 - The complete specification of investor states (Allowlisted, De-listed, Frozen)
   and the exit-only cash path across all vault lifecycle operations is detailed in
@@ -459,14 +467,16 @@ investor sees the exit-only path.
 
 ### Admin panel
 
-Operates an existing vault; deploys nothing. Every privileged entrypoint belongs
-to exactly one authority, so the panel splits into five surfaces:
+Operates an existing vault; deploys nothing. Each privileged entrypoint belongs
+to exactly one authority; the panel groups them into five domain surfaces. A
+surface is visible to the authorities that act in it, and each action only to
+its own (permissionless actions to any connected address):
 
 | Surface       | Authority                             | Cadence             | Operations                                                                  |
 | ------------- | ------------------------------------- | ------------------- | --------------------------------------------------------------------------- |
 | Cycle         | attestation, treasury; anyone settles | Continuous          | Attestations, funding, transfers to and from the custodian, settlement, wind-down round finalization |
-| Compliance    | compliance                            | Continuous          | Allowlist, freeze/unfreeze, forced transfer, recovery via Manager           |
-| Emergency     | guardian                              | Rare and urgent     | Vault pause, share-token pause                                              |
+| Compliance    | compliance                            | Continuous          | Allowlist, freeze/unfreeze, forced transfer, recovery                       |
+| Emergency     | guardian, governance                  | Rare and urgent     | Vault pause (guardian) and unpause (governance); oracle ripcord raise (guardian) and reset (governance); share-token pause/unpause (governance) |
 | Configuration | governance                            | Rare and deliberate | Custodian slot, compliance module, parameters (bounds, freshness, timelock, wind-down delay) |
 | Governance    | governance                            | Very rare           | Roles, admin handover, upgrade, wind-down proposal and cancellation         |
 
@@ -482,8 +492,9 @@ public surface given the vault address.
 | Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the deviation cap bounds a single report upward, and `min_answer` is what bounds it downward, so that floor is a risk parameter and not a sanity check; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts |
 | Governance keys        | Malicious upgrade                              | Timelock on every code change and on the delay itself, bounded by a minimum no shorter than the standing notice and a maximum ceiling (90 days). A pause freezes the timelock clock and pushes the ETA by the duration paused, guaranteeing that investors have an unpaused exit window before any code change applies; applying while paused is refused. |
 | Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while anything is uncovered, and escrowed subscriptions never leave the vault                                                                                                                                                                                                                                                          |
-| Guardian keys          | Griefing via pause                             | Guardian can only pause deposit requests and epoch pricing; it cannot halt redemptions, custodian deployments, or payable claims, nor move funds; governance unpauses and rotates the role                                                                                                                                                                                                                                                                        |
-| Compliance keys        | Wrongful delisting or freeze                   | Delisted investors keep the exit-only cash path; freezes require the Manager path and are auditable per operation                                                                                                                                                                                                                                                                                                                                                |
+| Guardian keys          | Griefing via pause                             | Guardian can only pause deposit requests and epoch pricing; it cannot halt redemptions, custodian deployments, or payable claims, nor move funds; governance unpauses and rotates the vault role. It holds no role on the share token: the token's transfer pause is admin-gated to governance, not a guardian lever                                                                                                                                                                                                                                                                        |
+| Share-token pause      | Cancellations and secondary transfers halted   | Admin-gated to governance, never the guardian; it refuses SEP-41 transfers and escrowed-share returns only, never pricing, claims, mint, burn or forced transfer; only governance lifts it (§8.5) |
+| Compliance keys        | Wrongful delisting or freeze                   | Delisted investors keep the exit-only cash path; freezes require the share token's compliance role and are auditable per operation                                                                                                                                                                                                                                                                                                                                                |
 | Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics; replaceable by governance without touching the token                                                                                                                                                                                                                                                                                                                                                                                      |
 | Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; declared risk of the chosen asset, verified and reported at genesis (auth flags)                                                                                                                                                                                                                                                                                                                                                       |
 | Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                                                          |

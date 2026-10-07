@@ -1,7 +1,7 @@
 import {
 	AMOUNT_DECIMALS,
-	formatScaled,
-	toSafeNumber,
+	type Amount,
+	formatExact,
 	type NetworkState,
 } from "@stellar-scaffold/app-lib"
 import { type ActionPanelBlock } from "../components/vault/ActionPanel"
@@ -174,7 +174,7 @@ export function toPosition(
 			return { value: null, note: "Could not read your share balance." }
 		case "held":
 			return {
-				value: `${formatScaled(position.shares, AMOUNT_DECIMALS)} ${shareSymbol}`,
+				value: `${formatExact(position.shares, AMOUNT_DECIMALS)} ${shareSymbol}`,
 			}
 	}
 }
@@ -184,12 +184,12 @@ export function toActionBalance(
 	blocked: boolean,
 	deposit: DepositBalance,
 	shares: SharePosition,
-): number | null {
+): Amount | null {
 	if (blocked) return null
 	if (isSubscribe) {
-		return deposit.status === "held" ? toSafeNumber(deposit.amount) : null
+		return deposit.status === "held" ? deposit.amount : null
 	}
-	return shares.status === "held" ? toSafeNumber(shares.shares) : null
+	return shares.status === "held" ? shares.shares : null
 }
 
 export function emptyMessages(

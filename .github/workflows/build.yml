@@ -48,6 +48,10 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      # Before the CLI install so a broken contract test fails without
+      # waiting on it. rustup picks the toolchain from rust-toolchain.toml.
+      - name: Run the contract unit tests
+        run: cargo test --locked
       - run:
           sudo apt-get update && sudo apt-get install -y libudev-dev
           libdbus-1-dev pkg-config

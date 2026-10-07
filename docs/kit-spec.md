@@ -44,16 +44,18 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   Priced claims are never re-priced and never identity-gated. A frozen investor is outside this guarantee (design document §8.1).
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
-- **Definition**: Investors cannot be trapped in the vault by an administrative pause.
-- **Testable Property**: When `paused == true`:
+- **Definition**: Investors cannot be trapped in the vault by a vault pause.
+- **Testable Property**: When the vault is paused (`paused == true`):
   - `request_deposit` is refused by `#[when_not_paused]` (`PausableError::EnforcedPause`).
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
+  - `cancel_redeem` remains open; only the share token's own transfer pause can refuse it (Invariant 6).
 
 ### Invariant 6: Single-Step Atomic Cancellation
-- **Definition**: Cancellation is an all-or-nothing operation open only while an epoch cannot be priced.
+- **Definition**: Cancellation is an all-or-nothing operation, open while an epoch cannot be priced and subject to the share token's transfer pause for redemptions.
 - **Testable Property**:
   - While an epoch is `Open`, or `Pending` with `priceable_at > now` (or feed stale/paused), `cancel_deposit` and `cancel_redeem` return 100% of escrowed assets/shares atomically.
+  - `cancel_redeem` is refused with `PausableError::EnforcedPause` while the share token's transfer pause is active; the request stays pending and the cash claim remains open.
   - Once `now >= priceable_at` and a fresh attestation is available, cancellation is refused with `PriceAvailable`.
   - Once fulfilled, cancellation is refused with `AlreadyPriced`.
 
@@ -96,7 +98,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`share_token`** | `name` | `String` | Human-readable token name (e.g. `"Strata Vault USDC"`) | `share_token.constructor_args` |
 | **`share_token`** | `symbol` | `String` | Token ticker symbol (e.g. `"bvUSDC"`) | `share_token.constructor_args` |
 | **`share_token`** | `admin` | `Address` | Token administrative multisig (Governance) | `share_token.constructor_args` |
-| **`share_token`** | `manager` | `Address` | Authorized role for mint/burn/freeze hooks (Vault address) | `share_token.constructor_args` |
+| **`share_token`** | `compliance_authority` | `Address` | Compliance multisig; receives the `compliance` role for freezes, forced transfers and recovery. The vault's `manager` role is granted after deploy | `share_token.constructor_args` |
 | **`share_token`** | `compliance` | `Address` | Address of deployed `compliance` contract | `share_token.constructor_args` |
 | **`share_token`** | `identity_verifier` | `Address` | Address of deployed `identity_verifier` contract | `share_token.constructor_args` |
 | **`nav_oracle`** | `admin` | `Address` | Oracle admin multisig (Governance) | `nav_oracle.constructor_args` |
@@ -148,7 +150,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 
 | Authority | Quorum / Profile | Authorized Capabilities | Anti-Capabilities (What It Cannot Do) |
 |---|---|---|---|
-| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause, transfer admin. | **Cannot pause directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
+| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
 | **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `raise_ripcord` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
 | **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve); `fund` (returns assets from custodian). | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
 | **Attester** | High-security attestation multisig | `attest` (submits NAV report with proof reference). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
@@ -194,10 +196,13 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`NavOracle`** | `set_ripcord` | Governance | `#[only_admin]` | N/A |
 | **`NavOracle`** | `set_config` | Governance | `#[only_admin]` | No |
 | **`NavOracle`** | `clear_latest` | Governance | `#[only_admin]` (requires ripcord) | No |
-| **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(caller, "manager")]` | Respects token pause |
-| **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(caller, "manager")]` | Respects token pause |
-| **`ShareToken`** | `forced_transfer` | Manager (Compliance) | `#[only_role(caller, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `set_address_frozen` | Manager (Compliance) | `#[only_role(caller, "manager")]` | No |
+| **`ShareToken`** | `pause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
+| **`ShareToken`** | `unpause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
+| **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `forced_transfer` | Manager (Vault) or Compliance | `#[only_any_role(operator, ["manager", "compliance"])]` | Bypasses token pause |
+| **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens`, `recover_balance` | Compliance | `#[only_role(operator, "compliance")]` | No |
+| **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `#[only_admin]` | No |
 | **`IdentityVerifier`** | `allow` | Admin (Compliance) | `#[only_admin]` | No |
 | **`IdentityVerifier`** | `set_claim_topics_and_issuers`| Admin (Compliance) | `#[only_admin]` | No |
 
@@ -211,7 +216,7 @@ A clean deployment executes in three sequenced phases:
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role("manager", vault_address)` to authorize lazy share minting and burning.
-   - Call `IdentityVerifier::allow(vault_address, true)` so the vault can return escrowed shares on cancelled redemptions.
+   - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so the vault can return escrowed shares on cancelled redemptions.
    - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification.
 3. **Phase 3: Operational Parameterization**
    - Governance calls `set_notice(secs)` and `set_custodian(custodian_address)`.
