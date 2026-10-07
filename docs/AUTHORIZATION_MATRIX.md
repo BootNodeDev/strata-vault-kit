@@ -92,7 +92,7 @@ The following entrypoints are open to any caller on purpose:
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
-The token's admin is governance; `set_compliance` and `set_identity_verifier` need it. The `manager` role is held by the vault and the `compliance` role by the compliance authority.
+The token's `admin` is governance. `pause`, `unpause`, `set_compliance` and `set_identity_verifier` need the admin; the guardian holds no role on the token. The `manager` role is held by the vault and the `compliance` role by the compliance authority.
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
