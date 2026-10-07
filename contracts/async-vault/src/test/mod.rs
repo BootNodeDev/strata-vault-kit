@@ -56,6 +56,7 @@ struct Fixture<'a> {
     guardian: Address,
     custodian: Address,
     admin: Address,
+    compliance: Address,
 }
 
 impl Fixture<'_> {
@@ -71,7 +72,7 @@ impl Fixture<'_> {
 
     fn investor(&self, funded: i128) -> Address {
         let who = self.unverified_investor(funded);
-        self.identity.allow(&who, &true, &self.admin);
+        self.identity.allow(&who, &true, &self.compliance);
         who
     }
 
@@ -190,10 +191,13 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
     let custodian = Address::generate(&e);
     let admin = Address::generate(&e);
     let attester = Address::generate(&e);
-    let compliance_role = Address::generate(&e);
+    let compliance_authority = Address::generate(&e);
 
     let compliance = ComplianceClient::new(&e, &e.register(Compliance, (admin.clone(),)));
-    let identity = IdentityVerifierClient::new(&e, &e.register(IdentityVerifier, (admin.clone(),)));
+    let identity = IdentityVerifierClient::new(
+        &e,
+        &e.register(IdentityVerifier, (compliance_authority.clone(),)),
+    );
 
     let share = ShareTokenClient::new(
         &e,
@@ -203,7 +207,7 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
                 String::from_str(&e, "Strata Vault USDC"),
                 String::from_str(&e, "bvUSDC"),
                 admin.clone(),
-                admin.clone(),
+                compliance_authority.clone(),
                 compliance.address.clone(),
                 identity.address.clone(),
             ),
@@ -230,7 +234,7 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
                 manager: manager.clone(),
                 treasury: treasury.clone(),
                 guardian: guardian.clone(),
-                compliance: compliance_role,
+                compliance: compliance_authority.clone(),
                 attester: attester.clone(),
             },
         ),
@@ -239,7 +243,7 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
     // The vault holds escrowed shares, so returning them on cancellation goes
     // through the token's checked transfer. That verifies both sides, so the
     // vault has to be a recognised holder itself.
-    identity.allow(&contract_id, &true, &admin);
+    identity.allow(&contract_id, &true, &compliance_authority);
 
     Fixture {
         vault: AsyncVaultClient::new(&e, &contract_id),
@@ -253,6 +257,7 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
         guardian,
         custodian,
         admin,
+        compliance: compliance_authority,
         e,
     }
 }
