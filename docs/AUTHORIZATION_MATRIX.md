@@ -15,7 +15,7 @@ This document provides the complete authorization and role model specification f
    - **Treasury**: Deploys free reserve assets to custodian.
    - **Guardian**: Emergency responder; pauses vault entries, raises oracle ripcord.
    - **Attester (Oracle)**: Submits off-chain valuation reports within strict deviation and rate bounds.
-   - **Compliance / Identity**: External registry managing allowlists and transfer restrictions.
+   - **Compliance**: Writes the allowlist on the identity verifier and holds the share token's `compliance` role for freezes, forced transfers and recovery. Cannot mint, burn or swap the token's compliance or identity-verifier contract.
 
 ---
 
@@ -26,11 +26,14 @@ The symbol `"manager"` names two completely distinct roles living on separate co
 | Contract | Role Symbol | Held By | Scope & Privileges |
 |---|---|---|---|
 | **`AsyncVault`** | `symbol_short!("manager")` | Operator Multisig / Automation Bot | Strictly calls `close_epoch` to freeze orders for pricing. Holds **no** token minting or burning power. |
-| **`ShareToken`** | `symbol_short!("manager")` | `AsyncVault` Contract Instance | Authorized to call `mint` (claim deposits), `burn` (claim redemptions), `forced_transfer` (escrow redemptions), and compliance operations. |
+| **`ShareToken`** | `symbol_short!("manager")` | `AsyncVault` Contract Instance | Authorized to call `mint` (claim deposits), `burn` (claim redemptions) and `forced_transfer` (escrow redemptions). Holds no freeze or recovery power. |
+
+The share token has a third role, `"compliance"`, held by the compliance authority: freezes, partial freezes, recovery and `forced_transfer`. `forced_transfer` is the one entrypoint both roles reach, because the vault escrows redemptions with it.
 
 ### Deployment Script Safety
 In `scripts/harness/deploy.ts` and automated deployment scripts, the separation is enforced structurally:
 - The vault's constructor receives `roles.manager = accounts.manager.publicKey()`.
+- The share token's constructor grants `compliance` to the compliance key and grants `manager` to no one; the identity verifier is constructed with the compliance key as admin.
 - The share token role is granted to the deployed vault contract: `token.grant_role({ account: asyncVault.address, role: "manager", caller: governance })`.
 - After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. It does not check that no other account holds it.
 
@@ -89,21 +92,21 @@ The following entrypoints are open to any caller on purpose:
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
-The token's `admin` is governance. `pause` and `unpause` are admin-gated; the guardian holds no role on the token.
+The token's `admin` is governance. `pause`, `unpause`, `set_compliance` and `set_identity_verifier` need the admin; the guardian holds no role on the token. The `manager` role is held by the vault and the `compliance` role by the compliance authority.
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
 | `pause` | `#[only_admin]`, `caller.require_auth()` | Not paused | `test::unauthorized_caller_cannot_pause_or_unpause` |
 | `unpause` | `#[only_admin]`, `caller.require_auth()` | Paused | `test::unauthorized_caller_cannot_pause_or_unpause` |
-| `mint` | `#[only_role(operator, "manager")]` | Receiver allowlisted | `test::unauthorized_caller_cannot_mint` |
+| `mint` | `#[only_role(operator, "manager")]` | Receiver allowlisted | `test::unauthorized_caller_cannot_mint`, `test::the_compliance_authority_cannot_mint_burn_or_swap_the_rules` |
 | `burn` | `#[only_role(operator, "manager")]` | Balance sufficient | `test::unauthorized_caller_cannot_burn` |
-| `forced_transfer` | `#[only_role(operator, "manager")]` | Balance sufficient | `test::unauthorized_caller_cannot_forced_transfer` |
-| `set_address_frozen` | `#[only_role(operator, "manager")]` | None | `test::unauthorized_caller_cannot_freeze_or_recover` |
-| `freeze_partial_tokens` | `#[only_role(operator, "manager")]` | Balance sufficient | `test::unauthorized_caller_cannot_freeze_or_recover` |
-| `unfreeze_partial_tokens`| `#[only_role(operator, "manager")]` | Frozen amount sufficient | `test::unauthorized_caller_cannot_freeze_or_recover` |
-| `recover_balance` | `#[only_role(operator, "manager")]` | Target allowlisted | `test::unauthorized_caller_cannot_freeze_or_recover` |
-| `set_compliance` | `#[only_role(operator, "manager")]` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier` |
-| `set_identity_verifier` | `#[only_role(operator, "manager")]` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier` |
+| `forced_transfer` | `#[only_any_role(operator, ["manager", "compliance"])]` | Balance sufficient | `test::unauthorized_caller_cannot_forced_transfer` |
+| `set_address_frozen` | `#[only_role(operator, "compliance")]` | None | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_manager_escrows_but_does_not_intervene` |
+| `freeze_partial_tokens` | `#[only_role(operator, "compliance")]` | Balance sufficient | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_manager_escrows_but_does_not_intervene` |
+| `unfreeze_partial_tokens`| `#[only_role(operator, "compliance")]` | Frozen amount sufficient | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_manager_escrows_but_does_not_intervene` |
+| `recover_balance` | `#[only_role(operator, "compliance")]` | Target allowlisted and named by the verifier's `recovery_target` (the testnet stub names none, so recovery always fails there) | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_compliance_authority_reaches_recovery` |
+| `set_compliance` | `#[only_admin]`, `operator.require_auth()` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier`, `test::the_compliance_authority_cannot_mint_burn_or_swap_the_rules` |
+| `set_identity_verifier` | `#[only_admin]`, `operator.require_auth()` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier`, `test::the_compliance_authority_cannot_mint_burn_or_swap_the_rules` |
 | `renounce_admin` | Refused always (`ShareTokenError::AdminRequired`) | None | `test::the_admin_cannot_renounce_itself_out_of_the_token`; `test::admin_handover_in_two_steps_still_works`. A token without an admin could never be unpaused or rotate its manager; hand over through `transfer_admin_role` and `accept_admin_transfer`. |
 
 ### 5.3 NavOracle (`contracts/nav-oracle`)
@@ -119,7 +122,9 @@ The token's `admin` is governance. `pause` and `unpause` are admin-gated; the gu
 
 ### 5.4 IdentityVerifier (`contracts/identity-verifier`)
 
+A testnet-only stub. Its admin is the compliance key and cannot be transferred: the stub exposes no access-control interface, so replacing the compliance key on it means redeploying.
+
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
-| `allow` | `#[only_admin]`, `caller.require_auth()` | None | `test::only_admin_can_allow` |
+| `allow` | `#[only_admin]` (the compliance key), `caller.require_auth()` | None | `test::only_admin_can_allow` |
 | `verify_identity` | Open check (Internal hook) | `is_allowed(account) == true` | `test::verify_identity_checks_allowlist` |

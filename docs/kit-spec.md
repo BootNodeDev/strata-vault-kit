@@ -98,7 +98,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`share_token`** | `name` | `String` | Human-readable token name (e.g. `"Strata Vault USDC"`) | `share_token.constructor_args` |
 | **`share_token`** | `symbol` | `String` | Token ticker symbol (e.g. `"bvUSDC"`) | `share_token.constructor_args` |
 | **`share_token`** | `admin` | `Address` | Token administrative multisig (Governance) | `share_token.constructor_args` |
-| **`share_token`** | `manager` | `Address` | Authorized role for mint/burn/freeze hooks (Vault address) | `share_token.constructor_args` |
+| **`share_token`** | `compliance_authority` | `Address` | Compliance multisig; receives the `compliance` role for freezes, forced transfers and recovery. The vault's `manager` role is granted after deploy | `share_token.constructor_args` |
 | **`share_token`** | `compliance` | `Address` | Address of deployed `compliance` contract | `share_token.constructor_args` |
 | **`share_token`** | `identity_verifier` | `Address` | Address of deployed `identity_verifier` contract | `share_token.constructor_args` |
 | **`nav_oracle`** | `admin` | `Address` | Oracle admin multisig (Governance) | `nav_oracle.constructor_args` |
@@ -198,10 +198,11 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`NavOracle`** | `clear_latest` | Governance | `#[only_admin]` (requires ripcord) | No |
 | **`ShareToken`** | `pause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
 | **`ShareToken`** | `unpause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
-| **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(caller, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(caller, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `forced_transfer` | Manager (Compliance) | `#[only_role(caller, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `set_address_frozen` | Manager (Compliance) | `#[only_role(caller, "manager")]` | No |
+| **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `forced_transfer` | Manager (Vault) or Compliance | `#[only_any_role(operator, ["manager", "compliance"])]` | Bypasses token pause |
+| **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens`, `recover_balance` | Compliance | `#[only_role(operator, "compliance")]` | No |
+| **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `#[only_admin]` | No |
 | **`IdentityVerifier`** | `allow` | Admin (Compliance) | `#[only_admin]` | No |
 | **`IdentityVerifier`** | `set_claim_topics_and_issuers`| Admin (Compliance) | `#[only_admin]` | No |
 
@@ -215,7 +216,7 @@ A clean deployment executes in three sequenced phases:
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role("manager", vault_address)` to authorize lazy share minting and burning.
-   - Call `IdentityVerifier::allow(vault_address, true)` so the vault can return escrowed shares on cancelled redemptions.
+   - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so the vault can return escrowed shares on cancelled redemptions.
    - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification.
 3. **Phase 3: Operational Parameterization**
    - Governance calls `set_notice(secs)` and `set_custodian(custodian_address)`.
