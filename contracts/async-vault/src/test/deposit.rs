@@ -1,3 +1,8 @@
+use soroban_sdk::{
+    testutils::{AuthorizedFunction, AuthorizedInvocation},
+    IntoVal, Symbol,
+};
+
 use super::*;
 
 #[test]
@@ -79,6 +84,36 @@ fn request_deposit_needs_the_investor_authorisation() {
     f.e.set_auths(&[]);
     assert!(f.vault.try_request_deposit(&investor, &100).is_err());
     assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn one_investor_signature_covers_the_request_and_the_transfer() {
+    let f = setup();
+    let investor = f.investor(1_000);
+
+    f.vault.request_deposit(&investor, &400);
+
+    assert_eq!(
+        f.e.auths(),
+        std::vec![(
+            investor.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    f.vault.address.clone(),
+                    Symbol::new(&f.e, "request_deposit"),
+                    (investor.clone(), 400_i128).into_val(&f.e),
+                )),
+                sub_invocations: std::vec![AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        f.asset.clone(),
+                        symbol_short!("transfer"),
+                        (investor.clone(), f.vault.address.clone(), 400_i128).into_val(&f.e),
+                    )),
+                    sub_invocations: std::vec![],
+                }],
+            },
+        )]
+    );
 }
 
 #[test]

@@ -1,10 +1,16 @@
 extern crate std;
 
-use soroban_sdk::{symbol_short, testutils::Address as _, testutils::Ledger as _, Address, Env};
+use soroban_sdk::{
+    symbol_short,
+    testutils::{storage::Persistent as _, Address as _, Events as _, Ledger as _},
+    Address, Env, Event as _,
+};
 
+use crate::state::DataKey;
 use crate::{NavOracleContract, NavOracleContractClient, NavReport, OracleConfig, OracleState};
 
 const SCALE: i128 = 1_000_000_000_000_000_000;
+const DAY_IN_LEDGERS: u32 = 17_280;
 
 struct Fixture<'a> {
     #[allow(dead_code)]
@@ -145,6 +151,44 @@ fn attest_stamps_its_own_timestamp() {
     let stored = f.oracle.latest();
     assert_eq!(stored.timestamp, 10_000);
     assert_eq!(stored.expires_at, 10_000 + 3600);
+}
+
+#[test]
+fn attesting_publishes_the_stored_valuation() {
+    let f = setup();
+    f.oracle
+        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.oracle.address),
+        [crate::NavAttested {
+            attester: f.attester.clone(),
+            nav_per_share: SCALE,
+            expires_at: 10_000 + 3600,
+        }
+        .to_xdr(&f.e, &f.oracle.address)]
+    );
+}
+
+#[test]
+fn the_latest_valuation_keeps_a_full_ttl_while_it_is_read() {
+    let f = setup();
+    f.oracle
+        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+
+    f.e.ledger()
+        .with_mut(|l| l.sequence_number += 2 * DAY_IN_LEDGERS);
+    let decayed = f.e.as_contract(&f.oracle.address, || {
+        f.e.storage().persistent().get_ttl(&DataKey::Latest)
+    });
+    assert!(decayed < storage::PERSISTENT_EXTEND_AMOUNT);
+
+    f.oracle.latest();
+
+    let restored = f.e.as_contract(&f.oracle.address, || {
+        f.e.storage().persistent().get_ttl(&DataKey::Latest)
+    });
+    assert_eq!(restored, storage::PERSISTENT_EXTEND_AMOUNT);
 }
 
 #[test]
