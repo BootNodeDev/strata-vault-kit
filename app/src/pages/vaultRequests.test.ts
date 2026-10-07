@@ -272,7 +272,7 @@ describe("toRequestEntriesByStage", () => {
 		])
 	})
 
-	it("floors the owed amount rather than rounding it", () => {
+	it("floors the owed amount, and renders it exactly rather than rounding it for display", () => {
 		const uneven: InvestorRequest = {
 			...deposit,
 			amount: amount(10000199999n),
@@ -283,7 +283,17 @@ describe("toRequestEntriesByStage", () => {
 			tokens,
 		)
 
-		expect(result.ready[0]?.outAmount).toBe("476.19 vUSDC")
+		expect(result.ready[0]?.outAmount).toBe("476.1999999 vUSDC")
+	})
+
+	it("renders the requested amount at full precision, not rounded to two fraction digits", () => {
+		const uneven: InvestorRequest = { ...deposit, amount: amount(952380952n) }
+		const result = toRequestEntriesByStage(
+			{ requests: [uneven], archived: [], unreadable: [] },
+			tokens,
+		)
+
+		expect(result.ready[0]?.inAmount).toBe("95.2380952 USDC")
 	})
 
 	it("blocks a fulfilled request with an invalid price instead of throwing", () => {

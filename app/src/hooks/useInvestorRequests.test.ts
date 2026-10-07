@@ -3,15 +3,18 @@ import {
 	type ContractRead,
 	type DepositRequest,
 	type EpochInfo,
+	type EpochRequestsRead,
 	type Option,
 	type Price,
 	type RedeemRequest,
 	networkPassphrase,
 } from "@stellar-scaffold/app-lib"
+import type * as AppLib from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { createElement, type ReactNode } from "react"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
+import { addresses } from "../config/addresses"
 import {
 	WalletContext,
 	type WalletContextType,
@@ -23,19 +26,22 @@ import {
 	useInvestorRequests,
 } from "./useInvestorRequests"
 
-const { vaultMock, asyncVaultMock } = vi.hoisted(() => ({
+const { vaultMock, asyncVaultMock, readEpochRequestsMock } = vi.hoisted(() => ({
 	vaultMock: {
 		current_epoch: vi.fn(),
-		get_epoch: vi.fn(),
-		get_deposit_request: vi.fn(),
-		get_redeem_request: vi.fn(),
 	},
 	asyncVaultMock: vi.fn(),
+	readEpochRequestsMock: vi.fn(),
 }))
 asyncVaultMock.mockResolvedValue(vaultMock)
 
 vi.mock("../config/clients", () => ({
 	asyncVault: asyncVaultMock,
+}))
+
+vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
+	...(await importOriginal<typeof AppLib>()),
+	readEpochRequests: readEpochRequestsMock,
 }))
 
 const controller = "GCONTROLLER1234567890"
@@ -89,6 +95,11 @@ const depositArchived: ContractRead<Option<DepositRequest>> = {
 const redeemPresent: ContractRead<Option<RedeemRequest>> = {
 	kind: "value",
 	value: { shares: 20_0000000n, claimed: false },
+}
+
+const redeemAbsent: ContractRead<Option<RedeemRequest>> = {
+	kind: "value",
+	value: null,
 }
 
 describe("classifyRequest", () => {
@@ -172,30 +183,49 @@ describe("classifyRequest", () => {
 })
 
 describe("fetchInvestorRequests", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		asyncVaultMock.mockResolvedValue(vaultMock)
+	})
+
 	it("walks every epoch, skipping a gap without stopping", async () => {
 		vaultMock.current_epoch.mockResolvedValue({ result: 3n })
-		vaultMock.get_epoch.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) => ({
-				result: [undefined, openEpoch, pendingEpoch, fulfilledEpoch][
-					Number(epoch_id)
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "value", value: openEpoch },
+						deposit: {
+							kind: "value",
+							value: { amount: 100_0000000n, claimed: false },
+						},
+						redeem: redeemAbsent,
+					},
 				],
-			}),
-		)
-		vaultMock.get_deposit_request.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) => ({
-				result:
-					epoch_id === 1n
-						? { amount: 100_0000000n, claimed: false }
-						: epoch_id === 3n
-							? { amount: 50_0000000n, claimed: true }
-							: undefined,
-			}),
-		)
-		vaultMock.get_redeem_request.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) => ({
-				result:
-					epoch_id === 3n ? { shares: 20_0000000n, claimed: false } : undefined,
-			}),
+				[
+					2n,
+					{
+						epoch: { kind: "value", value: pendingEpoch },
+						deposit: depositAbsent,
+						redeem: redeemAbsent,
+					},
+				],
+				[
+					3n,
+					{
+						epoch: { kind: "value", value: fulfilledEpoch },
+						deposit: {
+							kind: "value",
+							value: { amount: 50_0000000n, claimed: true },
+						},
+						redeem: {
+							kind: "value",
+							value: { shares: 20_0000000n, claimed: false },
+						},
+					},
+				],
+			]),
 		)
 
 		const result = await fetchInvestorRequests(controller)
@@ -234,21 +264,27 @@ describe("fetchInvestorRequests", () => {
 			archived: [],
 			unreadable: [],
 		})
+		expect(readEpochRequestsMock).toHaveBeenCalledWith(
+			addresses.async_vault,
+			controller,
+			[1n, 2n, 3n],
+		)
 	})
 
 	it("collects an archived entry separately, never as absent or merged into requests", async () => {
 		vaultMock.current_epoch.mockResolvedValue({ result: 1n })
-		vaultMock.get_epoch.mockResolvedValue({ result: openEpoch })
-		vaultMock.get_deposit_request.mockImplementation(async () => ({
-			simulation: {
-				transactionData: {},
-				restorePreamble: { minResourceFee: "100", transactionData: {} },
-			},
-			get result(): DepositRequest {
-				throw new Error("You need to restore some contract state first")
-			},
-		}))
-		vaultMock.get_redeem_request.mockResolvedValue({ result: undefined })
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "value", value: openEpoch },
+						deposit: depositArchived,
+						redeem: redeemAbsent,
+					},
+				],
+			]),
+		)
 
 		const result = await fetchInvestorRequests(controller)
 
@@ -269,18 +305,28 @@ describe("fetchInvestorRequests", () => {
 
 	it("renders a live current-epoch request while an older epoch's read is unreadable", async () => {
 		vaultMock.current_epoch.mockResolvedValue({ result: 2n })
-		vaultMock.get_epoch.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) =>
-				epoch_id === 1n
-					? Promise.reject(new Error("network down"))
-					: { result: pendingEpoch },
-		)
-		vaultMock.get_deposit_request.mockResolvedValue({ result: undefined })
-		vaultMock.get_redeem_request.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) => ({
-				result:
-					epoch_id === 2n ? { shares: 30_0000000n, claimed: false } : undefined,
-			}),
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "unreadable" },
+						deposit: depositAbsent,
+						redeem: redeemAbsent,
+					},
+				],
+				[
+					2n,
+					{
+						epoch: { kind: "value", value: pendingEpoch },
+						deposit: depositAbsent,
+						redeem: {
+							kind: "value",
+							value: { shares: 30_0000000n, claimed: false },
+						},
+					},
+				],
+			]),
 		)
 
 		const result = await fetchInvestorRequests(controller)
@@ -306,31 +352,30 @@ describe("fetchInvestorRequests", () => {
 		})
 	})
 
-	it("renders a live current-epoch request while an older epoch's get_epoch is archived", async () => {
+	it("leaves no trace when an older epoch's own read is archived, fixing the Blocked-tab defect", async () => {
 		vaultMock.current_epoch.mockResolvedValue({ result: 2n })
-		vaultMock.get_epoch.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) =>
-				epoch_id === 1n
-					? {
-							simulation: {
-								transactionData: {},
-								restorePreamble: {
-									minResourceFee: "100",
-									transactionData: {},
-								},
-							},
-							get result(): EpochInfo {
-								throw new Error("You need to restore some contract state first")
-							},
-						}
-					: { result: pendingEpoch },
-		)
-		vaultMock.get_deposit_request.mockResolvedValue({ result: undefined })
-		vaultMock.get_redeem_request.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) => ({
-				result:
-					epoch_id === 2n ? { shares: 30_0000000n, claimed: false } : undefined,
-			}),
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "archived" },
+						deposit: depositAbsent,
+						redeem: redeemAbsent,
+					},
+				],
+				[
+					2n,
+					{
+						epoch: { kind: "value", value: pendingEpoch },
+						deposit: depositAbsent,
+						redeem: {
+							kind: "value",
+							value: { shares: 30_0000000n, claimed: false },
+						},
+					},
+				],
+			]),
 		)
 
 		const result = await fetchInvestorRequests(controller)
@@ -349,20 +394,52 @@ describe("fetchInvestorRequests", () => {
 				},
 			],
 			archived: [],
-			unreadable: [
-				{ epochId: 1n, side: "deposit" },
-				{ epochId: 1n, side: "redeem" },
-			],
+			unreadable: [],
+		})
+	})
+
+	it("an archived epoch leaves no trace in any bucket", async () => {
+		vaultMock.current_epoch.mockResolvedValue({ result: 1n })
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "archived" },
+						deposit: depositAbsent,
+						redeem: redeemAbsent,
+					},
+				],
+			]),
+		)
+
+		const result = await fetchInvestorRequests(controller)
+
+		expect(result).toEqual({
+			status: "loaded",
+			requests: [],
+			archived: [],
+			unreadable: [],
 		})
 	})
 
 	it("a single unreadable request never blanks a request readable elsewhere in the same epoch", async () => {
 		vaultMock.current_epoch.mockResolvedValue({ result: 1n })
-		vaultMock.get_epoch.mockResolvedValue({ result: openEpoch })
-		vaultMock.get_deposit_request.mockRejectedValue(new Error("network down"))
-		vaultMock.get_redeem_request.mockResolvedValue({
-			result: { shares: 10_0000000n, claimed: false },
-		})
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "value", value: openEpoch },
+						deposit: depositUnreadable,
+						redeem: {
+							kind: "value",
+							value: { shares: 10_0000000n, claimed: false },
+						},
+					},
+				],
+			]),
+		)
 
 		const result = await fetchInvestorRequests(controller)
 
@@ -390,17 +467,33 @@ describe("fetchInvestorRequests", () => {
 		const result = await fetchInvestorRequests(controller)
 
 		expect(result).toEqual({ status: "unreadable" })
+		expect(readEpochRequestsMock).not.toHaveBeenCalled()
 	})
 
-	it("renders a request from an epoch where the SDK decodes the other side's absence as null", async () => {
+	it("renders a request from an epoch where the reader decodes the other side's absence as null", async () => {
 		vaultMock.current_epoch.mockResolvedValue({ result: 2n })
-		vaultMock.get_epoch.mockResolvedValue({ result: pendingEpoch })
-		vaultMock.get_deposit_request.mockResolvedValue({ result: null })
-		vaultMock.get_redeem_request.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) => ({
-				result:
-					epoch_id === 2n ? { shares: 10_0000000n, claimed: false } : null,
-			}),
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "value", value: pendingEpoch },
+						deposit: depositAbsent,
+						redeem: redeemAbsent,
+					},
+				],
+				[
+					2n,
+					{
+						epoch: { kind: "value", value: pendingEpoch },
+						deposit: depositAbsent,
+						redeem: {
+							kind: "value",
+							value: { shares: 10_0000000n, claimed: false },
+						},
+					},
+				],
+			]),
 		)
 
 		const result = await fetchInvestorRequests(controller)
@@ -425,18 +518,29 @@ describe("fetchInvestorRequests", () => {
 
 	it("marks both sides unreadable on a genuine None epoch, without losing a readable epoch elsewhere", async () => {
 		vaultMock.current_epoch.mockResolvedValue({ result: 2n })
-		vaultMock.get_epoch.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) => ({
-				result: epoch_id === 1n ? undefined : openEpoch,
-			}),
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "value", value: null },
+						deposit: depositAbsent,
+						redeem: redeemAbsent,
+					},
+				],
+				[
+					2n,
+					{
+						epoch: { kind: "value", value: openEpoch },
+						deposit: {
+							kind: "value",
+							value: { amount: 10_0000000n, claimed: false },
+						},
+						redeem: redeemAbsent,
+					},
+				],
+			]),
 		)
-		vaultMock.get_deposit_request.mockImplementation(
-			async ({ epoch_id }: { epoch_id: bigint }) => ({
-				result:
-					epoch_id === 2n ? { amount: 10_0000000n, claimed: false } : undefined,
-			}),
-		)
-		vaultMock.get_redeem_request.mockResolvedValue({ result: undefined })
 
 		const result = await fetchInvestorRequests(controller)
 
@@ -460,6 +564,50 @@ describe("fetchInvestorRequests", () => {
 			],
 		})
 	})
+
+	it("delegates the whole range to the reader in one call past the 66-epoch chunk size", async () => {
+		const currentEpoch = 67n
+		const expectedEpochIds: bigint[] = []
+		const fixture = new Map<bigint, EpochRequestsRead>()
+		for (let epochId = 1n; epochId <= currentEpoch; epochId++) {
+			expectedEpochIds.push(epochId)
+			fixture.set(epochId, {
+				epoch: { kind: "value", value: openEpoch },
+				deposit:
+					epochId === currentEpoch
+						? { kind: "value", value: { amount: 10_0000000n, claimed: false } }
+						: depositAbsent,
+				redeem: redeemAbsent,
+			})
+		}
+		vaultMock.current_epoch.mockResolvedValue({ result: currentEpoch })
+		readEpochRequestsMock.mockResolvedValue(fixture)
+
+		const result = await fetchInvestorRequests(controller)
+
+		expect(readEpochRequestsMock).toHaveBeenCalledTimes(1)
+		expect(readEpochRequestsMock).toHaveBeenCalledWith(
+			addresses.async_vault,
+			controller,
+			expectedEpochIds,
+		)
+		expect(result).toEqual({
+			status: "loaded",
+			requests: [
+				{
+					epochId: currentEpoch,
+					side: "deposit",
+					epochStatus: openEpoch.status,
+					sharePrice: openEpoch.share_price as Price,
+					amount: 10_0000000n as Amount,
+					claimed: false,
+					priceableAt: openEpoch.priceable_at,
+				},
+			],
+			archived: [],
+			unreadable: [],
+		})
+	})
 })
 
 describe("useInvestorRequests", () => {
@@ -473,6 +621,11 @@ describe("useInvestorRequests", () => {
 		updateBalances: async () => {},
 		signTransaction: vi.fn() as WalletContextType["signTransaction"],
 	}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		asyncVaultMock.mockResolvedValue(vaultMock)
+	})
 
 	const renderInvestorRequests = () => {
 		const queryClient = new QueryClient({
@@ -503,9 +656,18 @@ describe("useInvestorRequests", () => {
 	it("keeps a loaded list on screen when a later background refetch fails", async () => {
 		asyncVaultMock.mockResolvedValue(vaultMock)
 		vaultMock.current_epoch.mockResolvedValue({ result: 1n })
-		vaultMock.get_epoch.mockResolvedValue({ result: openEpoch })
-		vaultMock.get_deposit_request.mockResolvedValue({ result: undefined })
-		vaultMock.get_redeem_request.mockResolvedValue({ result: undefined })
+		readEpochRequestsMock.mockResolvedValue(
+			new Map<bigint, EpochRequestsRead>([
+				[
+					1n,
+					{
+						epoch: { kind: "value", value: openEpoch },
+						deposit: depositAbsent,
+						redeem: redeemAbsent,
+					},
+				],
+			]),
+		)
 
 		const { result, queryClient } = renderInvestorRequests()
 
