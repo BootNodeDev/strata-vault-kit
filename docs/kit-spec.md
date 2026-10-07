@@ -44,16 +44,18 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   Priced claims are never re-priced and never identity-gated. A frozen investor is outside this guarantee (design document §8.1).
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
-- **Definition**: Investors cannot be trapped in the vault by an administrative pause.
-- **Testable Property**: When `paused == true`:
+- **Definition**: Investors cannot be trapped in the vault by a vault pause.
+- **Testable Property**: When the vault is paused (`paused == true`):
   - `request_deposit` is refused by `#[when_not_paused]` (`PausableError::EnforcedPause`).
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
+  - `cancel_redeem` remains open; only the share token's own transfer pause can refuse it (Invariant 6).
 
 ### Invariant 6: Single-Step Atomic Cancellation
-- **Definition**: Cancellation is an all-or-nothing operation open only while an epoch cannot be priced.
+- **Definition**: Cancellation is an all-or-nothing operation, open while an epoch cannot be priced and subject to the share token's transfer pause for redemptions.
 - **Testable Property**:
   - While an epoch is `Open`, or `Pending` with `priceable_at > now` (or feed stale/paused), `cancel_deposit` and `cancel_redeem` return 100% of escrowed assets/shares atomically.
+  - `cancel_redeem` is refused with `PausableError::EnforcedPause` while the share token's transfer pause is active; the request stays pending and the cash claim remains open.
   - Once `now >= priceable_at` and a fresh attestation is available, cancellation is refused with `PriceAvailable`.
   - Once fulfilled, cancellation is refused with `AlreadyPriced`.
 
@@ -148,7 +150,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 
 | Authority | Quorum / Profile | Authorized Capabilities | Anti-Capabilities (What It Cannot Do) |
 |---|---|---|---|
-| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause, transfer admin. | **Cannot pause directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
+| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
 | **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `raise_ripcord` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
 | **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve); `fund` (returns assets from custodian). | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
 | **Attester** | High-security attestation multisig | `attest` (submits NAV report with proof reference). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
@@ -194,8 +196,10 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`NavOracle`** | `set_ripcord` | Governance | `#[only_admin]` | N/A |
 | **`NavOracle`** | `set_config` | Governance | `#[only_admin]` | No |
 | **`NavOracle`** | `clear_latest` | Governance | `#[only_admin]` (requires ripcord) | No |
-| **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(caller, "manager")]` | Respects token pause |
-| **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(caller, "manager")]` | Respects token pause |
+| **`ShareToken`** | `pause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
+| **`ShareToken`** | `unpause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
+| **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(caller, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(caller, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `forced_transfer` | Manager (Compliance) | `#[only_role(caller, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `set_address_frozen` | Manager (Compliance) | `#[only_role(caller, "manager")]` | No |
 | **`IdentityVerifier`** | `allow` | Admin (Compliance) | `#[only_admin]` | No |
