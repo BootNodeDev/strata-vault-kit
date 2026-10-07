@@ -41,6 +41,20 @@ deploy from `environments.toml` → `[staging.contracts]`, which is the record.
 | `asset` | `CCTSSUV5XYKFEMT44SJBS2GUNBEMMRUQXLK422RAJMPTGLF7WV6ALDKR` |
 <!-- deployed-addresses:end -->
 
+## Testnet flow verification
+
+One testnet transaction per investor-facing flow, executed through the
+[live dApp](https://strata-vault-kit-app.vercel.app) against the contract IDs
+above.
+
+| Flow | Entrypoint | Transaction |
+| --- | --- | --- |
+| Connect wallet | — | n/a — no on-chain transaction |
+| Deposit (subscribe) | `request_deposit` | [`81e9c1a9…e590`](https://stellar.expert/explorer/testnet/tx/81e9c1a95c0ba932f5d9dca7be56aa508a2bb29abd186442928342048981e590) |
+| Claim shares | `claim_deposit` | [`fe59e77e…e029`](https://stellar.expert/explorer/testnet/tx/fe59e77ee68ca2849345515b5e2a8be0f80e517b49efeb22f0045a1df5a6e029) |
+| Redeem (request) | `request_redeem` | [`d6c02ee0…7524`](https://stellar.expert/explorer/testnet/tx/d6c02ee0868235fd12c280ba8c4e17fd6d63f4a117e9c48a897185c72dc97524) |
+| Withdraw (claim cash) | `claim_redeem` | [`27a81778…db64`](https://stellar.expert/explorer/testnet/tx/27a8177877ecac5a4c87c1b4bed12e5f8664ca387f13fd9c05f8062ec68bdb64) |
+
 ## Development
 
 Two ways to get a working toolchain.
