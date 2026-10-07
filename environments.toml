@@ -32,7 +32,7 @@ constructor_args = "--admin me"
 
 [development.contracts.share_token]
 client = true
-constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --manager me --compliance compliance --identity_verifier identity_verifier'
+constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --compliance_authority me --compliance compliance --identity_verifier identity_verifier'
 
 # `--config` takes the OracleConfig struct as JSON. The values mirror the
 # contract's own tests: a one-hour freshness window, a one-minute cooldown, a
@@ -71,12 +71,12 @@ default = true
 # underlying Stellar Asset Contract and has no crate here; it still gets a
 # generated client, because a SAC carries its own spec.
 [staging.contracts]
-async_vault = { id = "CCYHYTZ25MJSFWSKOUEQTYEVOLSA7QEWHSQGJSR2BT64AOBRIQTNJM4U" }
-nav_oracle = { id = "CDM7GHC4GBZVVEFBP4XCMX6EIPW67ZEOSBS7X6JQWKJCT6F7KP2KU7OF" }
-share_token = { id = "CDMZCOCFE6YXKZ2RG4DMPKIMDV7YHV7G3G2OD76CYNHO4YLDOL5R3ZWX" }
-identity_verifier = { id = "CBFF4YFKUT4A462LQN4APHQXZPRPT4GGE2VTHBRIK4YS4CTRFGSYQZNY" }
-compliance = { id = "CBLVQHCKL3GNB6HZSDAJMLYHZASJRNNLJ57FQ3HRRSZ4XITZBBFU2MF2" }
-asset = { id = "CDOC5UPUPG7UMZBO35JONIGPUDB6PUVR4HBPAMJ4OG2QJEGZO42KDWNG" }
+async_vault = { id = "CAXGUAAIZOCM6FIQ6PRTQEBBZG62GMN422TNT6N6UMIYY4HGFLJDUFCV" }
+nav_oracle = { id = "CBYVXBRLCKJTH56FVIZFBX7XUIBOLJOROP2DM4NYA4V6FOTTFZO7VJPL" }
+share_token = { id = "CCBANVMWNZXZ46WMV7N7EDGBPW3LIFOXZLILIOTRDTE63H4QXBM7XVYF" }
+identity_verifier = { id = "CBLCGV3YT5AM7ZQNFEIEX3FLA3ZY3XDVW3U2YQO4ZWSJVI47763LLL5T" }
+compliance = { id = "CA45ZSCHMNUMJEF2UDUT4UMCKHHMEG3LYYIB7QBK6LG2NIC7JYZ7XKRA" }
+asset = { id = "CCTSSUV5XYKFEMT44SJBS2GUNBEMMRUQXLK422RAJMPTGLF7WV6ALDKR" }
 
 ### Production environment configuration
 # Commented out on purpose. Mainnet needs an external audit and an audited

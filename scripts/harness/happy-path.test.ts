@@ -22,7 +22,15 @@ const holders = [
 	c.keys["holder-3"],
 ] as const
 const [first, second, canceller] = holders
-const { governance, custodian, outsider, issuer, manager, treasury } = c.keys
+const {
+	governance,
+	compliance,
+	custodian,
+	outsider,
+	issuer,
+	manager,
+	treasury,
+} = c.keys
 
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
@@ -65,13 +73,13 @@ describe("setup", () => {
 	})
 
 	it("allowlists each holder", async () => {
-		const verifier = identityVerifier(c, governance)
+		const verifier = identityVerifier(c, compliance)
 		for (const holder of holders) {
 			await send(
 				verifier.allow({
 					account: holder.publicKey(),
 					allowed: true,
-					caller: governance.publicKey(),
+					caller: compliance.publicKey(),
 				}),
 			)
 			expect(
@@ -222,6 +230,40 @@ describe("pricing", () => {
 			v,
 			"AlreadyClaimed",
 		)
+	})
+})
+
+describe("compliance", () => {
+	it("freezes a holder, whose transfer is refused, then unfreezes them", async () => {
+		const token = shareToken(c, compliance)
+		const freeze = (frozen: boolean) =>
+			send(
+				token.set_address_frozen({
+					user_address: first.publicKey(),
+					freeze: frozen,
+					operator: compliance.publicKey(),
+				}),
+			)
+
+		await freeze(true)
+		expect(
+			(await token.is_frozen({ user_address: first.publicKey() })).result,
+		).toBe(true)
+		const held = shareToken(c, first)
+		expectRefused(
+			await held.transfer({
+				from: first.publicKey(),
+				to: second.publicKey(),
+				amount: 1n,
+			}),
+			held,
+			"AddressFrozen",
+		)
+
+		await freeze(false)
+		expect(
+			(await token.is_frozen({ user_address: first.publicKey() })).result,
+		).toBe(false)
 	})
 })
 

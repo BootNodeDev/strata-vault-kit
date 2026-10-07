@@ -1,4 +1,4 @@
-use soroban_sdk::{symbol_short, Symbol};
-
-/// Operator role for privileged token actions. Held by the vault.
-pub const MANAGER_ROLE: Symbol = symbol_short!("manager");
+/// Role for allowlist-driven interventions: freeze, forced transfer, recovery.
+/// Held by the compliance authority. Minting, burning and escrow use the
+/// `manager` role, which governance grants to the vault.
+pub const COMPLIANCE_ROLE: &str = "compliance";

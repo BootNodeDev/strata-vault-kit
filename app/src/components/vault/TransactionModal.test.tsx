@@ -516,6 +516,16 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.queryByText(/150\.00/)).toBeNull()
 	})
 
+	it("renders the refunded amount at full precision, not rounded to two fraction digits", () => {
+		renderCancelModal({
+			status: "confirmed",
+			refundedAmount: 952380952n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByText(/95\.2380952 USDC/)).toBeTruthy()
+	})
+
 	it("names the vault's own reason for a cancel-specific contract refusal, distinct from subscribe's codes", () => {
 		renderCancelModal({
 			status: "failed",
@@ -648,6 +658,16 @@ describe("TransactionModal, cancelling a redemption", () => {
 		expect(screen.queryByText(/Batch/)).toBeNull()
 	})
 
+	it("renders the returned shares at full precision, not rounded to two fraction digits", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 952380952n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByText(/95\.2380952 vUSDC/)).toBeTruthy()
+	})
+
 	it("names the vault's own reason for a cancel-specific contract refusal, reusing the same table as cancelling a deposit", () => {
 		renderCancelRedeemModal({
 			status: "failed",
@@ -733,6 +753,16 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.getByRole("heading", { name: "Shares claimed" })).toBeTruthy()
 		expect(screen.getByText(/100\.00 vUSDC/)).toBeTruthy()
 		expect(screen.queryByText(/150\.00 USDC/)).toBeNull()
+	})
+
+	it("renders the shares minted at full precision, not rounded to two fraction digits", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 952380952n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByText(/95\.2380952 vUSDC/)).toBeTruthy()
 	})
 
 	it("tells the investor their deposit came back, not that shares were issued, on a zero result", () => {
@@ -1042,6 +1072,16 @@ describe("TransactionModal, claiming a redemption", () => {
 
 		expect(screen.getByRole("heading", { name: "USDC claimed" })).toBeTruthy()
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
+	})
+
+	it("renders the claimed asset amount at full precision, not rounded to two fraction digits", () => {
+		renderClaimRedeemModal({
+			status: "confirmed",
+			assetsClaimed: 952380952n as Amount,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByText(/95\.2380952 USDC/)).toBeTruthy()
 	})
 
 	it("tells the investor their shares came back, not that an asset was claimed, on a zero result", () => {
