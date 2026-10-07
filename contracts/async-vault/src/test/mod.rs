@@ -6,6 +6,7 @@ mod conversions;
 mod deposit;
 mod deposit_cap;
 mod epochs;
+mod events;
 mod multi_epoch;
 mod notice;
 mod oracle_pricing;
@@ -14,6 +15,7 @@ mod redeem;
 mod supply;
 mod timing;
 mod treasury;
+mod ttl;
 mod upgrade;
 mod wind_down;
 
