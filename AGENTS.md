@@ -47,7 +47,8 @@ does not carry over. Read it for Soroban and OZ mechanics only.
   works through the CLI wrapper. The devshell pins the Stellar CLI it expects.
 - **Tests:** `cargo test` from the repo root runs every workspace member against
   the in-memory `Env`. There is no unit-test runner for `app/` or `app-lib/`;
-  `e2e/` runs Playwright separately. CI does not run the Rust tests yet.
+  `e2e/` runs Playwright separately. CI runs `cargo test --locked` on every pull
+  request.
 - **Toolchain:** `nix develop` provides it, or rustup honours
   `rust-toolchain.toml`.
 
