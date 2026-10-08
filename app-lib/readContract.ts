@@ -47,7 +47,13 @@ export async function readContract<T>(
 
 const server = new Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
 
-const EPOCHS_PER_LEDGER_ENTRIES_REQUEST = 66
+const LEDGER_ENTRIES_PER_REQUEST = 200
+const REQUEST_KEYS_PER_EPOCH = 3
+const EPOCHS_PER_LEDGER_ENTRIES_REQUEST = Math.floor(
+	LEDGER_ENTRIES_PER_REQUEST / REQUEST_KEYS_PER_EPOCH,
+)
+const EVENTS_PAGE_SIZE = 200
+const MAX_EVENT_PAGES = 25
 
 const scvU64 = (value: bigint): xdr.ScVal =>
 	xdr.ScVal.scvU64(xdr.Uint64.fromString(value.toString()))
@@ -105,6 +111,12 @@ const chunk = <T>(items: T[], size: number): T[][] => {
 		chunks.push(items.slice(i, i + size))
 	return chunks
 }
+
+const latestLedgerSequence = (): Promise<number | null> =>
+	server
+		.getLatestLedger()
+		.then((response) => response.sequence)
+		.catch(() => null)
 
 type ChunkFetch =
 	{ ok: true; byKey: Map<string, Api.LedgerEntryResult> } | { ok: false }
@@ -174,10 +186,7 @@ export async function readEpochRequests(
 	)
 
 	const [latestLedger, resolvedChunks] = await Promise.all([
-		server
-			.getLatestLedger()
-			.then((response) => response.sequence)
-			.catch(() => null),
+		latestLedgerSequence(),
 		Promise.all(
 			chunks.map(async (keySetChunk) => ({
 				keySetChunk,
@@ -214,4 +223,116 @@ export async function readEpochRequests(
 	}
 
 	return results
+}
+
+export async function readEpochs(
+	contractId: string,
+	epochIds: bigint[],
+): Promise<Map<bigint, ContractRead<EpochInfo | null>>> {
+	const results = new Map<bigint, ContractRead<EpochInfo | null>>()
+	if (epochIds.length === 0) return results
+
+	const contract = Address.fromString(contractId).toScAddress()
+	const keyed = epochIds.map((epochId) => ({
+		epochId,
+		key: contractDataLedgerKey(contract, epochDataKey(epochId)),
+	}))
+
+	const [latestLedger, resolvedChunks] = await Promise.all([
+		latestLedgerSequence(),
+		Promise.all(
+			chunk(keyed, LEDGER_ENTRIES_PER_REQUEST).map(async (keyedChunk) => ({
+				keyedChunk,
+				chunkResult: await fetchChunk(keyedChunk.map(({ key }) => key)),
+			})),
+		),
+	])
+
+	for (const { keyedChunk, chunkResult } of resolvedChunks) {
+		for (const { epochId, key } of keyedChunk) {
+			results.set(
+				epochId,
+				decodeLedgerEntry<EpochInfo>(
+					chunkResult,
+					key,
+					decodeEpochInfo,
+					latestLedger,
+				),
+			)
+		}
+	}
+
+	return results
+}
+
+export async function readLedgerTime(): Promise<bigint | null> {
+	try {
+		const { closeTime } = await server.getLatestLedger()
+		return BigInt(closeTime)
+	} catch {
+		return null
+	}
+}
+
+export type EventSelection = { contractId: string; names: string[] }
+
+export type ChainEvent = {
+	contractId: string
+	name: string
+	topics: unknown[]
+	data: unknown
+	ledger: number
+	closedAt: bigint
+}
+
+const toEventFilter = ({
+	contractId,
+	names,
+}: EventSelection): Api.EventFilter => ({
+	type: "contract",
+	contractIds: [contractId],
+	topics: names.map((name) => [xdr.ScVal.scvSymbol(name).toXDR("base64"), "*"]),
+})
+
+const decodeEvent = (event: Api.EventResponse): ChainEvent | null => {
+	const [name, ...topics] = event.topic.map((topic) => scValToNative(topic))
+	if (typeof name !== "string" || event.contractId === undefined) return null
+	return {
+		contractId: event.contractId.contractId(),
+		name,
+		topics,
+		data: scValToNative(event.value),
+		ledger: event.ledger,
+		closedAt: BigInt(Math.floor(Date.parse(event.ledgerClosedAt) / 1000)),
+	}
+}
+
+export async function readEvents(
+	selections: EventSelection[],
+	windowLedgers: number,
+): Promise<ContractRead<ChainEvent[]>> {
+	try {
+		const { latestLedger, oldestLedger } = await server.getHealth()
+		const filters = selections.map(toEventFilter)
+		let request: Api.GetEventsRequest = {
+			filters,
+			startLedger: Math.max(latestLedger - windowLedgers, oldestLedger),
+			limit: EVENTS_PAGE_SIZE,
+		}
+
+		const events: ChainEvent[] = []
+		for (let page = 0; page < MAX_EVENT_PAGES; page++) {
+			const response = await server.getEvents(request)
+			for (const raw of response.events) {
+				const event = decodeEvent(raw)
+				if (event !== null) events.push(event)
+			}
+			if (response.events.length < EVENTS_PAGE_SIZE)
+				return { kind: "value", value: events }
+			request = { filters, cursor: response.cursor, limit: EVENTS_PAGE_SIZE }
+		}
+		return { kind: "unreadable" }
+	} catch {
+		return { kind: "unreadable" }
+	}
 }

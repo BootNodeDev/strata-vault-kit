@@ -1,5 +1,6 @@
 import { shortAddress } from "@stellar-scaffold/app-lib"
 import React from "react"
+import CycleSection from "../components/admin/CycleSection"
 import Skeleton from "../components/Skeleton"
 import AddressRows, { type AddressRow } from "../components/vault/AddressRows"
 import { vaultContractId } from "../config/contracts"
@@ -107,7 +108,10 @@ const AdminPanel: React.FC = () => {
 				<ul className={styles.cards}>
 					{SURFACE_ORDER.filter((surface) => surfaces.has(surface)).map(
 						(surface) => (
-							<li className={styles.card} key={surface}>
+							<li
+								className={`${styles.card} ${surface === "cycle" ? styles.cardWide : ""}`}
+								key={surface}
+							>
 								<h2
 									className={`${typeStyles.sectionHead} ${styles.cardHeading}`}
 								>
@@ -119,6 +123,7 @@ const AdminPanel: React.FC = () => {
 										.map((grant) => describeCardGrant(grant, address ?? ""))
 										.join(", ")}
 								</span>
+								{surface === "cycle" && <CycleSection />}
 							</li>
 						),
 					)}
