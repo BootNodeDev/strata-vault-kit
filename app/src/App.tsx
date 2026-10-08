@@ -2,6 +2,7 @@ import { Outlet, Route, Routes } from "react-router-dom"
 import styles from "./App.module.css"
 import ConnectAccount from "./components/ConnectAccount"
 import ExternalLink from "./components/icons/ExternalLink"
+import AdminPanel from "./pages/AdminPanel"
 import VaultPreview from "./pages/VaultPreview"
 
 function App() {
@@ -9,6 +10,7 @@ function App() {
 		<Routes>
 			<Route element={<AppLayout />}>
 				<Route path="/" element={<VaultPreview />} />
+				<Route path="/admin" element={<AdminPanel />} />
 			</Route>
 		</Routes>
 	)
