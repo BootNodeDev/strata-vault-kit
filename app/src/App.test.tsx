@@ -39,7 +39,8 @@ const disconnectedAuthority: AdminAuthority = {
 		configuration: [],
 		governance: [],
 	},
-	roles: [],
+	grants: [],
+	signersUnknown: false,
 	addresses: { oracle: null, shareToken: null, identityVerifier: null },
 }
 
