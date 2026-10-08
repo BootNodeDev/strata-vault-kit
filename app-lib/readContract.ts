@@ -4,7 +4,6 @@ import type {
 	DepositRequest,
 	EpochInfo,
 	EpochStatus,
-	Option,
 	RedeemRequest,
 } from "./contracts"
 import { rpcUrl, stellarNetwork } from "./env"
@@ -127,7 +126,7 @@ function decodeLedgerEntry<T>(
 	key: xdr.LedgerKey,
 	decode: (val: xdr.ScVal) => T,
 	latestLedger: number | null,
-): ContractRead<Option<T>> {
+): ContractRead<T | null> {
 	if (!chunkResult.ok) return { kind: "unreadable" }
 	const entry = chunkResult.byKey.get(key.toXDR("base64"))
 	if (entry === undefined) return { kind: "value", value: null }
@@ -154,9 +153,9 @@ const decodeEpochInfo = (val: xdr.ScVal): EpochInfo => {
 }
 
 export type EpochRequestsRead = {
-	epoch: ContractRead<Option<EpochInfo>>
-	deposit: ContractRead<Option<DepositRequest>>
-	redeem: ContractRead<Option<RedeemRequest>>
+	epoch: ContractRead<EpochInfo | null>
+	deposit: ContractRead<DepositRequest | null>
+	redeem: ContractRead<RedeemRequest | null>
 }
 
 export async function readEpochRequests(

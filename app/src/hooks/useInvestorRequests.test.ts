@@ -4,7 +4,6 @@ import {
 	type DepositRequest,
 	type EpochInfo,
 	type EpochRequestsRead,
-	type Option,
 	type Price,
 	type RedeemRequest,
 	networkPassphrase,
@@ -73,31 +72,31 @@ const fulfilledEpoch: EpochInfo = {
 	priceable_at: 1_700_003_600n,
 }
 
-const depositPresent: ContractRead<Option<DepositRequest>> = {
+const depositPresent: ContractRead<DepositRequest | null> = {
 	kind: "value",
 	value: { amount: 100_0000000n, claimed: false },
 }
-const depositClaimed: ContractRead<Option<DepositRequest>> = {
+const depositClaimed: ContractRead<DepositRequest | null> = {
 	kind: "value",
 	value: { amount: 100_0000000n, claimed: true },
 }
-const depositAbsent: ContractRead<Option<DepositRequest>> = {
+const depositAbsent: ContractRead<DepositRequest | null> = {
 	kind: "value",
 	value: null,
 }
-const depositUnreadable: ContractRead<Option<DepositRequest>> = {
+const depositUnreadable: ContractRead<DepositRequest | null> = {
 	kind: "unreadable",
 }
-const depositArchived: ContractRead<Option<DepositRequest>> = {
+const depositArchived: ContractRead<DepositRequest | null> = {
 	kind: "archived",
 }
 
-const redeemPresent: ContractRead<Option<RedeemRequest>> = {
+const redeemPresent: ContractRead<RedeemRequest | null> = {
 	kind: "value",
 	value: { shares: 20_0000000n, claimed: false },
 }
 
-const redeemAbsent: ContractRead<Option<RedeemRequest>> = {
+const redeemAbsent: ContractRead<RedeemRequest | null> = {
 	kind: "value",
 	value: null,
 }

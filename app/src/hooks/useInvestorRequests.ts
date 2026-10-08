@@ -4,7 +4,6 @@ import {
 	type DepositRequest,
 	type EpochInfo,
 	type EpochStatus,
-	type Option,
 	type Price,
 	type RedeemRequest,
 	readContract,
@@ -51,7 +50,7 @@ export type ClassifiedRequest =
 	| { kind: "archived"; request: ArchivedRequest }
 
 export function classifyRequest(
-	read: ContractRead<Option<DepositRequest | RedeemRequest>>,
+	read: ContractRead<DepositRequest | RedeemRequest | null>,
 	side: RequestSide,
 	epochId: bigint,
 	epoch: EpochInfo,

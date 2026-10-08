@@ -1,8 +1,4 @@
-import {
-	type ContractRead,
-	type Option,
-	readContract,
-} from "@stellar-scaffold/app-lib"
+import { type ContractRead, readContract } from "@stellar-scaffold/app-lib"
 import { useQuery } from "@tanstack/react-query"
 import { asyncVault } from "../config/clients"
 
@@ -11,7 +7,7 @@ export type AuthorityKey =
 
 export type VaultAuthorities = Record<AuthorityKey, string | null>
 
-const toAddress = (read: ContractRead<Option<string>>): string | null =>
+const toAddress = (read: ContractRead<string | null>): string | null =>
 	read.kind === "value" ? read.value : null
 
 async function fetchVaultAuthorities(): Promise<VaultAuthorities> {

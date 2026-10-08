@@ -19,6 +19,14 @@ export default defineConfig({
 				},
 			},
 			{
+				root: "./scripts",
+				test: {
+					name: "scripts",
+					environment: "node",
+					include: ["lib/**/*.test.mjs"],
+				},
+			},
+			{
 				root: "./app-lib",
 				test: {
 					name: "app-lib",
