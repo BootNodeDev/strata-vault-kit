@@ -1,4 +1,17 @@
 {
 	"extends": "@theahaco/ts-config/typescript",
+	"compilerOptions": {
+		"paths": {
+			"@stellar/stellar-sdk": [
+				"../node_modules/@stellar/stellar-sdk/lib/esm/index.d.ts"
+			],
+			"@stellar/stellar-sdk/contract": [
+				"../node_modules/@stellar/stellar-sdk/lib/esm/contract/index.d.ts"
+			],
+			"@stellar/stellar-sdk/rpc": [
+				"../node_modules/@stellar/stellar-sdk/lib/esm/rpc/index.d.ts"
+			]
+		}
+	},
 	"include": ["src", "reset.d.ts"]
 }
