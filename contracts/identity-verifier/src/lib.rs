@@ -32,27 +32,19 @@ impl IdentityVerifier {
     #[only_admin]
     pub fn allow(e: &Env, account: Address, allowed: bool, caller: Address) {
         caller.require_auth();
-        e.storage()
-            .persistent()
-            .set(&DataKey::Allowed(account), &allowed);
+        storage::set_persistent(e, &DataKey::Allowed(account), &allowed);
     }
 
     pub fn is_allowed(e: &Env, account: Address) -> bool {
-        e.storage()
-            .persistent()
-            .get(&DataKey::Allowed(account))
-            .unwrap_or(false)
+        storage::get_persistent(e, &DataKey::Allowed(account)).unwrap_or(false)
     }
 }
 
 #[contractimpl(contracttrait)]
 impl identity_verification::IdentityVerifier for IdentityVerifier {
     fn verify_identity(e: &Env, account: &Address) {
-        let allowed: bool = e
-            .storage()
-            .persistent()
-            .get(&DataKey::Allowed(account.clone()))
-            .unwrap_or(false);
+        let allowed: bool =
+            storage::get_persistent(e, &DataKey::Allowed(account.clone())).unwrap_or(false);
         if !allowed {
             panic_with_error!(e, RWAError::IdentityVerificationFailed);
         }

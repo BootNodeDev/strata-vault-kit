@@ -1,5 +1,11 @@
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{
+    testutils::{storage::Persistent as _, Address as _, Ledger as _},
+    Address, Env,
+};
+use storage::PERSISTENT_EXTEND_AMOUNT;
+
+const DAY_IN_LEDGERS: u32 = 17_280;
 use stellar_tokens::rwa::identity_verification::IdentityVerifierClient as IdClient;
 
 #[test]
@@ -52,4 +58,48 @@ fn verify_identity_checks_allowlist() {
     // Once allowed, verification succeeds.
     client.allow(&investor, &true, &admin);
     id_client.verify_identity(&investor);
+}
+
+fn allowed_ttl(e: &Env, id: &Address, account: &Address) -> u32 {
+    e.as_contract(id, || {
+        e.storage()
+            .persistent()
+            .get_ttl(&DataKey::Allowed(account.clone()))
+    })
+}
+
+fn age(e: &Env, ledgers: u32) {
+    e.ledger().with_mut(|l| l.sequence_number += ledgers);
+}
+
+#[test]
+fn allowing_writes_the_entry_with_the_full_ttl() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let admin = Address::generate(&e);
+    let investor = Address::generate(&e);
+    let id = e.register(IdentityVerifier, (admin.clone(),));
+
+    IdentityVerifierClient::new(&e, &id).allow(&investor, &true, &admin);
+
+    assert_eq!(allowed_ttl(&e, &id, &investor), PERSISTENT_EXTEND_AMOUNT);
+}
+
+#[test]
+fn checking_an_allowed_account_restores_the_full_ttl() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let admin = Address::generate(&e);
+    let investor = Address::generate(&e);
+    let id = e.register(IdentityVerifier, (admin.clone(),));
+    let client = IdentityVerifierClient::new(&e, &id);
+    client.allow(&investor, &true, &admin);
+
+    age(&e, 2 * DAY_IN_LEDGERS);
+    assert!(client.is_allowed(&investor));
+    assert_eq!(allowed_ttl(&e, &id, &investor), PERSISTENT_EXTEND_AMOUNT);
+
+    age(&e, 2 * DAY_IN_LEDGERS);
+    IdClient::new(&e, &id).verify_identity(&investor);
+    assert_eq!(allowed_ttl(&e, &id, &investor), PERSISTENT_EXTEND_AMOUNT);
 }
