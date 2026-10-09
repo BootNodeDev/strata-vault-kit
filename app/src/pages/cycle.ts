@@ -793,19 +793,19 @@ function toFinalizeAction(state: ReadyState): WindDownAction {
 	const { phase, round } = state.windDown
 	const { free } = state.reserve
 	const next = round === null ? null : round + 1
-	const action = toWindDownAction(
+	const windDownActive: Condition =
+		next === null
+			? { label: "Wind-down active", met: false, detail: "Round unavailable" }
+			: { label: "Wind-down active", met: phase === "active" }
+	return toWindDownAction(
 		"finalize-round",
 		"Finalize round",
-		[
-			{ label: "Wind-down active", met: phase === "active" },
-			freeToDistribute(free),
-		],
+		[windDownActive, freeToDistribute(free)],
 		free === null || free <= 0n || next === null
 			? null
 			: `Distributes ${exactAmount(free)} to holders as round ${next}.`,
 		next,
 	)
-	return next === null ? { ...action, enabled: false } : action
 }
 
 function toWindDownActions(state: ReadyState): WindDownAction[] {
