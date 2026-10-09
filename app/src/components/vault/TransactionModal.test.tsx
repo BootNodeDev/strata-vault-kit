@@ -9,7 +9,9 @@ import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
+import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
 import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
+import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import TransactionModal from "./TransactionModal"
@@ -165,6 +167,36 @@ const renderAttestModal = (
 			status={status}
 			price="1.0400"
 			validFor={validFor}
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderDeployModal = (status: DeployToCustodianStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="deploy"
+			status={status}
+			amount="250.00"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderFundModal = (status: FundStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="fund"
+			status={status}
+			amount="100.00"
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -1547,6 +1579,179 @@ describe("TransactionModal, attesting a price", () => {
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
 		const { onClose } = renderAttestModal({ status: "preparing" })
+
+		expect(screen.getByRole("dialog")).toBeTruthy()
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, deploying to the custodian", () => {
+	it("opens with a preparing state naming the amount being deployed", () => {
+		renderDeployModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to deploy 250.00" }),
+		).toBeTruthy()
+	})
+
+	it("tells the treasury what signing sends and where", () => {
+		renderDeployModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Signing sends 250.00 from the vault's reserve to the custodian.",
+			),
+		).toBeTruthy()
+	})
+
+	it("tells the treasury the deployment is on its way", () => {
+		renderDeployModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending the deployment" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("says what left the vault once confirmed", () => {
+		renderDeployModal({ status: "confirmed", hash: "b".repeat(64) })
+
+		expect(screen.getByRole("heading", { name: "Deployed" })).toBeTruthy()
+		expect(
+			screen.getByText("250.00 left the vault for the custodian."),
+		).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6046, /winding down/],
+		[6007, /greater than zero/],
+		[6012, /No custodian is set/],
+		[6005, /free reserve/],
+		[6014, /too large/],
+		[2000, /not authorized/],
+		[2007, /treasury role/],
+	])("names the vault's reason for code %i", (code, sentence) => {
+		renderDeployModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(screen.getByText(sentence)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for a code it does not recognize, without the raw code", () => {
+		renderDeployModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6029 },
+		})
+
+		expect(
+			screen.getByText(/The vault refused this request\. Try again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/6029/)).toBeNull()
+	})
+
+	it("sends an unknown outcome to the Cycle card, not to the investor's requests", () => {
+		renderDeployModal({ status: "failed", failure: { kind: "unknown" } })
+
+		expect(
+			screen.getByText(/check the Cycle card before trying again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/your requests/)).toBeNull()
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderDeployModal({ status: "preparing" })
+
+		expect(screen.getByRole("dialog")).toBeTruthy()
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, funding the reserve", () => {
+	it("opens with a preparing state naming the amount being funded", () => {
+		renderFundModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to fund 100.00" }),
+		).toBeTruthy()
+	})
+
+	it("tells the funder what signing moves out of their wallet", () => {
+		renderFundModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Signing moves 100.00 from your wallet into the vault's reserve.",
+			),
+		).toBeTruthy()
+	})
+
+	it("tells the funder the funding is on its way", () => {
+		renderFundModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending the funding" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("says what joined the reserve once confirmed", () => {
+		renderFundModal({ status: "confirmed", hash: "b".repeat(64) })
+
+		expect(screen.getByRole("heading", { name: "Funded" })).toBeTruthy()
+		expect(screen.getByText("100.00 joined the reserve.")).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6007, /greater than zero/],
+		[6014, /too large/],
+	])("names the vault's reason for code %i", (code, sentence) => {
+		renderFundModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(screen.getByText(sentence)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal when the asset transfer itself refuses, without the raw code", () => {
+		renderFundModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 10 },
+		})
+
+		expect(
+			screen.getByText(/The vault refused this request\. Try again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/\b10\b/)).toBeNull()
+	})
+
+	it("sends an unknown outcome to the Cycle card, not to the investor's requests", () => {
+		renderFundModal({ status: "failed", failure: { kind: "unknown" } })
+
+		expect(
+			screen.getByText(/check the Cycle card before trying again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/your requests/)).toBeNull()
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderFundModal({ status: "preparing" })
 
 		expect(screen.getByRole("dialog")).toBeTruthy()
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))

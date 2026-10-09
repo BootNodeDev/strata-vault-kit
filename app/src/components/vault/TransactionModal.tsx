@@ -14,7 +14,9 @@ import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type TransactionFailure } from "../../hooks/useContractTransaction"
+import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
 import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
+import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import typeStyles from "../../styles/type.module.css"
@@ -93,6 +95,20 @@ export type TransactionModalProps =
 			status: AttestStatus
 			price: string
 			validFor: string | null
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "deploy"
+			status: DeployToCustodianStatus
+			amount: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "fund"
+			status: FundStatus
+			amount: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -249,6 +265,38 @@ const attestContractErrorReason = (code: number): string => {
 			return "The cooldown since the last attestation has not elapsed yet."
 		case 3004:
 			return "That price moves further from the last attested price than the oracle allows."
+		default:
+			return GENERIC_REFUSAL
+	}
+}
+
+const deployContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6046:
+			return "The vault is winding down, so nothing can leave for the custodian."
+		case 6007:
+			return "Enter an amount greater than zero."
+		case 6012:
+			return "No custodian is set, so there is nowhere to deploy to."
+		case 6005:
+			return "That amount exceeds the free reserve. The rest is committed to priced exits."
+		case 6014:
+			return "That amount is too large for the vault to record."
+		case 2000:
+			return "This wallet is not authorized to deploy to the custodian."
+		case 2007:
+			return "This wallet does not hold the treasury role."
+		default:
+			return GENERIC_REFUSAL
+	}
+}
+
+const fundContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6007:
+			return "Enter an amount greater than zero."
+		case 6014:
+			return "That amount is too large for the vault to record."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -660,6 +708,88 @@ const describeAttestStatus = (
 	}
 }
 
+const describeDeployStatus = (
+	status: DeployToCustodianStatus,
+	amount: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: `Preparing to deploy ${amount}`,
+				body: "We are getting the deployment ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `Signing sends ${amount} from the vault's reserve to the custodian.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending the deployment",
+				body: "The deployment is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: "Deployed",
+				body: `${amount} left the vault for the custodian.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(
+					status.failure,
+					deployContractErrorReason,
+					OPERATOR_FOLLOW_UP,
+				),
+				hash: status.hash,
+			}
+	}
+}
+
+const describeFundStatus = (
+	status: FundStatus,
+	amount: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: `Preparing to fund ${amount}`,
+				body: "We are getting the funding ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `Signing moves ${amount} from your wallet into the vault's reserve.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending the funding",
+				body: "The funding is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: "Funded",
+				body: `${amount} joined the reserve.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(
+					status.failure,
+					fundContractErrorReason,
+					OPERATOR_FOLLOW_UP,
+				),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeStatus = (
 	props: TransactionModalProps,
 ): { heading: string; body: string; hash?: string } | undefined => {
@@ -697,6 +827,10 @@ const describeStatus = (
 			return describeFulfillEpochStatus(props.status, props.epoch)
 		case "attest":
 			return describeAttestStatus(props.status, props.price, props.validFor)
+		case "deploy":
+			return describeDeployStatus(props.status, props.amount)
+		case "fund":
+			return describeFundStatus(props.status, props.amount)
 	}
 }
 
@@ -721,7 +855,9 @@ const computeSteps = (
 		| ClaimRedeemStatus
 		| CloseEpochStatus
 		| FulfillEpochStatus
-		| AttestStatus,
+		| AttestStatus
+		| DeployToCustodianStatus
+		| FundStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":

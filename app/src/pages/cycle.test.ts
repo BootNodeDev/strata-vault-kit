@@ -24,6 +24,7 @@ import {
 	type AttestAction,
 	type CycleAction,
 	type EpochAction,
+	type TreasuryAction,
 	formatDuration,
 	toActivityList,
 	toCycleActions,
@@ -614,7 +615,9 @@ const treasury = grant("vault treasury")
 
 type ActionOf<Id extends CycleAction["id"]> = Id extends AttestAction["id"]
 	? AttestAction
-	: EpochAction
+	: Id extends TreasuryAction["id"]
+		? TreasuryAction
+		: EpochAction
 
 const actionOf = <Id extends CycleAction["id"]>(
 	actions: CycleAction[],
@@ -627,13 +630,13 @@ const conditionsOf = (action: CycleAction | undefined) =>
 	)
 
 describe("toCycleActions", () => {
-	it("offers the manager both actions and any other cycle role only the settlement", () => {
+	it("offers the manager the close, and every cycle role the settlement and the funding", () => {
 		expect(actionsFor(ready({}), [manager]).map((action) => action.id)).toEqual(
-			["close-epoch", "fulfill-epoch"],
+			["close-epoch", "fulfill-epoch", "fund"],
 		)
 		expect(
-			actionsFor(ready({}), [treasury]).map((action) => action.id),
-		).toEqual(["fulfill-epoch"])
+			actionsFor(ready({}), [attester]).map((action) => action.id),
+		).toEqual(["fulfill-epoch", "attest", "fund"])
 	})
 
 	it("offers nothing while the cycle is still being read or could not be", () => {
@@ -883,7 +886,11 @@ const attestOf = (
 	input: string,
 	overrides: Partial<ReadyState> = {},
 	grants: Grant[] = [attester],
-) => actionOf(toCycleActions(ready(overrides), grants, WALLET, input), "attest")
+) =>
+	actionOf(
+		toCycleActions(ready(overrides), grants, WALLET, { price: input }),
+		"attest",
+	)
 
 const withLimits = (limits: Partial<NonNullable<CycleOracle["limits"]>>) =>
 	({ ...oracle, limits: { ...oracle.limits!, ...limits } }) as CycleOracle
@@ -892,7 +899,7 @@ describe("toCycleActions, attesting", () => {
 	it("offers the attestation only to the oracle attester, in the Price group", () => {
 		expect(
 			actionsFor(ready({}), [attester]).map((action) => action.id),
-		).toEqual(["fulfill-epoch", "attest"])
+		).toEqual(["fulfill-epoch", "attest", "fund"])
 		expect(attestOf("")?.group).toBe("Price")
 		expect(attestOf("", {}, [manager, treasury])).toBeUndefined()
 	})
@@ -1142,5 +1149,321 @@ describe("toCycleActions, attesting", () => {
 			"Needs 2 signatures; collecting them is not supported yet.",
 		)
 		expect(attest?.enabled).toBe(false)
+	})
+})
+
+const deployOf = (
+	input: string,
+	overrides: Partial<ReadyState> = {},
+	grants: Grant[] = [treasury],
+) =>
+	actionOf(
+		toCycleActions(ready(overrides), grants, WALLET, { deploy: input }),
+		"deploy",
+	)
+
+const fundOf = (
+	input: string,
+	walletBalance: Amount | null = amount(1_000n),
+	overrides: Partial<ReadyState> = {},
+	grants: Grant[] = [treasury],
+) =>
+	actionOf(
+		toCycleActions(ready(overrides), grants, WALLET, {
+			fund: input,
+			walletBalance,
+		}),
+		"fund",
+	)
+
+const conditionOf = (action: CycleAction | undefined, label: string) =>
+	action?.conditions.find((condition) => condition.label === label)
+
+describe("toCycleActions, deploying to the custodian", () => {
+	it("offers the deployment only to the treasury, in the Reserve group, after the settlement", () => {
+		expect(
+			actionsFor(ready({}), [treasury]).map((action) => action.id),
+		).toEqual(["fulfill-epoch", "deploy", "fund"])
+		expect(deployOf("")?.group).toBe("Reserve")
+		expect(deployOf("", {}, [manager, attester])).toBeUndefined()
+	})
+
+	it("asks for the amount in a decimal field whose max fills the free reserve exactly", () => {
+		const deploy = deployOf("25", {
+			reserve: { ...reserve, free: (amount(900n) + 1n) as Amount },
+		})
+
+		expect(deploy?.label).toBe("Deploy to custodian")
+		expect(deploy?.field).toEqual({
+			label: "Amount to deploy",
+			placeholder: "0.00",
+			value: "25",
+			invalid: false,
+			max: "900.0000001",
+		})
+	})
+
+	it("offers no max while the free reserve could not be read", () => {
+		const deploy = deployOf("25", {
+			reserve: { ...reserve, free: null },
+		})
+
+		expect(deploy?.field?.max).toBeUndefined()
+	})
+
+	it("leaves the amount conditions open and the button disabled while nothing is typed", () => {
+		const deploy = deployOf("")
+
+		expect(conditionsOf(deploy)).toEqual({
+			"Wind-down not active": true,
+			"Custodian set": true,
+			"Amount above zero": null,
+			"Within the free reserve": null,
+		})
+		expect(deploy?.outcome).toBeNull()
+		expect(deploy?.amount).toBeNull()
+		expect(deploy?.enabled).toBe(false)
+		expect(deploy?.field?.invalid).toBe(false)
+	})
+
+	it.each(["abc", "1.2.3", "1.00000001"])(
+		"marks %j as invalid and keeps the conditions open",
+		(input) => {
+			const deploy = deployOf(input)
+
+			expect(deploy?.field?.invalid).toBe(true)
+			expect(conditionsOf(deploy)["Within the free reserve"]).toBeNull()
+			expect(deploy?.enabled).toBe(false)
+		},
+	)
+
+	it("enables the deployment when every condition is met, saying what leaves and what remains free", () => {
+		const deploy = deployOf("250")
+
+		expect(conditionsOf(deploy)).toEqual({
+			"Wind-down not active": true,
+			"Custodian set": true,
+			"Amount above zero": true,
+			"Within the free reserve": true,
+		})
+		expect(deploy?.amount).toBe(amount(250n))
+		expect(deploy?.outcome).toBe(
+			"Sends 250.00 to the custodian; free reserve becomes 650.00.",
+		)
+		expect(deploy?.enabled).toBe(true)
+		expect(deploy?.unavailable).toBeUndefined()
+	})
+
+	it("keeps every digit the treasury typed in the resulting line and the free reserve after it", () => {
+		const deploy = deployOf("250.1234567")
+
+		expect(deploy?.outcome).toBe(
+			"Sends 250.1234567 to the custodian; free reserve becomes 649.8765433.",
+		)
+	})
+
+	it("shows the free reserve exactly when the amount exceeds it", () => {
+		const deploy = deployOf("1000", {
+			reserve: { ...reserve, free: (amount(900n) + 1n) as Amount },
+		})
+
+		expect(conditionOf(deploy, "Within the free reserve")?.detail).toBe(
+			"Free 900.0000001",
+		)
+	})
+
+	it("names the custodian beside the condition it satisfies", () => {
+		expect(conditionOf(deployOf("250"), "Custodian set")).toEqual({
+			label: "Custodian set",
+			met: true,
+			detail: "CCUS...7890",
+		})
+	})
+
+	it("lets an amount equal to the free reserve through and empties it", () => {
+		const deploy = deployOf("900")
+
+		expect(conditionsOf(deploy)["Within the free reserve"]).toBe(true)
+		expect(deploy?.outcome).toBe(
+			"Sends 900.00 to the custodian; free reserve becomes 0.00.",
+		)
+		expect(deploy?.enabled).toBe(true)
+	})
+
+	it("shows the free reserve when the amount exceeds it, with no resulting line", () => {
+		const deploy = deployOf("900.0000001")
+
+		expect(conditionOf(deploy, "Within the free reserve")).toEqual({
+			label: "Within the free reserve",
+			met: false,
+			detail: "Free 900.00",
+		})
+		expect(deploy?.outcome).toBeNull()
+		expect(deploy?.enabled).toBe(false)
+	})
+
+	it.each(["0", "-1"])("refuses %s as an amount", (input) => {
+		const deploy = deployOf(input)
+
+		expect(conditionsOf(deploy)["Amount above zero"]).toBe(false)
+		expect(deploy?.outcome).toBeNull()
+		expect(deploy?.enabled).toBe(false)
+	})
+
+	it("cannot vouch for the free reserve when it could not be read", () => {
+		const deploy = deployOf("250", { reserve: { ...reserve, free: null } })
+
+		expect(conditionOf(deploy, "Within the free reserve")).toEqual({
+			label: "Within the free reserve",
+			met: false,
+		})
+		expect(deploy?.outcome).toBeNull()
+		expect(deploy?.enabled).toBe(false)
+	})
+
+	it("disables the deployment when no custodian is set", () => {
+		const deploy = deployOf("250", {
+			reserve: { ...reserve, custodian: null },
+		})
+
+		expect(conditionOf(deploy, "Custodian set")).toEqual({
+			label: "Custodian set",
+			met: false,
+		})
+		expect(deploy?.enabled).toBe(false)
+	})
+
+	it("disables the deployment while the wind-down is active", () => {
+		const deploy = deployOf("250", {
+			windDown: { ...windDown, phase: "active", round: 1 },
+		})
+
+		expect(conditionsOf(deploy)["Wind-down not active"]).toBe(false)
+		expect(deploy?.enabled).toBe(false)
+	})
+
+	it("makes the deployment unavailable when the treasury's authority needs more signatures than the wallet's", () => {
+		const deploy = deployOf("250", {}, [
+			grant("vault treasury", { weight: 1, threshold: 3 }),
+		])
+
+		expect(deploy?.unavailable).toBe(
+			"Needs 3 signatures; collecting them is not supported yet.",
+		)
+		expect(deploy?.enabled).toBe(false)
+	})
+})
+
+describe("toCycleActions, funding the reserve", () => {
+	it("offers the funding to every cycle role, in the Reserve group, never asking for signatures", () => {
+		for (const holder of [manager, attester, treasury]) {
+			const fund = fundOf("10", amount(1_000n), {}, [holder])
+			expect(fund?.group).toBe("Reserve")
+			expect(fund?.unavailable).toBeUndefined()
+		}
+		expect(
+			toCycleActions(
+				ready({}),
+				[grant("vault manager", { needs: 2 })],
+				WALLET,
+				{
+					fund: "10",
+					walletBalance: amount(1_000n),
+				},
+			).find((action) => action.id === "fund")?.enabled,
+		).toBe(true)
+	})
+
+	it("asks for the amount in a decimal field without a max", () => {
+		const fund = fundOf("10")
+
+		expect(fund?.label).toBe("Fund the reserve")
+		expect(fund?.field).toEqual({
+			label: "Amount to fund",
+			placeholder: "0.00",
+			value: "10",
+			invalid: false,
+		})
+	})
+
+	it("leaves the conditions open and the button disabled while nothing is typed", () => {
+		const fund = fundOf("")
+
+		expect(conditionsOf(fund)).toEqual({
+			"Amount above zero": null,
+			"Wallet balance covers it": null,
+		})
+		expect(fund?.outcome).toBeNull()
+		expect(fund?.amount).toBeNull()
+		expect(fund?.enabled).toBe(false)
+	})
+
+	it("enables the funding when the wallet covers it, saying what joins and what becomes free", () => {
+		const fund = fundOf("100")
+
+		expect(conditionsOf(fund)).toEqual({
+			"Amount above zero": true,
+			"Wallet balance covers it": true,
+		})
+		expect(fund?.amount).toBe(amount(100n))
+		expect(fund?.outcome).toBe(
+			"Adds 100.00 to the reserve; free reserve becomes 1,000.00.",
+		)
+		expect(fund?.enabled).toBe(true)
+	})
+
+	it("lets an amount equal to the wallet balance through", () => {
+		expect(fundOf("1000")?.enabled).toBe(true)
+	})
+
+	it("keeps every digit the funder typed in the resulting line and the balance detail", () => {
+		expect(fundOf("0.0000001")?.outcome).toBe(
+			"Adds 0.0000001 to the reserve; free reserve becomes 900.0000001.",
+		)
+		expect(
+			conditionOf(
+				fundOf("2000", (amount(1_000n) + 1n) as Amount),
+				"Wallet balance covers it",
+			)?.detail,
+		).toBe("Balance 1,000.0000001")
+	})
+
+	it("shows the wallet balance when the amount exceeds it", () => {
+		const fund = fundOf("1000.0000001")
+
+		expect(conditionOf(fund, "Wallet balance covers it")).toEqual({
+			label: "Wallet balance covers it",
+			met: false,
+			detail: "Balance 1,000.00",
+		})
+		expect(fund?.enabled).toBe(false)
+	})
+
+	it.each(["0", "-5"])("refuses %s as an amount", (input) => {
+		const fund = fundOf(input)
+
+		expect(conditionsOf(fund)["Amount above zero"]).toBe(false)
+		expect(fund?.outcome).toBeNull()
+		expect(fund?.enabled).toBe(false)
+	})
+
+	it("says the balance is unavailable when the wallet's could not be read", () => {
+		const fund = fundOf("100", null)
+
+		expect(conditionOf(fund, "Wallet balance covers it")).toEqual({
+			label: "Wallet balance covers it",
+			met: false,
+			detail: "Balance unavailable",
+		})
+		expect(fund?.enabled).toBe(false)
+	})
+
+	it("allows the funding without a resulting line when the free reserve could not be read", () => {
+		const fund = fundOf("100", amount(1_000n), {
+			reserve: { ...reserve, free: null },
+		})
+
+		expect(fund?.outcome).toBeNull()
+		expect(fund?.enabled).toBe(true)
 	})
 })
