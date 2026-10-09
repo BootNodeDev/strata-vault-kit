@@ -3,6 +3,7 @@ import {
 	type Amount,
 	type ChainEvent,
 	formatDayMonth,
+	formatExact,
 	formatScaled,
 	parseUnits,
 	PRICE_DECIMALS,
@@ -131,6 +132,9 @@ const formatAmountValue = (raw: Amount | null): string | null =>
 
 const formatPriceValue = (raw: bigint | null): string | null =>
 	raw === null ? null : formatScaled(raw as Price, PRICE_DECIMALS, 4)
+
+export const formatSignedPrice = (raw: Price): string =>
+	formatExact(raw, PRICE_DECIMALS, 4)
 
 const formatPercent = (basisPoints: number): string => `${basisPoints / 100}%`
 
@@ -492,7 +496,7 @@ const cooldownElapsed = (
 ): Condition => ({
 	label: "Cooldown elapsed",
 	met:
-		oracle.state === "never" ||
+		oracle.recorded === false ||
 		(ledgerTime !== null &&
 			oracle.attestedAt !== null &&
 			oracle.limits !== null &&
@@ -509,7 +513,7 @@ const withinAllowedMove = (
 	const label = "Within the allowed move"
 	const { limits, price: previous } = oracle
 	if (price === null) return { label, met: null }
-	if (oracle.state === "never") return { label, met: true }
+	if (oracle.recorded === false) return { label, met: true }
 	if (limits === null || previous === null) return { label, met: false }
 	const ceiling = previous + capped(previous, limits.maxUpBps)
 	const floor =
@@ -549,7 +553,7 @@ function toAttestAction(
 		outcome:
 			price === null || freshness === null
 				? null
-				: `Records ${formatPriceValue(price)} as the share price, valid for ${formatDuration(freshness)}.`,
+				: `Records ${formatSignedPrice(price)} as the share price, valid for ${formatDuration(freshness)}.`,
 		...(oracle.ripcord === true
 			? { note: "Ripcord raised — attesting does not lift it." }
 			: {}),

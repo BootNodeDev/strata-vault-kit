@@ -1,4 +1,3 @@
-import { formatScaled, PRICE_DECIMALS } from "@stellar-scaffold/app-lib"
 import React, { useEffect, useState } from "react"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { useAttest } from "../../hooks/useAttest"
@@ -10,6 +9,7 @@ import { usePendingTransaction } from "../../hooks/usePendingTransaction"
 import {
 	type CycleAction,
 	formatDuration,
+	formatSignedPrice,
 	toActivityList,
 	toCycleActions,
 	toCycleRows,
@@ -51,7 +51,7 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 				if (action.price !== null && action.freshness !== null)
 					attest.submit(
 						{ price: action.price, freshness: action.freshness },
-						formatScaled(action.price, PRICE_DECIMALS, 4),
+						formatSignedPrice(action.price),
 					)
 		}
 	}

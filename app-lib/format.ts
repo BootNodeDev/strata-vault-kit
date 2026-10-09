@@ -146,6 +146,7 @@ export function formatScaled<D extends Decimals>(
 export function formatExact<D extends Decimals>(
 	value: Scaled<D>,
 	decimals: NoInfer<D>,
+	minFractionDigits = 2,
 ): string {
 	const [integer = "0", fraction = ""] = formatUnits(
 		value,
@@ -157,7 +158,10 @@ export function formatExact<D extends Decimals>(
 	const grouped = BigInt(magnitude).toLocaleString("en-US")
 	const sign = negative ? "-" : ""
 	const trimmed = fraction.replace(/0+$/, "")
-	const minFraction = trimmed.length < 2 ? fraction.slice(0, 2) : trimmed
+	const minFraction =
+		trimmed.length < minFractionDigits
+			? fraction.slice(0, minFractionDigits)
+			: trimmed
 	return `${sign}${grouped}.${minFraction}`
 }
 

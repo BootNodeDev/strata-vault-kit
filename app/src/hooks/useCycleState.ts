@@ -58,6 +58,7 @@ export type CycleOracle = {
 	attestedAt: bigint | null
 	expiresAt: bigint | null
 	ripcord: boolean | null
+	recorded: boolean | null
 	limits: OracleLimits | null
 }
 
@@ -110,6 +111,15 @@ export type CycleState =
 const toAmount = (read: ContractRead<bigint>): Amount | null =>
 	read.kind === "value" ? (read.value as Amount) : null
 
+const NO_RECORD_ERROR = 3006
+
+const recordedOf = (latest: ContractRead<NavReport>): boolean | null => {
+	if (latest.kind === "value") return true
+	return latest.kind === "contract-error" && latest.code === NO_RECORD_ERROR
+		? false
+		: null
+}
+
 export function toOracle(
 	state: ContractRead<OracleState>,
 	latest: ContractRead<NavReport>,
@@ -131,6 +141,7 @@ export function toOracle(
 		attestedAt: report?.timestamp ?? null,
 		expiresAt: report?.expires_at ?? null,
 		ripcord: nav.status === "unreadable" ? null : nav.status === "paused",
+		recorded: recordedOf(latest),
 		limits:
 			config.kind === "value"
 				? {
