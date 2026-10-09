@@ -327,6 +327,26 @@ const attestAction: CycleAction = {
 	enabled: false,
 }
 
+const deployAction: CycleAction = {
+	id: "deploy",
+	group: "Reserve",
+	label: "Deploy to custodian",
+	conditions: [
+		{ label: "Custodian set", met: true, detail: "CCUS...7890" },
+		{ label: "Within the free reserve", met: null },
+	],
+	outcome: null,
+	field: {
+		label: "Amount to deploy",
+		placeholder: "0.00",
+		value: "",
+		invalid: false,
+		max: "900.0000001",
+	},
+	amount: null,
+	enabled: false,
+}
+
 describe("CycleActions", () => {
 	it("lists each condition as met or not met, in the card's label and figure typography", () => {
 		render(<CycleActions actions={[fulfillAction]} onRun={vi.fn()} />)
@@ -455,6 +475,35 @@ describe("CycleActions", () => {
 		const band = screen.getByText("Within the band").closest("li")!
 		expect(within(band).getByText("0.5000 – 2.0000")).toBeTruthy()
 		expect(within(band).queryByText("Not met")).toBeNull()
+	})
+
+	it("shows a condition's detail in place of Met when it has one", () => {
+		render(<CycleActions actions={[deployAction]} onRun={vi.fn()} />)
+
+		const custodian = screen.getByText("Custodian set").closest("li")!
+		expect(within(custodian).getByText("CCUS...7890")).toBeTruthy()
+		expect(within(custodian).queryByText("Met")).toBeNull()
+	})
+
+	it("offers to fill the field with its max, reporting the exact figure", () => {
+		const onInput = vi.fn()
+		render(
+			<CycleActions
+				actions={[deployAction]}
+				onRun={vi.fn()}
+				onInput={onInput}
+			/>,
+		)
+
+		fireEvent.click(screen.getByRole("button", { name: "Use max" }))
+
+		expect(onInput).toHaveBeenCalledWith(deployAction, "900.0000001")
+	})
+
+	it("offers no max for a field that has none", () => {
+		render(<CycleActions actions={[attestAction]} onRun={vi.fn()} />)
+
+		expect(screen.queryByRole("button", { name: "Use max" })).toBeNull()
 	})
 
 	it("states an action's note outside the conditions", () => {

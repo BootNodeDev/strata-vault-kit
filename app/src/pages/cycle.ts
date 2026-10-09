@@ -331,9 +331,10 @@ function windDownGroup(windDown: CycleWindDown): CycleGroup {
 	}
 }
 
-export type CycleActionId = "close-epoch" | "fulfill-epoch" | "attest"
+export type CycleActionId =
+	"close-epoch" | "fulfill-epoch" | "attest" | "deploy" | "fund"
 
-export type ActionGroup = "Epoch" | "Price"
+export type ActionGroup = "Epoch" | "Price" | "Reserve"
 
 export type Condition = { label: string; met: boolean | null; detail?: string }
 
@@ -342,6 +343,7 @@ export type ActionField = {
 	placeholder: string
 	value: string
 	invalid: boolean
+	max?: string
 }
 
 type ActionBase = {
@@ -366,10 +368,23 @@ export type AttestAction = ActionBase & {
 	freshness: bigint | null
 }
 
-export type CycleAction = EpochAction | AttestAction
+export type TreasuryAction = ActionBase & {
+	id: "deploy" | "fund"
+	amount: Amount | null
+}
+
+export type CycleAction = EpochAction | AttestAction | TreasuryAction
+
+export type ActionInputs = {
+	price?: string
+	deploy?: string
+	fund?: string
+	walletBalance?: Amount | null
+}
 
 const MANAGER_ROLE = "vault manager"
 const ATTESTER_ROLE = "oracle attester"
+const TREASURY_ROLE = "vault treasury"
 const BPS_DENOMINATOR = 10_000n
 
 const signaturesNeeded = (standing: Standing): number | null => {
@@ -574,20 +589,157 @@ function toAttestAction(
 	}
 }
 
+const amountField = (
+	label: string,
+	input: string,
+	amount: Amount | null,
+	max?: string,
+): ActionField => ({
+	label,
+	placeholder: "0.00",
+	value: input,
+	invalid: input.trim() !== "" && amount === null,
+	...(max === undefined ? {} : { max }),
+})
+
+const amountAboveZero = (amount: Amount | null): Condition => ({
+	label: "Amount above zero",
+	met: amount === null ? null : amount > 0n,
+})
+
+const exactAmount = (amount: Amount): string =>
+	formatExact(amount, AMOUNT_DECIMALS)
+
+const coveredBy = (
+	label: string,
+	amount: Amount | null,
+	available: Amount | null,
+	describe: (available: string) => string,
+	unavailable?: string,
+): Condition => {
+	if (amount === null) return { label, met: null }
+	if (available === null)
+		return unavailable === undefined
+			? { label, met: false }
+			: { label, met: false, detail: unavailable }
+	const met = amount <= available
+	return met
+		? { label, met }
+		: { label, met, detail: describe(exactAmount(available)) }
+}
+
+const custodianSet = (custodian: string | null): Condition =>
+	custodian === null
+		? { label: "Custodian set", met: false }
+		: { label: "Custodian set", met: true, detail: shortAddress(custodian) }
+
+const reserveAfter = (
+	amount: Amount | null,
+	free: Amount | null,
+	apply: (free: Amount, amount: Amount) => bigint,
+): string | null =>
+	amount === null || amount <= 0n || free === null
+		? null
+		: exactAmount(apply(free, amount) as Amount)
+
+function toDeployAction(
+	state: ReadyState,
+	grant: Grant,
+	wallet: string,
+	input: string,
+): TreasuryAction {
+	const { free, custodian } = state.reserve
+	const amount = parseUnits(input, AMOUNT_DECIMALS)
+	const conditions = [
+		windDownInactive(state),
+		custodianSet(custodian),
+		amountAboveZero(amount),
+		coveredBy(
+			"Within the free reserve",
+			amount,
+			free,
+			(available) => `Free ${available}`,
+		),
+	]
+	const unavailable = unavailableFor(grant, wallet)
+	const remaining =
+		amount !== null && free !== null && amount > free
+			? null
+			: reserveAfter(amount, free, (held, sent) => held - sent)
+	return {
+		id: "deploy",
+		group: "Reserve",
+		label: "Deploy to custodian",
+		conditions,
+		outcome:
+			amount === null || remaining === null
+				? null
+				: `Sends ${exactAmount(amount)} to the custodian; free reserve becomes ${remaining}.`,
+		field: amountField(
+			"Amount to deploy",
+			input,
+			amount,
+			free === null ? undefined : exactAmount(free),
+		),
+		amount,
+		enabled: unavailable === undefined && amount !== null && allMet(conditions),
+		...(unavailable === undefined ? {} : { unavailable }),
+	}
+}
+
+function toFundAction(
+	state: ReadyState,
+	input: string,
+	walletBalance: Amount | null,
+): TreasuryAction {
+	const { free } = state.reserve
+	const amount = parseUnits(input, AMOUNT_DECIMALS)
+	const conditions = [
+		amountAboveZero(amount),
+		coveredBy(
+			"Wallet balance covers it",
+			amount,
+			walletBalance,
+			(available) => `Balance ${available}`,
+			"Balance unavailable",
+		),
+	]
+	const total = reserveAfter(amount, free, (held, added) => held + added)
+	return {
+		id: "fund",
+		group: "Reserve",
+		label: "Fund the reserve",
+		conditions,
+		outcome:
+			amount === null || total === null
+				? null
+				: `Adds ${exactAmount(amount)} to the reserve; free reserve becomes ${total}.`,
+		field: amountField("Amount to fund", input, amount),
+		amount,
+		enabled: amount !== null && allMet(conditions),
+	}
+}
+
 export function toCycleActions(
 	state: CycleState,
 	grants: Grant[],
 	wallet: string,
-	priceInput = "",
+	inputs: ActionInputs = {},
 ): CycleAction[] {
 	if (state.status !== "ready" || grants.length === 0) return []
 	const manager = grantFor(grants, MANAGER_ROLE, wallet)
 	const attester = grantFor(grants, ATTESTER_ROLE, wallet)
+	const treasury = grantFor(grants, TREASURY_ROLE, wallet)
 	const actions: CycleAction[] = []
 	if (manager !== undefined) actions.push(toCloseAction(state, manager, wallet))
 	actions.push(toFulfillAction(state))
 	if (attester !== undefined)
-		actions.push(toAttestAction(state, attester, wallet, priceInput))
+		actions.push(toAttestAction(state, attester, wallet, inputs.price ?? ""))
+	if (treasury !== undefined)
+		actions.push(toDeployAction(state, treasury, wallet, inputs.deploy ?? ""))
+	actions.push(
+		toFundAction(state, inputs.fund ?? "", inputs.walletBalance ?? null),
+	)
 	return actions
 }
 
