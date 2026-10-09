@@ -171,3 +171,44 @@
 	color: var(--vault-text-muted);
 	white-space: normal;
 }
+
+.field,
+.fieldOver {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 58px;
+	padding: 8px 16px;
+	border: 1px solid var(--vault-action);
+	background: var(--vault-surface-card);
+}
+
+.fieldOver {
+	border: 2px solid var(--vault-danger);
+}
+
+.fieldInput {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: var(--vault-ink);
+}
+
+.fieldInput::placeholder {
+	color: var(--vault-text-muted);
+}
+
+.note {
+	margin: 0;
+	color: var(--vault-text-muted);
+}
+
+.srOnly {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+}

@@ -21,8 +21,11 @@ import {
 	type EpochRecord,
 } from "../hooks/useEpochHistory"
 import {
+	type AttestAction,
 	type CycleAction,
+	type EpochAction,
 	formatDuration,
+	formatTimestamp,
 	toActivityList,
 	toCycleActions,
 	toCycleRows,
@@ -608,8 +611,14 @@ const actionsFor = (state: CycleState, grants: Grant[]) =>
 const manager = grant("vault manager")
 const treasury = grant("vault treasury")
 
-const actionOf = (actions: CycleAction[], id: CycleAction["id"]) =>
-	actions.find((action) => action.id === id)
+type ActionOf<Id extends CycleAction["id"]> = Id extends AttestAction["id"]
+	? AttestAction
+	: EpochAction
+
+const actionOf = <Id extends CycleAction["id"]>(
+	actions: CycleAction[],
+	id: Id,
+) => actions.find((action): action is ActionOf<Id> => action.id === id)
 
 const conditionsOf = (action: CycleAction | undefined) =>
 	Object.fromEntries(
@@ -862,5 +871,220 @@ describe("toCycleActions", () => {
 		)
 
 		expect(fulfill?.outcome).toBeNull()
+	})
+})
+
+const attester = grant("oracle attester")
+
+const attestOf = (
+	input: string,
+	overrides: Partial<ReadyState> = {},
+	grants: Grant[] = [attester],
+) => actionOf(toCycleActions(ready(overrides), grants, WALLET, input), "attest")
+
+const withLimits = (limits: Partial<NonNullable<CycleOracle["limits"]>>) =>
+	({ ...oracle, limits: { ...oracle.limits!, ...limits } }) as CycleOracle
+
+describe("toCycleActions, attesting", () => {
+	it("offers the attestation only to the oracle attester, in the Price group", () => {
+		expect(
+			actionsFor(ready({}), [attester]).map((action) => action.id),
+		).toEqual(["fulfill-epoch", "attest"])
+		expect(attestOf("")?.group).toBe("Price")
+		expect(attestOf("", {}, [manager, treasury])).toBeUndefined()
+	})
+
+	it("asks for the share price in a decimal field with a screen-reader label", () => {
+		const attest = attestOf("1.04")
+
+		expect(attest?.label).toBe("Attest price")
+		expect(attest?.field).toEqual({
+			label: "Share price",
+			placeholder: "0.0000",
+			value: "1.04",
+			invalid: false,
+		})
+	})
+
+	it("leaves the price-dependent conditions open and the button disabled while nothing is typed", () => {
+		const attest = attestOf("")
+
+		expect(conditionsOf(attest)).toEqual({
+			"Within the band": null,
+			"Cooldown elapsed": true,
+			"Within the allowed move": null,
+		})
+		expect(attest?.outcome).toBeNull()
+		expect(attest?.price).toBeNull()
+		expect(attest?.enabled).toBe(false)
+		expect(attest?.field?.invalid).toBe(false)
+	})
+
+	it.each(["abc", "1.2.3", "1.0000000000000000001"])(
+		"marks %j as invalid and keeps the conditions open",
+		(input) => {
+			const attest = attestOf(input)
+
+			expect(attest?.field?.invalid).toBe(true)
+			expect(conditionsOf(attest)["Within the band"]).toBeNull()
+			expect(attest?.enabled).toBe(false)
+		},
+	)
+
+	it("enables the attestation when every condition is met, saying what it records and until when it is valid", () => {
+		const attest = attestOf("1.04")
+
+		expect(conditionsOf(attest)).toEqual({
+			"Within the band": true,
+			"Cooldown elapsed": true,
+			"Within the allowed move": true,
+		})
+		expect(attest?.price).toBe(1_040_000_000_000_000_000n)
+		expect(attest?.expiresAt).toBe(NOW + 86_400n)
+		expect(attest?.outcome).toBe(
+			`Records 1.0400 as the share price, valid until ${formatTimestamp(NOW + 86_400n)}.`,
+		)
+		expect(attest?.enabled).toBe(true)
+		expect(attest?.unavailable).toBeUndefined()
+		expect(attest?.note).toBeUndefined()
+	})
+
+	it.each(["0.5", "2"])(
+		"accepts a price on the edge of the band, %s",
+		(input) => {
+			const attest = attestOf(input, {
+				oracle: { ...oracle, state: "never", price: null, attestedAt: null },
+			})
+
+			expect(conditionsOf(attest)["Within the band"]).toBe(true)
+		},
+	)
+
+	it.each(["0.4999", "2.0001", "0", "-1"])(
+		"shows the band when %s falls outside it",
+		(input) => {
+			const attest = attestOf(input)
+			const band = attest?.conditions.find(
+				(condition) => condition.label === "Within the band",
+			)
+
+			expect(band).toEqual({
+				label: "Within the band",
+				met: false,
+				detail: "0.5000 – 2.0000",
+			})
+			expect(attest?.enabled).toBe(false)
+		},
+	)
+
+	it("treats the cooldown as elapsed the second it is due", () => {
+		const due = oracle.attestedAt! + oracle.limits!.cooldown
+
+		expect(
+			conditionsOf(attestOf("1.04", { ledgerTime: due }))["Cooldown elapsed"],
+		).toBe(true)
+		expect(
+			conditionsOf(attestOf("1.04", { ledgerTime: due - 1n }))[
+				"Cooldown elapsed"
+			],
+		).toBe(false)
+		expect(
+			conditionsOf(attestOf("1.04", { ledgerTime: null }))["Cooldown elapsed"],
+		).toBe(false)
+	})
+
+	it("caps a rise at the largest allowed, letting an equal move through", () => {
+		expect(conditionsOf(attestOf("1.05"))["Within the allowed move"]).toBe(true)
+		expect(
+			conditionsOf(attestOf("1.050000000000000001"))["Within the allowed move"],
+		).toBe(false)
+	})
+
+	it("lets any fall through when the oracle sets no largest fall", () => {
+		expect(conditionsOf(attestOf("0.5"))["Within the allowed move"]).toBe(true)
+	})
+
+	it("caps a fall at the largest allowed when the oracle sets one", () => {
+		const limited = { oracle: withLimits({ maxDownBps: 1_000 }) }
+
+		expect(
+			conditionsOf(attestOf("0.9", limited))["Within the allowed move"],
+		).toBe(true)
+		expect(
+			conditionsOf(attestOf("0.899999999999999999", limited))[
+				"Within the allowed move"
+			],
+		).toBe(false)
+	})
+
+	it("shows the ceiling when a rise exceeds the cap and no fall cap exists", () => {
+		const move = attestOf("1.06")?.conditions.find(
+			(condition) => condition.label === "Within the allowed move",
+		)
+
+		expect(move).toEqual({
+			label: "Within the allowed move",
+			met: false,
+			detail: "≤ 1.0500",
+		})
+	})
+
+	it("shows the allowed range when both caps exist and the move exceeds one", () => {
+		const limited = { oracle: withLimits({ maxDownBps: 1_000 }) }
+		const move = attestOf("0.8", limited)?.conditions.find(
+			(condition) => condition.label === "Within the allowed move",
+		)
+
+		expect(move).toEqual({
+			label: "Within the allowed move",
+			met: false,
+			detail: "0.9000 – 1.0500",
+		})
+	})
+
+	it("skips the cooldown and the move cap for the first attestation", () => {
+		const attest = attestOf("1.9", {
+			oracle: { ...oracle, state: "never", price: null, attestedAt: null },
+		})
+
+		expect(conditionsOf(attest)).toEqual({
+			"Within the band": true,
+			"Cooldown elapsed": true,
+			"Within the allowed move": true,
+		})
+		expect(attest?.enabled).toBe(true)
+	})
+
+	it("cannot vouch for the band or the move when the oracle's limits could not be read", () => {
+		const attest = attestOf("1.04", {
+			oracle: { ...oracle, limits: null },
+		})
+
+		expect(conditionsOf(attest)["Within the band"]).toBe(false)
+		expect(conditionsOf(attest)["Within the allowed move"]).toBe(false)
+		expect(attest?.outcome).toBeNull()
+		expect(attest?.expiresAt).toBeNull()
+		expect(attest?.enabled).toBe(false)
+	})
+
+	it("notes a raised ripcord without making it a condition", () => {
+		const attest = attestOf("1.04", {
+			oracle: { ...oracle, state: "paused", ripcord: true },
+		})
+
+		expect(attest?.note).toBe("Ripcord raised — attesting does not lift it.")
+		expect(Object.keys(conditionsOf(attest))).toHaveLength(3)
+		expect(attest?.enabled).toBe(true)
+	})
+
+	it("makes the attestation unavailable when the attester's authority needs more signatures than the wallet's", () => {
+		const attest = attestOf("1.04", {}, [
+			grant("oracle attester", { needs: 2 }),
+		])
+
+		expect(attest?.unavailable).toBe(
+			"Needs 2 signatures; collecting them is not supported yet.",
+		)
+		expect(attest?.enabled).toBe(false)
 	})
 })

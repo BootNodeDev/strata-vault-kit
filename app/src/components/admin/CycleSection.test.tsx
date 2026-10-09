@@ -2,6 +2,7 @@ import { type Amount, type Price } from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { type Grant } from "../../hooks/useAdminAuthority"
+import { type AttestStatus } from "../../hooks/useAttest"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type CycleState } from "../../hooks/useCycleState"
 import { type EpochRecord } from "../../hooks/useEpochHistory"
@@ -14,6 +15,7 @@ const {
 	useEpochHistoryMock,
 	closeEpochMock,
 	fulfillEpochMock,
+	attestMock,
 } = vi.hoisted(() => ({
 	useCycleStateMock: vi.fn(),
 	useCycleEventsMock: vi.fn(),
@@ -25,6 +27,11 @@ const {
 	},
 	fulfillEpochMock: {
 		status: { status: "idle" } as FulfillEpochStatus,
+		submit: vi.fn(() => true),
+		reset: vi.fn(),
+	},
+	attestMock: {
+		status: { status: "idle" } as AttestStatus,
 		submit: vi.fn(() => true),
 		reset: vi.fn(),
 	},
@@ -42,6 +49,9 @@ vi.mock("../../hooks/useCloseEpoch", () => ({
 }))
 vi.mock("../../hooks/useFulfillEpoch", () => ({
 	useFulfillEpoch: () => fulfillEpochMock,
+}))
+vi.mock("../../hooks/useAttest", () => ({
+	useAttest: () => attestMock,
 }))
 
 const amount = (whole: bigint) => (whole * 10_000_000n) as Amount
@@ -85,7 +95,14 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 		attestedAt: 1_700_050_000n,
 		expiresAt: 1_700_136_000n,
 		ripcord: false,
-		limits: null,
+		limits: {
+			freshness: 86_400n,
+			cooldown: 3_600n,
+			maxUpBps: 500,
+			maxDownBps: null,
+			min: price(1n) / 2n,
+			max: price(2n),
+		},
 	},
 	reserve: {
 		free: null,
@@ -119,6 +136,7 @@ const grant = (role: string, standing: Grant["standing"] = "signs-alone") => ({
 
 const manager = grant("vault manager")
 const treasury = grant("vault treasury")
+const attester = grant("oracle attester")
 
 const button = (name: string) =>
 	screen.getByRole("button", { name }) as HTMLButtonElement
@@ -128,8 +146,10 @@ describe("CycleSection", () => {
 		vi.clearAllMocks()
 		closeEpochMock.status = { status: "idle" }
 		fulfillEpochMock.status = { status: "idle" }
+		attestMock.status = { status: "idle" }
 		closeEpochMock.submit.mockReturnValue(true)
 		fulfillEpochMock.submit.mockReturnValue(true)
+		attestMock.submit.mockReturnValue(true)
 		useCycleStateMock.mockReturnValue({ cycle: ready() })
 		useCycleEventsMock.mockReturnValue({
 			cycleEvents: { status: "loaded", events: [] },
@@ -164,7 +184,61 @@ describe("CycleSection", () => {
 		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
 		expect(screen.queryByRole("button", { name: "Close epoch" })).toBeNull()
+		expect(screen.queryByRole("button", { name: "Attest price" })).toBeNull()
+		expect(screen.queryByRole("textbox")).toBeNull()
 		expect(button("Fulfill epoch").disabled).toBe(false)
+	})
+
+	it("offers the attester a price field under the Price group, with the button held until a price is typed", () => {
+		render(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		const field = screen.getByRole("textbox", { name: "Share price" })
+		const priceGroup = screen.getByRole("heading", {
+			name: "Price",
+		}).parentElement!
+		expect(within(priceGroup).getByRole("textbox")).toBe(field)
+		expect(button("Attest price").disabled).toBe(true)
+		const band = screen.getByText("Within the band").closest("li")!
+		expect(within(band).getByText("—")).toBeTruthy()
+
+		fireEvent.change(field, { target: { value: "1.04" } })
+
+		expect(button("Attest price").disabled).toBe(false)
+		expect(within(band).getByText("Met")).toBeTruthy()
+		expect(
+			screen.getByText(/^Records 1\.0400 as the share price, valid until /),
+		).toBeTruthy()
+	})
+
+	it("submits the typed price with its expiry and follows it in the modal, labelled with the price", () => {
+		const { rerender } = render(
+			<CycleSection grants={[attester]} wallet={WALLET} />,
+		)
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Share price" }), {
+			target: { value: "1.04" },
+		})
+		fireEvent.click(button("Attest price"))
+
+		expect(attestMock.submit).toHaveBeenCalledWith({
+			price: 1_040_000_000_000_000_000n,
+			expiresAt: 1_700_100_000n + 86_400n,
+		})
+
+		attestMock.status = { status: "preparing" }
+		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to attest 1.0400" }),
+		).toBeTruthy()
+	})
+
+	it("tells the attester how long the attested price stays valid once confirmed", () => {
+		attestMock.status = { status: "confirmed" }
+		render(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(screen.getByRole("heading", { name: "Price attested" })).toBeTruthy()
+		expect(screen.getByText(/Valid for 1d\./)).toBeTruthy()
 	})
 
 	it("disables the settlement and marks the failing condition while the notice runs", () => {

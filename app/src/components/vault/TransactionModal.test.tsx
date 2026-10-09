@@ -3,6 +3,7 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { StrictMode } from "react"
 import { describe, expect, it, vi } from "vitest"
+import { type AttestStatus } from "../../hooks/useAttest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
@@ -145,6 +146,25 @@ const renderFulfillEpochModal = (status: FulfillEpochStatus) => {
 			action="fulfill-epoch"
 			status={status}
 			epoch="4"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderAttestModal = (
+	status: AttestStatus,
+	validFor: string | null = "1d",
+) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="attest"
+			status={status}
+			price="1.0400"
+			validFor={validFor}
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -1431,6 +1451,102 @@ describe("TransactionModal, pricing an epoch", () => {
 
 	it("is reachable as a dialog and dismissible by its close control", () => {
 		const { onClose } = renderFulfillEpochModal({ status: "preparing" })
+
+		expect(screen.getByRole("dialog")).toBeTruthy()
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, attesting a price", () => {
+	it("opens with a preparing state naming the price being attested", () => {
+		renderAttestModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to attest 1.0400" }),
+		).toBeTruthy()
+	})
+
+	it("tells the attester what signing records", () => {
+		renderAttestModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Signing records 1.0400 as the share price. Sealed epochs settle at it once their notice elapses.",
+			),
+		).toBeTruthy()
+	})
+
+	it("tells the attester the attestation is on its way", () => {
+		renderAttestModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending the attestation" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("says how long the price stays valid once confirmed", () => {
+		renderAttestModal({ status: "confirmed", hash: "b".repeat(64) })
+
+		expect(screen.getByRole("heading", { name: "Price attested" })).toBeTruthy()
+		expect(
+			screen.getByText("1.0400 is the share price. Valid for 1d."),
+		).toBeTruthy()
+	})
+
+	it("leaves the validity out when the freshness window is not known", () => {
+		renderAttestModal({ status: "confirmed" }, null)
+
+		expect(screen.getByText("1.0400 is the share price.")).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[3002, /outside the band/],
+		[3005, /already have expired/],
+		[3003, /cooldown .* has not elapsed/],
+		[3004, /moves further from the last attested price/],
+	])("names the oracle's reason for code %i", (code, sentence) => {
+		renderAttestModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(screen.getByText(sentence)).toBeTruthy()
+	})
+
+	it.each([2000, 2007])(
+		"falls back to a generic refusal for code %i, without the raw code",
+		(code) => {
+			renderAttestModal({
+				status: "failed",
+				failure: { kind: "contract-error", code },
+			})
+
+			expect(
+				screen.getByText(/The vault refused this request\. Try again/),
+			).toBeTruthy()
+			expect(screen.queryByText(new RegExp(String(code)))).toBeNull()
+		},
+	)
+
+	it("sends an unknown outcome to the Cycle card, not to the investor's requests", () => {
+		renderAttestModal({ status: "failed", failure: { kind: "unknown" } })
+
+		expect(
+			screen.getByText(/check the Cycle card before trying again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/your requests/)).toBeNull()
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderAttestModal({ status: "preparing" })
 
 		expect(screen.getByRole("dialog")).toBeTruthy()
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
