@@ -3,11 +3,15 @@ import { type Grant } from "../../hooks/useAdminAuthority"
 import { useAttest } from "../../hooks/useAttest"
 import { useCloseEpoch } from "../../hooks/useCloseEpoch"
 import { useCycleEvents, useCycleState } from "../../hooks/useCycleState"
+import { useDeployToCustodian } from "../../hooks/useDeployToCustodian"
+import { useDepositBalance } from "../../hooks/useDepositBalance"
 import { useEpochHistory } from "../../hooks/useEpochHistory"
 import { useFulfillEpoch } from "../../hooks/useFulfillEpoch"
+import { useFund } from "../../hooks/useFund"
 import { usePendingTransaction } from "../../hooks/usePendingTransaction"
 import {
 	type CycleAction,
+	exactAmount,
 	formatDuration,
 	formatSignedPrice,
 	toActivityList,
@@ -20,6 +24,14 @@ import TransactionModal, {
 } from "../vault/TransactionModal"
 import CycleSurface, { CycleActions, type CycleGroup } from "./CycleSurface"
 
+const useAmountInput = (confirmed: boolean) => {
+	const [input, setInput] = useState("")
+	useEffect(() => {
+		if (confirmed) setInput("")
+	}, [confirmed])
+	return [input, setInput] as const
+}
+
 const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 	grants,
 	wallet,
@@ -27,15 +39,21 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 	const { cycle } = useCycleState()
 	const { history } = useEpochHistory()
 	const { cycleEvents } = useCycleEvents()
+	const { balance } = useDepositBalance()
 	const closeEpoch = usePendingTransaction(useCloseEpoch())
 	const fulfillEpoch = usePendingTransaction(useFulfillEpoch())
 	const attest = usePendingTransaction(useAttest())
-	const [priceInput, setPriceInput] = useState("")
-	const attested = attest.status.status === "confirmed"
-
-	useEffect(() => {
-		if (attested) setPriceInput("")
-	}, [attested])
+	const deploy = usePendingTransaction(useDeployToCustodian())
+	const fund = usePendingTransaction(useFund())
+	const [priceInput, setPriceInput] = useAmountInput(
+		attest.status.status === "confirmed",
+	)
+	const [deployInput, setDeployInput] = useAmountInput(
+		deploy.status.status === "confirmed",
+	)
+	const [fundInput, setFundInput] = useAmountInput(
+		fund.status.status === "confirmed",
+	)
 
 	const run = (action: CycleAction) => {
 		switch (action.id) {
@@ -53,14 +71,40 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 						{ price: action.price, freshness: action.freshness },
 						formatSignedPrice(action.price),
 					)
+				return
+			case "deploy":
+				if (action.amount !== null)
+					deploy.submit(action.amount, exactAmount(action.amount))
+				return
+			case "fund":
+				if (action.amount !== null)
+					fund.submit(action.amount, exactAmount(action.amount))
 		}
 	}
 
 	const onInput = (action: CycleAction, value: string) => {
-		if (action.id === "attest") setPriceInput(value)
+		switch (action.id) {
+			case "attest":
+				setPriceInput(value)
+				return
+			case "deploy":
+				setDeployInput(value)
+				return
+			case "fund":
+				setFundInput(value)
+				return
+			case "close-epoch":
+			case "fulfill-epoch":
+				return
+		}
 	}
 
-	const actions = toCycleActions(cycle, grants, wallet, priceInput)
+	const actions = toCycleActions(cycle, grants, wallet, {
+		price: priceInput,
+		deploy: deployInput,
+		fund: fundInput,
+		walletBalance: balance.status === "held" ? balance.amount : null,
+	})
 	const withActions = (group: CycleGroup): CycleGroup => {
 		const own = actions.filter((action) => action.group === group.title)
 		return own.length === 0
@@ -96,6 +140,20 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 			validFor: freshness === undefined ? null : formatDuration(freshness),
 			onClose: attest.reset,
 			onRetry: attest.retry,
+		},
+		{
+			action: "deploy",
+			status: deploy.status,
+			amount: deploy.amountLabel,
+			onClose: deploy.reset,
+			onRetry: deploy.retry,
+		},
+		{
+			action: "fund",
+			status: fund.status,
+			amount: fund.amountLabel,
+			onClose: fund.reset,
+			onRetry: fund.retry,
 		},
 	]
 	const activeModal = modalFlows.find((flow) => flow.status.status !== "idle")
