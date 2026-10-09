@@ -283,6 +283,7 @@ describe("CycleSurface", () => {
 
 const closeAction: CycleAction = {
 	id: "close-epoch",
+	group: "Epoch",
 	label: "Close epoch",
 	conditions: [
 		{ label: "Wind-down not active", met: true },
@@ -295,6 +296,7 @@ const closeAction: CycleAction = {
 
 const fulfillAction: CycleAction = {
 	id: "fulfill-epoch",
+	group: "Epoch",
 	label: "Fulfill epoch",
 	conditions: [
 		{ label: "Sealed epoch awaiting a price", met: true },
@@ -302,6 +304,26 @@ const fulfillAction: CycleAction = {
 	],
 	outcome: "Prices epoch 4 at 1.0000 and settles its requests.",
 	epochId: 4n,
+	enabled: false,
+}
+
+const attestAction: CycleAction = {
+	id: "attest",
+	group: "Price",
+	label: "Attest price",
+	conditions: [
+		{ label: "Within the band", met: null },
+		{ label: "Cooldown elapsed", met: true },
+	],
+	outcome: null,
+	field: {
+		label: "Share price",
+		placeholder: "0.0000",
+		value: "",
+		invalid: false,
+	},
+	price: null,
+	freshness: null,
 	enabled: false,
 }
 
@@ -374,5 +396,84 @@ describe("CycleActions", () => {
 
 		expect(screen.queryByText(/Prices epoch/)).toBeNull()
 		expect(screen.getByRole("button", { name: "Fulfill epoch" })).toBeTruthy()
+	})
+
+	it("asks for a figure in a decimal field, labelled for screen readers, and reports each keystroke", () => {
+		const onInput = vi.fn()
+		render(
+			<CycleActions
+				actions={[attestAction]}
+				onRun={vi.fn()}
+				onInput={onInput}
+			/>,
+		)
+
+		const field = screen.getByRole("textbox", {
+			name: "Share price",
+		}) as HTMLInputElement
+		expect(field.placeholder).toBe("0.0000")
+		expect(field.inputMode).toBe("decimal")
+
+		fireEvent.change(field, { target: { value: "1.04" } })
+
+		expect(onInput).toHaveBeenCalledWith(attestAction, "1.04")
+	})
+
+	it("renders no field for an action that takes no figure", () => {
+		render(<CycleActions actions={[closeAction]} onRun={vi.fn()} />)
+
+		expect(screen.queryByRole("textbox")).toBeNull()
+	})
+
+	it("leaves a condition open with a dash while it cannot be judged yet", () => {
+		render(<CycleActions actions={[attestAction]} onRun={vi.fn()} />)
+
+		const band = screen.getByText("Within the band").closest("li")!
+		expect(within(band).getByText("—")).toBeTruthy()
+		expect(within(band).queryByText("Not met")).toBeNull()
+	})
+
+	it("shows a condition's detail in place of Not met when it has one", () => {
+		render(
+			<CycleActions
+				actions={[
+					{
+						...attestAction,
+						conditions: [
+							{
+								label: "Within the band",
+								met: false,
+								detail: "0.5000 – 2.0000",
+							},
+						],
+					},
+				]}
+				onRun={vi.fn()}
+			/>,
+		)
+
+		const band = screen.getByText("Within the band").closest("li")!
+		expect(within(band).getByText("0.5000 – 2.0000")).toBeTruthy()
+		expect(within(band).queryByText("Not met")).toBeNull()
+	})
+
+	it("states an action's note outside the conditions", () => {
+		render(
+			<CycleActions
+				actions={[
+					{
+						...attestAction,
+						note: "Ripcord raised — attesting does not lift it.",
+					},
+				]}
+				onRun={vi.fn()}
+			/>,
+		)
+
+		const list = screen.getByRole("list", { name: "Attest price conditions" })
+		expect(
+			screen.getByText("Ripcord raised — attesting does not lift it."),
+		).toBeTruthy()
+		expect(within(list).queryByText(/Ripcord/)).toBeNull()
 	})
 })

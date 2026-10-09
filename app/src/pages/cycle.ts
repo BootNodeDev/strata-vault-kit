@@ -3,7 +3,9 @@ import {
 	type Amount,
 	type ChainEvent,
 	formatDayMonth,
+	formatExact,
 	formatScaled,
+	parseUnits,
 	PRICE_DECIMALS,
 	type Price,
 	shortAddress,
@@ -130,6 +132,9 @@ const formatAmountValue = (raw: Amount | null): string | null =>
 
 const formatPriceValue = (raw: bigint | null): string | null =>
 	raw === null ? null : formatScaled(raw as Price, PRICE_DECIMALS, 4)
+
+export const formatSignedPrice = (raw: Price): string =>
+	formatExact(raw, PRICE_DECIMALS, 4)
 
 const formatPercent = (basisPoints: number): string => `${basisPoints / 100}%`
 
@@ -326,21 +331,46 @@ function windDownGroup(windDown: CycleWindDown): CycleGroup {
 	}
 }
 
-export type CycleActionId = "close-epoch" | "fulfill-epoch"
+export type CycleActionId = "close-epoch" | "fulfill-epoch" | "attest"
 
-export type Condition = { label: string; met: boolean }
+export type ActionGroup = "Epoch" | "Price"
 
-export type CycleAction = {
-	id: CycleActionId
+export type Condition = { label: string; met: boolean | null; detail?: string }
+
+export type ActionField = {
+	label: string
+	placeholder: string
+	value: string
+	invalid: boolean
+}
+
+type ActionBase = {
+	group: ActionGroup
 	label: string
 	conditions: Condition[]
 	outcome: string | null
-	epochId: bigint | null
+	note?: string
+	field?: ActionField
 	enabled: boolean
 	unavailable?: string
 }
 
+export type EpochAction = ActionBase & {
+	id: "close-epoch" | "fulfill-epoch"
+	epochId: bigint | null
+}
+
+export type AttestAction = ActionBase & {
+	id: "attest"
+	price: Price | null
+	freshness: bigint | null
+}
+
+export type CycleAction = EpochAction | AttestAction
+
 const MANAGER_ROLE = "vault manager"
+const ATTESTER_ROLE = "oracle attester"
+const BPS_DENOMINATOR = 10_000n
 
 const signaturesNeeded = (standing: Standing): number | null => {
 	if (standing === "signs-alone") return null
@@ -373,23 +403,24 @@ const windDownInactive = (state: ReadyState): Condition => ({
 	met: state.windDown.phase !== null && state.windDown.phase !== "active",
 })
 
-const toAction = (
-	id: CycleActionId,
+const allMet = (conditions: Condition[]): boolean =>
+	conditions.every((condition) => condition.met === true)
+
+const toEpochAction = (
+	id: EpochAction["id"],
 	label: string,
 	conditions: Condition[],
 	outcome: string | null,
 	epochId: bigint | null,
 	unavailable?: string,
-): CycleAction => ({
+): EpochAction => ({
 	id,
+	group: "Epoch",
 	label,
 	conditions,
 	outcome,
 	epochId,
-	enabled:
-		unavailable === undefined &&
-		epochId !== null &&
-		conditions.every((condition) => condition.met),
+	enabled: unavailable === undefined && epochId !== null && allMet(conditions),
 	...(unavailable === undefined ? {} : { unavailable }),
 })
 
@@ -397,9 +428,9 @@ function toCloseAction(
 	state: ReadyState,
 	grant: Grant,
 	wallet: string,
-): CycleAction {
+): EpochAction {
 	const { epoch } = state
-	return toAction(
+	return toEpochAction(
 		"close-epoch",
 		"Close epoch",
 		[
@@ -412,11 +443,11 @@ function toCloseAction(
 	)
 }
 
-function toFulfillAction(state: ReadyState): CycleAction {
+function toFulfillAction(state: ReadyState): EpochAction {
 	const { awaiting } = state.epoch
 	const { oracle, ledgerTime } = state
 	const price = formatPriceValue(oracle.price)
-	return toAction(
+	return toEpochAction(
 		"fulfill-epoch",
 		"Fulfill epoch",
 		[
@@ -446,16 +477,117 @@ function toFulfillAction(state: ReadyState): CycleAction {
 	)
 }
 
+const withinBand = (oracle: CycleOracle, price: Price | null): Condition => {
+	const { limits } = oracle
+	if (price === null) return { label: "Within the band", met: null }
+	const met = limits !== null && limits.min <= price && price <= limits.max
+	return met || limits === null
+		? { label: "Within the band", met }
+		: {
+				label: "Within the band",
+				met,
+				detail: `${formatPriceValue(limits.min)} – ${formatPriceValue(limits.max)}`,
+			}
+}
+
+const cooldownElapsed = (
+	oracle: CycleOracle,
+	ledgerTime: bigint | null,
+): Condition => ({
+	label: "Cooldown elapsed",
+	met:
+		oracle.recorded === false ||
+		(ledgerTime !== null &&
+			oracle.attestedAt !== null &&
+			oracle.limits !== null &&
+			ledgerTime >= oracle.attestedAt + oracle.limits.cooldown),
+})
+
+const capped = (previous: bigint, bps: number): bigint =>
+	(previous * BigInt(bps)) / BPS_DENOMINATOR
+
+const withinAllowedMove = (
+	oracle: CycleOracle,
+	price: Price | null,
+): Condition => {
+	const label = "Within the allowed move"
+	const { limits, price: previous } = oracle
+	if (price === null) return { label, met: null }
+	if (oracle.recorded === false) return { label, met: true }
+	if (limits === null || previous === null) return { label, met: false }
+	const ceiling = previous + capped(previous, limits.maxUpBps)
+	const floor =
+		limits.maxDownBps === null
+			? null
+			: previous - capped(previous, limits.maxDownBps)
+	const met = price <= ceiling && (floor === null || price >= floor)
+	if (met) return { label, met }
+	const top = formatPriceValue(ceiling)
+	return {
+		label,
+		met,
+		detail: floor === null ? `≤ ${top}` : `${formatPriceValue(floor)} – ${top}`,
+	}
+}
+
+function toAttestAction(
+	state: ReadyState,
+	grant: Grant,
+	wallet: string,
+	input: string,
+): AttestAction {
+	const { oracle, ledgerTime } = state
+	const price = parseUnits(input, PRICE_DECIMALS)
+	const freshness = oracle.limits?.freshness ?? null
+	const conditions = [
+		withinBand(oracle, price),
+		cooldownElapsed(oracle, ledgerTime),
+		withinAllowedMove(oracle, price),
+	]
+	const unavailable = unavailableFor(grant, wallet)
+	return {
+		id: "attest",
+		group: "Price",
+		label: "Attest price",
+		conditions,
+		outcome:
+			price === null || freshness === null
+				? null
+				: `Records ${formatSignedPrice(price)} as the share price, valid for ${formatDuration(freshness)}.`,
+		...(oracle.ripcord === true
+			? { note: "Ripcord raised — attesting does not lift it." }
+			: {}),
+		field: {
+			label: "Share price",
+			placeholder: "0.0000",
+			value: input,
+			invalid: input.trim() !== "" && price === null,
+		},
+		price,
+		freshness,
+		enabled:
+			unavailable === undefined &&
+			price !== null &&
+			freshness !== null &&
+			allMet(conditions),
+		...(unavailable === undefined ? {} : { unavailable }),
+	}
+}
+
 export function toCycleActions(
 	state: CycleState,
 	grants: Grant[],
 	wallet: string,
+	priceInput = "",
 ): CycleAction[] {
 	if (state.status !== "ready" || grants.length === 0) return []
 	const manager = grantFor(grants, MANAGER_ROLE, wallet)
+	const attester = grantFor(grants, ATTESTER_ROLE, wallet)
 	const actions: CycleAction[] = []
 	if (manager !== undefined) actions.push(toCloseAction(state, manager, wallet))
 	actions.push(toFulfillAction(state))
+	if (attester !== undefined)
+		actions.push(toAttestAction(state, attester, wallet, priceInput))
 	return actions
 }
 

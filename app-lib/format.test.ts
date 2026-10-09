@@ -12,6 +12,7 @@ import {
 	networkStatus,
 	parseAmount,
 	parseUnits,
+	PRICE_DECIMALS,
 	type Price,
 	shortAddress,
 } from "./format"
@@ -127,6 +128,18 @@ describe("formatExact", () => {
 	it("keeps the sign for a negative value smaller than one whole unit", () => {
 		const value = -5n as Amount
 		expect(formatExact(value, AMOUNT_DECIMALS)).toBe("-0.0000005")
+	})
+})
+
+describe("formatExact with a minimum fraction width", () => {
+	it("pads a short price to the minimum", () => {
+		const value = 11n * 10n ** 17n
+		expect(formatExact(value as Price, PRICE_DECIMALS, 4)).toBe("1.1000")
+	})
+
+	it("keeps every significant digit beyond the minimum", () => {
+		const value = 1_041_234_560_000_000_000n
+		expect(formatExact(value as Price, PRICE_DECIMALS, 4)).toBe("1.04123456")
 	})
 })
 
