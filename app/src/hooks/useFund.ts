@@ -1,11 +1,13 @@
 import { type Amount, type Signer } from "@stellar-scaffold/app-lib"
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
 	useContractTransaction,
 	type TransactionStatus,
 } from "./useContractTransaction"
 import { cycleWriteKeys } from "./useCycleState"
+import { depositBalanceKey } from "./useDepositBalance"
+import { useWallet } from "./useWallet"
 
 export type FundStatus = TransactionStatus
 
@@ -16,6 +18,14 @@ export interface UseFund {
 }
 
 export function useFund(): UseFund {
+	const { address } = useWallet()
+	const refreshKeys = useMemo(
+		() =>
+			address
+				? [...cycleWriteKeys, depositBalanceKey(address)]
+				: cycleWriteKeys,
+		[address],
+	)
 	const call = useCallback(
 		(signer: Signer, assets: Amount) =>
 			asyncVaultWriter(signer).then((vault) =>
@@ -27,6 +37,6 @@ export function useFund(): UseFund {
 	return useContractTransaction<Amount, bigint, Record<never, never>>(
 		call,
 		toConfirmed,
-		cycleWriteKeys,
+		refreshKeys,
 	)
 }
