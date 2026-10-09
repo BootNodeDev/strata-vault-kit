@@ -7,6 +7,7 @@ import {
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
 import React from "react"
+import { type ActivateWindDownStatus } from "../../hooks/useActivateWindDown"
 import { type AttestStatus } from "../../hooks/useAttest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
@@ -15,6 +16,7 @@ import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type TransactionFailure } from "../../hooks/useContractTransaction"
 import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
+import { type FinalizeWindDownRoundStatus } from "../../hooks/useFinalizeWindDownRound"
 import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
@@ -109,6 +111,19 @@ export type TransactionModalProps =
 			action: "fund"
 			status: FundStatus
 			amount: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "activate-wind-down"
+			status: ActivateWindDownStatus
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "finalize-round"
+			status: FinalizeWindDownRoundStatus
+			round: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -301,6 +316,32 @@ const fundContractErrorReason = (code: number): string => {
 			return code < 6000
 				? "Your wallet could not cover the transfer. Check the balance and the trustline."
 				: GENERIC_REFUSAL
+	}
+}
+
+const activateWindDownContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6047:
+			return "No wind-down has been proposed, so there is nothing to activate."
+		case 6046:
+			return "The wind-down is already active."
+		case 6049:
+			return "The wind-down delay has not elapsed yet."
+		default:
+			return GENERIC_REFUSAL
+	}
+}
+
+const finalizeRoundContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6050:
+			return "The wind-down is not active, so no round can be finalized."
+		case 6052:
+			return "There is nothing to distribute: the free reserve is empty or too small to split across holders."
+		case 6014:
+			return "The round is too large for the vault to record."
+		default:
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -792,6 +833,87 @@ const describeFundStatus = (
 	}
 }
 
+const describeActivateWindDownStatus = (
+	status: ActivateWindDownStatus,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing to activate the wind-down",
+				body: "We are getting the activation ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: "Signing stops new requests and opens distribution rounds.",
+			}
+		case "submitted":
+			return {
+				heading: "Sending the activation",
+				body: "The activation is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: "Wind-down active",
+				body: "New requests are closed. Rounds can now distribute the free reserve.",
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(
+					status.failure,
+					activateWindDownContractErrorReason,
+					OPERATOR_FOLLOW_UP,
+				),
+				hash: status.hash,
+			}
+	}
+}
+
+const describeFinalizeRoundStatus = (
+	status: FinalizeWindDownRoundStatus,
+	round: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: `Preparing round ${round}`,
+				body: "We are getting the round ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `Signing distributes the free reserve to holders as round ${round}.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending the round",
+				body: "The round is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: `Round ${round} finalized`,
+				body: `${formatExact(status.credited, AMOUNT_DECIMALS)} is claimable by holders.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(
+					status.failure,
+					finalizeRoundContractErrorReason,
+					OPERATOR_FOLLOW_UP,
+				),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeStatus = (
 	props: TransactionModalProps,
 ): { heading: string; body: string; hash?: string } | undefined => {
@@ -833,6 +955,10 @@ const describeStatus = (
 			return describeDeployStatus(props.status, props.amount)
 		case "fund":
 			return describeFundStatus(props.status, props.amount)
+		case "activate-wind-down":
+			return describeActivateWindDownStatus(props.status)
+		case "finalize-round":
+			return describeFinalizeRoundStatus(props.status, props.round)
 	}
 }
 
@@ -859,7 +985,9 @@ const computeSteps = (
 		| FulfillEpochStatus
 		| AttestStatus
 		| DeployToCustodianStatus
-		| FundStatus,
+		| FundStatus
+		| ActivateWindDownStatus
+		| FinalizeWindDownRoundStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":

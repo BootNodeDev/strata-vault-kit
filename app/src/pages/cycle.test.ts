@@ -25,7 +25,9 @@ import {
 	type CycleAction,
 	type EpochAction,
 	type TreasuryAction,
+	type WindDownAction,
 	formatDuration,
+	formatTimestamp,
 	toActivityList,
 	toCycleActions,
 	toCycleRows,
@@ -617,7 +619,9 @@ type ActionOf<Id extends CycleAction["id"]> = Id extends AttestAction["id"]
 	? AttestAction
 	: Id extends TreasuryAction["id"]
 		? TreasuryAction
-		: EpochAction
+		: Id extends WindDownAction["id"]
+			? WindDownAction
+			: EpochAction
 
 const actionOf = <Id extends CycleAction["id"]>(
 	actions: CycleAction[],
@@ -1497,5 +1501,175 @@ describe("toCycleActions, funding the reserve", () => {
 
 		expect(fund?.outcome).toBeNull()
 		expect(fund?.enabled).toBe(true)
+	})
+})
+
+const ACTIVE_AT = NOW - 60n
+const proposed: CycleWindDown = {
+	...windDown,
+	phase: "proposed",
+	activeAt: ACTIVE_AT,
+	round: 0,
+}
+const active: CycleWindDown = { ...proposed, phase: "active", round: 2 }
+
+const windDownActionsOf = (
+	overrides: Partial<ReadyState>,
+	grants: Grant[] = [manager],
+) =>
+	actionsFor(ready(overrides), grants).filter(
+		(action) => action.group === "Wind-down",
+	)
+
+describe("toCycleActions, winding down", () => {
+	it("offers no wind-down action while none is proposed", () => {
+		expect(windDownActionsOf({})).toEqual([])
+	})
+
+	it("offers no wind-down action while the wind-down could not be read", () => {
+		expect(
+			windDownActionsOf({ windDown: { ...proposed, phase: null } }),
+		).toEqual([])
+	})
+
+	it("offers the activation to every cycle role once a wind-down is proposed, never asking for signatures", () => {
+		for (const holder of [
+			manager,
+			attester,
+			treasury,
+			grant("vault manager", { needs: 2 }),
+		]) {
+			const actions = windDownActionsOf({ windDown: proposed }, [holder])
+			expect(actions.map((action) => action.id)).toEqual(["activate-wind-down"])
+			expect(actions[0]?.enabled).toBe(true)
+			expect(actions[0]?.unavailable).toBeUndefined()
+		}
+	})
+
+	it("enables the activation once the delay has elapsed, saying what it stops and opens", () => {
+		const activate = actionOf(
+			windDownActionsOf({ windDown: proposed }),
+			"activate-wind-down",
+		)
+
+		expect(activate?.label).toBe("Activate wind-down")
+		expect(conditionsOf(activate)).toEqual({
+			"Wind-down proposed": true,
+			"Delay elapsed": true,
+		})
+		expect(activate?.outcome).toBe(
+			"Stops new requests and opens distribution rounds.",
+		)
+		expect(activate?.round).toBeNull()
+		expect(activate?.enabled).toBe(true)
+	})
+
+	it("lets the activation through at the very second the delay elapses", () => {
+		const activate = actionOf(
+			windDownActionsOf({ windDown: { ...proposed, activeAt: NOW } }),
+			"activate-wind-down",
+		)
+
+		expect(conditionsOf(activate)["Delay elapsed"]).toBe(true)
+		expect(activate?.enabled).toBe(true)
+	})
+
+	it("names when the wind-down activates while the delay runs", () => {
+		const activate = actionOf(
+			windDownActionsOf({ windDown: { ...proposed, activeAt: NOW + 1n } }),
+			"activate-wind-down",
+		)
+
+		expect(conditionOf(activate, "Delay elapsed")).toEqual({
+			label: "Delay elapsed",
+			met: false,
+			detail: `Activates ${formatTimestamp(NOW + 1n)}`,
+		})
+		expect(activate?.enabled).toBe(false)
+	})
+
+	it("cannot vouch for the delay when the ledger time could not be read", () => {
+		const activate = actionOf(
+			windDownActionsOf({ windDown: proposed, ledgerTime: null }),
+			"activate-wind-down",
+		)
+
+		expect(conditionsOf(activate)["Delay elapsed"]).toBe(false)
+		expect(activate?.enabled).toBe(false)
+	})
+
+	it("offers both actions once active, the activation already done", () => {
+		const actions = windDownActionsOf({ windDown: active })
+		const activate = actionOf(actions, "activate-wind-down")
+
+		expect(actions.map((action) => action.id)).toEqual([
+			"activate-wind-down",
+			"finalize-round",
+		])
+		expect(conditionsOf(activate)["Wind-down proposed"]).toBe(false)
+		expect(activate?.enabled).toBe(false)
+	})
+
+	it("enables the round when the free reserve holds something, naming what it distributes and which round", () => {
+		const finalize = actionOf(
+			windDownActionsOf({ windDown: active }, [attester]),
+			"finalize-round",
+		)
+
+		expect(finalize?.label).toBe("Finalize round")
+		expect(conditionsOf(finalize)).toEqual({
+			"Wind-down active": true,
+			"Free reserve to distribute": true,
+		})
+		expect(finalize?.outcome).toBe("Distributes 900.00 to holders as round 3.")
+		expect(finalize?.round).toBe(3)
+		expect(finalize?.enabled).toBe(true)
+		expect(finalize?.unavailable).toBeUndefined()
+	})
+
+	it("shows the empty free reserve and disables the round when nothing is free", () => {
+		const finalize = actionOf(
+			windDownActionsOf({
+				windDown: active,
+				reserve: { ...reserve, free: amount(0n) },
+			}),
+			"finalize-round",
+		)
+
+		expect(conditionOf(finalize, "Free reserve to distribute")).toEqual({
+			label: "Free reserve to distribute",
+			met: false,
+			detail: "Free 0.00",
+		})
+		expect(finalize?.outcome).toBeNull()
+		expect(finalize?.enabled).toBe(false)
+	})
+
+	it("cannot vouch for the free reserve when it could not be read", () => {
+		const finalize = actionOf(
+			windDownActionsOf({
+				windDown: active,
+				reserve: { ...reserve, free: null },
+			}),
+			"finalize-round",
+		)
+
+		expect(conditionOf(finalize, "Free reserve to distribute")).toEqual({
+			label: "Free reserve to distribute",
+			met: false,
+		})
+		expect(finalize?.outcome).toBeNull()
+		expect(finalize?.enabled).toBe(false)
+	})
+
+	it("holds the round when the current round could not be read", () => {
+		const finalize = actionOf(
+			windDownActionsOf({ windDown: { ...active, round: null } }),
+			"finalize-round",
+		)
+
+		expect(finalize?.round).toBeNull()
+		expect(finalize?.outcome).toBeNull()
+		expect(finalize?.enabled).toBe(false)
 	})
 })
