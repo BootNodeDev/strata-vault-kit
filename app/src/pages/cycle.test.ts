@@ -1412,6 +1412,38 @@ describe("toCycleActions, funding the reserve", () => {
 		expect(fund?.enabled).toBe(true)
 	})
 
+	describe("against a shortfall", () => {
+		const short = (uncovered: bigint) => ({
+			reserve: { ...reserve, free: amount(0n), uncovered: amount(uncovered) },
+		})
+
+		it("only shrinks the shortfall when the funding does not cover it", () => {
+			expect(fundOf("100", amount(1_000n), short(250n))?.outcome).toBe(
+				"Adds 100.00 to the reserve; the shortfall becomes 150.00.",
+			)
+		})
+
+		it("leaves nothing free when the funding exactly covers the shortfall", () => {
+			expect(fundOf("250", amount(1_000n), short(250n))?.outcome).toBe(
+				"Adds 250.00 to the reserve; free reserve becomes 0.00.",
+			)
+		})
+
+		it("frees only what is left once the shortfall is covered", () => {
+			expect(fundOf("400", amount(1_000n), short(250n))?.outcome).toBe(
+				"Adds 400.00 to the reserve; free reserve becomes 150.00.",
+			)
+		})
+
+		it("states no outcome when the shortfall could not be read", () => {
+			const unknown = {
+				reserve: { ...reserve, free: amount(0n), uncovered: null },
+			}
+
+			expect(fundOf("100", amount(1_000n), unknown)?.outcome).toBeNull()
+		})
+	})
+
 	it("lets an amount equal to the wallet balance through", () => {
 		expect(fundOf("1000")?.enabled).toBe(true)
 	})

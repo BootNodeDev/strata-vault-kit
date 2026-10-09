@@ -5,7 +5,7 @@ import {
 	useContractTransaction,
 	type TransactionStatus,
 } from "./useContractTransaction"
-import { cycleWriteKeys } from "./useCycleState"
+import { custodianBalanceKey, cycleWriteKeys } from "./useCycleState"
 
 export type DeployToCustodianStatus = TransactionStatus
 
@@ -14,6 +14,8 @@ export interface UseDeployToCustodian {
 	submit: (assets: Amount) => boolean
 	reset: () => void
 }
+
+const refreshKeys = [...cycleWriteKeys, custodianBalanceKey]
 
 export function useDeployToCustodian(): UseDeployToCustodian {
 	const call = useCallback(
@@ -27,6 +29,6 @@ export function useDeployToCustodian(): UseDeployToCustodian {
 	return useContractTransaction<Amount, bigint, Record<never, never>>(
 		call,
 		toConfirmed,
-		cycleWriteKeys,
+		refreshKeys,
 	)
 }

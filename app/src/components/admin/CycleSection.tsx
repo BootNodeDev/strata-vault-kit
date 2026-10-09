@@ -1,8 +1,3 @@
-import {
-	AMOUNT_DECIMALS,
-	type Amount,
-	formatScaled,
-} from "@stellar-scaffold/app-lib"
 import React, { useEffect, useState } from "react"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { useAttest } from "../../hooks/useAttest"
@@ -16,6 +11,7 @@ import { useFund } from "../../hooks/useFund"
 import { usePendingTransaction } from "../../hooks/usePendingTransaction"
 import {
 	type CycleAction,
+	exactAmount,
 	formatDuration,
 	formatSignedPrice,
 	toActivityList,
@@ -35,8 +31,6 @@ const useAmountInput = (confirmed: boolean) => {
 	}, [confirmed])
 	return [input, setInput] as const
 }
-
-const amountLabel = (amount: Amount) => formatScaled(amount, AMOUNT_DECIMALS)
 
 const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 	grants,
@@ -80,11 +74,11 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 				return
 			case "deploy":
 				if (action.amount !== null)
-					deploy.submit(action.amount, amountLabel(action.amount))
+					deploy.submit(action.amount, exactAmount(action.amount))
 				return
 			case "fund":
 				if (action.amount !== null)
-					fund.submit(action.amount, amountLabel(action.amount))
+					fund.submit(action.amount, exactAmount(action.amount))
 		}
 	}
 

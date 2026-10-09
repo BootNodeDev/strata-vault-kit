@@ -134,7 +134,7 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 	reserve: {
 		free: amount(900n),
 		committed: null,
-		uncovered: null,
+		uncovered: amount(0n),
 		liquid: null,
 		netDeployed: null,
 		depositCap: null,
@@ -311,6 +311,24 @@ describe("CycleSection", () => {
 		).toBeTruthy()
 	})
 
+	it("labels the deployment modal with the exact amount that is signed", () => {
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} />,
+		)
+
+		fireEvent.change(
+			screen.getByRole("textbox", { name: "Amount to deploy" }),
+			{ target: { value: "250.1234567" } },
+		)
+		fireEvent.click(button("Deploy to custodian"))
+		deployMock.status = { status: "preparing" }
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to deploy 250.1234567" }),
+		).toBeTruthy()
+	})
+
 	it("clears the deployment amount once it confirms", () => {
 		const { rerender } = render(
 			<CycleSection grants={[treasury]} wallet={WALLET} />,
@@ -327,6 +345,23 @@ describe("CycleSection", () => {
 
 		expect(field().value).toBe("")
 		expect(screen.getByRole("heading", { name: "Deployed" })).toBeTruthy()
+	})
+
+	it("labels the funding modal with the exact amount that is signed", () => {
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} />,
+		)
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+			target: { value: "100.1234567" },
+		})
+		fireEvent.click(button("Fund the reserve"))
+		fundMock.status = { status: "preparing" }
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to fund 100.1234567" }),
+		).toBeTruthy()
 	})
 
 	it("judges the funding against the connected wallet's balance", () => {

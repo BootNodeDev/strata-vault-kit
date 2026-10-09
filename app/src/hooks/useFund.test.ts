@@ -159,6 +159,18 @@ describe("useFund", () => {
 		})
 	})
 
+	it("refreshes the custodian's balance once the funding confirms", async () => {
+		vaultMock.fund.mockResolvedValue(successful())
+		const { result, queryClient } = renderFund()
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+		await act(() => result.current.submit(assets))
+
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: ["cycle", "custodianBalance"],
+		})
+	})
+
 	it("names the funding wallet's balance among the keys it refreshes, keeping submit stable", () => {
 		const { result, rerender } = renderFund()
 		const firstSubmit = result.current.submit
