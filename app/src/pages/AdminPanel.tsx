@@ -5,6 +5,8 @@ import AddressRows, { type AddressRow } from "../components/vault/AddressRows"
 import { vaultContractId } from "../config/contracts"
 import {
 	type AdminAddresses,
+	type Grant,
+	type Standing,
 	SURFACE_LABELS,
 	SURFACE_ORDER,
 	useAdminAuthority,
@@ -20,6 +22,25 @@ const toAddressRows = (addresses: AdminAddresses): AddressRow[] => [
 	{ label: "Identity verifier", address: addresses.identityVerifier },
 ]
 
+const describeStanding = (standing: Standing): string => {
+	if (standing === "signs-alone") return "signs alone"
+	if ("needs" in standing) return `1 of ${standing.needs} signatures`
+	return `weight ${standing.weight} of threshold ${standing.threshold}`
+}
+
+const isSingleKey = (grant: Grant, wallet: string): boolean =>
+	grant.authority === wallet && grant.standing === "signs-alone"
+
+const describeGrant = (grant: Grant, wallet: string): string =>
+	isSingleKey(grant, wallet)
+		? grant.role
+		: `${grant.role} (${describeStanding(grant.standing)})`
+
+const describeCardGrant = (grant: Grant, wallet: string): string =>
+	isSingleKey(grant, wallet)
+		? grant.role
+		: `${grant.role} — ${describeStanding(grant.standing)}`
+
 const AddressesBlock: React.FC<{ addresses: AdminAddresses }> = ({
 	addresses,
 }) => (
@@ -32,7 +53,8 @@ const AddressesBlock: React.FC<{ addresses: AdminAddresses }> = ({
 )
 
 const AdminPanel: React.FC = () => {
-	const { status, surfaces, grantedBy, roles, addresses } = useAdminAuthority()
+	const { status, surfaces, grantedBy, grants, signersUnknown, addresses } =
+		useAdminAuthority()
 	const { address } = useWallet()
 
 	return (
@@ -42,8 +64,14 @@ const AdminPanel: React.FC = () => {
 			{status === "ready" && address !== undefined && (
 				<p className={typeStyles.footnote}>
 					{shortAddress(address)}
-					{roles.length > 0 ? ` · ${roles.join(" · ")}` : ""}
+					{grants.length > 0
+						? ` · ${grants.map((grant) => describeGrant(grant, address)).join(" · ")}`
+						: ""}
 				</p>
+			)}
+
+			{status === "ready" && signersUnknown && (
+				<p className={typeStyles.footnote}>Signer lookup unavailable.</p>
 			)}
 
 			{status === "disconnected" && (
@@ -86,7 +114,10 @@ const AdminPanel: React.FC = () => {
 									{SURFACE_LABELS[surface]}
 								</h2>
 								<span className={`${typeStyles.footnote} ${styles.cardNote}`}>
-									Granted by {grantedBy[surface].join(", ")}
+									Granted by{" "}
+									{grantedBy[surface]
+										.map((grant) => describeCardGrant(grant, address ?? ""))
+										.join(", ")}
 								</span>
 							</li>
 						),

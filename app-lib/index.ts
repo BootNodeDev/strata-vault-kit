@@ -3,6 +3,7 @@
 // Clients in app-lib/clients/index.ts). Framework-specific code (providers,
 // stores, UI components) stays in each template.
 
+export * from "./accounts" // AccountSigners, accountSigners
 export * from "./contracts" // AsyncVaultApi, connectAsyncVault
 export * from "./env" // rpcUrl, networkPassphrase, stellarNetwork, horizonUrl, network, labPrefix
 export * from "./format" // shortAddress, formatNetworkName, networkStatus, NetworkState

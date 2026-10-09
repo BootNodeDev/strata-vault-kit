@@ -5,7 +5,7 @@ import {
 } from "@creit.tech/stellar-wallets-kit"
 import { defaultModules } from "@creit.tech/stellar-wallets-kit/modules/utils"
 import { Horizon } from "@stellar/stellar-sdk"
-import { networkPassphrase, stellarNetwork } from "./env"
+import { horizonUrl, networkPassphrase, stellarNetwork } from "./env"
 
 // These wallets work on Local and Futurenet while the rest enforce or fail on
 // any networks beside Testnet and Mainnet. Filter below based on dApp config.
@@ -142,7 +142,7 @@ export const onWalletChange = (
 function getHorizonHost(mode: string) {
 	switch (mode) {
 		case "LOCAL":
-			return "http://localhost:8000"
+			return horizonUrl
 		case "FUTURENET":
 			return "https://horizon-futurenet.stellar.org"
 		case "TESTNET":
@@ -154,7 +154,7 @@ function getHorizonHost(mode: string) {
 	}
 }
 
-const horizon = new Horizon.Server(getHorizonHost(stellarNetwork), {
+export const horizon = new Horizon.Server(getHorizonHost(stellarNetwork), {
 	allowHttp: stellarNetwork === "LOCAL",
 })
 

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type * as UseAdminAuthority from "../hooks/useAdminAuthority"
-import { type AdminAuthority } from "../hooks/useAdminAuthority"
+import { type AdminAuthority, type Grant } from "../hooks/useAdminAuthority"
 import AdminPanel from "./AdminPanel"
 
 const { useAdminAuthorityMock, useWalletMock } = vi.hoisted(() => ({
@@ -19,12 +19,18 @@ vi.mock("../hooks/useWallet", () => ({ useWallet: useWalletMock }))
 const connectedAddress = "GCONNECTEDADDRESS1234567890"
 
 const emptyGrantedBy = {
-	cycle: [] as string[],
-	compliance: [] as string[],
-	emergency: [] as string[],
-	configuration: [] as string[],
-	governance: [] as string[],
+	cycle: [] as Grant[],
+	compliance: [] as Grant[],
+	emergency: [] as Grant[],
+	configuration: [] as Grant[],
+	governance: [] as Grant[],
 }
+
+const holderOf = (role: string): Grant => ({
+	role,
+	authority: connectedAddress,
+	standing: "signs-alone",
+})
 
 const noAddresses = { oracle: null, shareToken: null, identityVerifier: null }
 
@@ -32,7 +38,8 @@ const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	status: "disconnected",
 	surfaces: new Set(),
 	grantedBy: emptyGrantedBy,
-	roles: [],
+	grants: [],
+	signersUnknown: false,
 	addresses: noAddresses,
 	...overrides,
 })
@@ -93,17 +100,21 @@ describe("AdminPanel", () => {
 	})
 
 	it("renders a card per held surface, in Cycle · Compliance · Emergency · Configuration · Governance order", () => {
+		const manager = holderOf("vault manager")
+		const guardian = holderOf("vault guardian")
+		const oracleGuardian = holderOf("oracle guardian")
+		const governance = holderOf("vault governance")
 		useAdminAuthorityMock.mockReturnValue(
 			authority({
 				status: "ready",
 				surfaces: new Set(["governance", "cycle", "emergency"]),
 				grantedBy: {
 					...emptyGrantedBy,
-					cycle: ["vault manager"],
-					emergency: ["vault guardian", "oracle guardian"],
-					governance: ["vault governance"],
+					cycle: [manager],
+					emergency: [guardian, oracleGuardian],
+					governance: [governance],
 				},
-				roles: ["vault manager", "vault guardian", "oracle guardian"],
+				grants: [manager, guardian, oracleGuardian, governance],
 			}),
 		)
 		render(<AdminPanel />)
@@ -122,8 +133,104 @@ describe("AdminPanel", () => {
 		).toBeNull()
 		expect(
 			screen.getByText(
-				"GCON...7890 · vault manager · vault guardian · oracle guardian",
+				"GCON...7890 · vault manager · vault guardian · oracle guardian · vault governance",
 			),
 		).toBeTruthy()
+	})
+
+	it("names the signature standing on the identity line and on the cards", () => {
+		const governance: Grant = {
+			role: "vault governance",
+			authority: "GGOVERNANCEMULTISIG",
+			standing: "signs-alone",
+		}
+		const attester: Grant = {
+			role: "oracle attester",
+			authority: "GATTESTERMULTISIG",
+			standing: { needs: 2 },
+		}
+		const compliance: Grant = {
+			role: "share-token compliance",
+			authority: "GCOMPLIANCEMULTISIG",
+			standing: { weight: 1, threshold: 3 },
+		}
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle", "compliance", "governance"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					cycle: [attester],
+					compliance: [compliance],
+					governance: [governance],
+				},
+				grants: [attester, compliance, governance],
+			}),
+		)
+		render(<AdminPanel />)
+
+		expect(
+			screen.getByText(
+				"GCON...7890 · oracle attester (1 of 2 signatures) · share-token compliance (weight 1 of threshold 3) · vault governance (signs alone)",
+			),
+		).toBeTruthy()
+		expect(
+			screen.getByText("Granted by vault governance — signs alone"),
+		).toBeTruthy()
+		expect(
+			screen.getByText("Granted by oracle attester — 1 of 2 signatures"),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Granted by share-token compliance — weight 1 of threshold 3",
+			),
+		).toBeTruthy()
+	})
+
+	it("says nothing extra when the wallet is the holder itself", () => {
+		const manager = holderOf("vault manager")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle"]),
+				grantedBy: { ...emptyGrantedBy, cycle: [manager] },
+				grants: [manager],
+			}),
+		)
+		render(<AdminPanel />)
+
+		expect(screen.getByText("Granted by vault manager")).toBeTruthy()
+		expect(screen.getByText("GCON...7890 · vault manager")).toBeTruthy()
+		expect(screen.queryByText("Signer lookup unavailable.")).toBeNull()
+	})
+
+	it("names the standing of the wallet's own key when it cannot act alone", () => {
+		const governance: Grant = {
+			role: "vault governance",
+			authority: connectedAddress,
+			standing: { needs: 2 },
+		}
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["governance"]),
+				grantedBy: { ...emptyGrantedBy, governance: [governance] },
+				grants: [governance],
+			}),
+		)
+		render(<AdminPanel />)
+
+		expect(
+			screen.getByText("GCON...7890 · vault governance (1 of 2 signatures)"),
+		).toBeTruthy()
+	})
+
+	it("adds one line when the signer lookup was unavailable", () => {
+		useAdminAuthorityMock.mockReturnValue(
+			authority({ status: "ready", signersUnknown: true }),
+		)
+		render(<AdminPanel />)
+
+		expect(screen.getAllByText("Signer lookup unavailable.")).toHaveLength(1)
 	})
 })
