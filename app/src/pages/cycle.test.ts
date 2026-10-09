@@ -75,6 +75,7 @@ const oracle: CycleOracle = {
 	attestedAt: 1_700_050_000n,
 	expiresAt: 1_700_136_000n,
 	ripcord: false,
+	recorded: true,
 	limits: {
 		freshness: 86_400n,
 		cooldown: 3_600n,
@@ -256,6 +257,7 @@ describe("toCycleRows", () => {
 				oracle: {
 					...oracle,
 					state: "never",
+					recorded: false,
 					price: null,
 					attestedAt: null,
 					expiresAt: null,
@@ -863,7 +865,9 @@ describe("toCycleActions", () => {
 	it("keeps the outcome without a price figure when the oracle has none to show", () => {
 		const fulfill = actionOf(
 			actionsFor(
-				ready({ oracle: { ...oracle, state: "never", price: null } }),
+				ready({
+					oracle: { ...oracle, state: "never", recorded: false, price: null },
+				}),
 				[treasury],
 			),
 			"fulfill-epoch",
@@ -952,7 +956,13 @@ describe("toCycleActions, attesting", () => {
 		"accepts a price on the edge of the band, %s",
 		(input) => {
 			const attest = attestOf(input, {
-				oracle: { ...oracle, state: "never", price: null, attestedAt: null },
+				oracle: {
+					...oracle,
+					state: "never",
+					recorded: false,
+					price: null,
+					attestedAt: null,
+				},
 			})
 
 			expect(conditionsOf(attest)["Within the band"]).toBe(true)
@@ -1043,7 +1053,13 @@ describe("toCycleActions, attesting", () => {
 
 	it("skips the cooldown and the move cap for the first attestation", () => {
 		const attest = attestOf("1.9", {
-			oracle: { ...oracle, state: "never", price: null, attestedAt: null },
+			oracle: {
+				...oracle,
+				state: "never",
+				recorded: false,
+				price: null,
+				attestedAt: null,
+			},
 		})
 
 		expect(conditionsOf(attest)).toEqual({
@@ -1052,6 +1068,47 @@ describe("toCycleActions, attesting", () => {
 			"Within the allowed move": true,
 		})
 		expect(attest?.enabled).toBe(true)
+	})
+
+	it("skips the cooldown and the move cap with the ripcord raised and no stored record", () => {
+		const attest = attestOf("1.9", {
+			ledgerTime: oracle.attestedAt! - 1n,
+			oracle: {
+				...oracle,
+				state: "paused",
+				ripcord: true,
+				recorded: false,
+				price: null,
+				attestedAt: null,
+			},
+		})
+
+		expect(conditionsOf(attest)).toEqual({
+			"Within the band": true,
+			"Cooldown elapsed": true,
+			"Within the allowed move": true,
+		})
+		expect(attest?.enabled).toBe(true)
+	})
+
+	it("states the typed price exactly in the outcome, not rounded to four decimals", () => {
+		expect(attestOf("1.04123456")?.outcome).toBe(
+			"Records 1.04123456 as the share price, valid for 1d.",
+		)
+		expect(attestOf("1.1")?.outcome).toBe(
+			"Records 1.1000 as the share price, valid for 1d.",
+		)
+	})
+
+	it("makes the attestation unavailable when the attester's authority is an account the wallet only signs for", () => {
+		const attest = attestOf("1.04", {}, [
+			grant("oracle attester", "signs-alone", "GOTHERACCOUNT9876543210"),
+		])
+
+		expect(attest?.unavailable).toBe(
+			"Signs for GOTH...3210; acting on its behalf is not supported yet.",
+		)
+		expect(attest?.enabled).toBe(false)
 	})
 
 	it("cannot vouch for the band or the move when the oracle's limits could not be read", () => {

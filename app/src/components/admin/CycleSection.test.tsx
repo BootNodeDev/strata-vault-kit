@@ -95,6 +95,7 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 		attestedAt: 1_700_050_000n,
 		expiresAt: 1_700_136_000n,
 		ripcord: false,
+		recorded: true,
 		limits: {
 			freshness: 86_400n,
 			cooldown: 3_600n,
@@ -230,6 +231,23 @@ describe("CycleSection", () => {
 
 		expect(
 			screen.getByRole("heading", { name: "Preparing to attest 1.0400" }),
+		).toBeTruthy()
+	})
+
+	it("labels the modal with the exact price that is signed", () => {
+		const { rerender } = render(
+			<CycleSection grants={[attester]} wallet={WALLET} />,
+		)
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Share price" }), {
+			target: { value: "1.04123456" },
+		})
+		fireEvent.click(button("Attest price"))
+		attestMock.status = { status: "preparing" }
+		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to attest 1.04123456" }),
 		).toBeTruthy()
 	})
 

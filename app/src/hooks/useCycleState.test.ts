@@ -93,6 +93,7 @@ describe("toOracle", () => {
 			attestedAt: 1_700_050_000n,
 			expiresAt: 1_700_136_000n,
 			ripcord: false,
+			recorded: true,
 			limits: {
 				freshness: 86_400n,
 				cooldown: 3_600n,
@@ -132,6 +133,22 @@ describe("toOracle", () => {
 		})
 	})
 
+	it("knows there is no record even while the ripcord is raised", () => {
+		const oracle = toOracle(
+			state("Paused"),
+			{ kind: "contract-error", code: 3006 },
+			value(config),
+		)
+
+		expect(oracle).toMatchObject({
+			state: "paused",
+			ripcord: true,
+			recorded: false,
+			price: null,
+			attestedAt: null,
+		})
+	})
+
 	it("reports nothing it could not read", () => {
 		expect(toOracle(unreadable, unreadable, unreadable)).toEqual({
 			state: "unreadable",
@@ -139,6 +156,7 @@ describe("toOracle", () => {
 			attestedAt: null,
 			expiresAt: null,
 			ripcord: null,
+			recorded: null,
 			limits: null,
 		})
 	})
