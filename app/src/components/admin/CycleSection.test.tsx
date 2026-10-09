@@ -1,6 +1,7 @@
 import { type Amount, type Price } from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { type ActivateWindDownStatus } from "../../hooks/useActivateWindDown"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { type AttestStatus } from "../../hooks/useAttest"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
@@ -8,6 +9,7 @@ import { type CycleState } from "../../hooks/useCycleState"
 import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
 import { type DepositBalance } from "../../hooks/useDepositBalance"
 import { type EpochRecord } from "../../hooks/useEpochHistory"
+import { type FinalizeWindDownRoundStatus } from "../../hooks/useFinalizeWindDownRound"
 import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type FundStatus } from "../../hooks/useFund"
 import CycleSection from "./CycleSection"
@@ -22,6 +24,8 @@ const {
 	attestMock,
 	deployMock,
 	fundMock,
+	activateMock,
+	finalizeMock,
 } = vi.hoisted(() => ({
 	useCycleStateMock: vi.fn(),
 	useCycleEventsMock: vi.fn(),
@@ -52,6 +56,16 @@ const {
 		submit: vi.fn(() => true),
 		reset: vi.fn(),
 	},
+	activateMock: {
+		status: { status: "idle" } as ActivateWindDownStatus,
+		submit: vi.fn(() => true),
+		reset: vi.fn(),
+	},
+	finalizeMock: {
+		status: { status: "idle" } as FinalizeWindDownRoundStatus,
+		submit: vi.fn(() => true),
+		reset: vi.fn(),
+	},
 }))
 
 vi.mock("../../hooks/useCycleState", () => ({
@@ -75,6 +89,12 @@ vi.mock("../../hooks/useDeployToCustodian", () => ({
 }))
 vi.mock("../../hooks/useFund", () => ({
 	useFund: () => fundMock,
+}))
+vi.mock("../../hooks/useActivateWindDown", () => ({
+	useActivateWindDown: () => activateMock,
+}))
+vi.mock("../../hooks/useFinalizeWindDownRound", () => ({
+	useFinalizeWindDownRound: () => finalizeMock,
 }))
 vi.mock("../../hooks/useDepositBalance", () => ({
 	useDepositBalance: useDepositBalanceMock,
@@ -155,6 +175,8 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 
 const WALLET = "GAUTHORITY1234567890"
 
+const windDown = (ready() as ReadyState).windDown
+
 const grant = (role: string, standing: Grant["standing"] = "signs-alone") => ({
 	role,
 	authority: WALLET,
@@ -176,11 +198,15 @@ describe("CycleSection", () => {
 		attestMock.status = { status: "idle" }
 		deployMock.status = { status: "idle" }
 		fundMock.status = { status: "idle" }
+		activateMock.status = { status: "idle" }
+		finalizeMock.status = { status: "idle" }
 		closeEpochMock.submit.mockReturnValue(true)
 		fulfillEpochMock.submit.mockReturnValue(true)
 		attestMock.submit.mockReturnValue(true)
 		deployMock.submit.mockReturnValue(true)
 		fundMock.submit.mockReturnValue(true)
+		activateMock.submit.mockReturnValue(true)
+		finalizeMock.submit.mockReturnValue(true)
 		useCycleStateMock.mockReturnValue({ cycle: ready() })
 		useDepositBalanceMock.mockReturnValue({
 			balance: { status: "held", amount: amount(1_000n) } as DepositBalance,
@@ -649,5 +675,80 @@ describe("CycleSection", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 
 		expect(fulfillEpochMock.reset).toHaveBeenCalledTimes(1)
+	})
+
+	it("offers no wind-down action while none is proposed", () => {
+		render(<CycleSection grants={[manager]} wallet={WALLET} />)
+
+		expect(
+			screen.queryByRole("button", { name: "Activate wind-down" }),
+		).toBeNull()
+		expect(screen.queryByRole("button", { name: "Finalize round" })).toBeNull()
+	})
+
+	it("offers every cycle role the activation under the Wind-down group once proposed, and follows it in the modal", () => {
+		const proposed = ready({
+			windDown: { ...windDown, phase: "proposed", activeAt: 1_700_000_000n },
+		})
+		useCycleStateMock.mockReturnValue({ cycle: proposed })
+		const { rerender } = render(
+			<CycleSection grants={[attester]} wallet={WALLET} />,
+		)
+		const windDownGroup = screen.getByRole("heading", {
+			name: "Wind-down",
+		}).parentElement!
+		const activate = within(windDownGroup).getByRole("button", {
+			name: "Activate wind-down",
+		}) as HTMLButtonElement
+
+		expect(activate.disabled).toBe(false)
+		expect(
+			screen.getByText("Stops new requests and opens distribution rounds."),
+		).toBeTruthy()
+		fireEvent.click(activate)
+		expect(activateMock.submit).toHaveBeenCalledTimes(1)
+
+		activateMock.status = { status: "preparing" }
+		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", {
+				name: "Preparing to activate the wind-down",
+			}),
+		).toBeTruthy()
+	})
+
+	it("submits the round and keeps its number in the modal after the cycle moves on", () => {
+		const active = (round: number) =>
+			ready({
+				windDown: {
+					...windDown,
+					phase: "active",
+					activeAt: 1_700_000_000n,
+					round,
+				},
+			})
+		useCycleStateMock.mockReturnValue({ cycle: active(2) })
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} />,
+		)
+
+		expect(
+			screen.getByText("Distributes 900.00 to holders as round 3."),
+		).toBeTruthy()
+		fireEvent.click(button("Finalize round"))
+		expect(finalizeMock.submit).toHaveBeenCalledTimes(1)
+
+		finalizeMock.status = {
+			status: "confirmed",
+			credited: amount(900n),
+		}
+		useCycleStateMock.mockReturnValue({ cycle: active(3) })
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", { name: "Round 3 finalized" }),
+		).toBeTruthy()
+		expect(screen.getByText("900.00 is claimable by holders.")).toBeTruthy()
 	})
 })
