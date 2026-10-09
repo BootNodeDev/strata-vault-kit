@@ -1,5 +1,5 @@
 import { formatScaled, PRICE_DECIMALS } from "@stellar-scaffold/app-lib"
-import React, { useState } from "react"
+import React, { useEffect, useState } from "react"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { useAttest } from "../../hooks/useAttest"
 import { useCloseEpoch } from "../../hooks/useCloseEpoch"
@@ -31,6 +31,11 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 	const fulfillEpoch = usePendingTransaction(useFulfillEpoch())
 	const attest = usePendingTransaction(useAttest())
 	const [priceInput, setPriceInput] = useState("")
+	const attested = attest.status.status === "confirmed"
+
+	useEffect(() => {
+		if (attested) setPriceInput("")
+	}, [attested])
 
 	const run = (action: CycleAction) => {
 		switch (action.id) {
@@ -43,9 +48,9 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 					fulfillEpoch.submit(action.epochId, String(action.epochId))
 				return
 			case "attest":
-				if (action.price !== null && action.expiresAt !== null)
+				if (action.price !== null && action.freshness !== null)
 					attest.submit(
-						{ price: action.price, expiresAt: action.expiresAt },
+						{ price: action.price, freshness: action.freshness },
 						formatScaled(action.price, PRICE_DECIMALS, 4),
 					)
 		}

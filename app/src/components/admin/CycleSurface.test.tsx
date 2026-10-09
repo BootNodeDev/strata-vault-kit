@@ -323,7 +323,7 @@ const attestAction: CycleAction = {
 		invalid: false,
 	},
 	price: null,
-	expiresAt: null,
+	freshness: null,
 	enabled: false,
 }
 

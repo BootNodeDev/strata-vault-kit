@@ -359,7 +359,7 @@ export type EpochAction = ActionBase & {
 export type AttestAction = ActionBase & {
 	id: "attest"
 	price: Price | null
-	expiresAt: bigint | null
+	freshness: bigint | null
 }
 
 export type CycleAction = EpochAction | AttestAction
@@ -534,10 +534,7 @@ function toAttestAction(
 ): AttestAction {
 	const { oracle, ledgerTime } = state
 	const price = parseUnits(input, PRICE_DECIMALS)
-	const expiresAt =
-		ledgerTime === null || oracle.limits === null
-			? null
-			: ledgerTime + oracle.limits.freshness
+	const freshness = oracle.limits?.freshness ?? null
 	const conditions = [
 		withinBand(oracle, price),
 		cooldownElapsed(oracle, ledgerTime),
@@ -550,9 +547,9 @@ function toAttestAction(
 		label: "Attest price",
 		conditions,
 		outcome:
-			price === null || expiresAt === null
+			price === null || freshness === null
 				? null
-				: `Records ${formatPriceValue(price)} as the share price, valid until ${formatTimestamp(expiresAt)}.`,
+				: `Records ${formatPriceValue(price)} as the share price, valid for ${formatDuration(freshness)}.`,
 		...(oracle.ripcord === true
 			? { note: "Ripcord raised — attesting does not lift it." }
 			: {}),
@@ -563,11 +560,11 @@ function toAttestAction(
 			invalid: input.trim() !== "" && price === null,
 		},
 		price,
-		expiresAt,
+		freshness,
 		enabled:
 			unavailable === undefined &&
 			price !== null &&
-			expiresAt !== null &&
+			freshness !== null &&
 			allMet(conditions),
 		...(unavailable === undefined ? {} : { unavailable }),
 	}
