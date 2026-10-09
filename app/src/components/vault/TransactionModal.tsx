@@ -524,7 +524,7 @@ const describeCloseEpochStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `Signing seals epoch ${epoch} and opens epoch ${BigInt(epoch) + 1n}. Requests in epoch ${epoch} wait for a price.`,
+				body: `Signing seals epoch ${epoch} and opens the next one. Requests in epoch ${epoch} wait for a price.`,
 			}
 		case "submitted":
 			return {
