@@ -56,6 +56,82 @@
 	margin: 0;
 }
 
+.unmet {
+	color: var(--vault-text-muted);
+	text-align: right;
+	white-space: nowrap;
+}
+
+.actionArea {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+	gap: 20px 24px;
+	margin-top: 9px;
+}
+
+.action {
+	display: flex;
+	flex-direction: column;
+	gap: 11px;
+	padding: 16px;
+	border: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-inset);
+}
+
+.conditions {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.conditions .row {
+	padding-bottom: 0;
+}
+
+.outcome {
+	margin: 0;
+	color: var(--vault-text-body);
+}
+
+.actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.actionPrimary,
+.actionUnavailable {
+	flex: 1;
+	min-height: 48px;
+	padding: 13px 18px;
+	font-family: var(--vault-font-sans);
+	font-size: 15.5px;
+	font-weight: 500;
+	border-radius: 0;
+}
+
+.actionPrimary {
+	border: 1px solid var(--vault-action);
+	background: var(--vault-action);
+	color: var(--vault-surface-card);
+}
+
+.actionPrimary:hover:not(:disabled) {
+	background: var(--vault-action-ring);
+	border-color: var(--vault-action);
+	color: var(--vault-action);
+}
+
+.actionUnavailable {
+	border: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-card);
+	color: var(--vault-text-muted);
+	cursor: not-allowed;
+}
+
 .rowSkeleton {
 	height: 1em;
 	width: 11ch;

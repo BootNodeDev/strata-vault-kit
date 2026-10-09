@@ -8,6 +8,7 @@ import {
 	type CycleGroup,
 	type ListState,
 } from "../components/admin/CycleSurface"
+import { type Grant } from "../hooks/useAdminAuthority"
 import {
 	type CycleEpoch,
 	type CycleOracle,
@@ -20,8 +21,10 @@ import {
 	type EpochRecord,
 } from "../hooks/useEpochHistory"
 import {
+	type CycleAction,
 	formatDuration,
 	toActivityList,
+	toCycleActions,
 	toCycleRows,
 	toEpochList,
 } from "./cycle"
@@ -100,7 +103,9 @@ const windDown: CycleWindDown = {
 	supply: amount(0n),
 }
 
-const ready = (overrides: Partial<Extract<CycleState, { status: "ready" }>>) =>
+type ReadyState = Extract<CycleState, { status: "ready" }>
+
+const ready = (overrides: Partial<ReadyState>) =>
 	({
 		status: "ready",
 		ledgerTime: NOW,
@@ -586,5 +591,253 @@ describe("toActivityList", () => {
 		])
 
 		expect(rows).toEqual([])
+	})
+})
+
+const grant = (role: string, standing: Grant["standing"] = "signs-alone") => ({
+	role,
+	authority: "GAUTHORITY1234567890",
+	standing,
+})
+
+const manager = grant("vault manager")
+const treasury = grant("vault treasury")
+
+const actionOf = (actions: CycleAction[], id: CycleAction["id"]) =>
+	actions.find((action) => action.id === id)
+
+const conditionsOf = (action: CycleAction | undefined) =>
+	Object.fromEntries(
+		(action?.conditions ?? []).map(({ label, met }) => [label, met]),
+	)
+
+describe("toCycleActions", () => {
+	it("offers the manager both actions and any other cycle role only the settlement", () => {
+		expect(
+			toCycleActions(ready({}), [manager]).map((action) => action.id),
+		).toEqual(["close-epoch", "fulfill-epoch"])
+		expect(
+			toCycleActions(ready({}), [treasury]).map((action) => action.id),
+		).toEqual(["fulfill-epoch"])
+	})
+
+	it("offers nothing while the cycle is still being read or could not be", () => {
+		expect(toCycleActions({ status: "checking" }, [manager])).toEqual([])
+		expect(toCycleActions({ status: "unreadable" }, [manager])).toEqual([])
+	})
+
+	it("enables the close when the wind-down is not active and an epoch is open, naming what it seals and opens", () => {
+		const close = actionOf(toCycleActions(ready({}), [manager]), "close-epoch")
+
+		expect(close?.label).toBe("Close epoch")
+		expect(conditionsOf(close)).toEqual({
+			"Wind-down not active": true,
+			"Epoch open": true,
+		})
+		expect(close?.outcome).toBe("Seals epoch 5 and opens epoch 6.")
+		expect(close?.epochId).toBe(5n)
+		expect(close?.enabled).toBe(true)
+		expect(close?.unavailable).toBeUndefined()
+	})
+
+	it("disables the close while the wind-down is active", () => {
+		const close = actionOf(
+			toCycleActions(ready({ windDown: { ...windDown, phase: "active" } }), [
+				manager,
+			]),
+			"close-epoch",
+		)
+
+		expect(conditionsOf(close)["Wind-down not active"]).toBe(false)
+		expect(close?.enabled).toBe(false)
+	})
+
+	it("disables the close when no open epoch could be read", () => {
+		const close = actionOf(
+			toCycleActions(ready({ epoch: { ...epoch, open: null } }), [manager]),
+			"close-epoch",
+		)
+
+		expect(conditionsOf(close)["Epoch open"]).toBe(false)
+		expect(close?.enabled).toBe(false)
+	})
+
+	it("does not count an unreadable wind-down as inactive", () => {
+		const close = actionOf(
+			toCycleActions(ready({ windDown: { ...windDown, phase: null } }), [
+				manager,
+			]),
+			"close-epoch",
+		)
+
+		expect(conditionsOf(close)["Wind-down not active"]).toBe(false)
+	})
+
+	it("makes the close unavailable when the manager's authority needs more signatures than the wallet's", () => {
+		const close = actionOf(
+			toCycleActions(ready({}), [grant("vault manager", { needs: 2 })]),
+			"close-epoch",
+		)
+
+		expect(close?.unavailable).toBe(
+			"Needs 2 signatures; collecting them is not supported yet.",
+		)
+		expect(close?.enabled).toBe(false)
+	})
+
+	it("reads the threshold as the signatures needed for a weighted authority", () => {
+		const close = actionOf(
+			toCycleActions(ready({}), [
+				grant("vault manager", { weight: 1, threshold: 3 }),
+			]),
+			"close-epoch",
+		)
+
+		expect(close?.unavailable).toBe(
+			"Needs 3 signatures; collecting them is not supported yet.",
+		)
+	})
+
+	it("enables the settlement when every condition is met, pricing the oldest sealed epoch at the current price", () => {
+		const fulfill = actionOf(
+			toCycleActions(ready({}), [treasury]),
+			"fulfill-epoch",
+		)
+
+		expect(fulfill?.label).toBe("Fulfill epoch")
+		expect(conditionsOf(fulfill)).toEqual({
+			"Sealed epoch awaiting a price": true,
+			"Notice elapsed": true,
+			"Price valid": true,
+			"Attested after the close": true,
+			"Vault not paused": true,
+			"Wind-down not active": true,
+		})
+		expect(fulfill?.outcome).toBe(
+			"Prices epoch 4 at 1.0000 and settles its requests.",
+		)
+		expect(fulfill?.epochId).toBe(4n)
+		expect(fulfill?.enabled).toBe(true)
+		expect(fulfill?.unavailable).toBeUndefined()
+	})
+
+	it("never asks a settlement for signatures, since anyone may run it", () => {
+		const fulfill = actionOf(
+			toCycleActions(ready({}), [grant("vault treasury", { needs: 2 })]),
+			"fulfill-epoch",
+		)
+
+		expect(fulfill?.unavailable).toBeUndefined()
+		expect(fulfill?.enabled).toBe(true)
+	})
+
+	it("disables the settlement with no outcome when nothing sealed awaits a price", () => {
+		const fulfill = actionOf(
+			toCycleActions(ready({ epoch: { ...epoch, awaiting: null } }), [
+				treasury,
+			]),
+			"fulfill-epoch",
+		)
+
+		expect(conditionsOf(fulfill)["Sealed epoch awaiting a price"]).toBe(false)
+		expect(conditionsOf(fulfill)["Notice elapsed"]).toBe(false)
+		expect(conditionsOf(fulfill)["Attested after the close"]).toBe(false)
+		expect(fulfill?.outcome).toBeNull()
+		expect(fulfill?.epochId).toBeNull()
+		expect(fulfill?.enabled).toBe(false)
+	})
+
+	it("disables the settlement while the notice has not elapsed", () => {
+		const fulfill = actionOf(
+			toCycleActions(ready({ ledgerTime: sealed.priceableAt - 1n }), [
+				treasury,
+			]),
+			"fulfill-epoch",
+		)
+
+		expect(conditionsOf(fulfill)["Notice elapsed"]).toBe(false)
+		expect(fulfill?.enabled).toBe(false)
+	})
+
+	it("treats the notice as elapsed the second it is due, and unknown without a ledger time", () => {
+		expect(
+			conditionsOf(
+				actionOf(
+					toCycleActions(ready({ ledgerTime: sealed.priceableAt }), [treasury]),
+					"fulfill-epoch",
+				),
+			)["Notice elapsed"],
+		).toBe(true)
+		expect(
+			conditionsOf(
+				actionOf(
+					toCycleActions(ready({ ledgerTime: null }), [treasury]),
+					"fulfill-epoch",
+				),
+			)["Notice elapsed"],
+		).toBe(false)
+	})
+
+	it.each<CycleOracle["state"]>(["stale", "paused", "never", "unreadable"])(
+		"disables the settlement while the price is %s",
+		(state) => {
+			const fulfill = actionOf(
+				toCycleActions(ready({ oracle: { ...oracle, state } }), [treasury]),
+				"fulfill-epoch",
+			)
+
+			expect(conditionsOf(fulfill)["Price valid"]).toBe(false)
+			expect(fulfill?.enabled).toBe(false)
+		},
+	)
+
+	it("disables the settlement when the price was attested before the epoch was sealed", () => {
+		const fulfill = actionOf(
+			toCycleActions(
+				ready({ oracle: { ...oracle, attestedAt: sealed.closedAt - 1n } }),
+				[treasury],
+			),
+			"fulfill-epoch",
+		)
+
+		expect(conditionsOf(fulfill)["Attested after the close"]).toBe(false)
+		expect(fulfill?.enabled).toBe(false)
+	})
+
+	it("accepts a price attested in the same second the epoch was sealed", () => {
+		const fulfill = actionOf(
+			toCycleActions(
+				ready({ oracle: { ...oracle, attestedAt: sealed.closedAt } }),
+				[treasury],
+			),
+			"fulfill-epoch",
+		)
+
+		expect(conditionsOf(fulfill)["Attested after the close"]).toBe(true)
+	})
+
+	it.each<ReadyState["paused"]>(["paused", "checking", "unreadable"])(
+		"disables the settlement while the vault's pause reads %s",
+		(paused) => {
+			const fulfill = actionOf(
+				toCycleActions(ready({ paused }), [treasury]),
+				"fulfill-epoch",
+			)
+
+			expect(conditionsOf(fulfill)["Vault not paused"]).toBe(false)
+			expect(fulfill?.enabled).toBe(false)
+		},
+	)
+
+	it("keeps the outcome without a price figure when the oracle has none to show", () => {
+		const fulfill = actionOf(
+			toCycleActions(
+				ready({ oracle: { ...oracle, state: "never", price: null } }),
+				[treasury],
+			),
+			"fulfill-epoch",
+		)
+
+		expect(fulfill?.outcome).toBeNull()
 	})
 })

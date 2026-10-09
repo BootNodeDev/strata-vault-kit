@@ -4,7 +4,7 @@ import {
 	isUserRejection,
 	parseErrorCode,
 } from "@stellar-scaffold/app-lib"
-import { useQueryClient } from "@tanstack/react-query"
+import { type QueryKey, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useRef, useState } from "react"
 import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
@@ -40,6 +40,7 @@ export function useContractTransaction<
 >(
 	call: (signer: Signer, arg: TArg) => Promise<AssembledTransaction<TResult>>,
 	toConfirmed: (result: TResult) => TConfirmed,
+	extraKeys: readonly QueryKey[] = [],
 ): UseContractTransaction<TArg, TConfirmed> {
 	const { address, signTransaction } = useWallet()
 	const queryClient = useQueryClient()
@@ -69,6 +70,9 @@ export function useContractTransaction<
 				void queryClient.invalidateQueries({
 					queryKey: sharePositionKey(owner),
 				})
+				for (const queryKey of extraKeys) {
+					void queryClient.invalidateQueries({ queryKey })
+				}
 			}
 			applyStatus({ status: "preparing" })
 			try {
@@ -119,7 +123,7 @@ export function useContractTransaction<
 				submitting.current = false
 			}
 		},
-		[signTransaction, call, toConfirmed, queryClient],
+		[signTransaction, call, toConfirmed, queryClient, extraKeys],
 	)
 
 	const submit = useCallback(

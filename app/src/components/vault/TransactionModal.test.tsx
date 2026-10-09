@@ -1,4 +1,4 @@
-import { type Amount } from "@stellar-scaffold/app-lib"
+import { type Amount, type Price } from "@stellar-scaffold/app-lib"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { StrictMode } from "react"
@@ -7,6 +7,8 @@ import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
+import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
+import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import TransactionModal from "./TransactionModal"
@@ -113,6 +115,36 @@ const renderClaimRedeemModal = (status: ClaimRedeemStatus) => {
 			status={status}
 			amount="100.00"
 			ticker="USDC"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderCloseEpochModal = (status: CloseEpochStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="close-epoch"
+			status={status}
+			epoch="5"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderFulfillEpochModal = (status: FulfillEpochStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="fulfill-epoch"
+			status={status}
+			epoch="4"
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -1184,6 +1216,211 @@ describe("TransactionModal, claiming a redemption", () => {
 			status: "awaiting-signature",
 		})
 
+		fireEvent.click(screen.getByRole("button", { name: "Close" }))
+		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, closing an epoch", () => {
+	it("opens with a preparing state naming the epoch being closed", () => {
+		renderCloseEpochModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to close epoch 5" }),
+		).toBeTruthy()
+	})
+
+	it("tells the manager what signing seals and what it opens", () => {
+		renderCloseEpochModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Signing seals epoch 5 and opens epoch 6. Requests in epoch 5 wait for a price.",
+			),
+		).toBeTruthy()
+	})
+
+	it("tells the manager the close is on its way", () => {
+		renderCloseEpochModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending the close" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("names the epoch the vault sealed once confirmed, taking the id from the result rather than the label", () => {
+		renderCloseEpochModal({
+			status: "confirmed",
+			sealedEpoch: 7n,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByRole("heading", { name: "Epoch 7 sealed" })).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Epoch 8 is open and accepting requests. Epoch 7 prices once the notice elapses and a valid price is attested.",
+			),
+		).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6046, /winding down/],
+		[6029, /current epoch could not be found/],
+		[6032, /not open/],
+		[2000, /not authorized to close/],
+		[2007, /does not hold the manager role/],
+	])("names the vault's reason for code %i", (code, sentence) => {
+		renderCloseEpochModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(screen.getByText(sentence)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for a close error it does not recognize, without the raw code", () => {
+		renderCloseEpochModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6001 },
+		})
+
+		expect(
+			screen.getByText(/The vault refused this request\. Try again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/6001/)).toBeNull()
+	})
+
+	it("sends an unknown outcome to the Cycle card, not to the investor's requests", () => {
+		renderCloseEpochModal({
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Something went wrong" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"We could not confirm whether this reached the network. We don't yet know if it went through, so check the Cycle card before trying again.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByText(/your requests/)).toBeNull()
+	})
+
+	it("reads a declined signature as a choice and offers to try again", () => {
+		const { onRetry } = renderCloseEpochModal({
+			status: "failed",
+			failure: { kind: "declined" },
+		})
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, pricing an epoch", () => {
+	it("opens with a preparing state naming the epoch being priced", () => {
+		renderFulfillEpochModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to price epoch 4" }),
+		).toBeTruthy()
+	})
+
+	it("tells the operator what signing prices and settles", () => {
+		renderFulfillEpochModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Signing prices epoch 4 at the oracle's current price and settles its requests.",
+			),
+		).toBeTruthy()
+	})
+
+	it("tells the operator the settlement is on its way", () => {
+		renderFulfillEpochModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending the settlement" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("shows the share price the vault settled at once confirmed, to four places", () => {
+		renderFulfillEpochModal({
+			status: "confirmed",
+			sharePrice: 1_250_000_000_000_000_000n as Price,
+			hash: "b".repeat(64),
+		})
+
+		expect(screen.getByRole("heading", { name: "Epoch 4 priced" })).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Settled at 1.2500 per share. Share claims are ready; redemption claims wait until the reserve covers them.",
+			),
+		).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6046, /winding down/],
+		[6029, /epoch could not be found/],
+		[6038, /not sealed/],
+		[6042, /notice period has not elapsed/],
+		[6044, /price is not valid/],
+		[6043, /attested before this epoch was sealed/],
+		[6031, /could not resolve a valid share price/],
+		[6014, /too large/],
+		[1000, /paused/],
+	])("names the vault's reason for code %i", (code, sentence) => {
+		renderFulfillEpochModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(screen.getByText(sentence)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for a settlement error it does not recognize, without the raw code", () => {
+		renderFulfillEpochModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6035 },
+		})
+
+		expect(
+			screen.getByText(/The vault refused this request\. Try again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/6035/)).toBeNull()
+	})
+
+	it("sends an unknown outcome to the Cycle card, not to the investor's requests", () => {
+		renderFulfillEpochModal({
+			status: "failed",
+			failure: { kind: "unknown" },
+			hash: "c".repeat(64),
+		})
+
+		expect(
+			screen.getByText(/check the Cycle card before trying again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/your requests/)).toBeNull()
+		expect(screen.getByText(/cccc\.\.\.cccc/)).toBeTruthy()
+	})
+
+	it("is reachable as a dialog and dismissible by its close control", () => {
+		const { onClose } = renderFulfillEpochModal({ status: "preparing" })
+
+		expect(screen.getByRole("dialog")).toBeTruthy()
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 		expect(onClose).toHaveBeenCalledTimes(1)
 	})

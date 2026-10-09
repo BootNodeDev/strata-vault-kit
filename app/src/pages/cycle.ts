@@ -17,6 +17,7 @@ import {
 } from "../components/admin/CycleSurface"
 import { type FigureRow } from "../components/vault/AboutVault"
 import { type Metric } from "../components/vault/MetricsStrip"
+import { type Grant, type Standing } from "../hooks/useAdminAuthority"
 import {
 	type CycleEventsRead,
 	type CycleOracle,
@@ -323,6 +324,116 @@ function windDownGroup(windDown: CycleWindDown): CycleGroup {
 			row("Supply", formatAmountValue(windDown.supply)),
 		],
 	}
+}
+
+export type CycleActionId = "close-epoch" | "fulfill-epoch"
+
+export type Condition = { label: string; met: boolean }
+
+export type CycleAction = {
+	id: CycleActionId
+	label: string
+	conditions: Condition[]
+	outcome: string | null
+	epochId: bigint | null
+	enabled: boolean
+	unavailable?: string
+}
+
+const MANAGER_ROLE = "vault manager"
+
+const signaturesNeeded = (standing: Standing): number | null => {
+	if (standing === "signs-alone") return null
+	return "needs" in standing ? standing.needs : standing.threshold
+}
+
+const windDownInactive = (state: ReadyState): Condition => ({
+	label: "Wind-down not active",
+	met: state.windDown.phase !== null && state.windDown.phase !== "active",
+})
+
+const toAction = (
+	id: CycleActionId,
+	label: string,
+	conditions: Condition[],
+	outcome: string | null,
+	epochId: bigint | null,
+	unavailable?: string,
+): CycleAction => ({
+	id,
+	label,
+	conditions,
+	outcome,
+	epochId,
+	enabled:
+		unavailable === undefined &&
+		epochId !== null &&
+		conditions.every((condition) => condition.met),
+	...(unavailable === undefined ? {} : { unavailable }),
+})
+
+function toCloseAction(state: ReadyState, grant: Grant): CycleAction {
+	const { epoch } = state
+	const needed = signaturesNeeded(grant.standing)
+	return toAction(
+		"close-epoch",
+		"Close epoch",
+		[
+			windDownInactive(state),
+			{ label: "Epoch open", met: epoch.open?.status === "Open" },
+		],
+		`Seals epoch ${epoch.id} and opens epoch ${epoch.id + 1n}.`,
+		epoch.id,
+		needed === null
+			? undefined
+			: `Needs ${needed} signatures; collecting them is not supported yet.`,
+	)
+}
+
+function toFulfillAction(state: ReadyState): CycleAction {
+	const { awaiting } = state.epoch
+	const { oracle, ledgerTime } = state
+	const price = formatPriceValue(oracle.price)
+	return toAction(
+		"fulfill-epoch",
+		"Fulfill epoch",
+		[
+			{ label: "Sealed epoch awaiting a price", met: awaiting !== null },
+			{
+				label: "Notice elapsed",
+				met:
+					awaiting !== null &&
+					ledgerTime !== null &&
+					ledgerTime >= awaiting.priceableAt,
+			},
+			{ label: "Price valid", met: oracle.state === "valid" },
+			{
+				label: "Attested after the close",
+				met:
+					awaiting !== null &&
+					oracle.attestedAt !== null &&
+					oracle.attestedAt >= awaiting.closedAt,
+			},
+			{ label: "Vault not paused", met: state.paused === "open" },
+			windDownInactive(state),
+		],
+		awaiting === null || price === null
+			? null
+			: `Prices epoch ${awaiting.id} at ${price} and settles its requests.`,
+		awaiting?.id ?? null,
+	)
+}
+
+export function toCycleActions(
+	state: CycleState,
+	grants: Grant[],
+): CycleAction[] {
+	if (state.status !== "ready" || grants.length === 0) return []
+	const manager = grants.find((grant) => grant.role === MANAGER_ROLE)
+	const actions: CycleAction[] = []
+	if (manager !== undefined) actions.push(toCloseAction(state, manager))
+	actions.push(toFulfillAction(state))
+	return actions
 }
 
 export function toCycleRows(state: CycleState): CycleGroup[] {
