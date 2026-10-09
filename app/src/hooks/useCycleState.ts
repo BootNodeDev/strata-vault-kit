@@ -15,6 +15,7 @@ import { asset, asyncVault, navOracle } from "../config/clients"
 import {
 	type EpochHistoryRead,
 	type EpochRecord,
+	epochHistoryKey,
 	useEpochHistory,
 } from "./useEpochHistory"
 import { classifyNav, type NavClassification } from "./useNavPrice"
@@ -32,6 +33,15 @@ const VAULT_EVENTS = [
 	"deposit_claimed",
 ]
 const ORACLE_EVENTS = ["nav_attested"]
+
+export const cycleReadsKey = ["cycle", "reads"] as const
+export const cycleEventsKey = ["cycle", "events"] as const
+export const cycleWriteKeys = [
+	epochHistoryKey,
+	cycleReadsKey,
+	cycleEventsKey,
+	["vault", "figures"],
+] as const
 
 export type OracleLimits = {
 	freshness: bigint
@@ -246,7 +256,7 @@ export function useCycleState(): { cycle: CycleState } {
 	const { pause } = useVaultPaused()
 	const { authorities, isPending: authoritiesPending } = useVaultAuthorities()
 	const { data: reads } = useQuery({
-		queryKey: ["cycle", "reads"],
+		queryKey: cycleReadsKey,
 		queryFn: fetchCycleReads,
 		staleTime: STALE_MS,
 		refetchInterval: REFRESH_MS,
@@ -312,7 +322,7 @@ async function fetchCycleEvents(): Promise<CycleEventsRead> {
 
 export function useCycleEvents(): { cycleEvents: CycleEventsRead } {
 	const { data } = useQuery({
-		queryKey: ["cycle", "events"],
+		queryKey: cycleEventsKey,
 		queryFn: fetchCycleEvents,
 		staleTime: STALE_MS,
 	})
