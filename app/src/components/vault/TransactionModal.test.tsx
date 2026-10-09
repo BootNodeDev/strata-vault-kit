@@ -3,6 +3,7 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { StrictMode } from "react"
 import { describe, expect, it, vi } from "vitest"
+import { type ActivateWindDownStatus } from "../../hooks/useActivateWindDown"
 import { type AttestStatus } from "../../hooks/useAttest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
@@ -10,6 +11,7 @@ import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
+import { type FinalizeWindDownRoundStatus } from "../../hooks/useFinalizeWindDownRound"
 import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
@@ -197,6 +199,35 @@ const renderFundModal = (status: FundStatus) => {
 			action="fund"
 			status={status}
 			amount="100.00"
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderActivateModal = (status: ActivateWindDownStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="activate-wind-down"
+			status={status}
+			onClose={onClose}
+			onRetry={onRetry}
+		/>,
+	)
+	return { ...view, onClose, onRetry }
+}
+
+const renderFinalizeModal = (status: FinalizeWindDownRoundStatus) => {
+	const onClose = vi.fn()
+	const onRetry = vi.fn()
+	const view = render(
+		<TransactionModal
+			action="finalize-round"
+			status={status}
+			round="3"
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -1758,5 +1789,161 @@ describe("TransactionModal, funding the reserve", () => {
 		expect(screen.getByRole("dialog")).toBeTruthy()
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 		expect(onClose).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("TransactionModal, activating the wind-down", () => {
+	it("opens with a preparing state", () => {
+		renderActivateModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", {
+				name: "Preparing to activate the wind-down",
+			}),
+		).toBeTruthy()
+	})
+
+	it("tells the signer what the activation stops and opens", () => {
+		renderActivateModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Signing stops new requests and opens distribution rounds.",
+			),
+		).toBeTruthy()
+	})
+
+	it("tells the signer the activation is on its way", () => {
+		renderActivateModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending the activation" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("says requests are closed and rounds can distribute once confirmed", () => {
+		renderActivateModal({ status: "confirmed", hash: "b".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Wind-down active" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"New requests are closed. Rounds can now distribute the free reserve.",
+			),
+		).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6047, /No wind-down has been proposed/],
+		[6046, /already active/],
+		[6049, /delay has not elapsed/],
+	])("names the vault's reason for code %i", (code, sentence) => {
+		renderActivateModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(screen.getByText(sentence)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for a code it does not recognize, without the raw code", () => {
+		renderActivateModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6050 },
+		})
+
+		expect(
+			screen.getByText(/The vault refused this request\. Try again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/6050/)).toBeNull()
+	})
+
+	it("sends an unknown outcome to the Cycle card, not to the investor's requests", () => {
+		renderActivateModal({ status: "failed", failure: { kind: "unknown" } })
+
+		expect(
+			screen.getByText(/check the Cycle card before trying again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/your requests/)).toBeNull()
+	})
+})
+
+describe("TransactionModal, finalizing a wind-down round", () => {
+	it("opens with a preparing state naming the round", () => {
+		renderFinalizeModal({ status: "preparing" })
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing round 3" }),
+		).toBeTruthy()
+	})
+
+	it("tells the signer what the round distributes", () => {
+		renderFinalizeModal({ status: "awaiting-signature" })
+
+		expect(
+			screen.getByRole("heading", { name: "Confirm in your wallet" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Signing distributes the free reserve to holders as round 3.",
+			),
+		).toBeTruthy()
+	})
+
+	it("tells the signer the round is on its way", () => {
+		renderFinalizeModal({ status: "submitted", hash: "a".repeat(64) })
+
+		expect(
+			screen.getByRole("heading", { name: "Sending the round" }),
+		).toBeTruthy()
+		expect(screen.getByText(/on its way to the network/)).toBeTruthy()
+	})
+
+	it("says what holders can claim once confirmed, to the last digit", () => {
+		renderFinalizeModal({
+			status: "confirmed",
+			hash: "b".repeat(64),
+			credited: 9_000_000_001n as Amount,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Round 3 finalized" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText("900.0000001 is claimable by holders."),
+		).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6050, /not active/],
+		[6052, /nothing to distribute/],
+		[6014, /too large/],
+	])("names the vault's reason for code %i", (code, sentence) => {
+		renderFinalizeModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(screen.getByText(sentence)).toBeTruthy()
+	})
+
+	it("sends an unknown outcome to the Cycle card, not to the investor's requests", () => {
+		renderFinalizeModal({ status: "failed", failure: { kind: "unknown" } })
+
+		expect(
+			screen.getByText(/check the Cycle card before trying again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/your requests/)).toBeNull()
 	})
 })

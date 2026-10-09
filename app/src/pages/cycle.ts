@@ -332,9 +332,15 @@ function windDownGroup(windDown: CycleWindDown): CycleGroup {
 }
 
 export type CycleActionId =
-	"close-epoch" | "fulfill-epoch" | "attest" | "deploy" | "fund"
+	| "close-epoch"
+	| "fulfill-epoch"
+	| "attest"
+	| "deploy"
+	| "fund"
+	| "activate-wind-down"
+	| "finalize-round"
 
-export type ActionGroup = "Epoch" | "Price" | "Reserve"
+export type ActionGroup = "Epoch" | "Price" | "Reserve" | "Wind-down"
 
 export type Condition = { label: string; met: boolean | null; detail?: string }
 
@@ -373,7 +379,13 @@ export type TreasuryAction = ActionBase & {
 	amount: Amount | null
 }
 
-export type CycleAction = EpochAction | AttestAction | TreasuryAction
+export type WindDownAction = ActionBase & {
+	id: "activate-wind-down" | "finalize-round"
+	round: number | null
+}
+
+export type CycleAction =
+	EpochAction | AttestAction | TreasuryAction | WindDownAction
 
 export type ActionInputs = {
 	price?: string
@@ -729,6 +741,81 @@ function toFundAction(
 	}
 }
 
+const toWindDownAction = (
+	id: WindDownAction["id"],
+	label: string,
+	conditions: Condition[],
+	outcome: string | null,
+	round: number | null = null,
+): WindDownAction => ({
+	id,
+	group: "Wind-down",
+	label,
+	conditions,
+	outcome,
+	round,
+	enabled: allMet(conditions),
+})
+
+const delayElapsed = (
+	activeAt: bigint | null,
+	ledgerTime: bigint | null,
+): Condition => {
+	const label = "Delay elapsed"
+	if (activeAt === null || ledgerTime === null) return { label, met: false }
+	return ledgerTime >= activeAt
+		? { label, met: true }
+		: { label, met: false, detail: `Activates ${formatTimestamp(activeAt)}` }
+}
+
+function toActivateAction(state: ReadyState): WindDownAction {
+	const { phase, activeAt } = state.windDown
+	return toWindDownAction(
+		"activate-wind-down",
+		"Activate wind-down",
+		[
+			{ label: "Wind-down proposed", met: phase === "proposed" },
+			delayElapsed(activeAt, state.ledgerTime),
+		],
+		"Stops new requests and opens distribution rounds.",
+	)
+}
+
+const freeToDistribute = (free: Amount | null): Condition => {
+	const label = "Free reserve to distribute"
+	if (free === null) return { label, met: false }
+	return free > 0n
+		? { label, met: true }
+		: { label, met: false, detail: `Free ${exactAmount(free)}` }
+}
+
+function toFinalizeAction(state: ReadyState): WindDownAction {
+	const { phase, round } = state.windDown
+	const { free } = state.reserve
+	const next = round === null ? null : round + 1
+	const windDownActive: Condition =
+		next === null
+			? { label: "Wind-down active", met: false, detail: "Round unavailable" }
+			: { label: "Wind-down active", met: phase === "active" }
+	return toWindDownAction(
+		"finalize-round",
+		"Finalize round",
+		[windDownActive, freeToDistribute(free)],
+		free === null || free <= 0n || next === null
+			? null
+			: `Distributes ${exactAmount(free)} to holders as round ${next}.`,
+		next,
+	)
+}
+
+function toWindDownActions(state: ReadyState): WindDownAction[] {
+	const { phase } = state.windDown
+	if (phase === null || phase === "none") return []
+	const actions = [toActivateAction(state)]
+	if (phase === "active") actions.push(toFinalizeAction(state))
+	return actions
+}
+
 export function toCycleActions(
 	state: CycleState,
 	grants: Grant[],
@@ -748,6 +835,7 @@ export function toCycleActions(
 		actions.push(toDeployAction(state, treasury, wallet, inputs.deploy ?? ""))
 	actions.push(
 		toFundAction(state, inputs.fund ?? "", inputs.walletBalance ?? null),
+		...toWindDownActions(state),
 	)
 	return actions
 }
