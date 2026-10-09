@@ -5,7 +5,7 @@ import {
 	useContractTransaction,
 	type TransactionStatus,
 } from "./useContractTransaction"
-import { cycleWriteKeys } from "./useCycleState"
+import { custodianBalanceKey, cycleWriteKeys } from "./useCycleState"
 import { depositBalanceKey } from "./useDepositBalance"
 import { useWallet } from "./useWallet"
 
@@ -22,8 +22,8 @@ export function useFund(): UseFund {
 	const refreshKeys = useMemo(
 		() =>
 			address
-				? [...cycleWriteKeys, depositBalanceKey(address)]
-				: cycleWriteKeys,
+				? [...cycleWriteKeys, custodianBalanceKey, depositBalanceKey(address)]
+				: [...cycleWriteKeys, custodianBalanceKey],
 		[address],
 	)
 	const call = useCallback(

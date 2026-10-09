@@ -35,6 +35,7 @@ const VAULT_EVENTS = [
 const ORACLE_EVENTS = ["nav_attested"]
 
 export const cycleReadsKey = ["cycle", "reads"] as const
+export const custodianBalanceKey = ["cycle", "custodianBalance"] as const
 export const cycleEventsKey = ["cycle", "events"] as const
 export const cycleWriteKeys = [
 	epochHistoryKey,
@@ -274,7 +275,7 @@ export function useCycleState(): { cycle: CycleState } {
 	})
 	const custodian = authorities?.custodian ?? null
 	const { data: custodianBalance, isPending: balancePending } = useQuery({
-		queryKey: ["cycle", "custodianBalance", custodian],
+		queryKey: [...custodianBalanceKey, custodian],
 		queryFn:
 			custodian === null ? skipToken : () => fetchCustodianBalance(custodian),
 		staleTime: STALE_MS,

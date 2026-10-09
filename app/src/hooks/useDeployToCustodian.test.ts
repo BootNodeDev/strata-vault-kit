@@ -151,6 +151,18 @@ describe("useDeployToCustodian", () => {
 		}
 	})
 
+	it("refreshes the custodian's balance once the deployment confirms", async () => {
+		vaultMock.deploy_to_custodian.mockResolvedValue(successful())
+		const { result, queryClient } = renderDeploy()
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+		await act(() => result.current.submit(assets))
+
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: ["cycle", "custodianBalance"],
+		})
+	})
+
 	it("does not touch the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.deploy_to_custodian.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6012)" },

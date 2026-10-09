@@ -607,7 +607,7 @@ const amountAboveZero = (amount: Amount | null): Condition => ({
 	met: amount === null ? null : amount > 0n,
 })
 
-const exactAmount = (amount: Amount): string =>
+export const exactAmount = (amount: Amount): string =>
 	formatExact(amount, AMOUNT_DECIMALS)
 
 const coveredBy = (
@@ -687,12 +687,25 @@ function toDeployAction(
 	}
 }
 
+const fundOutcome = (
+	amount: Amount | null,
+	free: Amount | null,
+	uncovered: Amount | null,
+): string | null => {
+	if (amount === null || amount <= 0n || free === null || uncovered === null)
+		return null
+	const added = `Adds ${exactAmount(amount)} to the reserve; `
+	if (amount < uncovered)
+		return `${added}the shortfall becomes ${exactAmount((uncovered - amount) as Amount)}.`
+	return `${added}free reserve becomes ${exactAmount((free + amount - uncovered) as Amount)}.`
+}
+
 function toFundAction(
 	state: ReadyState,
 	input: string,
 	walletBalance: Amount | null,
 ): TreasuryAction {
-	const { free } = state.reserve
+	const { free, uncovered } = state.reserve
 	const amount = parseUnits(input, AMOUNT_DECIMALS)
 	const conditions = [
 		amountAboveZero(amount),
@@ -704,16 +717,12 @@ function toFundAction(
 			"Balance unavailable",
 		),
 	]
-	const total = reserveAfter(amount, free, (held, added) => held + added)
 	return {
 		id: "fund",
 		group: "Reserve",
 		label: "Fund the reserve",
 		conditions,
-		outcome:
-			amount === null || total === null
-				? null
-				: `Adds ${exactAmount(amount)} to the reserve; free reserve becomes ${total}.`,
+		outcome: fundOutcome(amount, free, uncovered),
 		field: amountField("Amount to fund", input, amount),
 		amount,
 		enabled: amount !== null && allMet(conditions),
