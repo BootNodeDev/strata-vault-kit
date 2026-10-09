@@ -206,11 +206,11 @@ describe("CycleSection", () => {
 		expect(button("Attest price").disabled).toBe(false)
 		expect(within(band).getByText("Met")).toBeTruthy()
 		expect(
-			screen.getByText(/^Records 1\.0400 as the share price, valid until /),
+			screen.getByText("Records 1.0400 as the share price, valid for 1d."),
 		).toBeTruthy()
 	})
 
-	it("submits the typed price with its expiry and follows it in the modal, labelled with the price", () => {
+	it("submits the typed price with the freshness window and follows it in the modal, labelled with the price", () => {
 		const { rerender } = render(
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
@@ -222,7 +222,7 @@ describe("CycleSection", () => {
 
 		expect(attestMock.submit).toHaveBeenCalledWith({
 			price: 1_040_000_000_000_000_000n,
-			expiresAt: 1_700_100_000n + 86_400n,
+			freshness: 86_400n,
 		})
 
 		attestMock.status = { status: "preparing" }
@@ -231,6 +231,41 @@ describe("CycleSection", () => {
 		expect(
 			screen.getByRole("heading", { name: "Preparing to attest 1.0400" }),
 		).toBeTruthy()
+	})
+
+	it("clears the typed price once the attestation confirms", () => {
+		const { rerender } = render(
+			<CycleSection grants={[attester]} wallet={WALLET} />,
+		)
+		const field = () =>
+			screen.getByRole("textbox", { name: "Share price" }) as HTMLInputElement
+
+		fireEvent.change(field(), { target: { value: "1.04" } })
+		fireEvent.click(button("Attest price"))
+		attestMock.status = { status: "awaiting-signature" }
+		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
+		expect(field().value).toBe("1.04")
+
+		attestMock.status = { status: "confirmed" }
+		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(field().value).toBe("")
+		expect(button("Attest price").disabled).toBe(true)
+	})
+
+	it("keeps the typed price when the attestation is declined or refused, so it can be retried", () => {
+		const { rerender } = render(
+			<CycleSection grants={[attester]} wallet={WALLET} />,
+		)
+		const field = () =>
+			screen.getByRole("textbox", { name: "Share price" }) as HTMLInputElement
+
+		fireEvent.change(field(), { target: { value: "1.04" } })
+		fireEvent.click(button("Attest price"))
+		attestMock.status = { status: "failed", failure: { kind: "declined" } }
+		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(field().value).toBe("1.04")
 	})
 
 	it("tells the attester how long the attested price stays valid once confirmed", () => {

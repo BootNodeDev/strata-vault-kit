@@ -25,7 +25,6 @@ import {
 	type CycleAction,
 	type EpochAction,
 	formatDuration,
-	formatTimestamp,
 	toActivityList,
 	toCycleActions,
 	toCycleRows,
@@ -931,7 +930,7 @@ describe("toCycleActions, attesting", () => {
 		},
 	)
 
-	it("enables the attestation when every condition is met, saying what it records and until when it is valid", () => {
+	it("enables the attestation when every condition is met, saying what it records and for how long", () => {
 		const attest = attestOf("1.04")
 
 		expect(conditionsOf(attest)).toEqual({
@@ -940,9 +939,9 @@ describe("toCycleActions, attesting", () => {
 			"Within the allowed move": true,
 		})
 		expect(attest?.price).toBe(1_040_000_000_000_000_000n)
-		expect(attest?.expiresAt).toBe(NOW + 86_400n)
+		expect(attest?.freshness).toBe(86_400n)
 		expect(attest?.outcome).toBe(
-			`Records 1.0400 as the share price, valid until ${formatTimestamp(NOW + 86_400n)}.`,
+			"Records 1.0400 as the share price, valid for 1d.",
 		)
 		expect(attest?.enabled).toBe(true)
 		expect(attest?.unavailable).toBeUndefined()
@@ -1063,7 +1062,7 @@ describe("toCycleActions, attesting", () => {
 		expect(conditionsOf(attest)["Within the band"]).toBe(false)
 		expect(conditionsOf(attest)["Within the allowed move"]).toBe(false)
 		expect(attest?.outcome).toBeNull()
-		expect(attest?.expiresAt).toBeNull()
+		expect(attest?.freshness).toBeNull()
 		expect(attest?.enabled).toBe(false)
 	})
 

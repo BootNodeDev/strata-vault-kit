@@ -9,7 +9,7 @@ import { cycleWriteKeys } from "./useCycleState"
 
 export type AttestStatus = TransactionStatus
 
-export type Attestation = { price: Price; expiresAt: bigint }
+export type Attestation = { price: Price; freshness: bigint }
 
 export const attestWriteKeys = [...cycleWriteKeys, ["nav", "latest"]] as const
 
@@ -21,12 +21,12 @@ export interface UseAttest {
 
 export function useAttest(): UseAttest {
 	const call = useCallback(
-		(signer: Signer, { price, expiresAt }: Attestation) =>
+		(signer: Signer, { price, freshness }: Attestation) =>
 			navOracleWriter(signer).then((oracle) =>
 				oracle.attest({
 					report: {
 						nav_per_share: price,
-						expires_at: expiresAt,
+						expires_at: BigInt(Math.floor(Date.now() / 1000)) + freshness,
 						timestamp: 0n,
 					},
 					caller: signer.publicKey,

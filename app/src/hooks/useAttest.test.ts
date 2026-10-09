@@ -17,8 +17,9 @@ vi.mock("../config/clients", () => ({
 
 const attestation = {
 	price: 1_040_000_000_000_000_000n as Price,
-	expiresAt: 1_700_186_400n,
+	freshness: 86_400n,
 }
+const wallClock = 1_700_200_000
 
 const renderAttest = () => renderWithWallet(useAttest)
 
@@ -33,10 +34,11 @@ const successful = () => ({
 describe("useAttest", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
+		vi.spyOn(Date, "now").mockReturnValue(wallClock * 1000 + 999)
 		navOracleWriterMock.mockResolvedValue(oracleMock)
 	})
 
-	it("moves through awaiting signature, submitted, then confirmed, in order", async () => {
+	it("moves through awaiting signature, submitted, then confirmed, in order, expiring the report a freshness window after the wall clock", async () => {
 		const signingGate = deferred<void>()
 		const confirmGate = deferred<void>()
 		const signAndSend = vi.fn(
@@ -72,7 +74,7 @@ describe("useAttest", () => {
 		expect(oracleMock.attest).toHaveBeenCalledWith({
 			report: {
 				nav_per_share: attestation.price,
-				expires_at: attestation.expiresAt,
+				expires_at: BigInt(wallClock) + attestation.freshness,
 				timestamp: 0n,
 			},
 			caller: investorAddress,
