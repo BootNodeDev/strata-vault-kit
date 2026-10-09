@@ -122,14 +122,14 @@ const renderClaimRedeemModal = (status: ClaimRedeemStatus) => {
 	return { ...view, onClose, onRetry }
 }
 
-const renderCloseEpochModal = (status: CloseEpochStatus) => {
+const renderCloseEpochModal = (status: CloseEpochStatus, epoch = "5") => {
 	const onClose = vi.fn()
 	const onRetry = vi.fn()
 	const view = render(
 		<TransactionModal
 			action="close-epoch"
 			status={status}
-			epoch="5"
+			epoch={epoch}
 			onClose={onClose}
 			onRetry={onRetry}
 		/>,
@@ -1238,10 +1238,22 @@ describe("TransactionModal, closing an epoch", () => {
 		).toBeTruthy()
 		expect(
 			screen.getByText(
-				"Signing seals epoch 5 and opens epoch 6. Requests in epoch 5 wait for a price.",
+				"Signing seals epoch 5 and opens the next one. Requests in epoch 5 wait for a price.",
 			),
 		).toBeTruthy()
 	})
+
+	it.each(["", "unknown"])(
+		"renders the signing prompt without throwing when the label is %j",
+		(epoch) => {
+			expect(() =>
+				renderCloseEpochModal({ status: "awaiting-signature" }, epoch),
+			).not.toThrow()
+			expect(
+				screen.getByRole("heading", { name: "Confirm in your wallet" }),
+			).toBeTruthy()
+		},
+	)
 
 	it("tells the manager the close is on its way", () => {
 		renderCloseEpochModal({ status: "submitted", hash: "a".repeat(64) })

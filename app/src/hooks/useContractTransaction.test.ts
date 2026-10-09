@@ -56,6 +56,19 @@ describe("useContractTransaction", () => {
 		expect(invalidateQueries).not.toHaveBeenCalled()
 	})
 
+	it("keeps the same submit across rerenders when no extra keys are given", () => {
+		const call = async () => transaction()
+		const toConfirmed = (result: bigint) => ({ result })
+		const { result, rerender } = renderWithWallet(() =>
+			useContractTransaction(call, toConfirmed),
+		)
+		const { submit } = result.current
+
+		rerender()
+
+		expect(result.current.submit).toBe(submit)
+	})
+
 	it("refreshes only the investor's caches when no extra keys are given", async () => {
 		const { result, queryClient } = renderWithWallet(() =>
 			useContractTransaction(

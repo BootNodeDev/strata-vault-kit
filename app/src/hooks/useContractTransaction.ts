@@ -27,6 +27,8 @@ export type TransactionStatus<
 	| ({ status: "confirmed"; hash?: string } & TConfirmed)
 	| { status: "failed"; failure: TransactionFailure; hash?: string }
 
+const NO_EXTRA_KEYS: readonly QueryKey[] = []
+
 export interface UseContractTransaction<TArg, TConfirmed extends object> {
 	status: TransactionStatus<TConfirmed>
 	submit: (arg: TArg) => boolean
@@ -40,7 +42,7 @@ export function useContractTransaction<
 >(
 	call: (signer: Signer, arg: TArg) => Promise<AssembledTransaction<TResult>>,
 	toConfirmed: (result: TResult) => TConfirmed,
-	extraKeys: readonly QueryKey[] = [],
+	extraKeys: readonly QueryKey[] = NO_EXTRA_KEYS,
 ): UseContractTransaction<TArg, TConfirmed> {
 	const { address, signTransaction } = useWallet()
 	const queryClient = useQueryClient()
