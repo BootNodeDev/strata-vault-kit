@@ -3,9 +3,10 @@ import { type Amount } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
+import type * as ContractTransactionModule from "./useContractTransaction"
+import { useContractTransaction } from "./useContractTransaction"
 import { cycleWriteKeys } from "./useCycleState"
 import { depositBalanceKey } from "./useDepositBalance"
-import { useContractTransaction } from "./useContractTransaction"
 import { useFund } from "./useFund"
 
 const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
@@ -18,8 +19,7 @@ vi.mock("../config/clients", () => ({
 }))
 
 vi.mock("./useContractTransaction", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("./useContractTransaction")>()
+	const actual = await importOriginal<typeof ContractTransactionModule>()
 	return {
 		...actual,
 		useContractTransaction: vi.fn(actual.useContractTransaction),
