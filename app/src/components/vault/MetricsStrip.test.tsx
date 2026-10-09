@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import MetricsStrip, { type Metric } from "./MetricsStrip"
 
-const metrics: [Metric, Metric, Metric, Metric] = [
+const metrics: Metric[] = [
 	{ label: "Share price", value: "1.0342", note: "Attested 31 Aug 2026" },
 	{
 		label: "Liquid reserve",
@@ -32,12 +32,7 @@ describe("MetricsStrip", () => {
 	})
 
 	it("renders an em dash for a value that could not be read", () => {
-		const unread = metrics.map((metric) => ({ ...metric, value: null })) as [
-			Metric,
-			Metric,
-			Metric,
-			Metric,
-		]
+		const unread = metrics.map((metric) => ({ ...metric, value: null }))
 
 		render(<MetricsStrip metrics={unread} />)
 
@@ -45,11 +40,11 @@ describe("MetricsStrip", () => {
 	})
 
 	it("distinguishes a pending cell from one that could not be read", () => {
-		const mixed: [Metric, Metric, Metric, Metric] = [
-			{ ...metrics[0], value: null, pending: true },
-			{ ...metrics[1], value: null },
-			metrics[2],
-			metrics[3],
+		const mixed: Metric[] = [
+			{ ...metrics[0]!, value: null, pending: true },
+			{ ...metrics[1]!, value: null },
+			metrics[2]!,
+			metrics[3]!,
 		]
 
 		render(<MetricsStrip metrics={mixed} />)

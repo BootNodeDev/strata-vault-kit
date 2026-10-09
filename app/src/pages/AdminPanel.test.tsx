@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type * as UseAdminAuthority from "../hooks/useAdminAuthority"
 import { type AdminAuthority, type Grant } from "../hooks/useAdminAuthority"
@@ -15,6 +15,10 @@ vi.mock("../hooks/useAdminAuthority", async (importOriginal) => {
 })
 
 vi.mock("../hooks/useWallet", () => ({ useWallet: useWalletMock }))
+
+vi.mock("../components/admin/CycleSection", () => ({
+	default: () => <div>Cycle surface</div>,
+}))
 
 const connectedAddress = "GCONNECTEDADDRESS1234567890"
 
@@ -232,5 +236,45 @@ describe("AdminPanel", () => {
 		render(<AdminPanel />)
 
 		expect(screen.getAllByText("Signer lookup unavailable.")).toHaveLength(1)
+	})
+
+	it("shows the cycle surface inside the Cycle card, and only there", () => {
+		const manager = holderOf("vault manager")
+		const compliance = holderOf("share-token compliance")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle", "compliance"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					cycle: [manager],
+					compliance: [compliance],
+				},
+				grants: [manager, compliance],
+			}),
+		)
+		render(<AdminPanel />)
+
+		const cards = screen.getAllByRole("listitem")
+		const cycleCard = cards.find(
+			(card) => within(card).queryByRole("heading", { name: "Cycle" }) !== null,
+		)
+		expect(within(cycleCard!).getByText("Cycle surface")).toBeTruthy()
+		expect(screen.getAllByText("Cycle surface")).toHaveLength(1)
+	})
+
+	it("shows no cycle surface to a wallet with no Cycle grant", () => {
+		const compliance = holderOf("share-token compliance")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["compliance"]),
+				grantedBy: { ...emptyGrantedBy, compliance: [compliance] },
+				grants: [compliance],
+			}),
+		)
+		render(<AdminPanel />)
+
+		expect(screen.queryByText("Cycle surface")).toBeNull()
 	})
 })
