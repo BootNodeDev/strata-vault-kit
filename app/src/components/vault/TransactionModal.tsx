@@ -2,6 +2,8 @@ import {
 	AMOUNT_DECIMALS,
 	explorerTransaction,
 	formatExact,
+	formatScaled,
+	PRICE_DECIMALS,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
 import React from "react"
@@ -9,7 +11,9 @@ import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
+import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type TransactionFailure } from "../../hooks/useContractTransaction"
+import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import typeStyles from "../../styles/type.module.css"
@@ -66,6 +70,20 @@ export type TransactionModalProps =
 			amount: string
 			ticker: string
 			uncovered?: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "close-epoch"
+			status: CloseEpochStatus
+			epoch: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "fulfill-epoch"
+			status: FulfillEpochStatus
+			epoch: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -170,9 +188,55 @@ const claimRedeemContractErrorReason = (
 	}
 }
 
+const closeEpochContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6046:
+			return "The vault is winding down, so no more epochs can be sealed."
+		case 6029:
+			return "The current epoch could not be found."
+		case 6032:
+			return "The current epoch is not open, so there is nothing to seal."
+		case 2000:
+			return "This wallet is not authorized to close epochs."
+		case 2007:
+			return "This wallet does not hold the manager role."
+		default:
+			return GENERIC_REFUSAL
+	}
+}
+
+const fulfillEpochContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6046:
+			return "The vault is winding down, so epochs can no longer be priced."
+		case 6029:
+			return "This epoch could not be found."
+		case 6038:
+			return "This epoch is not sealed, so it cannot be priced."
+		case 6042:
+			return "The notice period has not elapsed yet."
+		case 6044:
+			return "The oracle price is not valid right now."
+		case 6043:
+			return "The latest price was attested before this epoch was sealed. A fresh attestation is needed."
+		case 6031:
+			return "The vault could not resolve a valid share price."
+		case 6014:
+			return "The settlement total is too large for the vault to record."
+		case 1000:
+			return "The vault is paused, so epochs cannot be priced."
+		default:
+			return GENERIC_REFUSAL
+	}
+}
+
+const INVESTOR_FOLLOW_UP = "check your requests before doing anything else"
+const OPERATOR_FOLLOW_UP = "check the Cycle card before trying again"
+
 const describeFailure = (
 	failure: TransactionFailure,
 	contractErrorReason: (code: number) => string,
+	followUp = INVESTOR_FOLLOW_UP,
 ): { heading: string; body: string } => {
 	switch (failure.kind) {
 		case "declined":
@@ -193,7 +257,7 @@ const describeFailure = (
 		case "unknown":
 			return {
 				heading: "Something went wrong",
-				body: "We could not confirm whether this reached the network. We don't yet know if it went through, so check your requests before doing anything else.",
+				body: `We could not confirm whether this reached the network. We don't yet know if it went through, so ${followUp}.`,
 			}
 	}
 }
@@ -445,6 +509,88 @@ const describeClaimRedeemStatus = (
 	}
 }
 
+const describeCloseEpochStatus = (
+	status: CloseEpochStatus,
+	epoch: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: `Preparing to close epoch ${epoch}`,
+				body: "We are getting the close ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `Signing seals epoch ${epoch} and opens the next one. Requests in epoch ${epoch} wait for a price.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending the close",
+				body: "The close is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: `Epoch ${status.sealedEpoch} sealed`,
+				body: `Epoch ${status.sealedEpoch + 1n} is open and accepting requests. Epoch ${status.sealedEpoch} prices once the notice elapses and a valid price is attested.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(
+					status.failure,
+					closeEpochContractErrorReason,
+					OPERATOR_FOLLOW_UP,
+				),
+				hash: status.hash,
+			}
+	}
+}
+
+const describeFulfillEpochStatus = (
+	status: FulfillEpochStatus,
+	epoch: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: `Preparing to price epoch ${epoch}`,
+				body: "We are getting the settlement ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `Signing prices epoch ${epoch} at the oracle's current price and settles its requests.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending the settlement",
+				body: "The settlement is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: `Epoch ${epoch} priced`,
+				body: `Settled at ${formatScaled(status.sharePrice, PRICE_DECIMALS, 4)} per share. Share claims are ready; redemption claims wait until the reserve covers them.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(
+					status.failure,
+					fulfillEpochContractErrorReason,
+					OPERATOR_FOLLOW_UP,
+				),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeStatus = (
 	props: TransactionModalProps,
 ): { heading: string; body: string; hash?: string } | undefined => {
@@ -476,6 +622,10 @@ const describeStatus = (
 				props.ticker,
 				props.uncovered,
 			)
+		case "close-epoch":
+			return describeCloseEpochStatus(props.status, props.epoch)
+		case "fulfill-epoch":
+			return describeFulfillEpochStatus(props.status, props.epoch)
 	}
 }
 
@@ -497,7 +647,9 @@ const computeSteps = (
 		| CancelRedeemStatus
 		| ClaimDepositStatus
 		| RequestRedeemStatus
-		| ClaimRedeemStatus,
+		| ClaimRedeemStatus
+		| CloseEpochStatus
+		| FulfillEpochStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":

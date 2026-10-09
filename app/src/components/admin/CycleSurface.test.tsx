@@ -1,7 +1,9 @@
-import { render, screen, within } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+import { type CycleAction } from "../../pages/cycle"
 import CycleSurface, {
 	type ActivityRow,
+	CycleActions,
 	type CycleGroup,
 	type EpochRow,
 	type ListState,
@@ -248,6 +250,26 @@ describe("CycleSurface", () => {
 		expect(screen.queryByRole("table", { name: "Recent activity" })).toBeNull()
 	})
 
+	it("renders a group's action area after its rows", () => {
+		renderSurface({
+			groups: [
+				{ ...groups[0]!, actions: <button type="button">Close epoch</button> },
+			],
+		})
+
+		const group = screen.getByText("Notice period").closest("li")!
+			.parentElement!.parentElement!
+		const button = within(group).getByRole("button", { name: "Close epoch" })
+		expect(
+			group.compareDocumentPosition(button) &
+				Node.DOCUMENT_POSITION_CONTAINED_BY,
+		).toBeTruthy()
+		expect(
+			screen.getByText("Notice period").compareDocumentPosition(button) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy()
+	})
+
 	it("heads each group and section with a sentence-case title below the card title", () => {
 		renderSurface()
 
@@ -256,5 +278,101 @@ describe("CycleSurface", () => {
 				.getAllByRole("heading", { level: 3 })
 				.map((heading) => heading.textContent),
 		).toEqual(["Epoch", "Reserve", "Epochs", "Recent activity — last 7 days"])
+	})
+})
+
+const closeAction: CycleAction = {
+	id: "close-epoch",
+	label: "Close epoch",
+	conditions: [
+		{ label: "Wind-down not active", met: true },
+		{ label: "Epoch open", met: true },
+	],
+	outcome: "Seals epoch 5 and opens epoch 6.",
+	epochId: 5n,
+	enabled: true,
+}
+
+const fulfillAction: CycleAction = {
+	id: "fulfill-epoch",
+	label: "Fulfill epoch",
+	conditions: [
+		{ label: "Sealed epoch awaiting a price", met: true },
+		{ label: "Notice elapsed", met: false },
+	],
+	outcome: "Prices epoch 4 at 1.0000 and settles its requests.",
+	epochId: 4n,
+	enabled: false,
+}
+
+describe("CycleActions", () => {
+	it("lists each condition as met or not met, in the card's label and figure typography", () => {
+		render(<CycleActions actions={[fulfillAction]} onRun={vi.fn()} />)
+
+		const list = screen.getByRole("list", { name: "Fulfill epoch conditions" })
+		const [awaiting, notice] = within(list).getAllByRole("listitem")
+		expect(
+			within(awaiting!).getByText("Sealed epoch awaiting a price"),
+		).toBeTruthy()
+		expect(within(awaiting!).getByText("Met")).toBeTruthy()
+		expect(within(notice!).getByText("Notice elapsed")).toBeTruthy()
+		expect(within(notice!).getByText("Not met")).toBeTruthy()
+	})
+
+	it("states the resulting state before the button and enables the button only when the action is", () => {
+		const onRun = vi.fn()
+		render(
+			<CycleActions actions={[closeAction, fulfillAction]} onRun={onRun} />,
+		)
+
+		expect(screen.getByText("Seals epoch 5 and opens epoch 6.")).toBeTruthy()
+		const close = screen.getByRole("button", { name: "Close epoch" })
+		const fulfill = screen.getByRole("button", { name: "Fulfill epoch" })
+		expect((close as HTMLButtonElement).disabled).toBe(false)
+		expect((fulfill as HTMLButtonElement).disabled).toBe(true)
+
+		fireEvent.click(close)
+		fireEvent.click(fulfill)
+
+		expect(onRun).toHaveBeenCalledTimes(1)
+		expect(onRun).toHaveBeenCalledWith(closeAction)
+	})
+
+	it("says why an action is unavailable and keeps its button disabled", () => {
+		render(
+			<CycleActions
+				actions={[
+					{
+						...closeAction,
+						enabled: false,
+						unavailable:
+							"Needs 2 signatures; collecting them is not supported yet.",
+					},
+				]}
+				onRun={vi.fn()}
+			/>,
+		)
+
+		expect(
+			screen.getByText(
+				"Needs 2 signatures; collecting them is not supported yet.",
+			),
+		).toBeTruthy()
+		expect(
+			(screen.getByRole("button", { name: "Close epoch" }) as HTMLButtonElement)
+				.disabled,
+		).toBe(true)
+	})
+
+	it("omits the resulting state when there is none to show", () => {
+		render(
+			<CycleActions
+				actions={[{ ...fulfillAction, outcome: null }]}
+				onRun={vi.fn()}
+			/>,
+		)
+
+		expect(screen.queryByText(/Prices epoch/)).toBeNull()
+		expect(screen.getByRole("button", { name: "Fulfill epoch" })).toBeTruthy()
 	})
 })

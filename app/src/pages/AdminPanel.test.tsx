@@ -17,7 +17,9 @@ vi.mock("../hooks/useAdminAuthority", async (importOriginal) => {
 vi.mock("../hooks/useWallet", () => ({ useWallet: useWalletMock }))
 
 vi.mock("../components/admin/CycleSection", () => ({
-	default: () => <div>Cycle surface</div>,
+	default: ({ grants }: { grants: Grant[] }) => (
+		<div>Cycle surface for {grants.map((grant) => grant.role).join(", ")}</div>
+	),
 }))
 
 const connectedAddress = "GCONNECTEDADDRESS1234567890"
@@ -191,6 +193,24 @@ describe("AdminPanel", () => {
 		).toBeTruthy()
 	})
 
+	it("hands the Cycle card every grant that opened it, so its actions follow the wallet's roles", () => {
+		const manager = holderOf("vault manager")
+		const treasury = holderOf("vault treasury")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle"]),
+				grantedBy: { ...emptyGrantedBy, cycle: [manager, treasury] },
+				grants: [manager, treasury],
+			}),
+		)
+		render(<AdminPanel />)
+
+		expect(
+			screen.getByText("Cycle surface for vault manager, vault treasury"),
+		).toBeTruthy()
+	})
+
 	it("says nothing extra when the wallet is the holder itself", () => {
 		const manager = holderOf("vault manager")
 		useAdminAuthorityMock.mockReturnValue(
@@ -259,8 +279,10 @@ describe("AdminPanel", () => {
 		const cycleCard = cards.find(
 			(card) => within(card).queryByRole("heading", { name: "Cycle" }) !== null,
 		)
-		expect(within(cycleCard!).getByText("Cycle surface")).toBeTruthy()
-		expect(screen.getAllByText("Cycle surface")).toHaveLength(1)
+		expect(
+			within(cycleCard!).getByText("Cycle surface for vault manager"),
+		).toBeTruthy()
+		expect(screen.getAllByText(/Cycle surface/)).toHaveLength(1)
 	})
 
 	it("shows no cycle surface to a wallet with no Cycle grant", () => {
