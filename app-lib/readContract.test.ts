@@ -451,7 +451,7 @@ describe("readEvents", () => {
 			SEVEN_DAYS_OF_LEDGERS,
 		)
 
-		expect(read).toEqual({ kind: "value", value: [] })
+		expect(read).toEqual({ kind: "value", value: [], partial: false })
 		const [request] = getEventsMock.mock.calls[0] as [
 			{ startLedger: number; filters: unknown[] },
 		]
@@ -509,6 +509,7 @@ describe("readEvents", () => {
 
 		expect(read).toEqual({
 			kind: "value",
+			partial: false,
 			value: [
 				{
 					contractId: CONTRACT_ID,
@@ -550,6 +551,75 @@ describe("readEvents", () => {
 		]
 		expect(second.cursor).toBe("next")
 		expect(second.startLedger).toBeUndefined()
+	})
+
+	it("returns what it gathered, flagged partial, when the page cap is hit", async () => {
+		getHealthMock.mockResolvedValue({ latestLedger: 500_000, oldestLedger: 1 })
+		const event = eventResponse({
+			name: "epoch_closed",
+			second: scvU64(1n),
+			data: structScVal({}),
+			ledger: 499_000,
+			closedAt: "2026-10-07T12:00:00Z",
+		})
+		getEventsMock.mockResolvedValue({
+			events: Array.from({ length: 200 }, () => event),
+			cursor: "next",
+		})
+
+		const read = await readEvents(
+			[{ contractId: CONTRACT_ID, names: ["epoch_closed"] }],
+			SEVEN_DAYS_OF_LEDGERS,
+		)
+
+		expect(getEventsMock).toHaveBeenCalledTimes(25)
+		expect(read.kind === "value" && read.partial).toBe(true)
+		expect(read.kind === "value" && read.value).toHaveLength(5_000)
+	})
+
+	it("skips an event it cannot decode instead of failing the read", async () => {
+		getHealthMock.mockResolvedValue({ latestLedger: 500_000, oldestLedger: 1 })
+		const good = eventResponse({
+			name: "epoch_closed",
+			second: scvU64(1n),
+			data: structScVal({}),
+			ledger: 499_000,
+			closedAt: "2026-10-07T12:00:00Z",
+		})
+		const bad = { ...good, ledgerClosedAt: "not a date" }
+		getEventsMock.mockResolvedValue({ events: [bad, good], cursor: "c" })
+
+		const read = await readEvents(
+			[{ contractId: CONTRACT_ID, names: ["epoch_closed"] }],
+			SEVEN_DAYS_OF_LEDGERS,
+		)
+
+		expect(read.kind === "value" && read.value).toHaveLength(1)
+		expect(read.kind === "value" && read.partial).toBe(false)
+	})
+
+	it("stays unreadable when a later page fails", async () => {
+		getHealthMock.mockResolvedValue({ latestLedger: 500_000, oldestLedger: 1 })
+		const event = eventResponse({
+			name: "epoch_closed",
+			second: scvU64(1n),
+			data: structScVal({}),
+			ledger: 499_000,
+			closedAt: "2026-10-07T12:00:00Z",
+		})
+		getEventsMock
+			.mockResolvedValueOnce({
+				events: Array.from({ length: 200 }, () => event),
+				cursor: "next",
+			})
+			.mockRejectedValueOnce(new Error("network down"))
+
+		const read = await readEvents(
+			[{ contractId: CONTRACT_ID, names: ["epoch_closed"] }],
+			SEVEN_DAYS_OF_LEDGERS,
+		)
+
+		expect(read).toEqual({ kind: "unreadable" })
 	})
 
 	it("is unreadable when the RPC cannot serve the window", async () => {

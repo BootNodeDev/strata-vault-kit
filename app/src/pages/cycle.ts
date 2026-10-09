@@ -475,6 +475,8 @@ const DESCRIBERS: Record<string, (event: ChainEvent) => Described | null> = {
 	deposit_claimed: describeDepositClaimed,
 }
 
+const PARTIAL_ACTIVITY_NOTE = "Only part of the last 7 days is shown."
+
 function toActivity(events: ChainEvent[]): ActivityRow[] {
 	const newestFirst = events
 		.map((event, index) => ({ event, index }))
@@ -498,5 +500,9 @@ export function toActivityList(
 	cycleEvents: CycleEventsRead,
 ): ListState<ActivityRow> {
 	if (cycleEvents.status !== "loaded") return { status: cycleEvents.status }
-	return { status: "loaded", rows: toActivity(cycleEvents.events) }
+	return {
+		status: "loaded",
+		rows: toActivity(cycleEvents.events),
+		note: cycleEvents.partial ? PARTIAL_ACTIVITY_NOTE : undefined,
+	}
 }

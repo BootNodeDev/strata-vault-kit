@@ -295,22 +295,30 @@ const toEventFilter = ({
 })
 
 const decodeEvent = (event: Api.EventResponse): ChainEvent | null => {
-	const [name, ...topics] = event.topic.map((topic) => scValToNative(topic))
-	if (typeof name !== "string" || event.contractId === undefined) return null
-	return {
-		contractId: event.contractId.contractId(),
-		name,
-		topics,
-		data: scValToNative(event.value),
-		ledger: event.ledger,
-		closedAt: BigInt(Math.floor(Date.parse(event.ledgerClosedAt) / 1000)),
+	try {
+		const [name, ...topics] = event.topic.map((topic) => scValToNative(topic))
+		if (typeof name !== "string" || event.contractId === undefined) return null
+		return {
+			contractId: event.contractId.contractId(),
+			name,
+			topics,
+			data: scValToNative(event.value),
+			ledger: event.ledger,
+			closedAt: BigInt(Math.floor(Date.parse(event.ledgerClosedAt) / 1000)),
+		}
+	} catch {
+		return null
 	}
 }
+
+export type EventsRead =
+	| { kind: "value"; value: ChainEvent[]; partial: boolean }
+	| { kind: "unreadable" }
 
 export async function readEvents(
 	selections: EventSelection[],
 	windowLedgers: number,
-): Promise<ContractRead<ChainEvent[]>> {
+): Promise<EventsRead> {
 	try {
 		const { latestLedger, oldestLedger } = await server.getHealth()
 		const filters = selections.map(toEventFilter)
@@ -328,10 +336,10 @@ export async function readEvents(
 				if (event !== null) events.push(event)
 			}
 			if (response.events.length < EVENTS_PAGE_SIZE)
-				return { kind: "value", value: events }
+				return { kind: "value", value: events, partial: false }
 			request = { filters, cursor: response.cursor, limit: EVENTS_PAGE_SIZE }
 		}
-		return { kind: "unreadable" }
+		return { kind: "value", value: events, partial: true }
 	} catch {
 		return { kind: "unreadable" }
 	}

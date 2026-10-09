@@ -330,6 +330,21 @@ describe("useCycleState", () => {
 		expect(assetMock.balance).toHaveBeenCalledWith({ id: "GCUSTODIAN" })
 	})
 
+	it("refetches the cycle reads while the page stays open", async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true })
+		try {
+			const { result } = renderWithWallet(useCycleState)
+			await waitFor(() => expect(result.current.cycle.status).toBe("ready"))
+			const before = oracleMock.state.mock.calls.length
+
+			await vi.advanceTimersByTimeAsync(16_000)
+
+			expect(oracleMock.state.mock.calls.length).toBeGreaterThan(before)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	it("reads no balance when no custodian is set", async () => {
 		vaultMock.custodian.mockResolvedValue({ result: null })
 
@@ -359,13 +374,18 @@ describe("useCycleEvents", () => {
 	})
 
 	it("asks for the vault and oracle events over the last seven days of ledgers", async () => {
-		readEventsMock.mockResolvedValue(value([]))
+		readEventsMock.mockResolvedValue({
+			kind: "value",
+			value: [],
+			partial: false,
+		})
 
 		const { result } = renderWithWallet(useCycleEvents)
 		await waitFor(() =>
 			expect(result.current.cycleEvents).toEqual({
 				status: "loaded",
 				events: [],
+				partial: false,
 			}),
 		)
 
@@ -381,6 +401,23 @@ describe("useCycleEvents", () => {
 			"nav_attested",
 		])
 		expect(windowLedgers).toBe(120_960)
+	})
+
+	it("carries the partial flag when the events were capped", async () => {
+		readEventsMock.mockResolvedValue({
+			kind: "value",
+			value: [],
+			partial: true,
+		})
+
+		const { result } = renderWithWallet(useCycleEvents)
+
+		await waitFor(() =>
+			expect(result.current.cycleEvents).toMatchObject({
+				status: "loaded",
+				partial: true,
+			}),
+		)
 	})
 
 	it("is unreadable when the RPC cannot serve the events", async () => {

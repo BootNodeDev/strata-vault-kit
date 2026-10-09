@@ -23,6 +23,7 @@ import { useVaultFigures } from "./useVaultFigures"
 import { type PauseState, useVaultPaused } from "./useVaultPaused"
 
 const STALE_MS = 30_000
+const REFRESH_MS = 15_000
 const LEDGERS_IN_SEVEN_DAYS = (7 * 24 * 60 * 60) / 5
 const VAULT_EVENTS = [
 	"epoch_closed",
@@ -248,6 +249,7 @@ export function useCycleState(): { cycle: CycleState } {
 		queryKey: ["cycle", "reads"],
 		queryFn: fetchCycleReads,
 		staleTime: STALE_MS,
+		refetchInterval: REFRESH_MS,
 	})
 	const custodian = authorities?.custodian ?? null
 	const { data: custodianBalance, isPending: balancePending } = useQuery({
@@ -293,7 +295,7 @@ export function useCycleState(): { cycle: CycleState } {
 export type CycleEventsRead =
 	| { status: "checking" }
 	| { status: "unreadable" }
-	| { status: "loaded"; events: ChainEvent[] }
+	| { status: "loaded"; events: ChainEvent[]; partial: boolean }
 
 async function fetchCycleEvents(): Promise<CycleEventsRead> {
 	const read = await readEvents(
@@ -304,7 +306,7 @@ async function fetchCycleEvents(): Promise<CycleEventsRead> {
 		LEDGERS_IN_SEVEN_DAYS,
 	)
 	return read.kind === "value"
-		? { status: "loaded", events: read.value }
+		? { status: "loaded", events: read.value, partial: read.partial }
 		: { status: "unreadable" }
 }
 

@@ -30,7 +30,7 @@ const rowsOf = <T>(list: ListState<T>): T[] =>
 	list.status === "loaded" ? list.rows : []
 
 const activityOf = (events: ChainEvent[]) =>
-	rowsOf(toActivityList({ status: "loaded", events }))
+	rowsOf(toActivityList({ status: "loaded", events, partial: false }))
 
 const NOW = 1_700_100_000n
 const amount = (whole: bigint) => (whole * 10_000_000n) as Amount
@@ -552,6 +552,15 @@ describe("toActivityList", () => {
 		expect(toActivityList({ status: "unreadable" })).toEqual({
 			status: "unreadable",
 		})
+	})
+
+	it("notes that only the most recent events are shown when the read was partial", () => {
+		expect(
+			toActivityList({ status: "loaded", events: [], partial: true }),
+		).toMatchObject({ note: "Only part of the last 7 days is shown." })
+		expect(
+			toActivityList({ status: "loaded", events: [], partial: false }),
+		).not.toHaveProperty("note", expect.any(String))
 	})
 
 	it("keeps only the latest ten", () => {
