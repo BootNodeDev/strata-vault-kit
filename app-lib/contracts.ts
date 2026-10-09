@@ -57,8 +57,11 @@ export const connectAsyncVault = (
 export const isUserRejection = (error: unknown): boolean =>
 	error instanceof AssembledTransaction.Errors.UserRejected
 
-export const connectNavOracle = (contractId: string): Promise<NavOracleApi> =>
-	Client.from<NavOracleApi>(clientOptions(contractId))
+export const connectNavOracle = (
+	contractId: string,
+	signer?: Signer,
+): Promise<NavOracleApi> =>
+	Client.from<NavOracleApi>(clientOptions(contractId, signer))
 
 export const connectIdentityVerifier = (
 	contractId: string,
