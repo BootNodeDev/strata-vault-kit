@@ -109,9 +109,11 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 	...overrides,
 })
 
+const WALLET = "GAUTHORITY1234567890"
+
 const grant = (role: string, standing: Grant["standing"] = "signs-alone") => ({
 	role,
-	authority: "GAUTHORITY1234567890",
+	authority: WALLET,
 	standing,
 })
 
@@ -144,7 +146,7 @@ describe("CycleSection", () => {
 	})
 
 	it("offers the manager the close and the settlement, with their conditions and resulting state", () => {
-		render(<CycleSection grants={[manager]} />)
+		render(<CycleSection grants={[manager]} wallet={WALLET} />)
 
 		expect(button("Close epoch").disabled).toBe(false)
 		expect(button("Fulfill epoch").disabled).toBe(false)
@@ -159,7 +161,7 @@ describe("CycleSection", () => {
 	})
 
 	it("offers the treasury only the settlement", () => {
-		render(<CycleSection grants={[treasury]} />)
+		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
 		expect(screen.queryByRole("button", { name: "Close epoch" })).toBeNull()
 		expect(button("Fulfill epoch").disabled).toBe(false)
@@ -169,7 +171,7 @@ describe("CycleSection", () => {
 		useCycleStateMock.mockReturnValue({
 			cycle: ready({ ledgerTime: sealed.priceableAt - 1n }),
 		})
-		render(<CycleSection grants={[treasury]} />)
+		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
 		expect(button("Fulfill epoch").disabled).toBe(true)
 		const notice = screen.getByText("Notice elapsed").closest("li")!
@@ -177,7 +179,12 @@ describe("CycleSection", () => {
 	})
 
 	it("tells a manager signing through a multisig that collecting signatures is not supported yet", () => {
-		render(<CycleSection grants={[grant("vault manager", { needs: 2 })]} />)
+		render(
+			<CycleSection
+				grants={[grant("vault manager", { needs: 2 })]}
+				wallet={WALLET}
+			/>,
+		)
 
 		expect(button("Close epoch").disabled).toBe(true)
 		expect(
@@ -188,21 +195,39 @@ describe("CycleSection", () => {
 		expect(button("Fulfill epoch").disabled).toBe(false)
 	})
 
+	it("tells a signer of another account that acting on its behalf is not supported yet", () => {
+		render(
+			<CycleSection
+				grants={[{ ...manager, authority: "GOTHERACCOUNT9876543210" }]}
+				wallet={WALLET}
+			/>,
+		)
+
+		expect(button("Close epoch").disabled).toBe(true)
+		expect(
+			screen.getByText(
+				"Signs for GOTH...3210; acting on its behalf is not supported yet.",
+			),
+		).toBeTruthy()
+	})
+
 	it("shows no actions while the cycle is still being read", () => {
 		useCycleStateMock.mockReturnValue({ cycle: { status: "checking" } })
-		render(<CycleSection grants={[manager]} />)
+		render(<CycleSection grants={[manager]} wallet={WALLET} />)
 
 		expect(screen.queryByRole("button")).toBeNull()
 	})
 
 	it("submits the close and follows it in the modal, labelled with the epoch it seals", () => {
-		const { rerender } = render(<CycleSection grants={[manager]} />)
+		const { rerender } = render(
+			<CycleSection grants={[manager]} wallet={WALLET} />,
+		)
 
 		fireEvent.click(button("Close epoch"))
 		expect(closeEpochMock.submit).toHaveBeenCalledTimes(1)
 
 		closeEpochMock.status = { status: "preparing" }
-		rerender(<CycleSection grants={[manager]} />)
+		rerender(<CycleSection grants={[manager]} wallet={WALLET} />)
 
 		expect(
 			screen.getByRole("heading", { name: "Preparing to close epoch 5" }),
@@ -210,13 +235,15 @@ describe("CycleSection", () => {
 	})
 
 	it("submits the settlement for the oldest sealed epoch and follows it in the modal", () => {
-		const { rerender } = render(<CycleSection grants={[treasury]} />)
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} />,
+		)
 
 		fireEvent.click(button("Fulfill epoch"))
 		expect(fulfillEpochMock.submit).toHaveBeenCalledWith(4n)
 
 		fulfillEpochMock.status = { status: "awaiting-signature" }
-		rerender(<CycleSection grants={[treasury]} />)
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
 		expect(
 			screen.getByText(
@@ -230,7 +257,7 @@ describe("CycleSection", () => {
 			status: "failed",
 			failure: { kind: "declined" },
 		}
-		render(<CycleSection grants={[treasury]} />)
+		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
 		fireEvent.click(screen.getByRole("button", { name: "Close" }))
 

@@ -347,6 +347,27 @@ const signaturesNeeded = (standing: Standing): number | null => {
 	return "needs" in standing ? standing.needs : standing.threshold
 }
 
+export const grantFor = (
+	grants: Grant[],
+	role: string,
+	wallet: string,
+): Grant | undefined => {
+	const ofRole = grants.filter((grant) => grant.role === role)
+	return ofRole.find((grant) => grant.authority === wallet) ?? ofRole[0]
+}
+
+export const unavailableFor = (
+	grant: Grant,
+	wallet: string,
+): string | undefined => {
+	const needed = signaturesNeeded(grant.standing)
+	if (needed !== null)
+		return `Needs ${needed} signatures; collecting them is not supported yet.`
+	if (grant.authority !== wallet)
+		return `Signs for ${shortAddress(grant.authority)}; acting on its behalf is not supported yet.`
+	return undefined
+}
+
 const windDownInactive = (state: ReadyState): Condition => ({
 	label: "Wind-down not active",
 	met: state.windDown.phase !== null && state.windDown.phase !== "active",
@@ -372,9 +393,12 @@ const toAction = (
 	...(unavailable === undefined ? {} : { unavailable }),
 })
 
-function toCloseAction(state: ReadyState, grant: Grant): CycleAction {
+function toCloseAction(
+	state: ReadyState,
+	grant: Grant,
+	wallet: string,
+): CycleAction {
 	const { epoch } = state
-	const needed = signaturesNeeded(grant.standing)
 	return toAction(
 		"close-epoch",
 		"Close epoch",
@@ -384,9 +408,7 @@ function toCloseAction(state: ReadyState, grant: Grant): CycleAction {
 		],
 		`Seals epoch ${epoch.id} and opens epoch ${epoch.id + 1n}.`,
 		epoch.id,
-		needed === null
-			? undefined
-			: `Needs ${needed} signatures; collecting them is not supported yet.`,
+		unavailableFor(grant, wallet),
 	)
 }
 
@@ -427,11 +449,12 @@ function toFulfillAction(state: ReadyState): CycleAction {
 export function toCycleActions(
 	state: CycleState,
 	grants: Grant[],
+	wallet: string,
 ): CycleAction[] {
 	if (state.status !== "ready" || grants.length === 0) return []
-	const manager = grants.find((grant) => grant.role === MANAGER_ROLE)
+	const manager = grantFor(grants, MANAGER_ROLE, wallet)
 	const actions: CycleAction[] = []
-	if (manager !== undefined) actions.push(toCloseAction(state, manager))
+	if (manager !== undefined) actions.push(toCloseAction(state, manager, wallet))
 	actions.push(toFulfillAction(state))
 	return actions
 }

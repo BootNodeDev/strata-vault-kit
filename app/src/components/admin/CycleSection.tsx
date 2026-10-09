@@ -19,7 +19,10 @@ import CycleSurface, { CycleActions, type CycleGroup } from "./CycleSurface"
 
 const EPOCH_GROUP = "Epoch"
 
-const CycleSection: React.FC<{ grants: Grant[] }> = ({ grants }) => {
+const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
+	grants,
+	wallet,
+}) => {
 	const { cycle } = useCycleState()
 	const { history } = useEpochHistory()
 	const { cycleEvents } = useCycleEvents()
@@ -33,7 +36,7 @@ const CycleSection: React.FC<{ grants: Grant[] }> = ({ grants }) => {
 		else fulfillEpoch.submit(action.epochId, label)
 	}
 
-	const actions = toCycleActions(cycle, grants)
+	const actions = toCycleActions(cycle, grants, wallet)
 	const withActions = (group: CycleGroup): CycleGroup =>
 		group.title === EPOCH_GROUP && actions.length > 0
 			? { ...group, actions: <CycleActions actions={actions} onRun={run} /> }

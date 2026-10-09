@@ -594,11 +594,16 @@ describe("toActivityList", () => {
 	})
 })
 
-const grant = (role: string, standing: Grant["standing"] = "signs-alone") => ({
-	role,
-	authority: "GAUTHORITY1234567890",
-	standing,
-})
+const WALLET = "GAUTHORITY1234567890"
+
+const grant = (
+	role: string,
+	standing: Grant["standing"] = "signs-alone",
+	authority = WALLET,
+) => ({ role, authority, standing })
+
+const actionsFor = (state: CycleState, grants: Grant[]) =>
+	toCycleActions(state, grants, WALLET)
 
 const manager = grant("vault manager")
 const treasury = grant("vault treasury")
@@ -613,21 +618,21 @@ const conditionsOf = (action: CycleAction | undefined) =>
 
 describe("toCycleActions", () => {
 	it("offers the manager both actions and any other cycle role only the settlement", () => {
+		expect(actionsFor(ready({}), [manager]).map((action) => action.id)).toEqual(
+			["close-epoch", "fulfill-epoch"],
+		)
 		expect(
-			toCycleActions(ready({}), [manager]).map((action) => action.id),
-		).toEqual(["close-epoch", "fulfill-epoch"])
-		expect(
-			toCycleActions(ready({}), [treasury]).map((action) => action.id),
+			actionsFor(ready({}), [treasury]).map((action) => action.id),
 		).toEqual(["fulfill-epoch"])
 	})
 
 	it("offers nothing while the cycle is still being read or could not be", () => {
-		expect(toCycleActions({ status: "checking" }, [manager])).toEqual([])
-		expect(toCycleActions({ status: "unreadable" }, [manager])).toEqual([])
+		expect(actionsFor({ status: "checking" }, [manager])).toEqual([])
+		expect(actionsFor({ status: "unreadable" }, [manager])).toEqual([])
 	})
 
 	it("enables the close when the wind-down is not active and an epoch is open, naming what it seals and opens", () => {
-		const close = actionOf(toCycleActions(ready({}), [manager]), "close-epoch")
+		const close = actionOf(actionsFor(ready({}), [manager]), "close-epoch")
 
 		expect(close?.label).toBe("Close epoch")
 		expect(conditionsOf(close)).toEqual({
@@ -642,7 +647,7 @@ describe("toCycleActions", () => {
 
 	it("disables the close while the wind-down is active", () => {
 		const close = actionOf(
-			toCycleActions(ready({ windDown: { ...windDown, phase: "active" } }), [
+			actionsFor(ready({ windDown: { ...windDown, phase: "active" } }), [
 				manager,
 			]),
 			"close-epoch",
@@ -654,7 +659,7 @@ describe("toCycleActions", () => {
 
 	it("disables the close when no open epoch could be read", () => {
 		const close = actionOf(
-			toCycleActions(ready({ epoch: { ...epoch, open: null } }), [manager]),
+			actionsFor(ready({ epoch: { ...epoch, open: null } }), [manager]),
 			"close-epoch",
 		)
 
@@ -664,9 +669,7 @@ describe("toCycleActions", () => {
 
 	it("does not count an unreadable wind-down as inactive", () => {
 		const close = actionOf(
-			toCycleActions(ready({ windDown: { ...windDown, phase: null } }), [
-				manager,
-			]),
+			actionsFor(ready({ windDown: { ...windDown, phase: null } }), [manager]),
 			"close-epoch",
 		)
 
@@ -675,7 +678,7 @@ describe("toCycleActions", () => {
 
 	it("makes the close unavailable when the manager's authority needs more signatures than the wallet's", () => {
 		const close = actionOf(
-			toCycleActions(ready({}), [grant("vault manager", { needs: 2 })]),
+			actionsFor(ready({}), [grant("vault manager", { needs: 2 })]),
 			"close-epoch",
 		)
 
@@ -685,9 +688,36 @@ describe("toCycleActions", () => {
 		expect(close?.enabled).toBe(false)
 	})
 
+	it("makes the close unavailable when the manager's authority is an account the wallet only signs for", () => {
+		const close = actionOf(
+			actionsFor(ready({}), [
+				grant("vault manager", "signs-alone", "GOTHERACCOUNT9876543210"),
+			]),
+			"close-epoch",
+		)
+
+		expect(close?.unavailable).toBe(
+			"Signs for GOTH...3210; acting on its behalf is not supported yet.",
+		)
+		expect(close?.enabled).toBe(false)
+	})
+
+	it("prefers the grant whose authority is the wallet over an earlier one for the same role", () => {
+		const close = actionOf(
+			actionsFor(ready({}), [
+				grant("vault manager", "signs-alone", "GOTHERACCOUNT9876543210"),
+				grant("vault manager"),
+			]),
+			"close-epoch",
+		)
+
+		expect(close?.unavailable).toBeUndefined()
+		expect(close?.enabled).toBe(true)
+	})
+
 	it("reads the threshold as the signatures needed for a weighted authority", () => {
 		const close = actionOf(
-			toCycleActions(ready({}), [
+			actionsFor(ready({}), [
 				grant("vault manager", { weight: 1, threshold: 3 }),
 			]),
 			"close-epoch",
@@ -699,10 +729,7 @@ describe("toCycleActions", () => {
 	})
 
 	it("enables the settlement when every condition is met, pricing the oldest sealed epoch at the current price", () => {
-		const fulfill = actionOf(
-			toCycleActions(ready({}), [treasury]),
-			"fulfill-epoch",
-		)
+		const fulfill = actionOf(actionsFor(ready({}), [treasury]), "fulfill-epoch")
 
 		expect(fulfill?.label).toBe("Fulfill epoch")
 		expect(conditionsOf(fulfill)).toEqual({
@@ -723,7 +750,7 @@ describe("toCycleActions", () => {
 
 	it("never asks a settlement for signatures, since anyone may run it", () => {
 		const fulfill = actionOf(
-			toCycleActions(ready({}), [grant("vault treasury", { needs: 2 })]),
+			actionsFor(ready({}), [grant("vault treasury", { needs: 2 })]),
 			"fulfill-epoch",
 		)
 
@@ -733,9 +760,7 @@ describe("toCycleActions", () => {
 
 	it("disables the settlement with no outcome when nothing sealed awaits a price", () => {
 		const fulfill = actionOf(
-			toCycleActions(ready({ epoch: { ...epoch, awaiting: null } }), [
-				treasury,
-			]),
+			actionsFor(ready({ epoch: { ...epoch, awaiting: null } }), [treasury]),
 			"fulfill-epoch",
 		)
 
@@ -749,9 +774,7 @@ describe("toCycleActions", () => {
 
 	it("disables the settlement while the notice has not elapsed", () => {
 		const fulfill = actionOf(
-			toCycleActions(ready({ ledgerTime: sealed.priceableAt - 1n }), [
-				treasury,
-			]),
+			actionsFor(ready({ ledgerTime: sealed.priceableAt - 1n }), [treasury]),
 			"fulfill-epoch",
 		)
 
@@ -763,7 +786,7 @@ describe("toCycleActions", () => {
 		expect(
 			conditionsOf(
 				actionOf(
-					toCycleActions(ready({ ledgerTime: sealed.priceableAt }), [treasury]),
+					actionsFor(ready({ ledgerTime: sealed.priceableAt }), [treasury]),
 					"fulfill-epoch",
 				),
 			)["Notice elapsed"],
@@ -771,7 +794,7 @@ describe("toCycleActions", () => {
 		expect(
 			conditionsOf(
 				actionOf(
-					toCycleActions(ready({ ledgerTime: null }), [treasury]),
+					actionsFor(ready({ ledgerTime: null }), [treasury]),
 					"fulfill-epoch",
 				),
 			)["Notice elapsed"],
@@ -782,7 +805,7 @@ describe("toCycleActions", () => {
 		"disables the settlement while the price is %s",
 		(state) => {
 			const fulfill = actionOf(
-				toCycleActions(ready({ oracle: { ...oracle, state } }), [treasury]),
+				actionsFor(ready({ oracle: { ...oracle, state } }), [treasury]),
 				"fulfill-epoch",
 			)
 
@@ -793,7 +816,7 @@ describe("toCycleActions", () => {
 
 	it("disables the settlement when the price was attested before the epoch was sealed", () => {
 		const fulfill = actionOf(
-			toCycleActions(
+			actionsFor(
 				ready({ oracle: { ...oracle, attestedAt: sealed.closedAt - 1n } }),
 				[treasury],
 			),
@@ -806,7 +829,7 @@ describe("toCycleActions", () => {
 
 	it("accepts a price attested in the same second the epoch was sealed", () => {
 		const fulfill = actionOf(
-			toCycleActions(
+			actionsFor(
 				ready({ oracle: { ...oracle, attestedAt: sealed.closedAt } }),
 				[treasury],
 			),
@@ -820,7 +843,7 @@ describe("toCycleActions", () => {
 		"disables the settlement while the vault's pause reads %s",
 		(paused) => {
 			const fulfill = actionOf(
-				toCycleActions(ready({ paused }), [treasury]),
+				actionsFor(ready({ paused }), [treasury]),
 				"fulfill-epoch",
 			)
 
@@ -831,7 +854,7 @@ describe("toCycleActions", () => {
 
 	it("keeps the outcome without a price figure when the oracle has none to show", () => {
 		const fulfill = actionOf(
-			toCycleActions(
+			actionsFor(
 				ready({ oracle: { ...oracle, state: "never", price: null } }),
 				[treasury],
 			),
