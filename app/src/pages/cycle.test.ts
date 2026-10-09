@@ -1668,6 +1668,11 @@ describe("toCycleActions, winding down", () => {
 			"finalize-round",
 		)
 
+		expect(conditionOf(finalize, "Wind-down active")).toEqual({
+			label: "Wind-down active",
+			met: false,
+			detail: "Round unavailable",
+		})
 		expect(finalize?.round).toBeNull()
 		expect(finalize?.outcome).toBeNull()
 		expect(finalize?.enabled).toBe(false)
