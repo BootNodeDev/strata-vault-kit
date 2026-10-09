@@ -124,7 +124,10 @@ const AdminPanel: React.FC = () => {
 										.join(", ")}
 								</span>
 								{surface === "cycle" && (
-									<CycleSection grants={grantedBy[surface]} />
+									<CycleSection
+										grants={grantedBy[surface]}
+										wallet={address ?? ""}
+									/>
 								)}
 							</li>
 						),
