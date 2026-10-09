@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { cycleWriteKeys } from "./useCycleState"
 import { depositBalanceKey } from "./useDepositBalance"
+import { useContractTransaction } from "./useContractTransaction"
 import { useFund } from "./useFund"
 
 const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
@@ -15,6 +16,15 @@ const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
 vi.mock("../config/clients", () => ({
 	asyncVaultWriter: asyncVaultWriterMock,
 }))
+
+vi.mock("./useContractTransaction", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("./useContractTransaction")>()
+	return {
+		...actual,
+		useContractTransaction: vi.fn(actual.useContractTransaction),
+	}
+})
 
 const assets = 1_000_000_000n as Amount
 
@@ -147,6 +157,17 @@ describe("useFund", () => {
 		expect(invalidateQueries).toHaveBeenCalledWith({
 			queryKey: depositBalanceKey(investorAddress),
 		})
+	})
+
+	it("names the funding wallet's balance among the keys it refreshes, keeping submit stable", () => {
+		const { result, rerender } = renderFund()
+		const firstSubmit = result.current.submit
+
+		rerender()
+
+		const extraKeys = vi.mocked(useContractTransaction).mock.lastCall?.[2]
+		expect(extraKeys).toContainEqual(depositBalanceKey(investorAddress))
+		expect(result.current.submit).toBe(firstSubmit)
 	})
 
 	it("does not touch the cached cycle when the vault refuses at simulation", async () => {

@@ -1729,14 +1729,16 @@ describe("TransactionModal, funding the reserve", () => {
 		expect(screen.getByText(sentence)).toBeTruthy()
 	})
 
-	it("falls back to a generic refusal when the asset transfer itself refuses, without the raw code", () => {
+	it("points the funder at their balance and trustline when the asset transfer refuses, without the raw code", () => {
 		renderFundModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 10 },
 		})
 
 		expect(
-			screen.getByText(/The vault refused this request\. Try again/),
+			screen.getByText(
+				"Your wallet could not cover the transfer. Check the balance and the trustline.",
+			),
 		).toBeTruthy()
 		expect(screen.queryByText(/\b10\b/)).toBeNull()
 	})

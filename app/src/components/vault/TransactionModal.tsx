@@ -298,7 +298,9 @@ const fundContractErrorReason = (code: number): string => {
 		case 6014:
 			return "That amount is too large for the vault to record."
 		default:
-			return GENERIC_REFUSAL
+			return code < 6000
+				? "Your wallet could not cover the transfer. Check the balance and the trustline."
+				: GENERIC_REFUSAL
 	}
 }
 
