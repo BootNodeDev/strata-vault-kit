@@ -1,3 +1,4 @@
+import { type Amount } from "@stellar-scaffold/app-lib"
 import { describe, expect, it } from "vitest"
 import { type Grant } from "../hooks/useAdminAuthority"
 import { type ConfigurationState } from "../hooks/useConfigurationState"
@@ -32,7 +33,7 @@ const ready = (
 	overrides: Partial<Extract<ConfigurationState, { status: "ready" }>> = {},
 ): ConfigurationState => ({
 	status: "ready",
-	depositCap: { kind: "capped", amount: 1_000_0000000n as never },
+	depositCap: { kind: "capped", amount: 1_000_0000000n as Amount },
 	custodian: CUSTODIAN,
 	notice: DAY,
 	windDownDelay: 7n * DAY,

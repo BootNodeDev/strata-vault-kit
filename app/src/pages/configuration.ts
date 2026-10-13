@@ -125,10 +125,10 @@ const ANY_ADDRESS = address(
 )
 const CONTRACT = address((text) => StrKey.isValidContract(text))
 
-const CAP: Kind<bigint | null> = {
+const CAP: Kind<Amount | null> = {
 	parse: orNone((text) => parseUnits(text, AMOUNT_DECIMALS) ?? undefined),
-	show: (cap) => (cap === null ? "No cap" : exactAmount(cap as Amount)),
-	prefill: (cap) => (cap === null ? "" : exactAmount(cap as Amount)),
+	show: (cap) => (cap === null ? "No cap" : exactAmount(cap)),
+	prefill: (cap) => (cap === null ? "" : exactAmount(cap)),
 	placeholder: "No cap",
 }
 
@@ -216,7 +216,7 @@ function single<Id extends ConfigurationAction["id"], T>(
 	}
 }
 
-const capOf = (state: ConfigurationValues): bigint | null | undefined => {
+const capOf = (state: ConfigurationValues): Amount | null | undefined => {
 	if (state.depositCap === null) return undefined
 	return state.depositCap.kind === "uncapped" ? null : state.depositCap.amount
 }
