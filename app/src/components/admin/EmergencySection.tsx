@@ -1,0 +1,143 @@
+import React from "react"
+import { type Grant } from "../../hooks/useAdminAuthority"
+import { useClearLatest } from "../../hooks/useClearLatest"
+import { type TransactionStatus } from "../../hooks/useContractTransaction"
+import { useOracleState } from "../../hooks/useOracleState"
+import { usePauseToken } from "../../hooks/usePauseToken"
+import { usePauseVault } from "../../hooks/usePauseVault"
+import { usePendingTransaction } from "../../hooks/usePendingTransaction"
+import { useRaiseRipcord } from "../../hooks/useRaiseRipcord"
+import { useSetRipcord } from "../../hooks/useSetRipcord"
+import { useTokenPaused } from "../../hooks/useTokenPaused"
+import { useUnpauseToken } from "../../hooks/useUnpauseToken"
+import { useUnpauseVault } from "../../hooks/useUnpauseVault"
+import { useVaultPaused } from "../../hooks/useVaultPaused"
+import {
+	type EmergencyAction,
+	type EmergencyState,
+	toEmergencyActions,
+	toEmergencyTiles,
+} from "../../pages/emergency"
+import typeStyles from "../../styles/type.module.css"
+import MetricsStrip from "../vault/MetricsStrip"
+import TransactionModal, {
+	type TransactionModalProps,
+} from "../vault/TransactionModal"
+import CycleActionRail from "./CycleActionRail"
+import styles from "./EmergencySection.module.css"
+
+const RAISE = "raise"
+const LOWER = "lower"
+
+const EmergencySection: React.FC<{
+	grants: Grant[]
+	wallet: string
+	contracts?: React.ReactNode
+	active?: boolean
+}> = ({ grants, wallet, contracts, active = true }) => {
+	const { pause: vault } = useVaultPaused({ poll: active })
+	const { pause: token } = useTokenPaused({ poll: active })
+	const { oracle } = useOracleState({ poll: active })
+	const pauseVault = usePendingTransaction(usePauseVault())
+	const unpauseVault = usePendingTransaction(useUnpauseVault())
+	const raiseRipcord = usePendingTransaction(useRaiseRipcord())
+	const setRipcord = usePendingTransaction(useSetRipcord())
+	const clearLatest = usePendingTransaction(useClearLatest())
+	const pauseToken = usePendingTransaction(usePauseToken())
+	const unpauseToken = usePendingTransaction(useUnpauseToken())
+
+	const state: EmergencyState = { vault, token, oracle }
+	const actions = toEmergencyActions(state, grants, wallet)
+
+	const run = (action: EmergencyAction) => {
+		switch (action.id) {
+			case "pause-vault":
+				pauseVault.submit(undefined, "")
+				return
+			case "unpause-vault":
+				unpauseVault.submit(undefined, "")
+				return
+			case "raise-ripcord":
+				if (action.viaAdmin) setRipcord.submit(true, RAISE)
+				else raiseRipcord.submit(undefined, "")
+				return
+			case "lower-ripcord":
+				setRipcord.submit(false, LOWER)
+				return
+			case "clear-latest":
+				clearLatest.submit(undefined, "")
+				return
+			case "pause-token":
+				pauseToken.submit(undefined, "")
+				return
+			case "unpause-token":
+				unpauseToken.submit(undefined, "")
+		}
+	}
+
+	const flow = (
+		action: TransactionModalProps["action"] & EmergencyAction["id"],
+		transaction: {
+			status: TransactionStatus
+			reset: () => void
+			retry: () => void
+		},
+	): TransactionModalProps => ({
+		action,
+		status: transaction.status,
+		onClose: transaction.reset,
+		onRetry: transaction.retry,
+	})
+
+	const modalFlows: TransactionModalProps[] = [
+		flow("pause-vault", pauseVault),
+		flow("unpause-vault", unpauseVault),
+		flow("raise-ripcord", raiseRipcord),
+		flow(
+			setRipcord.amountLabel === RAISE ? "raise-ripcord" : "lower-ripcord",
+			setRipcord,
+		),
+		flow("clear-latest", clearLatest),
+		flow("pause-token", pauseToken),
+		flow("unpause-token", unpauseToken),
+	]
+	const activeModal = modalFlows.find((props) => props.status.status !== "idle")
+
+	return (
+		<>
+			<div className={styles.layout}>
+				<div className={styles.body}>
+					<aside className={styles.side} aria-label="Actions">
+						<CycleActionRail
+							scope="emergency"
+							actions={actions}
+							pending={actions.length === 0 && grants.length > 0}
+							unreadable={false}
+							onRun={run}
+						/>
+					</aside>
+					<div className={styles.main}>
+						<section
+							className={styles.group}
+							aria-labelledby="emergency-status"
+						>
+							<h3
+								id="emergency-status"
+								className={`${typeStyles.body} ${styles.groupTitle}`}
+							>
+								Status
+							</h3>
+							<MetricsStrip metrics={toEmergencyTiles(state)} />
+						</section>
+						{contracts}
+					</div>
+				</div>
+			</div>
+			{active && activeModal !== undefined && (
+				<TransactionModal {...activeModal} />
+			)}
+		</>
+	)
+}
+
+export default EmergencySection

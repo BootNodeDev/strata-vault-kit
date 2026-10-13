@@ -4,6 +4,9 @@ import { asyncVault } from "../config/clients"
 
 export type PauseState = "checking" | "open" | "paused" | "unreadable"
 
+export const vaultPausedKey = ["vault", "paused"] as const
+export const PAUSE_REFRESH_MS = 15_000
+
 export function classifyPause(read: ContractRead<boolean>): PauseState {
 	if (read.kind !== "value") return "unreadable"
 	return read.value ? "paused" : "open"
@@ -14,11 +17,14 @@ async function fetchVaultPause(): Promise<PauseState> {
 	return classifyPause(read)
 }
 
-export function useVaultPaused(): { pause: PauseState } {
+export function useVaultPaused({ poll = false }: { poll?: boolean } = {}): {
+	pause: PauseState
+} {
 	const { data } = useQuery({
-		queryKey: ["vault", "paused"],
+		queryKey: vaultPausedKey,
 		queryFn: fetchVaultPause,
 		staleTime: 30_000,
+		refetchInterval: poll ? PAUSE_REFRESH_MS : false,
 	})
 
 	return { pause: data ?? "checking" }

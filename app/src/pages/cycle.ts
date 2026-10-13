@@ -19,7 +19,7 @@ import {
 } from "../components/admin/CycleSurface"
 import { type FigureRow } from "../components/vault/AboutVault"
 import { type Metric } from "../components/vault/MetricsStrip"
-import { type Grant, type Standing } from "../hooks/useAdminAuthority"
+import { type Grant } from "../hooks/useAdminAuthority"
 import {
 	type CycleEventsRead,
 	type CycleOracle,
@@ -32,6 +32,14 @@ import {
 	type EpochHistoryRead,
 	type EpochRecord,
 } from "../hooks/useEpochHistory"
+import {
+	type ActionField,
+	allMet,
+	type Condition,
+	grantFor,
+	type RailAction,
+	unavailableFor,
+} from "./actions"
 
 type ReadyState = Extract<CycleState, { status: "ready" }>
 
@@ -350,26 +358,7 @@ export type CycleActionId =
 
 export type ActionGroup = "Epoch" | "Price" | "Reserve" | "Wind-down"
 
-export type Condition = { label: string; met: boolean | null; detail?: string }
-
-export type ActionField = {
-	label: string
-	placeholder: string
-	value: string
-	invalid: boolean
-	max?: string
-}
-
-type ActionBase = {
-	group: ActionGroup
-	label: string
-	conditions: Condition[]
-	outcome: string | null
-	note?: string
-	field?: ActionField
-	enabled: boolean
-	unavailable?: string
-}
+type ActionBase = Omit<RailAction, "id"> & { group: ActionGroup }
 
 export type EpochAction = ActionBase & {
 	id: "close-epoch" | "fulfill-epoch"
@@ -407,39 +396,10 @@ const ATTESTER_ROLE = "oracle attester"
 const TREASURY_ROLE = "vault treasury"
 const BPS_DENOMINATOR = 10_000n
 
-const signaturesNeeded = (standing: Standing): number | null => {
-	if (standing === "signs-alone") return null
-	return "needs" in standing ? standing.needs : standing.threshold
-}
-
-export const grantFor = (
-	grants: Grant[],
-	role: string,
-	wallet: string,
-): Grant | undefined => {
-	const ofRole = grants.filter((grant) => grant.role === role)
-	return ofRole.find((grant) => grant.authority === wallet) ?? ofRole[0]
-}
-
-export const unavailableFor = (
-	grant: Grant,
-	wallet: string,
-): string | undefined => {
-	const needed = signaturesNeeded(grant.standing)
-	if (needed !== null)
-		return `Needs ${needed} signatures; collecting them is not supported yet.`
-	if (grant.authority !== wallet)
-		return `Signs for ${shortAddress(grant.authority)}; acting on its behalf is not supported yet.`
-	return undefined
-}
-
 const windDownInactive = (state: ReadyState): Condition => ({
 	label: "Wind-down not active",
 	met: state.windDown.phase !== null && state.windDown.phase !== "active",
 })
-
-const allMet = (conditions: Condition[]): boolean =>
-	conditions.every((condition) => condition.met === true)
 
 const toEpochAction = (
 	id: EpochAction["id"],
@@ -823,25 +783,6 @@ function toWindDownActions(state: ReadyState): WindDownAction[] {
 	if (phase === "active") actions.push(toFinalizeAction(state))
 	return actions
 }
-
-export type Readiness =
-	| { kind: "ready" }
-	| { kind: "unmet"; count: number }
-	| { kind: "unavailable"; reason: string }
-
-export const readiness = (action: CycleAction): Readiness => {
-	if (action.enabled) return { kind: "ready" }
-	if (action.unavailable !== undefined)
-		return { kind: "unavailable", reason: action.unavailable }
-	return {
-		kind: "unmet",
-		count: action.conditions.filter((condition) => condition.met !== true)
-			.length,
-	}
-}
-
-export const readyCount = (actions: CycleAction[]): number =>
-	actions.filter((action) => action.enabled).length
 
 export function toCycleActions(
 	state: CycleState,

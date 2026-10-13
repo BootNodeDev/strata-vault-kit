@@ -68,8 +68,11 @@ export const connectIdentityVerifier = (
 ): Promise<IdentityVerifierApi> =>
 	Client.from<IdentityVerifierApi>(clientOptions(contractId))
 
-export const connectShareToken = (contractId: string): Promise<ShareTokenApi> =>
-	Client.from<ShareTokenApi>(clientOptions(contractId))
+export const connectShareToken = (
+	contractId: string,
+	signer?: Signer,
+): Promise<ShareTokenApi> =>
+	Client.from<ShareTokenApi>(clientOptions(contractId, signer))
 
 export const connectAsset = (contractId: string): Promise<AssetApi> =>
 	Client.from<AssetApi>(clientOptions(contractId))

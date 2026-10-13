@@ -56,6 +56,10 @@ export const navOracleWriter = writer((signer) =>
 	connectNavOracle(addresses.nav_oracle, signer),
 )
 
+export const shareTokenWriter = writer((signer) =>
+	connectShareToken(addresses.share_token, signer),
+)
+
 let oracle: Promise<NavOracleApi> | undefined
 
 export const navOracle = (): Promise<NavOracleApi> => {

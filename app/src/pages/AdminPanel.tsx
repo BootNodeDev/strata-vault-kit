@@ -3,6 +3,7 @@ import React, { useEffect, useRef } from "react"
 import { Navigate, useParams } from "react-router-dom"
 import CycleSection from "../components/admin/CycleSection"
 import Disclosure from "../components/admin/Disclosure"
+import EmergencySection from "../components/admin/EmergencySection"
 import SurfaceTabs from "../components/admin/SurfaceTabs"
 import Skeleton from "../components/Skeleton"
 import AddressRows, { type AddressRow } from "../components/vault/AddressRows"
@@ -36,16 +37,61 @@ const describeStanding = (standing: Standing): string => {
 const isSingleKey = (grant: Grant, wallet: string): boolean =>
 	grant.authority === wallet && grant.standing === "signs-alone"
 
+const titleCase = (text: string): string =>
+	text.replace(
+		/(^|[\s-])(\w)/g,
+		(_, gap: string, letter: string) => `${gap}${letter.toUpperCase()}`,
+	)
+
 const describeGrant = (grant: Grant, wallet: string): string =>
 	isSingleKey(grant, wallet)
-		? grant.role
-		: `${grant.role} (${describeStanding(grant.standing)})`
+		? titleCase(grant.role)
+		: `${titleCase(grant.role)} (${describeStanding(grant.standing)})`
+
+const describeRoles = (grants: Grant[], wallet: string): string =>
+	`${grants.length === 1 ? "Current role" : "Current roles"}: ${grants
+		.map((grant) => describeGrant(grant, wallet))
+		.join(" · ")}`
 
 const Contracts: React.FC<{ addresses: AdminAddresses }> = ({ addresses }) => (
 	<Disclosure title="Contracts">
 		<AddressRows rows={toAddressRows(addresses)} />
 	</Disclosure>
 )
+
+const SurfaceBody: React.FC<{
+	surface: AdminSurface
+	active: boolean
+	grantedBy: Record<AdminSurface, Grant[]>
+	wallet: string
+	addresses: AdminAddresses
+}> = ({ surface, active, grantedBy, wallet, addresses }) => {
+	const contracts = <Contracts addresses={addresses} />
+	switch (surface) {
+		case "cycle":
+			return (
+				<CycleSection
+					grants={grantedBy.cycle}
+					wallet={wallet}
+					active={active}
+					contracts={contracts}
+				/>
+			)
+		case "emergency":
+			return (
+				<EmergencySection
+					grants={grantedBy.emergency}
+					wallet={wallet}
+					active={active}
+					contracts={contracts}
+				/>
+			)
+		case "compliance":
+		case "configuration":
+		case "governance":
+			return contracts
+	}
+}
 
 const HeldSurfaces: React.FC<{
 	held: AdminSurface[]
@@ -90,16 +136,13 @@ const HeldSurfaces: React.FC<{
 					>
 						{SURFACE_LABELS[surface]}
 					</h2>
-					{surface === "cycle" ? (
-						<CycleSection
-							grants={grantedBy.cycle}
-							wallet={wallet}
-							active={surface === active}
-							contracts={<Contracts addresses={addresses} />}
-						/>
-					) : (
-						<Contracts addresses={addresses} />
-					)}
+					<SurfaceBody
+						surface={surface}
+						active={surface === active}
+						grantedBy={grantedBy}
+						wallet={wallet}
+						addresses={addresses}
+					/>
 				</section>
 			))}
 		</div>
@@ -114,14 +157,12 @@ const AdminPanel: React.FC = () => {
 
 	return (
 		<div className={styles.page}>
-			<h1 className={typeStyles.sectionHead}>Admin</h1>
+			<h1 className={typeStyles.sectionHead}>Operations Console</h1>
 
 			{status === "ready" && address !== undefined && (
 				<p className={typeStyles.footnote}>
 					{shortAddress(address)}
-					{grants.length > 0
-						? ` · ${grants.map((grant) => describeGrant(grant, address)).join(" · ")}`
-						: ""}
+					{grants.length > 0 ? ` · ${describeRoles(grants, address)}` : ""}
 				</p>
 			)}
 
