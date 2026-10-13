@@ -123,7 +123,12 @@ const AdminPanel: React.FC = () => {
 										.map((grant) => describeCardGrant(grant, address ?? ""))
 										.join(", ")}
 								</span>
-								{surface === "cycle" && <CycleSection />}
+								{surface === "cycle" && (
+									<CycleSection
+										grants={grantedBy[surface]}
+										wallet={address ?? ""}
+									/>
+								)}
 							</li>
 						),
 					)}

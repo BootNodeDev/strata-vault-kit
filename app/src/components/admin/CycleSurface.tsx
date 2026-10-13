@@ -1,4 +1,5 @@
 import React from "react"
+import { type CycleAction } from "../../pages/cycle"
 import typeStyles from "../../styles/type.module.css"
 import Skeleton from "../Skeleton"
 import { type AddressRow, type FigureGroup } from "../vault/AboutVault"
@@ -9,6 +10,7 @@ import styles from "./CycleSurface.module.css"
 export type CycleGroup = FigureGroup & {
 	tiles: Metric[]
 	addresses?: AddressRow[]
+	actions?: React.ReactNode
 }
 
 export type EpochRow = {
@@ -79,6 +81,60 @@ const Group: React.FC<{ group: CycleGroup }> = ({ group }) => (
 			))}
 		</ul>
 		{group.addresses !== undefined && <AddressRows rows={group.addresses} />}
+		{group.actions}
+	</div>
+)
+
+export const CycleActions: React.FC<{
+	actions: CycleAction[]
+	onRun: (action: CycleAction) => void
+}> = ({ actions, onRun }) => (
+	<div className={styles.actionArea}>
+		{actions.map((action) => (
+			<div className={styles.action} key={action.id}>
+				<ul
+					aria-label={`${action.label} conditions`}
+					className={styles.conditions}
+				>
+					{action.conditions.map((condition) => (
+						<li className={styles.row} key={condition.label}>
+							<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
+								{condition.label}
+							</span>
+							<span
+								className={`${typeStyles.railValue} ${
+									condition.met ? styles.rowValue : styles.unmet
+								}`}
+							>
+								{condition.met ? "Met" : "Not met"}
+							</span>
+						</li>
+					))}
+				</ul>
+				{action.outcome !== null && (
+					<p className={`${typeStyles.footnote} ${styles.outcome}`}>
+						{action.outcome}
+					</p>
+				)}
+				<div className={styles.actions}>
+					<button
+						type="button"
+						className={
+							action.enabled ? styles.actionPrimary : styles.actionUnavailable
+						}
+						disabled={!action.enabled}
+						onClick={() => onRun(action)}
+					>
+						{action.label}
+					</button>
+				</div>
+				{action.unavailable !== undefined && (
+					<p className={`${typeStyles.footnote} ${styles.placeholder}`}>
+						{action.unavailable}
+					</p>
+				)}
+			</div>
+		))}
 	</div>
 )
 
