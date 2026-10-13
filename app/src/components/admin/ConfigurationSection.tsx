@@ -33,7 +33,7 @@ import layoutStyles from "./SurfaceLayout.module.css"
 
 type Flow = Pick<
 	UsePendingTransaction<never, object>,
-	"status" | "amountLabel" | "reset" | "retry"
+	"status" | "amountLabel" | "reset" | "retry" | "submit"
 >
 
 const flow = (
@@ -63,15 +63,18 @@ const ConfigurationSection: React.FC<{
 	const identityVerifier = usePendingTransaction(useSetIdentityVerifier())
 	const [inputs, setInputs] = useState<ConfigurationInputs>({})
 
-	const modalFlows: TransactionModalProps[] = [
-		flow("set-deposit-cap", depositCap),
-		flow("set-custodian", custodian),
-		flow("set-notice", notice),
-		flow("set-wind-down-delay", windDownDelay),
-		flow("set-oracle-config", oracleConfig),
-		flow("set-compliance", compliance),
-		flow("set-identity-verifier", identityVerifier),
-	]
+	const flows: Record<ConfigurationAction["id"], Flow> = {
+		"set-deposit-cap": depositCap,
+		"set-custodian": custodian,
+		"set-notice": notice,
+		"set-wind-down-delay": windDownDelay,
+		"set-oracle-config": oracleConfig,
+		"set-compliance": compliance,
+		"set-identity-verifier": identityVerifier,
+	}
+	const modalFlows = Object.entries(flows).map(([id, transaction]) =>
+		flow(id as ConfigurationModalAction, transaction),
+	)
 	const recorded = modalFlows.some(
 		(props) => props.status.status === "confirmed",
 	)
@@ -82,31 +85,8 @@ const ConfigurationSection: React.FC<{
 	const actions = toConfigurationActions(configuration, grants, wallet, inputs)
 
 	const run = (action: ConfigurationAction) => {
-		switch (action.id) {
-			case "set-deposit-cap":
-				if (action.arg !== undefined) depositCap.submit(action.arg, action.next)
-				return
-			case "set-custodian":
-				if (action.arg !== undefined) custodian.submit(action.arg, action.next)
-				return
-			case "set-notice":
-				if (action.arg !== undefined) notice.submit(action.arg, action.next)
-				return
-			case "set-wind-down-delay":
-				if (action.arg !== undefined)
-					windDownDelay.submit(action.arg, action.next)
-				return
-			case "set-oracle-config":
-				if (action.arg !== undefined)
-					oracleConfig.submit(action.arg, action.next)
-				return
-			case "set-compliance":
-				if (action.arg !== undefined) compliance.submit(action.arg, action.next)
-				return
-			case "set-identity-verifier":
-				if (action.arg !== undefined)
-					identityVerifier.submit(action.arg, action.next)
-		}
+		if (action.arg !== undefined)
+			flows[action.id].submit(action.arg as never, action.next)
 	}
 
 	const onInput = (_: ConfigurationAction, value: string, key?: string) => {
