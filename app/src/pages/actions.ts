@@ -74,7 +74,7 @@ export const readiness = (action: RailAction<RailField>): Readiness => {
 	const [only] = unmet
 	if (unmet.length === 1 && only?.unchanged === true && only.met === false)
 		return { kind: "unchanged" }
-	return { kind: "unmet", count: unmet.length }
+	return { kind: "unmet", count: Math.max(unmet.length, 1) }
 }
 
 export const readyCount = (actions: RailAction<RailField>[]): number =>

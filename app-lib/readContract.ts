@@ -71,13 +71,10 @@ const userRequestDataKey = (
 const contractDataLedgerKey = (
 	contract: xdr.ScAddress,
 	key: xdr.ScVal,
+	durability = xdr.ContractDataDurability.persistent(),
 ): xdr.LedgerKey =>
 	xdr.LedgerKey.contractData(
-		new xdr.LedgerKeyContractData({
-			contract,
-			key,
-			durability: xdr.ContractDataDurability.persistent(),
-		}),
+		new xdr.LedgerKeyContractData({ contract, key, durability }),
 	)
 
 type EpochKeySet = {
@@ -271,6 +268,101 @@ export async function readLedgerTime(): Promise<bigint | null> {
 		return BigInt(closeTime)
 	} catch {
 		return null
+	}
+}
+
+export type PendingTransfer = {
+	address: string
+	liveUntilLedger: number
+	expired: boolean
+}
+
+export type LedgerWindow = {
+	sequence: number
+	closeTime: bigint
+	maxLiveUntil: number | null
+}
+
+export type PendingAdmins = {
+	ledger: LedgerWindow
+	pending: Map<string, PendingTransfer | null>
+}
+
+const pendingAdminKey = (contractId: string): xdr.LedgerKey =>
+	contractDataLedgerKey(
+		Address.fromString(contractId).toScAddress(),
+		xdr.ScVal.scvVec([xdr.ScVal.scvSymbol("PendingAdmin")]),
+		xdr.ContractDataDurability.temporary(),
+	)
+
+const archivalSettingsKey = (): xdr.LedgerKey =>
+	xdr.LedgerKey.configSetting(
+		new xdr.LedgerKeyConfigSetting({
+			configSettingId: xdr.ConfigSettingId.configSettingStateArchival(),
+		}),
+	)
+
+const decodePendingTransfer = (
+	entry: Api.LedgerEntryResult | undefined,
+	sequence: number,
+): PendingTransfer | null => {
+	if (entry === undefined || (entry.liveUntilLedgerSeq ?? 0) < sequence)
+		return null
+	const { address, live_until_ledger } = scValToNative(
+		entry.val.contractData().val(),
+	) as { address: string; live_until_ledger: number }
+	return {
+		address,
+		liveUntilLedger: live_until_ledger,
+		expired: sequence > live_until_ledger,
+	}
+}
+
+const maxLiveUntil = (
+	settings: Api.LedgerEntryResult | undefined,
+	sequence: number,
+): number | null =>
+	settings === undefined
+		? null
+		: sequence +
+			settings.val.configSetting().stateArchivalSettings().maxEntryTtl() -
+			1
+
+export async function readPendingAdmins(
+	contractIds: string[],
+): Promise<ContractRead<PendingAdmins>> {
+	const keyed = contractIds.map((contractId) => ({
+		contractId,
+		key: pendingAdminKey(contractId),
+	}))
+	const archival = archivalSettingsKey()
+	try {
+		const [latest, fetched] = await Promise.all([
+			server.getLatestLedger(),
+			fetchChunk([...keyed.map(({ key }) => key), archival]),
+		])
+		if (!fetched.ok) return { kind: "unreadable" }
+		const entryOf = (key: xdr.LedgerKey) =>
+			fetched.byKey.get(key.toXDR("base64"))
+		const { sequence } = latest
+		return {
+			kind: "value",
+			value: {
+				ledger: {
+					sequence,
+					closeTime: BigInt(latest.closeTime),
+					maxLiveUntil: maxLiveUntil(entryOf(archival), sequence),
+				},
+				pending: new Map(
+					keyed.map(({ contractId, key }) => [
+						contractId,
+						decodePendingTransfer(entryOf(key), sequence),
+					]),
+				),
+			},
+		}
+	} catch {
+		return { kind: "unreadable" }
 	}
 }
 

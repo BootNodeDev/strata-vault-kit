@@ -1074,6 +1074,34 @@ const revokeCopy =
 		doneBody: `Revoked ${value}.`,
 	})
 
+const handOverCopy =
+	(refuser: AdminCopy["refuser"]) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		verb: "hand over the admin",
+		signing: "Signing proposes the handover.",
+		done: "Handover proposed",
+		doneBody: value,
+	})
+
+const cancelHandoverCopy =
+	(refuser: AdminCopy["refuser"]) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		verb: "cancel the handover",
+		signing: `Signing withdraws the offer to ${value}.`,
+		done: "Handover cancelled",
+		doneBody: `${value} can no longer accept.`,
+	})
+
+const acceptAdminCopy = (refuser: AdminCopy["refuser"]) => (): AdminCopy => ({
+	refuser,
+	verb: "accept the admin role",
+	signing: `Signing makes this wallet the ${refuser} admin.`,
+	done: "Admin accepted",
+	doneBody: `This wallet is now the ${refuser} admin.`,
+})
+
 const GOVERNANCE_COPY: Record<
 	GovernanceModalAction,
 	(value: string) => AdminCopy
@@ -1084,6 +1112,15 @@ const GOVERNANCE_COPY: Record<
 	"revoke-oracle-role": revokeCopy("oracle"),
 	"grant-token-role": grantCopy("share token"),
 	"revoke-token-role": revokeCopy("share token"),
+	"hand-over-vault-admin": handOverCopy("vault"),
+	"cancel-vault-handover": cancelHandoverCopy("vault"),
+	"accept-vault-admin": acceptAdminCopy("vault"),
+	"hand-over-oracle-admin": handOverCopy("oracle"),
+	"cancel-oracle-handover": cancelHandoverCopy("oracle"),
+	"accept-oracle-admin": acceptAdminCopy("oracle"),
+	"hand-over-token-admin": handOverCopy("share token"),
+	"cancel-token-handover": cancelHandoverCopy("share token"),
+	"accept-token-admin": acceptAdminCopy("share token"),
 }
 
 const adminContractErrorReason =
@@ -1102,6 +1139,14 @@ const adminContractErrorReason =
 				return "The account does not hold this role."
 			case 2010:
 				return `The ${refuser} cannot hold any more roles.`
+			case 2200:
+				return "There is no pending handover."
+			case 2201:
+				return "The expiry is outside what the network allows."
+			case 2202:
+				return "The pending handover is to a different address."
+			case 2203:
+				return "The handover expired before it was accepted."
 			case 3001:
 				return "One of the oracle limits is out of range."
 			case 3008:
@@ -1230,6 +1275,15 @@ const describeStatus = (
 		case "revoke-oracle-role":
 		case "grant-token-role":
 		case "revoke-token-role":
+		case "hand-over-vault-admin":
+		case "cancel-vault-handover":
+		case "accept-vault-admin":
+		case "hand-over-oracle-admin":
+		case "cancel-oracle-handover":
+		case "accept-oracle-admin":
+		case "hand-over-token-admin":
+		case "cancel-token-handover":
+		case "accept-token-admin":
 			return describeAdminStatus(
 				GOVERNANCE_COPY[props.action](props.value),
 				props.status,

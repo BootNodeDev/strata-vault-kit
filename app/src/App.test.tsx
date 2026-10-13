@@ -53,6 +53,9 @@ const disconnectedAuthority: AdminAuthority = {
 		"share-token compliance": [],
 		"share-token manager": [],
 		"share-token admin": [],
+		"vault pending admin": [],
+		"oracle pending admin": [],
+		"share-token pending admin": [],
 	},
 }
 

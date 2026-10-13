@@ -4,10 +4,13 @@ import {
 	connectNavOracle,
 	connectShareToken,
 	type ContractRead,
+	type PendingAdmins,
 	readContract,
+	readPendingAdmins,
 } from "@stellar-scaffold/app-lib"
 import { skipToken, useQuery } from "@tanstack/react-query"
 import { asyncVault } from "../config/clients"
+import { vaultContractId } from "../config/contracts"
 import { useWallet } from "./useWallet"
 
 export type AdminSurface =
@@ -68,6 +71,9 @@ const ROLE_SURFACES = {
 	"share-token admin": ["emergency", "configuration", "governance"],
 	"oracle admin": ["emergency", "configuration", "governance"],
 	"vault governance": ["emergency", "configuration", "governance"],
+	"vault pending admin": ["governance"],
+	"oracle pending admin": ["governance"],
+	"share-token pending admin": ["governance"],
 } as const satisfies Record<string, readonly AdminSurface[]>
 
 type RoleLabel = keyof typeof ROLE_SURFACES
@@ -213,6 +219,17 @@ const asHolders = (read: ContractRead<string | null>): string[] =>
 const asMembers = (read: ContractRead<string[]>): string[] =>
 	read.kind === "value" ? read.value : []
 
+const pendingAdminOf = (
+	read: ContractRead<PendingAdmins>,
+	contract: string,
+): string[] => {
+	if (read.kind !== "value") return []
+	const transfer = read.value.pending.get(contract)
+	return transfer === undefined || transfer === null || transfer.expired
+		? []
+		: [transfer.address]
+}
+
 async function readSigners(
 	holders: RoleHolders,
 ): Promise<{ byAccount: Record<string, AccountSigners>; unknown: boolean }> {
@@ -274,6 +291,7 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		tokenManager,
 		tokenAdmin,
 		identityVerifier,
+		pendingAdmins,
 	] = await Promise.all([
 		readRoleMembers(oraclePromise, "attester"),
 		readRoleMembers(oraclePromise, "guardian"),
@@ -282,6 +300,11 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		readRoleMembers(tokenPromise, "manager"),
 		readContract(async () => (await tokenPromise).get_admin()),
 		readContract(async () => (await tokenPromise).identity_verifier()),
+		readPendingAdmins([
+			vaultContractId,
+			oracleAddress.value,
+			shareTokenAddress.value,
+		]),
 	])
 
 	const addresses: AdminAddresses = {
@@ -316,6 +339,12 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		"share-token compliance": asMembers(tokenCompliance),
 		"share-token manager": asMembers(tokenManager),
 		"share-token admin": asHolders(tokenAdmin),
+		"vault pending admin": pendingAdminOf(pendingAdmins, vaultContractId),
+		"oracle pending admin": pendingAdminOf(pendingAdmins, oracleAddress.value),
+		"share-token pending admin": pendingAdminOf(
+			pendingAdmins,
+			shareTokenAddress.value,
+		),
 	}
 	const { byAccount, unknown } = await readSigners(holders)
 

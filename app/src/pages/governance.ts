@@ -1,8 +1,16 @@
 import { StrKey } from "@stellar/stellar-sdk"
-import { shortAddress } from "@stellar-scaffold/app-lib"
+import { type PendingTransfer, shortAddress } from "@stellar-scaffold/app-lib"
 import { type Metric } from "../components/vault/MetricsStrip"
 import { type Grant, type RoleHolders } from "../hooks/useAdminAuthority"
-import { type RoleChange } from "../hooks/useGovernanceTransactions"
+import {
+	GOVERNED_CONTRACTS,
+	type GovernedContract,
+	type Handovers,
+} from "../hooks/useGovernanceState"
+import {
+	type AdminOffer,
+	type RoleChange,
+} from "../hooks/useGovernanceTransactions"
 import {
 	allMet,
 	type Condition,
@@ -13,21 +21,42 @@ import {
 	type Spec,
 	toAction,
 } from "./actions"
+import { formatTimestamp } from "./cycle"
 
-type RoleContract = "vault" | "oracle" | "token"
 type Operation = "grant" | "revoke"
 
-export type GovernanceActionId = `${Operation}-${RoleContract}-role`
+type RoleActionId = `${Operation}-${GovernedContract}-role`
+type OfferActionId =
+	`hand-over-${GovernedContract}-admin` | `cancel-${GovernedContract}-handover`
+type AcceptActionId = `accept-${GovernedContract}-admin`
 
-export type GovernanceAction = RailAction<RailField> & {
-	id: GovernanceActionId
-	arg: RoleChange | undefined
-	next: string
-}
+export type GovernanceActionId = RoleActionId | OfferActionId | AcceptActionId
+
+export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] =
+	GOVERNED_CONTRACTS.flatMap((contract) => [
+		`grant-${contract}-role` as const,
+		`revoke-${contract}-role` as const,
+		`hand-over-${contract}-admin` as const,
+		`cancel-${contract}-handover` as const,
+		`accept-${contract}-admin` as const,
+	])
+
+type Built<Id extends string, Arg> = Id extends string
+	? RailAction<RailField> & { id: Id; arg: Arg; next: string }
+	: never
+
+export type GovernanceAction =
+	| Built<RoleActionId, RoleChange | undefined>
+	| Built<OfferActionId, AdminOffer | undefined>
+	| Built<AcceptActionId, undefined>
 
 export type GovernanceInputs = Partial<Record<string, string>>
 
-export type GovernanceState = { holders: RoleHolders; vault: string }
+export type GovernanceState = {
+	holders: RoleHolders
+	vault: string
+	handovers: Handovers
+}
 
 export type GovernanceGroup = { title: string; metrics: Metric[] }
 
@@ -37,14 +66,20 @@ type RoleEntry = { role: string; label: string; holders: Holder }
 
 type ContractEntry = {
 	title: string
+	subject: string
+	name: string
+	pendingGrant: string
 	noun: string
 	admin: { grant: string; label: string; holders: Holder }
 	roles: [RoleEntry, ...RoleEntry[]]
 }
 
-const CONTRACTS: Record<RoleContract, ContractEntry> = {
+const CONTRACTS: Record<GovernedContract, ContractEntry> = {
 	vault: {
 		title: "Vault",
+		subject: "vault",
+		name: "vault",
+		pendingGrant: "vault pending admin",
 		noun: "a vault role",
 		admin: {
 			grant: ROLES.governance,
@@ -59,6 +94,9 @@ const CONTRACTS: Record<RoleContract, ContractEntry> = {
 	},
 	oracle: {
 		title: "Oracle",
+		subject: "oracle",
+		name: "oracle",
+		pendingGrant: "oracle pending admin",
 		noun: "an oracle role",
 		admin: {
 			grant: ROLES.oracleAdmin,
@@ -72,6 +110,9 @@ const CONTRACTS: Record<RoleContract, ContractEntry> = {
 	},
 	token: {
 		title: "Share token",
+		subject: "share token",
+		name: "share-token",
+		pendingGrant: "share-token pending admin",
 		noun: "a share-token role",
 		admin: {
 			grant: ROLES.tokenAdmin,
@@ -88,8 +129,6 @@ const CONTRACTS: Record<RoleContract, ContractEntry> = {
 		],
 	},
 }
-
-const CONTRACT_ORDER: RoleContract[] = ["vault", "oracle", "token"]
 
 const SEPARATED_VAULT_ROLES: Holder[] = [
 	"vault governance",
@@ -117,9 +156,15 @@ const holderList = (accounts: string[]): string =>
 const capitalize = (text: string): string =>
 	`${text.charAt(0).toUpperCase()}${text.slice(1)}`
 
+const LEDGER_SECONDS = 5n
+const DAY_IN_LEDGERS = 17_280
+const DAY = 86_400n
+const DEFAULT_DAYS = "7"
+const WHOLE_DAYS = /^\d+$/
+
 type Draft = {
 	operation: Operation
-	contract: RoleContract
+	contract: GovernedContract
 	entry: RoleEntry
 	account: string
 	state: GovernanceState
@@ -160,14 +205,14 @@ const resultingHolders = ({
 		: current.filter((holder) => holder !== account)
 }
 
+type Confirmation = { field: RailField; condition: Condition }
+
 function confirmation(
-	draft: Draft,
 	key: string,
+	label: string,
+	value: string,
 	inputs: GovernanceInputs,
-): { field: RailField; condition: Condition } | undefined {
-	const label = warningOf(draft)
-	if (label === undefined) return undefined
-	const value = `${draft.entry.role}:${draft.account}`
+): Confirmation {
 	const checked = inputs[key] === value
 	return {
 		field: { kind: "confirm", key, label, value, checked },
@@ -175,16 +220,36 @@ function confirmation(
 	}
 }
 
+const roleConfirmation = (
+	draft: Draft,
+	key: string,
+	inputs: GovernanceInputs,
+): Confirmation | undefined => {
+	const label = warningOf(draft)
+	return label === undefined
+		? undefined
+		: confirmation(key, label, `${draft.entry.role}:${draft.account}`, inputs)
+}
+
+const accountField = (key: string, text: string, label: string): RailField => ({
+	key,
+	label,
+	placeholder: "Address",
+	value: text,
+	invalid: text.trim() !== "" && parseAccount(text) === undefined,
+	text: true,
+})
+
 function roleSpec(
 	operation: Operation,
-	contract: RoleContract,
+	contract: GovernedContract,
 	state: GovernanceState,
 	inputs: GovernanceInputs,
-): Spec<GovernanceActionId, RailField> & {
+): Spec<RoleActionId, RailField> & {
 	arg: RoleChange | undefined
 	next: string
 } {
-	const id: GovernanceActionId = `${operation}-${contract}-role`
+	const id: RoleActionId = `${operation}-${contract}-role`
 	const { noun, roles } = CONTRACTS[contract]
 	const roleKey = `${id}-role`
 	const accountKey = `${id}-account`
@@ -204,14 +269,7 @@ function roleSpec(
 			value: entry.role,
 			options: roles.map(({ role, label }) => ({ value: role, label })),
 		},
-		{
-			key: accountKey,
-			label: "Account",
-			placeholder: "Address",
-			value: text,
-			invalid: text.trim() !== "" && account === undefined,
-			text: true,
-		},
+		accountField(accountKey, text, "Account"),
 	]
 	const conditions: Condition[] = [
 		operation === "grant"
@@ -228,7 +286,7 @@ function roleSpec(
 	const confirm =
 		draft === undefined
 			? undefined
-			: confirmation(draft, `${id}-confirm`, inputs)
+			: roleConfirmation(draft, `${id}-confirm`, inputs)
 	if (confirm !== undefined) {
 		fields.push(confirm.field)
 		conditions.push(confirm.condition)
@@ -253,26 +311,195 @@ function roleSpec(
 	}
 }
 
+type Ledger = Extract<Handovers, { status: "ready" }>["ledger"]
+
+const ledgerTime = (ledger: Ledger, sequence: number): bigint =>
+	ledger.closeTime + BigInt(sequence - ledger.sequence) * LEDGER_SECONDS
+
+const limitCondition = (
+	ledger: Ledger | undefined,
+	liveUntil: number | undefined,
+): Condition[] => {
+	if (ledger === undefined)
+		return [{ label: "Expiry within the network limit", met: null }]
+	if (ledger.maxLiveUntil === null) return []
+	const maxDays = Math.floor(
+		(ledger.maxLiveUntil - ledger.sequence) / DAY_IN_LEDGERS,
+	)
+	return [
+		{
+			label: `Expiry ≤ ${maxDays} days`,
+			met: liveUntil === undefined ? null : liveUntil <= ledger.maxLiveUntil,
+		},
+	]
+}
+
+function handOverSpec(
+	contract: GovernedContract,
+	state: GovernanceState,
+	inputs: GovernanceInputs,
+): Spec<OfferActionId, RailField> & {
+	arg: AdminOffer | undefined
+	next: string
+} {
+	const id: OfferActionId = `hand-over-${contract}-admin`
+	const accountKey = `${id}-account`
+	const daysKey = `${id}-days`
+	const text = inputs[accountKey] ?? ""
+	const account = parseAccount(text)
+	const daysText = inputs[daysKey] ?? DEFAULT_DAYS
+	const days = WHOLE_DAYS.test(daysText.trim()) ? Number(daysText) : undefined
+	const ledger =
+		state.handovers.status === "ready" ? state.handovers.ledger : undefined
+	const liveUntil =
+		ledger === undefined || days === undefined
+			? undefined
+			: ledger.sequence + days * DAY_IN_LEDGERS
+	const fields: RailField[] = [
+		accountField(accountKey, text, "New admin"),
+		{
+			key: daysKey,
+			label: "Expiry in days",
+			placeholder: DEFAULT_DAYS,
+			value: daysText,
+			invalid: daysText.trim() !== "" && days === undefined,
+		},
+	]
+	const conditions: Condition[] = [
+		{
+			label: "New admin entered",
+			met: text.trim() === "" ? null : account !== undefined,
+		},
+		{ label: "Expiry ≥ 1 day", met: days === undefined ? null : days >= 1 },
+		...limitCondition(ledger, liveUntil),
+	]
+	if (account !== undefined) {
+		const confirm = confirmation(
+			`${id}-confirm`,
+			`Hands control of the ${CONTRACTS[contract].subject} to ${shortAddress(account)}.`,
+			account,
+			inputs,
+		)
+		fields.push(confirm.field)
+		conditions.push(confirm.condition)
+	}
+	const offer =
+		account === undefined || liveUntil === undefined || ledger === undefined
+			? undefined
+			: { newAdmin: account, liveUntilLedger: liveUntil }
+	const outcome =
+		offer === undefined || ledger === undefined || days === undefined
+			? null
+			: `${shortAddress(offer.newAdmin)} becomes admin once it accepts before ${formatTimestamp(
+					ledger.closeTime + BigInt(days) * DAY,
+				)}.`
+	return {
+		id,
+		label: `Hand over ${CONTRACTS[contract].name} admin`,
+		conditions,
+		outcome,
+		fields,
+		danger: true,
+		ready: allMet(conditions) && offer !== undefined,
+		arg: offer,
+		next: outcome ?? "",
+	}
+}
+
+const cancelSpec = (
+	contract: GovernedContract,
+	pending: PendingTransfer,
+): Spec<OfferActionId> & { arg: AdminOffer; next: string } => ({
+	id: `cancel-${contract}-handover`,
+	label: `Cancel the ${CONTRACTS[contract].name} handover`,
+	conditions: [],
+	outcome: `${shortAddress(pending.address)} can no longer accept.`,
+	arg: { newAdmin: pending.address, liveUntilLedger: 0 },
+	next: shortAddress(pending.address),
+})
+
+const acceptSpec = (
+	contract: GovernedContract,
+	ledger: Ledger,
+	pending: PendingTransfer,
+): Spec<AcceptActionId> & { arg: undefined; next: string } => ({
+	id: `accept-${contract}-admin`,
+	label: `Accept ${CONTRACTS[contract].name} admin`,
+	conditions: [
+		{
+			label: "Offer open until",
+			met: true,
+			detail: formatTimestamp(ledgerTime(ledger, pending.liveUntilLedger)),
+		},
+	],
+	outcome: `${shortAddress(pending.address)} becomes the admin of the ${CONTRACTS[contract].subject}.`,
+	arg: undefined,
+	next: CONTRACTS[contract].subject,
+})
+
+const build = <Id extends GovernanceActionId, Arg, F extends RailField>(
+	spec: Spec<Id, F> & { arg: Arg; next: string },
+	grant: Grant,
+	wallet: string,
+) => ({ ...toAction(spec, grant, wallet), arg: spec.arg, next: spec.next })
+
+function adminActions(
+	contract: GovernedContract,
+	state: GovernanceState,
+	grant: Grant,
+	wallet: string,
+	inputs: GovernanceInputs,
+): GovernanceAction[] {
+	const pending =
+		state.handovers.status === "ready"
+			? state.handovers.pending[contract]
+			: null
+	return [
+		build(roleSpec("grant", contract, state, inputs), grant, wallet),
+		build(roleSpec("revoke", contract, state, inputs), grant, wallet),
+		build(handOverSpec(contract, state, inputs), grant, wallet),
+		...(pending === null
+			? []
+			: [build(cancelSpec(contract, pending), grant, wallet)]),
+	]
+}
+
+function acceptAction(
+	contract: GovernedContract,
+	state: GovernanceState,
+	grants: Grant[],
+	wallet: string,
+): GovernanceAction[] {
+	if (state.handovers.status !== "ready") return []
+	const pending = state.handovers.pending[contract]
+	const grant = grantFor(grants, CONTRACTS[contract].pendingGrant, wallet)
+	if (
+		pending === null ||
+		pending.expired ||
+		grant === undefined ||
+		grant.authority !== pending.address
+	)
+		return []
+	return [
+		build(acceptSpec(contract, state.handovers.ledger, pending), grant, wallet),
+	]
+}
+
 export function toGovernanceActions(
 	state: GovernanceState,
 	grants: Grant[],
 	wallet: string,
 	inputs: GovernanceInputs,
 ): GovernanceAction[] {
-	const actions: GovernanceAction[] = []
-	for (const contract of CONTRACT_ORDER) {
-		const grant = grantFor(grants, CONTRACTS[contract].admin.grant, wallet)
-		if (grant === undefined) continue
-		for (const operation of ["grant", "revoke"] as const) {
-			const spec = roleSpec(operation, contract, state, inputs)
-			actions.push({
-				...toAction(spec, grant, wallet),
-				arg: spec.arg,
-				next: spec.next,
-			})
-		}
-	}
-	return actions
+	return GOVERNED_CONTRACTS.flatMap((contract) => {
+		const admin = grantFor(grants, CONTRACTS[contract].admin.grant, wallet)
+		return [
+			...(admin === undefined
+				? []
+				: adminActions(contract, state, admin, wallet, inputs)),
+			...acceptAction(contract, state, grants, wallet),
+		]
+	})
 }
 
 const holdersMetric = (label: string, accounts: string[]): Metric =>
@@ -284,15 +511,38 @@ const holdersMetric = (label: string, accounts: string[]): Metric =>
 				note: holderList(accounts),
 			}
 
+const pendingMetric = (
+	handovers: Handovers,
+	contract: GovernedContract,
+): Metric[] => {
+	if (handovers.status !== "ready") return []
+	const pending = handovers.pending[contract]
+	if (pending === null) return []
+	const at = formatTimestamp(
+		ledgerTime(handovers.ledger, pending.liveUntilLedger),
+	)
+	return [
+		{
+			label: "Pending admin",
+			value: shortAddress(pending.address),
+			note: pending.expired ? `Expired ${at}` : `Expires ${at}`,
+		},
+	]
+}
+
 export const toGovernanceGroups = ({
 	holders,
+	handovers,
 }: GovernanceState): GovernanceGroup[] =>
-	CONTRACT_ORDER.map((contract) => {
+	GOVERNED_CONTRACTS.map((contract) => {
 		const { title, admin, roles } = CONTRACTS[contract]
 		return {
 			title,
-			metrics: [admin, ...roles].map((entry) =>
-				holdersMetric(entry.label, holders[entry.holders]),
-			),
+			metrics: [
+				...[admin, ...roles].map((entry) =>
+					holdersMetric(entry.label, holders[entry.holders]),
+				),
+				...pendingMetric(handovers, contract),
+			],
 		}
 	})

@@ -51,6 +51,14 @@ describe("readiness", () => {
 		expect(readiness(action)).toEqual({ kind: "unmet", count: 2 })
 	})
 
+	it("never reads a closed action as zero unmet", () => {
+		const action = actionWith({
+			conditions: [{ label: "Expiry ≥ 1 day", met: true }],
+		})
+
+		expect(readiness(action)).toEqual({ kind: "unmet", count: 1 })
+	})
+
 	it("reads an action whose only unmet condition is no change as unchanged", () => {
 		const action = actionWith({
 			conditions: [

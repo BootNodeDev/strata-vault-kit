@@ -1,10 +1,21 @@
 import React, { useEffect, useState } from "react"
+import { addresses } from "../../config/addresses"
 import { vaultContractId } from "../../config/contracts"
 import { type Grant, type RoleHolders } from "../../hooks/useAdminAuthority"
+import { useGovernanceState } from "../../hooks/useGovernanceState"
 import {
+	useAcceptOracleAdmin,
+	useAcceptTokenAdmin,
+	useAcceptVaultAdmin,
+	useCancelOracleHandover,
+	useCancelTokenHandover,
+	useCancelVaultHandover,
 	useGrantOracleRole,
 	useGrantTokenRole,
 	useGrantVaultRole,
+	useHandOverOracleAdmin,
+	useHandOverTokenAdmin,
+	useHandOverVaultAdmin,
 	useRevokeOracleRole,
 	useRevokeTokenRole,
 	useRevokeVaultRole,
@@ -14,6 +25,7 @@ import {
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
 import {
+	GOVERNANCE_ACTION_IDS,
 	type GovernanceAction,
 	type GovernanceInputs,
 	toGovernanceActions,
@@ -45,6 +57,63 @@ const flow = (
 	onRetry: transaction.retry,
 })
 
+const CONTRACTS = {
+	vault: vaultContractId,
+	oracle: addresses.nav_oracle,
+	token: addresses.share_token,
+}
+
+function useGovernanceFlows() {
+	return {
+		"grant-vault-role": usePendingTransaction(useGrantVaultRole()),
+		"revoke-vault-role": usePendingTransaction(useRevokeVaultRole()),
+		"hand-over-vault-admin": usePendingTransaction(useHandOverVaultAdmin()),
+		"cancel-vault-handover": usePendingTransaction(useCancelVaultHandover()),
+		"accept-vault-admin": usePendingTransaction(useAcceptVaultAdmin()),
+		"grant-oracle-role": usePendingTransaction(useGrantOracleRole()),
+		"revoke-oracle-role": usePendingTransaction(useRevokeOracleRole()),
+		"hand-over-oracle-admin": usePendingTransaction(useHandOverOracleAdmin()),
+		"cancel-oracle-handover": usePendingTransaction(useCancelOracleHandover()),
+		"accept-oracle-admin": usePendingTransaction(useAcceptOracleAdmin()),
+		"grant-token-role": usePendingTransaction(useGrantTokenRole()),
+		"revoke-token-role": usePendingTransaction(useRevokeTokenRole()),
+		"hand-over-token-admin": usePendingTransaction(useHandOverTokenAdmin()),
+		"cancel-token-handover": usePendingTransaction(useCancelTokenHandover()),
+		"accept-token-admin": usePendingTransaction(useAcceptTokenAdmin()),
+	} satisfies Record<GovernanceModalAction, Flow>
+}
+
+type Flows = ReturnType<typeof useGovernanceFlows>
+
+function submit(flows: Flows, action: GovernanceAction) {
+	switch (action.id) {
+		case "grant-vault-role":
+		case "revoke-vault-role":
+		case "grant-oracle-role":
+		case "revoke-oracle-role":
+		case "grant-token-role":
+		case "revoke-token-role":
+			return (
+				action.arg !== undefined &&
+				flows[action.id].submit(action.arg, action.next)
+			)
+		case "hand-over-vault-admin":
+		case "cancel-vault-handover":
+		case "hand-over-oracle-admin":
+		case "cancel-oracle-handover":
+		case "hand-over-token-admin":
+		case "cancel-token-handover":
+			return (
+				action.arg !== undefined &&
+				flows[action.id].submit(action.arg, action.next)
+			)
+		case "accept-vault-admin":
+		case "accept-oracle-admin":
+		case "accept-token-admin":
+			return flows[action.id].submit(undefined, action.next)
+	}
+}
+
 const GovernanceSection: React.FC<{
 	grants: Grant[]
 	wallet: string
@@ -52,24 +121,11 @@ const GovernanceSection: React.FC<{
 	contracts?: React.ReactNode
 	active?: boolean
 }> = ({ grants, wallet, holders, contracts, active = true }) => {
-	const grantVault = usePendingTransaction(useGrantVaultRole())
-	const revokeVault = usePendingTransaction(useRevokeVaultRole())
-	const grantOracle = usePendingTransaction(useGrantOracleRole())
-	const revokeOracle = usePendingTransaction(useRevokeOracleRole())
-	const grantToken = usePendingTransaction(useGrantTokenRole())
-	const revokeToken = usePendingTransaction(useRevokeTokenRole())
+	const { handovers } = useGovernanceState({ contracts: CONTRACTS, active })
+	const flows = useGovernanceFlows()
 	const [inputs, setInputs] = useState<GovernanceInputs>({})
 
-	const modalFlows = (
-		[
-			["grant-vault-role", grantVault],
-			["revoke-vault-role", revokeVault],
-			["grant-oracle-role", grantOracle],
-			["revoke-oracle-role", revokeOracle],
-			["grant-token-role", grantToken],
-			["revoke-token-role", revokeToken],
-		] satisfies [GovernanceModalAction, Flow][]
-	).map(([id, transaction]) => flow(id, transaction))
+	const modalFlows = GOVERNANCE_ACTION_IDS.map((id) => flow(id, flows[id]))
 	const recorded = modalFlows.some(
 		(props) => props.status.status === "confirmed",
 	)
@@ -77,26 +133,8 @@ const GovernanceSection: React.FC<{
 		if (recorded) setInputs({})
 	}, [recorded])
 
-	const state = { holders, vault: vaultContractId }
+	const state = { holders, vault: vaultContractId, handovers }
 	const actions = toGovernanceActions(state, grants, wallet, inputs)
-
-	const run = (action: GovernanceAction) => {
-		if (action.arg === undefined) return
-		switch (action.id) {
-			case "grant-vault-role":
-				return grantVault.submit(action.arg, action.next)
-			case "revoke-vault-role":
-				return revokeVault.submit(action.arg, action.next)
-			case "grant-oracle-role":
-				return grantOracle.submit(action.arg, action.next)
-			case "revoke-oracle-role":
-				return revokeOracle.submit(action.arg, action.next)
-			case "grant-token-role":
-				return grantToken.submit(action.arg, action.next)
-			case "revoke-token-role":
-				return revokeToken.submit(action.arg, action.next)
-		}
-	}
 
 	const onInput = (_: GovernanceAction, value: string, key?: string) => {
 		if (key !== undefined)
@@ -114,7 +152,7 @@ const GovernanceSection: React.FC<{
 						actions={actions}
 						pending={false}
 						unreadable={false}
-						onRun={run}
+						onRun={(action) => submit(flows, action)}
 						onInput={onInput}
 					/>
 				}

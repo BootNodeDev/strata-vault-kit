@@ -1,6 +1,7 @@
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { vaultContractId } from "../config/contracts"
 import { renderWithWallet, investorAddress } from "./testSupport"
 import {
 	type AdminSurface,
@@ -25,6 +26,9 @@ const noHolders: RoleHolders = {
 	"share-token compliance": [],
 	"share-token manager": [],
 	"share-token admin": [],
+	"vault pending admin": [],
+	"oracle pending admin": [],
+	"share-token pending admin": [],
 }
 
 const holders = (overrides: Partial<RoleHolders>): RoleHolders => ({
@@ -76,6 +80,9 @@ describe("toSurfaces", () => {
 		["share-token admin", ["emergency", "configuration", "governance"]],
 		["oracle admin", ["emergency", "configuration", "governance"]],
 		["vault governance", ["emergency", "configuration", "governance"]],
+		["vault pending admin", ["governance"]],
+		["oracle pending admin", ["governance"]],
+		["share-token pending admin", ["governance"]],
 	])("grants %s's surfaces to the wallet that holds it", (role, expected) => {
 		const { surfaces, grantedBy, grants } = toSurfaces(
 			investorAddress,
@@ -289,6 +296,7 @@ const {
 	connectNavOracleMock,
 	connectShareTokenMock,
 	accountSignersMock,
+	readPendingAdminsMock,
 } = vi.hoisted(() => ({
 	vaultMock: {
 		governance: vi.fn(),
@@ -311,6 +319,7 @@ const {
 	connectNavOracleMock: vi.fn(),
 	connectShareTokenMock: vi.fn(),
 	accountSignersMock: vi.fn(),
+	readPendingAdminsMock: vi.fn(),
 }))
 
 vi.mock("../config/clients", () => ({
@@ -324,7 +333,23 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 		connectNavOracle: connectNavOracleMock,
 		connectShareToken: connectShareTokenMock,
 		accountSigners: accountSignersMock,
+		readPendingAdmins: readPendingAdminsMock,
 	}
+})
+
+const pendingAdmins = (
+	byContract: Record<string, { address: string; expired: boolean }>,
+) => ({
+	kind: "value",
+	value: {
+		ledger: { sequence: 1_000, closeTime: 0n, maxLiveUntil: null },
+		pending: new Map(
+			Object.entries(byContract).map(([contract, transfer]) => [
+				contract,
+				{ ...transfer, liveUntilLedger: 2_000 },
+			]),
+		),
+	},
 })
 
 const members = (
@@ -371,6 +396,7 @@ describe("useAdminAuthority", () => {
 			result: "CVERIFIERADDRESS",
 		})
 		accountSignersMock.mockResolvedValue(singleKey)
+		readPendingAdminsMock.mockResolvedValue(pendingAdmins({}))
 	})
 
 	it("reports the held surfaces and the derived addresses once every read resolves", async () => {
@@ -475,6 +501,38 @@ describe("useAdminAuthority", () => {
 		expect(result.current.grants.map((grant) => grant.role)).toEqual([
 			"vault manager",
 		])
+	})
+
+	it("lets the pending admin of a live handover reach the governance surface", async () => {
+		vaultRoles({})
+		readPendingAdminsMock.mockResolvedValue(
+			pendingAdmins({
+				[derivedOracleAddress]: { address: investorAddress, expired: false },
+				[derivedShareTokenAddress]: { address: investorAddress, expired: true },
+			}),
+		)
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(readPendingAdminsMock).toHaveBeenCalledWith([
+			vaultContractId,
+			derivedOracleAddress,
+			derivedShareTokenAddress,
+		])
+		expect(result.current.surfaces).toEqual(new Set(["governance"]))
+		expect(result.current.grants.map((grant) => grant.role)).toEqual([
+			"oracle pending admin",
+		])
+	})
+
+	it("stays ready without any pending admin when the handovers cannot be read", async () => {
+		readPendingAdminsMock.mockResolvedValue({ kind: "unreadable" })
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
 	})
 
 	it("reads the share-token admin from get_admin", async () => {
