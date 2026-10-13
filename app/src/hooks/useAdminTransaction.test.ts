@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { adminAuthorityKey } from "./useAdminAuthority"
 import { configurationReadsKey } from "./useConfigurationState"
-import { isAllowedKey } from "./useIsAllowed"
 import {
 	useSetCompliance,
 	useSetCustodian,
@@ -24,6 +23,7 @@ import {
 	useUnpauseToken,
 	useUnpauseVault,
 } from "./useEmergencyTransactions"
+import { isAllowedKey } from "./useIsAllowed"
 import { oracleWriteKeys } from "./useOracleState"
 import { tokenPausedKey } from "./useTokenPaused"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
