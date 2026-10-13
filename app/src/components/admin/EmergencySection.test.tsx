@@ -55,25 +55,13 @@ vi.mock("../../hooks/useTokenPaused", () => ({
 vi.mock("../../hooks/useOracleState", () => ({
 	useOracleState: useOracleStateMock,
 }))
-vi.mock("../../hooks/usePauseVault", () => ({
+vi.mock("../../hooks/useEmergencyTransactions", () => ({
 	usePauseVault: () => pauseVaultMock,
-}))
-vi.mock("../../hooks/useUnpauseVault", () => ({
 	useUnpauseVault: () => unpauseVaultMock,
-}))
-vi.mock("../../hooks/useRaiseRipcord", () => ({
 	useRaiseRipcord: () => raiseRipcordMock,
-}))
-vi.mock("../../hooks/useSetRipcord", () => ({
 	useSetRipcord: () => setRipcordMock,
-}))
-vi.mock("../../hooks/useClearLatest", () => ({
 	useClearLatest: () => clearLatestMock,
-}))
-vi.mock("../../hooks/usePauseToken", () => ({
 	usePauseToken: () => pauseTokenMock,
-}))
-vi.mock("../../hooks/useUnpauseToken", () => ({
 	useUnpauseToken: () => unpauseTokenMock,
 }))
 

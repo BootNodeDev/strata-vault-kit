@@ -1,16 +1,18 @@
 import React from "react"
 import { type Grant } from "../../hooks/useAdminAuthority"
-import { useClearLatest } from "../../hooks/useClearLatest"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
+import {
+	useClearLatest,
+	usePauseToken,
+	usePauseVault,
+	useRaiseRipcord,
+	useSetRipcord,
+	useUnpauseToken,
+	useUnpauseVault,
+} from "../../hooks/useEmergencyTransactions"
 import { useOracleState } from "../../hooks/useOracleState"
-import { usePauseToken } from "../../hooks/usePauseToken"
-import { usePauseVault } from "../../hooks/usePauseVault"
 import { usePendingTransaction } from "../../hooks/usePendingTransaction"
-import { useRaiseRipcord } from "../../hooks/useRaiseRipcord"
-import { useSetRipcord } from "../../hooks/useSetRipcord"
 import { useTokenPaused } from "../../hooks/useTokenPaused"
-import { useUnpauseToken } from "../../hooks/useUnpauseToken"
-import { useUnpauseVault } from "../../hooks/useUnpauseVault"
 import { useVaultPaused } from "../../hooks/useVaultPaused"
 import {
 	type EmergencyAction,
