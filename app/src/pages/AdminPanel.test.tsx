@@ -120,7 +120,7 @@ describe("AdminPanel", () => {
 			screen.getByText("This address holds no authority on this vault."),
 		).toBeTruthy()
 		expect(screen.getByText("GCON...7890")).toBeTruthy()
-		expect(screen.queryByText("Contracts")).toBeNull()
+		expect(screen.getByText("Contracts").closest("details")?.open).toBe(false)
 	})
 
 	it.each(["/admin/cycle", "/admin/compliance"])(

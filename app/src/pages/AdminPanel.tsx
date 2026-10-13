@@ -148,9 +148,12 @@ const AdminPanel: React.FC = () => {
 			)}
 
 			{status === "ready" && held.length === 0 && (
-				<p className={typeStyles.body}>
-					This address holds no authority on this vault.
-				</p>
+				<>
+					<p className={typeStyles.body}>
+						This address holds no authority on this vault.
+					</p>
+					<Contracts addresses={addresses} />
+				</>
 			)}
 
 			{status === "ready" && held.length > 0 && (
