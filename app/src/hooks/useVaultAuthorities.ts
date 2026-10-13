@@ -2,6 +2,8 @@ import { type ContractRead, readContract } from "@stellar-scaffold/app-lib"
 import { useQuery } from "@tanstack/react-query"
 import { asyncVault } from "../config/clients"
 
+export const vaultAuthoritiesKey = ["vault", "authorities"] as const
+
 export type AuthorityKey =
 	"governance" | "manager" | "treasury" | "guardian" | "custodian"
 
@@ -34,7 +36,7 @@ export function useVaultAuthorities(): {
 	isPending: boolean
 } {
 	const { data, isPending } = useQuery({
-		queryKey: ["vault", "authorities"],
+		queryKey: vaultAuthoritiesKey,
 		queryFn: fetchVaultAuthorities,
 		staleTime: 30_000,
 	})

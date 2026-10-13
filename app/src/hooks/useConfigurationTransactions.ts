@@ -9,10 +9,9 @@ import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
 import { oracleWriteKeys } from "./useOracleState"
+import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 
 export type OracleConfig = Parameters<NavOracleApi["set_config"]>[0]["config"]
-
-const vaultAuthoritiesKey = ["vault", "authorities"] as const
 
 export const useSetDepositCap = adminTransaction(
 	(signer: Signer, cap: bigint | null) =>

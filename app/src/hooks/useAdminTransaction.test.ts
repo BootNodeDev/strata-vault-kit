@@ -25,6 +25,7 @@ import {
 } from "./useEmergencyTransactions"
 import { oracleWriteKeys } from "./useOracleState"
 import { tokenPausedKey } from "./useTokenPaused"
+import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 import { vaultPausedKey } from "./useVaultPaused"
 
 const { vault, token, oracle } = vi.hoisted(() => ({
@@ -57,7 +58,6 @@ vi.mock("../config/clients", () => ({
 }))
 
 const CONTRACT = "CCONTRACTADDRESS1234567890"
-const VAULT_AUTHORITIES_KEY = ["vault", "authorities"]
 const ORACLE_CONFIG = {
 	freshness_duration: 86_400n,
 	cooldown_secs: 3_600n,
@@ -159,7 +159,7 @@ const cases: Case[] = [
 		method: vault.set_custodian,
 		arg: CONTRACT,
 		args: { custodian: CONTRACT, caller: investorAddress },
-		keys: [VAULT_AUTHORITIES_KEY],
+		keys: [vaultAuthoritiesKey],
 		refusal: 2000,
 	},
 	{
