@@ -64,7 +64,8 @@ const ROLE_SURFACES = {
 	"vault guardian": ["emergency"],
 	"oracle guardian": ["emergency"],
 	"share-token admin": ["emergency"],
-	"vault governance": ["configuration", "governance"],
+	"oracle admin": ["emergency"],
+	"vault governance": ["emergency", "configuration", "governance"],
 } as const satisfies Record<string, readonly AdminSurface[]>
 
 type RoleLabel = keyof typeof ROLE_SURFACES
@@ -259,12 +260,14 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 	const [
 		oracleAttesters,
 		oracleGuardians,
+		oracleAdmin,
 		tokenCompliance,
 		tokenAdmin,
 		identityVerifier,
 	] = await Promise.all([
 		readRoleMembers(oraclePromise, "attester"),
 		readRoleMembers(oraclePromise, "guardian"),
+		readContract(async () => (await oraclePromise).get_admin()),
 		readRoleMembers(tokenPromise, "compliance"),
 		readContract(async () => (await tokenPromise).get_admin()),
 		readContract(async () => (await tokenPromise).identity_verifier()),
@@ -283,6 +286,7 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		guardian,
 		oracleAttesters,
 		oracleGuardians,
+		oracleAdmin,
 		tokenCompliance,
 		tokenAdmin,
 	]
@@ -296,6 +300,7 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		"vault guardian": asHolders(guardian),
 		"oracle attester": asMembers(oracleAttesters),
 		"oracle guardian": asMembers(oracleGuardians),
+		"oracle admin": asHolders(oracleAdmin),
 		"share-token compliance": asMembers(tokenCompliance),
 		"share-token admin": asHolders(tokenAdmin),
 	}
