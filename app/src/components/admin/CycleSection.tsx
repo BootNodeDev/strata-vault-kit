@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react"
+import { useActivateWindDown } from "../../hooks/useActivateWindDown"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { useAttest } from "../../hooks/useAttest"
 import { useCloseEpoch } from "../../hooks/useCloseEpoch"
@@ -6,6 +7,7 @@ import { useCycleEvents, useCycleState } from "../../hooks/useCycleState"
 import { useDeployToCustodian } from "../../hooks/useDeployToCustodian"
 import { useDepositBalance } from "../../hooks/useDepositBalance"
 import { useEpochHistory } from "../../hooks/useEpochHistory"
+import { useFinalizeWindDownRound } from "../../hooks/useFinalizeWindDownRound"
 import { useFulfillEpoch } from "../../hooks/useFulfillEpoch"
 import { useFund } from "../../hooks/useFund"
 import { usePendingTransaction } from "../../hooks/usePendingTransaction"
@@ -45,6 +47,8 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 	const attest = usePendingTransaction(useAttest())
 	const deploy = usePendingTransaction(useDeployToCustodian())
 	const fund = usePendingTransaction(useFund())
+	const activateWindDown = usePendingTransaction(useActivateWindDown())
+	const finalizeRound = usePendingTransaction(useFinalizeWindDownRound())
 	const [priceInput, setPriceInput] = useAmountInput(
 		attest.status.status === "confirmed",
 	)
@@ -79,6 +83,13 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 			case "fund":
 				if (action.amount !== null)
 					fund.submit(action.amount, exactAmount(action.amount))
+				return
+			case "activate-wind-down":
+				activateWindDown.submit(undefined, "")
+				return
+			case "finalize-round":
+				if (action.round !== null)
+					finalizeRound.submit(undefined, String(action.round))
 		}
 	}
 
@@ -95,6 +106,8 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 				return
 			case "close-epoch":
 			case "fulfill-epoch":
+			case "activate-wind-down":
+			case "finalize-round":
 				return
 		}
 	}
@@ -154,6 +167,19 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 			amount: fund.amountLabel,
 			onClose: fund.reset,
 			onRetry: fund.retry,
+		},
+		{
+			action: "activate-wind-down",
+			status: activateWindDown.status,
+			onClose: activateWindDown.reset,
+			onRetry: activateWindDown.retry,
+		},
+		{
+			action: "finalize-round",
+			status: finalizeRound.status,
+			round: finalizeRound.amountLabel,
+			onClose: finalizeRound.reset,
+			onRetry: finalizeRound.retry,
 		},
 	]
 	const activeModal = modalFlows.find((flow) => flow.status.status !== "idle")
