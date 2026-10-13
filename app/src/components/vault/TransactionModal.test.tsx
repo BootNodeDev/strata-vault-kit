@@ -2005,13 +2005,13 @@ describe("TransactionModal, emergency actions", () => {
 	it.each<[EmergencyModalAction, string, string]>([
 		[
 			"pause-token",
-			"Signing stops holder transfers and redeem cancellations.",
-			"Holder transfers and redeem cancellations are stopped. Minting, burning and forced transfers stay open.",
+			"Signing stops holder transfers and returns of escrowed shares.",
+			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
 		],
 		[
 			"unpause-token",
-			"Signing resumes holder transfers and redeem cancellations.",
-			"Holder transfers and redeem cancellations are open again.",
+			"Signing resumes holder transfers and returns of escrowed shares.",
+			"Holder transfers and returns of escrowed shares are open again.",
 		],
 	])(
 		"words %s after what the share token enforces",

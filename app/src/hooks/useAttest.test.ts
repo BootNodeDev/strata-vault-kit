@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { attestWriteKeys, useAttest } from "./useAttest"
 import { investorRequestsKey } from "./useInvestorRequests"
+import { navLatestKey } from "./useNavPrice"
 
 const { oracleMock, navOracleWriterMock } = vi.hoisted(() => ({
 	oracleMock: { attest: vi.fn() },
@@ -153,7 +154,7 @@ describe("useAttest", () => {
 			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
 		}
 		expect(invalidateQueries).toHaveBeenCalledWith({
-			queryKey: ["nav", "latest"],
+			queryKey: navLatestKey,
 		})
 		expect(invalidateQueries).toHaveBeenCalledWith({
 			queryKey: investorRequestsKey(investorAddress),

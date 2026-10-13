@@ -130,14 +130,14 @@ const tokenSpecs = (token: PauseState): [Spec, Spec] => [
 		label: "Pause the share token",
 		conditions: [pauseIs("Share token is open", token, "open")],
 		outcome:
-			"Stops holder transfers and redeem cancellations. Minting, burning and forced transfers stay open.",
+			"Stops holder transfers and returns of escrowed shares. Minting, burning and forced transfers stay open.",
 		danger: true,
 	},
 	{
 		id: "unpause-token",
 		label: "Unpause the share token",
 		conditions: [pauseIs("Share token is paused", token, "paused")],
-		outcome: "Resumes holder transfers and redeem cancellations.",
+		outcome: "Resumes holder transfers and returns of escrowed shares.",
 	},
 ]
 

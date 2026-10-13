@@ -984,17 +984,17 @@ const EMERGENCY_COPY: Record<EmergencyModalAction, EmergencyCopy> = {
 	"pause-token": {
 		refuser: "share token",
 		verb: "pause the share token",
-		signing: "Signing stops holder transfers and redeem cancellations.",
+		signing: "Signing stops holder transfers and returns of escrowed shares.",
 		done: "Share token paused",
 		doneBody:
-			"Holder transfers and redeem cancellations are stopped. Minting, burning and forced transfers stay open.",
+			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
 	},
 	"unpause-token": {
 		refuser: "share token",
 		verb: "unpause the share token",
-		signing: "Signing resumes holder transfers and redeem cancellations.",
+		signing: "Signing resumes holder transfers and returns of escrowed shares.",
 		done: "Share token unpaused",
-		doneBody: "Holder transfers and redeem cancellations are open again.",
+		doneBody: "Holder transfers and returns of escrowed shares are open again.",
 	},
 }
 
