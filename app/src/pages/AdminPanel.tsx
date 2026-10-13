@@ -41,6 +41,12 @@ const describeGrant = (grant: Grant, wallet: string): string =>
 		? grant.role
 		: `${grant.role} (${describeStanding(grant.standing)})`
 
+const Contracts: React.FC<{ addresses: AdminAddresses }> = ({ addresses }) => (
+	<Disclosure title="Contracts">
+		<AddressRows rows={toAddressRows(addresses)} />
+	</Disclosure>
+)
+
 const HeldSurfaces: React.FC<{
 	held: AdminSurface[]
 	grantedBy: Record<AdminSurface, Grant[]>
@@ -67,29 +73,34 @@ const HeldSurfaces: React.FC<{
 
 	if (active === undefined) return <Navigate replace to={`/admin/${held[0]}`} />
 
-	const contracts = (
-		<Disclosure title="Contracts">
-			<AddressRows rows={toAddressRows(addresses)} />
-		</Disclosure>
-	)
-
 	return (
 		<div className={styles.surfaces}>
 			<SurfaceTabs surfaces={held} />
-			<section className={styles.surface}>
-				<h2 ref={headingRef} tabIndex={-1} className={styles.srOnly}>
-					{SURFACE_LABELS[active]}
-				</h2>
-				{active === "cycle" ? (
-					<CycleSection
-						grants={grantedBy.cycle}
-						wallet={wallet}
-						contracts={contracts}
-					/>
-				) : (
-					contracts
-				)}
-			</section>
+			{held.map((surface) => (
+				<section
+					key={surface}
+					aria-label={SURFACE_LABELS[surface]}
+					hidden={surface !== active}
+					className={styles.surface}
+				>
+					<h2
+						ref={surface === active ? headingRef : undefined}
+						tabIndex={-1}
+						className={styles.srOnly}
+					>
+						{SURFACE_LABELS[surface]}
+					</h2>
+					{surface === "cycle" ? (
+						<CycleSection
+							grants={grantedBy.cycle}
+							wallet={wallet}
+							contracts={<Contracts addresses={addresses} />}
+						/>
+					) : (
+						<Contracts addresses={addresses} />
+					)}
+				</section>
+			))}
 		</div>
 	)
 }

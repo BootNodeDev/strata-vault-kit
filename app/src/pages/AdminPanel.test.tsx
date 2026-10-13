@@ -28,6 +28,7 @@ vi.mock("../components/admin/CycleSection", () => ({
 	}) => (
 		<div>
 			<p>Cycle surface for {grants.map((grant) => grant.role).join(", ")}</p>
+			<input aria-label="Amount" />
 			{contracts}
 		</div>
 	),
@@ -146,7 +147,9 @@ describe("AdminPanel", () => {
 			)
 			renderAt(path)
 
-			const disclosure = screen.getByText("Contracts").closest("details")
+			const disclosure = within(screen.getByRole("region"))
+				.getByText("Contracts")
+				.closest("details")
 			expect(disclosure?.open).toBe(false)
 			expect(within(disclosure!).getByText("Oracle")).toBeTruthy()
 			expect(within(disclosure!).getByText("Identity verifier")).toBeTruthy()
@@ -435,10 +438,39 @@ describe("AdminPanel", () => {
 		)
 		renderAt("/admin/compliance")
 
-		expect(screen.queryByText(/Cycle surface/)).toBeNull()
+		expect(screen.queryByRole("region", { name: "Cycle" })).toBeNull()
 
 		fireEvent.click(screen.getByRole("link", { name: "Cycle" }))
 
-		expect(screen.getAllByText(/Cycle surface/)).toHaveLength(1)
+		expect(screen.getByRole("region", { name: "Cycle" })).toBeTruthy()
+		expect(screen.queryByRole("region", { name: "Compliance" })).toBeNull()
+	})
+
+	it("keeps work in progress on a surface when switching tabs and back", () => {
+		const manager = holderOf("vault manager")
+		const compliance = holderOf("share-token compliance")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle", "compliance"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					cycle: [manager],
+					compliance: [compliance],
+				},
+				grants: [manager, compliance],
+			}),
+		)
+		renderAt("/admin/cycle")
+
+		fireEvent.change(screen.getByLabelText("Amount"), {
+			target: { value: "250" },
+		})
+		fireEvent.click(screen.getByRole("link", { name: "Compliance" }))
+		fireEvent.click(screen.getByRole("link", { name: "Cycle" }))
+
+		expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe(
+			"250",
+		)
 	})
 })

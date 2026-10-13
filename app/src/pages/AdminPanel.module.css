@@ -43,3 +43,7 @@
 .srOnly:focus {
 	outline: none;
 }
+
+.surface[hidden] {
+	display: none;
+}
