@@ -6,16 +6,17 @@ import {
 import { useQuery } from "@tanstack/react-query"
 import { navOracle } from "../config/clients"
 import { cycleReadsKey } from "./useCycleState"
+import { navLatestKey } from "./useNavPrice"
 import { PAUSE_REFRESH_MS } from "./useVaultPaused"
 
 export type OracleStatus =
 	"checking" | "valid" | "stale" | "paused" | "unreadable"
 
-export const oracleStateKey = ["oracle", "state"] as const
+const oracleStateKey = ["oracle", "state"] as const
 export const oracleWriteKeys = [
 	oracleStateKey,
 	cycleReadsKey,
-	["nav", "latest"],
+	navLatestKey,
 ] as const
 
 const STATUS_BY_TAG = {
