@@ -2,6 +2,7 @@ import { shortAddress } from "@stellar-scaffold/app-lib"
 import React, { useEffect, useRef } from "react"
 import { Navigate, useParams } from "react-router-dom"
 import CycleSection from "../components/admin/CycleSection"
+import { Disclosure } from "../components/admin/CycleSurface"
 import SurfaceTabs from "../components/admin/SurfaceTabs"
 import Skeleton from "../components/Skeleton"
 import AddressRows, { type AddressRow } from "../components/vault/AddressRows"
@@ -40,22 +41,12 @@ const describeGrant = (grant: Grant, wallet: string): string =>
 		? grant.role
 		: `${grant.role} (${describeStanding(grant.standing)})`
 
-const AddressesBlock: React.FC<{ addresses: AdminAddresses }> = ({
-	addresses,
-}) => (
-	<div className={styles.addresses}>
-		<span className={`${typeStyles.label} ${styles.addressesTitle}`}>
-			Addresses
-		</span>
-		<AddressRows rows={toAddressRows(addresses)} />
-	</div>
-)
-
 const HeldSurfaces: React.FC<{
 	held: AdminSurface[]
 	grantedBy: Record<AdminSurface, Grant[]>
 	wallet: string
-}> = ({ held, grantedBy, wallet }) => {
+	addresses: AdminAddresses
+}> = ({ held, grantedBy, wallet, addresses }) => {
 	const { surface } = useParams()
 	const active = held.find((candidate) => candidate === surface)
 	const headingRef = useRef<HTMLHeadingElement>(null)
@@ -76,6 +67,12 @@ const HeldSurfaces: React.FC<{
 
 	if (active === undefined) return <Navigate replace to={`/admin/${held[0]}`} />
 
+	const contracts = (
+		<Disclosure title="Contracts">
+			<AddressRows rows={toAddressRows(addresses)} />
+		</Disclosure>
+	)
+
 	return (
 		<div className={styles.surfaces}>
 			<SurfaceTabs surfaces={held} />
@@ -83,8 +80,14 @@ const HeldSurfaces: React.FC<{
 				<h2 ref={headingRef} tabIndex={-1} className={styles.srOnly}>
 					{SURFACE_LABELS[active]}
 				</h2>
-				{active === "cycle" && (
-					<CycleSection grants={grantedBy.cycle} wallet={wallet} />
+				{active === "cycle" ? (
+					<CycleSection
+						grants={grantedBy.cycle}
+						wallet={wallet}
+						contracts={contracts}
+					/>
+				) : (
+					contracts
 				)}
 			</section>
 		</div>
@@ -144,10 +147,9 @@ const AdminPanel: React.FC = () => {
 					held={held}
 					grantedBy={grantedBy}
 					wallet={address ?? ""}
+					addresses={addresses}
 				/>
 			)}
-
-			{status === "ready" && <AddressesBlock addresses={addresses} />}
 		</div>
 	)
 }

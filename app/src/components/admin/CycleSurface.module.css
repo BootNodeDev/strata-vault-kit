@@ -1,7 +1,54 @@
-.surface {
+.layout {
+	container-type: inline-size;
+}
+
+.body {
+	display: grid;
+	grid-template-columns: minmax(0, 2.2fr) minmax(320px, 1fr);
+	align-items: start;
+	gap: 18px 32px;
+}
+
+.main {
 	display: flex;
 	flex-direction: column;
 	gap: 22px;
+	min-width: 0;
+}
+
+.side {
+	position: sticky;
+	top: 24px;
+	min-width: 0;
+}
+
+@container (max-width: 1080px) {
+	.body {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.side {
+		position: static;
+		order: -1;
+	}
+}
+
+.disclosure {
+	border-top: 1px solid var(--vault-border-hairline);
+	padding-top: 11px;
+}
+
+.disclosureTitle {
+	cursor: pointer;
+	color: var(--vault-text-body);
+}
+
+.disclosureTitle:hover {
+	color: var(--vault-ink);
+}
+
+.disclosureBody {
+	padding-top: 11px;
 }
 
 .group {

@@ -126,8 +126,12 @@ const ready = (overrides: Partial<ReadyState>) =>
 const groupOf = (groups: CycleGroup[], title: string) =>
 	groups.find((group) => group.title === title)
 
-const valueOf = (groups: CycleGroup[], title: string, label: string) =>
-	groupOf(groups, title)?.rows.find((row) => row.label === label)?.value
+const valueOf = (groups: CycleGroup[], title: string, label: string) => {
+	const group = groupOf(groups, title)
+	return [...(group?.rows ?? []), ...(group?.limits ?? [])].find(
+		(row) => row.label === label,
+	)?.value
+}
 
 const tileOf = (groups: CycleGroup[], title: string, label: string) =>
 	groupOf(groups, title)?.tiles.find((tile) => tile.label === label)
@@ -162,8 +166,20 @@ describe("toCycleRows", () => {
 		])
 		expect(groups.map((group) => group.rows.map((row) => row.label))).toEqual([
 			["Vault", "Notice period", "Sealed at", "Notice"],
+			["Ripcord"],
+			["Committed", "Liquid reserve"],
+			["Activates at", "Delay", "Supply"],
+		])
+	})
+
+	it("keeps the static limits apart from the live rows, in Price and Reserve only", () => {
+		const groups = toCycleRows(ready({}))
+
+		expect(
+			groups.map((group) => group.limits?.map((row) => row.label)),
+		).toEqual([
+			undefined,
 			[
-				"Ripcord",
 				"Freshness window",
 				"Cooldown",
 				"Largest rise",
@@ -171,8 +187,8 @@ describe("toCycleRows", () => {
 				"Price floor",
 				"Price ceiling",
 			],
-			["Committed", "Liquid reserve", "Deposit cap"],
-			["Activates at", "Delay", "Supply"],
+			["Deposit cap"],
+			undefined,
 		])
 	})
 
@@ -183,6 +199,7 @@ describe("toCycleRows", () => {
 			groups.map((group) => [
 				group.tiles.map((tile) => tile.label),
 				group.rows.map((row) => row.label),
+				group.limits?.map((row) => row.label),
 			])
 
 		expect(labelsOf(pending)).toEqual(labelsOf(labelled))
@@ -190,7 +207,7 @@ describe("toCycleRows", () => {
 			pending.every(
 				(group) =>
 					group.tiles.every((tile) => tile.pending) &&
-					group.rows.every((row) => row.pending),
+					[...group.rows, ...(group.limits ?? [])].every((row) => row.pending),
 			),
 		).toBe(true)
 	})

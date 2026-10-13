@@ -43,15 +43,3 @@
 .srOnly:focus {
 	outline: none;
 }
-
-.addresses {
-	display: flex;
-	flex-direction: column;
-	gap: 11px;
-	border-top: 1px solid var(--vault-border-hairline);
-	padding-top: 20px;
-}
-
-.addressesTitle {
-	color: var(--vault-text-muted);
-}

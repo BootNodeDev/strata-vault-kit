@@ -1,4 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, within } from "@testing-library/react"
+import type React from "react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type * as UseAdminAuthority from "../hooks/useAdminAuthority"
@@ -18,8 +19,17 @@ vi.mock("../hooks/useAdminAuthority", async (importOriginal) => {
 vi.mock("../hooks/useWallet", () => ({ useWallet: useWalletMock }))
 
 vi.mock("../components/admin/CycleSection", () => ({
-	default: ({ grants }: { grants: Grant[] }) => (
-		<div>Cycle surface for {grants.map((grant) => grant.role).join(", ")}</div>
+	default: ({
+		grants,
+		contracts,
+	}: {
+		grants: Grant[]
+		contracts: React.ReactNode
+	}) => (
+		<div>
+			<p>Cycle surface for {grants.map((grant) => grant.role).join(", ")}</p>
+			{contracts}
+		</div>
 	),
 }))
 
@@ -102,25 +112,46 @@ describe("AdminPanel", () => {
 	})
 
 	it("tells an address with no role it holds no authority, listing just the shortened address", () => {
-		useAdminAuthorityMock.mockReturnValue(
-			authority({
-				status: "ready",
-				addresses: {
-					oracle: "CORACLE",
-					shareToken: "CTOKEN",
-					identityVerifier: "CVERIFIER",
-				},
-			}),
-		)
+		useAdminAuthorityMock.mockReturnValue(authority({ status: "ready" }))
 		renderAt("/admin")
 
 		expect(
 			screen.getByText("This address holds no authority on this vault."),
 		).toBeTruthy()
-		expect(screen.getByText("Addresses")).toBeTruthy()
-		expect(screen.getByText("Oracle")).toBeTruthy()
 		expect(screen.getByText("GCON...7890")).toBeTruthy()
+		expect(screen.queryByText("Contracts")).toBeNull()
 	})
+
+	it.each(["/admin/cycle", "/admin/compliance"])(
+		"keeps the contract addresses in a closed Contracts disclosure on %s",
+		(path) => {
+			const manager = holderOf("vault manager")
+			const compliance = holderOf("share-token compliance")
+			useAdminAuthorityMock.mockReturnValue(
+				authority({
+					status: "ready",
+					surfaces: new Set(["cycle", "compliance"]),
+					grantedBy: {
+						...emptyGrantedBy,
+						cycle: [manager],
+						compliance: [compliance],
+					},
+					grants: [manager, compliance],
+					addresses: {
+						oracle: "CORACLE",
+						shareToken: "CTOKEN",
+						identityVerifier: "CVERIFIER",
+					},
+				}),
+			)
+			renderAt(path)
+
+			const disclosure = screen.getByText("Contracts").closest("details")
+			expect(disclosure?.open).toBe(false)
+			expect(within(disclosure!).getByText("Oracle")).toBeTruthy()
+			expect(within(disclosure!).getByText("Identity verifier")).toBeTruthy()
+		},
+	)
 
 	it("keeps the page-level states free of surface tabs", () => {
 		useAdminAuthorityMock.mockReturnValue(authority({ status: "checking" }))

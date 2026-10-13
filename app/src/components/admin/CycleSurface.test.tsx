@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
+import type React from "react"
 import { describe, expect, it, vi } from "vitest"
 import { type CycleAction } from "../../pages/cycle"
 import CycleSurface, {
@@ -30,7 +31,8 @@ const groups: CycleGroup[] = [
 	{
 		title: "Reserve",
 		tiles: [{ label: "Uncovered", value: "0.00", note: "Covered" }],
-		rows: [{ label: "Deposit cap", value: "No cap" }],
+		rows: [{ label: "Liquid reserve", value: "800.00" }],
+		limits: [{ label: "Deposit cap", value: "No cap" }],
 		addresses: [{ label: "Custodian", address: "CCUSTODIAN1234567890" }],
 	},
 ]
@@ -77,6 +79,7 @@ const renderSurface = (
 		unreadable?: boolean
 		epochs?: ListState<EpochRow>
 		activity?: ListState<ActivityRow>
+		contracts?: React.ReactNode
 	} = {},
 ) =>
 	render(
@@ -85,6 +88,8 @@ const renderSurface = (
 			unreadable={overrides.unreadable ?? false}
 			epochs={overrides.epochs ?? { status: "loaded", rows: epochRows }}
 			activity={overrides.activity ?? { status: "loaded", rows: activityRows }}
+			rail={<button type="button">Close epoch</button>}
+			contracts={overrides.contracts}
 		/>,
 	)
 
@@ -115,8 +120,8 @@ describe("CycleSurface", () => {
 		expect(within(epochRowsList!).getByText("1h")).toBeTruthy()
 		const row = within(epochRowsList!).getByText("Sealed at").closest("li")
 		expect(within(row!).getByText("Unavailable")).toBeTruthy()
-		expect(within(reserveRowsList!).getByText("Deposit cap")).toBeTruthy()
-		expect(within(reserveRowsList!).getByText("No cap")).toBeTruthy()
+		expect(within(reserveRowsList!).getByText("Liquid reserve")).toBeTruthy()
+		expect(within(reserveRowsList!).queryByText("Deposit cap")).toBeNull()
 		expect(within(epochRowsList!).queryByText("Open epoch")).toBeNull()
 	})
 
@@ -250,24 +255,49 @@ describe("CycleSurface", () => {
 		expect(screen.queryByRole("table", { name: "Recent activity" })).toBeNull()
 	})
 
-	it("renders a group's action area after its rows", () => {
-		renderSurface({
-			groups: [
-				{ ...groups[0]!, actions: <button type="button">Close epoch</button> },
-			],
-		})
+	it("keeps a group's static limits in a closed Limits disclosure after its rows", () => {
+		renderSurface()
 
-		const group = screen.getByText("Notice period").closest("li")!
-			.parentElement!.parentElement!
-		const button = within(group).getByRole("button", { name: "Close epoch" })
+		const disclosure = screen.getByText("Limits").closest("details")!
+		expect(disclosure.open).toBe(false)
+		expect(within(disclosure).getByText("Deposit cap")).toBeTruthy()
+		expect(within(disclosure).getByText("No cap")).toBeTruthy()
 		expect(
-			group.compareDocumentPosition(button) &
-				Node.DOCUMENT_POSITION_CONTAINED_BY,
-		).toBeTruthy()
-		expect(
-			screen.getByText("Notice period").compareDocumentPosition(button) &
+			screen.getByText("Liquid reserve").compareDocumentPosition(disclosure) &
 				Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy()
+	})
+
+	it("adds no Limits disclosure to a group without limits", () => {
+		renderSurface({ groups: [groups[0]!] })
+
+		expect(screen.queryByText("Limits")).toBeNull()
+	})
+
+	it("acts only from the Actions aside, the overview holding no action", () => {
+		renderSurface()
+
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+		expect(
+			within(rail).getByRole("button", { name: "Close epoch" }),
+		).toBeTruthy()
+		expect(screen.getAllByRole("button")).toHaveLength(1)
+	})
+
+	it("closes the overview with the contracts it is given", () => {
+		renderSurface({ contracts: <p>Contract addresses</p> })
+
+		const contracts = screen.getByText("Contract addresses")
+		expect(
+			screen
+				.getByRole("table", { name: "Recent activity" })
+				.compareDocumentPosition(contracts) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy()
+		expect(
+			within(
+				screen.getByRole("complementary", { name: "Actions" }),
+			).queryByText("Contract addresses"),
+		).toBeNull()
 	})
 
 	it("heads each group and section with a sentence-case title below the card title", () => {

@@ -38,7 +38,12 @@ type ReadyState = Extract<CycleState, { status: "ready" }>
 const ACTIVITY_LIMIT = 10
 const NOT_APPLICABLE = "—"
 
-const GROUP_LAYOUT: { title: string; tiles: string[]; rows: string[] }[] = [
+const GROUP_LAYOUT: {
+	title: string
+	tiles: string[]
+	rows: string[]
+	limits?: string[]
+}[] = [
 	{
 		title: "Epoch",
 		tiles: [
@@ -52,8 +57,8 @@ const GROUP_LAYOUT: { title: string; tiles: string[]; rows: string[] }[] = [
 	{
 		title: "Price",
 		tiles: ["Share price", "Attested", "Valid until"],
-		rows: [
-			"Ripcord",
+		rows: ["Ripcord"],
+		limits: [
 			"Freshness window",
 			"Cooldown",
 			"Largest rise",
@@ -65,7 +70,8 @@ const GROUP_LAYOUT: { title: string; tiles: string[]; rows: string[] }[] = [
 	{
 		title: "Reserve",
 		tiles: ["Free", "Uncovered", "Net deployed", "Custodian balance"],
-		rows: ["Committed", "Liquid reserve", "Deposit cap"],
+		rows: ["Committed", "Liquid reserve"],
+		limits: ["Deposit cap"],
 	},
 	{
 		title: "Wind-down",
@@ -240,6 +246,8 @@ function priceGroup(oracle: CycleOracle): CycleGroup {
 						? "Raised"
 						: "Not raised",
 			),
+		],
+		limits: [
 			row("Freshness window", limits && formatDuration(limits.freshness)),
 			row("Cooldown", limits && formatDuration(limits.cooldown)),
 			row("Largest rise", limits && formatPercent(limits.maxUpBps)),
@@ -287,8 +295,8 @@ function reserveGroup(state: ReadyState): CycleGroup {
 		rows: [
 			row("Committed", formatAmountValue(reserve.committed)),
 			row("Liquid reserve", formatAmountValue(reserve.liquid)),
-			row("Deposit cap", depositCapValue(reserve.depositCap)),
 		],
+		limits: [row("Deposit cap", depositCapValue(reserve.depositCap))],
 		addresses: [{ label: "Custodian", address: reserve.custodian }],
 	}
 }
@@ -843,10 +851,12 @@ export function toCycleActions(
 export function toCycleRows(state: CycleState): CycleGroup[] {
 	if (state.status === "unreadable") return []
 	if (state.status === "checking") {
-		return GROUP_LAYOUT.map(({ title, tiles, rows }) => ({
+		const pending = (label: string) => ({ label, value: null, pending: true })
+		return GROUP_LAYOUT.map(({ title, tiles, rows, limits }) => ({
 			title,
-			tiles: tiles.map((label) => ({ label, value: null, pending: true })),
-			rows: rows.map((label) => ({ label, value: null, pending: true })),
+			tiles: tiles.map(pending),
+			rows: rows.map(pending),
+			...(limits === undefined ? {} : { limits: limits.map(pending) }),
 		}))
 	}
 

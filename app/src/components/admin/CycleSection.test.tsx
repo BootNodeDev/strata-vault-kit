@@ -240,26 +240,24 @@ describe("CycleSection", () => {
 		).toBeTruthy()
 	})
 
-	it("offers the treasury the settlement and both reserve actions, under the Reserve group", () => {
+	it("offers the treasury the settlement and both reserve actions, in the Actions rail", () => {
 		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
 		expect(screen.queryByRole("button", { name: "Close epoch" })).toBeNull()
 		expect(screen.queryByRole("button", { name: "Attest price" })).toBeNull()
 		expect(button("Fulfill epoch").disabled).toBe(false)
-		const reserveGroup = screen.getByRole("heading", {
-			name: "Reserve",
-		}).parentElement!
+		const rail = screen.getByRole("complementary", { name: "Actions" })
 		expect(
-			within(reserveGroup).getByRole("button", { name: "Deploy to custodian" }),
+			within(rail).getByRole("button", { name: "Deploy to custodian" }),
 		).toBeTruthy()
 		expect(
-			within(reserveGroup).getByRole("button", { name: "Fund the reserve" }),
+			within(rail).getByRole("button", { name: "Fund the reserve" }),
 		).toBeTruthy()
 		expect(
-			within(reserveGroup).getByRole("textbox", { name: "Amount to deploy" }),
+			within(rail).getByRole("textbox", { name: "Amount to deploy" }),
 		).toBeTruthy()
 		expect(
-			within(reserveGroup).getByRole("textbox", { name: "Amount to fund" }),
+			within(rail).getByRole("textbox", { name: "Amount to fund" }),
 		).toBeTruthy()
 	})
 
@@ -476,14 +474,14 @@ describe("CycleSection", () => {
 		expect(button("Fund the reserve").disabled).toBe(false)
 	})
 
-	it("offers the attester a price field under the Price group, with the button held until a price is typed", () => {
+	it("offers the attester a price field in the Actions rail, with the button held until a price is typed", () => {
 		render(<CycleSection grants={[attester]} wallet={WALLET} />)
 
 		const field = screen.getByRole("textbox", { name: "Share price" })
-		const priceGroup = screen.getByRole("heading", {
-			name: "Price",
-		}).parentElement!
-		expect(within(priceGroup).getByRole("textbox")).toBe(field)
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+		expect(within(rail).getByRole("textbox", { name: "Share price" })).toBe(
+			field,
+		)
 		expect(button("Attest price").disabled).toBe(true)
 		const band = screen.getByText("Within the band").closest("li")!
 		expect(within(band).getByText("—")).toBeTruthy()
@@ -686,7 +684,7 @@ describe("CycleSection", () => {
 		expect(screen.queryByRole("button", { name: "Finalize round" })).toBeNull()
 	})
 
-	it("offers every cycle role the activation under the Wind-down group once proposed, and follows it in the modal", () => {
+	it("offers every cycle role the activation in the Actions rail once proposed, and follows it in the modal", () => {
 		const proposed = ready({
 			windDown: { ...windDown, phase: "proposed", activeAt: 1_700_000_000n },
 		})
@@ -694,10 +692,8 @@ describe("CycleSection", () => {
 		const { rerender } = render(
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
-		const windDownGroup = screen.getByRole("heading", {
-			name: "Wind-down",
-		}).parentElement!
-		const activate = within(windDownGroup).getByRole("button", {
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+		const activate = within(rail).getByRole("button", {
 			name: "Activate wind-down",
 		}) as HTMLButtonElement
 

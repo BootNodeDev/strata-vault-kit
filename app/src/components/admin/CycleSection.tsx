@@ -24,7 +24,7 @@ import {
 import TransactionModal, {
 	type TransactionModalProps,
 } from "../vault/TransactionModal"
-import CycleSurface, { CycleActions, type CycleGroup } from "./CycleSurface"
+import CycleSurface, { CycleActions } from "./CycleSurface"
 
 const useAmountInput = (confirmed: boolean) => {
 	const [input, setInput] = useState("")
@@ -34,10 +34,11 @@ const useAmountInput = (confirmed: boolean) => {
 	return [input, setInput] as const
 }
 
-const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
-	grants,
-	wallet,
-}) => {
+const CycleSection: React.FC<{
+	grants: Grant[]
+	wallet: string
+	contracts?: React.ReactNode
+}> = ({ grants, wallet, contracts }) => {
 	const { cycle } = useCycleState()
 	const { history } = useEpochHistory()
 	const { cycleEvents } = useCycleEvents()
@@ -118,15 +119,6 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 		fund: fundInput,
 		walletBalance: balance.status === "held" ? balance.amount : null,
 	})
-	const withActions = (group: CycleGroup): CycleGroup => {
-		const own = actions.filter((action) => action.group === group.title)
-		return own.length === 0
-			? group
-			: {
-					...group,
-					actions: <CycleActions actions={own} onRun={run} onInput={onInput} />,
-				}
-	}
 
 	const freshness =
 		cycle.status === "ready" ? cycle.oracle.limits?.freshness : undefined
@@ -187,10 +179,12 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 	return (
 		<>
 			<CycleSurface
-				groups={toCycleRows(cycle).map(withActions)}
+				groups={toCycleRows(cycle)}
 				unreadable={cycle.status === "unreadable"}
 				epochs={toEpochList(history)}
 				activity={toActivityList(cycleEvents)}
+				rail={<CycleActions actions={actions} onRun={run} onInput={onInput} />}
+				contracts={contracts}
 			/>
 			{activeModal !== undefined && <TransactionModal {...activeModal} />}
 		</>
