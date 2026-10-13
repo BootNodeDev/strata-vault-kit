@@ -59,25 +59,27 @@ const ripcordRaised = (oracle: OracleStatus): Condition => ({
 	met: isKnown(oracle) ? oracle === "paused" : null,
 })
 
-type Spec = {
-	id: PlainId
+type Spec<Id extends string = PlainId> = {
+	id: Id
 	label: string
 	conditions: Condition[]
 	outcome: string
+	note?: string
 	danger?: boolean
 }
 
-const toAction = (
-	spec: Spec,
+const toAction = <Id extends string>(
+	spec: Spec<Id>,
 	grant: Grant,
 	wallet: string,
-): EmergencyAction => {
+): RailAction & { id: Id } => {
 	const unavailable = unavailableFor(grant, wallet)
 	return {
 		id: spec.id,
 		label: spec.label,
 		conditions: spec.conditions,
 		outcome: spec.outcome,
+		...(spec.note === undefined ? {} : { note: spec.note }),
 		enabled:
 			unavailable === undefined &&
 			spec.conditions.every((condition) => condition.met !== false),
@@ -151,25 +153,15 @@ const raiseGrant = (
 	return guardian ?? admin
 }
 
-function toRaiseAction(
-	oracle: OracleStatus,
-	grant: Grant,
-	wallet: string,
-): EmergencyAction {
-	const unavailable = unavailableFor(grant, wallet)
-	return {
-		id: "raise-ripcord",
-		viaAdmin: grant.role === ROLES.oracleAdmin,
-		label: "Raise the ripcord",
-		conditions: [],
-		outcome:
-			"Stops pricing: no epoch can be fulfilled until it is lowered. Attesting stays open.",
-		...(oracle === "paused" ? { note: "Ripcord already raised." } : {}),
-		enabled: unavailable === undefined,
-		tone: "danger",
-		...(unavailable === undefined ? {} : { unavailable }),
-	}
-}
+const raiseSpec = (oracle: OracleStatus): Spec<"raise-ripcord"> => ({
+	id: "raise-ripcord",
+	label: "Raise the ripcord",
+	conditions: [],
+	outcome:
+		"Stops pricing: no epoch can be fulfilled until it is lowered. Attesting stays open.",
+	...(oracle === "paused" ? { note: "Ripcord already raised." } : {}),
+	danger: true,
+})
 
 export function toEmergencyActions(
 	state: EmergencyState,
@@ -193,7 +185,10 @@ export function toEmergencyActions(
 	if (governance !== undefined)
 		actions.push(toAction(unpauseVault, governance, wallet))
 	if (raiser !== undefined)
-		actions.push(toRaiseAction(state.oracle, raiser, wallet))
+		actions.push({
+			...toAction(raiseSpec(state.oracle), raiser, wallet),
+			viaAdmin: raiser.role === ROLES.oracleAdmin,
+		})
 	if (oracleAdmin !== undefined)
 		actions.push(
 			toAction(lower, oracleAdmin, wallet),
