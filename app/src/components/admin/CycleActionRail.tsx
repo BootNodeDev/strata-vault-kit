@@ -111,9 +111,10 @@ const ActionBody: React.FC<{
 const CycleActionRail: React.FC<{
 	actions: CycleAction[]
 	pending: boolean
+	unreadable: boolean
 	onRun: (action: CycleAction) => void
 	onInput?: OnInput
-}> = ({ actions, pending, onRun, onInput }) => {
+}> = ({ actions, pending, unreadable, onRun, onInput }) => {
 	const [open, setOpen] = useState<CycleActionId | null | undefined>()
 	if (open === undefined && actions.length > 0)
 		setOpen(actions.find((action) => action.enabled)?.id ?? null)
@@ -135,7 +136,9 @@ const CycleActionRail: React.FC<{
 					<Skeleton className={styles.skeleton} />
 				) : (
 					<p className={`${typeStyles.footnote} ${styles.note}`}>
-						No actions available.
+						{unreadable
+							? "Could not read the cycle state."
+							: "No actions available."}
 					</p>
 				))}
 			{actions.length > 0 && (

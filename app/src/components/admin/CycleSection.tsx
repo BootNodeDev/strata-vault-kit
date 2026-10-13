@@ -188,6 +188,7 @@ const CycleSection: React.FC<{
 					<CycleActionRail
 						actions={actions}
 						pending={cycle.status === "checking"}
+						unreadable={cycle.status === "unreadable"}
 						onRun={run}
 						onInput={onInput}
 					/>

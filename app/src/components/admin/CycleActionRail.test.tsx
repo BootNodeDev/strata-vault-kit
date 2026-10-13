@@ -86,16 +86,19 @@ const renderRail = (
 		onRun = vi.fn(),
 		onInput = vi.fn(),
 		pending = false,
+		unreadable = false,
 	}: {
 		onRun?: (action: CycleAction) => void
 		onInput?: (action: CycleAction, value: string) => void
 		pending?: boolean
+		unreadable?: boolean
 	} = {},
 ) =>
 	render(
 		<CycleActionRail
 			actions={actions}
 			pending={pending}
+			unreadable={unreadable}
 			onRun={onRun}
 			onInput={onInput}
 		/>,
@@ -120,10 +123,6 @@ const expand = (label: string) => {
 const expanded = (label: string) =>
 	rowToggle(label).getAttribute("aria-expanded") === "true"
 
-const summaryOf = (label: string) =>
-	document.getElementById(rowToggle(label).getAttribute("aria-describedby")!)
-		?.textContent
-
 describe("CycleActionRail", () => {
 	it("heads the rail with how many of its actions are ready", () => {
 		renderRail([closeAction, fulfillAction, attestAction])
@@ -135,27 +134,34 @@ describe("CycleActionRail", () => {
 	it("lists one row per action, in order, summarising its readiness", () => {
 		renderRail([unavailableClose, fulfillAction, attestAction, deployAction])
 
-		const toggles = screen
-			.getAllByRole("button")
-			.filter((button) => button.hasAttribute("aria-expanded"))
 		expect(
-			toggles.map((toggle) => toggle.getAttribute("aria-labelledby")),
+			screen
+				.getAllByRole("button")
+				.filter((button) => button.hasAttribute("aria-expanded"))
+				.map((toggle) => toggle.textContent),
 		).toEqual([
-			"cycle-close-epoch-action-label",
-			"cycle-fulfill-epoch-action-label",
-			"cycle-attest-action-label",
-			"cycle-deploy-action-label",
+			"Close epochUnavailable",
+			"Fulfill epoch1 unmet",
+			"Attest price1 unmet",
+			"Deploy to custodian1 unmet",
 		])
-		expect(summaryOf("Close epoch")).toBe("Unavailable")
-		expect(summaryOf("Fulfill epoch")).toBe("1 unmet")
-		expect(summaryOf("Attest price")).toBe("1 unmet")
-		expect(summaryOf("Deploy to custodian")).toBe("1 unmet")
+		for (const [name, description] of [
+			["Close epoch", "Unavailable"],
+			["Fulfill epoch", "1 unmet"],
+			["Attest price", "1 unmet"],
+			["Deploy to custodian", "1 unmet"],
+		] as const)
+			expect(
+				screen.getAllByRole("button", { name, description })[0],
+			).toBeTruthy()
 	})
 
 	it("summarises a ready action as Ready", () => {
 		renderRail([closeAction])
 
-		expect(summaryOf("Close epoch")).toBe("Ready")
+		expect(
+			screen.getByRole("button", { name: "Close epoch", description: "Ready" }),
+		).toBeTruthy()
 	})
 
 	it("opens the first ready action and keeps the others collapsed", () => {
@@ -218,6 +224,7 @@ describe("CycleActionRail", () => {
 					{ ...fulfillAction, enabled: true },
 				]}
 				pending={false}
+				unreadable={false}
 				onRun={vi.fn()}
 			/>,
 		)
@@ -233,6 +240,7 @@ describe("CycleActionRail", () => {
 			<CycleActionRail
 				actions={[fulfillAction, closeAction]}
 				pending={false}
+				unreadable={false}
 				onRun={vi.fn()}
 			/>,
 		)
@@ -251,6 +259,13 @@ describe("CycleActionRail", () => {
 		renderRail([])
 
 		expect(screen.getByText("No actions available.")).toBeTruthy()
+	})
+
+	it("says the cycle state could not be read, not that no action exists", () => {
+		renderRail([], { unreadable: true })
+
+		expect(screen.getByText("Could not read the cycle state.")).toBeTruthy()
+		expect(screen.queryByText("No actions available.")).toBeNull()
 	})
 
 	it("lists each condition as met or not met", () => {
