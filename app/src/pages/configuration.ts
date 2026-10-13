@@ -79,6 +79,8 @@ const DAY = 86_400n
 const MAX_NOTICE = 30n * DAY
 const MAX_WIND_DOWN_DELAY = 90n * DAY
 const MAX_BPS = 10_000
+const MAX_U64 = (1n << 64n) - 1n
+const MAX_I128 = (1n << 127n) - 1n
 const MAX_CEILING = ((1n << 127n) - 1n) / 10_000n
 const PERCENT = /^(\d+)(?:\.(\d{1,2}))?\s*%?$/
 
@@ -250,6 +252,11 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 	return [
 		single("set-deposit-cap", "Set the deposit cap", capField, cap, [
 			bound("Deposit cap ≥ 0", capField.arg, (value) => (value ?? 0n) >= 0n),
+			bound(
+				"Deposit cap ≤ 2^127−1",
+				capField.arg,
+				(value) => (value ?? 0n) <= MAX_I128,
+			),
 		]),
 		single(
 			"set-custodian",
@@ -392,6 +399,16 @@ const oracleBounds = (fields: ParsedConfig): Condition[] => {
 			"Freshness window > 0",
 			fields.freshness_duration.arg,
 			(value) => value > 0n,
+		),
+		bound(
+			"Freshness window ≤ 2^64−1 s",
+			fields.freshness_duration.arg,
+			(value) => value <= MAX_U64,
+		),
+		bound(
+			"Cooldown ≤ 2^64−1 s",
+			fields.cooldown_secs.arg,
+			(value) => value <= MAX_U64,
 		),
 		bound("Largest rise > 0", fields.max_up_bps.arg, (value) => value > 0),
 		bound(

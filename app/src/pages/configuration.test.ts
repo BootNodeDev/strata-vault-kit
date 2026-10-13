@@ -194,6 +194,38 @@ describe("toConfigurationActions", () => {
 		expect(uncapped.enabled).toBe(false)
 	})
 
+	it("holds a deposit cap and an oracle duration at their contract width", () => {
+		const cap = (text: string) =>
+			find("set-deposit-cap", [governance], { depositCap: text })
+		const oracle = (inputs: ConfigurationInputs) =>
+			find("set-oracle-config", [oracleAdmin], inputs)
+
+		expect(
+			condition(
+				cap("17014118346046923173168730371588.4105727"),
+				"Deposit cap ≤ 2^127−1",
+			),
+		).toBe(true)
+		expect(
+			condition(
+				cap("17014118346046923173168730371588.4105728"),
+				"Deposit cap ≤ 2^127−1",
+			),
+		).toBe(false)
+		expect(
+			condition(
+				oracle({ freshness: "18446744073709551615" }),
+				"Freshness window ≤ 2^64−1 s",
+			),
+		).toBe(true)
+		expect(
+			condition(
+				oracle({ cooldown: "18446744073709551615" }),
+				"Cooldown ≤ 2^64−1 s",
+			),
+		).toBe(true)
+	})
+
 	it("takes an account or a contract as custodian and says where deploys go", () => {
 		for (const address of [ACCOUNT, CONTRACT]) {
 			const custodian = find("set-custodian", [governance], {
@@ -261,6 +293,8 @@ describe("toConfigurationActions", () => {
 
 	it.each<[ConfigurationInputs, string]>([
 		[{ freshness: "0" }, "Freshness window > 0"],
+		[{ freshness: "18446744073709551616" }, "Freshness window ≤ 2^64−1 s"],
+		[{ cooldown: "18446744073709551616" }, "Cooldown ≤ 2^64−1 s"],
 		[{ maxRise: "0" }, "Largest rise > 0"],
 		[{ maxRise: "100.01" }, "Largest rise ≤ 100%"],
 		[{ maxFall: "101%" }, "Largest fall ≤ 100%"],
