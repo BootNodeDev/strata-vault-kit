@@ -1,14 +1,26 @@
 import { shortAddress } from "@stellar-scaffold/app-lib"
 import { type Grant, type Standing } from "../hooks/useAdminAuthority"
 
+export const ROLES = {
+	vaultGuardian: "vault guardian",
+	governance: "vault governance",
+	oracleGuardian: "oracle guardian",
+	oracleAdmin: "oracle admin",
+	tokenAdmin: "share-token admin",
+} as const
+
 export type Condition = { label: string; met: boolean | null; detail?: string }
 
 export type ActionField = {
+	key?: string
 	label: string
 	placeholder: string
 	value: string
 	invalid: boolean
 	max?: string
+	text?: boolean
+	current?: string
+	next?: string | null
 }
 
 export type RailAction = {
@@ -18,6 +30,7 @@ export type RailAction = {
 	outcome: string | null
 	note?: string
 	field?: ActionField
+	fields?: ActionField[]
 	enabled: boolean
 	unavailable?: string
 	tone?: "danger"
@@ -69,4 +82,37 @@ export const unavailableFor = (
 	if (grant.authority !== wallet)
 		return `Signs for ${shortAddress(grant.authority)}; acting on its behalf is not supported yet.`
 	return undefined
+}
+
+export type Spec<Id extends string> = {
+	id: Id
+	label: string
+	conditions: Condition[]
+	outcome: string | null
+	note?: string
+	danger?: boolean
+	fields?: ActionField[]
+	ready?: boolean
+}
+
+export const toAction = <Id extends string>(
+	spec: Spec<Id>,
+	grant: Grant,
+	wallet: string,
+): RailAction & { id: Id } => {
+	const unavailable = unavailableFor(grant, wallet)
+	return {
+		id: spec.id,
+		label: spec.label,
+		conditions: spec.conditions,
+		outcome: spec.outcome,
+		...(spec.note === undefined ? {} : { note: spec.note }),
+		...(spec.fields === undefined ? {} : { fields: spec.fields }),
+		enabled:
+			unavailable === undefined &&
+			spec.ready !== false &&
+			spec.conditions.every((condition) => condition.met !== false),
+		...(spec.danger === true ? { tone: "danger" as const } : {}),
+		...(unavailable === undefined ? {} : { unavailable }),
+	}
 }

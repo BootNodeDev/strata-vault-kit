@@ -28,6 +28,7 @@ import {
 	type WindDownAction,
 	formatDuration,
 	formatTimestamp,
+	parseDuration,
 	toActivityList,
 	toCycleActions,
 	toCycleRows,
@@ -430,6 +431,36 @@ describe("formatDuration", () => {
 		[604_800n, "7d"],
 	])("formats %s seconds as %s", (seconds, expected) => {
 		expect(formatDuration(seconds)).toBe(expected)
+	})
+
+	it("keeps every unit when asked for an exact duration", () => {
+		expect(formatDuration(90_061n, 4)).toBe("1d 1h 1m 1s")
+	})
+})
+
+describe("parseDuration", () => {
+	it.each<[string, bigint]>([
+		["3600", 3_600n],
+		[" 0 ", 0n],
+		["7d", 604_800n],
+		["1h 30m", 5_400n],
+		["1d2h", 93_600n],
+		["1d 1h 1m 1s", 90_061n],
+		["2D", 172_800n],
+	])("reads %j as %s seconds", (input, expected) => {
+		expect(parseDuration(input)).toBe(expected)
+	})
+
+	it.each(["", "  ", "1.5h", "-60", "1w", "h", "1h h", "1h 1h"])(
+		"refuses %j",
+		(input) => {
+			expect(parseDuration(input)).toBeNull()
+		},
+	)
+
+	it("reads back every duration it formats exactly", () => {
+		for (const seconds of [0n, 59n, 3_661n, 2_592_000n, 7_776_000n])
+			expect(parseDuration(formatDuration(seconds, 4))).toBe(seconds)
 	})
 })
 

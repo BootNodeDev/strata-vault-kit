@@ -1,30 +1,13 @@
-import { type AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { type Signer } from "@stellar-scaffold/app-lib"
-import { type QueryKey } from "@tanstack/react-query"
 import {
 	asyncVaultWriter,
 	navOracleWriter,
 	shareTokenWriter,
 } from "../config/clients"
-import {
-	useContractTransaction,
-	type UseContractTransaction,
-} from "./useContractTransaction"
+import { adminTransaction } from "./useAdminTransaction"
 import { oracleWriteKeys } from "./useOracleState"
 import { tokenPausedKey } from "./useTokenPaused"
 import { vaultPausedKey } from "./useVaultPaused"
-
-type NoResult = Record<never, never>
-
-const toConfirmed = () => ({})
-
-const emergencyTransaction =
-	<TArg = void>(
-		call: (signer: Signer, arg: TArg) => Promise<AssembledTransaction<void>>,
-		keys: readonly QueryKey[],
-	) =>
-	(): UseContractTransaction<TArg, NoResult> =>
-		useContractTransaction<TArg, void, NoResult>(call, toConfirmed, keys)
 
 const vaultCall = (method: "pause" | "unpause") => (signer: Signer) =>
 	asyncVaultWriter(signer).then((vault) =>
@@ -47,27 +30,24 @@ const setRipcordCall = (signer: Signer, paused: boolean) =>
 		oracle.set_ripcord({ paused, caller: signer.publicKey }),
 	)
 
-export const usePauseVault = emergencyTransaction(vaultCall("pause"), [
+export const usePauseVault = adminTransaction(vaultCall("pause"), [
 	vaultPausedKey,
 ])
-export const useUnpauseVault = emergencyTransaction(vaultCall("unpause"), [
+export const useUnpauseVault = adminTransaction(vaultCall("unpause"), [
 	vaultPausedKey,
 ])
-export const usePauseToken = emergencyTransaction(tokenCall("pause"), [
+export const usePauseToken = adminTransaction(tokenCall("pause"), [
 	tokenPausedKey,
 ])
-export const useUnpauseToken = emergencyTransaction(tokenCall("unpause"), [
+export const useUnpauseToken = adminTransaction(tokenCall("unpause"), [
 	tokenPausedKey,
 ])
-export const useRaiseRipcord = emergencyTransaction(
+export const useRaiseRipcord = adminTransaction(
 	oracleCall("raise_ripcord"),
 	oracleWriteKeys,
 )
-export const useClearLatest = emergencyTransaction(
+export const useClearLatest = adminTransaction(
 	oracleCall("clear_latest"),
 	oracleWriteKeys,
 )
-export const useSetRipcord = emergencyTransaction(
-	setRipcordCall,
-	oracleWriteKeys,
-)
+export const useSetRipcord = adminTransaction(setRipcordCall, oracleWriteKeys)

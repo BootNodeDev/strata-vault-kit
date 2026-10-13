@@ -5,6 +5,8 @@ import {
 	type RailAction,
 	readiness,
 	readyCount,
+	type Spec,
+	toAction,
 	unavailableFor,
 } from "./actions"
 
@@ -103,6 +105,79 @@ describe("unavailableFor", () => {
 	it("explains that signing for another account is not supported", () => {
 		expect(unavailableFor(grant({ authority: multisig }), wallet)).toBe(
 			"Signs for GMUL...5678; acting on its behalf is not supported yet.",
+		)
+	})
+})
+
+describe("toAction", () => {
+	const spec = (
+		overrides: Partial<Spec<"set-notice">>,
+	): Spec<"set-notice"> => ({
+		id: "set-notice",
+		label: "Set the notice",
+		conditions: [{ label: "Notice ≤ 30d", met: true }],
+		outcome: null,
+		...overrides,
+	})
+
+	it("enables a spec the wallet signs alone when no condition is refused", () => {
+		const action = toAction(
+			spec({ conditions: [{ label: "Vault is open", met: null }] }),
+			grant({}),
+			wallet,
+		)
+
+		expect(action.enabled).toBe(true)
+		expect(action.unavailable).toBeUndefined()
+	})
+
+	it("keeps a spec that is not ready closed, even with every condition met", () => {
+		expect(toAction(spec({ ready: false }), grant({}), wallet).enabled).toBe(
+			false,
+		)
+	})
+
+	it("keeps a refused condition closing the action", () => {
+		const action = toAction(
+			spec({ conditions: [{ label: "Notice ≤ 30d", met: false }] }),
+			grant({}),
+			wallet,
+		)
+
+		expect(action.enabled).toBe(false)
+	})
+
+	it("carries the fields, the note and the danger tone", () => {
+		const field = {
+			key: "notice",
+			label: "Notice",
+			placeholder: "7d",
+			value: "3d",
+			invalid: false,
+		}
+		const action = toAction(
+			spec({ fields: [field], note: "Heads up.", danger: true }),
+			grant({}),
+			wallet,
+		)
+
+		expect(action).toMatchObject({
+			fields: [field],
+			note: "Heads up.",
+			tone: "danger",
+		})
+	})
+
+	it("explains a grant the wallet cannot sign alone and keeps it closed", () => {
+		const action = toAction(
+			spec({}),
+			grant({ authority: multisig, standing: { needs: 2 } }),
+			wallet,
+		)
+
+		expect(action.enabled).toBe(false)
+		expect(action.unavailable).toBe(
+			"Needs 2 signatures; collecting them is not supported yet.",
 		)
 	})
 })

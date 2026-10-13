@@ -61,6 +61,25 @@ vi.mock("../components/admin/EmergencySection", () => ({
 	),
 }))
 
+vi.mock("../components/admin/ConfigurationSection", () => ({
+	default: ({
+		grants,
+		contracts,
+		active,
+	}: {
+		grants: Grant[]
+		contracts: React.ReactNode
+		active: boolean
+	}) => (
+		<div data-testid="configuration-surface" data-active={String(active)}>
+			<p>
+				Configuration surface for {grants.map((grant) => grant.role).join(", ")}
+			</p>
+			{contracts}
+		</div>
+	),
+}))
+
 const connectedAddress = "GCONNECTEDADDRESS1234567890"
 
 const emptyGrantedBy = {
@@ -253,6 +272,34 @@ describe("AdminPanel", () => {
 		).toBe("true")
 		expect(
 			screen.getByTestId("cycle-surface").getAttribute("data-active"),
+		).toBe("false")
+	})
+
+	it("renders the configuration actions with the configuration grants, active only on its tab", () => {
+		const guardian = holderOf("vault guardian")
+		const oracleAdmin = holderOf("oracle admin")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["emergency", "configuration"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					emergency: [guardian, oracleAdmin],
+					configuration: [oracleAdmin],
+				},
+				grants: [guardian, oracleAdmin],
+			}),
+		)
+		renderAt("/admin/configuration")
+
+		expect(
+			screen.getByText("Configuration surface for oracle admin"),
+		).toBeTruthy()
+		expect(
+			screen.getByTestId("configuration-surface").getAttribute("data-active"),
+		).toBe("true")
+		expect(
+			screen.getByTestId("emergency-surface").getAttribute("data-active"),
 		).toBe("false")
 	})
 

@@ -72,8 +72,8 @@ describe("toSurfaces", () => {
 		["share-token compliance", ["compliance"]],
 		["vault guardian", ["emergency"]],
 		["oracle guardian", ["emergency"]],
-		["share-token admin", ["emergency"]],
-		["oracle admin", ["emergency"]],
+		["share-token admin", ["emergency", "configuration"]],
+		["oracle admin", ["emergency", "configuration"]],
 		["vault governance", ["emergency", "configuration", "governance"]],
 	])("grants %s's surfaces to the wallet that holds it", (role, expected) => {
 		const { surfaces, grantedBy, grants } = toSurfaces(
@@ -436,8 +436,10 @@ describe("useAdminAuthority", () => {
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
 
-		expect(result.current.surfaces).toEqual(new Set(["cycle", "emergency"]))
-		expect(result.current.grantedBy.emergency[0]?.role).toBe(
+		expect(result.current.surfaces).toEqual(
+			new Set(["cycle", "emergency", "configuration"]),
+		)
+		expect(result.current.grantedBy.configuration[0]?.role).toBe(
 			"share-token admin",
 		)
 	})
@@ -448,8 +450,10 @@ describe("useAdminAuthority", () => {
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
 
-		expect(result.current.surfaces).toEqual(new Set(["cycle", "emergency"]))
-		expect(result.current.grantedBy.emergency).toEqual([
+		expect(result.current.surfaces).toEqual(
+			new Set(["cycle", "emergency", "configuration"]),
+		)
+		expect(result.current.grantedBy.configuration).toEqual([
 			{
 				role: "oracle admin",
 				authority: investorAddress,
@@ -467,7 +471,9 @@ describe("useAdminAuthority", () => {
 		await waitFor(() => expect(result.current.status).toBe("ready"))
 
 		expect(accountSignersMock).toHaveBeenCalledWith(multisig)
-		expect(result.current.surfaces).toEqual(new Set(["emergency"]))
+		expect(result.current.surfaces).toEqual(
+			new Set(["emergency", "configuration"]),
+		)
 	})
 
 	it("reports unreadable when the oracle admin read fails", async () => {

@@ -17,7 +17,10 @@ import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
-import TransactionModal, { type EmergencyModalAction } from "./TransactionModal"
+import TransactionModal, {
+	type ConfigurationModalAction,
+	type EmergencyModalAction,
+} from "./TransactionModal"
 
 const { explorerTransactionMock } = vi.hoisted(() => ({
 	explorerTransactionMock: vi.fn(() => null as string | null),
@@ -2077,6 +2080,144 @@ describe("TransactionModal, emergency actions", () => {
 
 		expect(
 			screen.getByText(/check the Emergency tab before trying again/),
+		).toBeTruthy()
+	})
+})
+
+const renderConfigurationModal = (
+	action: ConfigurationModalAction,
+	status: TransactionStatus,
+	value = "",
+) =>
+	render(
+		<TransactionModal
+			action={action}
+			status={status}
+			value={value}
+			onClose={vi.fn()}
+			onRetry={vi.fn()}
+		/>,
+	)
+
+describe("TransactionModal, configuration actions", () => {
+	it.each<[ConfigurationModalAction, string, string]>([
+		[
+			"set-deposit-cap",
+			"Preparing to set the deposit cap",
+			"Deposit cap updated",
+		],
+		["set-custodian", "Preparing to set the custodian", "Custodian updated"],
+		["set-notice", "Preparing to set the notice", "Notice updated"],
+		[
+			"set-wind-down-delay",
+			"Preparing to set the wind-down delay",
+			"Wind-down delay updated",
+		],
+		[
+			"set-oracle-config",
+			"Preparing to set the oracle limits",
+			"Oracle limits updated",
+		],
+		[
+			"set-compliance",
+			"Preparing to set the compliance contract",
+			"Compliance contract updated",
+		],
+		[
+			"set-identity-verifier",
+			"Preparing to set the identity verifier",
+			"Identity verifier updated",
+		],
+	])("walks %s from preparing to confirmed", (action, preparing, confirmed) => {
+		const { rerender } = renderConfigurationModal(action, {
+			status: "preparing",
+		})
+		expect(screen.getByRole("heading", { name: preparing })).toBeTruthy()
+
+		rerender(
+			<TransactionModal
+				action={action}
+				status={{ status: "confirmed" }}
+				value="3d"
+				onClose={vi.fn()}
+				onRetry={vi.fn()}
+			/>,
+		)
+		expect(screen.getByRole("heading", { name: confirmed })).toBeTruthy()
+	})
+
+	it("states the new value before signing and once recorded", () => {
+		const { rerender } = renderConfigurationModal(
+			"set-deposit-cap",
+			{ status: "awaiting-signature" },
+			"5,000.00",
+		)
+		expect(screen.getByText("New deposit cap: 5,000.00.")).toBeTruthy()
+
+		rerender(
+			<TransactionModal
+				action="set-deposit-cap"
+				status={{ status: "confirmed" }}
+				value="5,000.00"
+				onClose={vi.fn()}
+				onRetry={vi.fn()}
+			/>,
+		)
+		expect(screen.getByText("Deposit cap: 5,000.00.")).toBeTruthy()
+	})
+
+	it.each<[ConfigurationModalAction, string]>([
+		["set-custodian", "Treasury deploys to the new address from now on."],
+		["set-notice", "Applies to epochs closed from now on."],
+		["set-wind-down-delay", "A proposed wind-down keeps its activation time."],
+	])("names the side effect of %s once recorded", (action, effect) => {
+		renderConfigurationModal(action, { status: "confirmed" }, "3d")
+
+		expect(screen.getByText(effect)).toBeTruthy()
+	})
+
+	it.each<[ConfigurationModalAction, number, string, RegExp]>([
+		["set-deposit-cap", 6007, "vault", /The deposit cap cannot be negative/],
+		["set-notice", 6045, "vault", /The notice cannot exceed 30 days/],
+		["set-notice", 6061, "vault", /The notice cannot exceed the upgrade delay/],
+		[
+			"set-wind-down-delay",
+			6053,
+			"vault",
+			/The wind-down delay cannot exceed 90 days/,
+		],
+		[
+			"set-oracle-config",
+			3001,
+			"oracle",
+			/One of the oracle limits is out of range/,
+		],
+		["set-compliance", 2000, "share token", /does not hold the role/],
+	])(
+		"names the reason %s was refused with code %i",
+		(action, code, refuser, sentence) => {
+			renderConfigurationModal(action, {
+				status: "failed",
+				failure: { kind: "contract-error", code },
+			})
+
+			expect(
+				screen.getByRole("heading", {
+					name: `The ${refuser} refused this request`,
+				}),
+			).toBeTruthy()
+			expect(screen.getByText(sentence)).toBeTruthy()
+		},
+	)
+
+	it("sends an unknown outcome to the Configuration tab", () => {
+		renderConfigurationModal("set-notice", {
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+
+		expect(
+			screen.getByText(/check the Configuration tab before trying again/),
 		).toBeTruthy()
 	})
 })

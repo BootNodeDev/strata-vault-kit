@@ -195,6 +195,29 @@
 	border: 2px solid var(--vault-danger);
 }
 
+.keyed {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.keyedHead {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 4px 12px;
+}
+
+.fieldLabel {
+	color: var(--vault-ink);
+}
+
+.fieldValue {
+	color: var(--vault-text-muted);
+	overflow-wrap: anywhere;
+}
+
 .fieldInput {
 	flex: 1;
 	min-width: 0;

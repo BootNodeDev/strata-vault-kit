@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+import { type RailAction } from "../../pages/actions"
 import { type CycleAction } from "../../pages/cycle"
 import CycleActionRail from "./CycleActionRail"
 
@@ -420,5 +421,88 @@ describe("CycleActionRail", () => {
 			screen.getByText("Ripcord raised — attesting does not lift it."),
 		).toBeTruthy()
 		expect(within(list).queryByText(/Ripcord/)).toBeNull()
+	})
+})
+
+describe("CycleActionRail with keyed fields", () => {
+	const setLimits: RailAction = {
+		id: "set-oracle-config",
+		label: "Set the oracle limits",
+		conditions: [{ label: "Differs from current", met: true }],
+		outcome: null,
+		fields: [
+			{
+				key: "freshness",
+				label: "Freshness window",
+				placeholder: "7d",
+				value: "2d",
+				invalid: false,
+				text: true,
+				current: "1d",
+				next: "2d",
+			},
+			{
+				key: "floor",
+				label: "Price floor",
+				placeholder: "0.00",
+				value: "0.5",
+				invalid: false,
+				current: "0.50",
+				next: null,
+			},
+		],
+		enabled: true,
+	}
+
+	const renderKeyed = (onInput = vi.fn()) => {
+		render(
+			<CycleActionRail
+				scope="configuration"
+				actions={[setLimits]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onInput={onInput}
+			/>,
+		)
+		return onInput
+	}
+
+	it("labels every field and reports each keystroke with the field's key", () => {
+		const onInput = renderKeyed()
+
+		const freshness = screen.getByRole("textbox", { name: "Freshness window" })
+		fireEvent.change(freshness, { target: { value: "3d" } })
+		fireEvent.change(screen.getByRole("textbox", { name: "Price floor" }), {
+			target: { value: "0.6" },
+		})
+
+		expect(onInput).toHaveBeenNthCalledWith(1, setLimits, "3d", "freshness")
+		expect(onInput).toHaveBeenNthCalledWith(2, setLimits, "0.6", "floor")
+	})
+
+	it("shows the current value next to the field and the new one once it reads", () => {
+		renderKeyed()
+
+		expect(screen.getByText("Current 1d")).toBeTruthy()
+		expect(screen.getByText("New 2d")).toBeTruthy()
+		expect(screen.getByText("Current 0.50")).toBeTruthy()
+		expect(screen.queryByText(/^New 0/)).toBeNull()
+	})
+
+	it("asks for text where the field is not a figure", () => {
+		renderKeyed()
+
+		expect(
+			(
+				screen.getByRole("textbox", {
+					name: "Freshness window",
+				}) as HTMLInputElement
+			).inputMode,
+		).toBe("text")
+		expect(
+			(screen.getByRole("textbox", { name: "Price floor" }) as HTMLInputElement)
+				.inputMode,
+		).toBe("decimal")
 	})
 })
