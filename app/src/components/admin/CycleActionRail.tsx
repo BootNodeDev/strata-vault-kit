@@ -21,6 +21,7 @@ const conditionValue = (condition: Condition): string => {
 const summaryOf = (state: Readiness): string => {
 	if (state.kind === "ready") return "Ready"
 	if (state.kind === "unavailable") return "Unavailable"
+	if (state.kind === "unchanged") return "No change"
 	return `${state.count} unmet`
 }
 

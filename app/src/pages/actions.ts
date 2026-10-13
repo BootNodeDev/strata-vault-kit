@@ -9,7 +9,12 @@ export const ROLES = {
 	tokenAdmin: "share-token admin",
 } as const
 
-export type Condition = { label: string; met: boolean | null; detail?: string }
+export type Condition = {
+	label: string
+	met: boolean | null
+	detail?: string
+	unchanged?: true
+}
 
 export type ActionField = {
 	key?: string
@@ -39,17 +44,18 @@ export type RailAction = {
 export type Readiness =
 	| { kind: "ready" }
 	| { kind: "unmet"; count: number }
+	| { kind: "unchanged" }
 	| { kind: "unavailable"; reason: string }
 
 export const readiness = (action: RailAction): Readiness => {
 	if (action.enabled) return { kind: "ready" }
 	if (action.unavailable !== undefined)
 		return { kind: "unavailable", reason: action.unavailable }
-	return {
-		kind: "unmet",
-		count: action.conditions.filter((condition) => condition.met !== true)
-			.length,
-	}
+	const unmet = action.conditions.filter((condition) => condition.met !== true)
+	const [only] = unmet
+	if (unmet.length === 1 && only?.unchanged === true && only.met === false)
+		return { kind: "unchanged" }
+	return { kind: "unmet", count: unmet.length }
 }
 
 export const readyCount = (actions: RailAction[]): number =>

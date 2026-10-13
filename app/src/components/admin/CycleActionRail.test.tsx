@@ -126,6 +126,21 @@ const expanded = (label: string) =>
 	rowToggle(label).getAttribute("aria-expanded") === "true"
 
 describe("CycleActionRail", () => {
+	it("summarises an action that changes nothing as no change", () => {
+		renderRail([
+			{
+				...fulfillAction,
+				conditions: [
+					{ label: "Differs from current", met: false, unchanged: true },
+				],
+			},
+		])
+
+		expect(rowToggle("Fulfill epoch").textContent).toBe(
+			"Fulfill epochNo change",
+		)
+	})
+
 	it("heads the rail with how many of its actions are ready", () => {
 		renderRail([closeAction, fulfillAction, attestAction])
 

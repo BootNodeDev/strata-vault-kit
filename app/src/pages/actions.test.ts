@@ -51,6 +51,28 @@ describe("readiness", () => {
 		expect(readiness(action)).toEqual({ kind: "unmet", count: 2 })
 	})
 
+	it("reads an action whose only unmet condition is no change as unchanged", () => {
+		const action = actionWith({
+			conditions: [
+				{ label: "Notice ≤ 30d", met: true },
+				{ label: "Differs from current", met: false, unchanged: true },
+			],
+		})
+
+		expect(readiness(action)).toEqual({ kind: "unchanged" })
+	})
+
+	it("keeps counting when something besides no change is unmet", () => {
+		const action = actionWith({
+			conditions: [
+				{ label: "Notice ≤ 30d", met: false },
+				{ label: "Differs from current", met: false, unchanged: true },
+			],
+		})
+
+		expect(readiness(action)).toEqual({ kind: "unmet", count: 2 })
+	})
+
 	it("reads an action the wallet cannot sign as unavailable, keeping the reason", () => {
 		const reason = "Needs 2 signatures; collecting them is not supported yet."
 		const action = actionWith({

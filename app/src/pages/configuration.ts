@@ -190,6 +190,7 @@ const bound = <T>(
 const differs = (changed: boolean | undefined): Condition => ({
 	label: "Differs from current",
 	met: changed ?? null,
+	unchanged: true,
 })
 
 const changedFrom = <T>(arg: T | undefined, current: T | undefined) =>
