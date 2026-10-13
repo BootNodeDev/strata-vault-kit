@@ -28,6 +28,8 @@ import {
 	type WindDownAction,
 	formatDuration,
 	formatTimestamp,
+	readiness,
+	readyCount,
 	toActivityList,
 	toCycleActions,
 	toCycleRows,
@@ -1693,5 +1695,57 @@ describe("toCycleActions, winding down", () => {
 		expect(finalize?.round).toBeNull()
 		expect(finalize?.outcome).toBeNull()
 		expect(finalize?.enabled).toBe(false)
+	})
+})
+
+const actionWith = (overrides: Partial<TreasuryAction>): TreasuryAction => ({
+	id: "fund",
+	group: "Reserve",
+	label: "Fund the reserve",
+	conditions: [],
+	outcome: null,
+	enabled: false,
+	amount: null,
+	...overrides,
+})
+
+describe("readiness", () => {
+	it("reads an enabled action as ready", () => {
+		expect(readiness(actionWith({ enabled: true }))).toEqual({ kind: "ready" })
+	})
+
+	it("counts the conditions not met, an undecided one included", () => {
+		const action = actionWith({
+			conditions: [
+				{ label: "Amount above zero", met: false },
+				{ label: "Within the balance", met: null },
+				{ label: "Wind-down not active", met: true },
+			],
+		})
+
+		expect(readiness(action)).toEqual({ kind: "unmet", count: 2 })
+	})
+
+	it("reads an action the wallet cannot sign as unavailable, keeping the reason", () => {
+		const reason = "Needs 2 signatures; collecting them is not supported yet."
+		const action = actionWith({
+			conditions: [{ label: "Amount above zero", met: false }],
+			unavailable: reason,
+		})
+
+		expect(readiness(action)).toEqual({ kind: "unavailable", reason })
+	})
+})
+
+describe("readyCount", () => {
+	it("counts the enabled actions", () => {
+		expect(
+			readyCount([
+				actionWith({ enabled: true }),
+				actionWith({}),
+				actionWith({ enabled: true }),
+			]),
+		).toBe(2)
+		expect(readyCount([])).toBe(0)
 	})
 })

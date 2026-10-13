@@ -824,6 +824,25 @@ function toWindDownActions(state: ReadyState): WindDownAction[] {
 	return actions
 }
 
+export type Readiness =
+	| { kind: "ready" }
+	| { kind: "unmet"; count: number }
+	| { kind: "unavailable"; reason: string }
+
+export const readiness = (action: CycleAction): Readiness => {
+	if (action.enabled) return { kind: "ready" }
+	if (action.unavailable !== undefined)
+		return { kind: "unavailable", reason: action.unavailable }
+	return {
+		kind: "unmet",
+		count: action.conditions.filter((condition) => condition.met !== true)
+			.length,
+	}
+}
+
+export const readyCount = (actions: CycleAction[]): number =>
+	actions.filter((action) => action.enabled).length
+
 export function toCycleActions(
 	state: CycleState,
 	grants: Grant[],

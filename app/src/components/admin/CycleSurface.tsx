@@ -1,9 +1,4 @@
 import React from "react"
-import {
-	type ActionField as ActionFieldSpec,
-	type Condition,
-	type CycleAction,
-} from "../../pages/cycle"
 import typeStyles from "../../styles/type.module.css"
 import Skeleton from "../Skeleton"
 import {
@@ -112,105 +107,6 @@ const Group: React.FC<{ group: CycleGroup }> = ({ group }) => (
 				<FigureRows rows={group.limits} />
 			</Disclosure>
 		)}
-	</div>
-)
-
-const conditionValue = (condition: Condition): string => {
-	if (condition.met === null) return "—"
-	return condition.detail ?? (condition.met ? "Met" : "Not met")
-}
-
-const ActionField: React.FC<{
-	action: CycleAction
-	field: ActionFieldSpec
-	onInput: ((action: CycleAction, value: string) => void) | undefined
-}> = ({ action, field, onInput }) => {
-	const id = `cycle-${action.id}-field`
-	return (
-		<div className={field.invalid ? styles.fieldOver : styles.field}>
-			<label htmlFor={id} className={styles.srOnly}>
-				{field.label}
-			</label>
-			<input
-				id={id}
-				className={`${typeStyles.amountInput} ${styles.fieldInput}`}
-				value={field.value}
-				onChange={(event) => onInput?.(action, event.target.value)}
-				placeholder={field.placeholder}
-				inputMode="decimal"
-			/>
-			{field.max !== undefined && (
-				<button
-					type="button"
-					className={styles.useMax}
-					onClick={() => onInput?.(action, field.max ?? "")}
-				>
-					Use max
-				</button>
-			)}
-		</div>
-	)
-}
-
-export const CycleActions: React.FC<{
-	actions: CycleAction[]
-	onRun: (action: CycleAction) => void
-	onInput?: (action: CycleAction, value: string) => void
-}> = ({ actions, onRun, onInput }) => (
-	<div className={styles.actionArea}>
-		{actions.map((action) => (
-			<div className={styles.action} key={action.id}>
-				{action.field !== undefined && (
-					<ActionField action={action} field={action.field} onInput={onInput} />
-				)}
-				<ul
-					aria-label={`${action.label} conditions`}
-					className={styles.conditions}
-				>
-					{action.conditions.map((condition) => (
-						<li className={styles.row} key={condition.label}>
-							<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
-								{condition.label}
-							</span>
-							<span
-								className={`${typeStyles.railValue} ${
-									condition.met ? styles.rowValue : styles.unmet
-								}`}
-							>
-								{conditionValue(condition)}
-							</span>
-						</li>
-					))}
-				</ul>
-				{action.note !== undefined && (
-					<p className={`${typeStyles.footnote} ${styles.note}`}>
-						{action.note}
-					</p>
-				)}
-				{action.outcome !== null && (
-					<p className={`${typeStyles.footnote} ${styles.outcome}`}>
-						{action.outcome}
-					</p>
-				)}
-				<div className={styles.actions}>
-					<button
-						type="button"
-						className={
-							action.enabled ? styles.actionPrimary : styles.actionUnavailable
-						}
-						disabled={!action.enabled}
-						onClick={() => onRun(action)}
-					>
-						{action.label}
-					</button>
-				</div>
-				{action.unavailable !== undefined && (
-					<p className={`${typeStyles.footnote} ${styles.placeholder}`}>
-						{action.unavailable}
-					</p>
-				)}
-			</div>
-		))}
 	</div>
 )
 

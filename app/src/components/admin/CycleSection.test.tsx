@@ -187,8 +187,35 @@ const manager = grant("vault manager")
 const treasury = grant("vault treasury")
 const attester = grant("oracle attester")
 
-const button = (name: string) =>
-	screen.getByRole("button", { name }) as HTMLButtonElement
+const rowToggle = (label: string) =>
+	screen
+		.getAllByRole("button", { name: label })
+		.find((candidate) => candidate.hasAttribute("aria-expanded"))!
+
+const openRow = (label: string) => {
+	const toggle = rowToggle(label)
+	if (toggle.getAttribute("aria-expanded") !== "true") fireEvent.click(toggle)
+}
+
+const button = (name: string) => {
+	openRow(name)
+	return screen
+		.getAllByRole("button", { name })
+		.find(
+			(candidate) => !candidate.hasAttribute("aria-expanded"),
+		) as HTMLButtonElement
+}
+
+const FIELD_ROWS: Record<string, string> = {
+	"Amount to deploy": "Deploy to custodian",
+	"Amount to fund": "Fund the reserve",
+	"Share price": "Attest price",
+}
+
+const fieldOf = (name: string) => {
+	openRow(FIELD_ROWS[name]!)
+	return screen.getByRole("textbox", { name }) as HTMLInputElement
+}
 
 describe("CycleSection", () => {
 	beforeEach(() => {
@@ -229,11 +256,11 @@ describe("CycleSection", () => {
 		render(<CycleSection grants={[manager]} wallet={WALLET} />)
 
 		expect(button("Close epoch").disabled).toBe(false)
-		expect(button("Fulfill epoch").disabled).toBe(false)
 		const closeConditions = screen.getByRole("list", {
 			name: "Close epoch conditions",
 		})
 		expect(within(closeConditions).getByText("Epoch open")).toBeTruthy()
+		expect(button("Fulfill epoch").disabled).toBe(false)
 		expect(screen.getByText("Seals epoch 5 and opens epoch 6.")).toBeTruthy()
 		expect(
 			screen.getByText("Prices epoch 4 at 1.0000 and settles its requests."),
@@ -247,18 +274,10 @@ describe("CycleSection", () => {
 		expect(screen.queryByRole("button", { name: "Attest price" })).toBeNull()
 		expect(button("Fulfill epoch").disabled).toBe(false)
 		const rail = screen.getByRole("complementary", { name: "Actions" })
-		expect(
-			within(rail).getByRole("button", { name: "Deploy to custodian" }),
-		).toBeTruthy()
-		expect(
-			within(rail).getByRole("button", { name: "Fund the reserve" }),
-		).toBeTruthy()
-		expect(
-			within(rail).getByRole("textbox", { name: "Amount to deploy" }),
-		).toBeTruthy()
-		expect(
-			within(rail).getByRole("textbox", { name: "Amount to fund" }),
-		).toBeTruthy()
+		expect(rail.contains(fieldOf("Amount to deploy"))).toBe(true)
+		expect(rail.contains(button("Deploy to custodian"))).toBe(true)
+		expect(rail.contains(fieldOf("Amount to fund"))).toBe(true)
+		expect(rail.contains(button("Fund the reserve"))).toBe(true)
 	})
 
 	it("offers the manager the funding but not the deployment", () => {
@@ -269,7 +288,7 @@ describe("CycleSection", () => {
 		).toBeNull()
 		expect(screen.queryByRole("button", { name: "Use max" })).toBeNull()
 		expect(button("Fund the reserve").disabled).toBe(true)
-		expect(screen.getByRole("textbox", { name: "Amount to fund" })).toBeTruthy()
+		expect(fieldOf("Amount to fund")).toBeTruthy()
 	})
 
 	it("holds the deployment until an amount is typed, then enables it and states the resulting reserve", () => {
@@ -279,12 +298,9 @@ describe("CycleSection", () => {
 		const within_ = screen.getByText("Within the free reserve").closest("li")!
 		expect(within(within_).getByText("—")).toBeTruthy()
 
-		fireEvent.change(
-			screen.getByRole("textbox", { name: "Amount to deploy" }),
-			{
-				target: { value: "250" },
-			},
-		)
+		fireEvent.change(fieldOf("Amount to deploy"), {
+			target: { value: "250" },
+		})
 
 		expect(button("Deploy to custodian").disabled).toBe(false)
 		expect(within(within_).getByText("Met")).toBeTruthy()
@@ -298,11 +314,9 @@ describe("CycleSection", () => {
 	it("fills the deployment with the exact free reserve on Use max", () => {
 		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
-		fireEvent.click(button("Use max"))
+		const field = fieldOf("Amount to deploy")
+		fireEvent.click(screen.getByRole("button", { name: "Use max" }))
 
-		const field = screen.getByRole("textbox", {
-			name: "Amount to deploy",
-		}) as HTMLInputElement
 		expect(field.value).toBe("900.00")
 		expect(button("Deploy to custodian").disabled).toBe(false)
 		expect(
@@ -317,12 +331,9 @@ describe("CycleSection", () => {
 			<CycleSection grants={[treasury]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(
-			screen.getByRole("textbox", { name: "Amount to deploy" }),
-			{
-				target: { value: "250" },
-			},
-		)
+		fireEvent.change(fieldOf("Amount to deploy"), {
+			target: { value: "250" },
+		})
 		fireEvent.click(button("Deploy to custodian"))
 
 		expect(deployMock.submit).toHaveBeenCalledWith(amount(250n))
@@ -340,10 +351,9 @@ describe("CycleSection", () => {
 			<CycleSection grants={[treasury]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(
-			screen.getByRole("textbox", { name: "Amount to deploy" }),
-			{ target: { value: "250.1234567" } },
-		)
+		fireEvent.change(fieldOf("Amount to deploy"), {
+			target: { value: "250.1234567" },
+		})
 		fireEvent.click(button("Deploy to custodian"))
 		deployMock.status = { status: "preparing" }
 		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
@@ -357,10 +367,7 @@ describe("CycleSection", () => {
 		const { rerender } = render(
 			<CycleSection grants={[treasury]} wallet={WALLET} />,
 		)
-		const field = () =>
-			screen.getByRole("textbox", {
-				name: "Amount to deploy",
-			}) as HTMLInputElement
+		const field = () => fieldOf("Amount to deploy")
 
 		fireEvent.change(field(), { target: { value: "250" } })
 		fireEvent.click(button("Deploy to custodian"))
@@ -376,7 +383,7 @@ describe("CycleSection", () => {
 			<CycleSection grants={[treasury]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+		fireEvent.change(fieldOf("Amount to fund"), {
 			target: { value: "100.1234567" },
 		})
 		fireEvent.click(button("Fund the reserve"))
@@ -390,7 +397,7 @@ describe("CycleSection", () => {
 
 	it("judges the funding against the connected wallet's balance", () => {
 		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
-		const field = screen.getByRole("textbox", { name: "Amount to fund" })
+		const field = fieldOf("Amount to fund")
 
 		fireEvent.change(field, { target: { value: "1000.0000001" } })
 
@@ -414,7 +421,7 @@ describe("CycleSection", () => {
 		})
 		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
-		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+		fireEvent.change(fieldOf("Amount to fund"), {
 			target: { value: "100" },
 		})
 
@@ -428,7 +435,7 @@ describe("CycleSection", () => {
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+		fireEvent.change(fieldOf("Amount to fund"), {
 			target: { value: "100" },
 		})
 		fireEvent.click(button("Fund the reserve"))
@@ -453,12 +460,9 @@ describe("CycleSection", () => {
 			/>,
 		)
 
-		fireEvent.change(
-			screen.getByRole("textbox", { name: "Amount to deploy" }),
-			{
-				target: { value: "250" },
-			},
-		)
+		fireEvent.change(fieldOf("Amount to deploy"), {
+			target: { value: "250" },
+		})
 
 		expect(button("Deploy to custodian").disabled).toBe(true)
 		expect(
@@ -467,7 +471,7 @@ describe("CycleSection", () => {
 			),
 		).toBeTruthy()
 
-		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+		fireEvent.change(fieldOf("Amount to fund"), {
 			target: { value: "100" },
 		})
 
@@ -477,7 +481,7 @@ describe("CycleSection", () => {
 	it("offers the attester a price field in the Actions rail, with the button held until a price is typed", () => {
 		render(<CycleSection grants={[attester]} wallet={WALLET} />)
 
-		const field = screen.getByRole("textbox", { name: "Share price" })
+		const field = fieldOf("Share price")
 		const rail = screen.getByRole("complementary", { name: "Actions" })
 		expect(within(rail).getByRole("textbox", { name: "Share price" })).toBe(
 			field,
@@ -500,7 +504,7 @@ describe("CycleSection", () => {
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(screen.getByRole("textbox", { name: "Share price" }), {
+		fireEvent.change(fieldOf("Share price"), {
 			target: { value: "1.04" },
 		})
 		fireEvent.click(button("Attest price"))
@@ -523,7 +527,7 @@ describe("CycleSection", () => {
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(screen.getByRole("textbox", { name: "Share price" }), {
+		fireEvent.change(fieldOf("Share price"), {
 			target: { value: "1.04123456" },
 		})
 		fireEvent.click(button("Attest price"))
@@ -539,8 +543,7 @@ describe("CycleSection", () => {
 		const { rerender } = render(
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
-		const field = () =>
-			screen.getByRole("textbox", { name: "Share price" }) as HTMLInputElement
+		const field = () => fieldOf("Share price")
 
 		fireEvent.change(field(), { target: { value: "1.04" } })
 		fireEvent.click(button("Attest price"))
@@ -559,8 +562,7 @@ describe("CycleSection", () => {
 		const { rerender } = render(
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
-		const field = () =>
-			screen.getByRole("textbox", { name: "Share price" }) as HTMLInputElement
+		const field = () => fieldOf("Share price")
 
 		fireEvent.change(field(), { target: { value: "1.04" } })
 		fireEvent.click(button("Attest price"))
@@ -675,6 +677,52 @@ describe("CycleSection", () => {
 		expect(fulfillEpochMock.reset).toHaveBeenCalledTimes(1)
 	})
 
+	it("lists the role's actions in the rail with their readiness, the first ready one open", () => {
+		render(<CycleSection grants={[manager]} wallet={WALLET} />)
+
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+		expect(within(rail).getByText("2 of 3 ready")).toBeTruthy()
+		expect(rowToggle("Close epoch").getAttribute("aria-expanded")).toBe("true")
+		expect(rowToggle("Fulfill epoch").getAttribute("aria-expanded")).toBe(
+			"false",
+		)
+		expect(rowToggle("Fund the reserve").getAttribute("aria-expanded")).toBe(
+			"false",
+		)
+	})
+
+	it("keeps the overview free of actions and the static limits behind a disclosure", () => {
+		render(<CycleSection grants={[manager]} wallet={WALLET} />)
+
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+		const overviewButtons = screen
+			.getAllByRole("button")
+			.filter((candidate) => !rail.contains(candidate))
+		expect(overviewButtons).toEqual([])
+		const limits = screen
+			.getAllByText("Limits")
+			.map((summary) => summary.closest("details")!)
+		expect(limits.every((disclosure) => !disclosure.open)).toBe(true)
+		expect(within(limits[0]!).getByText("Freshness window")).toBeTruthy()
+		expect(within(limits[1]!).getByText("Deposit cap")).toBeTruthy()
+	})
+
+	it("keeps the row open after its action confirms", () => {
+		const { rerender } = render(
+			<CycleSection grants={[manager]} wallet={WALLET} />,
+		)
+		fireEvent.click(button("Close epoch"))
+
+		closeEpochMock.status = {
+			status: "confirmed",
+			sealedEpoch: 5n,
+			hash: "abc",
+		}
+		rerender(<CycleSection grants={[manager]} wallet={WALLET} />)
+
+		expect(rowToggle("Close epoch").getAttribute("aria-expanded")).toBe("true")
+	})
+
 	it("offers no wind-down action while none is proposed", () => {
 		render(<CycleSection grants={[manager]} wallet={WALLET} />)
 
@@ -693,10 +741,9 @@ describe("CycleSection", () => {
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
 		const rail = screen.getByRole("complementary", { name: "Actions" })
-		const activate = within(rail).getByRole("button", {
-			name: "Activate wind-down",
-		}) as HTMLButtonElement
+		const activate = button("Activate wind-down")
 
+		expect(rail.contains(activate)).toBe(true)
 		expect(activate.disabled).toBe(false)
 		expect(
 			screen.getByText("Stops new requests and opens distribution rounds."),

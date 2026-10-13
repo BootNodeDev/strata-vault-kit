@@ -24,7 +24,8 @@ import {
 import TransactionModal, {
 	type TransactionModalProps,
 } from "../vault/TransactionModal"
-import CycleSurface, { CycleActions } from "./CycleSurface"
+import CycleActionRail from "./CycleActionRail"
+import CycleSurface from "./CycleSurface"
 
 const useAmountInput = (confirmed: boolean) => {
 	const [input, setInput] = useState("")
@@ -183,7 +184,14 @@ const CycleSection: React.FC<{
 				unreadable={cycle.status === "unreadable"}
 				epochs={toEpochList(history)}
 				activity={toActivityList(cycleEvents)}
-				rail={<CycleActions actions={actions} onRun={run} onInput={onInput} />}
+				rail={
+					<CycleActionRail
+						actions={actions}
+						pending={cycle.status === "checking"}
+						onRun={run}
+						onInput={onInput}
+					/>
+				}
 				contracts={contracts}
 			/>
 			{activeModal !== undefined && <TransactionModal {...activeModal} />}
