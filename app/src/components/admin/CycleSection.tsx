@@ -196,7 +196,9 @@ const CycleSection: React.FC<{
 				}
 				contracts={contracts}
 			/>
-			{activeModal !== undefined && <TransactionModal {...activeModal} />}
+			{active && activeModal !== undefined && (
+				<TransactionModal {...activeModal} />
+			)}
 		</>
 	)
 }

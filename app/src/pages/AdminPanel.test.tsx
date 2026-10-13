@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import {
+	cleanup,
+	fireEvent,
+	render,
+	screen,
+	within,
+} from "@testing-library/react"
 import type React from "react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
@@ -22,11 +28,13 @@ vi.mock("../components/admin/CycleSection", () => ({
 	default: ({
 		grants,
 		contracts,
+		active,
 	}: {
 		grants: Grant[]
 		contracts: React.ReactNode
+		active: boolean
 	}) => (
-		<div>
+		<div data-testid="cycle-surface" data-active={String(active)}>
 			<p>Cycle surface for {grants.map((grant) => grant.role).join(", ")}</p>
 			<input aria-label="Amount" />
 			{contracts}
@@ -317,6 +325,30 @@ describe("AdminPanel", () => {
 		expect(document.activeElement).not.toBe(
 			screen.getByRole("heading", { name: "Compliance" }),
 		)
+	})
+
+	it("marks the cycle surface inactive while another tab is shown", () => {
+		const manager = holderOf("vault manager")
+		const compliance = holderOf("share-token compliance")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle", "compliance"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					cycle: [manager],
+					compliance: [compliance],
+				},
+				grants: [manager, compliance],
+			}),
+		)
+
+		renderAt("/admin/cycle")
+		expect(screen.getByTestId("cycle-surface").dataset.active).toBe("true")
+		cleanup()
+
+		renderAt("/admin/compliance")
+		expect(screen.getByTestId("cycle-surface").dataset.active).toBe("false")
 	})
 
 	it("names the signature standing of every grant on the identity line", () => {

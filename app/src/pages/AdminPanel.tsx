@@ -94,6 +94,7 @@ const HeldSurfaces: React.FC<{
 						<CycleSection
 							grants={grantedBy.cycle}
 							wallet={wallet}
+							active={surface === active}
 							contracts={<Contracts addresses={addresses} />}
 						/>
 					) : (

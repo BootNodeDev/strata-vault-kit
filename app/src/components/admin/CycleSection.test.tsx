@@ -346,6 +346,33 @@ describe("CycleSection", () => {
 		).toBeTruthy()
 	})
 
+	it("shows the flow modal only while the surface is active, and again on return", () => {
+		deployMock.status = { status: "preparing" }
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} active />,
+		)
+		expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1)
+
+		rerender(
+			<CycleSection grants={[treasury]} wallet={WALLET} active={false} />,
+		)
+		expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0)
+		expect(deployMock.reset).not.toHaveBeenCalled()
+
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} active />)
+		expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1)
+	})
+
+	it("pauses the cycle polling while the surface is inactive", () => {
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} active={false} />,
+		)
+		expect(useCycleStateMock).toHaveBeenLastCalledWith({ active: false })
+
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} active />)
+		expect(useCycleStateMock).toHaveBeenLastCalledWith({ active: true })
+	})
+
 	it("labels the deployment modal with the exact amount that is signed", () => {
 		const { rerender } = render(
 			<CycleSection grants={[treasury]} wallet={WALLET} />,
