@@ -2002,6 +2002,37 @@ describe("TransactionModal, emergency actions", () => {
 		).toBeTruthy()
 	})
 
+	it.each<[EmergencyModalAction, string, string]>([
+		[
+			"pause-token",
+			"Signing stops holder transfers and redeem cancellations.",
+			"Holder transfers and redeem cancellations are stopped. Minting, burning and forced transfers stay open.",
+		],
+		[
+			"unpause-token",
+			"Signing resumes holder transfers and redeem cancellations.",
+			"Holder transfers and redeem cancellations are open again.",
+		],
+	])(
+		"words %s after what the share token enforces",
+		(action, signing, done) => {
+			const { rerender } = renderEmergencyModal(action, {
+				status: "awaiting-signature",
+			})
+			expect(screen.getByText(signing)).toBeTruthy()
+
+			rerender(
+				<TransactionModal
+					action={action}
+					status={{ status: "confirmed" }}
+					onClose={vi.fn()}
+					onRetry={vi.fn()}
+				/>,
+			)
+			expect(screen.getByText(done)).toBeTruthy()
+		},
+	)
+
 	it.each<[EmergencyModalAction, number, string, RegExp]>([
 		["pause-vault", 1000, "vault", /The vault is already paused/],
 		["unpause-vault", 1001, "vault", /The vault is not paused/],

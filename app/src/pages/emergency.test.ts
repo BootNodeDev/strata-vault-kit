@@ -172,7 +172,10 @@ describe("toEmergencyActions", () => {
 			"Stops new deposits, pricing and upgrades. Redemptions, claims, cancels and closing epochs stay open.",
 		)
 		expect(actionOf(calm, everyRole, "pause-token").outcome).toBe(
-			"Stops share transfers between holders. Minting, burning, claims and forced transfers stay open.",
+			"Stops holder transfers and redeem cancellations. Minting, burning and forced transfers stay open.",
+		)
+		expect(actionOf(alarmed, everyRole, "unpause-token").outcome).toBe(
+			"Resumes holder transfers and redeem cancellations.",
 		)
 		expect(actionOf(calm, everyRole, "raise-ripcord").outcome).toBe(
 			"Stops pricing: no epoch can be fulfilled until it is lowered. Attesting stays open.",

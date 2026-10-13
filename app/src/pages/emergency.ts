@@ -130,14 +130,14 @@ const tokenSpecs = (state: SettledState): [Spec, Spec] => [
 		label: "Pause the share token",
 		conditions: [pauseIs("Share token is open", state.token, "open")],
 		outcome:
-			"Stops share transfers between holders. Minting, burning, claims and forced transfers stay open.",
+			"Stops holder transfers and redeem cancellations. Minting, burning and forced transfers stay open.",
 		danger: true,
 	},
 	{
 		id: "unpause-token",
 		label: "Unpause the share token",
 		conditions: [pauseIs("Share token is paused", state.token, "paused")],
-		outcome: "Resumes share transfers between holders.",
+		outcome: "Resumes holder transfers and redeem cancellations.",
 	},
 ]
 
