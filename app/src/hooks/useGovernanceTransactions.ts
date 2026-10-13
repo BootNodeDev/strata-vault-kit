@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import { type AsyncVaultApi, type Signer } from "@stellar-scaffold/app-lib"
 import { type QueryKey } from "@tanstack/react-query"
 import {
@@ -7,7 +8,9 @@ import {
 } from "../config/clients"
 import { adminAuthorityKey } from "./useAdminAuthority"
 import { adminTransaction } from "./useAdminTransaction"
-import { governanceReadsKey } from "./useGovernanceState"
+import { configurationReadsKey } from "./useConfigurationState"
+import { cycleReadsKey } from "./useCycleState"
+import { governanceReadsKey, upgradeProposalKey } from "./useGovernanceState"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 
 export type RoleChange = { role: string; account: string }
@@ -107,3 +110,56 @@ export const useCancelTokenHandover = offerAdmin(
 	HANDOVER_KEYS,
 )
 export const useAcceptTokenAdmin = acceptAdmin(shareTokenWriter, HANDOVER_KEYS)
+
+const UPGRADE_KEYS = [upgradeProposalKey, configurationReadsKey]
+
+export const useProposeCodeUpgrade = adminTransaction(
+	(signer: Signer, hash: string) =>
+		asyncVaultWriter(signer).then((vault) =>
+			vault.propose_upgrade({
+				wasm_hash: Buffer.from(hash, "hex"),
+				caller: signer.publicKey,
+			}),
+		),
+	UPGRADE_KEYS,
+)
+
+export const useProposeUpgradeDelay = adminTransaction(
+	(signer: Signer, secs: bigint) =>
+		asyncVaultWriter(signer).then((vault) =>
+			vault.propose_upgrade_delay({ secs, caller: signer.publicKey }),
+		),
+	UPGRADE_KEYS,
+)
+
+export const useApplyUpgrade = adminTransaction(
+	(signer: Signer) =>
+		asyncVaultWriter(signer).then((vault) =>
+			vault.apply_upgrade({ caller: signer.publicKey }),
+		),
+	UPGRADE_KEYS,
+)
+
+export const useCancelUpgrade = adminTransaction(
+	(signer: Signer) =>
+		asyncVaultWriter(signer).then((vault) =>
+			vault.cancel_upgrade({ caller: signer.publicKey }),
+		),
+	UPGRADE_KEYS,
+)
+
+export const useProposeWindDown = adminTransaction(
+	(signer: Signer) =>
+		asyncVaultWriter(signer).then((vault) =>
+			vault.propose_wind_down({ caller: signer.publicKey }),
+		),
+	[cycleReadsKey],
+)
+
+export const useCancelWindDown = adminTransaction(
+	(signer: Signer) =>
+		asyncVaultWriter(signer).then((vault) =>
+			vault.cancel_wind_down_proposal({ caller: signer.publicKey }),
+		),
+	[cycleReadsKey],
+)

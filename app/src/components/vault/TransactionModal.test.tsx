@@ -2280,6 +2280,16 @@ describe("TransactionModal, governance actions", () => {
 		["hand-over-oracle-admin", 2201, "oracle", /expiry is outside/],
 		["cancel-token-handover", 2202, "share token", /different address/],
 		["accept-vault-admin", 2203, "vault", /expired before it was accepted/],
+		["apply-upgrade", 1000, "vault", /The vault is paused/],
+		["propose-wind-down", 6046, "vault", /wind-down is already active/],
+		["cancel-wind-down", 6047, "vault", /No wind-down is proposed/],
+		["propose-wind-down", 6048, "vault", /wind-down is already proposed/],
+		["propose-code-upgrade", 6055, "vault", /upgrade is already pending/],
+		["cancel-upgrade", 6056, "vault", /No upgrade is pending/],
+		["apply-upgrade", 6057, "vault", /upgrade delay has not passed/],
+		["propose-upgrade-delay", 6058, "vault", /cannot be under 7 days/],
+		["propose-upgrade-delay", 6059, "vault", /cannot be under the notice/],
+		["propose-upgrade-delay", 6060, "vault", /cannot exceed 90 days/],
 	])(
 		"names the reason %s was refused with code %i",
 		(action, code, refuser, sentence) => {
@@ -2321,6 +2331,59 @@ describe("TransactionModal, governance actions", () => {
 		],
 	])(
 		"names the handover step of %s",
+		(action, value, signing, done, doneBody) => {
+			const { unmount } = renderGovernanceModal(
+				action,
+				{ status: "awaiting-signature" },
+				value,
+			)
+			expect(screen.getByText(signing)).toBeTruthy()
+			unmount()
+
+			renderGovernanceModal(action, { status: "confirmed" }, value)
+			expect(screen.getByRole("heading", { name: done })).toBeTruthy()
+			expect(screen.getByText(doneBody)).toBeTruthy()
+		},
+	)
+
+	it.each<[GovernanceModalAction, string, string, string, string]>([
+		[
+			"propose-code-upgrade",
+			"Code abab...abab",
+			"Signing queues Code abab...abab.",
+			"Upgrade proposed",
+			"Code abab...abab can apply once the upgrade delay passes.",
+		],
+		[
+			"apply-upgrade",
+			"Delay 14d",
+			"Signing applies Delay 14d.",
+			"Upgrade applied",
+			"Delay 14d is in effect.",
+		],
+		[
+			"cancel-upgrade",
+			"Code abab...abab",
+			"Signing withdraws Code abab...abab.",
+			"Upgrade cancelled",
+			"Code abab...abab is withdrawn.",
+		],
+		[
+			"propose-wind-down",
+			"Activates 21 Nov, 22:13 UTC.",
+			"Signing starts the wind-down countdown.",
+			"Wind-down proposed",
+			"Activates 21 Nov, 22:13 UTC.",
+		],
+		[
+			"cancel-wind-down",
+			"",
+			"Signing withdraws the wind-down.",
+			"Wind-down cancelled",
+			"The vault stays open.",
+		],
+	])(
+		"names the vault proposal step of %s",
 		(action, value, signing, done, doneBody) => {
 			const { unmount } = renderGovernanceModal(
 				action,

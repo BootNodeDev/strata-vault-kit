@@ -1,9 +1,12 @@
 import { type PendingTransfer } from "@stellar-scaffold/app-lib"
 import { describe, expect, it } from "vitest"
 import { type Grant, type RoleHolders } from "../hooks/useAdminAuthority"
-import { type GovernedContract } from "../hooks/useGovernanceState"
+import {
+	type GovernedContract,
+	type Upgrades,
+} from "../hooks/useGovernanceState"
 import { type RailField, readiness } from "./actions"
-import { formatTimestamp } from "./cycle"
+import { formatDuration, formatTimestamp } from "./cycle"
 import {
 	type GovernanceAction,
 	type GovernanceInputs,
@@ -49,6 +52,26 @@ const CLOSE_TIME = 1_700_000_000n
 const DAY_IN_LEDGERS = 17_280
 const DAY = 86_400n
 
+type ReadyUpgrades = Extract<Upgrades, { status: "ready" }>
+
+const upgrades = (overrides: Partial<ReadyUpgrades> = {}): Upgrades => ({
+	status: "ready",
+	proposal: null,
+	delay: 7n * DAY,
+	notice: DAY,
+	windDown: {
+		phase: "none",
+		activeAt: null,
+		round: null,
+		delay: 3n * DAY,
+		owed: null,
+		supply: null,
+	},
+	now: CLOSE_TIME,
+	paused: "open",
+	...overrides,
+})
+
 const state = (
 	overrides: Partial<RoleHolders> = {},
 	pending: Partial<Record<GovernedContract, PendingTransfer>> = {},
@@ -65,6 +88,7 @@ const state = (
 			token: pending.token ?? null,
 		},
 	},
+	upgrades: upgrades(),
 })
 
 const find = <Id extends GovernanceAction["id"]>(
@@ -94,7 +118,14 @@ describe("toGovernanceActions", () => {
 	it.each<[Grant, GovernanceAction["id"][]]>([
 		[
 			governance,
-			["grant-vault-role", "revoke-vault-role", "hand-over-vault-admin"],
+			[
+				"grant-vault-role",
+				"revoke-vault-role",
+				"hand-over-vault-admin",
+				"propose-code-upgrade",
+				"propose-upgrade-delay",
+				"propose-wind-down",
+			],
 		],
 		[
 			oracleAdmin,
@@ -416,6 +447,225 @@ describe("admin handover", () => {
 				{},
 			),
 		).toEqual([])
+	})
+})
+
+describe("upgrades and wind-down", () => {
+	const HASH = "ab".repeat(32)
+	const withUpgrades = (overrides: Partial<ReadyUpgrades>) => ({
+		...state(),
+		upgrades: upgrades(overrides),
+	})
+	const codeProposal = {
+		kind: "code" as const,
+		hash: HASH,
+		eta: CLOSE_TIME + DAY,
+	}
+
+	it("proposes code by its 64-character hash while nothing is pending", () => {
+		const short = find("propose-code-upgrade", [governance], {
+			"propose-code-upgrade-hash": "abc",
+		})
+		const valid = find("propose-code-upgrade", [governance], {
+			"propose-code-upgrade-hash": ` ${HASH.toUpperCase()} `,
+		})
+		const blocked = find(
+			"propose-code-upgrade",
+			[governance],
+			{ "propose-code-upgrade-hash": HASH },
+			withUpgrades({ proposal: codeProposal }),
+		)
+
+		expect(condition(short, "Hash of 64 hex characters")).toBe(false)
+		expect(valid.enabled).toBe(true)
+		expect(valid.arg).toBe(HASH)
+		expect(valid.next).toBe("Code abab...abab")
+		expect(valid.outcome).toBe(
+			`Can apply after ${formatTimestamp(CLOSE_TIME + 7n * DAY)}.`,
+		)
+		expect(condition(blocked, "No pending upgrade")).toBe(false)
+		expect(blocked.enabled).toBe(false)
+	})
+
+	it.each<[string, string, boolean]>([
+		["6d", "Delay ≥ 7d", false],
+		["91d", "Delay ≤ 90d", false],
+		["14d", "Delay ≥ notice 1d", true],
+		["7d", "Differs from current", false],
+	])("bounds a proposed delay of %s by %s", (text, label, met) => {
+		const delay = find("propose-upgrade-delay", [governance], {
+			"propose-upgrade-delay-secs": text,
+		})
+
+		expect(condition(delay, label)).toBe(met)
+	})
+
+	it("proposes a new upgrade delay at or above the notice", () => {
+		const delay = find("propose-upgrade-delay", [governance], {
+			"propose-upgrade-delay-secs": "14d",
+		})
+		const belowNotice = find(
+			"propose-upgrade-delay",
+			[governance],
+			{ "propose-upgrade-delay-secs": "8d" },
+			withUpgrades({ notice: 10n * DAY }),
+		)
+
+		expect(delay.enabled).toBe(true)
+		expect(delay.arg).toBe(14n * DAY)
+		expect(delay.next).toBe("Delay 14d")
+		expect(condition(belowNotice, "Delay ≥ notice 10d")).toBe(false)
+	})
+
+	it("applies a code upgrade after its ETA, unpaused and confirmed", () => {
+		const early = find(
+			"apply-upgrade",
+			[governance],
+			{},
+			withUpgrades({
+				proposal: codeProposal,
+			}),
+		)
+		const due = withUpgrades({ proposal: codeProposal, now: CLOSE_TIME + DAY })
+		const unconfirmed = find("apply-upgrade", [governance], {}, due)
+		const confirm = fieldOf(unconfirmed, "confirm")
+		const confirmed = find(
+			"apply-upgrade",
+			[governance],
+			{ [confirm?.key ?? ""]: confirm?.value },
+			due,
+		)
+		const paused = find(
+			"apply-upgrade",
+			[governance],
+			{ [confirm?.key ?? ""]: confirm?.value },
+			withUpgrades({
+				proposal: codeProposal,
+				now: CLOSE_TIME + DAY,
+				paused: "paused",
+			}),
+		)
+
+		expect(condition(early, "ETA reached")).toBe(false)
+		expect(confirm?.label).toBe("Replaces the vault's code.")
+		expect(unconfirmed.tone).toBe("danger")
+		expect(unconfirmed.enabled).toBe(false)
+		expect(confirmed.enabled).toBe(true)
+		expect(confirmed.next).toBe("Code abab...abab")
+		expect(condition(paused, "Vault not paused")).toBe(false)
+	})
+
+	it("re-checks a delay proposal against the notice when applying", () => {
+		const proposal = { kind: "delay" as const, secs: 8n * DAY, eta: CLOSE_TIME }
+		const apply = find(
+			"apply-upgrade",
+			[governance],
+			{},
+			withUpgrades({ proposal, notice: 10n * DAY }),
+		)
+		const fine = find(
+			"apply-upgrade",
+			[governance],
+			{},
+			withUpgrades({ proposal }),
+		)
+
+		expect(condition(apply, "Delay ≥ notice 10d")).toBe(false)
+		expect(fine.fields).toEqual([])
+		expect(fine.enabled).toBe(true)
+		expect(fine.outcome).toBe(
+			`Upgrade delay becomes ${formatDuration(8n * DAY)}.`,
+		)
+	})
+
+	it("offers apply and cancel only while an upgrade is pending", () => {
+		const ids = (current: GovernanceState) =>
+			toGovernanceActions(current, [governance], WALLET, {}).map(
+				(action) => action.id,
+			)
+
+		expect(ids(state())).not.toContain("apply-upgrade")
+		expect(ids(state())).not.toContain("cancel-upgrade")
+		expect(ids(withUpgrades({ proposal: codeProposal }))).toEqual(
+			expect.arrayContaining(["apply-upgrade", "cancel-upgrade"]),
+		)
+	})
+
+	it("proposes a wind-down once confirmed, and cancels only a proposed one", () => {
+		const draft = find("propose-wind-down", [governance])
+		const confirm = fieldOf(draft, "confirm")
+		const confirmed = find("propose-wind-down", [governance], {
+			[confirm?.key ?? ""]: confirm?.value,
+		})
+		const windDown = (phase: "proposed" | "active") =>
+			withUpgrades({
+				windDown: {
+					phase,
+					activeAt: CLOSE_TIME + DAY,
+					round: 0,
+					delay: 3n * DAY,
+					owed: null,
+					supply: null,
+				},
+			})
+		const ids = (current: GovernanceState) =>
+			toGovernanceActions(current, [governance], WALLET, {}).map(
+				(action) => action.id,
+			)
+
+		expect(confirm?.label).toBe("Starts closing the vault.")
+		expect(draft.enabled).toBe(false)
+		expect(confirmed.enabled).toBe(true)
+		expect(confirmed.outcome).toBe(
+			`Activates ${formatTimestamp(CLOSE_TIME + 3n * DAY)}.`,
+		)
+		expect(
+			condition(
+				find("propose-wind-down", [governance], {}, windDown("proposed")),
+				"No wind-down proposed",
+			),
+		).toBe(false)
+		expect(
+			condition(
+				find("propose-wind-down", [governance], {}, windDown("active")),
+				"Wind-down not active",
+			),
+		).toBe(false)
+		expect(ids(windDown("proposed"))).toContain("cancel-wind-down")
+		expect(ids(windDown("active"))).not.toContain("cancel-wind-down")
+		expect(ids(state())).not.toContain("cancel-wind-down")
+	})
+
+	it("shows the pending upgrade and the proposed wind-down in the vault group", () => {
+		const [vault] = toGovernanceGroups(
+			withUpgrades({
+				proposal: { kind: "delay", secs: 14n * DAY, eta: CLOSE_TIME + DAY },
+				windDown: {
+					phase: "proposed",
+					activeAt: CLOSE_TIME + 2n * DAY,
+					round: 0,
+					delay: 3n * DAY,
+					owed: null,
+					supply: null,
+				},
+			}),
+		)
+
+		expect(vault?.metrics.slice(-2)).toEqual([
+			{
+				label: "Pending upgrade",
+				value: "Delay 14d",
+				note: `ETA ${formatTimestamp(CLOSE_TIME + DAY)}`,
+			},
+			{
+				label: "Wind-down",
+				value: "Proposed",
+				note: `Activates ${formatTimestamp(CLOSE_TIME + 2n * DAY)}`,
+			},
+		])
+		expect(
+			toGovernanceGroups(state())[0]?.metrics.map(({ label }) => label),
+		).not.toContain("Pending upgrade")
 	})
 })
 

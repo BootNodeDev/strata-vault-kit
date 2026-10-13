@@ -959,6 +959,7 @@ const describeFinalizeRoundStatus = (
 
 type AdminCopy = {
 	refuser: "vault" | "share token" | "oracle"
+	reasons?: Partial<Record<number, string>>
 	verb: string
 	signing: string
 	done: string
@@ -1102,6 +1103,47 @@ const acceptAdminCopy = (refuser: AdminCopy["refuser"]) => (): AdminCopy => ({
 	doneBody: `This wallet is now the ${refuser} admin.`,
 })
 
+const proposalCopy = (value: string): AdminCopy => ({
+	refuser: "vault",
+	verb: "propose an upgrade",
+	signing: `Signing queues ${value}.`,
+	done: "Upgrade proposed",
+	doneBody: `${value} can apply once the upgrade delay passes.`,
+})
+
+const applyUpgradeCopy = (value: string): AdminCopy => ({
+	refuser: "vault",
+	reasons: { 1000: "The vault is paused; unpause it first." },
+	verb: "apply the upgrade",
+	signing: `Signing applies ${value}.`,
+	done: "Upgrade applied",
+	doneBody: `${value} is in effect.`,
+})
+
+const cancelUpgradeCopy = (value: string): AdminCopy => ({
+	refuser: "vault",
+	verb: "cancel the upgrade",
+	signing: `Signing withdraws ${value}.`,
+	done: "Upgrade cancelled",
+	doneBody: `${value} is withdrawn.`,
+})
+
+const proposeWindDownCopy = (value: string): AdminCopy => ({
+	refuser: "vault",
+	verb: "propose a wind-down",
+	signing: "Signing starts the wind-down countdown.",
+	done: "Wind-down proposed",
+	doneBody: value,
+})
+
+const cancelWindDownCopy = (): AdminCopy => ({
+	refuser: "vault",
+	verb: "cancel the wind-down",
+	signing: "Signing withdraws the wind-down.",
+	done: "Wind-down cancelled",
+	doneBody: "The vault stays open.",
+})
+
 const GOVERNANCE_COPY: Record<
 	GovernanceModalAction,
 	(value: string) => AdminCopy
@@ -1121,6 +1163,12 @@ const GOVERNANCE_COPY: Record<
 	"hand-over-token-admin": handOverCopy("share token"),
 	"cancel-token-handover": cancelHandoverCopy("share token"),
 	"accept-token-admin": acceptAdminCopy("share token"),
+	"propose-code-upgrade": proposalCopy,
+	"propose-upgrade-delay": proposalCopy,
+	"apply-upgrade": applyUpgradeCopy,
+	"cancel-upgrade": cancelUpgradeCopy,
+	"propose-wind-down": proposeWindDownCopy,
+	"cancel-wind-down": cancelWindDownCopy,
 }
 
 const adminContractErrorReason =
@@ -1147,6 +1195,24 @@ const adminContractErrorReason =
 				return "The pending handover is to a different address."
 			case 2203:
 				return "The handover expired before it was accepted."
+			case 6046:
+				return "The wind-down is already active."
+			case 6047:
+				return "No wind-down is proposed."
+			case 6048:
+				return "A wind-down is already proposed."
+			case 6055:
+				return "An upgrade is already pending."
+			case 6056:
+				return "No upgrade is pending."
+			case 6057:
+				return "The upgrade delay has not passed yet."
+			case 6058:
+				return "The upgrade delay cannot be under 7 days."
+			case 6059:
+				return "The upgrade delay cannot be under the notice."
+			case 6060:
+				return "The upgrade delay cannot exceed 90 days."
 			case 3001:
 				return "One of the oracle limits is out of range."
 			case 3008:
@@ -1191,7 +1257,9 @@ const describeAdminStatus = (
 			return {
 				...describeFailure(
 					status.failure,
-					adminContractErrorReason(copy.refuser),
+					(code) =>
+						copy.reasons?.[code] ??
+						adminContractErrorReason(copy.refuser)(code),
 					followUp,
 					copy.refuser,
 				),
@@ -1284,6 +1352,12 @@ const describeStatus = (
 		case "hand-over-token-admin":
 		case "cancel-token-handover":
 		case "accept-token-admin":
+		case "propose-code-upgrade":
+		case "propose-upgrade-delay":
+		case "apply-upgrade":
+		case "cancel-upgrade":
+		case "propose-wind-down":
+		case "cancel-wind-down":
 			return describeAdminStatus(
 				GOVERNANCE_COPY[props.action](props.value),
 				props.status,

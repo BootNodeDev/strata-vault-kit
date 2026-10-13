@@ -6,6 +6,8 @@ import {
 	GOVERNED_CONTRACTS,
 	type GovernedContract,
 	type Handovers,
+	type PendingUpgrade,
+	type Upgrades,
 } from "../hooks/useGovernanceState"
 import {
 	type AdminOffer,
@@ -21,7 +23,7 @@ import {
 	type Spec,
 	toAction,
 } from "./actions"
-import { formatTimestamp } from "./cycle"
+import { formatDuration, formatTimestamp, parseDuration } from "./cycle"
 
 type Operation = "grant" | "revoke"
 
@@ -30,16 +32,36 @@ type OfferActionId =
 	`hand-over-${GovernedContract}-admin` | `cancel-${GovernedContract}-handover`
 type AcceptActionId = `accept-${GovernedContract}-admin`
 
-export type GovernanceActionId = RoleActionId | OfferActionId | AcceptActionId
+type ProposalActionId = "propose-code-upgrade" | "propose-upgrade-delay"
+type VaultActionId =
+	"apply-upgrade" | "cancel-upgrade" | "propose-wind-down" | "cancel-wind-down"
 
-export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] =
-	GOVERNED_CONTRACTS.flatMap((contract) => [
+export type GovernanceActionId =
+	| RoleActionId
+	| OfferActionId
+	| AcceptActionId
+	| ProposalActionId
+	| VaultActionId
+
+const VAULT_ACTION_IDS: GovernanceActionId[] = [
+	"propose-code-upgrade",
+	"propose-upgrade-delay",
+	"apply-upgrade",
+	"cancel-upgrade",
+	"propose-wind-down",
+	"cancel-wind-down",
+]
+
+export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
+	...GOVERNED_CONTRACTS.flatMap((contract) => [
 		`grant-${contract}-role` as const,
 		`revoke-${contract}-role` as const,
 		`hand-over-${contract}-admin` as const,
 		`cancel-${contract}-handover` as const,
 		`accept-${contract}-admin` as const,
-	])
+	]),
+	...VAULT_ACTION_IDS,
+]
 
 type Built<Id extends string, Arg> = Id extends string
 	? RailAction<RailField> & { id: Id; arg: Arg; next: string }
@@ -49,6 +71,9 @@ export type GovernanceAction =
 	| Built<RoleActionId, RoleChange | undefined>
 	| Built<OfferActionId, AdminOffer | undefined>
 	| Built<AcceptActionId, undefined>
+	| Built<"propose-code-upgrade", string | undefined>
+	| Built<"propose-upgrade-delay", bigint | undefined>
+	| Built<VaultActionId, undefined>
 
 export type GovernanceInputs = Partial<Record<string, string>>
 
@@ -56,6 +81,7 @@ export type GovernanceState = {
 	holders: RoleHolders
 	vault: string
 	handovers: Handovers
+	upgrades: Upgrades
 }
 
 export type GovernanceGroup = { title: string; metrics: Metric[] }
@@ -437,6 +463,236 @@ const acceptSpec = (
 	next: CONTRACTS[contract].subject,
 })
 
+type ReadyUpgrades = Extract<Upgrades, { status: "ready" }>
+type VaultSpec<Id extends string, Arg> = Spec<Id, RailField> & {
+	arg: Arg
+	next: string
+}
+
+const MIN_UPGRADE_DELAY = 7n * DAY
+const MAX_UPGRADE_DELAY = 90n * DAY
+const WASM_HASH = /^[0-9a-f]{64}$/i
+
+const upgradeName = (proposal: PendingUpgrade): string =>
+	proposal.kind === "code"
+		? `Code ${shortAddress(proposal.hash)}`
+		: `Delay ${formatDuration(proposal.secs)}`
+
+const noPendingUpgrade = (upgrades?: ReadyUpgrades): Condition => ({
+	label: "No pending upgrade",
+	met: upgrades?.proposal === undefined ? null : upgrades.proposal === null,
+})
+
+const applyAfter = (upgrades?: ReadyUpgrades): string | null =>
+	upgrades?.now == null || upgrades.delay === null
+		? null
+		: `Can apply after ${formatTimestamp(upgrades.now + upgrades.delay)}.`
+
+const aboveNotice = (
+	secs: bigint | undefined,
+	notice: bigint | null | undefined,
+): Condition => ({
+	label:
+		notice == null
+			? "Delay ≥ notice"
+			: `Delay ≥ notice ${formatDuration(notice)}`,
+	met: secs === undefined || notice == null ? null : secs >= notice,
+})
+
+function codeUpgradeSpec(
+	inputs: GovernanceInputs,
+	upgrades?: ReadyUpgrades,
+): VaultSpec<"propose-code-upgrade", string | undefined> {
+	const key = "propose-code-upgrade-hash"
+	const text = inputs[key] ?? ""
+	const hash = WASM_HASH.test(text.trim())
+		? text.trim().toLowerCase()
+		: undefined
+	const conditions = [
+		{
+			label: "Hash of 64 hex characters",
+			met: text.trim() === "" ? null : hash !== undefined,
+		},
+		noPendingUpgrade(upgrades),
+	]
+	return {
+		id: "propose-code-upgrade",
+		label: "Propose a code upgrade",
+		conditions,
+		outcome: hash === undefined ? null : applyAfter(upgrades),
+		fields: [
+			{
+				key,
+				label: "Code hash",
+				placeholder: "Wasm hash",
+				value: text,
+				invalid: text.trim() !== "" && hash === undefined,
+				text: true,
+			},
+		],
+		ready: allMet(conditions),
+		arg: hash,
+		next: hash === undefined ? "" : `Code ${shortAddress(hash)}`,
+	}
+}
+
+function delayUpgradeSpec(
+	inputs: GovernanceInputs,
+	upgrades?: ReadyUpgrades,
+): VaultSpec<"propose-upgrade-delay", bigint | undefined> {
+	const key = "propose-upgrade-delay-secs"
+	const current = upgrades?.delay ?? undefined
+	const text =
+		inputs[key] ?? (current === undefined ? "" : formatDuration(current, 4))
+	const secs = parseDuration(text) ?? undefined
+	const conditions: Condition[] = [
+		{
+			label: "Delay ≥ 7d",
+			met: secs === undefined ? null : secs >= MIN_UPGRADE_DELAY,
+		},
+		{
+			label: "Delay ≤ 90d",
+			met: secs === undefined ? null : secs <= MAX_UPGRADE_DELAY,
+		},
+		aboveNotice(secs, upgrades?.notice),
+		{
+			label: "Differs from current",
+			met:
+				secs === undefined || current === undefined ? null : secs !== current,
+			unchanged: true,
+		},
+		noPendingUpgrade(upgrades),
+	]
+	return {
+		id: "propose-upgrade-delay",
+		label: "Propose an upgrade delay",
+		conditions,
+		outcome: secs === undefined ? null : applyAfter(upgrades),
+		fields: [
+			{
+				key,
+				label: "Upgrade delay",
+				placeholder: "7d",
+				value: text,
+				invalid: text.trim() !== "" && secs === undefined,
+				text: true,
+				current: current === undefined ? "—" : formatDuration(current),
+				next: secs === undefined ? null : formatDuration(secs),
+			},
+		],
+		ready: allMet(conditions),
+		arg: secs,
+		next: secs === undefined ? "" : `Delay ${formatDuration(secs)}`,
+	}
+}
+
+const notPaused = (paused: ReadyUpgrades["paused"]): Condition => ({
+	label: "Vault not paused",
+	met: paused === "open" ? true : paused === "paused" ? false : null,
+})
+
+function applySpec(
+	proposal: PendingUpgrade,
+	upgrades: ReadyUpgrades,
+	inputs: GovernanceInputs,
+): VaultSpec<"apply-upgrade", undefined> {
+	const conditions: Condition[] = [
+		{
+			label: "ETA reached",
+			met: upgrades.now === null ? null : upgrades.now >= proposal.eta,
+			detail: formatTimestamp(proposal.eta),
+		},
+		notPaused(upgrades.paused),
+	]
+	const fields: RailField[] = []
+	if (proposal.kind === "delay")
+		conditions.push(aboveNotice(proposal.secs, upgrades.notice))
+	else {
+		const confirm = confirmation(
+			"apply-upgrade-confirm",
+			"Replaces the vault's code.",
+			proposal.hash,
+			inputs,
+		)
+		fields.push(confirm.field)
+		conditions.push(confirm.condition)
+	}
+	return {
+		id: "apply-upgrade",
+		label: "Apply the upgrade",
+		conditions,
+		outcome:
+			proposal.kind === "delay"
+				? `Upgrade delay becomes ${formatDuration(proposal.secs)}.`
+				: null,
+		fields,
+		...(proposal.kind === "code" ? { danger: true } : {}),
+		ready: allMet(conditions),
+		arg: undefined,
+		next: upgradeName(proposal),
+	}
+}
+
+const cancelUpgradeSpec = (
+	proposal: PendingUpgrade,
+): VaultSpec<"cancel-upgrade", undefined> => ({
+	id: "cancel-upgrade",
+	label: "Cancel the upgrade",
+	conditions: [],
+	outcome: null,
+	arg: undefined,
+	next: upgradeName(proposal),
+})
+
+function windDownSpec(
+	inputs: GovernanceInputs,
+	upgrades?: ReadyUpgrades,
+): VaultSpec<"propose-wind-down", undefined> {
+	const phase = upgrades?.windDown.phase ?? null
+	const confirm = confirmation(
+		"propose-wind-down-confirm",
+		"Starts closing the vault.",
+		"wind-down",
+		inputs,
+	)
+	const conditions: Condition[] = [
+		{
+			label: "No wind-down proposed",
+			met: phase === null ? null : phase !== "proposed",
+		},
+		{
+			label: "Wind-down not active",
+			met: phase === null ? null : phase !== "active",
+		},
+		confirm.condition,
+	]
+	const delay = upgrades?.windDown.delay ?? null
+	const outcome =
+		upgrades?.now == null || delay === null
+			? null
+			: `Activates ${formatTimestamp(upgrades.now + delay)}.`
+	return {
+		id: "propose-wind-down",
+		label: "Propose a wind-down",
+		conditions,
+		outcome,
+		fields: [confirm.field],
+		danger: true,
+		ready: allMet(conditions),
+		arg: undefined,
+		next: outcome ?? "",
+	}
+}
+
+const cancelWindDownSpec = (): VaultSpec<"cancel-wind-down", undefined> => ({
+	id: "cancel-wind-down",
+	label: "Cancel the wind-down",
+	conditions: [],
+	outcome: null,
+	arg: undefined,
+	next: "",
+})
+
 const build = <Id extends GovernanceActionId, Arg, F extends RailField>(
 	spec: Spec<Id, F> & { arg: Arg; next: string },
 	grant: Grant,
@@ -461,6 +717,32 @@ function adminActions(
 		...(pending === null
 			? []
 			: [build(cancelSpec(contract, pending), grant, wallet)]),
+		...(contract === "vault" ? vaultActions(state, grant, wallet, inputs) : []),
+	]
+}
+
+function vaultActions(
+	state: GovernanceState,
+	grant: Grant,
+	wallet: string,
+	inputs: GovernanceInputs,
+): GovernanceAction[] {
+	const upgrades =
+		state.upgrades.status === "ready" ? state.upgrades : undefined
+	const proposal = upgrades?.proposal ?? null
+	return [
+		build(codeUpgradeSpec(inputs, upgrades), grant, wallet),
+		build(delayUpgradeSpec(inputs, upgrades), grant, wallet),
+		...(proposal === null || upgrades === undefined
+			? []
+			: [
+					build(applySpec(proposal, upgrades, inputs), grant, wallet),
+					build(cancelUpgradeSpec(proposal), grant, wallet),
+				]),
+		build(windDownSpec(inputs, upgrades), grant, wallet),
+		...(upgrades?.windDown.phase === "proposed"
+			? [build(cancelWindDownSpec(), grant, wallet)]
+			: []),
 	]
 }
 
@@ -530,9 +812,29 @@ const pendingMetric = (
 	]
 }
 
+const upgradeMetrics = (upgrades: Upgrades): Metric[] => {
+	if (upgrades.status !== "ready") return []
+	const metrics: Metric[] = []
+	const { proposal, windDown } = upgrades
+	if (proposal != null)
+		metrics.push({
+			label: "Pending upgrade",
+			value: upgradeName(proposal),
+			note: `ETA ${formatTimestamp(proposal.eta)}`,
+		})
+	if (windDown.phase === "proposed" && windDown.activeAt !== null)
+		metrics.push({
+			label: "Wind-down",
+			value: "Proposed",
+			note: `Activates ${formatTimestamp(windDown.activeAt)}`,
+		})
+	return metrics
+}
+
 export const toGovernanceGroups = ({
 	holders,
 	handovers,
+	upgrades,
 }: GovernanceState): GovernanceGroup[] =>
 	GOVERNED_CONTRACTS.map((contract) => {
 		const { title, admin, roles } = CONTRACTS[contract]
@@ -543,6 +845,7 @@ export const toGovernanceGroups = ({
 					holdersMetric(entry.label, holders[entry.holders]),
 				),
 				...pendingMetric(handovers, contract),
+				...(contract === "vault" ? upgradeMetrics(upgrades) : []),
 			],
 		}
 	})

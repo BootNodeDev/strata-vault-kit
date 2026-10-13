@@ -3,7 +3,11 @@ import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { type Grant, type RoleHolders } from "../../hooks/useAdminAuthority"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
-import { type Handovers } from "../../hooks/useGovernanceState"
+import {
+	type Handovers,
+	type PendingUpgrade,
+	type Upgrades,
+} from "../../hooks/useGovernanceState"
 import GovernanceSection from "./GovernanceSection"
 
 const WALLET = "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H"
@@ -27,6 +31,12 @@ const { txs, useGovernanceStateMock } = vi.hoisted(() => {
 		"useHandOverTokenAdmin",
 		"useCancelTokenHandover",
 		"useAcceptTokenAdmin",
+		"useProposeCodeUpgrade",
+		"useProposeUpgradeDelay",
+		"useApplyUpgrade",
+		"useCancelUpgrade",
+		"useProposeWindDown",
+		"useCancelWindDown",
 	] as const
 	const tx = () => ({
 		status: { status: "idle" } as { status: string },
@@ -89,6 +99,23 @@ const handovers = (pending: PendingTransfer | null = null): Handovers => ({
 	pending: { vault: null, oracle: pending, token: null },
 })
 
+const upgrades = (proposal: PendingUpgrade | null = null): Upgrades => ({
+	status: "ready",
+	proposal,
+	delay: 7n * 86_400n,
+	notice: 86_400n,
+	windDown: {
+		phase: "proposed",
+		activeAt: 1_700_100_000n,
+		round: 0,
+		delay: 86_400n,
+		owed: null,
+		supply: null,
+	},
+	now: 1_800_000_000n,
+	paused: "open",
+})
+
 const expand = (name: string) => {
 	const toggle = screen
 		.getAllByRole("button", { name })
@@ -114,7 +141,10 @@ const renderSection = (grants: Grant[], active = true) =>
 describe("GovernanceSection", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		useGovernanceStateMock.mockReturnValue({ handovers: handovers() })
+		useGovernanceStateMock.mockReturnValue({
+			handovers: handovers(),
+			upgrades: upgrades(),
+		})
 		for (const mock of Object.values(txs))
 			Object.assign(mock, {
 				status: { status: "idle" } as TransactionStatus,
@@ -233,6 +263,7 @@ describe("GovernanceSection", () => {
 				liveUntilLedger: 5_000,
 				expired: false,
 			}),
+			upgrades: upgrades(),
 		})
 		renderSection([grantOf("oracle admin"), grantOf("oracle pending admin")])
 
@@ -250,5 +281,26 @@ describe("GovernanceSection", () => {
 			contracts: { vault: VAULT, oracle: "CORACLE", token: "CTOKEN" },
 			active: true,
 		})
+	})
+
+	it("applies a confirmed code upgrade and cancels the wind-down", () => {
+		const hash = "ab".repeat(32)
+		useGovernanceStateMock.mockReturnValue({
+			handovers: handovers(),
+			upgrades: upgrades({ kind: "code", hash, eta: 1_700_000_000n }),
+		})
+		renderSection([governance])
+
+		expand("Apply the upgrade")
+		fireEvent.click(
+			screen.getByRole("checkbox", { name: "Replaces the vault's code." }),
+		)
+		fireEvent.click(submit("Apply the upgrade"))
+		expand("Cancel the wind-down")
+		fireEvent.click(submit("Cancel the wind-down"))
+
+		expect(txs.useApplyUpgrade.submit).toHaveBeenCalledWith(undefined)
+		expect(txs.useCancelWindDown.submit).toHaveBeenCalledWith(undefined)
+		expect(screen.getByText("Pending upgrade")).toBeTruthy()
 	})
 })

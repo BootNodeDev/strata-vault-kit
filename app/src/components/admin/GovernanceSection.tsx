@@ -4,6 +4,12 @@ import { vaultContractId } from "../../config/contracts"
 import { type Grant, type RoleHolders } from "../../hooks/useAdminAuthority"
 import { useGovernanceState } from "../../hooks/useGovernanceState"
 import {
+	useApplyUpgrade,
+	useCancelUpgrade,
+	useCancelWindDown,
+	useProposeCodeUpgrade,
+	useProposeUpgradeDelay,
+	useProposeWindDown,
 	useAcceptOracleAdmin,
 	useAcceptTokenAdmin,
 	useAcceptVaultAdmin,
@@ -80,6 +86,12 @@ function useGovernanceFlows() {
 		"hand-over-token-admin": usePendingTransaction(useHandOverTokenAdmin()),
 		"cancel-token-handover": usePendingTransaction(useCancelTokenHandover()),
 		"accept-token-admin": usePendingTransaction(useAcceptTokenAdmin()),
+		"propose-code-upgrade": usePendingTransaction(useProposeCodeUpgrade()),
+		"propose-upgrade-delay": usePendingTransaction(useProposeUpgradeDelay()),
+		"apply-upgrade": usePendingTransaction(useApplyUpgrade()),
+		"cancel-upgrade": usePendingTransaction(useCancelUpgrade()),
+		"propose-wind-down": usePendingTransaction(useProposeWindDown()),
+		"cancel-wind-down": usePendingTransaction(useCancelWindDown()),
 	} satisfies Record<GovernanceModalAction, Flow>
 }
 
@@ -107,9 +119,23 @@ function submit(flows: Flows, action: GovernanceAction) {
 				action.arg !== undefined &&
 				flows[action.id].submit(action.arg, action.next)
 			)
+		case "propose-code-upgrade":
+			return (
+				action.arg !== undefined &&
+				flows[action.id].submit(action.arg, action.next)
+			)
+		case "propose-upgrade-delay":
+			return (
+				action.arg !== undefined &&
+				flows[action.id].submit(action.arg, action.next)
+			)
 		case "accept-vault-admin":
 		case "accept-oracle-admin":
 		case "accept-token-admin":
+		case "apply-upgrade":
+		case "cancel-upgrade":
+		case "propose-wind-down":
+		case "cancel-wind-down":
 			return flows[action.id].submit(undefined, action.next)
 	}
 }
@@ -121,7 +147,10 @@ const GovernanceSection: React.FC<{
 	contracts?: React.ReactNode
 	active?: boolean
 }> = ({ grants, wallet, holders, contracts, active = true }) => {
-	const { handovers } = useGovernanceState({ contracts: CONTRACTS, active })
+	const { handovers, upgrades } = useGovernanceState({
+		contracts: CONTRACTS,
+		active,
+	})
 	const flows = useGovernanceFlows()
 	const [inputs, setInputs] = useState<GovernanceInputs>({})
 
@@ -133,7 +162,7 @@ const GovernanceSection: React.FC<{
 		if (recorded) setInputs({})
 	}, [recorded])
 
-	const state = { holders, vault: vaultContractId, handovers }
+	const state = { holders, vault: vaultContractId, handovers, upgrades }
 	const actions = toGovernanceActions(state, grants, wallet, inputs)
 
 	const onInput = (_: GovernanceAction, value: string, key?: string) => {
