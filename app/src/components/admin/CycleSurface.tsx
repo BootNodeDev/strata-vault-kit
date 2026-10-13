@@ -10,8 +10,8 @@ import AddressRows from "../vault/AddressRows"
 import MetricsStrip, { type Metric } from "../vault/MetricsStrip"
 import styles from "./CycleSurface.module.css"
 import Disclosure from "./Disclosure"
-import layoutStyles from "./SurfaceLayout.module.css"
 import SurfaceLayout from "./SurfaceLayout"
+import layoutStyles from "./SurfaceLayout.module.css"
 
 export type CycleGroup = FigureGroup & {
 	tiles: Metric[]

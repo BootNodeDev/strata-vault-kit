@@ -26,8 +26,8 @@ import TransactionModal, {
 	type TransactionModalProps,
 } from "../vault/TransactionModal"
 import CycleActionRail from "./CycleActionRail"
-import layoutStyles from "./SurfaceLayout.module.css"
 import SurfaceLayout from "./SurfaceLayout"
+import layoutStyles from "./SurfaceLayout.module.css"
 
 const RAISE = "raise"
 const LOWER = "lower"
