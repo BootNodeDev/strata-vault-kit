@@ -262,7 +262,9 @@ async function fetchCustodianBalance(
 	return toAmount(balance)
 }
 
-export function useCycleState(): { cycle: CycleState } {
+export function useCycleState({ active = true }: { active?: boolean } = {}): {
+	cycle: CycleState
+} {
 	const { history } = useEpochHistory()
 	const { figures, isPending: figuresPending } = useVaultFigures()
 	const { pause } = useVaultPaused()
@@ -271,7 +273,7 @@ export function useCycleState(): { cycle: CycleState } {
 		queryKey: cycleReadsKey,
 		queryFn: fetchCycleReads,
 		staleTime: STALE_MS,
-		refetchInterval: REFRESH_MS,
+		refetchInterval: active ? REFRESH_MS : false,
 	})
 	const custodian = authorities?.custodian ?? null
 	const { data: custodianBalance, isPending: balancePending } = useQuery({

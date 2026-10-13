@@ -363,6 +363,28 @@ describe("useCycleState", () => {
 		}
 	})
 
+	it("stops refetching the cycle reads while inactive and resumes when active again", async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true })
+		try {
+			let active = false
+			const { result, rerender } = renderWithWallet(() =>
+				useCycleState({ active }),
+			)
+			await waitFor(() => expect(result.current.cycle.status).toBe("ready"))
+			const before = oracleMock.state.mock.calls.length
+
+			await vi.advanceTimersByTimeAsync(31_000)
+			expect(oracleMock.state.mock.calls.length).toBe(before)
+
+			active = true
+			rerender()
+			await vi.advanceTimersByTimeAsync(16_000)
+			expect(oracleMock.state.mock.calls.length).toBeGreaterThan(before)
+		} finally {
+			vi.useRealTimers()
+		}
+	})
+
 	it("reads no balance when no custodian is set", async () => {
 		vaultMock.custodian.mockResolvedValue({ result: null })
 
