@@ -8,6 +8,7 @@ import { adminAuthorityKey } from "./useAdminAuthority"
 import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
+import { isAllowedKey } from "./useIsAllowed"
 import { oracleWriteKeys } from "./useOracleState"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 
@@ -56,7 +57,7 @@ export const useSetCompliance = adminTransaction(
 		shareTokenWriter(signer).then((token) =>
 			token.set_compliance({ compliance, operator: signer.publicKey }),
 		),
-	[configurationReadsKey],
+	[configurationReadsKey, isAllowedKey],
 )
 
 export const useSetIdentityVerifier = adminTransaction(
@@ -67,5 +68,5 @@ export const useSetIdentityVerifier = adminTransaction(
 				operator: signer.publicKey,
 			}),
 		),
-	[configurationReadsKey, adminAuthorityKey],
+	[configurationReadsKey, adminAuthorityKey, isAllowedKey],
 )

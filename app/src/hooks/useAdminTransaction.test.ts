@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { adminAuthorityKey } from "./useAdminAuthority"
 import { configurationReadsKey } from "./useConfigurationState"
+import { isAllowedKey } from "./useIsAllowed"
 import {
 	useSetCompliance,
 	useSetCustodian,
@@ -195,7 +196,7 @@ const cases: Case[] = [
 		method: token.set_compliance,
 		arg: CONTRACT,
 		args: { compliance: CONTRACT, operator: investorAddress },
-		keys: [configurationReadsKey],
+		keys: [configurationReadsKey, isAllowedKey],
 		refusal: 2000,
 	},
 	{
@@ -204,7 +205,7 @@ const cases: Case[] = [
 		method: token.set_identity_verifier,
 		arg: CONTRACT,
 		args: { identity_verifier: CONTRACT, operator: investorAddress },
-		keys: [configurationReadsKey, adminAuthorityKey],
+		keys: [configurationReadsKey, adminAuthorityKey, isAllowedKey],
 		refusal: 2000,
 	},
 ]
