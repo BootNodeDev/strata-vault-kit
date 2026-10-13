@@ -23,6 +23,10 @@
 	background: var(--vault-surface-card);
 }
 
+.cardWide {
+	grid-column: 1 / -1;
+}
+
 .cardHeading {
 	color: var(--vault-ink);
 }

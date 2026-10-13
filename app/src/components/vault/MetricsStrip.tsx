@@ -6,12 +6,12 @@ import styles from "./MetricsStrip.module.css"
 export type Metric = {
 	label: string
 	value: string | null
-	note: string
+	note?: string
 	pending?: boolean
 }
 
 type MetricsStripProps = {
-	metrics: [Metric, Metric, Metric, Metric]
+	metrics: Metric[]
 }
 
 const MetricsStrip: React.FC<MetricsStripProps> = ({ metrics }) => (
@@ -30,9 +30,11 @@ const MetricsStrip: React.FC<MetricsStripProps> = ({ metrics }) => (
 						{metric.value ?? "—"}
 					</span>
 				)}
-				<span className={`${typeStyles.metricSub} ${styles.note}`}>
-					{metric.note}
-				</span>
+				{metric.note !== undefined && (
+					<span className={`${typeStyles.metricSub} ${styles.note}`}>
+						{metric.note}
+					</span>
+				)}
 			</div>
 		))}
 	</div>

@@ -1,0 +1,97 @@
+.surface {
+	display: flex;
+	flex-direction: column;
+	gap: 22px;
+}
+
+.group {
+	display: flex;
+	flex-direction: column;
+	gap: 11px;
+	border-top: 1px solid var(--vault-border-hairline);
+	padding-top: 20px;
+}
+
+.groupTitle {
+	margin: 0;
+	color: var(--vault-ink);
+	font-weight: 600;
+}
+
+.rows {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 11px 24px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+@media (max-width: 620px) {
+	.rows {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+.row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 12px;
+	padding-bottom: 7px;
+}
+
+.rowLabel {
+	color: var(--vault-text-muted);
+	white-space: nowrap;
+}
+
+.rowValue {
+	text-align: right;
+	white-space: nowrap;
+}
+
+.placeholder {
+	color: var(--vault-text-muted);
+	margin: 0;
+}
+
+.rowSkeleton {
+	height: 1em;
+	width: 11ch;
+}
+
+.sectionSkeleton {
+	height: 1.2em;
+	width: 60%;
+}
+
+.tableScroll {
+	overflow-x: auto;
+}
+
+.table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.headCell {
+	padding: 0 16px 8px 0;
+	border-bottom: 1px solid var(--vault-border-hairline);
+	color: var(--vault-text-muted);
+	text-align: left;
+	white-space: nowrap;
+}
+
+.cell {
+	padding: 8px 16px 8px 0;
+	border-bottom: 1px solid var(--vault-border-hairline);
+	text-align: left;
+	white-space: nowrap;
+}
+
+.detailCell {
+	width: 100%;
+	color: var(--vault-text-muted);
+	white-space: normal;
+}
