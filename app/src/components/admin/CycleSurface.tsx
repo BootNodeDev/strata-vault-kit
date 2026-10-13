@@ -1,5 +1,9 @@
 import React from "react"
-import { type CycleAction } from "../../pages/cycle"
+import {
+	type ActionField as ActionFieldSpec,
+	type Condition,
+	type CycleAction,
+} from "../../pages/cycle"
 import typeStyles from "../../styles/type.module.css"
 import Skeleton from "../Skeleton"
 import { type AddressRow, type FigureGroup } from "../vault/AboutVault"
@@ -85,13 +89,46 @@ const Group: React.FC<{ group: CycleGroup }> = ({ group }) => (
 	</div>
 )
 
+const conditionValue = (condition: Condition): string => {
+	if (condition.met === null) return "—"
+	if (condition.met) return "Met"
+	return condition.detail ?? "Not met"
+}
+
+const ActionField: React.FC<{
+	action: CycleAction
+	field: ActionFieldSpec
+	onInput: ((action: CycleAction, value: string) => void) | undefined
+}> = ({ action, field, onInput }) => {
+	const id = `cycle-${action.id}-field`
+	return (
+		<div className={field.invalid ? styles.fieldOver : styles.field}>
+			<label htmlFor={id} className={styles.srOnly}>
+				{field.label}
+			</label>
+			<input
+				id={id}
+				className={`${typeStyles.amountInput} ${styles.fieldInput}`}
+				value={field.value}
+				onChange={(event) => onInput?.(action, event.target.value)}
+				placeholder={field.placeholder}
+				inputMode="decimal"
+			/>
+		</div>
+	)
+}
+
 export const CycleActions: React.FC<{
 	actions: CycleAction[]
 	onRun: (action: CycleAction) => void
-}> = ({ actions, onRun }) => (
+	onInput?: (action: CycleAction, value: string) => void
+}> = ({ actions, onRun, onInput }) => (
 	<div className={styles.actionArea}>
 		{actions.map((action) => (
 			<div className={styles.action} key={action.id}>
+				{action.field !== undefined && (
+					<ActionField action={action} field={action.field} onInput={onInput} />
+				)}
 				<ul
 					aria-label={`${action.label} conditions`}
 					className={styles.conditions}
@@ -106,11 +143,16 @@ export const CycleActions: React.FC<{
 									condition.met ? styles.rowValue : styles.unmet
 								}`}
 							>
-								{condition.met ? "Met" : "Not met"}
+								{conditionValue(condition)}
 							</span>
 						</li>
 					))}
 				</ul>
+				{action.note !== undefined && (
+					<p className={`${typeStyles.footnote} ${styles.note}`}>
+						{action.note}
+					</p>
+				)}
 				{action.outcome !== null && (
 					<p className={`${typeStyles.footnote} ${styles.outcome}`}>
 						{action.outcome}

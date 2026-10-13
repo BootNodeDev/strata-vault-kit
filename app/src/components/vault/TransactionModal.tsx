@@ -7,6 +7,7 @@ import {
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
 import React from "react"
+import { type AttestStatus } from "../../hooks/useAttest"
 import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
@@ -84,6 +85,14 @@ export type TransactionModalProps =
 			action: "fulfill-epoch"
 			status: FulfillEpochStatus
 			epoch: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "attest"
+			status: AttestStatus
+			price: string
+			validFor: string | null
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -225,6 +234,21 @@ const fulfillEpochContractErrorReason = (code: number): string => {
 			return "The settlement total is too large for the vault to record."
 		case 1000:
 			return "The vault is paused, so epochs cannot be priced."
+		default:
+			return GENERIC_REFUSAL
+	}
+}
+
+const attestContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 3002:
+			return "That price is outside the band the oracle accepts."
+		case 3005:
+			return "The attestation would already have expired when recorded."
+		case 3003:
+			return "The cooldown since the last attestation has not elapsed yet."
+		case 3004:
+			return "That price moves further from the last attested price than the oracle allows."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -591,6 +615,51 @@ const describeFulfillEpochStatus = (
 	}
 }
 
+const describeAttestStatus = (
+	status: AttestStatus,
+	price: string,
+	validFor: string | null,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: `Preparing to attest ${price}`,
+				body: "We are getting the attestation ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `Signing records ${price} as the share price. Sealed epochs settle at it once their notice elapses.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending the attestation",
+				body: "The attestation is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				heading: "Price attested",
+				body:
+					validFor === null
+						? `${price} is the share price.`
+						: `${price} is the share price. Valid for ${validFor}.`,
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(
+					status.failure,
+					attestContractErrorReason,
+					OPERATOR_FOLLOW_UP,
+				),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeStatus = (
 	props: TransactionModalProps,
 ): { heading: string; body: string; hash?: string } | undefined => {
@@ -626,6 +695,8 @@ const describeStatus = (
 			return describeCloseEpochStatus(props.status, props.epoch)
 		case "fulfill-epoch":
 			return describeFulfillEpochStatus(props.status, props.epoch)
+		case "attest":
+			return describeAttestStatus(props.status, props.price, props.validFor)
 	}
 }
 
@@ -649,7 +720,8 @@ const computeSteps = (
 		| RequestRedeemStatus
 		| ClaimRedeemStatus
 		| CloseEpochStatus
-		| FulfillEpochStatus,
+		| FulfillEpochStatus
+		| AttestStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":

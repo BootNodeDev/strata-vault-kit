@@ -23,31 +23,38 @@ export const asyncVault = (): Promise<AsyncVaultApi> => {
 	return vault
 }
 
-interface VaultWriterEntry {
+interface WriterEntry<T> {
 	signer: Signer
-	client: Promise<AsyncVaultApi>
+	client: Promise<T>
 }
-
-let vaultWriter: VaultWriterEntry | undefined
 
 const sameSigner = (a: Signer, b: Signer) =>
 	a.publicKey === b.publicKey && a.signTransaction === b.signTransaction
 
-export const asyncVaultWriter = (signer: Signer): Promise<AsyncVaultApi> => {
-	if (!vaultWriter || !sameSigner(vaultWriter.signer, signer)) {
-		const entry: VaultWriterEntry = {
-			signer,
-			client: connectAsyncVault(addresses.async_vault, signer).catch(
-				(error: unknown) => {
-					if (vaultWriter === entry) vaultWriter = undefined
+const writer = <T>(connect: (signer: Signer) => Promise<T>) => {
+	let current: WriterEntry<T> | undefined
+	return (signer: Signer): Promise<T> => {
+		if (!current || !sameSigner(current.signer, signer)) {
+			const entry: WriterEntry<T> = {
+				signer,
+				client: connect(signer).catch((error: unknown) => {
+					if (current === entry) current = undefined
 					throw error
-				},
-			),
+				}),
+			}
+			current = entry
 		}
-		vaultWriter = entry
+		return current.client
 	}
-	return vaultWriter.client
 }
+
+export const asyncVaultWriter = writer((signer) =>
+	connectAsyncVault(addresses.async_vault, signer),
+)
+
+export const navOracleWriter = writer((signer) =>
+	connectNavOracle(addresses.nav_oracle, signer),
+)
 
 let oracle: Promise<NavOracleApi> | undefined
 
