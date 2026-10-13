@@ -63,11 +63,16 @@ const HeldSurfaces: React.FC<{
 
 	useEffect(() => {
 		if (active === undefined) return
-		if (shownSurface.current !== undefined && shownSurface.current !== active) {
+		const previous = shownSurface.current
+		if (
+			previous !== undefined &&
+			previous !== active &&
+			held.includes(previous)
+		) {
 			headingRef.current?.focus()
 		}
 		shownSurface.current = active
-	}, [active])
+	}, [active, held])
 
 	if (active === undefined) return <Navigate replace to={`/admin/${held[0]}`} />
 

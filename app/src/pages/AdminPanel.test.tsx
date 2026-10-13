@@ -51,15 +51,16 @@ const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	...overrides,
 })
 
-const renderAt = (path: string) =>
-	render(
-		<MemoryRouter initialEntries={[path]}>
-			<Routes>
-				<Route path="/admin" element={<AdminPanel />} />
-				<Route path="/admin/:surface" element={<AdminPanel />} />
-			</Routes>
-		</MemoryRouter>,
-	)
+const routedPanel = (path: string) => (
+	<MemoryRouter initialEntries={[path]}>
+		<Routes>
+			<Route path="/admin" element={<AdminPanel />} />
+			<Route path="/admin/:surface" element={<AdminPanel />} />
+		</Routes>
+	</MemoryRouter>
+)
+
+const renderAt = (path: string) => render(routedPanel(path))
 
 const currentTab = () =>
 	screen
@@ -247,6 +248,39 @@ describe("AdminPanel", () => {
 
 		expect(currentTab()).toBe("Compliance")
 		expect(document.activeElement).toBe(
+			screen.getByRole("heading", { name: "Compliance" }),
+		)
+	})
+
+	it("leaves focus alone when losing a surface redirects to another", () => {
+		const manager = holderOf("vault manager")
+		const compliance = holderOf("share-token compliance")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle", "compliance"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					cycle: [manager],
+					compliance: [compliance],
+				},
+				grants: [manager, compliance],
+			}),
+		)
+		const { rerender } = renderAt("/admin/cycle")
+
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["compliance"]),
+				grantedBy: { ...emptyGrantedBy, compliance: [compliance] },
+				grants: [compliance],
+			}),
+		)
+		rerender(routedPanel("/admin/cycle"))
+
+		expect(currentTab()).toBe("Compliance")
+		expect(document.activeElement).not.toBe(
 			screen.getByRole("heading", { name: "Compliance" }),
 		)
 	})
