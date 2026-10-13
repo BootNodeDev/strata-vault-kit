@@ -374,7 +374,7 @@ describe("useCycleState", () => {
 			const before = oracleMock.state.mock.calls.length
 
 			await vi.advanceTimersByTimeAsync(31_000)
-			expect(oracleMock.state.mock.calls.length).toBe(before)
+			expect(oracleMock.state.mock.calls).toHaveLength(before)
 
 			active = true
 			rerender()
