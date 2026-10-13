@@ -24,7 +24,8 @@ import TransactionModal, {
 	type TransactionModalProps,
 } from "../vault/TransactionModal"
 import CycleActionRail from "./CycleActionRail"
-import styles from "./EmergencySection.module.css"
+import layoutStyles from "./SurfaceLayout.module.css"
+import SurfaceLayout from "./SurfaceLayout"
 
 const RAISE = "raise"
 const LOWER = "lower"
@@ -105,34 +106,31 @@ const EmergencySection: React.FC<{
 
 	return (
 		<>
-			<div className={styles.layout}>
-				<div className={styles.body}>
-					<aside className={styles.side} aria-label="Actions">
-						<CycleActionRail
-							scope="emergency"
-							actions={actions}
-							pending={actions.length === 0 && grants.length > 0}
-							unreadable={false}
-							onRun={run}
-						/>
-					</aside>
-					<div className={styles.main}>
-						<section
-							className={styles.group}
-							aria-labelledby="emergency-status"
-						>
-							<h3
-								id="emergency-status"
-								className={`${typeStyles.body} ${styles.groupTitle}`}
-							>
-								Status
-							</h3>
-							<MetricsStrip metrics={toEmergencyTiles(state)} />
-						</section>
-						{contracts}
-					</div>
-				</div>
-			</div>
+			<SurfaceLayout
+				side={
+					<CycleActionRail
+						scope="emergency"
+						actions={actions}
+						pending={actions.length === 0 && grants.length > 0}
+						unreadable={false}
+						onRun={run}
+					/>
+				}
+			>
+				<section
+					className={layoutStyles.group}
+					aria-labelledby="emergency-status"
+				>
+					<h3
+						id="emergency-status"
+						className={`${typeStyles.body} ${layoutStyles.groupTitle}`}
+					>
+						Status
+					</h3>
+					<MetricsStrip metrics={toEmergencyTiles(state)} />
+				</section>
+				{contracts}
+			</SurfaceLayout>
 			{active && activeModal !== undefined && (
 				<TransactionModal {...activeModal} />
 			)}

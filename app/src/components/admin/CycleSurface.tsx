@@ -10,6 +10,8 @@ import AddressRows from "../vault/AddressRows"
 import MetricsStrip, { type Metric } from "../vault/MetricsStrip"
 import styles from "./CycleSurface.module.css"
 import Disclosure from "./Disclosure"
+import layoutStyles from "./SurfaceLayout.module.css"
+import SurfaceLayout from "./SurfaceLayout"
 
 export type CycleGroup = FigureGroup & {
 	tiles: Metric[]
@@ -86,8 +88,10 @@ const FigureRows: React.FC<{ rows: FigureRow[] }> = ({ rows }) => (
 )
 
 const Group: React.FC<{ group: CycleGroup }> = ({ group }) => (
-	<div className={styles.group}>
-		<h3 className={`${typeStyles.body} ${styles.groupTitle}`}>{group.title}</h3>
+	<div className={layoutStyles.group}>
+		<h3 className={`${typeStyles.body} ${layoutStyles.groupTitle}`}>
+			{group.title}
+		</h3>
 		<MetricsStrip metrics={group.tiles} />
 		<FigureRows rows={group.rows} />
 		{group.addresses !== undefined && <AddressRows rows={group.addresses} />}
@@ -106,8 +110,8 @@ const Section: React.FC<{
 	empty: string
 	children: React.ReactNode
 }> = ({ title, state, unreadable, empty, children }) => (
-	<div className={styles.group}>
-		<h3 className={`${typeStyles.body} ${styles.groupTitle}`}>{title}</h3>
+	<div className={layoutStyles.group}>
+		<h3 className={`${typeStyles.body} ${layoutStyles.groupTitle}`}>{title}</h3>
 		{state.status === "checking" && (
 			<Skeleton className={styles.sectionSkeleton} />
 		)}
@@ -205,39 +209,30 @@ const CycleSurface: React.FC<CycleSurfaceProps> = ({
 	rail,
 	contracts,
 }) => (
-	<div className={styles.layout}>
-		<div className={styles.body}>
-			<aside className={styles.side} aria-label="Actions">
-				{rail}
-			</aside>
-			<div className={styles.main}>
-				{unreadable ? (
-					<p className={typeStyles.body}>Could not read the vault's cycle.</p>
-				) : (
-					groups.map((group) => <Group group={group} key={group.title} />)
-				)}
-				<Section
-					title="Epochs"
-					state={epochs}
-					unreadable="Could not read the epoch history."
-					empty="No epochs yet."
-				>
-					{epochs.status === "loaded" && <EpochTable rows={epochs.rows} />}
-				</Section>
-				<Section
-					title="Recent activity — last 7 days"
-					state={activity}
-					unreadable="Could not read recent activity."
-					empty="No cycle activity in the last 7 days."
-				>
-					{activity.status === "loaded" && (
-						<ActivityTable rows={activity.rows} />
-					)}
-				</Section>
-				{contracts}
-			</div>
-		</div>
-	</div>
+	<SurfaceLayout side={rail}>
+		{unreadable ? (
+			<p className={typeStyles.body}>Could not read the vault's cycle.</p>
+		) : (
+			groups.map((group) => <Group group={group} key={group.title} />)
+		)}
+		<Section
+			title="Epochs"
+			state={epochs}
+			unreadable="Could not read the epoch history."
+			empty="No epochs yet."
+		>
+			{epochs.status === "loaded" && <EpochTable rows={epochs.rows} />}
+		</Section>
+		<Section
+			title="Recent activity — last 7 days"
+			state={activity}
+			unreadable="Could not read recent activity."
+			empty="No cycle activity in the last 7 days."
+		>
+			{activity.status === "loaded" && <ActivityTable rows={activity.rows} />}
+		</Section>
+		{contracts}
+	</SurfaceLayout>
 )
 
 export default CycleSurface
