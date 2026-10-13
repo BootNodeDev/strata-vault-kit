@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { type RailAction } from "../../pages/actions"
+import { type RailAction, type RailField } from "../../pages/actions"
 import { type CycleAction } from "../../pages/cycle"
 import CycleActionRail from "./CycleActionRail"
 
@@ -520,4 +520,88 @@ describe("CycleActionRail with keyed fields", () => {
 				.inputMode,
 		).toBe("decimal")
 	})
+})
+
+describe("CycleActionRail choice fields", () => {
+	const grantRole = (checked = false): RailAction<RailField> => ({
+		id: "grant-vault-role",
+		label: "Grant a vault role",
+		conditions: [{ label: "Confirmed", met: checked }],
+		outcome: null,
+		fields: [
+			{
+				kind: "select",
+				key: "role",
+				label: "Role",
+				value: "treasury",
+				options: [
+					{ value: "manager", label: "Manager" },
+					{ value: "treasury", label: "Treasury" },
+				],
+			},
+			{
+				kind: "confirm",
+				key: "confirm",
+				label: "Merges two vault roles on one account.",
+				value: "treasury:GABC",
+				checked,
+			},
+		],
+		enabled: checked,
+	})
+
+	const renderChoices = (action: RailAction<RailField>) => {
+		const onInput = vi.fn()
+		render(
+			<CycleActionRail
+				scope="governance"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onInput={onInput}
+			/>,
+		)
+		const collapsed = screen.queryByRole("button", {
+			name: "Grant a vault role",
+			expanded: false,
+		})
+		if (collapsed !== null) fireEvent.click(collapsed)
+		return onInput
+	}
+
+	it("offers the options of a select and reports the chosen one with its key", () => {
+		const action = grantRole()
+		const onInput = renderChoices(action)
+		const select = screen.getByRole<HTMLSelectElement>("combobox", {
+			name: "Role",
+		})
+
+		expect(select.value).toBe("treasury")
+		expect(
+			within(select)
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual(["Manager", "Treasury"])
+		fireEvent.change(select, { target: { value: "manager" } })
+		expect(onInput).toHaveBeenCalledWith(action, "manager", "role")
+	})
+
+	it.each([
+		[false, "treasury:GABC"],
+		[true, ""],
+	])(
+		"toggles a confirmation checked %s by reporting %o",
+		(checked, reported) => {
+			const action = grantRole(checked)
+			const onInput = renderChoices(action)
+			const check = screen.getByRole<HTMLInputElement>("checkbox", {
+				name: "Merges two vault roles on one account.",
+			})
+
+			expect(check.checked).toBe(checked)
+			fireEvent.click(check)
+			expect(onInput).toHaveBeenCalledWith(action, reported, "confirm")
+		},
+	)
 })

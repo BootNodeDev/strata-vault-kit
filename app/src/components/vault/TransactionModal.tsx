@@ -25,6 +25,7 @@ import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import { EFFECTS } from "../../pages/configuration"
+import { type GovernanceActionId } from "../../pages/governance"
 import typeStyles from "../../styles/type.module.css"
 import Close from "../icons/Close"
 import ExternalLink from "../icons/ExternalLink"
@@ -48,6 +49,8 @@ export type ConfigurationModalAction =
 	| "set-compliance"
 	| "set-identity-verifier"
 
+export type GovernanceModalAction = GovernanceActionId
+
 export type TransactionModalProps =
 	| {
 			action: EmergencyModalAction
@@ -56,7 +59,7 @@ export type TransactionModalProps =
 			onRetry: () => void
 	  }
 	| {
-			action: ConfigurationModalAction
+			action: ConfigurationModalAction | GovernanceModalAction
 			status: TransactionStatus
 			value: string
 			onClose: () => void
@@ -385,6 +388,7 @@ const OPERATOR_FOLLOW_UP = "check the Cycle card before trying again"
 const EMERGENCY_FOLLOW_UP = "check the Emergency tab before trying again"
 const CONFIGURATION_FOLLOW_UP =
 	"check the Configuration tab before trying again"
+const GOVERNANCE_FOLLOW_UP = "check the Governance tab before trying again"
 
 const describeFailure = (
 	failure: TransactionFailure,
@@ -1050,6 +1054,38 @@ const CONFIGURATION_COPY: Record<
 	"set-identity-verifier": setterCopy("share token", "Identity verifier"),
 }
 
+const grantCopy =
+	(refuser: AdminCopy["refuser"]) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		verb: "grant a role",
+		signing: `Signing grants ${value}.`,
+		done: "Role granted",
+		doneBody: `Granted ${value}.`,
+	})
+
+const revokeCopy =
+	(refuser: AdminCopy["refuser"]) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		verb: "revoke a role",
+		signing: `Signing revokes ${value}.`,
+		done: "Role revoked",
+		doneBody: `Revoked ${value}.`,
+	})
+
+const GOVERNANCE_COPY: Record<
+	GovernanceModalAction,
+	(value: string) => AdminCopy
+> = {
+	"grant-vault-role": grantCopy("vault"),
+	"revoke-vault-role": revokeCopy("vault"),
+	"grant-oracle-role": grantCopy("oracle"),
+	"revoke-oracle-role": revokeCopy("oracle"),
+	"grant-token-role": grantCopy("share token"),
+	"revoke-token-role": revokeCopy("share token"),
+}
+
 const adminContractErrorReason =
 	(refuser: AdminCopy["refuser"]) =>
 	(code: number): string => {
@@ -1060,6 +1096,12 @@ const adminContractErrorReason =
 				return `The ${refuser} is not paused, so there is nothing to unpause.`
 			case 2000:
 				return "This wallet does not hold the role this action needs."
+			case 2002:
+				return "The role's holders changed before this was recorded."
+			case 2007:
+				return "The account does not hold this role."
+			case 2010:
+				return `The ${refuser} cannot hold any more roles.`
 			case 3001:
 				return "One of the oracle limits is out of range."
 			case 3008:
@@ -1181,6 +1223,17 @@ const describeStatus = (
 				CONFIGURATION_COPY[props.action](props.value),
 				props.status,
 				CONFIGURATION_FOLLOW_UP,
+			)
+		case "grant-vault-role":
+		case "revoke-vault-role":
+		case "grant-oracle-role":
+		case "revoke-oracle-role":
+		case "grant-token-role":
+		case "revoke-token-role":
+			return describeAdminStatus(
+				GOVERNANCE_COPY[props.action](props.value),
+				props.status,
+				GOVERNANCE_FOLLOW_UP,
 			)
 	}
 }

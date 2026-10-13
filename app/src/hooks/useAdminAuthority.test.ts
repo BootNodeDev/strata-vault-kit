@@ -23,6 +23,7 @@ const noHolders: RoleHolders = {
 	"oracle guardian": [],
 	"oracle admin": [],
 	"share-token compliance": [],
+	"share-token manager": [],
 	"share-token admin": [],
 }
 
@@ -72,8 +73,8 @@ describe("toSurfaces", () => {
 		["share-token compliance", ["compliance"]],
 		["vault guardian", ["emergency"]],
 		["oracle guardian", ["emergency"]],
-		["share-token admin", ["emergency", "configuration"]],
-		["oracle admin", ["emergency", "configuration"]],
+		["share-token admin", ["emergency", "configuration", "governance"]],
+		["oracle admin", ["emergency", "configuration", "governance"]],
 		["vault governance", ["emergency", "configuration", "governance"]],
 	])("grants %s's surfaces to the wallet that holds it", (role, expected) => {
 		const { surfaces, grantedBy, grants } = toSurfaces(
@@ -291,9 +292,8 @@ const {
 } = vi.hoisted(() => ({
 	vaultMock: {
 		governance: vi.fn(),
-		manager: vi.fn(),
-		treasury: vi.fn(),
-		guardian: vi.fn(),
+		get_role_member_count: vi.fn(),
+		get_role_member: vi.fn(),
 		oracle: vi.fn(),
 		share_token: vi.fn(),
 	},
@@ -336,6 +336,19 @@ const members = (
 	)
 }
 
+const vaultRoles = (byRole: Record<string, string[]>) => {
+	vaultMock.get_role_member_count.mockImplementation(
+		async ({ role }: { role: string }) => ({
+			result: byRole[role]?.length ?? 0,
+		}),
+	)
+	vaultMock.get_role_member.mockImplementation(
+		async ({ role, index }: { role: string; index: number }) => ({
+			result: byRole[role]?.[index],
+		}),
+	)
+}
+
 describe("useAdminAuthority", () => {
 	const derivedOracleAddress = "CDERIVEDORACLEADDRESS"
 	const derivedShareTokenAddress = "CDERIVEDSHARETOKENADDRESS"
@@ -343,9 +356,7 @@ describe("useAdminAuthority", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		vaultMock.governance.mockResolvedValue({ result: null })
-		vaultMock.manager.mockResolvedValue({ result: investorAddress })
-		vaultMock.treasury.mockResolvedValue({ result: null })
-		vaultMock.guardian.mockResolvedValue({ result: null })
+		vaultRoles({ manager: [investorAddress] })
 		vaultMock.oracle.mockResolvedValue({ result: derivedOracleAddress })
 		vaultMock.share_token.mockResolvedValue({
 			result: derivedShareTokenAddress,
@@ -430,6 +441,42 @@ describe("useAdminAuthority", () => {
 		expect(result.current.surfaces).toEqual(new Set(["cycle", "compliance"]))
 	})
 
+	it("enumerates every holder of a vault role, not only the first", async () => {
+		vaultRoles({ manager: [otherAddress, investorAddress], treasury: [] })
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(vaultMock.get_role_member).toHaveBeenCalledWith({
+			role: "manager",
+			index: 1,
+		})
+		expect(result.current.holders["vault manager"]).toEqual([
+			otherAddress,
+			investorAddress,
+		])
+		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
+	})
+
+	it("lists the share-token manager among the holders without granting it", async () => {
+		tokenMock.get_role_member_count.mockImplementation(
+			async ({ role }: { role: string }) => ({
+				result: role === "manager" ? 1 : 0,
+			}),
+		)
+		members(tokenMock, [investorAddress])
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(result.current.holders["share-token manager"]).toEqual([
+			investorAddress,
+		])
+		expect(result.current.grants.map((grant) => grant.role)).toEqual([
+			"vault manager",
+		])
+	})
+
 	it("reads the share-token admin from get_admin", async () => {
 		tokenMock.get_admin.mockResolvedValue({ result: investorAddress })
 		const { result } = renderWithWallet(useAdminAuthority)
@@ -437,7 +484,7 @@ describe("useAdminAuthority", () => {
 		await waitFor(() => expect(result.current.status).toBe("ready"))
 
 		expect(result.current.surfaces).toEqual(
-			new Set(["cycle", "emergency", "configuration"]),
+			new Set(["cycle", "emergency", "configuration", "governance"]),
 		)
 		expect(result.current.grantedBy.configuration[0]?.role).toBe(
 			"share-token admin",
@@ -451,7 +498,7 @@ describe("useAdminAuthority", () => {
 		await waitFor(() => expect(result.current.status).toBe("ready"))
 
 		expect(result.current.surfaces).toEqual(
-			new Set(["cycle", "emergency", "configuration"]),
+			new Set(["cycle", "emergency", "configuration", "governance"]),
 		)
 		expect(result.current.grantedBy.configuration).toEqual([
 			{
@@ -463,7 +510,7 @@ describe("useAdminAuthority", () => {
 	})
 
 	it("looks up the signers of a multisig oracle admin", async () => {
-		vaultMock.manager.mockResolvedValue({ result: null })
+		vaultRoles({})
 		oracleMock.get_admin.mockResolvedValue({ result: multisig })
 		accountSignersMock.mockResolvedValue(oneSignatureOf(1))
 		const { result } = renderWithWallet(useAdminAuthority)
@@ -472,7 +519,7 @@ describe("useAdminAuthority", () => {
 
 		expect(accountSignersMock).toHaveBeenCalledWith(multisig)
 		expect(result.current.surfaces).toEqual(
-			new Set(["emergency", "configuration"]),
+			new Set(["emergency", "configuration", "governance"]),
 		)
 	})
 
@@ -486,9 +533,8 @@ describe("useAdminAuthority", () => {
 	})
 
 	it("grants a signer of a multisig authority and looks each account up once", async () => {
-		vaultMock.manager.mockResolvedValue({ result: null })
+		vaultRoles({ guardian: [multisig] })
 		vaultMock.governance.mockResolvedValue({ result: multisig })
-		vaultMock.guardian.mockResolvedValue({ result: multisig })
 		accountSignersMock.mockResolvedValue(oneSignatureOf(2))
 		const { result } = renderWithWallet(useAdminAuthority)
 
@@ -511,7 +557,7 @@ describe("useAdminAuthority", () => {
 	})
 
 	it("reports the holder key's standing under a 2-of-2 authority", async () => {
-		vaultMock.manager.mockResolvedValue({ result: null })
+		vaultRoles({})
 		vaultMock.governance.mockResolvedValue({ result: investorAddress })
 		accountSignersMock.mockResolvedValue(oneSignatureOf(2))
 		const { result } = renderWithWallet(useAdminAuthority)
@@ -545,7 +591,7 @@ describe("useAdminAuthority", () => {
 	})
 
 	it("never asks Horizon about a contract holder", async () => {
-		vaultMock.guardian.mockResolvedValue({ result: contractHolder })
+		vaultRoles({ manager: [investorAddress], guardian: [contractHolder] })
 		const { result } = renderWithWallet(useAdminAuthority)
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
@@ -567,7 +613,9 @@ describe("useAdminAuthority", () => {
 	})
 
 	it("reports unreadable when a role-determining read fails, without guessing a surface", async () => {
-		vaultMock.guardian.mockRejectedValue(new Error("simulation failed"))
+		vaultMock.get_role_member_count.mockRejectedValue(
+			new Error("simulation failed"),
+		)
 		const { result } = renderWithWallet(useAdminAuthority)
 
 		await waitFor(() => expect(result.current.status).toBe("unreadable"))

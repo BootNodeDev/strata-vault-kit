@@ -54,6 +54,7 @@ export interface AdminAuthority {
 	grants: Grant[]
 	signersUnknown: boolean
 	addresses: AdminAddresses
+	holders: RoleHolders
 }
 
 const ROLE_SURFACES = {
@@ -63,8 +64,9 @@ const ROLE_SURFACES = {
 	"share-token compliance": ["compliance"],
 	"vault guardian": ["emergency"],
 	"oracle guardian": ["emergency"],
-	"share-token admin": ["emergency", "configuration"],
-	"oracle admin": ["emergency", "configuration"],
+	"share-token manager": [],
+	"share-token admin": ["emergency", "configuration", "governance"],
+	"oracle admin": ["emergency", "configuration", "governance"],
 	"vault governance": ["emergency", "configuration", "governance"],
 } as const satisfies Record<string, readonly AdminSurface[]>
 
@@ -73,6 +75,12 @@ type RoleLabel = keyof typeof ROLE_SURFACES
 export type RoleHolders = Record<RoleLabel, string[]>
 
 const ROLE_LABELS = Object.keys(ROLE_SURFACES) as RoleLabel[]
+
+const emptyHolders = (): RoleHolders => {
+	const holders: Partial<RoleHolders> = {}
+	for (const role of ROLE_LABELS) holders[role] = []
+	return holders as RoleHolders
+}
 
 const emptyGrantedBy = (): Record<AdminSurface, Grant[]> => ({
 	cycle: [],
@@ -98,6 +106,7 @@ const emptyAuthority = (
 	grants: [],
 	signersUnknown: false,
 	addresses,
+	holders: emptyHolders(),
 })
 
 const toGrants = (grantedBy: Record<AdminSurface, Grant[]>): Grant[] => {
@@ -239,9 +248,9 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		shareTokenAddress,
 	] = await Promise.all([
 		readContract(async () => (await asyncVault()).governance()),
-		readContract(async () => (await asyncVault()).manager()),
-		readContract(async () => (await asyncVault()).treasury()),
-		readContract(async () => (await asyncVault()).guardian()),
+		readRoleMembers(asyncVault(), "manager"),
+		readRoleMembers(asyncVault(), "treasury"),
+		readRoleMembers(asyncVault(), "guardian"),
 		readContract(async () => (await asyncVault()).oracle()),
 		readContract(async () => (await asyncVault()).share_token()),
 	])
@@ -262,6 +271,7 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		oracleGuardians,
 		oracleAdmin,
 		tokenCompliance,
+		tokenManager,
 		tokenAdmin,
 		identityVerifier,
 	] = await Promise.all([
@@ -269,6 +279,7 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		readRoleMembers(oraclePromise, "guardian"),
 		readContract(async () => (await oraclePromise).get_admin()),
 		readRoleMembers(tokenPromise, "compliance"),
+		readRoleMembers(tokenPromise, "manager"),
 		readContract(async () => (await tokenPromise).get_admin()),
 		readContract(async () => (await tokenPromise).identity_verifier()),
 	])
@@ -288,6 +299,7 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		oracleGuardians,
 		oracleAdmin,
 		tokenCompliance,
+		tokenManager,
 		tokenAdmin,
 	]
 	if (roleReads.some(isUnreadable))
@@ -295,13 +307,14 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 
 	const holders: RoleHolders = {
 		"vault governance": asHolders(governance),
-		"vault manager": asHolders(manager),
-		"vault treasury": asHolders(treasury),
-		"vault guardian": asHolders(guardian),
+		"vault manager": asMembers(manager),
+		"vault treasury": asMembers(treasury),
+		"vault guardian": asMembers(guardian),
 		"oracle attester": asMembers(oracleAttesters),
 		"oracle guardian": asMembers(oracleGuardians),
 		"oracle admin": asHolders(oracleAdmin),
 		"share-token compliance": asMembers(tokenCompliance),
+		"share-token manager": asMembers(tokenManager),
 		"share-token admin": asHolders(tokenAdmin),
 	}
 	const { byAccount, unknown } = await readSigners(holders)
@@ -311,6 +324,7 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		...toSurfaces(wallet, holders, byAccount),
 		signersUnknown: unknown,
 		addresses,
+		holders,
 	}
 }
 

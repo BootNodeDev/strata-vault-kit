@@ -17,6 +17,7 @@ export type Condition = {
 }
 
 export type ActionField = {
+	kind?: undefined
 	key?: string
 	label: string
 	placeholder: string
@@ -28,14 +29,32 @@ export type ActionField = {
 	next?: string | null
 }
 
-export type RailAction = {
+export type SelectField = {
+	kind: "select"
+	key: string
+	label: string
+	value: string
+	options: { value: string; label: string }[]
+}
+
+export type ConfirmField = {
+	kind: "confirm"
+	key: string
+	label: string
+	value: string
+	checked: boolean
+}
+
+export type RailField = ActionField | SelectField | ConfirmField
+
+export type RailAction<F extends RailField = ActionField> = {
 	id: string
 	label: string
 	conditions: Condition[]
 	outcome: string | null
 	note?: string
 	field?: ActionField
-	fields?: ActionField[]
+	fields?: F[]
 	enabled: boolean
 	unavailable?: string
 	tone?: "danger"
@@ -47,7 +66,7 @@ export type Readiness =
 	| { kind: "unchanged" }
 	| { kind: "unavailable"; reason: string }
 
-export const readiness = (action: RailAction): Readiness => {
+export const readiness = (action: RailAction<RailField>): Readiness => {
 	if (action.enabled) return { kind: "ready" }
 	if (action.unavailable !== undefined)
 		return { kind: "unavailable", reason: action.unavailable }
@@ -58,7 +77,7 @@ export const readiness = (action: RailAction): Readiness => {
 	return { kind: "unmet", count: unmet.length }
 }
 
-export const readyCount = (actions: RailAction[]): number =>
+export const readyCount = (actions: RailAction<RailField>[]): number =>
 	actions.filter((action) => action.enabled).length
 
 export const allMet = (conditions: Condition[]): boolean =>
@@ -90,22 +109,22 @@ export const unavailableFor = (
 	return undefined
 }
 
-export type Spec<Id extends string> = {
+export type Spec<Id extends string, F extends RailField = ActionField> = {
 	id: Id
 	label: string
 	conditions: Condition[]
 	outcome: string | null
 	note?: string
 	danger?: boolean
-	fields?: ActionField[]
+	fields?: F[]
 	ready?: boolean
 }
 
-export const toAction = <Id extends string>(
-	spec: Spec<Id>,
+export const toAction = <Id extends string, F extends RailField>(
+	spec: Spec<Id, F>,
 	grant: Grant,
 	wallet: string,
-): RailAction & { id: Id } => {
+): RailAction<F> & { id: Id } => {
 	const unavailable = unavailableFor(grant, wallet)
 	return {
 		id: spec.id,

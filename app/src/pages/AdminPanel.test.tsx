@@ -9,7 +9,11 @@ import type React from "react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type * as UseAdminAuthority from "../hooks/useAdminAuthority"
-import { type AdminAuthority, type Grant } from "../hooks/useAdminAuthority"
+import {
+	type AdminAuthority,
+	type Grant,
+	type RoleHolders,
+} from "../hooks/useAdminAuthority"
 import AdminPanel from "./AdminPanel"
 
 const { useAdminAuthorityMock, useWalletMock } = vi.hoisted(() => ({
@@ -80,6 +84,28 @@ vi.mock("../components/admin/ConfigurationSection", () => ({
 	),
 }))
 
+vi.mock("../components/admin/GovernanceSection", () => ({
+	default: ({
+		grants,
+		holders,
+		contracts,
+		active,
+	}: {
+		grants: Grant[]
+		holders: RoleHolders
+		contracts: React.ReactNode
+		active: boolean
+	}) => (
+		<div data-testid="governance-surface" data-active={String(active)}>
+			<p>
+				Governance surface for {grants.map((grant) => grant.role).join(", ")}
+			</p>
+			<p>Managers {holders["vault manager"].join(", ")}</p>
+			{contracts}
+		</div>
+	),
+}))
+
 const connectedAddress = "GCONNECTEDADDRESS1234567890"
 
 const emptyGrantedBy = {
@@ -98,6 +124,19 @@ const holderOf = (role: string): Grant => ({
 
 const noAddresses = { oracle: null, shareToken: null, identityVerifier: null }
 
+const noHolders: RoleHolders = {
+	"vault governance": [],
+	"vault manager": [],
+	"vault treasury": [],
+	"vault guardian": [],
+	"oracle attester": [],
+	"oracle guardian": [],
+	"oracle admin": [],
+	"share-token compliance": [],
+	"share-token manager": [],
+	"share-token admin": [],
+}
+
 const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	status: "disconnected",
 	surfaces: new Set(),
@@ -105,6 +144,7 @@ const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	grants: [],
 	signersUnknown: false,
 	addresses: noAddresses,
+	holders: noHolders,
 	...overrides,
 })
 
@@ -300,6 +340,38 @@ describe("AdminPanel", () => {
 		).toBe("true")
 		expect(
 			screen.getByTestId("emergency-surface").getAttribute("data-active"),
+		).toBe("false")
+	})
+
+	it("renders the governance actions with the governance grants and every holder, active only on its tab", () => {
+		const governance = holderOf("vault governance")
+		const tokenAdmin = holderOf("share-token admin")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["configuration", "governance"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					configuration: [governance, tokenAdmin],
+					governance: [governance, tokenAdmin],
+				},
+				grants: [governance, tokenAdmin],
+				holders: { ...noHolders, "vault manager": ["GMANAGER", "GSECOND"] },
+			}),
+		)
+		renderAt("/admin/governance")
+
+		expect(
+			screen.getByText(
+				"Governance surface for vault governance, share-token admin",
+			),
+		).toBeTruthy()
+		expect(screen.getByText("Managers GMANAGER, GSECOND")).toBeTruthy()
+		expect(
+			screen.getByTestId("governance-surface").getAttribute("data-active"),
+		).toBe("true")
+		expect(
+			screen.getByTestId("configuration-surface").getAttribute("data-active"),
 		).toBe("false")
 	})
 

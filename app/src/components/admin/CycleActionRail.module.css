@@ -257,3 +257,11 @@
 	overflow: hidden;
 	clip: rect(0 0 0 0);
 }
+
+.confirm {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	color: var(--vault-ink);
+	cursor: pointer;
+}

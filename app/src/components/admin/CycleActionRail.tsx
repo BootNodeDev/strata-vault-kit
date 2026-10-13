@@ -2,10 +2,13 @@ import React, { useState } from "react"
 import {
 	type ActionField as ActionFieldSpec,
 	type Condition,
+	type ConfirmField,
 	type RailAction,
+	type RailField,
 	type Readiness,
 	readiness,
 	readyCount,
+	type SelectField,
 } from "../../pages/actions"
 import typeStyles from "../../styles/type.module.css"
 import Skeleton from "../Skeleton"
@@ -25,7 +28,49 @@ const summaryOf = (state: Readiness): string => {
 	return `${state.count} unmet`
 }
 
-function ActionField<A extends RailAction>({
+type Report = (value: string) => void
+
+const SelectInput: React.FC<{
+	id: string
+	field: SelectField
+	report: Report
+}> = ({ id, field, report }) => (
+	<div className={styles.field}>
+		<label htmlFor={id} className={styles.srOnly}>
+			{field.label}
+		</label>
+		<select
+			id={id}
+			className={`${typeStyles.body} ${styles.fieldInput}`}
+			value={field.value}
+			onChange={(event) => report(event.target.value)}
+		>
+			{field.options.map((option) => (
+				<option key={option.value} value={option.value}>
+					{option.label}
+				</option>
+			))}
+		</select>
+	</div>
+)
+
+const ConfirmInput: React.FC<{
+	id: string
+	field: ConfirmField
+	report: Report
+}> = ({ id, field, report }) => (
+	<label htmlFor={id} className={styles.confirm}>
+		<input
+			id={id}
+			type="checkbox"
+			checked={field.checked}
+			onChange={(event) => report(event.target.checked ? field.value : "")}
+		/>
+		<span className={typeStyles.footnote}>{field.label}</span>
+	</label>
+)
+
+function RailInput<A extends RailAction<RailField>>({
 	id,
 	action,
 	field,
@@ -33,13 +78,32 @@ function ActionField<A extends RailAction>({
 }: {
 	id: string
 	action: A
-	field: ActionFieldSpec
+	field: RailField
 	onInput: OnInput<A> | undefined
 }) {
 	const report = (value: string) =>
 		field.key === undefined
 			? onInput?.(action, value)
 			: onInput?.(action, value, field.key)
+	switch (field.kind) {
+		case "select":
+			return <SelectInput id={id} field={field} report={report} />
+		case "confirm":
+			return <ConfirmInput id={id} field={field} report={report} />
+		case undefined:
+			return <TextInput id={id} field={field} report={report} />
+	}
+}
+
+function TextInput({
+	id,
+	field,
+	report,
+}: {
+	id: string
+	field: ActionFieldSpec
+	report: Report
+}) {
 	const label = (
 		<label
 			htmlFor={id}
@@ -93,15 +157,15 @@ function ActionField<A extends RailAction>({
 	)
 }
 
-const fieldsOf = (action: RailAction): ActionFieldSpec[] =>
+const fieldsOf = (action: RailAction<RailField>): RailField[] =>
 	action.fields ?? (action.field === undefined ? [] : [action.field])
 
-const buttonClass = (action: RailAction): string | undefined => {
+const buttonClass = (action: RailAction<RailField>): string | undefined => {
 	if (!action.enabled) return styles.actionUnavailable
 	return action.tone === "danger" ? styles.actionDanger : styles.actionPrimary
 }
 
-function ActionBody<A extends RailAction>({
+function ActionBody<A extends RailAction<RailField>>({
 	fieldId,
 	action,
 	onRun,
@@ -115,7 +179,7 @@ function ActionBody<A extends RailAction>({
 	return (
 		<>
 			{fieldsOf(action).map((field) => (
-				<ActionField
+				<RailInput
 					key={field.key ?? field.label}
 					id={field.key === undefined ? fieldId : `${fieldId}-${field.key}`}
 					action={action}
@@ -167,7 +231,7 @@ function ActionBody<A extends RailAction>({
 	)
 }
 
-function CycleActionRail<A extends RailAction>({
+function CycleActionRail<A extends RailAction<RailField>>({
 	scope,
 	actions,
 	pending,

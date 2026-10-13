@@ -20,6 +20,7 @@ import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import TransactionModal, {
 	type ConfigurationModalAction,
 	type EmergencyModalAction,
+	type GovernanceModalAction,
 } from "./TransactionModal"
 
 const { explorerTransactionMock } = vi.hoisted(() => ({
@@ -2218,6 +2219,88 @@ describe("TransactionModal, configuration actions", () => {
 
 		expect(
 			screen.getByText(/check the Configuration tab before trying again/),
+		).toBeTruthy()
+	})
+})
+
+const renderGovernanceModal = (
+	action: GovernanceModalAction,
+	status: TransactionStatus,
+	value = "Manager to GABC...WXYZ",
+) =>
+	render(
+		<TransactionModal
+			action={action}
+			status={status}
+			value={value}
+			onClose={vi.fn()}
+			onRetry={vi.fn()}
+		/>,
+	)
+
+describe("TransactionModal, governance actions", () => {
+	it.each<[GovernanceModalAction, string, string, string, string]>([
+		[
+			"grant-vault-role",
+			"Manager to GABC...WXYZ",
+			"Signing grants Manager to GABC...WXYZ.",
+			"Role granted",
+			"Granted Manager to GABC...WXYZ.",
+		],
+		[
+			"revoke-token-role",
+			"Manager from CVAU...LTID",
+			"Signing revokes Manager from CVAU...LTID.",
+			"Role revoked",
+			"Revoked Manager from CVAU...LTID.",
+		],
+	])(
+		"names the role change of %s",
+		(action, value, signing, done, doneBody) => {
+			const { unmount } = renderGovernanceModal(
+				action,
+				{ status: "awaiting-signature" },
+				value,
+			)
+			expect(screen.getByText(signing)).toBeTruthy()
+			unmount()
+
+			renderGovernanceModal(action, { status: "confirmed" }, value)
+			expect(screen.getByRole("heading", { name: done })).toBeTruthy()
+			expect(screen.getByText(doneBody)).toBeTruthy()
+		},
+	)
+
+	it.each<[GovernanceModalAction, number, string, RegExp]>([
+		["grant-vault-role", 2000, "vault", /does not hold the role/],
+		["revoke-oracle-role", 2002, "oracle", /holders changed/],
+		["revoke-token-role", 2007, "share token", /does not hold this role/],
+		["grant-oracle-role", 2010, "oracle", /cannot hold any more roles/],
+	])(
+		"names the reason %s was refused with code %i",
+		(action, code, refuser, sentence) => {
+			renderGovernanceModal(action, {
+				status: "failed",
+				failure: { kind: "contract-error", code },
+			})
+
+			expect(
+				screen.getByRole("heading", {
+					name: `The ${refuser} refused this request`,
+				}),
+			).toBeTruthy()
+			expect(screen.getByText(sentence)).toBeTruthy()
+		},
+	)
+
+	it("sends an unknown outcome to the Governance tab", () => {
+		renderGovernanceModal("grant-token-role", {
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+
+		expect(
+			screen.getByText(/check the Governance tab before trying again/),
 		).toBeTruthy()
 	})
 })
