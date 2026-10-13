@@ -569,7 +569,7 @@ describe("TransactionModal", () => {
 		)
 
 		expect(consoleError).toHaveBeenCalledTimes(1)
-		expect(consoleError).toHaveBeenCalledWith("Vault contract error 9999")
+		expect(consoleError).toHaveBeenCalledWith("Contract error 9999")
 
 		consoleError.mockRestore()
 	})

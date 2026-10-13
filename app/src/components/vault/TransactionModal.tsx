@@ -1191,7 +1191,7 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 
 	React.useEffect(() => {
 		if (contractErrorCode !== undefined) {
-			console.error(`Vault contract error ${contractErrorCode}`)
+			console.error(`Contract error ${contractErrorCode}`)
 		}
 	}, [contractErrorCode])
 
