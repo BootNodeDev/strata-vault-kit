@@ -5,21 +5,28 @@ import { type Grant } from "../../hooks/useAdminAuthority"
 import { type AttestStatus } from "../../hooks/useAttest"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type CycleState } from "../../hooks/useCycleState"
+import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
+import { type DepositBalance } from "../../hooks/useDepositBalance"
 import { type EpochRecord } from "../../hooks/useEpochHistory"
 import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
+import { type FundStatus } from "../../hooks/useFund"
 import CycleSection from "./CycleSection"
 
 const {
 	useCycleStateMock,
 	useCycleEventsMock,
 	useEpochHistoryMock,
+	useDepositBalanceMock,
 	closeEpochMock,
 	fulfillEpochMock,
 	attestMock,
+	deployMock,
+	fundMock,
 } = vi.hoisted(() => ({
 	useCycleStateMock: vi.fn(),
 	useCycleEventsMock: vi.fn(),
 	useEpochHistoryMock: vi.fn(),
+	useDepositBalanceMock: vi.fn(),
 	closeEpochMock: {
 		status: { status: "idle" } as CloseEpochStatus,
 		submit: vi.fn(() => true),
@@ -32,6 +39,16 @@ const {
 	},
 	attestMock: {
 		status: { status: "idle" } as AttestStatus,
+		submit: vi.fn(() => true),
+		reset: vi.fn(),
+	},
+	deployMock: {
+		status: { status: "idle" } as DeployToCustodianStatus,
+		submit: vi.fn(() => true),
+		reset: vi.fn(),
+	},
+	fundMock: {
+		status: { status: "idle" } as FundStatus,
 		submit: vi.fn(() => true),
 		reset: vi.fn(),
 	},
@@ -52,6 +69,15 @@ vi.mock("../../hooks/useFulfillEpoch", () => ({
 }))
 vi.mock("../../hooks/useAttest", () => ({
 	useAttest: () => attestMock,
+}))
+vi.mock("../../hooks/useDeployToCustodian", () => ({
+	useDeployToCustodian: () => deployMock,
+}))
+vi.mock("../../hooks/useFund", () => ({
+	useFund: () => fundMock,
+}))
+vi.mock("../../hooks/useDepositBalance", () => ({
+	useDepositBalance: useDepositBalanceMock,
 }))
 
 const amount = (whole: bigint) => (whole * 10_000_000n) as Amount
@@ -106,13 +132,13 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 		},
 	},
 	reserve: {
-		free: null,
+		free: amount(900n),
 		committed: null,
-		uncovered: null,
+		uncovered: amount(0n),
 		liquid: null,
 		netDeployed: null,
 		depositCap: null,
-		custodian: null,
+		custodian: "CCUSTODIAN1234567890",
 		custodianBalance: null,
 	},
 	windDown: {
@@ -148,10 +174,17 @@ describe("CycleSection", () => {
 		closeEpochMock.status = { status: "idle" }
 		fulfillEpochMock.status = { status: "idle" }
 		attestMock.status = { status: "idle" }
+		deployMock.status = { status: "idle" }
+		fundMock.status = { status: "idle" }
 		closeEpochMock.submit.mockReturnValue(true)
 		fulfillEpochMock.submit.mockReturnValue(true)
 		attestMock.submit.mockReturnValue(true)
+		deployMock.submit.mockReturnValue(true)
+		fundMock.submit.mockReturnValue(true)
 		useCycleStateMock.mockReturnValue({ cycle: ready() })
+		useDepositBalanceMock.mockReturnValue({
+			balance: { status: "held", amount: amount(1_000n) } as DepositBalance,
+		})
 		useCycleEventsMock.mockReturnValue({
 			cycleEvents: { status: "loaded", events: [] },
 		})
@@ -181,13 +214,240 @@ describe("CycleSection", () => {
 		).toBeTruthy()
 	})
 
-	it("offers the treasury only the settlement", () => {
+	it("offers the treasury the settlement and both reserve actions, under the Reserve group", () => {
 		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
 
 		expect(screen.queryByRole("button", { name: "Close epoch" })).toBeNull()
 		expect(screen.queryByRole("button", { name: "Attest price" })).toBeNull()
-		expect(screen.queryByRole("textbox")).toBeNull()
 		expect(button("Fulfill epoch").disabled).toBe(false)
+		const reserveGroup = screen.getByRole("heading", {
+			name: "Reserve",
+		}).parentElement!
+		expect(
+			within(reserveGroup).getByRole("button", { name: "Deploy to custodian" }),
+		).toBeTruthy()
+		expect(
+			within(reserveGroup).getByRole("button", { name: "Fund the reserve" }),
+		).toBeTruthy()
+		expect(
+			within(reserveGroup).getByRole("textbox", { name: "Amount to deploy" }),
+		).toBeTruthy()
+		expect(
+			within(reserveGroup).getByRole("textbox", { name: "Amount to fund" }),
+		).toBeTruthy()
+	})
+
+	it("offers the manager the funding but not the deployment", () => {
+		render(<CycleSection grants={[manager]} wallet={WALLET} />)
+
+		expect(
+			screen.queryByRole("button", { name: "Deploy to custodian" }),
+		).toBeNull()
+		expect(screen.queryByRole("button", { name: "Use max" })).toBeNull()
+		expect(button("Fund the reserve").disabled).toBe(true)
+		expect(screen.getByRole("textbox", { name: "Amount to fund" })).toBeTruthy()
+	})
+
+	it("holds the deployment until an amount is typed, then enables it and states the resulting reserve", () => {
+		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		expect(button("Deploy to custodian").disabled).toBe(true)
+		const within_ = screen.getByText("Within the free reserve").closest("li")!
+		expect(within(within_).getByText("—")).toBeTruthy()
+
+		fireEvent.change(
+			screen.getByRole("textbox", { name: "Amount to deploy" }),
+			{
+				target: { value: "250" },
+			},
+		)
+
+		expect(button("Deploy to custodian").disabled).toBe(false)
+		expect(within(within_).getByText("Met")).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Sends 250.00 to the custodian; free reserve becomes 650.00.",
+			),
+		).toBeTruthy()
+	})
+
+	it("fills the deployment with the exact free reserve on Use max", () => {
+		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		fireEvent.click(button("Use max"))
+
+		const field = screen.getByRole("textbox", {
+			name: "Amount to deploy",
+		}) as HTMLInputElement
+		expect(field.value).toBe("900.00")
+		expect(button("Deploy to custodian").disabled).toBe(false)
+		expect(
+			screen.getByText(
+				"Sends 900.00 to the custodian; free reserve becomes 0.00.",
+			),
+		).toBeTruthy()
+	})
+
+	it("submits the deployment and follows it in the modal, labelled with the amount", () => {
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} />,
+		)
+
+		fireEvent.change(
+			screen.getByRole("textbox", { name: "Amount to deploy" }),
+			{
+				target: { value: "250" },
+			},
+		)
+		fireEvent.click(button("Deploy to custodian"))
+
+		expect(deployMock.submit).toHaveBeenCalledWith(amount(250n))
+
+		deployMock.status = { status: "preparing" }
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to deploy 250.00" }),
+		).toBeTruthy()
+	})
+
+	it("labels the deployment modal with the exact amount that is signed", () => {
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} />,
+		)
+
+		fireEvent.change(
+			screen.getByRole("textbox", { name: "Amount to deploy" }),
+			{ target: { value: "250.1234567" } },
+		)
+		fireEvent.click(button("Deploy to custodian"))
+		deployMock.status = { status: "preparing" }
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to deploy 250.1234567" }),
+		).toBeTruthy()
+	})
+
+	it("clears the deployment amount once it confirms", () => {
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} />,
+		)
+		const field = () =>
+			screen.getByRole("textbox", {
+				name: "Amount to deploy",
+			}) as HTMLInputElement
+
+		fireEvent.change(field(), { target: { value: "250" } })
+		fireEvent.click(button("Deploy to custodian"))
+		deployMock.status = { status: "confirmed" }
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		expect(field().value).toBe("")
+		expect(screen.getByRole("heading", { name: "Deployed" })).toBeTruthy()
+	})
+
+	it("labels the funding modal with the exact amount that is signed", () => {
+		const { rerender } = render(
+			<CycleSection grants={[treasury]} wallet={WALLET} />,
+		)
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+			target: { value: "100.1234567" },
+		})
+		fireEvent.click(button("Fund the reserve"))
+		fundMock.status = { status: "preparing" }
+		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		expect(
+			screen.getByRole("heading", { name: "Preparing to fund 100.1234567" }),
+		).toBeTruthy()
+	})
+
+	it("judges the funding against the connected wallet's balance", () => {
+		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
+		const field = screen.getByRole("textbox", { name: "Amount to fund" })
+
+		fireEvent.change(field, { target: { value: "1000.0000001" } })
+
+		expect(button("Fund the reserve").disabled).toBe(true)
+		const covers = screen.getByText("Wallet balance covers it").closest("li")!
+		expect(within(covers).getByText("Balance 1,000.00")).toBeTruthy()
+
+		fireEvent.change(field, { target: { value: "100" } })
+
+		expect(button("Fund the reserve").disabled).toBe(false)
+		expect(
+			screen.getByText(
+				"Adds 100.00 to the reserve; free reserve becomes 1,000.00.",
+			),
+		).toBeTruthy()
+	})
+
+	it("says the balance is unavailable and holds the funding while the wallet's balance cannot be read", () => {
+		useDepositBalanceMock.mockReturnValue({
+			balance: { status: "unreadable" } as DepositBalance,
+		})
+		render(<CycleSection grants={[treasury]} wallet={WALLET} />)
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+			target: { value: "100" },
+		})
+
+		expect(button("Fund the reserve").disabled).toBe(true)
+		const covers = screen.getByText("Wallet balance covers it").closest("li")!
+		expect(within(covers).getByText("Balance unavailable")).toBeTruthy()
+	})
+
+	it("submits the funding and follows it in the modal, labelled with the amount", () => {
+		const { rerender } = render(
+			<CycleSection grants={[attester]} wallet={WALLET} />,
+		)
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+			target: { value: "100" },
+		})
+		fireEvent.click(button("Fund the reserve"))
+
+		expect(fundMock.submit).toHaveBeenCalledWith(amount(100n))
+
+		fundMock.status = { status: "awaiting-signature" }
+		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(
+			screen.getByText(
+				"Signing moves 100.00 from your wallet into the vault's reserve.",
+			),
+		).toBeTruthy()
+	})
+
+	it("tells a treasury signing through a multisig that collecting signatures is not supported yet, while funding stays open", () => {
+		render(
+			<CycleSection
+				grants={[grant("vault treasury", { needs: 2 })]}
+				wallet={WALLET}
+			/>,
+		)
+
+		fireEvent.change(
+			screen.getByRole("textbox", { name: "Amount to deploy" }),
+			{
+				target: { value: "250" },
+			},
+		)
+
+		expect(button("Deploy to custodian").disabled).toBe(true)
+		expect(
+			screen.getByText(
+				"Needs 2 signatures; collecting them is not supported yet.",
+			),
+		).toBeTruthy()
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Amount to fund" }), {
+			target: { value: "100" },
+		})
+
+		expect(button("Fund the reserve").disabled).toBe(false)
 	})
 
 	it("offers the attester a price field under the Price group, with the button held until a price is typed", () => {

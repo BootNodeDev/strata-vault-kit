@@ -91,8 +91,7 @@ const Group: React.FC<{ group: CycleGroup }> = ({ group }) => (
 
 const conditionValue = (condition: Condition): string => {
 	if (condition.met === null) return "—"
-	if (condition.met) return "Met"
-	return condition.detail ?? "Not met"
+	return condition.detail ?? (condition.met ? "Met" : "Not met")
 }
 
 const ActionField: React.FC<{
@@ -114,6 +113,15 @@ const ActionField: React.FC<{
 				placeholder={field.placeholder}
 				inputMode="decimal"
 			/>
+			{field.max !== undefined && (
+				<button
+					type="button"
+					className={styles.useMax}
+					onClick={() => onInput?.(action, field.max ?? "")}
+				>
+					Use max
+				</button>
+			)}
 		</div>
 	)
 }
