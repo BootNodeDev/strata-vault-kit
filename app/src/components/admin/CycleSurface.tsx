@@ -218,6 +218,9 @@ const CycleSurface: React.FC<CycleSurfaceProps> = ({
 }) => (
 	<div className={styles.layout}>
 		<div className={styles.body}>
+			<aside className={styles.side} aria-label="Actions">
+				{rail}
+			</aside>
 			<div className={styles.main}>
 				{unreadable ? (
 					<p className={typeStyles.body}>Could not read the vault's cycle.</p>
@@ -244,9 +247,6 @@ const CycleSurface: React.FC<CycleSurfaceProps> = ({
 				</Section>
 				{contracts}
 			</div>
-			<aside className={styles.side} aria-label="Actions">
-				{rail}
-			</aside>
 		</div>
 	</div>
 )

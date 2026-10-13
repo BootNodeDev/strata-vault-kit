@@ -282,6 +282,17 @@ describe("CycleSurface", () => {
 		expect(screen.getAllByRole("button")).toHaveLength(1)
 	})
 
+	it("puts the Actions aside before the overview in reading order", () => {
+		renderSurface()
+
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+		expect(
+			rail.compareDocumentPosition(
+				screen.getByRole("heading", { name: "Epoch" }),
+			) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy()
+	})
+
 	it("closes the overview with the contracts it is given", () => {
 		renderSurface({ contracts: <p>Contract addresses</p> })
 
