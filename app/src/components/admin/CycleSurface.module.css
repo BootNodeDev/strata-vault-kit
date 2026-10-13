@@ -46,24 +46,6 @@
 	}
 }
 
-.disclosure {
-	border-top: 1px solid var(--vault-border-hairline);
-	padding-top: 11px;
-}
-
-.disclosureTitle {
-	cursor: pointer;
-	color: var(--vault-text-body);
-}
-
-.disclosureTitle:hover {
-	color: var(--vault-ink);
-}
-
-.disclosureBody {
-	padding-top: 11px;
-}
-
 .group {
 	display: flex;
 	flex-direction: column;

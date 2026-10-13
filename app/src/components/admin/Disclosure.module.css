@@ -1,0 +1,17 @@
+.disclosure {
+	border-top: 1px solid var(--vault-border-hairline);
+	padding-top: 11px;
+}
+
+.title {
+	cursor: pointer;
+	color: var(--vault-text-body);
+}
+
+.title:hover {
+	color: var(--vault-ink);
+}
+
+.body {
+	padding-top: 11px;
+}

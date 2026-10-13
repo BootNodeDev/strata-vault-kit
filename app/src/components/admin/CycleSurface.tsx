@@ -9,6 +9,7 @@ import {
 import AddressRows from "../vault/AddressRows"
 import MetricsStrip, { type Metric } from "../vault/MetricsStrip"
 import styles from "./CycleSurface.module.css"
+import Disclosure from "./Disclosure"
 
 export type CycleGroup = FigureGroup & {
 	tiles: Metric[]
@@ -82,18 +83,6 @@ const FigureRows: React.FC<{ rows: FigureRow[] }> = ({ rows }) => (
 			</li>
 		))}
 	</ul>
-)
-
-export const Disclosure: React.FC<{
-	title: string
-	children: React.ReactNode
-}> = ({ title, children }) => (
-	<details className={styles.disclosure}>
-		<summary className={`${typeStyles.footnote} ${styles.disclosureTitle}`}>
-			{title}
-		</summary>
-		<div className={styles.disclosureBody}>{children}</div>
-	</details>
 )
 
 const Group: React.FC<{ group: CycleGroup }> = ({ group }) => (
