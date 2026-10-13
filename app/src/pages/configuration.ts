@@ -81,7 +81,7 @@ const MAX_WIND_DOWN_DELAY = 90n * DAY
 const MAX_BPS = 10_000
 const MAX_U64 = (1n << 64n) - 1n
 const MAX_I128 = (1n << 127n) - 1n
-const MAX_CEILING = ((1n << 127n) - 1n) / 10_000n
+const MAX_CEILING = MAX_I128 / 10_000n
 const PERCENT = /^(\d+)(?:\.(\d{1,2}))?\s*%?$/
 
 type Kind<T> = {

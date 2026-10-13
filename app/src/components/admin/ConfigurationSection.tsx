@@ -63,18 +63,17 @@ const ConfigurationSection: React.FC<{
 	const identityVerifier = usePendingTransaction(useSetIdentityVerifier())
 	const [inputs, setInputs] = useState<ConfigurationInputs>({})
 
-	const flows: Record<ConfigurationAction["id"], Flow> = {
-		"set-deposit-cap": depositCap,
-		"set-custodian": custodian,
-		"set-notice": notice,
-		"set-wind-down-delay": windDownDelay,
-		"set-oracle-config": oracleConfig,
-		"set-compliance": compliance,
-		"set-identity-verifier": identityVerifier,
-	}
-	const modalFlows = Object.entries(flows).map(([id, transaction]) =>
-		flow(id as ConfigurationModalAction, transaction),
-	)
+	const modalFlows = (
+		[
+			["set-deposit-cap", depositCap],
+			["set-custodian", custodian],
+			["set-notice", notice],
+			["set-wind-down-delay", windDownDelay],
+			["set-oracle-config", oracleConfig],
+			["set-compliance", compliance],
+			["set-identity-verifier", identityVerifier],
+		] satisfies [ConfigurationModalAction, Flow][]
+	).map(([id, transaction]) => flow(id, transaction))
 	const recorded = modalFlows.some(
 		(props) => props.status.status === "confirmed",
 	)
@@ -85,8 +84,23 @@ const ConfigurationSection: React.FC<{
 	const actions = toConfigurationActions(configuration, grants, wallet, inputs)
 
 	const run = (action: ConfigurationAction) => {
-		if (action.arg !== undefined)
-			flows[action.id].submit(action.arg as never, action.next)
+		if (action.arg === undefined) return
+		switch (action.id) {
+			case "set-deposit-cap":
+				return depositCap.submit(action.arg, action.next)
+			case "set-custodian":
+				return custodian.submit(action.arg, action.next)
+			case "set-notice":
+				return notice.submit(action.arg, action.next)
+			case "set-wind-down-delay":
+				return windDownDelay.submit(action.arg, action.next)
+			case "set-oracle-config":
+				return oracleConfig.submit(action.arg, action.next)
+			case "set-compliance":
+				return compliance.submit(action.arg, action.next)
+			case "set-identity-verifier":
+				return identityVerifier.submit(action.arg, action.next)
+		}
 	}
 
 	const onInput = (_: ConfigurationAction, value: string, key?: string) => {
