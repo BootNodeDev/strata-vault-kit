@@ -1,0 +1,33 @@
+.tabs {
+	display: flex;
+	gap: 10px;
+	margin-inline: -6px;
+	overflow-x: auto;
+	scrollbar-width: thin;
+	box-shadow: inset 0 -1px 0 var(--vault-border-hairline);
+}
+
+.tab {
+	flex: none;
+	padding: 4px 6px 10px;
+	white-space: nowrap;
+	color: var(--vault-text-body);
+	text-decoration: none;
+	border-bottom: 2px solid transparent;
+}
+
+.tab:hover {
+	color: var(--vault-ink);
+	border-bottom-color: var(--vault-border-inactive);
+}
+
+.tab:focus-visible {
+	outline: 2px solid var(--vault-action);
+	outline-offset: -2px;
+}
+
+.active,
+.active:hover {
+	color: var(--vault-ink);
+	border-bottom-color: var(--vault-ink);
+}

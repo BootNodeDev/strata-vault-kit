@@ -1,11 +1,14 @@
 import { shortAddress } from "@stellar-scaffold/app-lib"
-import React from "react"
+import React, { useEffect, useRef } from "react"
+import { Navigate, useParams } from "react-router-dom"
 import CycleSection from "../components/admin/CycleSection"
+import SurfaceTabs from "../components/admin/SurfaceTabs"
 import Skeleton from "../components/Skeleton"
 import AddressRows, { type AddressRow } from "../components/vault/AddressRows"
 import { vaultContractId } from "../config/contracts"
 import {
 	type AdminAddresses,
+	type AdminSurface,
 	type Grant,
 	type Standing,
 	SURFACE_LABELS,
@@ -37,11 +40,6 @@ const describeGrant = (grant: Grant, wallet: string): string =>
 		? grant.role
 		: `${grant.role} (${describeStanding(grant.standing)})`
 
-const describeCardGrant = (grant: Grant, wallet: string): string =>
-	isSingleKey(grant, wallet)
-		? grant.role
-		: `${grant.role} — ${describeStanding(grant.standing)}`
-
 const AddressesBlock: React.FC<{ addresses: AdminAddresses }> = ({
 	addresses,
 }) => (
@@ -53,10 +51,46 @@ const AddressesBlock: React.FC<{ addresses: AdminAddresses }> = ({
 	</div>
 )
 
+const HeldSurfaces: React.FC<{
+	held: AdminSurface[]
+	grantedBy: Record<AdminSurface, Grant[]>
+	wallet: string
+}> = ({ held, grantedBy, wallet }) => {
+	const { surface } = useParams()
+	const active = held.find((candidate) => candidate === surface)
+	const headingRef = useRef<HTMLHeadingElement>(null)
+	const shownSurface = useRef<AdminSurface | undefined>(undefined)
+
+	useEffect(() => {
+		if (active === undefined) return
+		if (shownSurface.current !== undefined && shownSurface.current !== active) {
+			headingRef.current?.focus()
+		}
+		shownSurface.current = active
+	}, [active])
+
+	if (active === undefined) return <Navigate replace to={`/admin/${held[0]}`} />
+
+	return (
+		<div className={styles.surfaces}>
+			<SurfaceTabs surfaces={held} />
+			<section className={styles.surface}>
+				<h2 ref={headingRef} tabIndex={-1} className={styles.srOnly}>
+					{SURFACE_LABELS[active]}
+				</h2>
+				{active === "cycle" && (
+					<CycleSection grants={grantedBy.cycle} wallet={wallet} />
+				)}
+			</section>
+		</div>
+	)
+}
+
 const AdminPanel: React.FC = () => {
 	const { status, surfaces, grantedBy, grants, signersUnknown, addresses } =
 		useAdminAuthority()
 	const { address } = useWallet()
+	const held = SURFACE_ORDER.filter((surface) => surfaces.has(surface))
 
 	return (
 		<div className={styles.page}>
@@ -82,14 +116,10 @@ const AdminPanel: React.FC = () => {
 			)}
 
 			{status === "checking" && (
-				<ul className={styles.cards}>
-					<li className={styles.card}>
-						<Skeleton className={styles.cardSkeleton} />
-					</li>
-					<li className={styles.card}>
-						<Skeleton className={styles.cardSkeleton} />
-					</li>
-				</ul>
+				<div className={styles.pending}>
+					<Skeleton className={styles.pendingLine} />
+					<Skeleton className={styles.pendingLine} />
+				</div>
 			)}
 
 			{status === "unreadable" && (
@@ -98,41 +128,18 @@ const AdminPanel: React.FC = () => {
 				</p>
 			)}
 
-			{status === "ready" && surfaces.size === 0 && (
+			{status === "ready" && held.length === 0 && (
 				<p className={typeStyles.body}>
 					This address holds no authority on this vault.
 				</p>
 			)}
 
-			{status === "ready" && surfaces.size > 0 && (
-				<ul className={styles.cards}>
-					{SURFACE_ORDER.filter((surface) => surfaces.has(surface)).map(
-						(surface) => (
-							<li
-								className={`${styles.card} ${surface === "cycle" ? styles.cardWide : ""}`}
-								key={surface}
-							>
-								<h2
-									className={`${typeStyles.sectionHead} ${styles.cardHeading}`}
-								>
-									{SURFACE_LABELS[surface]}
-								</h2>
-								<span className={`${typeStyles.footnote} ${styles.cardNote}`}>
-									Granted by{" "}
-									{grantedBy[surface]
-										.map((grant) => describeCardGrant(grant, address ?? ""))
-										.join(", ")}
-								</span>
-								{surface === "cycle" && (
-									<CycleSection
-										grants={grantedBy[surface]}
-										wallet={address ?? ""}
-									/>
-								)}
-							</li>
-						),
-					)}
-				</ul>
+			{status === "ready" && held.length > 0 && (
+				<HeldSurfaces
+					held={held}
+					grantedBy={grantedBy}
+					wallet={address ?? ""}
+				/>
 			)}
 
 			{status === "ready" && <AddressesBlock addresses={addresses} />}
