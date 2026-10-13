@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest"
 import { type UseContractTransaction } from "./useContractTransaction"
 import { usePendingTransaction } from "./usePendingTransaction"
 
-const makeTransaction = (
-	submit: (epochId: bigint) => boolean,
-): UseContractTransaction<bigint, Record<never, never>> => ({
+const makeTransaction = <TArg = bigint>(
+	submit: (arg: TArg) => boolean,
+): UseContractTransaction<TArg, Record<never, never>> => ({
 	status: { status: "idle" },
 	submit,
 	reset: vi.fn(),
@@ -55,6 +55,18 @@ describe("usePendingTransaction", () => {
 		result.current.retry()
 
 		expect(submit).toHaveBeenNthCalledWith(2, 5n)
+	})
+
+	it("retries a submission whose argument was null", () => {
+		const submit = vi.fn().mockReturnValue(true)
+		const { result } = renderHook(() =>
+			usePendingTransaction(makeTransaction<bigint | null>(submit)),
+		)
+
+		result.current.submit(null, "No cap")
+		result.current.retry()
+
+		expect(submit).toHaveBeenNthCalledWith(2, null)
 	})
 
 	it("does nothing on retry before any submission was accepted", () => {
