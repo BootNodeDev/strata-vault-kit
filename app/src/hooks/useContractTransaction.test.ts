@@ -45,7 +45,7 @@ describe("useContractTransaction", () => {
 		})
 	})
 
-	it("leaves every cache alone when the vault refuses at simulation", async () => {
+	it("refreshes only the extra query keys when the contract refuses at simulation", async () => {
 		const { result, queryClient } = renderTransaction(
 			"HostError: Error(Contract, #6046)",
 		)
@@ -53,7 +53,10 @@ describe("useContractTransaction", () => {
 
 		await act(() => result.current.submit(undefined))
 
-		expect(invalidateQueries).not.toHaveBeenCalled()
+		expect(invalidateQueries).toHaveBeenCalledTimes(extraKeys.length)
+		for (const queryKey of extraKeys) {
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
+		}
 	})
 
 	it("keeps the same submit across rerenders when no extra keys are given", () => {

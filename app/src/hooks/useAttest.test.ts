@@ -160,7 +160,7 @@ describe("useAttest", () => {
 		})
 	})
 
-	it("does not touch the cached cycle when the oracle refuses at simulation", async () => {
+	it("refreshes the cached cycle when the oracle refuses at simulation", async () => {
 		oracleMock.attest.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #3002)" },
 			signAndSend: vi.fn(),
@@ -170,6 +170,8 @@ describe("useAttest", () => {
 
 		await act(() => result.current.submit(attestation))
 
-		expect(invalidateQueries).not.toHaveBeenCalled()
+		for (const queryKey of attestWriteKeys) {
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
+		}
 	})
 })

@@ -182,7 +182,7 @@ describe("useFund", () => {
 		expect(result.current.submit).toBe(firstSubmit)
 	})
 
-	it("does not touch the cached cycle when the vault refuses at simulation", async () => {
+	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.fund.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6014)" },
 			signAndSend: vi.fn(),
@@ -192,6 +192,8 @@ describe("useFund", () => {
 
 		await act(() => result.current.submit(assets))
 
-		expect(invalidateQueries).not.toHaveBeenCalled()
+		for (const queryKey of cycleWriteKeys) {
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
+		}
 	})
 })

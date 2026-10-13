@@ -62,6 +62,11 @@ export function useContractTransaction<
 				lastStatus.current = next
 				if (!dismissed.current) setStatus(next)
 			}
+			const invalidateExtraKeys = () => {
+				for (const queryKey of extraKeys) {
+					void queryClient.invalidateQueries({ queryKey })
+				}
+			}
 			const invalidateRequestData = () => {
 				void queryClient.invalidateQueries({
 					queryKey: investorRequestsKey(owner),
@@ -72,9 +77,7 @@ export function useContractTransaction<
 				void queryClient.invalidateQueries({
 					queryKey: sharePositionKey(owner),
 				})
-				for (const queryKey of extraKeys) {
-					void queryClient.invalidateQueries({ queryKey })
-				}
+				invalidateExtraKeys()
 			}
 			applyStatus({ status: "preparing" })
 			try {
@@ -85,6 +88,7 @@ export function useContractTransaction<
 						status: "failed",
 						failure: { kind: "contract-error", code },
 					})
+					invalidateExtraKeys()
 					return
 				}
 				signatureRequested = true

@@ -163,7 +163,7 @@ describe("useDeployToCustodian", () => {
 		})
 	})
 
-	it("does not touch the cached cycle when the vault refuses at simulation", async () => {
+	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.deploy_to_custodian.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6012)" },
 			signAndSend: vi.fn(),
@@ -173,6 +173,8 @@ describe("useDeployToCustodian", () => {
 
 		await act(() => result.current.submit(assets))
 
-		expect(invalidateQueries).not.toHaveBeenCalled()
+		for (const queryKey of cycleWriteKeys) {
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
+		}
 	})
 })

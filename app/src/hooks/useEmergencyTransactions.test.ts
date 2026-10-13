@@ -154,13 +154,14 @@ describe.each(cases)("$name", (testCase) => {
 		expect(method).toHaveBeenCalledWith(args)
 	})
 
-	it("refuses before asking for a signature when the simulation carries the contract's reason", async () => {
+	it("refuses before asking for a signature and refreshes the state it read", async () => {
 		const signAndSend = vi.fn()
 		method.mockResolvedValue({
 			simulation: { error: `HostError: Error(Contract, #${refusal})` },
 			signAndSend,
 		})
-		const { result } = renderWithWallet(useHook)
+		const { result, queryClient } = renderWithWallet(useHook)
+		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
 
 		await act(() => result.current.submit(arg as never))
 
@@ -169,6 +170,8 @@ describe.each(cases)("$name", (testCase) => {
 			failure: { kind: "contract-error", code: refusal },
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
+		for (const queryKey of keys)
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
 	})
 
 	it("tells a declined signature apart from a failure", async () => {
