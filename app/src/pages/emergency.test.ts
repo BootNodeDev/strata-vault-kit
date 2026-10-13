@@ -47,10 +47,33 @@ const actionOf = (state: EmergencyState, grants: Grant[], id: string) => {
 }
 
 describe("toEmergencyActions", () => {
-	it("offers nothing while any state is still being read", () => {
+	it("holds no action back on a state still being read, showing the condition as unknown", () => {
+		const reading: EmergencyState = {
+			vault: "checking",
+			token: "checking",
+			oracle: "checking",
+		}
+
 		expect(
-			toEmergencyActions({ ...calm, token: "checking" }, everyRole, wallet),
-		).toEqual([])
+			toEmergencyActions(reading, everyRole, wallet).every(
+				(action) => action.enabled,
+			),
+		).toBe(true)
+		expect(actionOf(reading, everyRole, "pause-vault").conditions).toEqual([
+			{ label: "Vault is open", met: null },
+		])
+	})
+
+	it("decides each action from its own state only", () => {
+		const state: EmergencyState = {
+			vault: "checking",
+			token: "paused",
+			oracle: "checking",
+		}
+
+		expect(actionOf(state, everyRole, "pause-vault").enabled).toBe(true)
+		expect(actionOf(state, everyRole, "pause-token").enabled).toBe(false)
+		expect(actionOf(state, everyRole, "unpause-token").enabled).toBe(true)
 	})
 
 	it("offers nothing to a wallet with no emergency grant", () => {
@@ -109,7 +132,12 @@ describe("toEmergencyActions", () => {
 			.filter((action) => action.enabled)
 			.map((action) => action.id)
 
-		expect(enabled).toEqual(["pause-vault", "raise-ripcord", "pause-token"])
+		expect(enabled).toEqual([
+			"pause-vault",
+			"raise-ripcord",
+			"lower-ripcord",
+			"pause-token",
+		])
 	})
 
 	it("enables unpausing, lowering and clearing once everything is paused", () => {
@@ -137,6 +165,7 @@ describe("toEmergencyActions", () => {
 		expect(actionOf(calm, everyRole, "clear-latest").conditions).toEqual([
 			{ label: "Ripcord raised", met: false },
 		])
+		expect(actionOf(calm, everyRole, "lower-ripcord").conditions).toEqual([])
 		expect(actionOf(alarmed, everyRole, "unpause-token").conditions).toEqual([
 			{ label: "Share token is paused", met: true },
 		])
@@ -153,9 +182,7 @@ describe("toEmergencyActions", () => {
 		expect(actionOf(state, everyRole, "pause-vault").conditions).toEqual([
 			{ label: "Vault is open", met: null },
 		])
-		expect(
-			actions.filter((action) => action.enabled).map((action) => action.id),
-		).toEqual(["raise-ripcord"])
+		expect(actions.every((action) => action.enabled)).toBe(true)
 	})
 
 	it("keeps raising the ripcord available once raised, noting it already is", () => {

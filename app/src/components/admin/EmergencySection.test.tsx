@@ -172,7 +172,7 @@ describe("EmergencySection", () => {
 		).toBeTruthy()
 	})
 
-	it("lowers the ripcord and clears the latest price once raised", () => {
+	it("lowers the ripcord, and clears the latest price once raised", () => {
 		setState("open", "open", "paused")
 		const { rerender } = render(
 			<EmergencySection grants={[oracleAdmin]} wallet={WALLET} />,
@@ -200,13 +200,11 @@ describe("EmergencySection", () => {
 		expect(pauseTokenMock.submit).toHaveBeenCalled()
 	})
 
-	it("shows no actions while the state is still being read", () => {
-		setState("checking", "open", "valid")
+	it("keeps the actions available while the state is still being read", () => {
+		setState("checking", "checking", "checking")
 		render(<EmergencySection grants={[guardian]} wallet={WALLET} />)
 
-		expect(
-			screen.queryAllByRole("button", { name: "Pause the vault" }),
-		).toHaveLength(0)
+		expect(button("Pause the vault").disabled).toBe(false)
 	})
 
 	it("shows the flow modal only while the surface is active", () => {

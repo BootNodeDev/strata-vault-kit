@@ -3,7 +3,6 @@ import { type Grant } from "../hooks/useAdminAuthority"
 import { type OracleStatus } from "../hooks/useOracleState"
 import { type PauseState } from "../hooks/useVaultPaused"
 import {
-	allMet,
 	type Condition,
 	grantFor,
 	type RailAction,
@@ -14,12 +13,6 @@ export type EmergencyState = {
 	vault: PauseState
 	token: PauseState
 	oracle: OracleStatus
-}
-
-type SettledState = {
-	vault: Exclude<PauseState, "checking">
-	token: Exclude<PauseState, "checking">
-	oracle: Exclude<OracleStatus, "checking">
 }
 
 type PlainId =
@@ -49,18 +42,21 @@ const ORACLE_LABELS = {
 	paused: "Paused",
 } as const
 
+const isKnown = (state: PauseState | OracleStatus): boolean =>
+	state !== "checking" && state !== "unreadable"
+
 const pauseIs = (
 	label: string,
-	state: SettledState["vault"],
+	state: PauseState,
 	wanted: "open" | "paused",
 ): Condition => ({
 	label,
-	met: state === "unreadable" ? null : state === wanted,
+	met: isKnown(state) ? state === wanted : null,
 })
 
-const ripcordRaised = (oracle: SettledState["oracle"]): Condition => ({
+const ripcordRaised = (oracle: OracleStatus): Condition => ({
 	label: "Ripcord raised",
-	met: oracle === "unreadable" ? null : oracle === "paused",
+	met: isKnown(oracle) ? oracle === "paused" : null,
 })
 
 type Spec = {
@@ -82,17 +78,19 @@ const toAction = (
 		label: spec.label,
 		conditions: spec.conditions,
 		outcome: spec.outcome,
-		enabled: unavailable === undefined && allMet(spec.conditions),
+		enabled:
+			unavailable === undefined &&
+			spec.conditions.every((condition) => condition.met !== false),
 		...(spec.danger === true ? { tone: "danger" as const } : {}),
 		...(unavailable === undefined ? {} : { unavailable }),
 	}
 }
 
-const vaultSpecs = (state: SettledState): [Spec, Spec] => [
+const vaultSpecs = (vault: PauseState): [Spec, Spec] => [
 	{
 		id: "pause-vault",
 		label: "Pause the vault",
-		conditions: [pauseIs("Vault is open", state.vault, "open")],
+		conditions: [pauseIs("Vault is open", vault, "open")],
 		outcome:
 			"Stops new deposits, pricing and upgrades. Redemptions, claims, cancels and closing epochs stay open.",
 		danger: true,
@@ -100,35 +98,35 @@ const vaultSpecs = (state: SettledState): [Spec, Spec] => [
 	{
 		id: "unpause-vault",
 		label: "Unpause the vault",
-		conditions: [pauseIs("Vault is paused", state.vault, "paused")],
+		conditions: [pauseIs("Vault is paused", vault, "paused")],
 		outcome:
 			"Resumes deposits, pricing and upgrades. A pending upgrade waits longer by the time the vault spent paused.",
 	},
 ]
 
-const oracleAdminSpecs = (state: SettledState): [Spec, Spec] => [
+const oracleAdminSpecs = (oracle: OracleStatus): [Spec, Spec] => [
 	{
 		id: "lower-ripcord",
 		label: "Lower the ripcord",
-		conditions: [ripcordRaised(state.oracle)],
+		conditions: [],
 		outcome:
 			"Resumes pricing: epochs can be fulfilled again while the price is valid.",
 	},
 	{
 		id: "clear-latest",
 		label: "Clear the latest price",
-		conditions: [ripcordRaised(state.oracle)],
+		conditions: [ripcordRaised(oracle)],
 		outcome:
 			"Removes the recorded price, so the next attestation is not limited by its distance from the last. Pricing stays stopped until the ripcord is lowered.",
 		danger: true,
 	},
 ]
 
-const tokenSpecs = (state: SettledState): [Spec, Spec] => [
+const tokenSpecs = (token: PauseState): [Spec, Spec] => [
 	{
 		id: "pause-token",
 		label: "Pause the share token",
-		conditions: [pauseIs("Share token is open", state.token, "open")],
+		conditions: [pauseIs("Share token is open", token, "open")],
 		outcome:
 			"Stops holder transfers and redeem cancellations. Minting, burning and forced transfers stay open.",
 		danger: true,
@@ -136,7 +134,7 @@ const tokenSpecs = (state: SettledState): [Spec, Spec] => [
 	{
 		id: "unpause-token",
 		label: "Unpause the share token",
-		conditions: [pauseIs("Share token is paused", state.token, "paused")],
+		conditions: [pauseIs("Share token is paused", token, "paused")],
 		outcome: "Resumes holder transfers and redeem cancellations.",
 	},
 ]
@@ -154,7 +152,7 @@ const raiseGrant = (
 }
 
 function toRaiseAction(
-	state: SettledState,
+	oracle: OracleStatus,
 	grant: Grant,
 	wallet: string,
 ): EmergencyAction {
@@ -166,28 +164,23 @@ function toRaiseAction(
 		conditions: [],
 		outcome:
 			"Stops pricing: no epoch can be fulfilled until it is lowered. Attesting stays open.",
-		...(state.oracle === "paused" ? { note: "Ripcord already raised." } : {}),
+		...(oracle === "paused" ? { note: "Ripcord already raised." } : {}),
 		enabled: unavailable === undefined,
 		tone: "danger",
 		...(unavailable === undefined ? {} : { unavailable }),
 	}
 }
 
-const isSettled = (state: EmergencyState): state is SettledState =>
-	state.vault !== "checking" &&
-	state.token !== "checking" &&
-	state.oracle !== "checking"
-
 export function toEmergencyActions(
 	state: EmergencyState,
 	grants: Grant[],
 	wallet: string,
 ): EmergencyAction[] {
-	if (!isSettled(state) || grants.length === 0) return []
+	if (grants.length === 0) return []
 	const held = (role: string) => grantFor(grants, role, wallet)
-	const [pauseVault, unpauseVault] = vaultSpecs(state)
-	const [lower, clear] = oracleAdminSpecs(state)
-	const [pauseToken, unpauseToken] = tokenSpecs(state)
+	const [pauseVault, unpauseVault] = vaultSpecs(state.vault)
+	const [lower, clear] = oracleAdminSpecs(state.oracle)
+	const [pauseToken, unpauseToken] = tokenSpecs(state.token)
 	const oracleAdmin = held(ROLES.oracleAdmin)
 	const tokenAdmin = held(ROLES.tokenAdmin)
 	const raiser = raiseGrant(held(ROLES.oracleGuardian), oracleAdmin, wallet)
@@ -199,7 +192,8 @@ export function toEmergencyActions(
 	const governance = held(ROLES.governance)
 	if (governance !== undefined)
 		actions.push(toAction(unpauseVault, governance, wallet))
-	if (raiser !== undefined) actions.push(toRaiseAction(state, raiser, wallet))
+	if (raiser !== undefined)
+		actions.push(toRaiseAction(state.oracle, raiser, wallet))
 	if (oracleAdmin !== undefined)
 		actions.push(
 			toAction(lower, oracleAdmin, wallet),

@@ -113,7 +113,7 @@ const EmergencySection: React.FC<{
 					<CycleActionRail
 						scope="emergency"
 						actions={actions}
-						pending={actions.length === 0 && grants.length > 0}
+						pending={false}
 						unreadable={false}
 						onRun={run}
 					/>
