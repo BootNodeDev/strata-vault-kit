@@ -40,6 +40,7 @@ vi.mock("../../config/contracts", () => ({
 	vaultContractId: "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
 }))
 
+const VAULT = "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3"
 const WALLET = "GWALLETADDRESS1234"
 const TARGET = "GDPO5SQDJY4E2XEE47MAOT2M2F3GR4H2AYYKSMIOT2YPOHAMC36VKWIA"
 const UNIT = 10_000_000n
@@ -154,6 +155,31 @@ describe("ComplianceSection", () => {
 		expect(
 			screen.getAllByText("Could not read the allowlist admin.").length,
 		).toBeGreaterThan(0)
+	})
+
+	it("clears a vault confirmation when the target changes", () => {
+		render(
+			<ComplianceSection
+				grants={[officer]}
+				wallet={WALLET}
+				addresses={ADDRESSES}
+			/>,
+		)
+		enterTarget(VAULT)
+		openRow("Freeze the address")
+		fireEvent.click(screen.getByLabelText("Stops the vault moving shares."))
+		expect(
+			screen.getByLabelText<HTMLInputElement>("Stops the vault moving shares.")
+				.checked,
+		).toBe(true)
+
+		enterTarget(TARGET)
+		enterTarget(VAULT)
+
+		expect(
+			screen.getByLabelText<HTMLInputElement>("Stops the vault moving shares.")
+				.checked,
+		).toBe(false)
 	})
 
 	it("ignores an address that is not a valid key", () => {

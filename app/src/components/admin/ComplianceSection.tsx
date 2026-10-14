@@ -16,7 +16,7 @@ import {
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
 import { useRailInputs } from "../../hooks/useRailInputs"
-import { parseAccount } from "../../pages/actions"
+import { clearConfirmations, parseAccount } from "../../pages/actions"
 import {
 	COMPLIANCE_ACTION_IDS,
 	type ComplianceAction,
@@ -134,6 +134,11 @@ const ComplianceSection: React.FC<{
 	}
 	const actions = toComplianceActions(state, grants, wallet, inputs)
 
+	const changeTarget = (text: string) => {
+		setTargetText(text)
+		setInputs((previous) => clearConfirmations(previous, COMPLIANCE_ACTION_IDS))
+	}
+
 	const invalid = targetText.trim() !== "" && target === undefined
 	const activeModal = modalFlows.find((props) => props.status.status !== "idle")
 
@@ -173,7 +178,7 @@ const ComplianceSection: React.FC<{
 								id={TARGET_ID}
 								className={`${typeStyles.body} ${styles.input}`}
 								value={targetText}
-								onChange={(event) => setTargetText(event.target.value)}
+								onChange={(event) => changeTarget(event.target.value)}
 								placeholder="Address"
 								aria-invalid={invalid}
 								aria-describedby={invalid ? TARGET_ERROR_ID : undefined}
