@@ -2275,7 +2275,12 @@ describe("TransactionModal, governance actions", () => {
 		["grant-vault-role", 2000, "vault", /does not hold the role/],
 		["revoke-oracle-role", 2002, "oracle", /holders changed/],
 		["revoke-token-role", 2007, "share token", /does not hold this role/],
-		["grant-oracle-role", 2010, "oracle", /cannot hold any more roles/],
+		[
+			"grant-oracle-role",
+			2010,
+			"oracle",
+			/already holds the maximum number of roles/,
+		],
 		["cancel-vault-handover", 2200, "vault", /no pending handover/],
 		["hand-over-oracle-admin", 2201, "oracle", /expiry is outside/],
 		["cancel-token-handover", 2202, "share token", /different address/],
