@@ -170,6 +170,31 @@ describe("GovernanceSection", () => {
 		expect(within(token).getByText("CABQ...GCK3")).toBeTruthy()
 	})
 
+	it("says when the pending admins could not be read", () => {
+		useGovernanceStateMock.mockReturnValue({
+			handovers: { status: "unreadable" },
+			upgrades: upgrades(),
+		})
+		renderSection([])
+
+		expect(
+			screen.getByText("Could not read the governance state."),
+		).toBeTruthy()
+	})
+
+	it("keeps the rail checking while the pending admins load", () => {
+		useGovernanceStateMock.mockReturnValue({
+			handovers: { status: "checking" },
+			upgrades: upgrades(),
+		})
+		renderSection([])
+
+		expect(
+			screen.queryByText("Could not read the governance state."),
+		).toBeNull()
+		expect(screen.queryByText("No actions available.")).toBeNull()
+	})
+
 	it("offers role changes only on the contracts the wallet administers", () => {
 		renderSection([tokenAdmin])
 

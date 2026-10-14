@@ -184,8 +184,8 @@ const GovernanceSection: React.FC<{
 					<CycleActionRail
 						scope="governance"
 						actions={actions}
-						pending={false}
-						unreadable={false}
+						pending={handovers.status === "checking"}
+						unreadable={handovers.status === "unreadable"}
 						onRun={(action) => submit(flows, action)}
 						onInput={onInput}
 					/>

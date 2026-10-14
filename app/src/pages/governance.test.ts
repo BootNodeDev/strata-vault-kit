@@ -1,8 +1,9 @@
 import { type PendingTransfer } from "@stellar-scaffold/app-lib"
 import { describe, expect, it } from "vitest"
+import { type Metric } from "../components/vault/MetricsStrip"
 import { type GovernedContract } from "../hooks/pendingAdmins"
 import { type Grant, type RoleHolders } from "../hooks/useAdminAuthority"
-import { type Upgrades } from "../hooks/useGovernanceState"
+import { type Handovers, type Upgrades } from "../hooks/useGovernanceState"
 import { type RailField, readiness } from "./actions"
 import { formatDuration, formatTimestamp } from "./cycle"
 import {
@@ -695,6 +696,21 @@ describe("toGovernanceGroups", () => {
 		expect(groups[2]?.metrics.at(-1)?.note).toBe(
 			`Expired ${formatTimestamp(CLOSE_TIME - 500n)}`,
 		)
+	})
+
+	it.each<[Handovers, Metric[]]>([
+		[{ status: "checking" }, []],
+		[
+			{ status: "unreadable" },
+			[{ label: "Pending admin", value: null, note: "Could not be read" }],
+		],
+	])("shows the pending admin of a %o read", (handovers, metrics) => {
+		const groups = toGovernanceGroups({ ...state(), handovers })
+
+		for (const group of groups)
+			expect(
+				group.metrics.filter(({ label }) => label === "Pending admin"),
+			).toEqual(metrics)
 	})
 
 	it("lists every role of each contract with its holders", () => {

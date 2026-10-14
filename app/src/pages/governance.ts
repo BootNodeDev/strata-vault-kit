@@ -799,7 +799,10 @@ const pendingMetric = (
 	handovers: Handovers,
 	contract: GovernedContract,
 ): Metric[] => {
-	if (handovers.status !== "ready") return []
+	const label = "Pending admin"
+	if (handovers.status === "checking") return []
+	if (handovers.status === "unreadable")
+		return [{ label, value: null, note: "Could not be read" }]
 	const pending = handovers.pending[contract]
 	if (pending === null) return []
 	const at = formatTimestamp(
@@ -807,7 +810,7 @@ const pendingMetric = (
 	)
 	return [
 		{
-			label: "Pending admin",
+			label,
 			value: shortAddress(pending.address),
 			note: pending.expired ? `Expired ${at}` : `Expires ${at}`,
 		},
