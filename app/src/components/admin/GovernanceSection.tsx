@@ -34,6 +34,7 @@ import {
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
 import {
+	confirmKey,
 	GOVERNANCE_ACTION_IDS,
 	type GovernanceAction,
 	type GovernanceInputs,
@@ -170,9 +171,13 @@ const GovernanceSection: React.FC<{
 	const state = { holders, vault: vaultContractId, handovers, upgrades }
 	const actions = toGovernanceActions(state, grants, wallet, inputs)
 
-	const onInput = (_: GovernanceAction, value: string, key?: string) => {
+	const onInput = (action: GovernanceAction, value: string, key?: string) => {
 		if (key !== undefined)
-			setInputs((previous) => ({ ...previous, [key]: value }))
+			setInputs((previous) => ({
+				...previous,
+				[confirmKey(action.id)]: "",
+				[key]: value,
+			}))
 	}
 
 	const activeModal = modalFlows.find((props) => props.status.status !== "idle")

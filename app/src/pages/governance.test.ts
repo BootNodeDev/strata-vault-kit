@@ -396,6 +396,19 @@ describe("admin handover", () => {
 		},
 	)
 
+	it("drops a confirmation given for another expiry", () => {
+		const draft = find("hand-over-vault-admin", [governance], offer)
+		const confirm = fieldOf(draft, "confirm")
+		const longer = find("hand-over-vault-admin", [governance], {
+			...offer,
+			"hand-over-vault-admin-expiry": "8d",
+			[confirm?.key ?? ""]: confirm?.value,
+		})
+
+		expect(fieldOf(longer, "confirm")).toMatchObject({ checked: false })
+		expect(longer.enabled).toBe(false)
+	})
+
 	it("offers any expiry the contract accepts, in any duration unit", () => {
 		const confirmed = (expiry: string) => {
 			const inputs = { ...offer, "hand-over-vault-admin-expiry": expiry }

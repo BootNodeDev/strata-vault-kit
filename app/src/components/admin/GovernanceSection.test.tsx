@@ -249,6 +249,54 @@ describe("GovernanceSection", () => {
 		})
 	})
 
+	it("asks again for a confirmation when a typed value comes back", () => {
+		renderSection([governance])
+
+		expand("Grant a vault role")
+		fireEvent.change(screen.getByRole("combobox", { name: "Role" }), {
+			target: { value: "guardian" },
+		})
+		const typeAccount = (value: string) =>
+			fireEvent.change(screen.getByRole("textbox", { name: "Account" }), {
+				target: { value },
+			})
+		const merge = () =>
+			screen.getByRole<HTMLInputElement>("checkbox", {
+				name: "Merges two vault roles on one account.",
+			})
+		typeAccount(WALLET)
+		fireEvent.click(merge())
+		expect(merge().checked).toBe(true)
+
+		typeAccount(ACCOUNT)
+		typeAccount(WALLET)
+
+		expect(merge().checked).toBe(false)
+		expect(submit("Grant a vault role").disabled).toBe(true)
+	})
+
+	it("asks again for a handover confirmation when the expiry comes back", () => {
+		renderSection([governance])
+
+		expand("Hand over vault admin")
+		fireEvent.change(screen.getByRole("textbox", { name: "New admin" }), {
+			target: { value: ACCOUNT },
+		})
+		const typeExpiry = (value: string) =>
+			fireEvent.change(screen.getByRole("textbox", { name: "Expiry" }), {
+				target: { value },
+			})
+		const hands = () =>
+			screen.getByRole<HTMLInputElement>("checkbox", {
+				name: "Hands control of the vault to GABA...EJXA.",
+			})
+		fireEvent.click(hands())
+		typeExpiry("2d")
+		typeExpiry("7d")
+
+		expect(hands().checked).toBe(false)
+	})
+
 	it("shows the running role change only while the tab is active", () => {
 		txs.useGrantOracleRole.status = { status: "awaiting-signature" }
 		const { rerender } = renderSection([grantOf("oracle admin")])

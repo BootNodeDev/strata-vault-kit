@@ -65,6 +65,8 @@ export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
 	...VAULT_ACTION_IDS,
 ]
 
+export const confirmKey = (id: GovernanceActionId): string => `${id}-confirm`
+
 type Built<Id extends string, Arg> = Id extends string
 	? RailAction<RailField> & { id: Id; arg: Arg; next: string }
 	: never
@@ -312,7 +314,7 @@ function roleSpec(
 	const confirm =
 		draft === undefined
 			? undefined
-			: roleConfirmation(draft, `${id}-confirm`, inputs)
+			: roleConfirmation(draft, confirmKey(id), inputs)
 	if (confirm !== undefined) {
 		fields.push(confirm.field)
 		conditions.push(confirm.condition)
@@ -404,7 +406,7 @@ function handOverSpec(
 	]
 	if (account !== undefined) {
 		const confirm = confirmation(
-			`${id}-confirm`,
+			confirmKey(id),
 			`Hands control of the ${CONTRACTS[contract].subject} to ${shortAddress(account)}.`,
 			`${account}:${secs ?? ""}`,
 			inputs,
@@ -606,7 +608,7 @@ function applySpec(
 		conditions.push(aboveNotice(proposal.secs, upgrades.notice))
 	else {
 		const confirm = confirmation(
-			"apply-upgrade-confirm",
+			confirmKey("apply-upgrade"),
 			"Replaces the vault's code.",
 			proposal.hash,
 			inputs,
@@ -647,7 +649,7 @@ function windDownSpec(
 ): VaultSpec<"propose-wind-down", undefined> {
 	const phase = upgrades?.windDown.phase ?? null
 	const confirm = confirmation(
-		"propose-wind-down-confirm",
+		confirmKey("propose-wind-down"),
 		"Starts closing the vault.",
 		"wind-down",
 		inputs,
