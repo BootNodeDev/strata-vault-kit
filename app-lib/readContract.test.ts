@@ -267,6 +267,26 @@ describe("readEpochRequests", () => {
 		expect(result.get(5n)?.epoch).toEqual({ kind: "archived" })
 	})
 
+	it("maps epoch and request entries reporting a TTL of 0 to archived", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [
+				entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 0),
+				entryFor(DEPOSIT_5_KEY_XDR, depositScVal, 0),
+				entryFor(REDEEM_5_KEY_XDR, redeemScVal, 0),
+			],
+			latestLedger: 100,
+		})
+		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
+
+		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, [5n])
+
+		expect(result.get(5n)).toEqual({
+			epoch: { kind: "archived" },
+			deposit: { kind: "archived" },
+			redeem: { kind: "archived" },
+		})
+	})
+
 	it("marks a value unreadable when the stored ScVal does not match the expected struct shape", async () => {
 		getLedgerEntriesMock.mockResolvedValue({
 			entries: [entryFor(EPOCH_5_KEY_XDR, xdr.ScVal.scvBool(true), 1000)],
@@ -358,6 +378,18 @@ describe("readEpochs", () => {
 	it("reports an entry whose TTL has lapsed as archived", async () => {
 		getLedgerEntriesMock.mockResolvedValue({
 			entries: [entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 50)],
+			latestLedger: 100,
+		})
+		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
+
+		const result = await readEpochs(CONTRACT_ID, [5n])
+
+		expect(result.get(5n)).toEqual({ kind: "archived" })
+	})
+
+	it("reports an entry whose TTL is 0 as archived", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 0)],
 			latestLedger: 100,
 		})
 		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
@@ -767,6 +799,18 @@ describe("readPendingAdmins", () => {
 	it("reads an entry whose TTL lapsed as no transfer", async () => {
 		getLedgerEntriesMock.mockResolvedValue({
 			entries: [pendingEntry(CONTRACT_ID, 900)],
+		})
+
+		const read = await readPendingAdmins([CONTRACT_ID])
+
+		expect(read.kind === "value" && read.value.pending.get(CONTRACT_ID)).toBe(
+			null,
+		)
+	})
+
+	it("reads an entry whose TTL is 0 as no transfer", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [pendingEntry(CONTRACT_ID, 1_500, 0)],
 		})
 
 		const read = await readPendingAdmins([CONTRACT_ID])

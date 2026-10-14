@@ -135,14 +135,15 @@ function decodeLedgerEntry<T>(
 	key: xdr.LedgerKey,
 	decode: (val: xdr.ScVal) => T,
 	latestLedger: number | null,
+	untrackedTtlIsLive = false,
 ): ContractRead<T | null> {
 	if (!chunkResult.ok) return { kind: "unreadable" }
 	const entry = chunkResult.byKey.get(key.toXDR("base64"))
 	if (entry === undefined) return { kind: "value", value: null }
 	if (latestLedger === null) return { kind: "unreadable" }
 	const liveUntil = entry.liveUntilLedgerSeq ?? 0
-	// RPC reports 0 for a live entry whose TTL it does not track
-	if (liveUntil !== 0 && liveUntil < latestLedger) return { kind: "archived" }
+	if (liveUntil < latestLedger && !(untrackedTtlIsLive && liveUntil === 0))
+		return { kind: "archived" }
 	try {
 		return { kind: "value", value: decode(entry.val.contractData().val()) }
 	} catch {
@@ -411,7 +412,13 @@ export async function readContractAdmin(
 			latestLedgerSequence(),
 			fetchChunk([key]),
 		])
-		return decodeLedgerEntry(fetched, key, decodeInstanceAdmin, latestLedger)
+		return decodeLedgerEntry(
+			fetched,
+			key,
+			decodeInstanceAdmin,
+			latestLedger,
+			true,
+		)
 	} catch {
 		return { kind: "unreadable" }
 	}
