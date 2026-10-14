@@ -317,8 +317,25 @@ describe("toComplianceActions", () => {
 
 		expect(unmet(over)).toEqual([["Amount ≤ shares", false]])
 		expect(over.enabled).toBe(false)
-		expect(unmet(missing)).toEqual([["Destination entered", null]])
+		expect(unmet(missing)).toEqual([
+			["Destination entered", null],
+			["Destination differs from the address", null],
+		])
 		expect(missing.enabled).toBe(false)
+	})
+
+	it("refuses a destination equal to the target and shows no outcome", () => {
+		const action = actionOf(stateOf(HOLDER), "force-transfer", {
+			"force-transfer-destination": HOLDER,
+			"force-transfer-amount": "5",
+		})
+
+		expect(unmet(action)).toEqual([
+			["Destination differs from the address", false],
+		])
+		expect(action.enabled).toBe(false)
+		expect(action.outcome).toBeNull()
+		expect(action.arg).toBeUndefined()
 	})
 
 	it("notes a destination that is not allowlisted", () => {

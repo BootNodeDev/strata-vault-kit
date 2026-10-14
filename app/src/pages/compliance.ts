@@ -326,6 +326,13 @@ function forceTransferSpec(
 		label: "Destination entered",
 		met: destinationText.trim() === "" ? null : destination !== undefined,
 	}
+	const differs: Condition = {
+		label: "Destination differs from the address",
+		met:
+			target === undefined || destination === undefined
+				? null
+				: destination !== target,
+	}
 	const bound = atMost("Amount ≤ shares", amount, shares)
 	const confirm = vaultConfirmation(
 		id,
@@ -337,12 +344,14 @@ function forceTransferSpec(
 	const required = [
 		entered,
 		destinationEntered,
+		differs,
 		positive(entry),
 		...(confirm ? [confirm.condition] : []),
 	]
 	const valid =
 		target !== undefined &&
 		destination !== undefined &&
+		differs.met === true &&
 		amount !== undefined &&
 		amount > 0n
 	return {
@@ -351,6 +360,7 @@ function forceTransferSpec(
 		conditions: [
 			entered,
 			destinationEntered,
+			differs,
 			positive(entry),
 			bound,
 			...(confirm ? [confirm.condition] : []),
