@@ -6,11 +6,16 @@ import {
 	type ContractRead,
 	type PendingAdmins,
 	readContract,
-	readPendingAdmins,
 } from "@stellar-scaffold/app-lib"
-import { skipToken, useQuery } from "@tanstack/react-query"
+import {
+	type QueryClient,
+	skipToken,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query"
 import { asyncVault } from "../config/clients"
 import { vaultContractId } from "../config/contracts"
+import { pendingAdminsQuery } from "./pendingAdmins"
 import { useWallet } from "./useWallet"
 
 export type AdminSurface =
@@ -264,7 +269,10 @@ async function readSigners(
 	return { byAccount, unknown }
 }
 
-async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
+async function fetchAdminAuthority(
+	wallet: string,
+	queryClient: QueryClient,
+): Promise<AdminAuthority> {
 	const [
 		governance,
 		manager,
@@ -309,11 +317,13 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		readRoleMembers(tokenPromise, "manager"),
 		readContract(async () => (await tokenPromise).get_admin()),
 		readContract(async () => (await tokenPromise).identity_verifier()),
-		readPendingAdmins([
-			vaultContractId,
-			oracleAddress.value,
-			shareTokenAddress.value,
-		]),
+		queryClient.fetchQuery(
+			pendingAdminsQuery({
+				vault: vaultContractId,
+				oracle: oracleAddress.value,
+				token: shareTokenAddress.value,
+			}),
+		),
 	])
 
 	const addresses: AdminAddresses = {
@@ -374,10 +384,13 @@ export const adminAuthorityKey = ["admin", "authority"] as const
 
 export function useAdminAuthority(): AdminAuthority {
 	const { address } = useWallet()
+	const queryClient = useQueryClient()
 	const { data } = useQuery({
 		queryKey: [...adminAuthorityKey, address],
 		queryFn:
-			address === undefined ? skipToken : () => fetchAdminAuthority(address),
+			address === undefined
+				? skipToken
+				: () => fetchAdminAuthority(address, queryClient),
 		staleTime: 30_000,
 		refetchOnWindowFocus: false,
 	})

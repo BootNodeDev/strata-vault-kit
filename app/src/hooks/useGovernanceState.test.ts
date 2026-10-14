@@ -107,6 +107,16 @@ describe("useGovernanceState", () => {
 		})
 	})
 
+	it("keeps checking, without reading, until the contract addresses are known", async () => {
+		const { result } = renderWithWallet(() =>
+			useGovernanceState({ contracts: undefined }),
+		)
+
+		await waitFor(() => expect(result.current.upgrades.status).toBe("ready"))
+		expect(result.current.handovers).toEqual({ status: "checking" })
+		expect(readPendingAdminsMock).not.toHaveBeenCalled()
+	})
+
 	it("reports unreadable when the ledger cannot be read", async () => {
 		readPendingAdminsMock.mockResolvedValue({ kind: "unreadable" })
 		const { result } = render()

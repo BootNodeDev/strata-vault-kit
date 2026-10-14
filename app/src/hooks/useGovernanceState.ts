@@ -1,11 +1,13 @@
 import {
+	type ContractRead,
 	type LedgerWindow,
+	type PendingAdmins,
 	type PendingTransfer,
 	readContract,
-	readPendingAdmins,
 } from "@stellar-scaffold/app-lib"
 import { useQuery } from "@tanstack/react-query"
 import { asyncVault } from "../config/clients"
+import { type GovernedContract, pendingAdminsQuery } from "./pendingAdmins"
 import { useConfigurationState } from "./useConfigurationState"
 import { type CycleWindDown, useCycleReads } from "./useCycleState"
 import { type PauseState, useVaultPaused } from "./useVaultPaused"
@@ -13,16 +15,7 @@ import { type PauseState, useVaultPaused } from "./useVaultPaused"
 const STALE_MS = 30_000
 const REFRESH_MS = 15_000
 
-export const governanceReadsKey = ["governance", "reads"] as const
 export const upgradeProposalKey = ["governance", "upgradeProposal"] as const
-
-export type GovernedContract = "vault" | "oracle" | "token"
-
-export const GOVERNED_CONTRACTS: GovernedContract[] = [
-	"vault",
-	"oracle",
-	"token",
-]
 
 export type Handovers =
 	| { status: "checking" }
@@ -93,12 +86,10 @@ function useUpgrades(active: boolean): Upgrades {
 	}
 }
 
-async function fetchHandovers(
+function toHandovers(
+	read: ContractRead<PendingAdmins>,
 	contracts: Record<GovernedContract, string>,
-): Promise<Handovers> {
-	const read = await readPendingAdmins(
-		GOVERNED_CONTRACTS.map((contract) => contracts[contract]),
-	)
+): Handovers {
 	if (read.kind !== "value") return { status: "unreadable" }
 	const pendingOf = (contract: GovernedContract) =>
 		read.value.pending.get(contracts[contract]) ?? null
@@ -117,15 +108,17 @@ export function useGovernanceState({
 	contracts,
 	active = true,
 }: {
-	contracts: Record<GovernedContract, string>
+	contracts: Record<GovernedContract, string> | undefined
 	active?: boolean
 }): { handovers: Handovers; upgrades: Upgrades } {
 	const { data } = useQuery({
-		queryKey: [...governanceReadsKey, contracts],
-		queryFn: () => fetchHandovers(contracts),
-		staleTime: STALE_MS,
+		...pendingAdminsQuery(contracts),
 		refetchInterval: active ? REFRESH_MS : false,
 	})
 	const upgrades = useUpgrades(active)
-	return { handovers: data ?? { status: "checking" }, upgrades }
+	const handovers: Handovers =
+		data === undefined || contracts === undefined
+			? { status: "checking" }
+			: toHandovers(data, contracts)
+	return { handovers, upgrades }
 }

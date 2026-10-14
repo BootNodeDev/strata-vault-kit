@@ -105,6 +105,7 @@ const SurfaceBody: React.FC<{
 					grants={grantedBy.governance}
 					wallet={wallet}
 					holders={holders}
+					addresses={addresses}
 					active={active}
 					contracts={contracts}
 				/>

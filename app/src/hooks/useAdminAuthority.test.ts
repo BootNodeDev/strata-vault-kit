@@ -2,6 +2,7 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { vaultContractId } from "../config/contracts"
+import { pendingAdminsQuery } from "./pendingAdmins"
 import { renderWithWallet, investorAddress } from "./testSupport"
 import {
 	type AdminSurface,
@@ -524,6 +525,23 @@ describe("useAdminAuthority", () => {
 		expect(result.current.grants.map((grant) => grant.role)).toEqual([
 			"oracle pending admin",
 		])
+	})
+
+	it("files the pending admins read where the governance state looks for it", async () => {
+		const { result, queryClient } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(
+			queryClient.getQueryData(
+				pendingAdminsQuery({
+					vault: vaultContractId,
+					oracle: derivedOracleAddress,
+					token: derivedShareTokenAddress,
+				}).queryKey,
+			),
+		).toEqual(pendingAdmins({}))
+		expect(readPendingAdminsMock).toHaveBeenCalledTimes(1)
 	})
 
 	it("is unreadable when the pending admins cannot be read", async () => {

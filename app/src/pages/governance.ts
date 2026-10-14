@@ -1,10 +1,12 @@
 import { StrKey } from "@stellar/stellar-sdk"
 import { type PendingTransfer, shortAddress } from "@stellar-scaffold/app-lib"
 import { type Metric } from "../components/vault/MetricsStrip"
-import { type Grant, type RoleHolders } from "../hooks/useAdminAuthority"
 import {
 	GOVERNED_CONTRACTS,
 	type GovernedContract,
+} from "../hooks/pendingAdmins"
+import { type Grant, type RoleHolders } from "../hooks/useAdminAuthority"
+import {
 	type Handovers,
 	type PendingUpgrade,
 	type Upgrades,

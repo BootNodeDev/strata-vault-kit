@@ -1,7 +1,11 @@
 import { type PendingTransfer } from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
-import { type Grant, type RoleHolders } from "../../hooks/useAdminAuthority"
+import {
+	type AdminAddresses,
+	type Grant,
+	type RoleHolders,
+} from "../../hooks/useAdminAuthority"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import {
 	type Handovers,
@@ -61,12 +65,15 @@ vi.mock("../../hooks/useGovernanceState", async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	useGovernanceState: useGovernanceStateMock,
 }))
-vi.mock("../../config/addresses", () => ({
-	addresses: { nav_oracle: "CORACLE", share_token: "CTOKEN" },
-}))
 vi.mock("../../config/contracts", () => ({
 	vaultContractId: "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
 }))
+
+const ADDRESSES: AdminAddresses = {
+	oracle: "CORACLE",
+	shareToken: "CTOKEN",
+	identityVerifier: null,
+}
 
 const grantOf = (role: string): Grant => ({
 	role,
@@ -134,6 +141,7 @@ const renderSection = (grants: Grant[], active = true) =>
 			grants={grants}
 			wallet={WALLET}
 			holders={HOLDERS}
+			addresses={ADDRESSES}
 			active={active}
 		/>,
 	)
@@ -226,6 +234,7 @@ describe("GovernanceSection", () => {
 				grants={[grantOf("oracle admin")]}
 				wallet={WALLET}
 				holders={HOLDERS}
+				addresses={ADDRESSES}
 				active={false}
 			/>,
 		)

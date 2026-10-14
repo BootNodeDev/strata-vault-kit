@@ -1,10 +1,8 @@
 import { type PendingTransfer } from "@stellar-scaffold/app-lib"
 import { describe, expect, it } from "vitest"
+import { type GovernedContract } from "../hooks/pendingAdmins"
 import { type Grant, type RoleHolders } from "../hooks/useAdminAuthority"
-import {
-	type GovernedContract,
-	type Upgrades,
-} from "../hooks/useGovernanceState"
+import { type Upgrades } from "../hooks/useGovernanceState"
 import { type RailField, readiness } from "./actions"
 import { formatDuration, formatTimestamp } from "./cycle"
 import {

@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react"
-import { addresses } from "../../config/addresses"
 import { vaultContractId } from "../../config/contracts"
-import { type Grant, type RoleHolders } from "../../hooks/useAdminAuthority"
+import {
+	type AdminAddresses,
+	type Grant,
+	type RoleHolders,
+} from "../../hooks/useAdminAuthority"
 import { useGovernanceState } from "../../hooks/useGovernanceState"
 import {
 	useApplyUpgrade,
@@ -62,12 +65,6 @@ const flow = (
 	onClose: transaction.reset,
 	onRetry: transaction.retry,
 })
-
-const CONTRACTS = {
-	vault: vaultContractId,
-	oracle: addresses.nav_oracle,
-	token: addresses.share_token,
-}
 
 function useGovernanceFlows() {
 	return {
@@ -144,11 +141,19 @@ const GovernanceSection: React.FC<{
 	grants: Grant[]
 	wallet: string
 	holders: RoleHolders
+	addresses: AdminAddresses
 	contracts?: React.ReactNode
 	active?: boolean
-}> = ({ grants, wallet, holders, contracts, active = true }) => {
+}> = ({ grants, wallet, holders, addresses, contracts, active = true }) => {
 	const { handovers, upgrades } = useGovernanceState({
-		contracts: CONTRACTS,
+		contracts:
+			addresses.oracle === null || addresses.shareToken === null
+				? undefined
+				: {
+						vault: vaultContractId,
+						oracle: addresses.oracle,
+						token: addresses.shareToken,
+					},
 		active,
 	})
 	const flows = useGovernanceFlows()

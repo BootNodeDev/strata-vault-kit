@@ -6,11 +6,12 @@ import {
 	navOracleWriter,
 	shareTokenWriter,
 } from "../config/clients"
+import { governanceReadsKey } from "./pendingAdmins"
 import { adminAuthorityKey } from "./useAdminAuthority"
 import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
-import { governanceReadsKey, upgradeProposalKey } from "./useGovernanceState"
+import { upgradeProposalKey } from "./useGovernanceState"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 
 export type RoleChange = { role: string; account: string }
