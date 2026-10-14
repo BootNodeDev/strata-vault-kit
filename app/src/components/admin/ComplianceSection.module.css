@@ -19,7 +19,11 @@
 }
 
 .fieldInvalid {
-	border: 2px solid var(--vault-danger);
+	border-color: var(--vault-danger);
+}
+
+.error {
+	color: var(--vault-danger);
 }
 
 .field:focus-within {

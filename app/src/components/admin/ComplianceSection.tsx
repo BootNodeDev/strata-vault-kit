@@ -87,6 +87,7 @@ function submit(flows: Flows, action: ComplianceAction) {
 }
 
 const TARGET_ID = "compliance-target"
+const TARGET_ERROR_ID = "compliance-target-error"
 
 const ComplianceSection: React.FC<{
 	grants: Grant[]
@@ -175,10 +176,19 @@ const ComplianceSection: React.FC<{
 								onChange={(event) => setTargetText(event.target.value)}
 								placeholder="Address"
 								aria-invalid={invalid}
+								aria-describedby={invalid ? TARGET_ERROR_ID : undefined}
 								spellCheck={false}
 								autoComplete="off"
 							/>
 						</div>
+						{invalid && (
+							<p
+								id={TARGET_ERROR_ID}
+								className={`${typeStyles.footnote} ${styles.error}`}
+							>
+								Enter a G… or C… address.
+							</p>
+						)}
 					</div>
 					<MetricsStrip metrics={toComplianceTiles(reads)} />
 				</section>

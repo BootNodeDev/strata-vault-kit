@@ -167,12 +167,31 @@ describe("ComplianceSection", () => {
 
 		enterTarget("GNOTANADDRESS")
 
-		expect(
-			screen.getByLabelText("Target address").getAttribute("aria-invalid"),
-		).toBe("true")
+		const input = screen.getByLabelText("Target address")
+		expect(input.getAttribute("aria-invalid")).toBe("true")
+		expect(input.getAttribute("aria-describedby")).toBe(
+			screen.getByText("Enter a G… or C… address.").id,
+		)
 		expect(useComplianceStateMock).toHaveBeenLastCalledWith(
 			expect.objectContaining({ target: undefined }),
 		)
+	})
+
+	it("shows no address error for an empty or valid target", () => {
+		render(
+			<ComplianceSection
+				grants={[officer]}
+				wallet={WALLET}
+				addresses={ADDRESSES}
+			/>,
+		)
+
+		expect(screen.queryByText("Enter a G… or C… address.")).toBeNull()
+		enterTarget(TARGET)
+		expect(screen.queryByText("Enter a G… or C… address.")).toBeNull()
+		expect(
+			screen.getByLabelText("Target address").hasAttribute("aria-describedby"),
+		).toBe(false)
 	})
 
 	it("allows the target and follows it in the modal", () => {
