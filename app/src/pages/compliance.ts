@@ -1,8 +1,10 @@
 import {
+	addAmounts,
 	AMOUNT_DECIMALS,
 	type Amount,
 	parseUnits,
 	shortAddress,
+	subtractAmounts,
 } from "@stellar-scaffold/app-lib"
 import { type Metric } from "../components/vault/MetricsStrip"
 import { type Grant } from "../hooks/useAdminAuthority"
@@ -76,8 +78,6 @@ const DESTINATION_KEY = "force-transfer-destination"
 export const destinationOf = (inputs: Inputs): string | undefined =>
 	parseAccount(inputs[DESTINATION_KEY] ?? "")
 
-const exact = (value: bigint): string => exactAmount(value as Amount)
-
 const yesNo = (value: boolean): string => (value ? "Yes" : "No")
 
 const targetEntered = (target: string | undefined): Condition => ({
@@ -93,11 +93,10 @@ const allowedOf = (allowance: Allowance | undefined): boolean | null =>
 		? allowance === "allowed"
 		: null
 
-const freeOf = (reads: TargetReads | undefined): bigint | null => {
-	if (reads?.shares == null || reads.frozenShares === null) return null
-	const free = reads.shares - reads.frozenShares
-	return free < 0n ? 0n : free
-}
+const freeOf = (reads: TargetReads | undefined): Amount | null =>
+	reads?.shares == null || reads.frozenShares === null
+		? null
+		: subtractAmounts(reads.shares, reads.frozenShares)
 
 const vaultConfirmation = (
 	id: ComplianceActionId,
@@ -205,14 +204,14 @@ function allowSpec<Id extends AllowActionId>(
 
 type AmountEntry = {
 	text: string
-	amount: bigint | undefined
+	amount: Amount | undefined
 	field: RailField
 }
 
 const amountEntry = (
 	key: string,
 	inputs: Inputs,
-	max: bigint | null,
+	max: Amount | null,
 ): AmountEntry => {
 	const text = inputs[key] ?? ""
 	const amount = parseUnits(text, AMOUNT_DECIMALS) ?? undefined
@@ -225,7 +224,7 @@ const amountEntry = (
 			placeholder: "0.00",
 			value: text,
 			invalid: text.trim() !== "" && amount === undefined,
-			...(max === null || max <= 0n ? {} : { max: exact(max) }),
+			...(max === null || max <= 0n ? {} : { max: exactAmount(max) }),
 		},
 	}
 }
@@ -237,12 +236,12 @@ const positive = ({ text, amount }: AmountEntry): Condition => ({
 
 const atMost = (
 	label: string,
-	amount: bigint | undefined,
-	limit: bigint | null,
+	amount: Amount | undefined,
+	limit: Amount | null,
 ): Condition => ({
 	label,
 	met: amount === undefined || limit === null ? null : amount <= limit,
-	...(limit === null ? {} : { detail: exact(limit) }),
+	...(limit === null ? {} : { detail: exactAmount(limit) }),
 })
 
 function sharesSpec(
@@ -291,26 +290,31 @@ function sharesSpec(
 		outcome:
 			!valid || frozen === null || bound.met !== true
 				? null
-				: `Frozen shares ${exact(frozen)} → ${exact(freezing ? frozen + amount : frozen - amount)}.`,
+				: `Frozen shares ${exactAmount(frozen)} → ${exactAmount(freezing ? addAmounts(frozen, amount) : subtractAmounts(frozen, amount))}.`,
 		fields,
 		...(confirm === undefined ? {} : { danger: true }),
 		ready: allMet(required),
 		arg: valid ? { account: target, amount } : undefined,
-		next: valid ? `${exact(amount)} shares of ${shortAddress(target)}` : "",
+		next: valid
+			? `${exactAmount(amount)} shares of ${shortAddress(target)}`
+			: "",
 	}
 }
 
 const transferOutcome = (
 	reads: TargetReads | undefined,
-	amount: bigint,
+	amount: Amount,
 ): string | null => {
 	const free = freeOf(reads)
 	if (reads?.shares == null || reads.frozenShares === null || free === null)
 		return null
-	const shares = `Shares ${exact(reads.shares)} → ${exact(reads.shares - amount)}.`
+	const shares = `Shares ${exactAmount(reads.shares)} → ${exactAmount(subtractAmounts(reads.shares, amount))}.`
 	if (amount <= free) return shares
-	const unfrozen = reads.frozenShares - (amount - free)
-	return `${shares} Frozen shares ${exact(reads.frozenShares)} → ${exact(unfrozen)}.`
+	const unfrozen = subtractAmounts(
+		reads.frozenShares,
+		subtractAmounts(amount, free),
+	)
+	return `${shares} Frozen shares ${exactAmount(reads.frozenShares)} → ${exactAmount(unfrozen)}.`
 }
 
 function forceTransferSpec(
@@ -380,7 +384,7 @@ function forceTransferSpec(
 		ready: allMet(required),
 		arg: valid ? { from: target, to: destination, amount } : undefined,
 		next: valid
-			? `${exact(amount)} shares from ${shortAddress(target)} to ${shortAddress(destination)}`
+			? `${exactAmount(amount)} shares from ${shortAddress(target)} to ${shortAddress(destination)}`
 			: "",
 	}
 }
@@ -460,8 +464,11 @@ export function toComplianceTiles(reads: TargetState): Metric[] {
 	return [
 		tile("Allowlisted", ALLOWANCE_LABELS[allowance]),
 		tile("Frozen", frozen === null ? null : yesNo(frozen)),
-		tile("Shares", shares === null ? null : exact(shares)),
-		tile("Frozen shares", frozenShares === null ? null : exact(frozenShares)),
-		tile("Free shares", free === null ? null : exact(free)),
+		tile("Shares", shares === null ? null : exactAmount(shares)),
+		tile(
+			"Frozen shares",
+			frozenShares === null ? null : exactAmount(frozenShares),
+		),
+		tile("Free shares", free === null ? null : exactAmount(free)),
 	]
 }

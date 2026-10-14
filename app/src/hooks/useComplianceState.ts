@@ -1,4 +1,4 @@
-import { readContract } from "@stellar-scaffold/app-lib"
+import { type Amount, readContract } from "@stellar-scaffold/app-lib"
 import { skipToken, useQuery } from "@tanstack/react-query"
 import { identityVerifierAt, shareToken } from "../config/clients"
 import { type Allowance, allowanceQuery, fetchAllowance } from "./useIsAllowed"
@@ -11,8 +11,8 @@ const REFRESH_MS = 15_000
 export type TargetReads = {
 	allowance: Allowance
 	frozen: boolean | null
-	shares: bigint | null
-	frozenShares: bigint | null
+	shares: Amount | null
+	frozenShares: Amount | null
 }
 
 export type TargetState =

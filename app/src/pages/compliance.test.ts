@@ -1,3 +1,4 @@
+import { type Amount } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
 import { type Grant } from "../hooks/useAdminAuthority"
 import { type TargetReads } from "../hooks/useComplianceState"
@@ -33,8 +34,8 @@ const officer = grantOf("share-token compliance")
 const reads = (overrides: Partial<TargetReads> = {}): TargetReads => ({
 	allowance: "allowed",
 	frozen: false,
-	shares: 100n * UNIT,
-	frozenShares: 10n * UNIT,
+	shares: (100n * UNIT) as Amount,
+	frozenShares: (10n * UNIT) as Amount,
 	...overrides,
 })
 
