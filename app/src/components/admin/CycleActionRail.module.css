@@ -119,14 +119,57 @@
 	color: var(--vault-text-muted);
 }
 
-.met,
-.unmet {
-	text-align: right;
-	white-space: nowrap;
+.check {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	min-width: 0;
 }
 
-.unmet {
+.pass,
+.fail,
+.pending {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 1em;
+	height: 1em;
+	align-self: center;
+}
+
+.pass {
+	color: var(--vault-ink);
+}
+
+.fail {
+	color: var(--vault-danger);
+}
+
+.pending {
 	color: var(--vault-text-muted);
+}
+
+.icon {
+	width: 100%;
+	height: 100%;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.dot {
+	width: 0.45em;
+	height: 0.45em;
+	border-radius: 50%;
+	background: currentColor;
+}
+
+.detail {
+	text-align: right;
+	white-space: nowrap;
 }
 
 .note {

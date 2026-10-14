@@ -16,16 +16,61 @@ import styles from "./CycleActionRail.module.css"
 
 type OnInput<A> = (action: A, value: string, key?: string) => void
 
-const conditionValue = (condition: Condition): string => {
-	if (condition.met === null) return "—"
-	return condition.detail ?? (condition.met ? "Met" : "Not met")
+type Status = "pass" | "fail" | "pending"
+
+const statusOf = ({ met }: Condition): Status => {
+	if (met === null) return "pending"
+	return met ? "pass" : "fail"
+}
+
+const STATUS_PREFIX: Record<Status, string> = {
+	pass: "Pass: ",
+	fail: "Fail: ",
+	pending: "Pending: ",
+}
+
+const STATUS_CLASS: Record<Status, string | undefined> = {
+	pass: styles.pass,
+	fail: styles.fail,
+	pending: styles.pending,
+}
+
+const StatusIcon: React.FC<{ status: Status }> = ({ status }) =>
+	status === "pending" ? (
+		<span className={styles.dot} />
+	) : (
+		<svg viewBox="0 0 16 16" className={styles.icon}>
+			<path d={status === "pass" ? "M3 8.5l3 3 7-7" : "M4 4l8 8M12 4l-8 8"} />
+		</svg>
+	)
+
+const ConditionRow: React.FC<{ condition: Condition }> = ({ condition }) => {
+	const status = statusOf(condition)
+	return (
+		<li className={styles.condition}>
+			<span className={styles.check}>
+				<span aria-hidden="true" className={STATUS_CLASS[status]}>
+					<StatusIcon status={status} />
+				</span>
+				<span className={`${typeStyles.footnote} ${styles.conditionLabel}`}>
+					<span className={styles.srOnly}>{STATUS_PREFIX[status]}</span>
+					{condition.label}
+				</span>
+			</span>
+			{condition.detail !== undefined && (
+				<span className={`${typeStyles.railValue} ${styles.detail}`}>
+					{condition.detail}
+				</span>
+			)}
+		</li>
+	)
 }
 
 const summaryOf = (state: Readiness): string => {
 	if (state.kind === "ready") return "Ready"
 	if (state.kind === "unavailable") return "Unavailable"
 	if (state.kind === "unchanged") return "No change"
-	return `${state.count} unmet`
+	return "Blocked"
 }
 
 type Report = (value: string) => void
@@ -192,18 +237,7 @@ function ActionBody<A extends RailAction<RailField>>({
 				className={styles.conditions}
 			>
 				{action.conditions.map((condition) => (
-					<li className={styles.condition} key={condition.label}>
-						<span className={`${typeStyles.footnote} ${styles.conditionLabel}`}>
-							{condition.label}
-						</span>
-						<span
-							className={`${typeStyles.railValue} ${
-								condition.met ? styles.met : styles.unmet
-							}`}
-						>
-							{conditionValue(condition)}
-						</span>
-					</li>
+					<ConditionRow key={condition.label} condition={condition} />
 				))}
 			</ul>
 			{action.note !== undefined && (

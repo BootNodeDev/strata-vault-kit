@@ -340,7 +340,7 @@ describe("admin handover", () => {
 		)
 	})
 
-	it("names each contract's handover and holds an empty one as unmet", () => {
+	it("names each contract's handover and holds an empty one as blocked", () => {
 		const current = state(
 			{},
 			{ token: { address: ACCOUNT, liveUntilLedger: 5_000, expired: false } },
@@ -362,14 +362,14 @@ describe("admin handover", () => {
 			]),
 		)
 		expect(condition(empty, "New admin entered")).toBeNull()
-		expect(readiness(empty)).toEqual({ kind: "unmet", count: 1 })
+		expect(readiness(empty)).toEqual({ kind: "blocked" })
 		expect(
 			readiness(
 				find("hand-over-vault-admin", [governance], {
 					"hand-over-vault-admin-account": ACCOUNT,
 				}),
 			),
-		).toEqual({ kind: "unmet", count: 1 })
+		).toEqual({ kind: "blocked" })
 	})
 
 	it.each<[string, number | null, string, boolean | null]>([

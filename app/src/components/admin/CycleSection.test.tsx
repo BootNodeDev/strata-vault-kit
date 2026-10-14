@@ -296,14 +296,14 @@ describe("CycleSection", () => {
 
 		expect(button("Deploy to custodian").disabled).toBe(true)
 		const within_ = screen.getByText("Within the free reserve").closest("li")!
-		expect(within(within_).getByText("—")).toBeTruthy()
+		expect(within_.textContent).toBe("Pending: Within the free reserve")
 
 		fireEvent.change(fieldOf("Amount to deploy"), {
 			target: { value: "250" },
 		})
 
 		expect(button("Deploy to custodian").disabled).toBe(false)
-		expect(within(within_).getByText("Met")).toBeTruthy()
+		expect(within_.textContent).toBe("Pass: Within the free reserve")
 		expect(
 			screen.getByText(
 				"Sends 250.00 to the custodian; free reserve becomes 650.00.",
@@ -515,12 +515,12 @@ describe("CycleSection", () => {
 		)
 		expect(button("Attest price").disabled).toBe(true)
 		const band = screen.getByText("Within the band").closest("li")!
-		expect(within(band).getByText("—")).toBeTruthy()
+		expect(band.textContent).toMatch(/^Pending: Within the band/)
 
 		fireEvent.change(field, { target: { value: "1.04" } })
 
 		expect(button("Attest price").disabled).toBe(false)
-		expect(within(band).getByText("Met")).toBeTruthy()
+		expect(band.textContent).toMatch(/^Pass: Within the band/)
 		expect(
 			screen.getByText("Records 1.0400 as the share price, valid for 1d."),
 		).toBeTruthy()
@@ -615,7 +615,7 @@ describe("CycleSection", () => {
 
 		expect(button("Fulfill epoch").disabled).toBe(true)
 		const notice = screen.getByText("Notice elapsed").closest("li")!
-		expect(within(notice).getByText("Not met")).toBeTruthy()
+		expect(notice.textContent).toMatch(/^Fail: Notice elapsed/)
 	})
 
 	it("tells a manager signing through a multisig that collecting signatures is not supported yet", () => {

@@ -62,7 +62,7 @@ export type RailAction<F extends RailField = ActionField> = {
 
 export type Readiness =
 	| { kind: "ready" }
-	| { kind: "unmet"; count: number }
+	| { kind: "blocked" }
 	| { kind: "unchanged" }
 	| { kind: "unavailable"; reason: string }
 
@@ -74,7 +74,7 @@ export const readiness = (action: RailAction<RailField>): Readiness => {
 	const [only] = unmet
 	if (unmet.length === 1 && only?.unchanged === true && only.met === false)
 		return { kind: "unchanged" }
-	return { kind: "unmet", count: Math.max(unmet.length, 1) }
+	return { kind: "blocked" }
 }
 
 export const readyCount = (actions: RailAction<RailField>[]): number =>

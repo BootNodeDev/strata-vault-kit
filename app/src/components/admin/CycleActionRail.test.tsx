@@ -158,15 +158,15 @@ describe("CycleActionRail", () => {
 				.map((toggle) => toggle.textContent),
 		).toEqual([
 			"Close epochUnavailable",
-			"Fulfill epoch1 unmet",
-			"Attest price1 unmet",
-			"Deploy to custodian1 unmet",
+			"Fulfill epochBlocked",
+			"Attest priceBlocked",
+			"Deploy to custodianBlocked",
 		])
 		for (const [name, description] of [
 			["Close epoch", "Unavailable"],
-			["Fulfill epoch", "1 unmet"],
-			["Attest price", "1 unmet"],
-			["Deploy to custodian", "1 unmet"],
+			["Fulfill epoch", "Blocked"],
+			["Attest price", "Blocked"],
+			["Deploy to custodian", "Blocked"],
 		] as const)
 			expect(
 				screen.getAllByRole("button", { name, description })[0],
@@ -301,18 +301,17 @@ describe("CycleActionRail", () => {
 		expect(screen.getByText("Could not read the emergency state.")).toBeTruthy()
 	})
 
-	it("lists each condition as met or not met", () => {
+	it("lists each condition as pass or fail, in words for screen readers", () => {
 		renderRail([fulfillAction])
 		expand("Fulfill epoch")
 
 		const list = screen.getByRole("list", { name: "Fulfill epoch conditions" })
-		const [awaiting, notice] = within(list).getAllByRole("listitem")
 		expect(
-			within(awaiting!).getByText("Sealed epoch awaiting a price"),
-		).toBeTruthy()
-		expect(within(awaiting!).getByText("Met")).toBeTruthy()
-		expect(within(notice!).getByText("Notice elapsed")).toBeTruthy()
-		expect(within(notice!).getByText("Not met")).toBeTruthy()
+			within(list)
+				.getAllByRole("listitem")
+				.map((item) => item.textContent),
+		).toEqual(["Pass: Sealed epoch awaiting a price", "Fail: Notice elapsed"])
+		expect(within(list).queryByText(/Met|Not met/)).toBeNull()
 	})
 
 	it("states the resulting state before the button and runs only an enabled action", () => {
@@ -374,16 +373,15 @@ describe("CycleActionRail", () => {
 		expect(screen.queryByRole("textbox")).toBeNull()
 	})
 
-	it("leaves a condition open with a dash while it cannot be judged yet", () => {
+	it("marks a condition pending while it cannot be judged yet", () => {
 		renderRail([attestAction])
 		expand("Attest price")
 
 		const band = screen.getByText("Within the band").closest("li")!
-		expect(within(band).getByText("—")).toBeTruthy()
-		expect(within(band).queryByText("Not met")).toBeNull()
+		expect(band.textContent).toBe("Pending: Within the band")
 	})
 
-	it("shows a condition's detail in place of Not met when it has one", () => {
+	it("keeps a failing condition's detail next to its label", () => {
 		renderRail([
 			{
 				...attestAction,
@@ -395,17 +393,16 @@ describe("CycleActionRail", () => {
 		expand("Attest price")
 
 		const band = screen.getByText("Within the band").closest("li")!
+		expect(band.textContent).toBe("Fail: Within the band0.5000 – 2.0000")
 		expect(within(band).getByText("0.5000 – 2.0000")).toBeTruthy()
-		expect(within(band).queryByText("Not met")).toBeNull()
 	})
 
-	it("shows a condition's detail in place of Met when it has one", () => {
+	it("keeps a passing condition's detail next to its label", () => {
 		renderRail([deployAction])
 		expand("Deploy to custodian")
 
 		const custodian = screen.getByText("Custodian set").closest("li")!
-		expect(within(custodian).getByText("CCUS...7890")).toBeTruthy()
-		expect(within(custodian).queryByText("Met")).toBeNull()
+		expect(custodian.textContent).toBe("Pass: Custodian setCCUS...7890")
 	})
 
 	it("offers to fill the field with its max, reporting the exact figure", () => {
