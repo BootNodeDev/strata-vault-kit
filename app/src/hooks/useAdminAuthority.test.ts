@@ -526,13 +526,13 @@ describe("useAdminAuthority", () => {
 		])
 	})
 
-	it("stays ready without any pending admin when the handovers cannot be read", async () => {
+	it("is unreadable when the pending admins cannot be read", async () => {
 		readPendingAdminsMock.mockResolvedValue({ kind: "unreadable" })
 		const { result } = renderWithWallet(useAdminAuthority)
 
-		await waitFor(() => expect(result.current.status).toBe("ready"))
+		await waitFor(() => expect(result.current.status).toBe("unreadable"))
 
-		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
+		expect(result.current.surfaces).toEqual(new Set())
 	})
 
 	it("reads the share-token admin from get_admin", async () => {

@@ -220,11 +220,10 @@ const asMembers = (read: ContractRead<string[]>): string[] =>
 	read.kind === "value" ? read.value : []
 
 const pendingAdminOf = (
-	read: ContractRead<PendingAdmins>,
+	pendingAdmins: PendingAdmins,
 	contract: string,
 ): string[] => {
-	if (read.kind !== "value") return []
-	const transfer = read.value.pending.get(contract)
+	const transfer = pendingAdmins.pending.get(contract)
 	return transfer === undefined || transfer === null || transfer.expired
 		? []
 		: [transfer.address]
@@ -324,8 +323,9 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		tokenCompliance,
 		tokenManager,
 		tokenAdmin,
+		pendingAdmins,
 	]
-	if (roleReads.some(isUnreadable))
+	if (roleReads.some(isUnreadable) || !isValue(pendingAdmins))
 		return emptyAuthority("unreadable", addresses)
 
 	const holders: RoleHolders = {
@@ -339,10 +339,13 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 		"share-token compliance": asMembers(tokenCompliance),
 		"share-token manager": asMembers(tokenManager),
 		"share-token admin": asHolders(tokenAdmin),
-		"vault pending admin": pendingAdminOf(pendingAdmins, vaultContractId),
-		"oracle pending admin": pendingAdminOf(pendingAdmins, oracleAddress.value),
+		"vault pending admin": pendingAdminOf(pendingAdmins.value, vaultContractId),
+		"oracle pending admin": pendingAdminOf(
+			pendingAdmins.value,
+			oracleAddress.value,
+		),
 		"share-token pending admin": pendingAdminOf(
-			pendingAdmins,
+			pendingAdmins.value,
 			shareTokenAddress.value,
 		),
 	}
