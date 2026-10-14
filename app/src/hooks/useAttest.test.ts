@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { attestWriteKeys, useAttest } from "./useAttest"
 import { investorRequestsKey } from "./useInvestorRequests"
+import { navLatestKey } from "./useNavPrice"
 
 const { oracleMock, navOracleWriterMock } = vi.hoisted(() => ({
 	oracleMock: { attest: vi.fn() },
@@ -153,14 +154,14 @@ describe("useAttest", () => {
 			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
 		}
 		expect(invalidateQueries).toHaveBeenCalledWith({
-			queryKey: ["nav", "latest"],
+			queryKey: navLatestKey,
 		})
 		expect(invalidateQueries).toHaveBeenCalledWith({
 			queryKey: investorRequestsKey(investorAddress),
 		})
 	})
 
-	it("does not touch the cached cycle when the oracle refuses at simulation", async () => {
+	it("refreshes the cached cycle when the oracle refuses at simulation", async () => {
 		oracleMock.attest.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #3002)" },
 			signAndSend: vi.fn(),
@@ -170,6 +171,8 @@ describe("useAttest", () => {
 
 		await act(() => result.current.submit(attestation))
 
-		expect(invalidateQueries).not.toHaveBeenCalled()
+		for (const queryKey of attestWriteKeys) {
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
+		}
 	})
 })

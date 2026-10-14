@@ -21,6 +21,7 @@ const noHolders: RoleHolders = {
 	"vault guardian": [],
 	"oracle attester": [],
 	"oracle guardian": [],
+	"oracle admin": [],
 	"share-token compliance": [],
 	"share-token admin": [],
 }
@@ -72,7 +73,8 @@ describe("toSurfaces", () => {
 		["vault guardian", ["emergency"]],
 		["oracle guardian", ["emergency"]],
 		["share-token admin", ["emergency"]],
-		["vault governance", ["configuration", "governance"]],
+		["oracle admin", ["emergency"]],
+		["vault governance", ["emergency", "configuration", "governance"]],
 	])("grants %s's surfaces to the wallet that holds it", (role, expected) => {
 		const { surfaces, grantedBy, grants } = toSurfaces(
 			investorAddress,
@@ -295,7 +297,11 @@ const {
 		oracle: vi.fn(),
 		share_token: vi.fn(),
 	},
-	oracleMock: { get_role_member_count: vi.fn(), get_role_member: vi.fn() },
+	oracleMock: {
+		get_role_member_count: vi.fn(),
+		get_role_member: vi.fn(),
+		get_admin: vi.fn(),
+	},
 	tokenMock: {
 		get_role_member_count: vi.fn(),
 		get_role_member: vi.fn(),
@@ -347,6 +353,7 @@ describe("useAdminAuthority", () => {
 		connectNavOracleMock.mockResolvedValue(oracleMock)
 		connectShareTokenMock.mockResolvedValue(tokenMock)
 		oracleMock.get_role_member_count.mockResolvedValue({ result: 0 })
+		oracleMock.get_admin.mockResolvedValue({ result: null })
 		tokenMock.get_role_member_count.mockResolvedValue({ result: 0 })
 		tokenMock.get_admin.mockResolvedValue({ result: null })
 		tokenMock.identity_verifier.mockResolvedValue({
@@ -433,6 +440,43 @@ describe("useAdminAuthority", () => {
 		expect(result.current.grantedBy.emergency[0]?.role).toBe(
 			"share-token admin",
 		)
+	})
+
+	it("reads the oracle admin from the oracle's get_admin", async () => {
+		oracleMock.get_admin.mockResolvedValue({ result: investorAddress })
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(result.current.surfaces).toEqual(new Set(["cycle", "emergency"]))
+		expect(result.current.grantedBy.emergency).toEqual([
+			{
+				role: "oracle admin",
+				authority: investorAddress,
+				standing: "signs-alone",
+			},
+		])
+	})
+
+	it("looks up the signers of a multisig oracle admin", async () => {
+		vaultMock.manager.mockResolvedValue({ result: null })
+		oracleMock.get_admin.mockResolvedValue({ result: multisig })
+		accountSignersMock.mockResolvedValue(oneSignatureOf(1))
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(accountSignersMock).toHaveBeenCalledWith(multisig)
+		expect(result.current.surfaces).toEqual(new Set(["emergency"]))
+	})
+
+	it("reports unreadable when the oracle admin read fails", async () => {
+		oracleMock.get_admin.mockRejectedValue(new Error("simulation failed"))
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("unreadable"))
+
+		expect(result.current.surfaces).toEqual(new Set())
 	})
 
 	it("grants a signer of a multisig authority and looks each account up once", async () => {

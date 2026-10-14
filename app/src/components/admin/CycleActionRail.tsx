@@ -2,17 +2,16 @@ import React, { useState } from "react"
 import {
 	type ActionField as ActionFieldSpec,
 	type Condition,
-	type CycleAction,
-	type CycleActionId,
+	type RailAction,
 	type Readiness,
 	readiness,
 	readyCount,
-} from "../../pages/cycle"
+} from "../../pages/actions"
 import typeStyles from "../../styles/type.module.css"
 import Skeleton from "../Skeleton"
 import styles from "./CycleActionRail.module.css"
 
-type OnInput = (action: CycleAction, value: string) => void
+type OnInput<A> = (action: A, value: string) => void
 
 const conditionValue = (condition: Condition): string => {
 	if (condition.met === null) return "—"
@@ -25,12 +24,17 @@ const summaryOf = (state: Readiness): string => {
 	return `${state.count} unmet`
 }
 
-const ActionField: React.FC<{
-	action: CycleAction
+function ActionField<A extends RailAction>({
+	id,
+	action,
+	field,
+	onInput,
+}: {
+	id: string
+	action: A
 	field: ActionFieldSpec
-	onInput: OnInput | undefined
-}> = ({ action, field, onInput }) => {
-	const id = `cycle-${action.id}-field`
+	onInput: OnInput<A> | undefined
+}) {
 	return (
 		<div className={field.invalid ? styles.fieldOver : styles.field}>
 			<label htmlFor={id} className={styles.srOnly}>
@@ -57,65 +61,92 @@ const ActionField: React.FC<{
 	)
 }
 
-const ActionBody: React.FC<{
-	action: CycleAction
-	onRun: (action: CycleAction) => void
-	onInput: OnInput | undefined
-}> = ({ action, onRun, onInput }) => (
-	<>
-		{action.field !== undefined && (
-			<ActionField action={action} field={action.field} onInput={onInput} />
-		)}
-		<ul aria-label={`${action.label} conditions`} className={styles.conditions}>
-			{action.conditions.map((condition) => (
-				<li className={styles.condition} key={condition.label}>
-					<span className={`${typeStyles.footnote} ${styles.conditionLabel}`}>
-						{condition.label}
-					</span>
-					<span
-						className={`${typeStyles.railValue} ${
-							condition.met ? styles.met : styles.unmet
-						}`}
-					>
-						{conditionValue(condition)}
-					</span>
-				</li>
-			))}
-		</ul>
-		{action.note !== undefined && (
-			<p className={`${typeStyles.footnote} ${styles.note}`}>{action.note}</p>
-		)}
-		{action.outcome !== null && (
-			<p className={`${typeStyles.footnote} ${styles.outcome}`}>
-				{action.outcome}
-			</p>
-		)}
-		<button
-			type="button"
-			className={
-				action.enabled ? styles.actionPrimary : styles.actionUnavailable
-			}
-			disabled={!action.enabled}
-			onClick={() => onRun(action)}
-		>
-			{action.label}
-		</button>
-		{action.unavailable !== undefined && (
-			<p className={`${typeStyles.footnote} ${styles.note}`}>
-				{action.unavailable}
-			</p>
-		)}
-	</>
-)
+const buttonClass = (action: RailAction): string | undefined => {
+	if (!action.enabled) return styles.actionUnavailable
+	return action.tone === "danger" ? styles.actionDanger : styles.actionPrimary
+}
 
-const CycleActionRail: React.FC<{
-	actions: CycleAction[]
+function ActionBody<A extends RailAction>({
+	fieldId,
+	action,
+	onRun,
+	onInput,
+}: {
+	fieldId: string
+	action: A
+	onRun: (action: A) => void
+	onInput: OnInput<A> | undefined
+}) {
+	return (
+		<>
+			{action.field !== undefined && (
+				<ActionField
+					id={fieldId}
+					action={action}
+					field={action.field}
+					onInput={onInput}
+				/>
+			)}
+			<ul
+				aria-label={`${action.label} conditions`}
+				className={styles.conditions}
+			>
+				{action.conditions.map((condition) => (
+					<li className={styles.condition} key={condition.label}>
+						<span className={`${typeStyles.footnote} ${styles.conditionLabel}`}>
+							{condition.label}
+						</span>
+						<span
+							className={`${typeStyles.railValue} ${
+								condition.met ? styles.met : styles.unmet
+							}`}
+						>
+							{conditionValue(condition)}
+						</span>
+					</li>
+				))}
+			</ul>
+			{action.note !== undefined && (
+				<p className={`${typeStyles.footnote} ${styles.note}`}>{action.note}</p>
+			)}
+			{action.outcome !== null && (
+				<p className={`${typeStyles.footnote} ${styles.outcome}`}>
+					{action.outcome}
+				</p>
+			)}
+			<button
+				type="button"
+				className={buttonClass(action)}
+				disabled={!action.enabled}
+				onClick={() => onRun(action)}
+			>
+				{action.label}
+			</button>
+			{action.unavailable !== undefined && (
+				<p className={`${typeStyles.footnote} ${styles.note}`}>
+					{action.unavailable}
+				</p>
+			)}
+		</>
+	)
+}
+
+function CycleActionRail<A extends RailAction>({
+	scope,
+	actions,
+	pending,
+	unreadable,
+	onRun,
+	onInput,
+}: {
+	scope: string
+	actions: A[]
 	pending: boolean
 	unreadable: boolean
-	onRun: (action: CycleAction) => void
-	onInput?: OnInput
-}> = ({ actions, pending, unreadable, onRun, onInput }) => {
-	const [open, setOpen] = useState<CycleActionId | null | undefined>()
+	onRun: (action: A) => void
+	onInput?: OnInput<A>
+}) {
+	const [open, setOpen] = useState<string | null | undefined>()
 	if (open === undefined && actions.length > 0)
 		setOpen(actions.find((action) => action.enabled)?.id ?? null)
 
@@ -137,7 +168,7 @@ const CycleActionRail: React.FC<{
 				) : (
 					<p className={`${typeStyles.footnote} ${styles.note}`}>
 						{unreadable
-							? "Could not read the cycle state."
+							? `Could not read the ${scope} state.`
 							: "No actions available."}
 					</p>
 				))}
@@ -146,7 +177,7 @@ const CycleActionRail: React.FC<{
 					{actions.map((action) => {
 						const state = readiness(action)
 						const expanded = open === action.id
-						const id = `cycle-${action.id}-action`
+						const id = `${scope}-${action.id}-action`
 						return (
 							<li className={styles.item} key={action.id}>
 								<button
@@ -180,7 +211,12 @@ const CycleActionRail: React.FC<{
 									</span>
 								</button>
 								<div id={id} className={styles.body} hidden={!expanded}>
-									<ActionBody action={action} onRun={onRun} onInput={onInput} />
+									<ActionBody
+										fieldId={`${scope}-${action.id}-field`}
+										action={action}
+										onRun={onRun}
+										onInput={onInput}
+									/>
 								</div>
 							</li>
 						)

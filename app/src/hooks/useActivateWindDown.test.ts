@@ -145,7 +145,7 @@ describe("useActivateWindDown", () => {
 		}
 	})
 
-	it("does not touch the cached cycle when the vault refuses at simulation", async () => {
+	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.activate_wind_down.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6047)" },
 			signAndSend: vi.fn(),
@@ -155,6 +155,8 @@ describe("useActivateWindDown", () => {
 
 		await act(() => result.current.submit())
 
-		expect(invalidateQueries).not.toHaveBeenCalled()
+		for (const queryKey of cycleWriteKeys) {
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
+		}
 	})
 })

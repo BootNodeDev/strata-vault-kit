@@ -14,7 +14,10 @@ import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
-import { type TransactionFailure } from "../../hooks/useContractTransaction"
+import {
+	type TransactionFailure,
+	type TransactionStatus,
+} from "../../hooks/useContractTransaction"
 import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
 import { type FinalizeWindDownRoundStatus } from "../../hooks/useFinalizeWindDownRound"
 import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
@@ -26,7 +29,22 @@ import Close from "../icons/Close"
 import ExternalLink from "../icons/ExternalLink"
 import styles from "./TransactionModal.module.css"
 
+export type EmergencyModalAction =
+	| "pause-vault"
+	| "unpause-vault"
+	| "raise-ripcord"
+	| "lower-ripcord"
+	| "clear-latest"
+	| "pause-token"
+	| "unpause-token"
+
 export type TransactionModalProps =
+	| {
+			action: EmergencyModalAction
+			status: TransactionStatus
+			onClose: () => void
+			onRetry: () => void
+	  }
 	| {
 			action: "subscribe"
 			status: RequestDepositStatus
@@ -347,11 +365,13 @@ const finalizeRoundContractErrorReason = (code: number): string => {
 
 const INVESTOR_FOLLOW_UP = "check your requests before doing anything else"
 const OPERATOR_FOLLOW_UP = "check the Cycle card before trying again"
+const EMERGENCY_FOLLOW_UP = "check the Emergency tab before trying again"
 
 const describeFailure = (
 	failure: TransactionFailure,
 	contractErrorReason: (code: number) => string,
 	followUp = INVESTOR_FOLLOW_UP,
+	refuser = "vault",
 ): { heading: string; body: string } => {
 	switch (failure.kind) {
 		case "declined":
@@ -361,7 +381,7 @@ const describeFailure = (
 			}
 		case "contract-error":
 			return {
-				heading: "The vault refused this request",
+				heading: `The ${refuser} refused this request`,
 				body: contractErrorReason(failure.code),
 			}
 		case "interrupted":
@@ -914,6 +934,123 @@ const describeFinalizeRoundStatus = (
 	}
 }
 
+type EmergencyCopy = {
+	refuser: "vault" | "share token" | "oracle"
+	verb: string
+	signing: string
+	done: string
+	doneBody: string
+}
+
+const EMERGENCY_COPY: Record<EmergencyModalAction, EmergencyCopy> = {
+	"pause-vault": {
+		refuser: "vault",
+		verb: "pause the vault",
+		signing: "Signing stops new deposits, pricing and upgrades.",
+		done: "Vault paused",
+		doneBody:
+			"New deposits, pricing and upgrades are stopped. Redemptions, claims, cancels and closing epochs stay open.",
+	},
+	"unpause-vault": {
+		refuser: "vault",
+		verb: "unpause the vault",
+		signing: "Signing resumes deposits, pricing and upgrades.",
+		done: "Vault unpaused",
+		doneBody: "Deposits, pricing and upgrades are open again.",
+	},
+	"raise-ripcord": {
+		refuser: "oracle",
+		verb: "raise the ripcord",
+		signing: "Signing stops pricing until the ripcord is lowered.",
+		done: "Ripcord raised",
+		doneBody:
+			"Pricing is stopped. No epoch can be fulfilled until the ripcord is lowered.",
+	},
+	"lower-ripcord": {
+		refuser: "oracle",
+		verb: "lower the ripcord",
+		signing: "Signing resumes pricing.",
+		done: "Ripcord lowered",
+		doneBody: "Epochs can be fulfilled again while the price is valid.",
+	},
+	"clear-latest": {
+		refuser: "oracle",
+		verb: "clear the latest price",
+		signing: "Signing removes the recorded price.",
+		done: "Latest price cleared",
+		doneBody:
+			"The next attestation is not limited by its distance from the last. Pricing stays stopped until the ripcord is lowered.",
+	},
+	"pause-token": {
+		refuser: "share token",
+		verb: "pause the share token",
+		signing: "Signing stops holder transfers and returns of escrowed shares.",
+		done: "Share token paused",
+		doneBody:
+			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
+	},
+	"unpause-token": {
+		refuser: "share token",
+		verb: "unpause the share token",
+		signing: "Signing resumes holder transfers and returns of escrowed shares.",
+		done: "Share token unpaused",
+		doneBody: "Holder transfers and returns of escrowed shares are open again.",
+	},
+}
+
+const emergencyContractErrorReason =
+	(refuser: EmergencyCopy["refuser"]) =>
+	(code: number): string => {
+		switch (code) {
+			case 1000:
+				return `The ${refuser} is already paused.`
+			case 1001:
+				return `The ${refuser} is not paused, so there is nothing to unpause.`
+			case 2000:
+				return "This wallet does not hold the role this action needs."
+			case 3008:
+				return "The ripcord is not raised, so the latest price cannot be cleared."
+			default:
+				return `The ${refuser} refused this request. Try again, and contact support if it keeps happening.`
+		}
+	}
+
+const describeEmergencyStatus = (
+	action: EmergencyModalAction,
+	status: TransactionStatus,
+): { heading: string; body: string; hash?: string } | undefined => {
+	const copy = EMERGENCY_COPY[action]
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: `Preparing to ${copy.verb}`,
+				body: "We are getting it ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return { heading: "Confirm in your wallet", body: copy.signing }
+		case "submitted":
+			return {
+				heading: "Sending",
+				body: "It is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return { heading: copy.done, body: copy.doneBody, hash: status.hash }
+		case "failed":
+			return {
+				...describeFailure(
+					status.failure,
+					emergencyContractErrorReason(copy.refuser),
+					EMERGENCY_FOLLOW_UP,
+					copy.refuser,
+				),
+				hash: status.hash,
+			}
+	}
+}
+
 const describeStatus = (
 	props: TransactionModalProps,
 ): { heading: string; body: string; hash?: string } | undefined => {
@@ -959,6 +1096,14 @@ const describeStatus = (
 			return describeActivateWindDownStatus(props.status)
 		case "finalize-round":
 			return describeFinalizeRoundStatus(props.status, props.round)
+		case "pause-vault":
+		case "unpause-vault":
+		case "raise-ripcord":
+		case "lower-ripcord":
+		case "clear-latest":
+		case "pause-token":
+		case "unpause-token":
+			return describeEmergencyStatus(props.action, props.status)
 	}
 }
 
@@ -987,7 +1132,8 @@ const computeSteps = (
 		| DeployToCustodianStatus
 		| FundStatus
 		| ActivateWindDownStatus
-		| FinalizeWindDownRoundStatus,
+		| FinalizeWindDownRoundStatus
+		| TransactionStatus,
 ): Record<StepId, StepState> | undefined => {
 	switch (status.status) {
 		case "idle":
@@ -1045,7 +1191,7 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 
 	React.useEffect(() => {
 		if (contractErrorCode !== undefined) {
-			console.error(`Vault contract error ${contractErrorCode}`)
+			console.error(`Contract error ${contractErrorCode}`)
 		}
 	}, [contractErrorCode])
 

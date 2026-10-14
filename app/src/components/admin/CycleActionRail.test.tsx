@@ -96,6 +96,7 @@ const renderRail = (
 ) =>
 	render(
 		<CycleActionRail
+			scope="cycle"
 			actions={actions}
 			pending={pending}
 			unreadable={unreadable}
@@ -219,6 +220,7 @@ describe("CycleActionRail", () => {
 
 		rerender(
 			<CycleActionRail
+				scope="cycle"
 				actions={[
 					{ ...closeAction, enabled: false },
 					{ ...fulfillAction, enabled: true },
@@ -238,6 +240,7 @@ describe("CycleActionRail", () => {
 
 		rerender(
 			<CycleActionRail
+				scope="cycle"
 				actions={[fulfillAction, closeAction]}
 				pending={false}
 				unreadable={false}
@@ -266,6 +269,20 @@ describe("CycleActionRail", () => {
 
 		expect(screen.getByText("Could not read the cycle state.")).toBeTruthy()
 		expect(screen.queryByText("No actions available.")).toBeNull()
+	})
+
+	it("names the surface it serves when its state could not be read", () => {
+		render(
+			<CycleActionRail
+				scope="emergency"
+				actions={[]}
+				pending={false}
+				unreadable
+				onRun={vi.fn()}
+			/>,
+		)
+
+		expect(screen.getByText("Could not read the emergency state.")).toBeTruthy()
 	})
 
 	it("lists each condition as met or not met", () => {

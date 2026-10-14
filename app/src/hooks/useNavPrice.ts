@@ -39,6 +39,8 @@ export function classifyNav(
 		: { status: "unreadable" }
 }
 
+export const navLatestKey = ["nav", "latest"] as const
+
 async function fetchNav(): Promise<NavClassification> {
 	const [state, latest] = await Promise.all([
 		readContract(async () => (await navOracle()).state()),
@@ -54,7 +56,7 @@ export function useNavPrice(): {
 	canEnter: boolean
 } {
 	const { data, isPending } = useQuery({
-		queryKey: ["nav", "latest"],
+		queryKey: navLatestKey,
 		queryFn: fetchNav,
 		staleTime: 30_000,
 	})

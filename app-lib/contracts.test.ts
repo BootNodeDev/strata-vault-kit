@@ -8,7 +8,11 @@ vi.mock("@stellar/stellar-sdk/contract", async (importOriginal) => {
 	return { ...actual, Client: { from: fromMock } }
 })
 
-import { connectAsyncVault, connectNavOracle } from "./contracts"
+import {
+	connectAsyncVault,
+	connectNavOracle,
+	connectShareToken,
+} from "./contracts"
 
 describe("connectAsyncVault", () => {
 	beforeEach(() => fromMock.mockClear())
@@ -64,6 +68,35 @@ describe("connectNavOracle", () => {
 
 		const options = fromMock.mock.calls[0]?.[0]
 		expect(options.publicKey).toBe("GATTESTER")
+		expect(options.signTransaction).toBe(signTransaction)
+	})
+})
+
+describe("connectShareToken", () => {
+	beforeEach(() => fromMock.mockClear())
+
+	it("builds a read client with no publicKey or signTransaction when no signer is given", async () => {
+		fromMock.mockResolvedValue({})
+
+		await connectShareToken("CTOKEN")
+
+		const options = fromMock.mock.calls[0]?.[0]
+		expect(options.contractId).toBe("CTOKEN")
+		expect(options.publicKey).toBeUndefined()
+		expect(options.signTransaction).toBeUndefined()
+	})
+
+	it("carries the connected address and signer when one is given", async () => {
+		fromMock.mockResolvedValue({})
+		const signTransaction = vi.fn()
+
+		await connectShareToken("CTOKEN", {
+			publicKey: "GTOKENADMIN",
+			signTransaction,
+		})
+
+		const options = fromMock.mock.calls[0]?.[0]
+		expect(options.publicKey).toBe("GTOKENADMIN")
 		expect(options.signTransaction).toBe(signTransaction)
 	})
 })

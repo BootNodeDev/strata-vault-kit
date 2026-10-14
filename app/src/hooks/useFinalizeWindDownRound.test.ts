@@ -151,7 +151,7 @@ describe("useFinalizeWindDownRound", () => {
 		}
 	})
 
-	it("does not touch the cached cycle when the vault refuses at simulation", async () => {
+	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.finalize_wind_down_round.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6050)" },
 			signAndSend: vi.fn(),
@@ -161,6 +161,8 @@ describe("useFinalizeWindDownRound", () => {
 
 		await act(() => result.current.submit())
 
-		expect(invalidateQueries).not.toHaveBeenCalled()
+		for (const queryKey of cycleWriteKeys) {
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
+		}
 	})
 })

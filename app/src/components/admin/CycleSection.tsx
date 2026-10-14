@@ -187,6 +187,7 @@ const CycleSection: React.FC<{
 				activity={toActivityList(cycleEvents)}
 				rail={
 					<CycleActionRail
+						scope="cycle"
 						actions={actions}
 						pending={cycle.status === "checking"}
 						unreadable={cycle.status === "unreadable"}

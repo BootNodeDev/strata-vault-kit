@@ -42,6 +42,25 @@ vi.mock("../components/admin/CycleSection", () => ({
 	),
 }))
 
+vi.mock("../components/admin/EmergencySection", () => ({
+	default: ({
+		grants,
+		contracts,
+		active,
+	}: {
+		grants: Grant[]
+		contracts: React.ReactNode
+		active: boolean
+	}) => (
+		<div data-testid="emergency-surface" data-active={String(active)}>
+			<p>
+				Emergency surface for {grants.map((grant) => grant.role).join(", ")}
+			</p>
+			{contracts}
+		</div>
+	),
+}))
+
 const connectedAddress = "GCONNECTEDADDRESS1234567890"
 
 const emptyGrantedBy = {
@@ -204,9 +223,37 @@ describe("AdminPanel", () => {
 		).toBeNull()
 		expect(
 			screen.getByText(
-				"GCON...7890 · vault manager · vault guardian · oracle guardian · vault governance",
+				"GCON...7890 · Current roles: Vault Manager · Vault Guardian · Oracle Guardian · Vault Governance",
 			),
 		).toBeTruthy()
+	})
+
+	it("renders the emergency actions with the emergency grants, active only on its tab", () => {
+		const manager = holderOf("vault manager")
+		const guardian = holderOf("vault guardian")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle", "emergency"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					cycle: [manager],
+					emergency: [guardian],
+				},
+				grants: [manager, guardian],
+			}),
+		)
+		renderAt("/admin/emergency")
+
+		expect(
+			screen.getByText("Emergency surface for vault guardian"),
+		).toBeTruthy()
+		expect(
+			screen.getByTestId("emergency-surface").getAttribute("data-active"),
+		).toBe("true")
+		expect(
+			screen.getByTestId("cycle-surface").getAttribute("data-active"),
+		).toBe("false")
 	})
 
 	it("opens the first held surface at /admin", () => {
@@ -384,7 +431,7 @@ describe("AdminPanel", () => {
 
 		expect(
 			screen.getByText(
-				"GCON...7890 · oracle attester (1 of 2 signatures) · share-token compliance (weight 1 of threshold 3) · vault governance (signs alone)",
+				"GCON...7890 · Current roles: Oracle Attester (1 of 2 signatures) · Share-Token Compliance (weight 1 of threshold 3) · Vault Governance (signs alone)",
 			),
 		).toBeTruthy()
 	})
@@ -419,7 +466,12 @@ describe("AdminPanel", () => {
 		)
 		renderAt("/admin")
 
-		expect(screen.getByText("GCON...7890 · vault manager")).toBeTruthy()
+		expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+			"Operations Console",
+		)
+		expect(
+			screen.getByText("GCON...7890 · Current role: Vault Manager"),
+		).toBeTruthy()
 		expect(screen.queryByText("Signer lookup unavailable.")).toBeNull()
 	})
 
@@ -440,7 +492,9 @@ describe("AdminPanel", () => {
 		renderAt("/admin")
 
 		expect(
-			screen.getByText("GCON...7890 · vault governance (1 of 2 signatures)"),
+			screen.getByText(
+				"GCON...7890 · Current role: Vault Governance (1 of 2 signatures)",
+			),
 		).toBeTruthy()
 	})
 

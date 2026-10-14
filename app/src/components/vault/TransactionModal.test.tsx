@@ -10,13 +10,14 @@ import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
+import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
 import { type FinalizeWindDownRoundStatus } from "../../hooks/useFinalizeWindDownRound"
 import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
-import TransactionModal from "./TransactionModal"
+import TransactionModal, { type EmergencyModalAction } from "./TransactionModal"
 
 const { explorerTransactionMock } = vi.hoisted(() => ({
 	explorerTransactionMock: vi.fn(() => null as string | null),
@@ -568,7 +569,7 @@ describe("TransactionModal", () => {
 		)
 
 		expect(consoleError).toHaveBeenCalledTimes(1)
-		expect(consoleError).toHaveBeenCalledWith("Vault contract error 9999")
+		expect(consoleError).toHaveBeenCalledWith("Contract error 9999")
 
 		consoleError.mockRestore()
 	})
@@ -1945,5 +1946,137 @@ describe("TransactionModal, finalizing a wind-down round", () => {
 			screen.getByText(/check the Cycle card before trying again/),
 		).toBeTruthy()
 		expect(screen.queryByText(/your requests/)).toBeNull()
+	})
+})
+
+const renderEmergencyModal = (
+	action: EmergencyModalAction,
+	status: TransactionStatus,
+) =>
+	render(
+		<TransactionModal
+			action={action}
+			status={status}
+			onClose={vi.fn()}
+			onRetry={vi.fn()}
+		/>,
+	)
+
+describe("TransactionModal, emergency actions", () => {
+	it.each<[EmergencyModalAction, string, string]>([
+		["pause-vault", "Preparing to pause the vault", "Vault paused"],
+		["unpause-vault", "Preparing to unpause the vault", "Vault unpaused"],
+		["raise-ripcord", "Preparing to raise the ripcord", "Ripcord raised"],
+		["lower-ripcord", "Preparing to lower the ripcord", "Ripcord lowered"],
+		[
+			"clear-latest",
+			"Preparing to clear the latest price",
+			"Latest price cleared",
+		],
+		["pause-token", "Preparing to pause the share token", "Share token paused"],
+		[
+			"unpause-token",
+			"Preparing to unpause the share token",
+			"Share token unpaused",
+		],
+	])("walks %s from preparing to confirmed", (action, preparing, confirmed) => {
+		const { rerender } = renderEmergencyModal(action, { status: "preparing" })
+		expect(screen.getByRole("heading", { name: preparing })).toBeTruthy()
+
+		rerender(
+			<TransactionModal
+				action={action}
+				status={{ status: "confirmed", hash: "b".repeat(64) }}
+				onClose={vi.fn()}
+				onRetry={vi.fn()}
+			/>,
+		)
+		expect(screen.getByRole("heading", { name: confirmed })).toBeTruthy()
+	})
+
+	it("tells the signer what pausing the vault stops and what stays open", () => {
+		renderEmergencyModal("pause-vault", { status: "awaiting-signature" })
+
+		expect(
+			screen.getByText("Signing stops new deposits, pricing and upgrades."),
+		).toBeTruthy()
+	})
+
+	it.each<[EmergencyModalAction, string, string]>([
+		[
+			"pause-token",
+			"Signing stops holder transfers and returns of escrowed shares.",
+			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
+		],
+		[
+			"unpause-token",
+			"Signing resumes holder transfers and returns of escrowed shares.",
+			"Holder transfers and returns of escrowed shares are open again.",
+		],
+	])(
+		"words %s after what the share token enforces",
+		(action, signing, done) => {
+			const { rerender } = renderEmergencyModal(action, {
+				status: "awaiting-signature",
+			})
+			expect(screen.getByText(signing)).toBeTruthy()
+
+			rerender(
+				<TransactionModal
+					action={action}
+					status={{ status: "confirmed" }}
+					onClose={vi.fn()}
+					onRetry={vi.fn()}
+				/>,
+			)
+			expect(screen.getByText(done)).toBeTruthy()
+		},
+	)
+
+	it.each<[EmergencyModalAction, number, string, RegExp]>([
+		["pause-vault", 1000, "vault", /The vault is already paused/],
+		["unpause-vault", 1001, "vault", /The vault is not paused/],
+		["pause-token", 1000, "share token", /The share token is already paused/],
+		["unpause-token", 1001, "share token", /The share token is not paused/],
+		["raise-ripcord", 2000, "oracle", /does not hold the role/],
+		["clear-latest", 3008, "oracle", /The ripcord is not raised/],
+	])(
+		"names the reason %s was refused with code %i",
+		(action, code, refuser, sentence) => {
+			renderEmergencyModal(action, {
+				status: "failed",
+				failure: { kind: "contract-error", code },
+			})
+
+			expect(
+				screen.getByRole("heading", {
+					name: `The ${refuser} refused this request`,
+				}),
+			).toBeTruthy()
+			expect(screen.getByText(sentence)).toBeTruthy()
+		},
+	)
+
+	it("falls back to a generic refusal from the right contract without the raw code", () => {
+		renderEmergencyModal("pause-token", {
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(
+			screen.getByText(/The share token refused this request\. Try again/),
+		).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
+	})
+
+	it("sends an unknown outcome to the Emergency tab", () => {
+		renderEmergencyModal("raise-ripcord", {
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+
+		expect(
+			screen.getByText(/check the Emergency tab before trying again/),
+		).toBeTruthy()
 	})
 })

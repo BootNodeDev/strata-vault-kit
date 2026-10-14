@@ -1,0 +1,143 @@
+import React from "react"
+import { type Grant } from "../../hooks/useAdminAuthority"
+import { type TransactionStatus } from "../../hooks/useContractTransaction"
+import {
+	useClearLatest,
+	usePauseToken,
+	usePauseVault,
+	useRaiseRipcord,
+	useSetRipcord,
+	useUnpauseToken,
+	useUnpauseVault,
+} from "../../hooks/useEmergencyTransactions"
+import { useOracleState } from "../../hooks/useOracleState"
+import { usePendingTransaction } from "../../hooks/usePendingTransaction"
+import { useTokenPaused } from "../../hooks/useTokenPaused"
+import { useVaultPaused } from "../../hooks/useVaultPaused"
+import {
+	type EmergencyAction,
+	type EmergencyState,
+	toEmergencyActions,
+	toEmergencyTiles,
+} from "../../pages/emergency"
+import typeStyles from "../../styles/type.module.css"
+import MetricsStrip from "../vault/MetricsStrip"
+import TransactionModal, {
+	type TransactionModalProps,
+} from "../vault/TransactionModal"
+import CycleActionRail from "./CycleActionRail"
+import SurfaceLayout from "./SurfaceLayout"
+import layoutStyles from "./SurfaceLayout.module.css"
+
+const RAISE = "raise"
+const LOWER = "lower"
+
+const EmergencySection: React.FC<{
+	grants: Grant[]
+	wallet: string
+	contracts?: React.ReactNode
+	active?: boolean
+}> = ({ grants, wallet, contracts, active = true }) => {
+	const { pause: vault } = useVaultPaused({ poll: active })
+	const { pause: token } = useTokenPaused({ poll: active })
+	const { oracle } = useOracleState({ poll: active })
+	const pauseVault = usePendingTransaction(usePauseVault())
+	const unpauseVault = usePendingTransaction(useUnpauseVault())
+	const raiseRipcord = usePendingTransaction(useRaiseRipcord())
+	const setRipcord = usePendingTransaction(useSetRipcord())
+	const clearLatest = usePendingTransaction(useClearLatest())
+	const pauseToken = usePendingTransaction(usePauseToken())
+	const unpauseToken = usePendingTransaction(useUnpauseToken())
+
+	const state: EmergencyState = { vault, token, oracle }
+	const actions = toEmergencyActions(state, grants, wallet)
+
+	const run = (action: EmergencyAction) => {
+		switch (action.id) {
+			case "pause-vault":
+				pauseVault.submit(undefined, "")
+				return
+			case "unpause-vault":
+				unpauseVault.submit(undefined, "")
+				return
+			case "raise-ripcord":
+				if (action.viaAdmin) setRipcord.submit(true, RAISE)
+				else raiseRipcord.submit(undefined, "")
+				return
+			case "lower-ripcord":
+				setRipcord.submit(false, LOWER)
+				return
+			case "clear-latest":
+				clearLatest.submit(undefined, "")
+				return
+			case "pause-token":
+				pauseToken.submit(undefined, "")
+				return
+			case "unpause-token":
+				unpauseToken.submit(undefined, "")
+		}
+	}
+
+	const flow = (
+		action: TransactionModalProps["action"] & EmergencyAction["id"],
+		transaction: {
+			status: TransactionStatus
+			reset: () => void
+			retry: () => void
+		},
+	): TransactionModalProps => ({
+		action,
+		status: transaction.status,
+		onClose: transaction.reset,
+		onRetry: transaction.retry,
+	})
+
+	const modalFlows: TransactionModalProps[] = [
+		flow("pause-vault", pauseVault),
+		flow("unpause-vault", unpauseVault),
+		flow("raise-ripcord", raiseRipcord),
+		flow(
+			setRipcord.amountLabel === RAISE ? "raise-ripcord" : "lower-ripcord",
+			setRipcord,
+		),
+		flow("clear-latest", clearLatest),
+		flow("pause-token", pauseToken),
+		flow("unpause-token", unpauseToken),
+	]
+	const activeModal = modalFlows.find((props) => props.status.status !== "idle")
+
+	return (
+		<>
+			<SurfaceLayout
+				side={
+					<CycleActionRail
+						scope="emergency"
+						actions={actions}
+						pending={false}
+						unreadable={false}
+						onRun={run}
+					/>
+				}
+			>
+				<section
+					className={layoutStyles.group}
+					aria-labelledby="emergency-status"
+				>
+					<h3
+						id="emergency-status"
+						className={`${typeStyles.body} ${layoutStyles.groupTitle}`}
+					>
+						Status
+					</h3>
+					<MetricsStrip metrics={toEmergencyTiles(state)} />
+				</section>
+				{contracts}
+			</SurfaceLayout>
+			{active && activeModal !== undefined && (
+				<TransactionModal {...activeModal} />
+			)}
+		</>
+	)
+}
+
+export default EmergencySection

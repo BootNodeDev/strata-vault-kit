@@ -6,12 +6,13 @@ import {
 	type TransactionStatus,
 } from "./useContractTransaction"
 import { cycleWriteKeys } from "./useCycleState"
+import { navLatestKey } from "./useNavPrice"
 
 export type AttestStatus = TransactionStatus
 
 export type Attestation = { price: Price; freshness: bigint }
 
-export const attestWriteKeys = [...cycleWriteKeys, ["nav", "latest"]] as const
+export const attestWriteKeys = [...cycleWriteKeys, navLatestKey] as const
 
 export interface UseAttest {
 	status: AttestStatus
