@@ -18,6 +18,7 @@ import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import TransactionModal, {
+	type ComplianceModalAction,
 	type ConfigurationModalAction,
 	type EmergencyModalAction,
 	type GovernanceModalAction,
@@ -2412,6 +2413,95 @@ describe("TransactionModal, governance actions", () => {
 
 		expect(
 			screen.getByText(/check the Governance tab before trying again/),
+		).toBeTruthy()
+	})
+})
+
+const renderComplianceModal = (
+	action: ComplianceModalAction,
+	status: TransactionStatus,
+	value = "GABC...WXYZ",
+) =>
+	render(
+		<TransactionModal
+			action={action}
+			status={status}
+			value={value}
+			onClose={vi.fn()}
+			onRetry={vi.fn()}
+		/>,
+	)
+
+describe("TransactionModal, compliance actions", () => {
+	it.each<[ComplianceModalAction, string, string, string, string]>([
+		[
+			"allow-address",
+			"GABC...WXYZ",
+			"Signing adds GABC...WXYZ to the allowlist.",
+			"Address allowed",
+			"GABC...WXYZ is on the allowlist.",
+		],
+		[
+			"freeze-shares",
+			"5.00 shares of GABC...WXYZ",
+			"Signing freezes 5.00 shares of GABC...WXYZ.",
+			"Shares frozen",
+			"Froze 5.00 shares of GABC...WXYZ.",
+		],
+		[
+			"force-transfer",
+			"5.00 shares from GABC...WXYZ to CVAU...LTID",
+			"Signing moves 5.00 shares from GABC...WXYZ to CVAU...LTID.",
+			"Transfer forced",
+			"Moved 5.00 shares from GABC...WXYZ to CVAU...LTID.",
+		],
+	])("names what %s changes", (action, value, signing, done, doneBody) => {
+		const { unmount } = renderComplianceModal(
+			action,
+			{ status: "awaiting-signature" },
+			value,
+		)
+		expect(screen.getByText(signing)).toBeTruthy()
+		unmount()
+
+		renderComplianceModal(action, { status: "confirmed" }, value)
+		expect(screen.getByRole("heading", { name: done })).toBeTruthy()
+		expect(screen.getByText(doneBody)).toBeTruthy()
+	})
+
+	it.each<[ComplianceModalAction, number, string, RegExp]>([
+		["freeze-shares", 300, "share token", /does not hold enough shares/],
+		["unfreeze-shares", 301, "share token", /cannot be negative/],
+		["force-transfer", 302, "share token", /The address is frozen/],
+		["unfreeze-shares", 303, "share token", /that many frozen shares/],
+		["freeze-address", 2000, "share token", /does not hold the role/],
+		["allow-address", 2000, "identity verifier", /does not hold the role/],
+		["disallow-address", 2001, "identity verifier", /verifier has no admin/],
+	])(
+		"names the reason %s was refused with code %i",
+		(action, code, refuser, sentence) => {
+			renderComplianceModal(action, {
+				status: "failed",
+				failure: { kind: "contract-error", code },
+			})
+
+			expect(
+				screen.getByRole("heading", {
+					name: `The ${refuser} refused this request`,
+				}),
+			).toBeTruthy()
+			expect(screen.getByText(sentence)).toBeTruthy()
+		},
+	)
+
+	it("sends an unknown outcome to the Compliance tab", () => {
+		renderComplianceModal("unfreeze-address", {
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+
+		expect(
+			screen.getByText(/check the Compliance tab before trying again/),
 		).toBeTruthy()
 	})
 })

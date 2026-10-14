@@ -51,6 +51,7 @@ const disconnectedAuthority: AdminAuthority = {
 		"oracle guardian": [],
 		"oracle admin": [],
 		"share-token compliance": [],
+		"identity-verifier admin": [],
 		"share-token manager": [],
 		"share-token admin": [],
 		"vault pending admin": [],

@@ -33,8 +33,8 @@ import {
 	usePendingTransaction,
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
+import { confirmKey } from "../../pages/actions"
 import {
-	confirmKey,
 	GOVERNANCE_ACTION_IDS,
 	type GovernanceAction,
 	type GovernanceInputs,

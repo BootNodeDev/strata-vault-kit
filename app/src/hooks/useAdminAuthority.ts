@@ -6,6 +6,7 @@ import {
 	type ContractRead,
 	type PendingAdmins,
 	readContract,
+	readContractAdmin,
 } from "@stellar-scaffold/app-lib"
 import {
 	type QueryClient,
@@ -70,6 +71,7 @@ const ROLE_SURFACES = {
 	"vault treasury": ["cycle"],
 	"oracle attester": ["cycle"],
 	"share-token compliance": ["compliance"],
+	"identity-verifier admin": ["compliance"],
 	"vault guardian": ["emergency"],
 	"oracle guardian": ["emergency"],
 	"share-token manager": [],
@@ -92,6 +94,7 @@ const emptyHolders = (): RoleHolders => ({
 	"vault treasury": [],
 	"oracle attester": [],
 	"share-token compliance": [],
+	"identity-verifier admin": [],
 	"vault guardian": [],
 	"oracle guardian": [],
 	"share-token manager": [],
@@ -333,6 +336,10 @@ async function fetchAdminAuthority(
 		shareToken: shareTokenAddress.value,
 		identityVerifier: toAddressOrNull(identityVerifier),
 	}
+	const verifierAdmin =
+		addresses.identityVerifier === null
+			? undefined
+			: await readContractAdmin(addresses.identityVerifier)
 
 	const roleReads: ContractRead<unknown>[] = [
 		governance,
@@ -358,6 +365,8 @@ async function fetchAdminAuthority(
 		"oracle guardian": asMembers(oracleGuardians),
 		"oracle admin": asHolders(oracleAdmin),
 		"share-token compliance": asMembers(tokenCompliance),
+		"identity-verifier admin":
+			verifierAdmin === undefined ? [] : asHolders(verifierAdmin),
 		"share-token manager": asMembers(tokenManager),
 		"share-token admin": asHolders(tokenAdmin),
 		"vault pending admin": pendingAdminOf(pendingAdmins, vaultContractId),

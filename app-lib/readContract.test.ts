@@ -8,6 +8,7 @@ import {
 	readEpochs,
 	readEvents,
 	readLedgerTime,
+	readContractAdmin,
 	readPendingAdmins,
 } from "./readContract"
 
@@ -808,6 +809,120 @@ describe("readPendingAdmins", () => {
 		fail()
 
 		expect(await readPendingAdmins([CONTRACT_ID])).toEqual({
+			kind: "unreadable",
+		})
+	})
+})
+
+const instanceKey = (contractId: string): xdr.LedgerKey =>
+	xdr.LedgerKey.contractData(
+		new xdr.LedgerKeyContractData({
+			contract: Address.fromString(contractId).toScAddress(),
+			key: xdr.ScVal.scvLedgerKeyContractInstance(),
+			durability: xdr.ContractDataDurability.persistent(),
+		}),
+	)
+
+const instanceEntry = (
+	storage: xdr.ScMapEntry[],
+	liveUntilLedgerSeq = 2_000,
+): Api.LedgerEntryResult =>
+	entryFor(
+		instanceKey(CONTRACT_ID).toXDR("base64"),
+		xdr.ScVal.scvContractInstance(
+			new xdr.ScContractInstance({
+				executable: xdr.ContractExecutable.contractExecutableStellarAsset(),
+				storage,
+			}),
+		),
+		liveUntilLedgerSeq,
+	)
+
+const storageEntry = (name: string, val: xdr.ScVal) =>
+	new xdr.ScMapEntry({
+		key: xdr.ScVal.scvVec([xdr.ScVal.scvSymbol(name)]),
+		val,
+	})
+
+describe("readContractAdmin", () => {
+	beforeEach(() => {
+		getLedgerEntriesMock.mockReset()
+		getLatestLedgerMock.mockReset()
+		getLatestLedgerMock.mockResolvedValue({ sequence: 1_000 })
+	})
+
+	it("reads the admin from the contract instance's storage", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [
+				instanceEntry([
+					storageEntry("PendingAdmin", xdr.ScVal.scvU32(1)),
+					storageEntry("Admin", Address.fromString(PENDING).toScVal()),
+				]),
+			],
+		})
+
+		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
+			kind: "value",
+			value: PENDING,
+		})
+		const sent = getLedgerEntriesMock.mock.calls[0] as xdr.LedgerKey[]
+		expect(sent.map((key) => key.toXDR("base64"))).toEqual([
+			instanceKey(CONTRACT_ID).toXDR("base64"),
+		])
+	})
+
+	it("reads the admin from an instance whose TTL the RPC reports as 0", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [
+				instanceEntry(
+					[storageEntry("Admin", Address.fromString(PENDING).toScVal())],
+					0,
+				),
+			],
+		})
+
+		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
+			kind: "value",
+			value: PENDING,
+		})
+	})
+
+	it("reports an instance whose TTL has lapsed as archived", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [
+				instanceEntry(
+					[storageEntry("Admin", Address.fromString(PENDING).toScVal())],
+					999,
+				),
+			],
+		})
+
+		expect(await readContractAdmin(CONTRACT_ID)).toEqual({ kind: "archived" })
+	})
+
+	it("reads no admin when the instance holds none", async () => {
+		getLedgerEntriesMock.mockResolvedValue({ entries: [instanceEntry([])] })
+
+		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
+			kind: "value",
+			value: null,
+		})
+	})
+
+	it("reports a malformed admin as unreadable", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [instanceEntry([storageEntry("Admin", xdr.ScVal.scvU32(7))])],
+		})
+
+		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
+			kind: "unreadable",
+		})
+	})
+
+	it("reports a failed ledger read as unreadable", async () => {
+		getLedgerEntriesMock.mockRejectedValue(new Error("rpc down"))
+
+		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
 			kind: "unreadable",
 		})
 	})

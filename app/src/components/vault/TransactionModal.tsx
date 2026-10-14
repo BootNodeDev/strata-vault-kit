@@ -24,6 +24,7 @@ import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
+import { type ComplianceActionId } from "../../pages/compliance"
 import { EFFECTS } from "../../pages/configuration"
 import { type GovernanceActionId } from "../../pages/governance"
 import typeStyles from "../../styles/type.module.css"
@@ -51,6 +52,8 @@ export type ConfigurationModalAction =
 
 export type GovernanceModalAction = GovernanceActionId
 
+export type ComplianceModalAction = ComplianceActionId
+
 export type TransactionModalProps =
 	| {
 			action: EmergencyModalAction
@@ -59,7 +62,8 @@ export type TransactionModalProps =
 			onRetry: () => void
 	  }
 	| {
-			action: ConfigurationModalAction | GovernanceModalAction
+			action:
+				ConfigurationModalAction | GovernanceModalAction | ComplianceModalAction
 			status: TransactionStatus
 			value: string
 			onClose: () => void
@@ -389,6 +393,7 @@ const EMERGENCY_FOLLOW_UP = "check the Emergency tab before trying again"
 const CONFIGURATION_FOLLOW_UP =
 	"check the Configuration tab before trying again"
 const GOVERNANCE_FOLLOW_UP = "check the Governance tab before trying again"
+const COMPLIANCE_FOLLOW_UP = "check the Compliance tab before trying again"
 
 const describeFailure = (
 	failure: TransactionFailure,
@@ -958,7 +963,7 @@ const describeFinalizeRoundStatus = (
 }
 
 type AdminCopy = {
-	refuser: "vault" | "share token" | "oracle"
+	refuser: "vault" | "share token" | "oracle" | "identity verifier"
 	reasons?: Partial<Record<number, string>>
 	verb: string
 	signing: string
@@ -1171,6 +1176,61 @@ const GOVERNANCE_COPY: Record<
 	"cancel-wind-down": cancelWindDownCopy,
 }
 
+const COMPLIANCE_COPY: Record<
+	ComplianceModalAction,
+	(value: string) => AdminCopy
+> = {
+	"allow-address": (value) => ({
+		refuser: "identity verifier",
+		verb: "allow the address",
+		signing: `Signing adds ${value} to the allowlist.`,
+		done: "Address allowed",
+		doneBody: `${value} is on the allowlist.`,
+	}),
+	"disallow-address": (value) => ({
+		refuser: "identity verifier",
+		verb: "remove the address from the allowlist",
+		signing: `Signing removes ${value} from the allowlist.`,
+		done: "Removed from the allowlist",
+		doneBody: `${value} is off the allowlist.`,
+	}),
+	"freeze-address": (value) => ({
+		refuser: "share token",
+		verb: "freeze the address",
+		signing: `Signing freezes ${value}.`,
+		done: "Address frozen",
+		doneBody: `${value} is frozen.`,
+	}),
+	"unfreeze-address": (value) => ({
+		refuser: "share token",
+		verb: "unfreeze the address",
+		signing: `Signing unfreezes ${value}.`,
+		done: "Address unfrozen",
+		doneBody: `${value} is no longer frozen.`,
+	}),
+	"freeze-shares": (value) => ({
+		refuser: "share token",
+		verb: "freeze shares",
+		signing: `Signing freezes ${value}.`,
+		done: "Shares frozen",
+		doneBody: `Froze ${value}.`,
+	}),
+	"unfreeze-shares": (value) => ({
+		refuser: "share token",
+		verb: "unfreeze shares",
+		signing: `Signing unfreezes ${value}.`,
+		done: "Shares unfrozen",
+		doneBody: `Unfroze ${value}.`,
+	}),
+	"force-transfer": (value) => ({
+		refuser: "share token",
+		verb: "force a transfer",
+		signing: `Signing moves ${value}.`,
+		done: "Transfer forced",
+		doneBody: `Moved ${value}.`,
+	}),
+}
+
 const adminContractErrorReason =
 	(refuser: AdminCopy["refuser"]) =>
 	(code: number): string => {
@@ -1179,8 +1239,18 @@ const adminContractErrorReason =
 				return `The ${refuser} is already paused.`
 			case 1001:
 				return `The ${refuser} is not paused, so there is nothing to unpause.`
+			case 300:
+				return "The address does not hold enough shares."
+			case 301:
+				return "The amount cannot be negative."
+			case 302:
+				return "The address is frozen."
+			case 303:
+				return "The address does not have that many frozen shares."
 			case 2000:
 				return "This wallet does not hold the role this action needs."
+			case 2001:
+				return `The ${refuser} has no admin.`
 			case 2002:
 				return "The role's holders changed before this was recorded."
 			case 2007:
@@ -1362,6 +1432,18 @@ const describeStatus = (
 				GOVERNANCE_COPY[props.action](props.value),
 				props.status,
 				GOVERNANCE_FOLLOW_UP,
+			)
+		case "allow-address":
+		case "disallow-address":
+		case "freeze-address":
+		case "unfreeze-address":
+		case "freeze-shares":
+		case "unfreeze-shares":
+		case "force-transfer":
+			return describeAdminStatus(
+				COMPLIANCE_COPY[props.action](props.value),
+				props.status,
+				COMPLIANCE_FOLLOW_UP,
 			)
 	}
 }

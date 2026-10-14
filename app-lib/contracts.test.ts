@@ -10,17 +10,27 @@ vi.mock("@stellar/stellar-sdk/contract", async (importOriginal) => {
 
 import {
 	connectAsyncVault,
+	connectIdentityVerifier,
 	connectNavOracle,
 	connectShareToken,
+	type Signer,
 } from "./contracts"
 
-describe("connectAsyncVault", () => {
+describe.each([
+	{ name: "connectAsyncVault", connect: connectAsyncVault },
+	{ name: "connectNavOracle", connect: connectNavOracle },
+	{ name: "connectShareToken", connect: connectShareToken },
+	{ name: "connectIdentityVerifier", connect: connectIdentityVerifier },
+] satisfies {
+	name: string
+	connect: (contractId: string, signer?: Signer) => Promise<unknown>
+}[])("$name", ({ connect }) => {
 	beforeEach(() => fromMock.mockClear())
 
 	it("builds a read client with no publicKey or signTransaction when no signer is given", async () => {
 		fromMock.mockResolvedValue({})
 
-		await connectAsyncVault("CCONTRACT")
+		await connect("CCONTRACT")
 
 		const options = fromMock.mock.calls[0]?.[0]
 		expect(options.contractId).toBe("CCONTRACT")
@@ -32,71 +42,10 @@ describe("connectAsyncVault", () => {
 		fromMock.mockResolvedValue({})
 		const signTransaction = vi.fn()
 
-		await connectAsyncVault("CCONTRACT", {
-			publicKey: "GADDRESS",
-			signTransaction,
-		})
+		await connect("CCONTRACT", { publicKey: "GSIGNER", signTransaction })
 
 		const options = fromMock.mock.calls[0]?.[0]
-		expect(options.publicKey).toBe("GADDRESS")
-		expect(options.signTransaction).toBe(signTransaction)
-	})
-})
-
-describe("connectNavOracle", () => {
-	beforeEach(() => fromMock.mockClear())
-
-	it("builds a read client with no publicKey or signTransaction when no signer is given", async () => {
-		fromMock.mockResolvedValue({})
-
-		await connectNavOracle("CORACLE")
-
-		const options = fromMock.mock.calls[0]?.[0]
-		expect(options.contractId).toBe("CORACLE")
-		expect(options.publicKey).toBeUndefined()
-		expect(options.signTransaction).toBeUndefined()
-	})
-
-	it("carries the connected address and signer when one is given", async () => {
-		fromMock.mockResolvedValue({})
-		const signTransaction = vi.fn()
-
-		await connectNavOracle("CORACLE", {
-			publicKey: "GATTESTER",
-			signTransaction,
-		})
-
-		const options = fromMock.mock.calls[0]?.[0]
-		expect(options.publicKey).toBe("GATTESTER")
-		expect(options.signTransaction).toBe(signTransaction)
-	})
-})
-
-describe("connectShareToken", () => {
-	beforeEach(() => fromMock.mockClear())
-
-	it("builds a read client with no publicKey or signTransaction when no signer is given", async () => {
-		fromMock.mockResolvedValue({})
-
-		await connectShareToken("CTOKEN")
-
-		const options = fromMock.mock.calls[0]?.[0]
-		expect(options.contractId).toBe("CTOKEN")
-		expect(options.publicKey).toBeUndefined()
-		expect(options.signTransaction).toBeUndefined()
-	})
-
-	it("carries the connected address and signer when one is given", async () => {
-		fromMock.mockResolvedValue({})
-		const signTransaction = vi.fn()
-
-		await connectShareToken("CTOKEN", {
-			publicKey: "GTOKENADMIN",
-			signTransaction,
-		})
-
-		const options = fromMock.mock.calls[0]?.[0]
-		expect(options.publicKey).toBe("GTOKENADMIN")
+		expect(options.publicKey).toBe("GSIGNER")
 		expect(options.signTransaction).toBe(signTransaction)
 	})
 })

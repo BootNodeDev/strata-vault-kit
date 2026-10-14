@@ -65,8 +65,9 @@ export const connectNavOracle = (
 
 export const connectIdentityVerifier = (
 	contractId: string,
+	signer?: Signer,
 ): Promise<IdentityVerifierApi> =>
-	Client.from<IdentityVerifierApi>(clientOptions(contractId))
+	Client.from<IdentityVerifierApi>(clientOptions(contractId, signer))
 
 export const connectShareToken = (
 	contractId: string,

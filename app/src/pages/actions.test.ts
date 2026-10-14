@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import { type Grant } from "../hooks/useAdminAuthority"
 import {
 	grantFor,
+	parseAccount,
 	type RailAction,
 	readiness,
 	readyCount,
@@ -210,4 +211,20 @@ describe("toAction", () => {
 			"Needs 2 signatures; collecting them is not supported yet.",
 		)
 	})
+})
+
+describe("parseAccount", () => {
+	const account = "GDPO5SQDJY4E2XEE47MAOT2M2F3GR4H2AYYKSMIOT2YPOHAMC36VKWIA"
+	const contract = "CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR"
+
+	it.each([account, contract])("accepts %s, trimmed", (address) => {
+		expect(parseAccount(`  ${address} `)).toBe(address)
+	})
+
+	it.each(["", "GABC", `${account.slice(0, -1)}B`, "SDPO5SQDJY4E2XEE"])(
+		"rejects %j",
+		(text) => {
+			expect(parseAccount(text)).toBeUndefined()
+		},
+	)
 })

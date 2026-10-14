@@ -140,8 +140,9 @@ function decodeLedgerEntry<T>(
 	const entry = chunkResult.byKey.get(key.toXDR("base64"))
 	if (entry === undefined) return { kind: "value", value: null }
 	if (latestLedger === null) return { kind: "unreadable" }
-	if ((entry.liveUntilLedgerSeq ?? 0) < latestLedger)
-		return { kind: "archived" }
+	const liveUntil = entry.liveUntilLedgerSeq ?? 0
+	// RPC reports 0 for a live entry whose TTL it does not track
+	if (liveUntil !== 0 && liveUntil < latestLedger) return { kind: "archived" }
 	try {
 		return { kind: "value", value: decode(entry.val.contractData().val()) }
 	} catch {
@@ -375,6 +376,42 @@ export async function readPendingAdmins(
 				pending,
 			},
 		}
+	} catch {
+		return { kind: "unreadable" }
+	}
+}
+
+const contractInstanceKey = (contractId: string): xdr.LedgerKey =>
+	contractDataLedgerKey(
+		Address.fromString(contractId).toScAddress(),
+		xdr.ScVal.scvLedgerKeyContractInstance(),
+	)
+
+const ADMIN_KEY = xdr.ScVal.scvVec([xdr.ScVal.scvSymbol("Admin")]).toXDR(
+	"base64",
+)
+
+const decodeInstanceAdmin = (val: xdr.ScVal): string | null => {
+	const entry = val
+		.instance()
+		.storage()
+		?.find((candidate) => candidate.key().toXDR("base64") === ADMIN_KEY)
+	if (entry === undefined) return null
+	const admin: unknown = scValToNative(entry.val())
+	if (typeof admin !== "string") throw new Error("malformed admin")
+	return admin
+}
+
+export async function readContractAdmin(
+	contractId: string,
+): Promise<ContractRead<string | null>> {
+	try {
+		const key = contractInstanceKey(contractId)
+		const [latestLedger, fetched] = await Promise.all([
+			latestLedgerSequence(),
+			fetchChunk([key]),
+		])
+		return decodeLedgerEntry(fetched, key, decodeInstanceAdmin, latestLedger)
 	} catch {
 		return { kind: "unreadable" }
 	}

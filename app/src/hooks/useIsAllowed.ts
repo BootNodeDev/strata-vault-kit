@@ -1,6 +1,10 @@
-import { type ContractRead, readContract } from "@stellar-scaffold/app-lib"
-import { skipToken, useQuery } from "@tanstack/react-query"
-import { identityVerifier } from "../config/clients"
+import {
+	type ContractRead,
+	type IdentityVerifierApi,
+	readContract,
+} from "@stellar-scaffold/app-lib"
+import { queryOptions, skipToken, useQuery } from "@tanstack/react-query"
+import { identityVerifier, identityVerifierAt } from "../config/clients"
 import { useWallet } from "./useWallet"
 
 export const isAllowedKey = ["identity", "is-allowed"] as const
@@ -12,18 +16,37 @@ export function classifyAllowance(read: ContractRead<boolean>): Allowance {
 	return read.value ? "allowed" : "not-allowed"
 }
 
-async function fetchAllowance(account: string): Promise<Allowance> {
+export async function fetchAllowance(
+	verifier: Promise<IdentityVerifierApi>,
+	account: string,
+): Promise<Allowance> {
 	const read = await readContract(async () =>
-		(await identityVerifier()).is_allowed({ account }),
+		(await verifier).is_allowed({ account }),
 	)
 	return classifyAllowance(read)
 }
+
+export const allowanceQuery = (
+	verifier: string | null,
+	account: string | undefined,
+) =>
+	queryOptions({
+		queryKey: [...isAllowedKey, verifier, account] as const,
+		queryFn:
+			verifier === null || account === undefined
+				? skipToken
+				: () => fetchAllowance(identityVerifierAt(verifier), account),
+		staleTime: 30_000,
+	})
 
 export function useIsAllowed(): { allowance: Allowance } {
 	const { address } = useWallet()
 	const { data } = useQuery({
 		queryKey: [...isAllowedKey, address],
-		queryFn: address === undefined ? skipToken : () => fetchAllowance(address),
+		queryFn:
+			address === undefined
+				? skipToken
+				: () => fetchAllowance(identityVerifier(), address),
 		staleTime: 30_000,
 	})
 

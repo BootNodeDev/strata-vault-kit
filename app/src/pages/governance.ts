@@ -1,4 +1,3 @@
-import { StrKey } from "@stellar/stellar-sdk"
 import { type PendingTransfer, shortAddress } from "@stellar-scaffold/app-lib"
 import { type Metric } from "../components/vault/MetricsStrip"
 import {
@@ -18,7 +17,11 @@ import {
 import {
 	allMet,
 	type Condition,
+	type Confirmation,
+	confirmation,
+	confirmKey,
 	grantFor,
+	parseAccount,
 	type RailAction,
 	type RailField,
 	ROLES,
@@ -64,8 +67,6 @@ export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
 	]),
 	...VAULT_ACTION_IDS,
 ]
-
-export const confirmKey = (id: GovernanceActionId): string => `${id}-confirm`
 
 type Built<Id extends string, Arg> = Id extends string
 	? RailAction<RailField> & { id: Id; arg: Arg; next: string }
@@ -172,14 +173,6 @@ const WARNINGS = {
 	mergedRoles: "Merges two vault roles on one account.",
 } as const
 
-const parseAccount = (text: string): string | undefined => {
-	const trimmed = text.trim()
-	return StrKey.isValidEd25519PublicKey(trimmed) ||
-		StrKey.isValidContract(trimmed)
-		? trimmed
-		: undefined
-}
-
 const holderList = (accounts: string[]): string =>
 	accounts.length === 0 ? "none" : accounts.map(shortAddress).join(", ")
 
@@ -232,21 +225,6 @@ const resultingHolders = ({
 	return operation === "grant"
 		? [...current, account]
 		: current.filter((holder) => holder !== account)
-}
-
-type Confirmation = { field: RailField; condition: Condition }
-
-function confirmation(
-	key: string,
-	label: string,
-	value: string,
-	inputs: GovernanceInputs,
-): Confirmation {
-	const checked = inputs[key] === value
-	return {
-		field: { kind: "confirm", key, label, value, checked },
-		condition: { label: "Confirmed", met: checked },
-	}
 }
 
 const roleConfirmation = (

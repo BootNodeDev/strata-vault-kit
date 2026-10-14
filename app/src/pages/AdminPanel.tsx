@@ -1,6 +1,7 @@
 import { shortAddress } from "@stellar-scaffold/app-lib"
 import React, { useEffect, useRef } from "react"
 import { Navigate, useParams } from "react-router-dom"
+import ComplianceSection from "../components/admin/ComplianceSection"
 import ConfigurationSection from "../components/admin/ConfigurationSection"
 import CycleSection from "../components/admin/CycleSection"
 import Disclosure from "../components/admin/Disclosure"
@@ -111,7 +112,15 @@ const SurfaceBody: React.FC<{
 				/>
 			)
 		case "compliance":
-			return contracts
+			return (
+				<ComplianceSection
+					grants={grantedBy.compliance}
+					wallet={wallet}
+					addresses={addresses}
+					active={active}
+					contracts={contracts}
+				/>
+			)
 	}
 }
 

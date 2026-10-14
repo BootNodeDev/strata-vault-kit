@@ -1,0 +1,42 @@
+.target {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.label {
+	color: var(--vault-ink);
+}
+
+.field,
+.fieldInvalid {
+	display: flex;
+	align-items: center;
+	min-height: 48px;
+	padding: 8px 16px;
+	border: 1px solid var(--vault-action);
+	background: var(--vault-surface-card);
+}
+
+.fieldInvalid {
+	border: 2px solid var(--vault-danger);
+}
+
+.field:focus-within {
+	outline: 2px solid var(--vault-action);
+	outline-offset: 2px;
+}
+
+.input {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: var(--vault-ink);
+	overflow-wrap: anywhere;
+}
+
+.input::placeholder {
+	color: var(--vault-text-muted);
+}
