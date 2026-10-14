@@ -52,6 +52,7 @@ const stateOf = (
 			: { status: "ready", reads: reads(overrides) },
 	vault: VAULT,
 	destination,
+	adminUnknown: false,
 })
 
 const actionOf = (
@@ -88,6 +89,50 @@ describe("toComplianceActions", () => {
 			"force-transfer",
 		])
 		expect(ids([grantOf("share-token admin")])).toEqual([])
+	})
+
+	it("withholds the allowlist from the compliance role when the verifier admin cannot be read", () => {
+		const actions = toComplianceActions(
+			{ ...stateOf(HOLDER), adminUnknown: true },
+			[officer],
+			WALLET,
+			{},
+		)
+
+		expect(
+			actions
+				.filter(({ id }) => id.endsWith("allow-address"))
+				.map(({ id, label, enabled, unavailable }) => [
+					id,
+					label,
+					enabled,
+					unavailable,
+				]),
+		).toEqual([
+			[
+				"allow-address",
+				"Allow the address",
+				false,
+				"Could not read the allowlist admin.",
+			],
+			[
+				"disallow-address",
+				"Remove from the allowlist",
+				false,
+				"Could not read the allowlist admin.",
+			],
+		])
+	})
+
+	it("does not withhold the allowlist from a verifier admin or offer it to a wallet with no surface", () => {
+		const state = { ...stateOf(HOLDER), adminUnknown: true }
+
+		expect(
+			toComplianceActions(state, [verifierAdmin], WALLET, {})
+				.filter(({ id }) => id.endsWith("allow-address"))
+				.map(({ unavailable }) => unavailable),
+		).toEqual([undefined, undefined])
+		expect(toComplianceActions(state, [], WALLET, {})).toEqual([])
 	})
 
 	it("blocks every action until a target address is entered", () => {

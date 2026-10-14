@@ -51,12 +51,18 @@ vi.mock("../components/admin/ComplianceSection", () => ({
 		grants,
 		contracts,
 		active,
+		verifierAdminUnknown,
 	}: {
 		grants: Grant[]
 		contracts: React.ReactNode
 		active: boolean
+		verifierAdminUnknown: boolean
 	}) => (
-		<div data-testid="compliance-surface" data-active={String(active)}>
+		<div
+			data-testid="compliance-surface"
+			data-active={String(active)}
+			data-admin-unknown={String(verifierAdminUnknown)}
+		>
 			<p>
 				Compliance surface for {grants.map((grant) => grant.role).join(", ")}
 			</p>
@@ -166,6 +172,7 @@ const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	grantedBy: emptyGrantedBy,
 	grants: [],
 	signersUnknown: false,
+	verifierAdminUnknown: false,
 	addresses: noAddresses,
 	holders: noHolders,
 	...overrides,
@@ -339,6 +346,26 @@ describe("AdminPanel", () => {
 		expect(
 			screen.getByTestId("cycle-surface").getAttribute("data-active"),
 		).toBe("false")
+	})
+
+	it("tells the compliance surface when the verifier admin is unknown", () => {
+		const officer = holderOf("share-token compliance")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["compliance"]),
+				grantedBy: { ...emptyGrantedBy, compliance: [officer] },
+				grants: [officer],
+				verifierAdminUnknown: true,
+			}),
+		)
+		renderAt("/admin/compliance")
+
+		expect(
+			screen
+				.getByTestId("compliance-surface")
+				.getAttribute("data-admin-unknown"),
+		).toBe("true")
 	})
 
 	it("renders the emergency actions with the emergency grants, active only on its tab", () => {

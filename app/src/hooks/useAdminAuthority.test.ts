@@ -3,7 +3,7 @@ import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { vaultContractId } from "../config/contracts"
 import { pendingAdminsQuery } from "./pendingAdmins"
-import { renderWithWallet, investorAddress } from "./testSupport"
+import { deferred, renderWithWallet, investorAddress } from "./testSupport"
 import {
 	type AdminSurface,
 	adminAuthorityKey,
@@ -436,22 +436,48 @@ describe("useAdminAuthority", () => {
 		expect(result.current.surfaces).toEqual(new Set())
 	})
 
-	it("keeps the other surfaces when the verifier admin cannot be read", async () => {
-		readContractAdminMock.mockResolvedValue({ kind: "unreadable" })
+	it.each([
+		["cannot be read", { kind: "unreadable" }],
+		["is archived", { kind: "archived" }],
+	])(
+		"keeps the other surfaces and flags the verifier admin when it %s",
+		async (_, read) => {
+			readContractAdminMock.mockResolvedValue(read)
+			const { result } = renderWithWallet(useAdminAuthority)
+
+			await waitFor(() => expect(result.current.status).toBe("ready"))
+			expect(result.current.surfaces).toEqual(new Set(["cycle"]))
+			expect(result.current.holders["identity-verifier admin"]).toEqual([])
+			expect(result.current.verifierAdminUnknown).toBe(true)
+		},
+	)
+
+	it("does not flag the verifier admin when it is read, even with no admin", async () => {
 		const { result } = renderWithWallet(useAdminAuthority)
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
-		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
-		expect(result.current.holders["identity-verifier admin"]).toEqual([])
+		expect(result.current.verifierAdminUnknown).toBe(false)
 	})
 
-	it("skips the verifier admin read when the token's verifier is unknown", async () => {
+	it("skips the verifier admin read and flags it when the token's verifier is unknown", async () => {
 		tokenMock.identity_verifier.mockRejectedValue(new Error("rpc down"))
 		const { result } = renderWithWallet(useAdminAuthority)
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
 		expect(readContractAdminMock).not.toHaveBeenCalled()
 		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
+		expect(result.current.verifierAdminUnknown).toBe(true)
+	})
+
+	it("reads the verifier admin without waiting for the other token reads", async () => {
+		const tokenAdmin = deferred<{ result: null }>()
+		tokenMock.get_admin.mockReturnValue(tokenAdmin.promise)
+		renderWithWallet(useAdminAuthority)
+
+		await waitFor(() =>
+			expect(readContractAdminMock).toHaveBeenCalledWith("CVERIFIERADDRESS"),
+		)
+		tokenAdmin.resolve({ result: null })
 	})
 
 	it("reports the held surfaces and the derived addresses once every read resolves", async () => {

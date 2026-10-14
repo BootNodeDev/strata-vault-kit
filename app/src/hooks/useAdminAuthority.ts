@@ -7,6 +7,7 @@ import {
 	type PendingAdmins,
 	readContract,
 	readContractAdmin,
+	type ShareTokenApi,
 } from "@stellar-scaffold/app-lib"
 import {
 	type QueryClient,
@@ -62,6 +63,7 @@ export interface AdminAuthority {
 	grantedBy: Record<AdminSurface, Grant[]>
 	grants: Grant[]
 	signersUnknown: boolean
+	verifierAdminUnknown: boolean
 	addresses: AdminAddresses
 	holders: RoleHolders
 }
@@ -129,6 +131,7 @@ const emptyAuthority = (
 	grantedBy: emptyGrantedBy(),
 	grants: [],
 	signersUnknown: false,
+	verifierAdminUnknown: false,
 	addresses,
 	holders: emptyHolders(),
 })
@@ -272,6 +275,25 @@ async function readSigners(
 	return { byAccount, unknown }
 }
 
+type VerifierRead = {
+	address: ContractRead<string>
+	admin: ContractRead<string | null> | undefined
+}
+
+async function readVerifier(
+	token: Promise<ShareTokenApi>,
+): Promise<VerifierRead> {
+	const address = await readContract(async () =>
+		(await token).identity_verifier(),
+	)
+	return {
+		address,
+		admin: isValue(address)
+			? await readContractAdmin(address.value)
+			: undefined,
+	}
+}
+
 async function fetchAdminAuthority(
 	wallet: string,
 	queryClient: QueryClient,
@@ -310,7 +332,7 @@ async function fetchAdminAuthority(
 		tokenCompliance,
 		tokenManager,
 		tokenAdmin,
-		identityVerifier,
+		verifier,
 		pendingAdmins,
 	] = await Promise.all([
 		readRoleMembers(oraclePromise, "attester"),
@@ -319,7 +341,7 @@ async function fetchAdminAuthority(
 		readRoleMembers(tokenPromise, "compliance"),
 		readRoleMembers(tokenPromise, "manager"),
 		readContract(async () => (await tokenPromise).get_admin()),
-		readContract(async () => (await tokenPromise).identity_verifier()),
+		readVerifier(tokenPromise),
 		queryClient
 			.fetchQuery(
 				pendingAdminsQuery({
@@ -334,12 +356,8 @@ async function fetchAdminAuthority(
 	const addresses: AdminAddresses = {
 		oracle: oracleAddress.value,
 		shareToken: shareTokenAddress.value,
-		identityVerifier: toAddressOrNull(identityVerifier),
+		identityVerifier: toAddressOrNull(verifier.address),
 	}
-	const verifierAdmin =
-		addresses.identityVerifier === null
-			? undefined
-			: await readContractAdmin(addresses.identityVerifier)
 
 	const roleReads: ContractRead<unknown>[] = [
 		governance,
@@ -366,7 +384,7 @@ async function fetchAdminAuthority(
 		"oracle admin": asHolders(oracleAdmin),
 		"share-token compliance": asMembers(tokenCompliance),
 		"identity-verifier admin":
-			verifierAdmin === undefined ? [] : asHolders(verifierAdmin),
+			verifier.admin === undefined ? [] : asHolders(verifier.admin),
 		"share-token manager": asMembers(tokenManager),
 		"share-token admin": asHolders(tokenAdmin),
 		"vault pending admin": pendingAdminOf(pendingAdmins, vaultContractId),
@@ -382,6 +400,8 @@ async function fetchAdminAuthority(
 		status: "ready",
 		...toSurfaces(wallet, holders, byAccount),
 		signersUnknown: unknown,
+		verifierAdminUnknown:
+			verifier.admin === undefined || !isValue(verifier.admin),
 		addresses,
 		holders,
 	}

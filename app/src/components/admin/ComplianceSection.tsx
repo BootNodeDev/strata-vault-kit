@@ -92,9 +92,17 @@ const ComplianceSection: React.FC<{
 	grants: Grant[]
 	wallet: string
 	addresses: AdminAddresses
+	verifierAdminUnknown?: boolean
 	contracts?: React.ReactNode
 	active?: boolean
-}> = ({ grants, wallet, addresses, contracts, active = true }) => {
+}> = ({
+	grants,
+	wallet,
+	addresses,
+	verifierAdminUnknown = false,
+	contracts,
+	active = true,
+}) => {
 	const verifier = addresses.identityVerifier
 	const [targetText, setTargetText] = useState("")
 	const { inputs, setInputs, onInput } = useRailInputs()
@@ -121,6 +129,7 @@ const ComplianceSection: React.FC<{
 		reads,
 		vault: vaultContractId,
 		destination,
+		adminUnknown: verifierAdminUnknown,
 	}
 	const actions = toComplianceActions(state, grants, wallet, inputs)
 

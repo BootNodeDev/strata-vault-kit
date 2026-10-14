@@ -62,6 +62,7 @@ export type ComplianceState = {
 	reads: TargetState
 	vault: string
 	destination: Allowance
+	adminUnknown: boolean
 }
 
 const DESTINATION_KEY = "force-transfer-destination"
@@ -386,6 +387,27 @@ const build = <Id extends ComplianceActionId, Arg>(
 	wallet: string,
 ) => ({ ...toAction(spec, grant, wallet), arg: spec.arg, next: spec.next })
 
+const ADMIN_UNREADABLE = "Could not read the allowlist admin."
+
+const allowActions = (
+	state: ComplianceState,
+	allowed: boolean | null,
+	inputs: Inputs,
+	grant: Grant,
+	wallet: string,
+): ComplianceAction[] => [
+	build(
+		allowSpec(TOGGLES["allow-address"], allowed, state, inputs),
+		grant,
+		wallet,
+	),
+	build(
+		allowSpec(TOGGLES["disallow-address"], allowed, state, inputs),
+		grant,
+		wallet,
+	),
+]
+
 export function toComplianceActions(
 	state: ComplianceState,
 	grants: Grant[],
@@ -397,20 +419,19 @@ export function toComplianceActions(
 	const frozen = reads?.frozen ?? null
 	const actions: ComplianceAction[] = []
 	const admin = grantFor(grants, ROLES.verifierAdmin, wallet)
+	const officer = grantFor(grants, ROLES.compliance, wallet)
 	if (admin !== undefined)
+		actions.push(...allowActions(state, allowed, inputs, admin, wallet))
+	else if (officer !== undefined && state.adminUnknown)
 		actions.push(
-			build(
-				allowSpec(TOGGLES["allow-address"], allowed, state, inputs),
-				admin,
-				wallet,
-			),
-			build(
-				allowSpec(TOGGLES["disallow-address"], allowed, state, inputs),
-				admin,
-				wallet,
+			...allowActions(state, allowed, inputs, officer, wallet).map(
+				(action) => ({
+					...action,
+					enabled: false,
+					unavailable: ADMIN_UNREADABLE,
+				}),
 			),
 		)
-	const officer = grantFor(grants, ROLES.compliance, wallet)
 	if (officer !== undefined)
 		actions.push(
 			build(

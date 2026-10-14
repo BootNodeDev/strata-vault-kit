@@ -41,6 +41,7 @@ const disconnectedAuthority: AdminAuthority = {
 	},
 	grants: [],
 	signersUnknown: false,
+	verifierAdminUnknown: false,
 	addresses: { oracle: null, shareToken: null, identityVerifier: null },
 	holders: {
 		"vault governance": [],

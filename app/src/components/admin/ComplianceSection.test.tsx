@@ -138,6 +138,24 @@ describe("ComplianceSection", () => {
 		expect(within(overview).getByText("90.00")).toBeTruthy()
 	})
 
+	it("tells the compliance role why the allowlist is unavailable", () => {
+		render(
+			<ComplianceSection
+				grants={[officer]}
+				wallet={WALLET}
+				addresses={ADDRESSES}
+				verifierAdminUnknown
+			/>,
+		)
+		enterTarget(TARGET)
+		openRow("Allow the address")
+
+		expect(button("Allow the address").disabled).toBe(true)
+		expect(
+			screen.getAllByText("Could not read the allowlist admin.").length,
+		).toBeGreaterThan(0)
+	})
+
 	it("ignores an address that is not a valid key", () => {
 		render(
 			<ComplianceSection
