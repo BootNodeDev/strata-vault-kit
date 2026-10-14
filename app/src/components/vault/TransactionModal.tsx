@@ -1186,7 +1186,7 @@ const adminContractErrorReason =
 			case 2007:
 				return "The account does not hold this role."
 			case 2010:
-				return "That account already holds the maximum number of roles."
+				return `The ${refuser} already has the maximum number of roles.`
 			case 2200:
 				return "There is no pending handover."
 			case 2201:

@@ -2279,7 +2279,7 @@ describe("TransactionModal, governance actions", () => {
 			"grant-oracle-role",
 			2010,
 			"oracle",
-			/already holds the maximum number of roles/,
+			/The oracle already has the maximum number of roles/,
 		],
 		["cancel-vault-handover", 2200, "vault", /no pending handover/],
 		["hand-over-oracle-admin", 2201, "oracle", /expiry is outside/],

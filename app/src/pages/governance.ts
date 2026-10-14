@@ -187,6 +187,7 @@ const capitalize = (text: string): string =>
 	`${text.charAt(0).toUpperCase()}${text.slice(1)}`
 
 const LEDGER_SECONDS = 5n
+const MIN_EXPIRY = 60n
 const U32_MAX = 4_294_967_295
 const DEFAULT_EXPIRY = "7d"
 
@@ -375,7 +376,9 @@ function handOverSpec(
 	const text = inputs[accountKey] ?? ""
 	const account = parseAccount(text)
 	const expiryText = inputs[expiryKey] ?? DEFAULT_EXPIRY
-	const secs = parseDuration(expiryText) ?? undefined
+	const secs = /^\s*\d+\s*$/.test(expiryText)
+		? undefined
+		: (parseDuration(expiryText) ?? undefined)
 	const ledger =
 		state.handovers.status === "ready" ? state.handovers.ledger : undefined
 	const liveUntil =
@@ -399,8 +402,12 @@ function handOverSpec(
 			met: text.trim() === "" ? null : account !== undefined,
 		},
 		{
-			label: `Expiry ≥ ${formatDuration(LEDGER_SECONDS)}`,
-			met: secs === undefined ? null : secs >= LEDGER_SECONDS,
+			label: "Expiry has a unit, e.g. 7d",
+			met: expiryText.trim() === "" ? null : secs !== undefined,
+		},
+		{
+			label: `Expiry ≥ ${formatDuration(MIN_EXPIRY)}`,
+			met: secs === undefined ? null : secs >= MIN_EXPIRY,
 		},
 		limitCondition(ledger, liveUntil),
 	]

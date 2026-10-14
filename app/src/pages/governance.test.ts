@@ -375,9 +375,11 @@ describe("admin handover", () => {
 	})
 
 	it.each<[string, number | null, string, boolean | null]>([
-		["4s", null, "Expiry ≥ 5s", false],
-		["5s", null, "Expiry ≥ 5s", true],
-		["1.5d", null, "Expiry ≥ 5s", null],
+		["59s", null, "Expiry ≥ 1m", false],
+		["1m", null, "Expiry ≥ 1m", true],
+		["1.5d", null, "Expiry ≥ 1m", null],
+		["60", null, "Expiry has a unit, e.g. 7d", false],
+		["7d", null, "Expiry has a unit, e.g. 7d", true],
 		["31d", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30d", false],
 		["30d", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30d", true],
 		["30d 5s", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30d", false],
@@ -426,10 +428,11 @@ describe("admin handover", () => {
 			newAdmin: ACCOUNT,
 			liveUntilLedger: SEQUENCE + 36 * 720,
 		})
-		expect(confirmed("5s")).toMatchObject({
+		expect(confirmed("1m")).toMatchObject({
 			enabled: true,
-			arg: { liveUntilLedger: SEQUENCE + 1 },
+			arg: { liveUntilLedger: SEQUENCE + 12 },
 		})
+		expect(confirmed("60")).toMatchObject({ enabled: false, arg: undefined })
 	})
 
 	it("refuses an expiry beyond the largest ledger number when the network limit is unknown", () => {
@@ -455,7 +458,8 @@ describe("admin handover", () => {
 
 		expect(draft.conditions.map(({ label }) => label)).toEqual([
 			"New admin entered",
-			"Expiry ≥ 5s",
+			"Expiry has a unit, e.g. 7d",
+			"Expiry ≥ 1m",
 			"Expiry within the network limit",
 			"Confirmed",
 		])
