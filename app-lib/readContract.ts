@@ -302,21 +302,27 @@ const archivalSettingsKey = (): xdr.LedgerKey =>
 		}),
 	)
 
-const decodePendingTransfer = (
-	entry: Api.LedgerEntryResult | undefined,
-	sequence: number,
-): PendingTransfer | null => {
-	if (entry === undefined || (entry.liveUntilLedgerSeq ?? 0) < sequence)
-		return null
-	const { address, live_until_ledger } = scValToNative(
-		entry.val.contractData().val(),
-	) as { address: string; live_until_ledger: number }
-	return {
-		address,
-		liveUntilLedger: live_until_ledger,
-		expired: sequence > live_until_ledger,
+const isPendingTransfer = (
+	value: unknown,
+): value is { address: string; live_until_ledger: number } =>
+	typeof value === "object" &&
+	value !== null &&
+	"address" in value &&
+	typeof value.address === "string" &&
+	"live_until_ledger" in value &&
+	typeof value.live_until_ledger === "number"
+
+const decodePendingTransfer =
+	(sequence: number) =>
+	(val: xdr.ScVal): PendingTransfer => {
+		const native: unknown = scValToNative(val)
+		if (!isPendingTransfer(native)) throw new Error("malformed pending admin")
+		return {
+			address: native.address,
+			liveUntilLedger: native.live_until_ledger,
+			expired: sequence > native.live_until_ledger,
+		}
 	}
-}
 
 const maxLiveUntil = (
 	settings: Api.LedgerEntryResult | undefined,
@@ -342,23 +348,31 @@ export async function readPendingAdmins(
 			fetchChunk([...keyed.map(({ key }) => key), archival]),
 		])
 		if (!fetched.ok) return { kind: "unreadable" }
-		const entryOf = (key: xdr.LedgerKey) =>
-			fetched.byKey.get(key.toXDR("base64"))
 		const { sequence } = latest
+		const pending = new Map<string, PendingTransfer | null>()
+		for (const { contractId, key } of keyed) {
+			const read = decodeLedgerEntry(
+				fetched,
+				key,
+				decodePendingTransfer(sequence),
+				sequence,
+			)
+			if (read.kind !== "value" && read.kind !== "archived")
+				return { kind: "unreadable" }
+			pending.set(contractId, read.kind === "value" ? read.value : null)
+		}
 		return {
 			kind: "value",
 			value: {
 				ledger: {
 					sequence,
 					closeTime: BigInt(latest.closeTime),
-					maxLiveUntil: maxLiveUntil(entryOf(archival), sequence),
+					maxLiveUntil: maxLiveUntil(
+						fetched.byKey.get(archival.toXDR("base64")),
+						sequence,
+					),
 				},
-				pending: new Map(
-					keyed.map(({ contractId, key }) => [
-						contractId,
-						decodePendingTransfer(entryOf(key), sequence),
-					]),
-				),
+				pending,
 			},
 		}
 	} catch {

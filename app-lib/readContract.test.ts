@@ -776,6 +776,31 @@ describe("readPendingAdmins", () => {
 	})
 
 	it.each([
+		["a value that is not a transfer", xdr.ScVal.scvU32(7)],
+		[
+			"a transfer without an address",
+			structScVal({ live_until_ledger: xdr.ScVal.scvU32(1_500) }),
+		],
+		[
+			"a transfer with a non-numeric expiry",
+			structScVal({
+				address: Address.fromString(PENDING).toScVal(),
+				live_until_ledger: xdr.ScVal.scvString("later"),
+			}),
+		],
+	])("is unreadable when the entry holds %s", async (_, val) => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [
+				entryFor(pendingAdminKey(CONTRACT_ID).toXDR("base64"), val, 1_500),
+			],
+		})
+
+		expect(await readPendingAdmins([CONTRACT_ID])).toEqual({
+			kind: "unreadable",
+		})
+	})
+
+	it.each([
 		["the entries", () => getLedgerEntriesMock.mockRejectedValue(new Error())],
 		["the ledger", () => getLatestLedgerMock.mockRejectedValue(new Error())],
 	])("is unreadable when %s cannot be read", async (_, fail) => {
