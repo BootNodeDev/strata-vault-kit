@@ -192,7 +192,7 @@ describe("toComplianceActions", () => {
 	})
 
 	it.each<[ComplianceAction["id"], string]>([
-		["disallow-address", "Stops the vault receiving shares."],
+		["disallow-address", "Stops the vault returning shares on cancellations."],
 		["freeze-address", "Stops the vault moving shares."],
 	])("asks to confirm %s on the vault", (id, label) => {
 		const state = stateOf(VAULT, { frozen: false, allowance: "allowed" })

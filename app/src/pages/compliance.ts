@@ -124,7 +124,7 @@ const TOGGLES: { [Id in AddressActionId]: Toggle<Id> } = {
 		condition: "Allowlisted",
 		subject: "Allowlisted",
 		wanted: false,
-		warning: "Stops the vault receiving shares.",
+		warning: "Stops the vault returning shares on cancellations.",
 	},
 	"freeze-address": {
 		id: "freeze-address",
