@@ -1243,8 +1243,6 @@ const adminContractErrorReason =
 				return "The address does not hold enough shares."
 			case 301:
 				return "The amount cannot be negative."
-			case 302:
-				return "The address is frozen."
 			case 303:
 				return "The address does not have that many frozen shares."
 			case 2000:

@@ -2472,7 +2472,6 @@ describe("TransactionModal, compliance actions", () => {
 	it.each<[ComplianceModalAction, number, string, RegExp]>([
 		["freeze-shares", 300, "share token", /does not hold enough shares/],
 		["unfreeze-shares", 301, "share token", /cannot be negative/],
-		["force-transfer", 302, "share token", /The address is frozen/],
 		["unfreeze-shares", 303, "share token", /that many frozen shares/],
 		["freeze-address", 2000, "share token", /does not hold the role/],
 		["allow-address", 2000, "identity verifier", /does not hold the role/],
