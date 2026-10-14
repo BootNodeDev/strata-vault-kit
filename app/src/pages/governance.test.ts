@@ -98,10 +98,11 @@ const find = <Id extends GovernanceAction["id"]>(
 	current: GovernanceState = state(),
 ) => {
 	const action = toGovernanceActions(current, grants, WALLET, inputs).find(
-		(candidate) => candidate.id === id,
+		(candidate): candidate is Extract<GovernanceAction, { id: Id }> =>
+			candidate.id === id,
 	)
 	if (action === undefined) throw new Error(`no ${id} action`)
-	return action as Extract<GovernanceAction, { id: Id }>
+	return action
 }
 
 const fieldOf = (action: GovernanceAction, kind: RailField["kind"]) =>

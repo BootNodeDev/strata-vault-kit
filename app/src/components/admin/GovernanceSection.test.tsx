@@ -1,6 +1,6 @@
 import { type PendingTransfer } from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
 import { type Grant, type RoleHolders } from "../../hooks/useAdminAuthority"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import {
@@ -15,39 +15,39 @@ const ACCOUNT = "GABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEJXA"
 const VAULT = "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3"
 
 const { txs, useGovernanceStateMock } = vi.hoisted(() => {
-	const names = [
-		"useGrantVaultRole",
-		"useRevokeVaultRole",
-		"useGrantOracleRole",
-		"useRevokeOracleRole",
-		"useGrantTokenRole",
-		"useRevokeTokenRole",
-		"useHandOverVaultAdmin",
-		"useCancelVaultHandover",
-		"useAcceptVaultAdmin",
-		"useHandOverOracleAdmin",
-		"useCancelOracleHandover",
-		"useAcceptOracleAdmin",
-		"useHandOverTokenAdmin",
-		"useCancelTokenHandover",
-		"useAcceptTokenAdmin",
-		"useProposeCodeUpgrade",
-		"useProposeUpgradeDelay",
-		"useApplyUpgrade",
-		"useCancelUpgrade",
-		"useProposeWindDown",
-		"useCancelWindDown",
-	] as const
-	const tx = () => ({
-		status: { status: "idle" } as { status: string },
+	const tx = (): {
+		status: TransactionStatus
+		submit: Mock<() => boolean>
+		reset: Mock
+	} => ({
+		status: { status: "idle" },
 		submit: vi.fn(() => true),
 		reset: vi.fn(),
 	})
 	return {
-		txs: Object.fromEntries(names.map((name) => [name, tx()])) as Record<
-			(typeof names)[number],
-			ReturnType<typeof tx>
-		>,
+		txs: {
+			useGrantVaultRole: tx(),
+			useRevokeVaultRole: tx(),
+			useGrantOracleRole: tx(),
+			useRevokeOracleRole: tx(),
+			useGrantTokenRole: tx(),
+			useRevokeTokenRole: tx(),
+			useHandOverVaultAdmin: tx(),
+			useCancelVaultHandover: tx(),
+			useAcceptVaultAdmin: tx(),
+			useHandOverOracleAdmin: tx(),
+			useCancelOracleHandover: tx(),
+			useAcceptOracleAdmin: tx(),
+			useHandOverTokenAdmin: tx(),
+			useCancelTokenHandover: tx(),
+			useAcceptTokenAdmin: tx(),
+			useProposeCodeUpgrade: tx(),
+			useProposeUpgradeDelay: tx(),
+			useApplyUpgrade: tx(),
+			useCancelUpgrade: tx(),
+			useProposeWindDown: tx(),
+			useCancelWindDown: tx(),
+		},
 		useGovernanceStateMock: vi.fn(),
 	}
 })
@@ -145,12 +145,11 @@ describe("GovernanceSection", () => {
 			handovers: handovers(),
 			upgrades: upgrades(),
 		})
-		for (const mock of Object.values(txs))
-			Object.assign(mock, {
-				status: { status: "idle" } as TransactionStatus,
-				submit: vi.fn(() => true),
-				reset: vi.fn(),
-			})
+		for (const mock of Object.values(txs)) {
+			mock.status = { status: "idle" }
+			mock.submit = vi.fn(() => true)
+			mock.reset = vi.fn()
+		}
 	})
 
 	it("shows the holders of every role grouped by contract", () => {

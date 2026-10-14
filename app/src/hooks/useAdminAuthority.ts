@@ -82,11 +82,21 @@ export type RoleHolders = Record<RoleLabel, string[]>
 
 const ROLE_LABELS = Object.keys(ROLE_SURFACES) as RoleLabel[]
 
-const emptyHolders = (): RoleHolders => {
-	const holders: Partial<RoleHolders> = {}
-	for (const role of ROLE_LABELS) holders[role] = []
-	return holders as RoleHolders
-}
+const emptyHolders = (): RoleHolders => ({
+	"vault manager": [],
+	"vault treasury": [],
+	"oracle attester": [],
+	"share-token compliance": [],
+	"vault guardian": [],
+	"oracle guardian": [],
+	"share-token manager": [],
+	"share-token admin": [],
+	"oracle admin": [],
+	"vault governance": [],
+	"vault pending admin": [],
+	"oracle pending admin": [],
+	"share-token pending admin": [],
+})
 
 const emptyGrantedBy = (): Record<AdminSurface, Grant[]> => ({
 	cycle: [],
