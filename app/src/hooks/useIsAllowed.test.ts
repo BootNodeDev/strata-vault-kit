@@ -1,8 +1,14 @@
 import { type ContractRead } from "@stellar-scaffold/app-lib"
-import { waitFor } from "@testing-library/react"
+import { QueryClientProvider, useQuery } from "@tanstack/react-query"
+import { renderHook, waitFor } from "@testing-library/react"
+import { createElement, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { investorAddress, renderWithWallet } from "./testSupport"
-import { classifyAllowance, useIsAllowed } from "./useIsAllowed"
+import {
+	classifyAllowance,
+	identityVerifierQuery,
+	useIsAllowed,
+} from "./useIsAllowed"
 
 const { tokenMock, verifierMock, identityVerifierAtMock } = vi.hoisted(() => ({
 	tokenMock: { identity_verifier: vi.fn() },
@@ -59,5 +65,19 @@ describe("useIsAllowed", () => {
 
 		await waitFor(() => expect(result.current.allowance).toBe("unreadable"))
 		expect(verifierMock.is_allowed).not.toHaveBeenCalled()
+	})
+
+	it("reads the verifier again on the next mount after a failed read", async () => {
+		tokenMock.identity_verifier.mockRejectedValueOnce(new Error("rpc down"))
+		const { result, queryClient } = renderWithWallet(() => useIsAllowed())
+		await waitFor(() => expect(result.current.allowance).toBe("unreadable"))
+
+		renderHook(() => useQuery(identityVerifierQuery), {
+			wrapper: ({ children }: { children: ReactNode }) =>
+				createElement(QueryClientProvider, { client: queryClient }, children),
+		})
+
+		await waitFor(() => expect(result.current.allowance).toBe("allowed"))
+		expect(tokenMock.identity_verifier).toHaveBeenCalledTimes(2)
 	})
 })

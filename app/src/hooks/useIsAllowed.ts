@@ -45,16 +45,19 @@ export const identityVerifierQuery = queryOptions({
 		const read = await readContract(async () =>
 			(await shareToken()).identity_verifier(),
 		)
-		return read.kind === "value" ? read.value : null
+		if (read.kind !== "value") {
+			throw new Error(`share token identity_verifier read failed: ${read.kind}`)
+		}
+		return read.value
 	},
 	staleTime: 30_000,
 })
 
 export function useIsAllowed(): { allowance: Allowance } {
 	const { address } = useWallet()
-	const { data: verifier } = useQuery(identityVerifierQuery)
+	const { data: verifier, isError } = useQuery(identityVerifierQuery)
 	const { data } = useQuery(allowanceQuery(verifier ?? null, address))
 
-	if (verifier === null) return { allowance: "unreadable" }
+	if (isError) return { allowance: "unreadable" }
 	return { allowance: data ?? "checking" }
 }
