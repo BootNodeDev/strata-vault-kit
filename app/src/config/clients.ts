@@ -86,18 +86,6 @@ export const navOracle = (): Promise<NavOracleApi> => {
 	return oracle
 }
 
-let identityVerifierClient: Promise<IdentityVerifierApi> | undefined
-
-export const identityVerifier = (): Promise<IdentityVerifierApi> => {
-	identityVerifierClient ??= connectIdentityVerifier(
-		addresses.identity_verifier,
-	).catch((error: unknown) => {
-		identityVerifierClient = undefined
-		throw error
-	})
-	return identityVerifierClient
-}
-
 const verifierReaders = new Map<string, Promise<IdentityVerifierApi>>()
 
 export const identityVerifierAt = (

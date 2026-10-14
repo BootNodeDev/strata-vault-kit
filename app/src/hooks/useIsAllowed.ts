@@ -4,7 +4,7 @@ import {
 	readContract,
 } from "@stellar-scaffold/app-lib"
 import { queryOptions, skipToken, useQuery } from "@tanstack/react-query"
-import { identityVerifier, identityVerifierAt } from "../config/clients"
+import { identityVerifierAt, shareToken } from "../config/clients"
 import { useWallet } from "./useWallet"
 
 export const isAllowedKey = ["identity", "is-allowed"] as const
@@ -39,16 +39,22 @@ export const allowanceQuery = (
 		staleTime: 30_000,
 	})
 
+export const identityVerifierQuery = queryOptions({
+	queryKey: [...isAllowedKey, "verifier"] as const,
+	queryFn: async () => {
+		const read = await readContract(async () =>
+			(await shareToken()).identity_verifier(),
+		)
+		return read.kind === "value" ? read.value : null
+	},
+	staleTime: 30_000,
+})
+
 export function useIsAllowed(): { allowance: Allowance } {
 	const { address } = useWallet()
-	const { data } = useQuery({
-		queryKey: [...isAllowedKey, address],
-		queryFn:
-			address === undefined
-				? skipToken
-				: () => fetchAllowance(identityVerifier(), address),
-		staleTime: 30_000,
-	})
+	const { data: verifier } = useQuery(identityVerifierQuery)
+	const { data } = useQuery(allowanceQuery(verifier ?? null, address))
 
+	if (verifier === null) return { allowance: "unreadable" }
 	return { allowance: data ?? "checking" }
 }
