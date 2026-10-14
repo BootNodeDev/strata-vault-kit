@@ -584,6 +584,12 @@ describe("CycleActionRail choice fields", () => {
 		expect(onInput).toHaveBeenCalledWith(action, "manager", "role")
 	})
 
+	it("shows the label of a select", () => {
+		renderChoices(grantRole())
+
+		expect(screen.getByText("Role").className).not.toContain("srOnly")
+	})
+
 	it.each([
 		[false, "treasury:GABC"],
 		[true, ""],

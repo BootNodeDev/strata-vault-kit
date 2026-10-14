@@ -80,22 +80,27 @@ const SelectInput: React.FC<{
 	field: SelectField
 	report: Report
 }> = ({ id, field, report }) => (
-	<div className={styles.field}>
-		<label htmlFor={id} className={styles.srOnly}>
+	<div className={styles.keyed}>
+		<label
+			htmlFor={id}
+			className={`${typeStyles.footnote} ${styles.fieldLabel}`}
+		>
 			{field.label}
 		</label>
-		<select
-			id={id}
-			className={`${typeStyles.body} ${styles.fieldInput}`}
-			value={field.value}
-			onChange={(event) => report(event.target.value)}
-		>
-			{field.options.map((option) => (
-				<option key={option.value} value={option.value}>
-					{option.label}
-				</option>
-			))}
-		</select>
+		<div className={styles.field}>
+			<select
+				id={id}
+				className={`${typeStyles.body} ${styles.fieldInput}`}
+				value={field.value}
+				onChange={(event) => report(event.target.value)}
+			>
+				{field.options.map((option) => (
+					<option key={option.value} value={option.value}>
+						{option.label}
+					</option>
+				))}
+			</select>
+		</div>
 	</div>
 )
 
