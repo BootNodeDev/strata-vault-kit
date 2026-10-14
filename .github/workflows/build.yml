@@ -65,7 +65,7 @@ jobs:
             # --locked so the source-build fallback uses the CLI's published
             # Cargo.lock instead of resolving fresh soroban deps whose MSRV
             # may outrun the pinned toolchain.
-            cargo binstall --locked stellar-scaffold-cli
+            cargo binstall --locked stellar-scaffold-cli@0.0.27
           else
             echo "stellar-scaffold already installed. Clear cache to force reinstall."
           fi
