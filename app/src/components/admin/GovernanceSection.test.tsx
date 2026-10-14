@@ -374,7 +374,9 @@ describe("GovernanceSection", () => {
 
 		expand("Apply the upgrade")
 		fireEvent.click(
-			screen.getByRole("checkbox", { name: "Replaces the vault's code." }),
+			screen.getByRole("checkbox", {
+				name: `Replaces the vault's code with ${hash}.`,
+			}),
 		)
 		fireEvent.click(submit("Apply the upgrade"))
 		expand("Cancel the wind-down")
@@ -383,5 +385,8 @@ describe("GovernanceSection", () => {
 		expect(txs.useApplyUpgrade.submit).toHaveBeenCalledWith(undefined)
 		expect(txs.useCancelWindDown.submit).toHaveBeenCalledWith(undefined)
 		expect(screen.getByText("Pending upgrade")).toBeTruthy()
+		expect(screen.getByTitle(`Code ${hash}`).textContent).toBe(
+			"Code abab...abab",
+		)
 	})
 })

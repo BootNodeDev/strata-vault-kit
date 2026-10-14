@@ -535,7 +535,7 @@ describe("upgrades and wind-down", () => {
 		expect(condition(short, "Hash of 64 hex characters")).toBe(false)
 		expect(valid.enabled).toBe(true)
 		expect(valid.arg).toBe(HASH)
-		expect(valid.next).toBe("Code abab...abab")
+		expect(valid.next).toBe(`Code ${HASH}`)
 		expect(valid.outcome).toBe(
 			`Can apply after ${formatTimestamp(CLOSE_TIME + 7n * DAY)}.`,
 		)
@@ -613,11 +613,11 @@ describe("upgrades and wind-down", () => {
 		)
 
 		expect(condition(early, "ETA reached")).toBe(false)
-		expect(confirm?.label).toBe("Replaces the vault's code.")
+		expect(confirm?.label).toBe(`Replaces the vault's code with ${HASH}.`)
 		expect(unconfirmed.tone).toBe("danger")
 		expect(unconfirmed.enabled).toBe(false)
 		expect(confirmed.enabled).toBe(true)
-		expect(confirmed.next).toBe("Code abab...abab")
+		expect(confirmed.next).toBe(`Code ${HASH}`)
 		expect(condition(paused, "Vault not paused")).toBe(false)
 	})
 
@@ -700,6 +700,19 @@ describe("upgrades and wind-down", () => {
 		expect(ids(windDown("proposed"))).toContain("cancel-wind-down")
 		expect(ids(windDown("active"))).not.toContain("cancel-wind-down")
 		expect(ids(state())).not.toContain("cancel-wind-down")
+	})
+
+	it("keeps a pending code upgrade short in its tile but exposes the full hash", () => {
+		const [vault] = toGovernanceGroups(withUpgrades({ proposal: codeProposal }))
+
+		expect(
+			vault?.metrics.find(({ label }) => label === "Pending upgrade"),
+		).toEqual({
+			label: "Pending upgrade",
+			value: "Code abab...abab",
+			title: `Code ${HASH}`,
+			note: `ETA ${formatTimestamp(CLOSE_TIME + DAY)}`,
+		})
 	})
 
 	it("shows the pending upgrade and the proposed wind-down in the vault group", () => {

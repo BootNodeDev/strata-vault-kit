@@ -307,4 +307,5 @@
 	gap: 10px;
 	color: var(--vault-ink);
 	cursor: pointer;
+	overflow-wrap: anywhere;
 }

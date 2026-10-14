@@ -478,9 +478,9 @@ const MIN_UPGRADE_DELAY = 7n * DAY
 const MAX_UPGRADE_DELAY = 90n * DAY
 const WASM_HASH = /^[0-9a-f]{64}$/i
 
-const upgradeName = (proposal: PendingUpgrade): string =>
+const upgradeName = (proposal: PendingUpgrade, full = false): string =>
 	proposal.kind === "code"
-		? `Code ${shortAddress(proposal.hash)}`
+		? `Code ${full ? proposal.hash : shortAddress(proposal.hash)}`
 		: `Delay ${formatDuration(proposal.secs)}`
 
 const noPendingUpgrade = (upgrades?: ReadyUpgrades): Condition => ({
@@ -537,7 +537,7 @@ function codeUpgradeSpec(
 		],
 		ready: allMet(conditions),
 		arg: hash,
-		next: hash === undefined ? "" : `Code ${shortAddress(hash)}`,
+		next: hash === undefined ? "" : `Code ${hash}`,
 	}
 }
 
@@ -609,7 +609,7 @@ function applySpec(
 	else {
 		const confirm = confirmation(
 			confirmKey("apply-upgrade"),
-			"Replaces the vault's code.",
+			`Replaces the vault's code with ${proposal.hash}.`,
 			proposal.hash,
 			inputs,
 		)
@@ -628,7 +628,7 @@ function applySpec(
 		...(proposal.kind === "code" ? { danger: true } : {}),
 		ready: allMet(conditions),
 		arg: undefined,
-		next: upgradeName(proposal),
+		next: upgradeName(proposal, true),
 	}
 }
 
@@ -822,6 +822,9 @@ const upgradeMetrics = (upgrades: Upgrades): Metric[] => {
 		metrics.push({
 			label: "Pending upgrade",
 			value: upgradeName(proposal),
+			...(proposal.kind === "code"
+				? { title: upgradeName(proposal, true) }
+				: {}),
 			note: `ETA ${formatTimestamp(proposal.eta)}`,
 		})
 	if (windDown.phase === "proposed" && windDown.activeAt !== null)
