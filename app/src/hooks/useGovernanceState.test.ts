@@ -2,6 +2,7 @@ import { Buffer } from "buffer"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { governanceReadsKey } from "./pendingAdmins"
 import { renderWithWallet } from "./testSupport"
 import { useGovernanceState } from "./useGovernanceState"
 
@@ -124,6 +125,21 @@ describe("useGovernanceState", () => {
 		await waitFor(() =>
 			expect(result.current.handovers.status).toBe("unreadable"),
 		)
+	})
+
+	it("restores the handovers once a later read succeeds", async () => {
+		const { result, queryClient } = render()
+		await waitFor(() =>
+			expect(result.current.handovers.status).toBe("unreadable"),
+		)
+
+		readPendingAdminsMock.mockResolvedValue({
+			kind: "value",
+			value: { ledger: LEDGER, pending: new Map([[ORACLE, TRANSFER]]) },
+		})
+		await queryClient.refetchQueries({ queryKey: governanceReadsKey })
+
+		await waitFor(() => expect(result.current.handovers.status).toBe("ready"))
 	})
 
 	it("gathers the upgrade delay, notice, wind-down, ledger time and pause", async () => {

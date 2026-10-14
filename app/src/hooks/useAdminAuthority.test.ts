@@ -6,6 +6,7 @@ import { pendingAdminsQuery } from "./pendingAdmins"
 import { renderWithWallet, investorAddress } from "./testSupport"
 import {
 	type AdminSurface,
+	adminAuthorityKey,
 	type RoleHolders,
 	toSurfaces,
 	useAdminAuthority,
@@ -540,17 +541,33 @@ describe("useAdminAuthority", () => {
 					token: derivedShareTokenAddress,
 				}).queryKey,
 			),
-		).toEqual(pendingAdmins({}))
+		).toEqual(pendingAdmins({}).value)
 		expect(readPendingAdminsMock).toHaveBeenCalledTimes(1)
 	})
 
-	it("is unreadable when the pending admins cannot be read", async () => {
-		readPendingAdminsMock.mockResolvedValue({ kind: "unreadable" })
-		const { result } = renderWithWallet(useAdminAuthority)
+	it("keeps the role surfaces when the pending admins cannot be read, and restores them on a later read", async () => {
+		vaultRoles({ manager: [investorAddress] })
+		readPendingAdminsMock.mockResolvedValueOnce({ kind: "unreadable" })
+		const { result, queryClient } = renderWithWallet(useAdminAuthority)
 
-		await waitFor(() => expect(result.current.status).toBe("unreadable"))
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+		expect(result.current.grants.map((grant) => grant.role)).toEqual([
+			"vault manager",
+		])
 
-		expect(result.current.surfaces).toEqual(new Set())
+		readPendingAdminsMock.mockResolvedValue(
+			pendingAdmins({
+				[derivedOracleAddress]: { address: investorAddress, expired: false },
+			}),
+		)
+		await queryClient.invalidateQueries({ queryKey: adminAuthorityKey })
+
+		await waitFor(() =>
+			expect(result.current.grants.map((grant) => grant.role)).toEqual([
+				"vault manager",
+				"oracle pending admin",
+			]),
+		)
 	})
 
 	it("reads the share-token admin from get_admin", async () => {

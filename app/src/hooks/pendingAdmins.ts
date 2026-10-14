@@ -19,9 +19,14 @@ export const pendingAdminsQuery = (
 		queryFn:
 			contracts === undefined
 				? skipToken
-				: () =>
-						readPendingAdmins(
+				: async () => {
+						const read = await readPendingAdmins(
 							GOVERNED_CONTRACTS.map((contract) => contracts[contract]),
-						),
+						)
+						if (read.kind !== "value") {
+							throw new Error("The pending admins could not be read.")
+						}
+						return read.value
+					},
 		staleTime: 30_000,
 	})

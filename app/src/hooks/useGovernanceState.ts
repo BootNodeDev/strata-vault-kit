@@ -1,5 +1,4 @@
 import {
-	type ContractRead,
 	type LedgerWindow,
 	type PendingAdmins,
 	type PendingTransfer,
@@ -87,15 +86,14 @@ function useUpgrades(active: boolean): Upgrades {
 }
 
 function toHandovers(
-	read: ContractRead<PendingAdmins>,
+	read: PendingAdmins,
 	contracts: Record<GovernedContract, string>,
 ): Handovers {
-	if (read.kind !== "value") return { status: "unreadable" }
 	const pendingOf = (contract: GovernedContract) =>
-		read.value.pending.get(contracts[contract]) ?? null
+		read.pending.get(contracts[contract]) ?? null
 	return {
 		status: "ready",
-		ledger: read.value.ledger,
+		ledger: read.ledger,
 		pending: {
 			vault: pendingOf("vault"),
 			oracle: pendingOf("oracle"),
@@ -111,14 +109,14 @@ export function useGovernanceState({
 	contracts: Record<GovernedContract, string> | undefined
 	active?: boolean
 }): { handovers: Handovers; upgrades: Upgrades } {
-	const { data } = useQuery({
+	const { data, isError } = useQuery({
 		...pendingAdminsQuery(contracts),
 		refetchInterval: active ? REFRESH_MS : false,
 	})
 	const upgrades = useUpgrades(active)
-	const handovers: Handovers =
-		data === undefined || contracts === undefined
-			? { status: "checking" }
-			: toHandovers(data, contracts)
+	let handovers: Handovers = { status: "checking" }
+	if (data !== undefined && contracts !== undefined)
+		handovers = toHandovers(data, contracts)
+	else if (isError) handovers = { status: "unreadable" }
 	return { handovers, upgrades }
 }

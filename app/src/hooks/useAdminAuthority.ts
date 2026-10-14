@@ -235,10 +235,10 @@ const asMembers = (read: ContractRead<string[]>): string[] =>
 	read.kind === "value" ? read.value : []
 
 const pendingAdminOf = (
-	pendingAdmins: PendingAdmins,
+	pendingAdmins: PendingAdmins | undefined,
 	contract: string,
 ): string[] => {
-	const transfer = pendingAdmins.pending.get(contract)
+	const transfer = pendingAdmins?.pending.get(contract)
 	return transfer === undefined || transfer === null || transfer.expired
 		? []
 		: [transfer.address]
@@ -317,13 +317,15 @@ async function fetchAdminAuthority(
 		readRoleMembers(tokenPromise, "manager"),
 		readContract(async () => (await tokenPromise).get_admin()),
 		readContract(async () => (await tokenPromise).identity_verifier()),
-		queryClient.fetchQuery(
-			pendingAdminsQuery({
-				vault: vaultContractId,
-				oracle: oracleAddress.value,
-				token: shareTokenAddress.value,
-			}),
-		),
+		queryClient
+			.fetchQuery(
+				pendingAdminsQuery({
+					vault: vaultContractId,
+					oracle: oracleAddress.value,
+					token: shareTokenAddress.value,
+				}),
+			)
+			.catch(() => undefined),
 	])
 
 	const addresses: AdminAddresses = {
@@ -343,9 +345,8 @@ async function fetchAdminAuthority(
 		tokenCompliance,
 		tokenManager,
 		tokenAdmin,
-		pendingAdmins,
 	]
-	if (roleReads.some(isUnreadable) || !isValue(pendingAdmins))
+	if (roleReads.some(isUnreadable))
 		return emptyAuthority("unreadable", addresses)
 
 	const holders: RoleHolders = {
@@ -359,13 +360,10 @@ async function fetchAdminAuthority(
 		"share-token compliance": asMembers(tokenCompliance),
 		"share-token manager": asMembers(tokenManager),
 		"share-token admin": asHolders(tokenAdmin),
-		"vault pending admin": pendingAdminOf(pendingAdmins.value, vaultContractId),
-		"oracle pending admin": pendingAdminOf(
-			pendingAdmins.value,
-			oracleAddress.value,
-		),
+		"vault pending admin": pendingAdminOf(pendingAdmins, vaultContractId),
+		"oracle pending admin": pendingAdminOf(pendingAdmins, oracleAddress.value),
 		"share-token pending admin": pendingAdminOf(
-			pendingAdmins.value,
+			pendingAdmins,
 			shareTokenAddress.value,
 		),
 	}
