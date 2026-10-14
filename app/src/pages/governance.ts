@@ -25,7 +25,7 @@ import {
 	type Spec,
 	toAction,
 } from "./actions"
-import { formatDuration, formatTimestamp, parseDuration } from "./cycle"
+import { DAY, formatDuration, formatTimestamp, parseDuration } from "./cycle"
 
 type Operation = "grant" | "revoke"
 
@@ -186,7 +186,6 @@ const capitalize = (text: string): string =>
 
 const LEDGER_SECONDS = 5n
 const DAY_IN_LEDGERS = 17_280
-const DAY = 86_400n
 const DEFAULT_DAYS = "7"
 const WHOLE_DAYS = /^\d+$/
 
