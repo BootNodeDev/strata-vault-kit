@@ -95,6 +95,11 @@ function useGovernanceFlows() {
 
 type Flows = ReturnType<typeof useGovernanceFlows>
 
+const submitArg = <Arg,>(
+	{ submit }: { submit: (arg: Arg, label: string) => boolean },
+	{ arg, next }: { arg: Arg | undefined; next: string },
+) => arg !== undefined && submit(arg, next)
+
 function submit(flows: Flows, action: GovernanceAction) {
 	switch (action.id) {
 		case "grant-vault-role":
@@ -103,30 +108,18 @@ function submit(flows: Flows, action: GovernanceAction) {
 		case "revoke-oracle-role":
 		case "grant-token-role":
 		case "revoke-token-role":
-			return (
-				action.arg !== undefined &&
-				flows[action.id].submit(action.arg, action.next)
-			)
+			return submitArg(flows[action.id], action)
 		case "hand-over-vault-admin":
 		case "cancel-vault-handover":
 		case "hand-over-oracle-admin":
 		case "cancel-oracle-handover":
 		case "hand-over-token-admin":
 		case "cancel-token-handover":
-			return (
-				action.arg !== undefined &&
-				flows[action.id].submit(action.arg, action.next)
-			)
+			return submitArg(flows[action.id], action)
 		case "propose-code-upgrade":
-			return (
-				action.arg !== undefined &&
-				flows[action.id].submit(action.arg, action.next)
-			)
+			return submitArg(flows[action.id], action)
 		case "propose-upgrade-delay":
-			return (
-				action.arg !== undefined &&
-				flows[action.id].submit(action.arg, action.next)
-			)
+			return submitArg(flows[action.id], action)
 		case "accept-vault-admin":
 		case "accept-oracle-admin":
 		case "accept-token-admin":
