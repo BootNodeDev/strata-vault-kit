@@ -15,7 +15,8 @@ import {
 	usePendingTransaction,
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
-import { confirmKey, type Inputs, parseAccount } from "../../pages/actions"
+import { useRailInputs } from "../../hooks/useRailInputs"
+import { parseAccount } from "../../pages/actions"
 import {
 	COMPLIANCE_ACTION_IDS,
 	type ComplianceAction,
@@ -96,7 +97,7 @@ const ComplianceSection: React.FC<{
 }> = ({ grants, wallet, addresses, contracts, active = true }) => {
 	const verifier = addresses.identityVerifier
 	const [targetText, setTargetText] = useState("")
-	const [inputs, setInputs] = useState<Inputs>({})
+	const { inputs, setInputs, onInput } = useRailInputs()
 	const target = parseAccount(targetText)
 	const { target: reads, destination } = useComplianceState({
 		verifier,
@@ -112,7 +113,7 @@ const ComplianceSection: React.FC<{
 	)
 	useEffect(() => {
 		if (recorded) setInputs({})
-	}, [recorded])
+	}, [recorded, setInputs])
 
 	const state = {
 		verifier,
@@ -122,15 +123,6 @@ const ComplianceSection: React.FC<{
 		destination,
 	}
 	const actions = toComplianceActions(state, grants, wallet, inputs)
-
-	const onInput = (action: ComplianceAction, value: string, key?: string) => {
-		if (key !== undefined)
-			setInputs((previous) => ({
-				...previous,
-				[confirmKey(action.id)]: "",
-				[key]: value,
-			}))
-	}
 
 	const invalid = targetText.trim() !== "" && target === undefined
 	const activeModal = modalFlows.find((props) => props.status.status !== "idle")

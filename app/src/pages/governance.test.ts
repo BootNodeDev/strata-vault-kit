@@ -4,11 +4,10 @@ import { type Metric } from "../components/vault/MetricsStrip"
 import { type GovernedContract } from "../hooks/pendingAdmins"
 import { type Grant, type RoleHolders } from "../hooks/useAdminAuthority"
 import { type Handovers, type Upgrades } from "../hooks/useGovernanceState"
-import { type RailField, readiness } from "./actions"
+import { type Inputs, type RailField, readiness } from "./actions"
 import { formatDuration, formatTimestamp } from "./cycle"
 import {
 	type GovernanceAction,
-	type GovernanceInputs,
 	type GovernanceState,
 	toGovernanceActions,
 	toGovernanceGroups,
@@ -94,7 +93,7 @@ const state = (
 const find = <Id extends GovernanceAction["id"]>(
 	id: Id,
 	grants: Grant[],
-	inputs: GovernanceInputs = {},
+	inputs: Inputs = {},
 	current: GovernanceState = state(),
 ) => {
 	const action = toGovernanceActions(current, grants, WALLET, inputs).find(
@@ -224,7 +223,7 @@ describe("toGovernanceActions", () => {
 	})
 
 	it("needs a confirmation to revoke the vault's share-token manager role", () => {
-		const inputs: GovernanceInputs = {
+		const inputs: Inputs = {
 			"revoke-token-role-role": "manager",
 			"revoke-token-role-account": VAULT,
 		}
@@ -271,7 +270,7 @@ describe("toGovernanceActions", () => {
 	})
 
 	it("drops a confirmation once the role or account changes", () => {
-		const inputs: GovernanceInputs = {
+		const inputs: Inputs = {
 			"grant-vault-role-role": "guardian",
 			"grant-vault-role-account": MANAGER,
 		}

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import { type Grant } from "../hooks/useAdminAuthority"
 import {
+	clearConfirmations,
 	grantFor,
 	parseAccount,
 	type RailAction,
@@ -9,6 +10,7 @@ import {
 	type Spec,
 	toAction,
 	unavailableFor,
+	withInput,
 } from "./actions"
 
 vi.mock("@stellar-scaffold/app-lib", () => ({
@@ -227,4 +229,43 @@ describe("parseAccount", () => {
 			expect(parseAccount(text)).toBeUndefined()
 		},
 	)
+})
+
+describe("withInput", () => {
+	it("sets the field and clears that action's confirmation only", () => {
+		expect(
+			withInput(
+				{ "fund-confirm": "ok", "other-confirm": "ok", keep: "1" },
+				"fund",
+				"fund-amount",
+				"5",
+			),
+		).toEqual({
+			"fund-confirm": "",
+			"other-confirm": "ok",
+			keep: "1",
+			"fund-amount": "5",
+		})
+	})
+})
+
+describe("clearConfirmations", () => {
+	it("clears the confirmation of every listed action and leaves other inputs", () => {
+		expect(
+			clearConfirmations(
+				{
+					"a-confirm": "x",
+					"b-confirm": "y",
+					"c-confirm": "z",
+					"a-amount": "1",
+				},
+				["a", "b"],
+			),
+		).toEqual({
+			"a-confirm": "",
+			"b-confirm": "",
+			"c-confirm": "z",
+			"a-amount": "1",
+		})
+	})
 })

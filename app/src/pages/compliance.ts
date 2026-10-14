@@ -17,6 +17,8 @@ import {
 import { type Allowance } from "../hooks/useIsAllowed"
 import {
 	allMet,
+	type Built,
+	type BuiltSpec,
 	type Condition,
 	type Confirmation,
 	confirmation,
@@ -24,10 +26,8 @@ import {
 	grantFor,
 	type Inputs,
 	parseAccount,
-	type RailAction,
 	type RailField,
 	ROLES,
-	type Spec,
 	toAction,
 } from "./actions"
 import { exactAmount } from "./cycle"
@@ -50,10 +50,6 @@ export const COMPLIANCE_ACTION_IDS: ComplianceActionId[] = [
 	"force-transfer",
 ]
 
-type Built<Id extends string, Arg> = Id extends string
-	? RailAction<RailField> & { id: Id; arg: Arg; next: string }
-	: never
-
 export type ComplianceAction =
 	| Built<AllowActionId, AllowanceChange | undefined>
 	| Built<FreezeActionId, string | undefined>
@@ -66,11 +62,6 @@ export type ComplianceState = {
 	reads: TargetState
 	vault: string
 	destination: Allowance
-}
-
-type BuiltSpec<Id extends string, Arg> = Spec<Id, RailField> & {
-	arg: Arg
-	next: string
 }
 
 const DESTINATION_KEY = "force-transfer-destination"

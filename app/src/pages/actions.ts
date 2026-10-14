@@ -153,9 +153,30 @@ export const toAction = <Id extends string, F extends RailField>(
 	}
 }
 
+export type Built<Id extends string, Arg> = Id extends string
+	? RailAction<RailField> & { id: Id; arg: Arg; next: string }
+	: never
+
+export type BuiltSpec<Id extends string, Arg> = Spec<Id, RailField> & {
+	arg: Arg
+	next: string
+}
+
 export type Inputs = Partial<Record<string, string>>
 
 export const confirmKey = (id: string): string => `${id}-confirm`
+
+export const clearConfirmations = (inputs: Inputs, ids: string[]): Inputs => ({
+	...inputs,
+	...Object.fromEntries(ids.map((id) => [confirmKey(id), ""])),
+})
+
+export const withInput = (
+	inputs: Inputs,
+	id: string,
+	key: string,
+	value: string,
+): Inputs => ({ ...clearConfirmations(inputs, [id]), [key]: value })
 
 export type Confirmation = { field: ConfirmField; condition: Condition }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react"
+import React, { useEffect } from "react"
 import { vaultContractId } from "../../config/contracts"
 import {
 	type AdminAddresses,
@@ -33,11 +33,10 @@ import {
 	usePendingTransaction,
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
-import { confirmKey } from "../../pages/actions"
+import { useRailInputs } from "../../hooks/useRailInputs"
 import {
 	GOVERNANCE_ACTION_IDS,
 	type GovernanceAction,
-	type GovernanceInputs,
 	toGovernanceActions,
 	toGovernanceGroups,
 } from "../../pages/governance"
@@ -151,7 +150,7 @@ const GovernanceSection: React.FC<{
 		active,
 	})
 	const flows = useGovernanceFlows()
-	const [inputs, setInputs] = useState<GovernanceInputs>({})
+	const { inputs, setInputs, onInput } = useRailInputs()
 
 	const modalFlows = GOVERNANCE_ACTION_IDS.map((id) => flow(id, flows[id]))
 	const recorded = modalFlows.some(
@@ -159,19 +158,10 @@ const GovernanceSection: React.FC<{
 	)
 	useEffect(() => {
 		if (recorded) setInputs({})
-	}, [recorded])
+	}, [recorded, setInputs])
 
 	const state = { holders, vault: vaultContractId, handovers, upgrades }
 	const actions = toGovernanceActions(state, grants, wallet, inputs)
-
-	const onInput = (action: GovernanceAction, value: string, key?: string) => {
-		if (key !== undefined)
-			setInputs((previous) => ({
-				...previous,
-				[confirmKey(action.id)]: "",
-				[key]: value,
-			}))
-	}
 
 	const activeModal = modalFlows.find((props) => props.status.status !== "idle")
 
