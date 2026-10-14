@@ -24,7 +24,8 @@ import {
 import TransactionModal, {
 	type TransactionModalProps,
 } from "../vault/TransactionModal"
-import CycleSurface, { CycleActions, type CycleGroup } from "./CycleSurface"
+import CycleActionRail from "./CycleActionRail"
+import CycleSurface from "./CycleSurface"
 
 const useAmountInput = (confirmed: boolean) => {
 	const [input, setInput] = useState("")
@@ -34,11 +35,13 @@ const useAmountInput = (confirmed: boolean) => {
 	return [input, setInput] as const
 }
 
-const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
-	grants,
-	wallet,
-}) => {
-	const { cycle } = useCycleState()
+const CycleSection: React.FC<{
+	grants: Grant[]
+	wallet: string
+	contracts?: React.ReactNode
+	active?: boolean
+}> = ({ grants, wallet, contracts, active = true }) => {
+	const { cycle } = useCycleState({ active })
 	const { history } = useEpochHistory()
 	const { cycleEvents } = useCycleEvents()
 	const { balance } = useDepositBalance()
@@ -118,15 +121,6 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 		fund: fundInput,
 		walletBalance: balance.status === "held" ? balance.amount : null,
 	})
-	const withActions = (group: CycleGroup): CycleGroup => {
-		const own = actions.filter((action) => action.group === group.title)
-		return own.length === 0
-			? group
-			: {
-					...group,
-					actions: <CycleActions actions={own} onRun={run} onInput={onInput} />,
-				}
-	}
 
 	const freshness =
 		cycle.status === "ready" ? cycle.oracle.limits?.freshness : undefined
@@ -187,12 +181,24 @@ const CycleSection: React.FC<{ grants: Grant[]; wallet: string }> = ({
 	return (
 		<>
 			<CycleSurface
-				groups={toCycleRows(cycle).map(withActions)}
+				groups={toCycleRows(cycle)}
 				unreadable={cycle.status === "unreadable"}
 				epochs={toEpochList(history)}
 				activity={toActivityList(cycleEvents)}
+				rail={
+					<CycleActionRail
+						actions={actions}
+						pending={cycle.status === "checking"}
+						unreadable={cycle.status === "unreadable"}
+						onRun={run}
+						onInput={onInput}
+					/>
+				}
+				contracts={contracts}
 			/>
-			{activeModal !== undefined && <TransactionModal {...activeModal} />}
+			{active && activeModal !== undefined && (
+				<TransactionModal {...activeModal} />
+			)}
 		</>
 	)
 }

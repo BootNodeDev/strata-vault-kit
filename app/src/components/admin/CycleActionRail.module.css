@@ -1,0 +1,224 @@
+.panel {
+	display: flex;
+	flex-direction: column;
+	gap: 15px;
+	padding: 24px;
+	border: 1px solid var(--vault-ink);
+	background: var(--vault-surface-card);
+}
+
+.head {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 6px 12px;
+}
+
+.heading {
+	margin: 0;
+	color: var(--vault-ink);
+}
+
+.count {
+	color: var(--vault-text-muted);
+}
+
+.skeleton {
+	height: 1.2em;
+	width: 60%;
+}
+
+.list {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.item {
+	border-top: 1px solid var(--vault-border-hairline);
+}
+
+.toggle {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	min-height: 48px;
+	padding: 12px 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--vault-ink);
+	text-align: left;
+	cursor: pointer;
+}
+
+.toggle:hover .toggleLabel {
+	color: var(--vault-action);
+}
+
+.toggle:focus-visible {
+	outline: 2px solid var(--vault-action);
+	outline-offset: 2px;
+}
+
+.marker,
+.markerReady {
+	flex: none;
+	width: 10px;
+	height: 10px;
+	border: 1.5px solid var(--vault-border-inactive);
+	background: transparent;
+}
+
+.markerReady {
+	border-color: var(--vault-action);
+	background: var(--vault-action);
+}
+
+.toggleLabel {
+	flex: 1;
+	min-width: 0;
+	font-weight: 500;
+}
+
+.summary {
+	flex: none;
+	color: var(--vault-text-muted);
+}
+
+.body {
+	display: flex;
+	flex-direction: column;
+	gap: 11px;
+	padding-bottom: 18px;
+}
+
+.body[hidden] {
+	display: none;
+}
+
+.conditions {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.condition {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 12px;
+}
+
+.conditionLabel {
+	color: var(--vault-text-muted);
+}
+
+.met,
+.unmet {
+	text-align: right;
+	white-space: nowrap;
+}
+
+.unmet {
+	color: var(--vault-text-muted);
+}
+
+.note {
+	margin: 0;
+	color: var(--vault-text-muted);
+}
+
+.outcome {
+	margin: 0;
+	color: var(--vault-text-body);
+}
+
+.actionPrimary,
+.actionUnavailable {
+	min-height: 48px;
+	padding: 13px 18px;
+	font-family: var(--vault-font-sans);
+	font-size: 15.5px;
+	font-weight: 500;
+	border-radius: 0;
+}
+
+.actionPrimary {
+	border: 1px solid var(--vault-action);
+	background: var(--vault-action);
+	color: var(--vault-surface-card);
+}
+
+.actionPrimary:hover:not(:disabled) {
+	background: var(--vault-action-ring);
+	border-color: var(--vault-action);
+	color: var(--vault-action);
+}
+
+.actionUnavailable {
+	border: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-inset);
+	color: var(--vault-text-muted);
+	cursor: not-allowed;
+}
+
+.field,
+.fieldOver {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	min-height: 58px;
+	padding: 8px 8px 8px 16px;
+	border: 1px solid var(--vault-action);
+	background: var(--vault-surface-card);
+}
+
+.fieldOver {
+	border: 2px solid var(--vault-danger);
+}
+
+.fieldInput {
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: var(--vault-ink);
+}
+
+.fieldInput::placeholder {
+	color: var(--vault-text-muted);
+}
+
+.useMax {
+	flex: none;
+	min-height: 40px;
+	padding: 9px 11px;
+	border: 1px solid var(--vault-border-hairline);
+	border-radius: 0;
+	background: var(--vault-surface-card);
+	color: var(--vault-text-body);
+	font-family: var(--vault-font-mono);
+	font-weight: 500;
+	font-size: 12px;
+}
+
+.useMax:hover {
+	background: var(--vault-action-ring);
+	border-color: var(--vault-action);
+	color: var(--vault-action);
+}
+
+.srOnly {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+}

@@ -28,6 +28,8 @@ import {
 	type WindDownAction,
 	formatDuration,
 	formatTimestamp,
+	readiness,
+	readyCount,
 	toActivityList,
 	toCycleActions,
 	toCycleRows,
@@ -126,8 +128,12 @@ const ready = (overrides: Partial<ReadyState>) =>
 const groupOf = (groups: CycleGroup[], title: string) =>
 	groups.find((group) => group.title === title)
 
-const valueOf = (groups: CycleGroup[], title: string, label: string) =>
-	groupOf(groups, title)?.rows.find((row) => row.label === label)?.value
+const valueOf = (groups: CycleGroup[], title: string, label: string) => {
+	const group = groupOf(groups, title)
+	return [...(group?.rows ?? []), ...(group?.limits ?? [])].find(
+		(row) => row.label === label,
+	)?.value
+}
 
 const tileOf = (groups: CycleGroup[], title: string, label: string) =>
 	groupOf(groups, title)?.tiles.find((tile) => tile.label === label)
@@ -162,8 +168,20 @@ describe("toCycleRows", () => {
 		])
 		expect(groups.map((group) => group.rows.map((row) => row.label))).toEqual([
 			["Vault", "Notice period", "Sealed at", "Notice"],
+			["Ripcord"],
+			["Committed", "Liquid reserve"],
+			["Activates at", "Delay", "Supply"],
+		])
+	})
+
+	it("keeps the static limits apart from the live rows, in Price and Reserve only", () => {
+		const groups = toCycleRows(ready({}))
+
+		expect(
+			groups.map((group) => group.limits?.map((row) => row.label)),
+		).toEqual([
+			undefined,
 			[
-				"Ripcord",
 				"Freshness window",
 				"Cooldown",
 				"Largest rise",
@@ -171,8 +189,8 @@ describe("toCycleRows", () => {
 				"Price floor",
 				"Price ceiling",
 			],
-			["Committed", "Liquid reserve", "Deposit cap"],
-			["Activates at", "Delay", "Supply"],
+			["Deposit cap"],
+			undefined,
 		])
 	})
 
@@ -183,6 +201,7 @@ describe("toCycleRows", () => {
 			groups.map((group) => [
 				group.tiles.map((tile) => tile.label),
 				group.rows.map((row) => row.label),
+				group.limits?.map((row) => row.label),
 			])
 
 		expect(labelsOf(pending)).toEqual(labelsOf(labelled))
@@ -190,7 +209,7 @@ describe("toCycleRows", () => {
 			pending.every(
 				(group) =>
 					group.tiles.every((tile) => tile.pending) &&
-					group.rows.every((row) => row.pending),
+					[...group.rows, ...(group.limits ?? [])].every((row) => row.pending),
 			),
 		).toBe(true)
 	})
@@ -1676,5 +1695,57 @@ describe("toCycleActions, winding down", () => {
 		expect(finalize?.round).toBeNull()
 		expect(finalize?.outcome).toBeNull()
 		expect(finalize?.enabled).toBe(false)
+	})
+})
+
+const actionWith = (overrides: Partial<TreasuryAction>): TreasuryAction => ({
+	id: "fund",
+	group: "Reserve",
+	label: "Fund the reserve",
+	conditions: [],
+	outcome: null,
+	enabled: false,
+	amount: null,
+	...overrides,
+})
+
+describe("readiness", () => {
+	it("reads an enabled action as ready", () => {
+		expect(readiness(actionWith({ enabled: true }))).toEqual({ kind: "ready" })
+	})
+
+	it("counts the conditions not met, an undecided one included", () => {
+		const action = actionWith({
+			conditions: [
+				{ label: "Amount above zero", met: false },
+				{ label: "Within the balance", met: null },
+				{ label: "Wind-down not active", met: true },
+			],
+		})
+
+		expect(readiness(action)).toEqual({ kind: "unmet", count: 2 })
+	})
+
+	it("reads an action the wallet cannot sign as unavailable, keeping the reason", () => {
+		const reason = "Needs 2 signatures; collecting them is not supported yet."
+		const action = actionWith({
+			conditions: [{ label: "Amount above zero", met: false }],
+			unavailable: reason,
+		})
+
+		expect(readiness(action)).toEqual({ kind: "unavailable", reason })
+	})
+})
+
+describe("readyCount", () => {
+	it("counts the enabled actions", () => {
+		expect(
+			readyCount([
+				actionWith({ enabled: true }),
+				actionWith({}),
+				actionWith({ enabled: true }),
+			]),
+		).toBe(2)
+		expect(readyCount([])).toBe(0)
 	})
 })

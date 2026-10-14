@@ -1,9 +1,8 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { render, screen, within } from "@testing-library/react"
+import type React from "react"
 import { describe, expect, it, vi } from "vitest"
-import { type CycleAction } from "../../pages/cycle"
 import CycleSurface, {
 	type ActivityRow,
-	CycleActions,
 	type CycleGroup,
 	type EpochRow,
 	type ListState,
@@ -30,7 +29,8 @@ const groups: CycleGroup[] = [
 	{
 		title: "Reserve",
 		tiles: [{ label: "Uncovered", value: "0.00", note: "Covered" }],
-		rows: [{ label: "Deposit cap", value: "No cap" }],
+		rows: [{ label: "Liquid reserve", value: "800.00" }],
+		limits: [{ label: "Deposit cap", value: "No cap" }],
 		addresses: [{ label: "Custodian", address: "CCUSTODIAN1234567890" }],
 	},
 ]
@@ -77,6 +77,7 @@ const renderSurface = (
 		unreadable?: boolean
 		epochs?: ListState<EpochRow>
 		activity?: ListState<ActivityRow>
+		contracts?: React.ReactNode
 	} = {},
 ) =>
 	render(
@@ -85,6 +86,8 @@ const renderSurface = (
 			unreadable={overrides.unreadable ?? false}
 			epochs={overrides.epochs ?? { status: "loaded", rows: epochRows }}
 			activity={overrides.activity ?? { status: "loaded", rows: activityRows }}
+			rail={<button type="button">Close epoch</button>}
+			contracts={overrides.contracts}
 		/>,
 	)
 
@@ -115,8 +118,8 @@ describe("CycleSurface", () => {
 		expect(within(epochRowsList!).getByText("1h")).toBeTruthy()
 		const row = within(epochRowsList!).getByText("Sealed at").closest("li")
 		expect(within(row!).getByText("Unavailable")).toBeTruthy()
-		expect(within(reserveRowsList!).getByText("Deposit cap")).toBeTruthy()
-		expect(within(reserveRowsList!).getByText("No cap")).toBeTruthy()
+		expect(within(reserveRowsList!).getByText("Liquid reserve")).toBeTruthy()
+		expect(within(reserveRowsList!).queryByText("Deposit cap")).toBeNull()
 		expect(within(epochRowsList!).queryByText("Open epoch")).toBeNull()
 	})
 
@@ -250,24 +253,60 @@ describe("CycleSurface", () => {
 		expect(screen.queryByRole("table", { name: "Recent activity" })).toBeNull()
 	})
 
-	it("renders a group's action area after its rows", () => {
-		renderSurface({
-			groups: [
-				{ ...groups[0]!, actions: <button type="button">Close epoch</button> },
-			],
-		})
+	it("keeps a group's static limits in a closed Limits disclosure after its rows", () => {
+		renderSurface()
 
-		const group = screen.getByText("Notice period").closest("li")!
-			.parentElement!.parentElement!
-		const button = within(group).getByRole("button", { name: "Close epoch" })
+		const disclosure = screen.getByText("Limits").closest("details")!
+		expect(disclosure.open).toBe(false)
+		expect(within(disclosure).getByText("Deposit cap")).toBeTruthy()
+		expect(within(disclosure).getByText("No cap")).toBeTruthy()
 		expect(
-			group.compareDocumentPosition(button) &
-				Node.DOCUMENT_POSITION_CONTAINED_BY,
-		).toBeTruthy()
-		expect(
-			screen.getByText("Notice period").compareDocumentPosition(button) &
+			screen.getByText("Liquid reserve").compareDocumentPosition(disclosure) &
 				Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy()
+	})
+
+	it("adds no Limits disclosure to a group without limits", () => {
+		renderSurface({ groups: [groups[0]!] })
+
+		expect(screen.queryByText("Limits")).toBeNull()
+	})
+
+	it("acts only from the Actions aside, the overview holding no action", () => {
+		renderSurface()
+
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+		expect(
+			within(rail).getByRole("button", { name: "Close epoch" }),
+		).toBeTruthy()
+		expect(screen.getAllByRole("button")).toHaveLength(1)
+	})
+
+	it("puts the Actions aside before the overview in reading order", () => {
+		renderSurface()
+
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+		expect(
+			rail.compareDocumentPosition(
+				screen.getByRole("heading", { name: "Epoch" }),
+			) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy()
+	})
+
+	it("closes the overview with the contracts it is given", () => {
+		renderSurface({ contracts: <p>Contract addresses</p> })
+
+		const contracts = screen.getByText("Contract addresses")
+		expect(
+			screen
+				.getByRole("table", { name: "Recent activity" })
+				.compareDocumentPosition(contracts) & Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy()
+		expect(
+			within(
+				screen.getByRole("complementary", { name: "Actions" }),
+			).queryByText("Contract addresses"),
+		).toBeNull()
 	})
 
 	it("heads each group and section with a sentence-case title below the card title", () => {
@@ -278,251 +317,5 @@ describe("CycleSurface", () => {
 				.getAllByRole("heading", { level: 3 })
 				.map((heading) => heading.textContent),
 		).toEqual(["Epoch", "Reserve", "Epochs", "Recent activity — last 7 days"])
-	})
-})
-
-const closeAction: CycleAction = {
-	id: "close-epoch",
-	group: "Epoch",
-	label: "Close epoch",
-	conditions: [
-		{ label: "Wind-down not active", met: true },
-		{ label: "Epoch open", met: true },
-	],
-	outcome: "Seals epoch 5 and opens epoch 6.",
-	epochId: 5n,
-	enabled: true,
-}
-
-const fulfillAction: CycleAction = {
-	id: "fulfill-epoch",
-	group: "Epoch",
-	label: "Fulfill epoch",
-	conditions: [
-		{ label: "Sealed epoch awaiting a price", met: true },
-		{ label: "Notice elapsed", met: false },
-	],
-	outcome: "Prices epoch 4 at 1.0000 and settles its requests.",
-	epochId: 4n,
-	enabled: false,
-}
-
-const attestAction: CycleAction = {
-	id: "attest",
-	group: "Price",
-	label: "Attest price",
-	conditions: [
-		{ label: "Within the band", met: null },
-		{ label: "Cooldown elapsed", met: true },
-	],
-	outcome: null,
-	field: {
-		label: "Share price",
-		placeholder: "0.0000",
-		value: "",
-		invalid: false,
-	},
-	price: null,
-	freshness: null,
-	enabled: false,
-}
-
-const deployAction: CycleAction = {
-	id: "deploy",
-	group: "Reserve",
-	label: "Deploy to custodian",
-	conditions: [
-		{ label: "Custodian set", met: true, detail: "CCUS...7890" },
-		{ label: "Within the free reserve", met: null },
-	],
-	outcome: null,
-	field: {
-		label: "Amount to deploy",
-		placeholder: "0.00",
-		value: "",
-		invalid: false,
-		max: "900.0000001",
-	},
-	amount: null,
-	enabled: false,
-}
-
-describe("CycleActions", () => {
-	it("lists each condition as met or not met, in the card's label and figure typography", () => {
-		render(<CycleActions actions={[fulfillAction]} onRun={vi.fn()} />)
-
-		const list = screen.getByRole("list", { name: "Fulfill epoch conditions" })
-		const [awaiting, notice] = within(list).getAllByRole("listitem")
-		expect(
-			within(awaiting!).getByText("Sealed epoch awaiting a price"),
-		).toBeTruthy()
-		expect(within(awaiting!).getByText("Met")).toBeTruthy()
-		expect(within(notice!).getByText("Notice elapsed")).toBeTruthy()
-		expect(within(notice!).getByText("Not met")).toBeTruthy()
-	})
-
-	it("states the resulting state before the button and enables the button only when the action is", () => {
-		const onRun = vi.fn()
-		render(
-			<CycleActions actions={[closeAction, fulfillAction]} onRun={onRun} />,
-		)
-
-		expect(screen.getByText("Seals epoch 5 and opens epoch 6.")).toBeTruthy()
-		const close = screen.getByRole("button", { name: "Close epoch" })
-		const fulfill = screen.getByRole("button", { name: "Fulfill epoch" })
-		expect((close as HTMLButtonElement).disabled).toBe(false)
-		expect((fulfill as HTMLButtonElement).disabled).toBe(true)
-
-		fireEvent.click(close)
-		fireEvent.click(fulfill)
-
-		expect(onRun).toHaveBeenCalledTimes(1)
-		expect(onRun).toHaveBeenCalledWith(closeAction)
-	})
-
-	it("says why an action is unavailable and keeps its button disabled", () => {
-		render(
-			<CycleActions
-				actions={[
-					{
-						...closeAction,
-						enabled: false,
-						unavailable:
-							"Needs 2 signatures; collecting them is not supported yet.",
-					},
-				]}
-				onRun={vi.fn()}
-			/>,
-		)
-
-		expect(
-			screen.getByText(
-				"Needs 2 signatures; collecting them is not supported yet.",
-			),
-		).toBeTruthy()
-		expect(
-			(screen.getByRole("button", { name: "Close epoch" }) as HTMLButtonElement)
-				.disabled,
-		).toBe(true)
-	})
-
-	it("omits the resulting state when there is none to show", () => {
-		render(
-			<CycleActions
-				actions={[{ ...fulfillAction, outcome: null }]}
-				onRun={vi.fn()}
-			/>,
-		)
-
-		expect(screen.queryByText(/Prices epoch/)).toBeNull()
-		expect(screen.getByRole("button", { name: "Fulfill epoch" })).toBeTruthy()
-	})
-
-	it("asks for a figure in a decimal field, labelled for screen readers, and reports each keystroke", () => {
-		const onInput = vi.fn()
-		render(
-			<CycleActions
-				actions={[attestAction]}
-				onRun={vi.fn()}
-				onInput={onInput}
-			/>,
-		)
-
-		const field = screen.getByRole("textbox", {
-			name: "Share price",
-		}) as HTMLInputElement
-		expect(field.placeholder).toBe("0.0000")
-		expect(field.inputMode).toBe("decimal")
-
-		fireEvent.change(field, { target: { value: "1.04" } })
-
-		expect(onInput).toHaveBeenCalledWith(attestAction, "1.04")
-	})
-
-	it("renders no field for an action that takes no figure", () => {
-		render(<CycleActions actions={[closeAction]} onRun={vi.fn()} />)
-
-		expect(screen.queryByRole("textbox")).toBeNull()
-	})
-
-	it("leaves a condition open with a dash while it cannot be judged yet", () => {
-		render(<CycleActions actions={[attestAction]} onRun={vi.fn()} />)
-
-		const band = screen.getByText("Within the band").closest("li")!
-		expect(within(band).getByText("—")).toBeTruthy()
-		expect(within(band).queryByText("Not met")).toBeNull()
-	})
-
-	it("shows a condition's detail in place of Not met when it has one", () => {
-		render(
-			<CycleActions
-				actions={[
-					{
-						...attestAction,
-						conditions: [
-							{
-								label: "Within the band",
-								met: false,
-								detail: "0.5000 – 2.0000",
-							},
-						],
-					},
-				]}
-				onRun={vi.fn()}
-			/>,
-		)
-
-		const band = screen.getByText("Within the band").closest("li")!
-		expect(within(band).getByText("0.5000 – 2.0000")).toBeTruthy()
-		expect(within(band).queryByText("Not met")).toBeNull()
-	})
-
-	it("shows a condition's detail in place of Met when it has one", () => {
-		render(<CycleActions actions={[deployAction]} onRun={vi.fn()} />)
-
-		const custodian = screen.getByText("Custodian set").closest("li")!
-		expect(within(custodian).getByText("CCUS...7890")).toBeTruthy()
-		expect(within(custodian).queryByText("Met")).toBeNull()
-	})
-
-	it("offers to fill the field with its max, reporting the exact figure", () => {
-		const onInput = vi.fn()
-		render(
-			<CycleActions
-				actions={[deployAction]}
-				onRun={vi.fn()}
-				onInput={onInput}
-			/>,
-		)
-
-		fireEvent.click(screen.getByRole("button", { name: "Use max" }))
-
-		expect(onInput).toHaveBeenCalledWith(deployAction, "900.0000001")
-	})
-
-	it("offers no max for a field that has none", () => {
-		render(<CycleActions actions={[attestAction]} onRun={vi.fn()} />)
-
-		expect(screen.queryByRole("button", { name: "Use max" })).toBeNull()
-	})
-
-	it("states an action's note outside the conditions", () => {
-		render(
-			<CycleActions
-				actions={[
-					{
-						...attestAction,
-						note: "Ripcord raised — attesting does not lift it.",
-					},
-				]}
-				onRun={vi.fn()}
-			/>,
-		)
-
-		const list = screen.getByRole("list", { name: "Attest price conditions" })
-		expect(
-			screen.getByText("Ripcord raised — attesting does not lift it."),
-		).toBeTruthy()
-		expect(within(list).queryByText(/Ripcord/)).toBeNull()
 	})
 })

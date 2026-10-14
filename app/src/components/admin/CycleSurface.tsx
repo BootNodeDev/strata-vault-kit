@@ -1,20 +1,20 @@
 import React from "react"
-import {
-	type ActionField as ActionFieldSpec,
-	type Condition,
-	type CycleAction,
-} from "../../pages/cycle"
 import typeStyles from "../../styles/type.module.css"
 import Skeleton from "../Skeleton"
-import { type AddressRow, type FigureGroup } from "../vault/AboutVault"
+import {
+	type AddressRow,
+	type FigureGroup,
+	type FigureRow,
+} from "../vault/AboutVault"
 import AddressRows from "../vault/AddressRows"
 import MetricsStrip, { type Metric } from "../vault/MetricsStrip"
 import styles from "./CycleSurface.module.css"
+import Disclosure from "./Disclosure"
 
 export type CycleGroup = FigureGroup & {
 	tiles: Metric[]
+	limits?: FigureRow[]
 	addresses?: AddressRow[]
-	actions?: React.ReactNode
 }
 
 export type EpochRow = {
@@ -44,6 +44,8 @@ type CycleSurfaceProps = {
 	unreadable: boolean
 	epochs: ListState<EpochRow>
 	activity: ListState<ActivityRow>
+	rail: React.ReactNode
+	contracts?: React.ReactNode
 }
 
 const EPOCH_COLUMNS = [
@@ -58,133 +60,42 @@ const ACTIVITY_COLUMNS = ["Time", "Event", "Detail"]
 
 const figureCell = `${typeStyles.railValue} ${styles.cell}`
 
+const FigureRows: React.FC<{ rows: FigureRow[] }> = ({ rows }) => (
+	<ul className={styles.rows}>
+		{rows.map((row) => (
+			<li className={styles.row} key={row.label}>
+				<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
+					{row.label}
+				</span>
+				{row.pending ? (
+					<Skeleton
+						className={`${typeStyles.railValue} ${styles.rowSkeleton}`}
+					/>
+				) : (
+					<span
+						className={`${typeStyles.railValue} ${
+							row.value === null ? styles.placeholder : styles.rowValue
+						}`}
+					>
+						{row.value ?? "Unavailable"}
+					</span>
+				)}
+			</li>
+		))}
+	</ul>
+)
+
 const Group: React.FC<{ group: CycleGroup }> = ({ group }) => (
 	<div className={styles.group}>
 		<h3 className={`${typeStyles.body} ${styles.groupTitle}`}>{group.title}</h3>
 		<MetricsStrip metrics={group.tiles} />
-		<ul className={styles.rows}>
-			{group.rows.map((row) => (
-				<li className={styles.row} key={row.label}>
-					<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
-						{row.label}
-					</span>
-					{row.pending ? (
-						<Skeleton
-							className={`${typeStyles.railValue} ${styles.rowSkeleton}`}
-						/>
-					) : (
-						<span
-							className={`${typeStyles.railValue} ${
-								row.value === null ? styles.placeholder : styles.rowValue
-							}`}
-						>
-							{row.value ?? "Unavailable"}
-						</span>
-					)}
-				</li>
-			))}
-		</ul>
+		<FigureRows rows={group.rows} />
 		{group.addresses !== undefined && <AddressRows rows={group.addresses} />}
-		{group.actions}
-	</div>
-)
-
-const conditionValue = (condition: Condition): string => {
-	if (condition.met === null) return "—"
-	return condition.detail ?? (condition.met ? "Met" : "Not met")
-}
-
-const ActionField: React.FC<{
-	action: CycleAction
-	field: ActionFieldSpec
-	onInput: ((action: CycleAction, value: string) => void) | undefined
-}> = ({ action, field, onInput }) => {
-	const id = `cycle-${action.id}-field`
-	return (
-		<div className={field.invalid ? styles.fieldOver : styles.field}>
-			<label htmlFor={id} className={styles.srOnly}>
-				{field.label}
-			</label>
-			<input
-				id={id}
-				className={`${typeStyles.amountInput} ${styles.fieldInput}`}
-				value={field.value}
-				onChange={(event) => onInput?.(action, event.target.value)}
-				placeholder={field.placeholder}
-				inputMode="decimal"
-			/>
-			{field.max !== undefined && (
-				<button
-					type="button"
-					className={styles.useMax}
-					onClick={() => onInput?.(action, field.max ?? "")}
-				>
-					Use max
-				</button>
-			)}
-		</div>
-	)
-}
-
-export const CycleActions: React.FC<{
-	actions: CycleAction[]
-	onRun: (action: CycleAction) => void
-	onInput?: (action: CycleAction, value: string) => void
-}> = ({ actions, onRun, onInput }) => (
-	<div className={styles.actionArea}>
-		{actions.map((action) => (
-			<div className={styles.action} key={action.id}>
-				{action.field !== undefined && (
-					<ActionField action={action} field={action.field} onInput={onInput} />
-				)}
-				<ul
-					aria-label={`${action.label} conditions`}
-					className={styles.conditions}
-				>
-					{action.conditions.map((condition) => (
-						<li className={styles.row} key={condition.label}>
-							<span className={`${typeStyles.footnote} ${styles.rowLabel}`}>
-								{condition.label}
-							</span>
-							<span
-								className={`${typeStyles.railValue} ${
-									condition.met ? styles.rowValue : styles.unmet
-								}`}
-							>
-								{conditionValue(condition)}
-							</span>
-						</li>
-					))}
-				</ul>
-				{action.note !== undefined && (
-					<p className={`${typeStyles.footnote} ${styles.note}`}>
-						{action.note}
-					</p>
-				)}
-				{action.outcome !== null && (
-					<p className={`${typeStyles.footnote} ${styles.outcome}`}>
-						{action.outcome}
-					</p>
-				)}
-				<div className={styles.actions}>
-					<button
-						type="button"
-						className={
-							action.enabled ? styles.actionPrimary : styles.actionUnavailable
-						}
-						disabled={!action.enabled}
-						onClick={() => onRun(action)}
-					>
-						{action.label}
-					</button>
-				</div>
-				{action.unavailable !== undefined && (
-					<p className={`${typeStyles.footnote} ${styles.placeholder}`}>
-						{action.unavailable}
-					</p>
-				)}
-			</div>
-		))}
+		{group.limits !== undefined && (
+			<Disclosure title="Limits">
+				<FigureRows rows={group.limits} />
+			</Disclosure>
+		)}
 	</div>
 )
 
@@ -291,29 +202,41 @@ const CycleSurface: React.FC<CycleSurfaceProps> = ({
 	unreadable,
 	epochs,
 	activity,
+	rail,
+	contracts,
 }) => (
-	<div className={styles.surface}>
-		{unreadable ? (
-			<p className={typeStyles.body}>Could not read the vault's cycle.</p>
-		) : (
-			groups.map((group) => <Group group={group} key={group.title} />)
-		)}
-		<Section
-			title="Epochs"
-			state={epochs}
-			unreadable="Could not read the epoch history."
-			empty="No epochs yet."
-		>
-			{epochs.status === "loaded" && <EpochTable rows={epochs.rows} />}
-		</Section>
-		<Section
-			title="Recent activity — last 7 days"
-			state={activity}
-			unreadable="Could not read recent activity."
-			empty="No cycle activity in the last 7 days."
-		>
-			{activity.status === "loaded" && <ActivityTable rows={activity.rows} />}
-		</Section>
+	<div className={styles.layout}>
+		<div className={styles.body}>
+			<aside className={styles.side} aria-label="Actions">
+				{rail}
+			</aside>
+			<div className={styles.main}>
+				{unreadable ? (
+					<p className={typeStyles.body}>Could not read the vault's cycle.</p>
+				) : (
+					groups.map((group) => <Group group={group} key={group.title} />)
+				)}
+				<Section
+					title="Epochs"
+					state={epochs}
+					unreadable="Could not read the epoch history."
+					empty="No epochs yet."
+				>
+					{epochs.status === "loaded" && <EpochTable rows={epochs.rows} />}
+				</Section>
+				<Section
+					title="Recent activity — last 7 days"
+					state={activity}
+					unreadable="Could not read recent activity."
+					empty="No cycle activity in the last 7 days."
+				>
+					{activity.status === "loaded" && (
+						<ActivityTable rows={activity.rows} />
+					)}
+				</Section>
+				{contracts}
+			</div>
+		</div>
 	</div>
 )
 

@@ -72,4 +72,13 @@ describe("App", () => {
 		).toBeTruthy()
 		expect(screen.getByText("GitHub")).toBeTruthy()
 	})
+
+	it("serves the admin panel at a surface path too", () => {
+		useAdminAuthorityMock.mockReturnValue(disconnectedAuthority)
+		renderAt("/admin/cycle")
+
+		expect(
+			screen.getByText("Connect a wallet to operate this vault."),
+		).toBeTruthy()
+	})
 })

@@ -11,6 +11,7 @@ function App() {
 			<Route element={<AppLayout />}>
 				<Route path="/" element={<VaultPreview />} />
 				<Route path="/admin" element={<AdminPanel />} />
+				<Route path="/admin/:surface" element={<AdminPanel />} />
 			</Route>
 		</Routes>
 	)
