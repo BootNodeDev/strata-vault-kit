@@ -303,7 +303,7 @@ describe("toGovernanceActions", () => {
 describe("admin handover", () => {
 	const offer = {
 		"hand-over-vault-admin-account": ACCOUNT,
-		"hand-over-vault-admin-days": "7",
+		"hand-over-vault-admin-expiry": "7d",
 	}
 	const transfer = (expired = false): PendingTransfer => ({
 		address: WALLET,
@@ -318,8 +318,10 @@ describe("admin handover", () => {
 		const confirm = fieldOf(draft, "confirm")
 
 		expect(
-			draft.fields?.find((field) => field.key === "hand-over-vault-admin-days"),
-		).toMatchObject({ value: "7" })
+			draft.fields?.find(
+				(field) => field.key === "hand-over-vault-admin-expiry",
+			),
+		).toMatchObject({ value: "7d" })
 		expect(confirm?.label).toBe("Hands control of the vault to GABA...EJXA.")
 		expect(draft.tone).toBe("danger")
 		expect(draft.enabled).toBe(false)
@@ -373,17 +375,20 @@ describe("admin handover", () => {
 	})
 
 	it.each<[string, number | null, string, boolean | null]>([
-		["0", null, "Expiry ≥ 1 day", false],
-		["31", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30 days", false],
-		["30", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30 days", true],
-		["1.5", null, "Expiry ≥ 1 day", null],
+		["4s", null, "Expiry ≥ 5s", false],
+		["5s", null, "Expiry ≥ 5s", true],
+		["1.5d", null, "Expiry ≥ 5s", null],
+		["31d", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30d", false],
+		["30d", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30d", true],
+		["30d 5s", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30d", false],
+		["1.5d", SEQUENCE + 30 * DAY_IN_LEDGERS, "Expiry ≤ 30d", null],
 	])(
-		"bounds an expiry of %s days by the network limit %s",
-		(days, max, label, met) => {
+		"bounds an expiry of %s by the network limit %s",
+		(expiry, max, label, met) => {
 			const draft = find(
 				"hand-over-vault-admin",
 				[governance],
-				{ ...offer, "hand-over-vault-admin-days": days },
+				{ ...offer, "hand-over-vault-admin-expiry": expiry },
 				state({}, {}, max),
 			)
 
@@ -391,19 +396,57 @@ describe("admin handover", () => {
 		},
 	)
 
-	it("checks only the lower bound when the network limit is unknown", () => {
+	it("offers any expiry the contract accepts, in any duration unit", () => {
+		const confirmed = (expiry: string) => {
+			const inputs = { ...offer, "hand-over-vault-admin-expiry": expiry }
+			const confirm = fieldOf(
+				find("hand-over-vault-admin", [governance], inputs),
+				"confirm",
+			)
+			return find("hand-over-vault-admin", [governance], {
+				...inputs,
+				[confirm?.key ?? ""]: confirm?.value,
+			})
+		}
+
+		expect(confirmed("36h").arg).toEqual({
+			newAdmin: ACCOUNT,
+			liveUntilLedger: SEQUENCE + 36 * 720,
+		})
+		expect(confirmed("5s")).toMatchObject({
+			enabled: true,
+			arg: { liveUntilLedger: SEQUENCE + 1 },
+		})
+	})
+
+	it("refuses an expiry beyond the largest ledger number when the network limit is unknown", () => {
 		const draft = find(
 			"hand-over-vault-admin",
 			[governance],
-			{ ...offer, "hand-over-vault-admin-days": "400" },
+			{ ...offer, "hand-over-vault-admin-expiry": "99999999d" },
+			state({}, {}, null),
+		)
+
+		expect(condition(draft, "Expiry within the network limit")).toBe(false)
+		expect(draft.arg).toBeUndefined()
+		expect(draft.enabled).toBe(false)
+	})
+
+	it("checks the largest ledger number alone when the network limit is unknown", () => {
+		const draft = find(
+			"hand-over-vault-admin",
+			[governance],
+			{ ...offer, "hand-over-vault-admin-expiry": "400d" },
 			state({}, {}, null),
 		)
 
 		expect(draft.conditions.map(({ label }) => label)).toEqual([
 			"New admin entered",
-			"Expiry ≥ 1 day",
+			"Expiry ≥ 5s",
+			"Expiry within the network limit",
 			"Confirmed",
 		])
+		expect(condition(draft, "Expiry within the network limit")).toBe(true)
 	})
 
 	it("cancels a pending handover by re-offering it with no expiry", () => {
@@ -491,13 +534,23 @@ describe("upgrades and wind-down", () => {
 		["6d", "Delay ≥ 7d", false],
 		["91d", "Delay ≤ 90d", false],
 		["14d", "Delay ≥ notice 1d", true],
-		["7d", "Differs from current", false],
 	])("bounds a proposed delay of %s by %s", (text, label, met) => {
 		const delay = find("propose-upgrade-delay", [governance], {
 			"propose-upgrade-delay-secs": text,
 		})
 
 		expect(condition(delay, label)).toBe(met)
+	})
+
+	it("lets the current upgrade delay be proposed again", () => {
+		const delay = find("propose-upgrade-delay", [governance], {
+			"propose-upgrade-delay-secs": "7d",
+		})
+
+		expect(delay.enabled).toBe(true)
+		expect(delay.conditions.map(({ label }) => label)).not.toContain(
+			"Differs from current",
+		)
 	})
 
 	it("proposes a new upgrade delay at or above the notice", () => {

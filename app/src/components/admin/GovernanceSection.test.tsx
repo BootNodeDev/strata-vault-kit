@@ -266,15 +266,15 @@ describe("GovernanceSection", () => {
 		expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0)
 	})
 
-	it("hands the admin over for the typed days once confirmed", () => {
+	it("hands the admin over for the typed expiry once confirmed", () => {
 		renderSection([governance])
 
 		expand("Hand over vault admin")
 		fireEvent.change(screen.getByRole("textbox", { name: "New admin" }), {
 			target: { value: ACCOUNT },
 		})
-		fireEvent.change(screen.getByRole("textbox", { name: "Expiry in days" }), {
-			target: { value: "2" },
+		fireEvent.change(screen.getByRole("textbox", { name: "Expiry" }), {
+			target: { value: "2d" },
 		})
 		fireEvent.click(
 			screen.getByRole("checkbox", {

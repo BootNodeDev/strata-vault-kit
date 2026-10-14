@@ -185,9 +185,8 @@ const capitalize = (text: string): string =>
 	`${text.charAt(0).toUpperCase()}${text.slice(1)}`
 
 const LEDGER_SECONDS = 5n
-const DAY_IN_LEDGERS = 17_280
-const DEFAULT_DAYS = "7"
-const WHOLE_DAYS = /^\d+$/
+const U32_MAX = 4_294_967_295
+const DEFAULT_EXPIRY = "7d"
 
 type Draft = {
 	operation: Operation
@@ -343,22 +342,21 @@ type Ledger = Extract<Handovers, { status: "ready" }>["ledger"]
 const ledgerTime = (ledger: Ledger, sequence: number): bigint =>
 	ledger.closeTime + BigInt(sequence - ledger.sequence) * LEDGER_SECONDS
 
+const LIMIT_LABEL = "Expiry within the network limit"
+
 const limitCondition = (
 	ledger: Ledger | undefined,
-	liveUntil: number | undefined,
-): Condition[] => {
-	if (ledger === undefined)
-		return [{ label: "Expiry within the network limit", met: null }]
-	if (ledger.maxLiveUntil === null) return []
-	const maxDays = Math.floor(
-		(ledger.maxLiveUntil - ledger.sequence) / DAY_IN_LEDGERS,
-	)
-	return [
-		{
-			label: `Expiry ≤ ${maxDays} days`,
-			met: liveUntil === undefined ? null : liveUntil <= ledger.maxLiveUntil,
-		},
-	]
+	liveUntil: bigint | undefined,
+): Condition => {
+	if (ledger === undefined) return { label: LIMIT_LABEL, met: null }
+	const limit = Math.min(ledger.maxLiveUntil ?? U32_MAX, U32_MAX)
+	return {
+		label:
+			ledger.maxLiveUntil === null
+				? LIMIT_LABEL
+				: `Expiry ≤ ${formatDuration(BigInt(limit - ledger.sequence) * LEDGER_SECONDS)}`,
+		met: liveUntil === undefined ? null : liveUntil <= BigInt(limit),
+	}
 }
 
 function handOverSpec(
@@ -371,25 +369,26 @@ function handOverSpec(
 } {
 	const id: OfferActionId = `hand-over-${contract}-admin`
 	const accountKey = `${id}-account`
-	const daysKey = `${id}-days`
+	const expiryKey = `${id}-expiry`
 	const text = inputs[accountKey] ?? ""
 	const account = parseAccount(text)
-	const daysText = inputs[daysKey] ?? DEFAULT_DAYS
-	const days = WHOLE_DAYS.test(daysText.trim()) ? Number(daysText) : undefined
+	const expiryText = inputs[expiryKey] ?? DEFAULT_EXPIRY
+	const secs = parseDuration(expiryText) ?? undefined
 	const ledger =
 		state.handovers.status === "ready" ? state.handovers.ledger : undefined
 	const liveUntil =
-		ledger === undefined || days === undefined
+		ledger === undefined || secs === undefined
 			? undefined
-			: ledger.sequence + days * DAY_IN_LEDGERS
+			: BigInt(ledger.sequence) + secs / LEDGER_SECONDS
 	const fields: RailField[] = [
 		accountField(accountKey, text, "New admin"),
 		{
-			key: daysKey,
-			label: "Expiry in days",
-			placeholder: DEFAULT_DAYS,
-			value: daysText,
-			invalid: daysText.trim() !== "" && days === undefined,
+			key: expiryKey,
+			label: "Expiry",
+			placeholder: DEFAULT_EXPIRY,
+			value: expiryText,
+			invalid: expiryText.trim() !== "" && secs === undefined,
+			text: true,
 		},
 	]
 	const conditions: Condition[] = [
@@ -397,28 +396,31 @@ function handOverSpec(
 			label: "New admin entered",
 			met: text.trim() === "" ? null : account !== undefined,
 		},
-		{ label: "Expiry ≥ 1 day", met: days === undefined ? null : days >= 1 },
-		...limitCondition(ledger, liveUntil),
+		{
+			label: `Expiry ≥ ${formatDuration(LEDGER_SECONDS)}`,
+			met: secs === undefined ? null : secs >= LEDGER_SECONDS,
+		},
+		limitCondition(ledger, liveUntil),
 	]
 	if (account !== undefined) {
 		const confirm = confirmation(
 			`${id}-confirm`,
 			`Hands control of the ${CONTRACTS[contract].subject} to ${shortAddress(account)}.`,
-			account,
+			`${account}:${secs ?? ""}`,
 			inputs,
 		)
 		fields.push(confirm.field)
 		conditions.push(confirm.condition)
 	}
 	const offer =
-		account === undefined || liveUntil === undefined || ledger === undefined
+		account === undefined || liveUntil === undefined || liveUntil > U32_MAX
 			? undefined
-			: { newAdmin: account, liveUntilLedger: liveUntil }
+			: { newAdmin: account, liveUntilLedger: Number(liveUntil) }
 	const outcome =
-		offer === undefined || ledger === undefined || days === undefined
+		offer === undefined || ledger === undefined
 			? null
 			: `${shortAddress(offer.newAdmin)} becomes admin once it accepts before ${formatTimestamp(
-					ledger.closeTime + BigInt(days) * DAY,
+					ledgerTime(ledger, offer.liveUntilLedger),
 				)}.`
 	return {
 		id,
@@ -556,12 +558,6 @@ function delayUpgradeSpec(
 			met: secs === undefined ? null : secs <= MAX_UPGRADE_DELAY,
 		},
 		aboveNotice(secs, upgrades?.notice),
-		{
-			label: "Differs from current",
-			met:
-				secs === undefined || current === undefined ? null : secs !== current,
-			unchanged: true,
-		},
 		noPendingUpgrade(upgrades),
 	]
 	return {
