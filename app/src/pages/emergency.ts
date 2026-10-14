@@ -6,6 +6,9 @@ import {
 	type Condition,
 	grantFor,
 	type RailAction,
+	ROLES,
+	type Spec,
+	toAction,
 	unavailableFor,
 } from "./actions"
 
@@ -25,14 +28,6 @@ type PlainId =
 
 export type EmergencyAction = RailAction &
 	({ id: PlainId } | { id: "raise-ripcord"; viaAdmin: boolean })
-
-const ROLES = {
-	vaultGuardian: "vault guardian",
-	governance: "vault governance",
-	oracleGuardian: "oracle guardian",
-	oracleAdmin: "oracle admin",
-	tokenAdmin: "share-token admin",
-} as const
 
 const PAUSE_LABELS = { open: "Open", paused: "Paused" } as const
 
@@ -59,36 +54,7 @@ const ripcordRaised = (oracle: OracleStatus): Condition => ({
 	met: isKnown(oracle) ? oracle === "paused" : null,
 })
 
-type Spec<Id extends string = PlainId> = {
-	id: Id
-	label: string
-	conditions: Condition[]
-	outcome: string
-	note?: string
-	danger?: boolean
-}
-
-const toAction = <Id extends string>(
-	spec: Spec<Id>,
-	grant: Grant,
-	wallet: string,
-): RailAction & { id: Id } => {
-	const unavailable = unavailableFor(grant, wallet)
-	return {
-		id: spec.id,
-		label: spec.label,
-		conditions: spec.conditions,
-		outcome: spec.outcome,
-		...(spec.note === undefined ? {} : { note: spec.note }),
-		enabled:
-			unavailable === undefined &&
-			spec.conditions.every((condition) => condition.met !== false),
-		...(spec.danger === true ? { tone: "danger" as const } : {}),
-		...(unavailable === undefined ? {} : { unavailable }),
-	}
-}
-
-const vaultSpecs = (vault: PauseState): [Spec, Spec] => [
+const vaultSpecs = (vault: PauseState): [Spec<PlainId>, Spec<PlainId>] => [
 	{
 		id: "pause-vault",
 		label: "Pause the vault",
@@ -106,7 +72,9 @@ const vaultSpecs = (vault: PauseState): [Spec, Spec] => [
 	},
 ]
 
-const oracleAdminSpecs = (oracle: OracleStatus): [Spec, Spec] => [
+const oracleAdminSpecs = (
+	oracle: OracleStatus,
+): [Spec<PlainId>, Spec<PlainId>] => [
 	{
 		id: "lower-ripcord",
 		label: "Lower the ripcord",
@@ -124,7 +92,7 @@ const oracleAdminSpecs = (oracle: OracleStatus): [Spec, Spec] => [
 	},
 ]
 
-const tokenSpecs = (token: PauseState): [Spec, Spec] => [
+const tokenSpecs = (token: PauseState): [Spec<PlainId>, Spec<PlainId>] => [
 	{
 		id: "pause-token",
 		label: "Pause the share token",

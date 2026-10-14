@@ -24,6 +24,7 @@ import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
+import { EFFECTS } from "../../pages/configuration"
 import typeStyles from "../../styles/type.module.css"
 import Close from "../icons/Close"
 import ExternalLink from "../icons/ExternalLink"
@@ -38,10 +39,26 @@ export type EmergencyModalAction =
 	| "pause-token"
 	| "unpause-token"
 
+export type ConfigurationModalAction =
+	| "set-deposit-cap"
+	| "set-custodian"
+	| "set-notice"
+	| "set-wind-down-delay"
+	| "set-oracle-config"
+	| "set-compliance"
+	| "set-identity-verifier"
+
 export type TransactionModalProps =
 	| {
 			action: EmergencyModalAction
 			status: TransactionStatus
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: ConfigurationModalAction
+			status: TransactionStatus
+			value: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -366,6 +383,8 @@ const finalizeRoundContractErrorReason = (code: number): string => {
 const INVESTOR_FOLLOW_UP = "check your requests before doing anything else"
 const OPERATOR_FOLLOW_UP = "check the Cycle card before trying again"
 const EMERGENCY_FOLLOW_UP = "check the Emergency tab before trying again"
+const CONFIGURATION_FOLLOW_UP =
+	"check the Configuration tab before trying again"
 
 const describeFailure = (
 	failure: TransactionFailure,
@@ -934,7 +953,7 @@ const describeFinalizeRoundStatus = (
 	}
 }
 
-type EmergencyCopy = {
+type AdminCopy = {
 	refuser: "vault" | "share token" | "oracle"
 	verb: string
 	signing: string
@@ -942,7 +961,7 @@ type EmergencyCopy = {
 	doneBody: string
 }
 
-const EMERGENCY_COPY: Record<EmergencyModalAction, EmergencyCopy> = {
+const EMERGENCY_COPY: Record<EmergencyModalAction, AdminCopy> = {
 	"pause-vault": {
 		refuser: "vault",
 		verb: "pause the vault",
@@ -998,8 +1017,41 @@ const EMERGENCY_COPY: Record<EmergencyModalAction, EmergencyCopy> = {
 	},
 }
 
-const emergencyContractErrorReason =
-	(refuser: EmergencyCopy["refuser"]) =>
+const setterCopy =
+	(refuser: AdminCopy["refuser"], subject: string, effect?: string) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		verb: `set the ${subject.toLowerCase()}`,
+		signing: `New ${subject.toLowerCase()}: ${value}.`,
+		done: `${subject} updated`,
+		doneBody: effect ?? `${subject}: ${value}.`,
+	})
+
+const CONFIGURATION_COPY: Record<
+	ConfigurationModalAction,
+	(value: string) => AdminCopy
+> = {
+	"set-deposit-cap": setterCopy("vault", "Deposit cap"),
+	"set-custodian": setterCopy("vault", "Custodian", EFFECTS.custodian),
+	"set-notice": setterCopy("vault", "Notice", EFFECTS.notice),
+	"set-wind-down-delay": setterCopy(
+		"vault",
+		"Wind-down delay",
+		EFFECTS.windDownDelay,
+	),
+	"set-oracle-config": () => ({
+		refuser: "oracle",
+		verb: "set the oracle limits",
+		signing: "Signing replaces every oracle limit.",
+		done: "Oracle limits updated",
+		doneBody: "The new limits are recorded.",
+	}),
+	"set-compliance": setterCopy("share token", "Compliance contract"),
+	"set-identity-verifier": setterCopy("share token", "Identity verifier"),
+}
+
+const adminContractErrorReason =
+	(refuser: AdminCopy["refuser"]) =>
 	(code: number): string => {
 		switch (code) {
 			case 1000:
@@ -1008,18 +1060,28 @@ const emergencyContractErrorReason =
 				return `The ${refuser} is not paused, so there is nothing to unpause.`
 			case 2000:
 				return "This wallet does not hold the role this action needs."
+			case 3001:
+				return "One of the oracle limits is out of range."
 			case 3008:
 				return "The ripcord is not raised, so the latest price cannot be cleared."
+			case 6007:
+				return "The deposit cap cannot be negative."
+			case 6045:
+				return "The notice cannot exceed 30 days."
+			case 6053:
+				return "The wind-down delay cannot exceed 90 days."
+			case 6061:
+				return "The notice cannot exceed the upgrade delay."
 			default:
 				return `The ${refuser} refused this request. Try again, and contact support if it keeps happening.`
 		}
 	}
 
-const describeEmergencyStatus = (
-	action: EmergencyModalAction,
+const describeAdminStatus = (
+	copy: AdminCopy,
 	status: TransactionStatus,
+	followUp: string,
 ): { heading: string; body: string; hash?: string } | undefined => {
-	const copy = EMERGENCY_COPY[action]
 	switch (status.status) {
 		case "idle":
 			return undefined
@@ -1042,8 +1104,8 @@ const describeEmergencyStatus = (
 			return {
 				...describeFailure(
 					status.failure,
-					emergencyContractErrorReason(copy.refuser),
-					EMERGENCY_FOLLOW_UP,
+					adminContractErrorReason(copy.refuser),
+					followUp,
 					copy.refuser,
 				),
 				hash: status.hash,
@@ -1103,7 +1165,23 @@ const describeStatus = (
 		case "clear-latest":
 		case "pause-token":
 		case "unpause-token":
-			return describeEmergencyStatus(props.action, props.status)
+			return describeAdminStatus(
+				EMERGENCY_COPY[props.action],
+				props.status,
+				EMERGENCY_FOLLOW_UP,
+			)
+		case "set-deposit-cap":
+		case "set-custodian":
+		case "set-notice":
+		case "set-wind-down-delay":
+		case "set-oracle-config":
+		case "set-compliance":
+		case "set-identity-verifier":
+			return describeAdminStatus(
+				CONFIGURATION_COPY[props.action](props.value),
+				props.status,
+				CONFIGURATION_FOLLOW_UP,
+			)
 	}
 }
 

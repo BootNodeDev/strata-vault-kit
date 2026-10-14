@@ -17,12 +17,12 @@ export function usePendingTransaction<TArg, TConfirmed extends object>(
 ): UsePendingTransaction<TArg, TConfirmed> {
 	const { status, submit: submitTransaction, reset } = transaction
 	const [amountLabel, setAmountLabel] = useState("")
-	const pendingArg = useRef<TArg | null>(null)
+	const pendingArg = useRef<{ arg: TArg } | null>(null)
 
 	const submit = useCallback(
 		(arg: TArg, label: string): boolean => {
 			if (!submitTransaction(arg)) return false
-			pendingArg.current = arg
+			pendingArg.current = { arg }
 			setAmountLabel(label)
 			return true
 		},
@@ -31,7 +31,7 @@ export function usePendingTransaction<TArg, TConfirmed extends object>(
 
 	const retry = useCallback(() => {
 		if (pendingArg.current === null) return
-		submitTransaction(pendingArg.current)
+		submitTransaction(pendingArg.current.arg)
 	}, [submitTransaction])
 
 	return { status, amountLabel, submit, retry, reset }

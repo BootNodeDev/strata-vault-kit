@@ -3,6 +3,8 @@ import { skipToken, useQuery } from "@tanstack/react-query"
 import { identityVerifier } from "../config/clients"
 import { useWallet } from "./useWallet"
 
+export const isAllowedKey = ["identity", "is-allowed"] as const
+
 export type Allowance = "checking" | "allowed" | "not-allowed" | "unreadable"
 
 export function classifyAllowance(read: ContractRead<boolean>): Allowance {
@@ -20,7 +22,7 @@ async function fetchAllowance(account: string): Promise<Allowance> {
 export function useIsAllowed(): { allowance: Allowance } {
 	const { address } = useWallet()
 	const { data } = useQuery({
-		queryKey: ["identity", "is-allowed", address],
+		queryKey: [...isAllowedKey, address],
 		queryFn: address === undefined ? skipToken : () => fetchAllowance(address),
 		staleTime: 30_000,
 	})

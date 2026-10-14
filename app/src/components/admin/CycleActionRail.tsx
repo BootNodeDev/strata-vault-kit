@@ -11,7 +11,7 @@ import typeStyles from "../../styles/type.module.css"
 import Skeleton from "../Skeleton"
 import styles from "./CycleActionRail.module.css"
 
-type OnInput<A> = (action: A, value: string) => void
+type OnInput<A> = (action: A, value: string, key?: string) => void
 
 const conditionValue = (condition: Condition): string => {
 	if (condition.met === null) return "—"
@@ -21,6 +21,7 @@ const conditionValue = (condition: Condition): string => {
 const summaryOf = (state: Readiness): string => {
 	if (state.kind === "ready") return "Ready"
 	if (state.kind === "unavailable") return "Unavailable"
+	if (state.kind === "unchanged") return "No change"
 	return `${state.count} unmet`
 }
 
@@ -35,31 +36,65 @@ function ActionField<A extends RailAction>({
 	field: ActionFieldSpec
 	onInput: OnInput<A> | undefined
 }) {
-	return (
+	const report = (value: string) =>
+		field.key === undefined
+			? onInput?.(action, value)
+			: onInput?.(action, value, field.key)
+	const label = (
+		<label
+			htmlFor={id}
+			className={
+				field.current === undefined
+					? styles.srOnly
+					: `${typeStyles.footnote} ${styles.fieldLabel}`
+			}
+		>
+			{field.label}
+		</label>
+	)
+	const input = (
 		<div className={field.invalid ? styles.fieldOver : styles.field}>
-			<label htmlFor={id} className={styles.srOnly}>
-				{field.label}
-			</label>
+			{field.current === undefined && label}
 			<input
 				id={id}
 				className={`${typeStyles.amountInput} ${styles.fieldInput}`}
 				value={field.value}
-				onChange={(event) => onInput?.(action, event.target.value)}
+				onChange={(event) => report(event.target.value)}
 				placeholder={field.placeholder}
-				inputMode="decimal"
+				inputMode={field.text === true ? "text" : "decimal"}
 			/>
 			{field.max !== undefined && (
 				<button
 					type="button"
 					className={styles.useMax}
-					onClick={() => onInput?.(action, field.max ?? "")}
+					onClick={() => report(field.max ?? "")}
 				>
 					Use max
 				</button>
 			)}
 		</div>
 	)
+	if (field.current === undefined) return input
+	return (
+		<div className={styles.keyed}>
+			<div className={styles.keyedHead}>
+				{label}
+				<span className={`${typeStyles.footnote} ${styles.fieldValue}`}>
+					Current {field.current}
+				</span>
+			</div>
+			{input}
+			{field.next !== undefined && field.next !== null && (
+				<span className={`${typeStyles.footnote} ${styles.fieldValue}`}>
+					New {field.next}
+				</span>
+			)}
+		</div>
+	)
 }
+
+const fieldsOf = (action: RailAction): ActionFieldSpec[] =>
+	action.fields ?? (action.field === undefined ? [] : [action.field])
 
 const buttonClass = (action: RailAction): string | undefined => {
 	if (!action.enabled) return styles.actionUnavailable
@@ -79,14 +114,15 @@ function ActionBody<A extends RailAction>({
 }) {
 	return (
 		<>
-			{action.field !== undefined && (
+			{fieldsOf(action).map((field) => (
 				<ActionField
-					id={fieldId}
+					key={field.key ?? field.label}
+					id={field.key === undefined ? fieldId : `${fieldId}-${field.key}`}
 					action={action}
-					field={action.field}
+					field={field}
 					onInput={onInput}
 				/>
-			)}
+			))}
 			<ul
 				aria-label={`${action.label} conditions`}
 				className={styles.conditions}

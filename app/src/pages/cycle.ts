@@ -26,6 +26,7 @@ import {
 	type CycleState,
 	type CycleWindDown,
 	type DepositCap,
+	type OracleLimits,
 	type WindDownPhase,
 } from "../hooks/useCycleState"
 import {
@@ -115,15 +116,29 @@ const SECONDS_PER_UNIT: [string, bigint][] = [
 	["s", 1n],
 ]
 
-export function formatDuration(seconds: bigint): string {
+export function formatDuration(seconds: bigint, maxParts = 2): string {
 	const parts: string[] = []
 	let remaining = seconds
 	for (const [unit, size] of SECONDS_PER_UNIT) {
 		const count = remaining / size
 		remaining -= count * size
-		if (count > 0n && parts.length < 2) parts.push(`${count}${unit}`)
+		if (count > 0n && parts.length < maxParts) parts.push(`${count}${unit}`)
 	}
 	return parts.length === 0 ? "0s" : parts.join(" ")
+}
+
+const SHORTHAND = /^(?:(\d+)d)?\s*(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:(\d+)s)?$/i
+
+export function parseDuration(input: string): bigint | null {
+	const text = input.trim()
+	if (/^\d+$/.test(text)) return BigInt(text)
+	const counts = SHORTHAND.exec(text)?.slice(1)
+	if (counts === undefined || counts.every((count) => count === undefined))
+		return null
+	return SECONDS_PER_UNIT.reduce(
+		(total, [, size], index) => total + BigInt(counts[index] ?? 0) * size,
+		0n,
+	)
 }
 
 const formatClock = (seconds: bigint): string =>
@@ -144,13 +159,14 @@ export function formatTimestamp(seconds: bigint): string {
 const formatAmountValue = (raw: Amount | null): string | null =>
 	raw === null ? null : formatScaled(raw, AMOUNT_DECIMALS)
 
-const formatPriceValue = (raw: bigint | null): string | null =>
+export const formatPriceValue = (raw: bigint | null): string | null =>
 	raw === null ? null : formatScaled(raw as Price, PRICE_DECIMALS, 4)
 
 export const formatSignedPrice = (raw: Price): string =>
 	formatExact(raw, PRICE_DECIMALS, 4)
 
-const formatPercent = (basisPoints: number): string => `${basisPoints / 100}%`
+export const formatPercent = (basisPoints: number): string =>
+	`${basisPoints / 100}%`
 
 const orNotApplicable = <T>(
 	value: T | null,
@@ -227,6 +243,21 @@ function epochGroup(state: ReadyState): CycleGroup {
 	}
 }
 
+export const oracleLimitRows = (limits: OracleLimits | null): FigureRow[] => [
+	row("Freshness window", limits && formatDuration(limits.freshness)),
+	row("Cooldown", limits && formatDuration(limits.cooldown)),
+	row("Largest rise", limits && formatPercent(limits.maxUpBps)),
+	row(
+		"Largest fall",
+		limits &&
+			(limits.maxDownBps === null
+				? "No limit"
+				: formatPercent(limits.maxDownBps)),
+	),
+	row("Price floor", limits && formatPriceValue(limits.min)),
+	row("Price ceiling", limits && formatPriceValue(limits.max)),
+]
+
 function priceGroup(oracle: CycleOracle): CycleGroup {
 	const { limits } = oracle
 	const timestamp = (value: bigint | null): string | null =>
@@ -255,20 +286,7 @@ function priceGroup(oracle: CycleOracle): CycleGroup {
 						: "Not raised",
 			),
 		],
-		limits: [
-			row("Freshness window", limits && formatDuration(limits.freshness)),
-			row("Cooldown", limits && formatDuration(limits.cooldown)),
-			row("Largest rise", limits && formatPercent(limits.maxUpBps)),
-			row(
-				"Largest fall",
-				limits &&
-					(limits.maxDownBps === null
-						? "No limit"
-						: formatPercent(limits.maxDownBps)),
-			),
-			row("Price floor", limits && formatPriceValue(limits.min)),
-			row("Price ceiling", limits && formatPriceValue(limits.max)),
-		],
+		limits: oracleLimitRows(limits),
 	}
 }
 
@@ -279,7 +297,7 @@ const coverage = (uncovered: Amount | null): string | undefined => {
 		: "Covered"
 }
 
-const depositCapValue = (cap: DepositCap | null): string | null => {
+export const depositCapValue = (cap: DepositCap | null): string | null => {
 	if (cap === null) return null
 	return cap.kind === "uncapped"
 		? "No cap"

@@ -63,8 +63,8 @@ const ROLE_SURFACES = {
 	"share-token compliance": ["compliance"],
 	"vault guardian": ["emergency"],
 	"oracle guardian": ["emergency"],
-	"share-token admin": ["emergency"],
-	"oracle admin": ["emergency"],
+	"share-token admin": ["emergency", "configuration"],
+	"oracle admin": ["emergency", "configuration"],
 	"vault governance": ["emergency", "configuration", "governance"],
 } as const satisfies Record<string, readonly AdminSurface[]>
 
@@ -314,10 +314,12 @@ async function fetchAdminAuthority(wallet: string): Promise<AdminAuthority> {
 	}
 }
 
+export const adminAuthorityKey = ["admin", "authority"] as const
+
 export function useAdminAuthority(): AdminAuthority {
 	const { address } = useWallet()
 	const { data } = useQuery({
-		queryKey: ["admin", "authority", address],
+		queryKey: [...adminAuthorityKey, address],
 		queryFn:
 			address === undefined ? skipToken : () => fetchAdminAuthority(address),
 		staleTime: 30_000,

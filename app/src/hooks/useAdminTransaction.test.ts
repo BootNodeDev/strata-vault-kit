@@ -2,6 +2,18 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
+import { adminAuthorityKey } from "./useAdminAuthority"
+import { configurationReadsKey } from "./useConfigurationState"
+import {
+	useSetCompliance,
+	useSetCustodian,
+	useSetDepositCap,
+	useSetIdentityVerifier,
+	useSetNotice,
+	useSetOracleConfig,
+	useSetWindDownDelay,
+} from "./useConfigurationTransactions"
+import { cycleReadsKey } from "./useCycleState"
 import {
 	useClearLatest,
 	usePauseToken,
@@ -11,17 +23,32 @@ import {
 	useUnpauseToken,
 	useUnpauseVault,
 } from "./useEmergencyTransactions"
+import { isAllowedKey } from "./useIsAllowed"
 import { oracleWriteKeys } from "./useOracleState"
 import { tokenPausedKey } from "./useTokenPaused"
+import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 import { vaultPausedKey } from "./useVaultPaused"
 
 const { vault, token, oracle } = vi.hoisted(() => ({
-	vault: { pause: vi.fn(), unpause: vi.fn() },
-	token: { pause: vi.fn(), unpause: vi.fn() },
+	vault: {
+		pause: vi.fn(),
+		unpause: vi.fn(),
+		set_deposit_cap: vi.fn(),
+		set_custodian: vi.fn(),
+		set_notice: vi.fn(),
+		set_wind_down_delay: vi.fn(),
+	},
+	token: {
+		pause: vi.fn(),
+		unpause: vi.fn(),
+		set_compliance: vi.fn(),
+		set_identity_verifier: vi.fn(),
+	},
 	oracle: {
 		raise_ripcord: vi.fn(),
 		set_ripcord: vi.fn(),
 		clear_latest: vi.fn(),
+		set_config: vi.fn(),
 	},
 }))
 
@@ -30,6 +57,16 @@ vi.mock("../config/clients", () => ({
 	shareTokenWriter: async () => token,
 	navOracleWriter: async () => oracle,
 }))
+
+const CONTRACT = "CCONTRACTADDRESS1234567890"
+const ORACLE_CONFIG = {
+	freshness_duration: 86_400n,
+	cooldown_secs: 3_600n,
+	max_up_bps: 1_000,
+	max_down_bps: null,
+	min_answer: 1n,
+	max_answer: 10n,
+}
 
 type Case = {
 	name: string
@@ -106,6 +143,69 @@ const cases: Case[] = [
 		arg: false,
 		args: { paused: false, caller: investorAddress },
 		keys: oracleWriteKeys,
+		refusal: 2000,
+	},
+	{
+		name: "useSetDepositCap",
+		useHook: useSetDepositCap,
+		method: vault.set_deposit_cap,
+		arg: null,
+		args: { cap: null, caller: investorAddress },
+		keys: [cycleReadsKey],
+		refusal: 6007,
+	},
+	{
+		name: "useSetCustodian",
+		useHook: useSetCustodian,
+		method: vault.set_custodian,
+		arg: CONTRACT,
+		args: { custodian: CONTRACT, caller: investorAddress },
+		keys: [vaultAuthoritiesKey],
+		refusal: 2000,
+	},
+	{
+		name: "useSetNotice",
+		useHook: useSetNotice,
+		method: vault.set_notice,
+		arg: 86_400n,
+		args: { secs: 86_400n, caller: investorAddress },
+		keys: [cycleReadsKey],
+		refusal: 6061,
+	},
+	{
+		name: "useSetWindDownDelay",
+		useHook: useSetWindDownDelay,
+		method: vault.set_wind_down_delay,
+		arg: 86_400n,
+		args: { secs: 86_400n, caller: investorAddress },
+		keys: [cycleReadsKey],
+		refusal: 6053,
+	},
+	{
+		name: "useSetOracleConfig",
+		useHook: useSetOracleConfig,
+		method: oracle.set_config,
+		arg: ORACLE_CONFIG,
+		args: { config: ORACLE_CONFIG },
+		keys: oracleWriteKeys,
+		refusal: 3001,
+	},
+	{
+		name: "useSetCompliance",
+		useHook: useSetCompliance,
+		method: token.set_compliance,
+		arg: CONTRACT,
+		args: { compliance: CONTRACT, operator: investorAddress },
+		keys: [configurationReadsKey, isAllowedKey],
+		refusal: 2000,
+	},
+	{
+		name: "useSetIdentityVerifier",
+		useHook: useSetIdentityVerifier,
+		method: token.set_identity_verifier,
+		arg: CONTRACT,
+		args: { identity_verifier: CONTRACT, operator: investorAddress },
+		keys: [configurationReadsKey, adminAuthorityKey, isAllowedKey],
 		refusal: 2000,
 	},
 ]

@@ -207,7 +207,7 @@ export function toEpoch(
 	}
 }
 
-type CycleReads = {
+export type CycleReads = {
 	ledgerTime: bigint | null
 	notice: ContractRead<bigint>
 	freeReserve: Amount | null
@@ -262,6 +262,16 @@ async function fetchCustodianBalance(
 	return toAmount(balance)
 }
 
+export function useCycleReads(active: boolean): CycleReads | undefined {
+	const { data } = useQuery({
+		queryKey: cycleReadsKey,
+		queryFn: fetchCycleReads,
+		staleTime: STALE_MS,
+		refetchInterval: active ? REFRESH_MS : false,
+	})
+	return data
+}
+
 export function useCycleState({ active = true }: { active?: boolean } = {}): {
 	cycle: CycleState
 } {
@@ -269,12 +279,7 @@ export function useCycleState({ active = true }: { active?: boolean } = {}): {
 	const { figures, isPending: figuresPending } = useVaultFigures()
 	const { pause } = useVaultPaused()
 	const { authorities, isPending: authoritiesPending } = useVaultAuthorities()
-	const { data: reads } = useQuery({
-		queryKey: cycleReadsKey,
-		queryFn: fetchCycleReads,
-		staleTime: STALE_MS,
-		refetchInterval: active ? REFRESH_MS : false,
-	})
+	const reads = useCycleReads(active)
 	const custodian = authorities?.custodian ?? null
 	const { data: custodianBalance, isPending: balancePending } = useQuery({
 		queryKey: [...custodianBalanceKey, custodian],
