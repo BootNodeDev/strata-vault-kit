@@ -1,11 +1,17 @@
+import { type Transaction } from "@stellar/stellar-sdk"
 import { type AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import {
-	type Signer,
+	decodePending,
 	isUserRejection,
+	OPERATOR_TIMEOUT_SECONDS,
 	parseErrorCode,
+	type SubmitFailure,
+	submitSigned,
 } from "@stellar-scaffold/app-lib"
 import { type QueryKey, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useRef, useState } from "react"
+import { type WriterSigner } from "../config/clients"
+import { type Grant, type Standing } from "./useAdminAuthority"
 import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { sharePositionKey } from "./useSharePosition"
@@ -15,7 +21,15 @@ export type TransactionFailure =
 	| { kind: "declined" }
 	| { kind: "contract-error"; code: number }
 	| { kind: "interrupted" }
+	| { kind: "network"; reason: SubmitFailure }
 	| { kind: "unknown" }
+
+export type SharedTransaction = {
+	status: "shared"
+	xdr: string
+	standing: Exclude<Standing, "signs-alone">
+	expiresAt: Date | null
+}
 
 export type TransactionStatus<
 	TConfirmed extends object = Record<never, never>,
@@ -24,6 +38,7 @@ export type TransactionStatus<
 	| { status: "preparing" }
 	| { status: "awaiting-signature" }
 	| { status: "submitted"; hash?: string }
+	| SharedTransaction
 	| ({ status: "confirmed"; hash?: string } & TConfirmed)
 	| { status: "failed"; failure: TransactionFailure; hash?: string }
 
@@ -31,8 +46,49 @@ const NO_EXTRA_KEYS: readonly QueryKey[] = []
 
 export interface UseContractTransaction<TArg, TConfirmed extends object> {
 	status: TransactionStatus<TConfirmed>
-	submit: (arg: TArg) => boolean
+	submit: (arg: TArg, grant?: Grant) => boolean
 	reset: () => void
+}
+
+const signerFor = (
+	owner: string,
+	grant: Grant | undefined,
+	signTransaction: WriterSigner["signTransaction"],
+): WriterSigner =>
+	grant === undefined
+		? { publicKey: owner, signTransaction }
+		: {
+				publicKey: grant.authority,
+				signTransaction,
+				timeoutInSeconds: OPERATOR_TIMEOUT_SECONDS,
+			}
+
+const shared = (
+	signed: Transaction,
+	standing: Exclude<Standing, "signs-alone">,
+): SharedTransaction => {
+	const xdr = signed.toEnvelope().toXDR("base64")
+	return {
+		status: "shared",
+		xdr,
+		standing,
+		expiresAt: decodePending(xdr).expiresAt,
+	}
+}
+
+const failureOf = (
+	error: unknown,
+	signatureRequested: boolean,
+): TransactionFailure => {
+	if (isUserRejection(error)) return { kind: "declined" }
+	return signatureRequested ? { kind: "unknown" } : { kind: "interrupted" }
+}
+
+const signedOf = <TResult>(tx: AssembledTransaction<TResult>): Transaction => {
+	if (tx.signed === undefined) {
+		throw new Error("The wallet returned no signed transaction")
+	}
+	return tx.signed
 }
 
 export function useContractTransaction<
@@ -40,7 +96,10 @@ export function useContractTransaction<
 	TResult,
 	TConfirmed extends object,
 >(
-	call: (signer: Signer, arg: TArg) => Promise<AssembledTransaction<TResult>>,
+	call: (
+		signer: WriterSigner,
+		arg: TArg,
+	) => Promise<AssembledTransaction<TResult>>,
 	toConfirmed: (result: TResult) => TConfirmed,
 	extraKeys: readonly QueryKey[] = NO_EXTRA_KEYS,
 ): UseContractTransaction<TArg, TConfirmed> {
@@ -54,7 +113,7 @@ export function useContractTransaction<
 	const lastStatus = useRef<TransactionStatus<TConfirmed>>({ status: "idle" })
 
 	const runSubmission = useCallback(
-		async (arg: TArg, owner: string) => {
+		async (arg: TArg, owner: string, grant: Grant | undefined) => {
 			let hash: string | undefined
 			let signatureRequested = false
 			let reachedNetwork = false
@@ -62,37 +121,52 @@ export function useContractTransaction<
 				lastStatus.current = next
 				if (!dismissed.current) setStatus(next)
 			}
-			const invalidateExtraKeys = () => {
-				for (const queryKey of extraKeys) {
+			const invalidate = (keys: readonly QueryKey[]) => {
+				for (const queryKey of keys) {
 					void queryClient.invalidateQueries({ queryKey })
 				}
 			}
-			const invalidateRequestData = () => {
-				void queryClient.invalidateQueries({
-					queryKey: investorRequestsKey(owner),
-				})
-				void queryClient.invalidateQueries({
-					queryKey: depositBalanceKey(owner),
-				})
-				void queryClient.invalidateQueries({
-					queryKey: sharePositionKey(owner),
-				})
-				invalidateExtraKeys()
+			const invalidateRequestData = () =>
+				invalidate([
+					investorRequestsKey(owner),
+					depositBalanceKey(owner),
+					sharePositionKey(owner),
+					...extraKeys,
+				])
+			const confirm = (result: TResult) => {
+				applyStatus({
+					status: "confirmed",
+					...toConfirmed(result),
+					hash,
+				} as TransactionStatus<TConfirmed>)
+				invalidateRequestData()
 			}
-			applyStatus({ status: "preparing" })
-			try {
-				const tx = await call({ publicKey: owner, signTransaction }, arg)
-				const code = parseErrorCode(tx.simulation)
-				if (code !== null) {
-					applyStatus({
-						status: "failed",
-						failure: { kind: "contract-error", code },
-					})
-					invalidateExtraKeys()
+			const submitAsOperator = async (
+				tx: AssembledTransaction<TResult>,
+				standing: Standing,
+			) => {
+				await tx.sign()
+				const signed = signedOf(tx)
+				if (standing !== "signs-alone") {
+					applyStatus(shared(signed, standing))
 					return
 				}
-				signatureRequested = true
-				applyStatus({ status: "awaiting-signature" })
+				reachedNetwork = true
+				applyStatus({ status: "submitted" })
+				const sent = await submitSigned(signed)
+				hash = sent.hash
+				if (sent.status === "failed") {
+					applyStatus({
+						status: "failed",
+						failure: { kind: "network", reason: sent.reason },
+						hash,
+					})
+					invalidateRequestData()
+					return
+				}
+				confirm(tx.result)
+			}
+			const signAndSend = async (tx: AssembledTransaction<TResult>) => {
 				const sent = await tx.signAndSend({
 					watcher: {
 						onSubmitted: (response) => {
@@ -108,20 +182,28 @@ export function useContractTransaction<
 					invalidateRequestData()
 					return
 				}
-				applyStatus({
-					status: "confirmed",
-					...toConfirmed(sent.result),
-					hash,
-				} as TransactionStatus<TConfirmed>)
-				invalidateRequestData()
+				confirm(sent.result)
+			}
+			applyStatus({ status: "preparing" })
+			try {
+				const tx = await call(signerFor(owner, grant, signTransaction), arg)
+				const code = parseErrorCode(tx.simulation)
+				if (code !== null) {
+					applyStatus({
+						status: "failed",
+						failure: { kind: "contract-error", code },
+					})
+					invalidate(extraKeys)
+					return
+				}
+				signatureRequested = true
+				applyStatus({ status: "awaiting-signature" })
+				if (grant === undefined) await signAndSend(tx)
+				else await submitAsOperator(tx, grant.standing)
 			} catch (error) {
 				applyStatus({
 					status: "failed",
-					failure: isUserRejection(error)
-						? { kind: "declined" }
-						: signatureRequested
-							? { kind: "unknown" }
-							: { kind: "interrupted" },
+					failure: failureOf(error, signatureRequested),
 					hash,
 				})
 				if (reachedNetwork) invalidateRequestData()
@@ -133,7 +215,7 @@ export function useContractTransaction<
 	)
 
 	const submit = useCallback(
-		(arg: TArg): boolean => {
+		(arg: TArg, grant?: Grant): boolean => {
 			if (address === undefined) return false
 			if (submitting.current) {
 				dismissed.current = false
@@ -142,7 +224,7 @@ export function useContractTransaction<
 			}
 			submitting.current = true
 			dismissed.current = false
-			void runSubmission(arg, address)
+			void runSubmission(arg, address, grant)
 			return true
 		},
 		[address, runSubmission],

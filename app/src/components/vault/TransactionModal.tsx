@@ -1,10 +1,12 @@
 import {
 	AMOUNT_DECIMALS,
 	explorerTransaction,
+	formatDate,
 	formatExact,
 	formatScaled,
 	PRICE_DECIMALS,
 	shortAddress,
+	type SubmitFailure,
 } from "@stellar-scaffold/app-lib"
 import React from "react"
 import { type ActivateWindDownStatus } from "../../hooks/useActivateWindDown"
@@ -24,6 +26,7 @@ import { type FulfillEpochStatus } from "../../hooks/useFulfillEpoch"
 import { type FundStatus } from "../../hooks/useFund"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
 import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
+import { describeStanding } from "../../pages/actions"
 import { type ComplianceActionId } from "../../pages/compliance"
 import { EFFECTS } from "../../pages/configuration"
 import { type GovernanceActionId } from "../../pages/governance"
@@ -395,6 +398,19 @@ const CONFIGURATION_FOLLOW_UP =
 const GOVERNANCE_FOLLOW_UP = "check the Governance tab before trying again"
 const COMPLIANCE_FOLLOW_UP = "check the Compliance tab before trying again"
 
+const NETWORK_REASONS: Record<Exclude<SubmitFailure, "unknown">, string> = {
+	expired: "The transaction expired before it was submitted.",
+	"sequence-consumed":
+		"The account moved on; this transaction is no longer valid.",
+	"bad-auth": "The signatures do not meet the account's threshold.",
+	fee: "The account cannot pay the fee.",
+}
+
+const unknownOutcome = (followUp: string) => ({
+	heading: "Something went wrong",
+	body: `We could not confirm whether this reached the network. We don't yet know if it went through, so ${followUp}.`,
+})
+
 const describeFailure = (
 	failure: TransactionFailure,
 	contractErrorReason: (code: number) => string,
@@ -402,6 +418,12 @@ const describeFailure = (
 	refuser = "vault",
 ): { heading: string; body: string } => {
 	switch (failure.kind) {
+		case "network":
+			if (failure.reason === "unknown") return unknownOutcome(followUp)
+			return {
+				heading: "The network rejected it",
+				body: NETWORK_REASONS[failure.reason],
+			}
 		case "declined":
 			return {
 				heading: "You declined the request",
@@ -418,11 +440,15 @@ const describeFailure = (
 				body: "Nothing was requested from your wallet. Try again when you're ready.",
 			}
 		case "unknown":
-			return {
-				heading: "Something went wrong",
-				body: `We could not confirm whether this reached the network. We don't yet know if it went through, so ${followUp}.`,
-			}
+			return unknownOutcome(followUp)
 	}
+}
+
+const describeShared = (expiresAt: Date | null) => {
+	const invitation = "Share the link with the next signer."
+	if (expiresAt === null) return invitation
+	const seconds = BigInt(Math.floor(expiresAt.getTime() / 1000))
+	return `${invitation} Valid until ${formatDate(seconds)}.`
 }
 
 const describeSubscribeStatus = (
@@ -1319,6 +1345,11 @@ const describeAdminStatus = (
 				body: "It is on its way to the network. This should only take a moment. Closing this window will not stop it.",
 				hash: status.hash,
 			}
+		case "shared":
+			return {
+				heading: describeStanding(status.standing),
+				body: describeShared(status.expiresAt),
+			}
 		case "confirmed":
 			return { heading: copy.done, body: copy.doneBody, hash: status.hash }
 		case "failed":
@@ -1487,13 +1518,18 @@ const computeSteps = (
 			return { signature: "current", network: "upcoming", recorded: "upcoming" }
 		case "submitted":
 			return { signature: "done", network: "current", recorded: "upcoming" }
+		case "shared":
+			return { signature: "done", network: "upcoming", recorded: "upcoming" }
 		case "confirmed":
 			return { signature: "done", network: "done", recorded: "done" }
 		case "failed":
 			if (status.failure.kind === "unknown" && status.hash !== undefined) {
 				return { signature: "done", network: "done", recorded: "failed" }
 			}
-			if (status.failure.kind === "unknown") {
+			if (
+				status.failure.kind === "unknown" ||
+				status.failure.kind === "network"
+			) {
 				return { signature: "done", network: "failed", recorded: "upcoming" }
 			}
 			return { signature: "failed", network: "upcoming", recorded: "upcoming" }
@@ -1511,6 +1547,42 @@ const stepAnnouncement: Partial<Record<StepState, string>> = {
 	done: "done",
 	current: "in progress",
 	failed: "failed",
+}
+
+const ShareLink: React.FC<{ xdr: string }> = ({ xdr }) => {
+	const [copied, setCopied] = React.useState(false)
+	const link = `${window.location.origin}/sign#${xdr}`
+
+	React.useEffect(() => {
+		if (!copied) return
+		const timer = setTimeout(() => setCopied(false), 2000)
+		return () => clearTimeout(timer)
+	}, [copied])
+
+	return (
+		<div className={styles.link}>
+			<input
+				className={`${typeStyles.railValue} ${styles.linkInput}`}
+				type="text"
+				readOnly
+				value={link}
+				aria-label="Signing link"
+				onFocus={(event) => event.currentTarget.select()}
+			/>
+			<button
+				type="button"
+				className={styles.retry}
+				onClick={() => {
+					void navigator.clipboard.writeText(link).then(
+						() => setCopied(true),
+						() => setCopied(false),
+					)
+				}}
+			>
+				{copied ? "Copied" : "Copy link"}
+			</button>
+		</div>
+	)
 }
 
 const TransactionModal: React.FC<TransactionModalProps> = (props) => {
@@ -1622,6 +1694,7 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 			) : (
 				body
 			)}
+			{status.status === "shared" && <ShareLink xdr={status.xdr} />}
 			{offersRetry && (
 				<div className={styles.actions}>
 					<button type="button" className={styles.retry} onClick={onRetry}>

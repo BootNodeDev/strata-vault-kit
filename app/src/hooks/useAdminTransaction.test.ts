@@ -1,10 +1,12 @@
 import { Buffer } from "buffer"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
+import type * as AppLib from "@stellar-scaffold/app-lib"
+import { OPERATOR_TIMEOUT_SECONDS } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { governanceReadsKey } from "./pendingAdmins"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
-import { adminAuthorityKey } from "./useAdminAuthority"
+import { adminAuthorityKey, type Grant } from "./useAdminAuthority"
 import { complianceReadsKey } from "./useComplianceState"
 import {
 	useAllowAddress,
@@ -65,57 +67,73 @@ import { tokenPausedKey } from "./useTokenPaused"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 import { vaultPausedKey } from "./useVaultPaused"
 
-const { vault, token, oracle, verifier, verifierWriterMock } = vi.hoisted(
-	() => ({
-		vault: {
-			pause: vi.fn(),
-			unpause: vi.fn(),
-			set_deposit_cap: vi.fn(),
-			set_custodian: vi.fn(),
-			set_notice: vi.fn(),
-			set_wind_down_delay: vi.fn(),
-			grant_role: vi.fn(),
-			revoke_role: vi.fn(),
-			transfer_admin_role: vi.fn(),
-			accept_admin_transfer: vi.fn(),
-			propose_upgrade: vi.fn(),
-			propose_upgrade_delay: vi.fn(),
-			apply_upgrade: vi.fn(),
-			cancel_upgrade: vi.fn(),
-			propose_wind_down: vi.fn(),
-			cancel_wind_down_proposal: vi.fn(),
-		},
-		token: {
-			pause: vi.fn(),
-			unpause: vi.fn(),
-			set_compliance: vi.fn(),
-			set_identity_verifier: vi.fn(),
-			grant_role: vi.fn(),
-			revoke_role: vi.fn(),
-			transfer_admin_role: vi.fn(),
-			accept_admin_transfer: vi.fn(),
-			set_address_frozen: vi.fn(),
-			freeze_partial_tokens: vi.fn(),
-			unfreeze_partial_tokens: vi.fn(),
-			forced_transfer: vi.fn(),
-		},
-		verifier: { allow: vi.fn() },
-		verifierWriterMock: vi.fn(),
-		oracle: {
-			raise_ripcord: vi.fn(),
-			set_ripcord: vi.fn(),
-			clear_latest: vi.fn(),
-			set_config: vi.fn(),
-			grant_role: vi.fn(),
-			revoke_role: vi.fn(),
-			transfer_admin_role: vi.fn(),
-			accept_admin_transfer: vi.fn(),
-		},
-	}),
-)
+const {
+	vault,
+	token,
+	oracle,
+	verifier,
+	verifierWriterMock,
+	asyncVaultWriterMock,
+	submitSignedMock,
+	decodePendingMock,
+} = vi.hoisted(() => ({
+	asyncVaultWriterMock: vi.fn(),
+	submitSignedMock: vi.fn(),
+	decodePendingMock: vi.fn(),
+	vault: {
+		pause: vi.fn(),
+		unpause: vi.fn(),
+		set_deposit_cap: vi.fn(),
+		set_custodian: vi.fn(),
+		set_notice: vi.fn(),
+		set_wind_down_delay: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
+		propose_upgrade: vi.fn(),
+		propose_upgrade_delay: vi.fn(),
+		apply_upgrade: vi.fn(),
+		cancel_upgrade: vi.fn(),
+		propose_wind_down: vi.fn(),
+		cancel_wind_down_proposal: vi.fn(),
+	},
+	token: {
+		pause: vi.fn(),
+		unpause: vi.fn(),
+		set_compliance: vi.fn(),
+		set_identity_verifier: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
+		set_address_frozen: vi.fn(),
+		freeze_partial_tokens: vi.fn(),
+		unfreeze_partial_tokens: vi.fn(),
+		forced_transfer: vi.fn(),
+	},
+	verifier: { allow: vi.fn() },
+	verifierWriterMock: vi.fn(),
+	oracle: {
+		raise_ripcord: vi.fn(),
+		set_ripcord: vi.fn(),
+		clear_latest: vi.fn(),
+		set_config: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
+	},
+}))
+
+vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
+	...(await importOriginal<typeof AppLib>()),
+	submitSigned: submitSignedMock,
+	decodePending: decodePendingMock,
+}))
 
 vi.mock("../config/clients", () => ({
-	asyncVaultWriter: async () => vault,
+	asyncVaultWriter: asyncVaultWriterMock,
 	shareTokenWriter: async () => token,
 	navOracleWriter: async () => oracle,
 	identityVerifierWriter: verifierWriterMock,
@@ -528,6 +546,7 @@ describe.each([...cases, ...governanceCases, ...complianceCases])(
 
 		beforeEach(() => {
 			vi.clearAllMocks()
+			asyncVaultWriterMock.mockResolvedValue(vault)
 			verifierWriterMock.mockImplementation(
 				(address: string) => async () =>
 					address === VERIFIER ? verifier : undefined,
@@ -616,3 +635,117 @@ describe.each([...cases, ...governanceCases, ...complianceCases])(
 		})
 	},
 )
+
+describe("usePauseVault with a grant", () => {
+	const AUTHORITY = "GAUTHORITYACCOUNT0987654321"
+	const HASH = "c".repeat(64)
+	const grantWith = (standing: Grant["standing"]): Grant => ({
+		role: "vault guardian",
+		authority: AUTHORITY,
+		standing,
+	})
+	const signable = () => {
+		const signed = {
+			toEnvelope: () => ({ toXDR: () => "SIGNEDXDR" }),
+		}
+		const tx = {
+			simulation: undefined,
+			result: undefined,
+			signed: undefined as typeof signed | undefined,
+			sign: vi.fn(async () => {
+				tx.signed = signed
+			}),
+			signAndSend: vi.fn(),
+		}
+		return { tx, signed }
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+		asyncVaultWriterMock.mockResolvedValue(vault)
+	})
+
+	it("builds as the authority with the operator timeout and submits the signed transaction when the wallet signs alone", async () => {
+		const { tx, signed } = signable()
+		vault.pause.mockResolvedValue(tx)
+		submitSignedMock.mockResolvedValue({ status: "success", hash: HASH })
+		const { result } = renderWithWallet(usePauseVault)
+
+		await act(() => result.current.submit(undefined, grantWith("signs-alone")))
+
+		expect(asyncVaultWriterMock).toHaveBeenCalledWith({
+			publicKey: AUTHORITY,
+			signTransaction: expect.any(Function),
+			timeoutInSeconds: OPERATOR_TIMEOUT_SECONDS,
+		})
+		expect(vault.pause).toHaveBeenCalledWith({ caller: AUTHORITY })
+		expect(tx.sign).toHaveBeenCalledTimes(1)
+		expect(submitSignedMock).toHaveBeenCalledWith(signed)
+		expect(tx.signAndSend).not.toHaveBeenCalled()
+		expect(result.current.status).toEqual({ status: "confirmed", hash: HASH })
+	})
+
+	it.each<[Exclude<Grant["standing"], "signs-alone">]>([
+		[{ needs: 2 }],
+		[{ weight: 2, threshold: 3 }],
+	])(
+		"shares the signed transaction instead of submitting when %j",
+		async (standing) => {
+			const { tx } = signable()
+			const expiresAt = new Date("2026-10-22T00:00:00Z")
+			vault.pause.mockResolvedValue(tx)
+			decodePendingMock.mockReturnValue({ expiresAt })
+			const { result } = renderWithWallet(usePauseVault)
+
+			await act(() => result.current.submit(undefined, grantWith(standing)))
+
+			expect(decodePendingMock).toHaveBeenCalledWith("SIGNEDXDR")
+			expect(submitSignedMock).not.toHaveBeenCalled()
+			expect(result.current.status).toEqual({
+				status: "shared",
+				xdr: "SIGNEDXDR",
+				standing,
+				expiresAt,
+			})
+		},
+	)
+
+	it("names the network's reason when the submission fails", async () => {
+		const { tx } = signable()
+		vault.pause.mockResolvedValue(tx)
+		submitSignedMock.mockResolvedValue({
+			status: "failed",
+			reason: "bad-auth",
+			hash: HASH,
+		})
+		const { result } = renderWithWallet(usePauseVault)
+
+		await act(() => result.current.submit(undefined, grantWith("signs-alone")))
+
+		expect(result.current.status).toEqual({
+			status: "failed",
+			failure: { kind: "network", reason: "bad-auth" },
+			hash: HASH,
+		})
+	})
+
+	it("keeps signing and sending as the wallet when no grant is given", async () => {
+		const { tx } = signable()
+		tx.signAndSend.mockResolvedValue({
+			getTransactionResponse: { status: "SUCCESS" },
+			result: undefined,
+		})
+		vault.pause.mockResolvedValue(tx)
+		const { result } = renderWithWallet(usePauseVault)
+
+		await act(() => result.current.submit(undefined))
+
+		expect(asyncVaultWriterMock).toHaveBeenCalledWith({
+			publicKey: investorAddress,
+			signTransaction: expect.any(Function),
+		})
+		expect(tx.sign).not.toHaveBeenCalled()
+		expect(submitSignedMock).not.toHaveBeenCalled()
+		expect(result.current.status).toEqual({ status: "confirmed" })
+	})
+})

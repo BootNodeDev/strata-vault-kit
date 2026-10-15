@@ -666,14 +666,12 @@ const cancelWindDownSpec = (): BuiltSpec<"cancel-wind-down", undefined> => ({
 const build = <Id extends GovernanceActionId, Arg, F extends RailField>(
 	spec: Spec<Id, F> & { arg: Arg; next: string },
 	grant: Grant,
-	wallet: string,
-) => ({ ...toAction(spec, grant, wallet), arg: spec.arg, next: spec.next })
+) => ({ ...toAction(spec, grant), arg: spec.arg, next: spec.next })
 
 function adminActions(
 	contract: GovernedContract,
 	state: GovernanceState,
 	grant: Grant,
-	wallet: string,
 	inputs: Inputs,
 ): GovernanceAction[] {
 	const pending =
@@ -681,37 +679,34 @@ function adminActions(
 			? state.handovers.pending[contract]
 			: null
 	return [
-		build(roleSpec("grant", contract, state, inputs), grant, wallet),
-		build(roleSpec("revoke", contract, state, inputs), grant, wallet),
-		build(handOverSpec(contract, state, inputs), grant, wallet),
-		...(pending === null
-			? []
-			: [build(cancelSpec(contract, pending), grant, wallet)]),
-		...(contract === "vault" ? vaultActions(state, grant, wallet, inputs) : []),
+		build(roleSpec("grant", contract, state, inputs), grant),
+		build(roleSpec("revoke", contract, state, inputs), grant),
+		build(handOverSpec(contract, state, inputs), grant),
+		...(pending === null ? [] : [build(cancelSpec(contract, pending), grant)]),
+		...(contract === "vault" ? vaultActions(state, grant, inputs) : []),
 	]
 }
 
 function vaultActions(
 	state: GovernanceState,
 	grant: Grant,
-	wallet: string,
 	inputs: Inputs,
 ): GovernanceAction[] {
 	const upgrades =
 		state.upgrades.status === "ready" ? state.upgrades : undefined
 	const proposal = upgrades?.proposal ?? null
 	return [
-		build(codeUpgradeSpec(inputs, upgrades), grant, wallet),
-		build(delayUpgradeSpec(inputs, upgrades), grant, wallet),
+		build(codeUpgradeSpec(inputs, upgrades), grant),
+		build(delayUpgradeSpec(inputs, upgrades), grant),
 		...(proposal === null || upgrades === undefined
 			? []
 			: [
-					build(applySpec(proposal, upgrades, inputs), grant, wallet),
-					build(cancelUpgradeSpec(proposal), grant, wallet),
+					build(applySpec(proposal, upgrades, inputs), grant),
+					build(cancelUpgradeSpec(proposal), grant),
 				]),
-		build(windDownSpec(inputs, upgrades), grant, wallet),
+		build(windDownSpec(inputs, upgrades), grant),
 		...(upgrades?.windDown.phase === "proposed"
-			? [build(cancelWindDownSpec(), grant, wallet)]
+			? [build(cancelWindDownSpec(), grant)]
 			: []),
 	]
 }
@@ -732,9 +727,7 @@ function acceptAction(
 		grant.authority !== pending.address
 	)
 		return []
-	return [
-		build(acceptSpec(contract, state.handovers.ledger, pending), grant, wallet),
-	]
+	return [build(acceptSpec(contract, state.handovers.ledger, pending), grant)]
 }
 
 export function toGovernanceActions(
@@ -748,7 +741,7 @@ export function toGovernanceActions(
 		return [
 			...(admin === undefined
 				? []
-				: adminActions(contract, state, admin, wallet, inputs)),
+				: adminActions(contract, state, admin, inputs)),
 			...acceptAction(contract, state, grants, wallet),
 		]
 	})

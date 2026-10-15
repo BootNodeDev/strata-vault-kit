@@ -295,8 +295,8 @@ describe("toGovernanceActions", () => {
 			"grant-vault-role-account": ACCOUNT,
 		})
 
-		expect(grant.enabled).toBe(false)
-		expect(grant.unavailable).toMatch(/Needs 2 signatures/)
+		expect(grant.enabled).toBe(true)
+		expect(grant.grant).toBe(shared)
 	})
 })
 
