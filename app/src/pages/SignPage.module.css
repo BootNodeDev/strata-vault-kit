@@ -1,0 +1,106 @@
+.page {
+	display: flex;
+	flex-direction: column;
+	gap: 28px;
+	padding: 32px 0;
+}
+
+.invalid {
+	padding: 32px 0;
+	color: var(--vault-text-body);
+}
+
+.heading {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.contract {
+	margin: 0;
+	color: var(--vault-text-muted);
+}
+
+.title {
+	margin: 0;
+	color: var(--vault-ink);
+}
+
+.state {
+	margin: 0;
+	color: var(--vault-text-body);
+}
+
+.facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+	gap: 14px 24px;
+	margin: 0;
+	border-top: 1px solid var(--vault-border-hairline);
+	padding-top: 20px;
+}
+
+.fact {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.factLabel {
+	color: var(--vault-text-muted);
+}
+
+.factValue {
+	margin: 0;
+	color: var(--vault-ink);
+	overflow-wrap: anywhere;
+}
+
+.signers {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.signed {
+	color: var(--vault-success);
+}
+
+.actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+}
+
+.actionPrimary,
+.actionUnavailable {
+	flex: 1 1 auto;
+	min-height: 48px;
+	padding: 13px 18px;
+	border-radius: 0;
+	font-family: var(--vault-font-sans);
+	font-size: 15.5px;
+	font-weight: 500;
+}
+
+.actionPrimary {
+	border: 1px solid var(--vault-action);
+	background: var(--vault-action);
+	color: var(--vault-surface-card);
+}
+
+.actionPrimary:hover {
+	background: var(--vault-action-ring);
+	color: var(--vault-action);
+}
+
+.actionUnavailable {
+	border: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-inset);
+	color: var(--vault-text-muted);
+	cursor: not-allowed;
+}

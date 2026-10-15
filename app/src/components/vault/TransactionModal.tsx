@@ -57,6 +57,12 @@ export type GovernanceModalAction = GovernanceActionId
 
 export type ComplianceModalAction = ComplianceActionId
 
+export type AdminModalAction =
+	| EmergencyModalAction
+	| ConfigurationModalAction
+	| GovernanceModalAction
+	| ComplianceModalAction
+
 export type TransactionModalProps =
 	| {
 			action: EmergencyModalAction
@@ -428,6 +434,11 @@ const describeFailure = (
 			return {
 				heading: "You declined the request",
 				body: "You chose not to sign, so nothing was sent. Try again when you're ready.",
+			}
+		case "unsigned":
+			return {
+				heading: "The wallet did not sign",
+				body: "Nothing was sent. Try again when you're ready.",
 			}
 		case "contract-error":
 			return {
@@ -1257,6 +1268,22 @@ const COMPLIANCE_COPY: Record<
 	}),
 }
 
+const verbsOf = <Id extends string>(
+	table: Record<Id, AdminCopy | ((value: string) => AdminCopy)>,
+): Record<Id, string> =>
+	Object.fromEntries(
+		Object.entries<AdminCopy | ((value: string) => AdminCopy)>(table).map(
+			([id, copy]) => [id, (typeof copy === "function" ? copy("") : copy).verb],
+		),
+	) as Record<Id, string>
+
+export const ADMIN_VERBS: Record<AdminModalAction, string> = {
+	...verbsOf(EMERGENCY_COPY),
+	...verbsOf(CONFIGURATION_COPY),
+	...verbsOf(GOVERNANCE_COPY),
+	...verbsOf(COMPLIANCE_COPY),
+}
+
 const adminContractErrorReason =
 	(refuser: AdminCopy["refuser"]) =>
 	(code: number): string => {
@@ -1549,7 +1576,7 @@ const stepAnnouncement: Partial<Record<StepState, string>> = {
 	failed: "failed",
 }
 
-const ShareLink: React.FC<{ xdr: string }> = ({ xdr }) => {
+export const ShareLink: React.FC<{ xdr: string }> = ({ xdr }) => {
 	const [copied, setCopied] = React.useState(false)
 	const link = `${window.location.origin}/sign#${xdr}`
 
@@ -1614,7 +1641,8 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 	const explorer =
 		content.hash === undefined ? null : explorerTransaction(content.hash)
 	const offersRetry =
-		status.status === "failed" && status.failure.kind === "declined"
+		status.status === "failed" &&
+		(status.failure.kind === "declined" || status.failure.kind === "unsigned")
 	const headingId = "transaction-modal-heading"
 
 	const headingClassName = isConfirmed

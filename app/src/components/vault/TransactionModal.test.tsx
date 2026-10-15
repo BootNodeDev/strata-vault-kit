@@ -454,6 +454,24 @@ describe("TransactionModal", () => {
 		expect(onRetry).toHaveBeenCalledTimes(1)
 	})
 
+	it("tells apart a wallet that failed to sign from a declined request", () => {
+		const { onRetry } = renderModal({
+			status: "failed",
+			failure: { kind: "unsigned" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The wallet did not sign" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText("Nothing was sent. Try again when you're ready."),
+		).toBeTruthy()
+		expect(screen.queryByText(/chose not to sign/)).toBeNull()
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+
 	it("names the vault's own reason for a contract refusal, with no hash since it never reached the network", () => {
 		renderModal({
 			status: "failed",

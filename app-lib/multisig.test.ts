@@ -304,6 +304,25 @@ describe("submitSigned", () => {
 		expect(pollMock).toHaveBeenCalledWith("abc123")
 	})
 
+	it("carries the native return value of a successful transaction", async () => {
+		const tx = signedBy(signerOne, signerTwo)
+		sendMock.mockResolvedValue(sent())
+		pollMock.mockResolvedValue({
+			...polled(
+				Api.GetTransactionStatus.SUCCESS,
+				transactionResult("txSuccess"),
+				tx,
+			),
+			returnValue: nativeToScVal(5n, { type: "u64" }),
+		})
+
+		await expect(submitSigned(tx)).resolves.toEqual({
+			status: "success",
+			hash: "abc123",
+			result: 5n,
+		})
+	})
+
 	it.each([
 		["txBadSeq", "sequence-consumed"],
 		["txTooLate", "expired"],

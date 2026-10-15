@@ -3,6 +3,7 @@ import { horizon } from "./wallet"
 export interface AccountSigners {
 	signers: Array<{ key: string; weight: number }>
 	thresholds: { low: number; med: number; high: number }
+	sequence: string
 }
 
 export async function accountSigners(
@@ -20,6 +21,7 @@ export async function accountSigners(
 				med: account.thresholds.med_threshold,
 				high: account.thresholds.high_threshold,
 			},
+			sequence: account.sequence,
 		}
 	} catch {
 		return null

@@ -25,6 +25,7 @@ describe("accountSigners", () => {
 				{ key: "GSIGNERTWO", weight: 2, type: "ed25519_public_key" },
 			],
 			thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 3 },
+			sequence: "4294967296",
 		})
 
 		expect(await accountSigners(holder)).toEqual({
@@ -33,6 +34,7 @@ describe("accountSigners", () => {
 				{ key: "GSIGNERTWO", weight: 2 },
 			],
 			thresholds: { low: 1, med: 2, high: 3 },
+			sequence: "4294967296",
 		})
 		expect(accountIdMock).toHaveBeenCalledWith(holder)
 	})
@@ -45,6 +47,7 @@ describe("accountSigners", () => {
 				{ key: "TPREAUTH", weight: 1, type: "preauth_tx" },
 			],
 			thresholds: { low_threshold: 0, med_threshold: 0, high_threshold: 0 },
+			sequence: "1",
 		})
 
 		const result = await accountSigners(holder)

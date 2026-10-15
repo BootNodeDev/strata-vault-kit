@@ -35,7 +35,7 @@ export type SubmitFailure =
 	"sequence-consumed" | "expired" | "bad-auth" | "fee" | "unknown"
 
 export type SubmitResult =
-	| { status: "success"; hash: string }
+	| { status: "success"; hash: string; result: unknown }
 	| { status: "failed"; reason: SubmitFailure; hash: string }
 
 const server = new Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
@@ -149,7 +149,11 @@ export async function submitSigned(
 	}
 	const polled = await server.pollTransaction(hash)
 	if (polled.status === Api.GetTransactionStatus.SUCCESS) {
-		return { status: "success", hash }
+		const result =
+			polled.returnValue === undefined
+				? undefined
+				: scValToNative(polled.returnValue)
+		return { status: "success", hash, result }
 	}
 	if (polled.status === Api.GetTransactionStatus.FAILED) {
 		return { status: "failed", reason: failureOf(polled.resultXdr), hash }

@@ -19,6 +19,7 @@ import { useWallet } from "./useWallet"
 
 export type TransactionFailure =
 	| { kind: "declined" }
+	| { kind: "unsigned" }
 	| { kind: "contract-error"; code: number }
 	| { kind: "interrupted" }
 	| { kind: "network"; reason: SubmitFailure }
