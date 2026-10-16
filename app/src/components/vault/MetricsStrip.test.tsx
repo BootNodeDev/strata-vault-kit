@@ -31,6 +31,24 @@ describe("MetricsStrip", () => {
 		}
 	})
 
+	it("exposes the full text behind a shortened value", () => {
+		render(
+			<MetricsStrip
+				metrics={[
+					{
+						label: "Pending upgrade",
+						value: "Code abab",
+						title: "Code abab...",
+					},
+				]}
+			/>,
+		)
+
+		expect(screen.getByText("Code abab").getAttribute("title")).toBe(
+			"Code abab...",
+		)
+	})
+
 	it("renders an em dash for a value that could not be read", () => {
 		const unread = metrics.map((metric) => ({ ...metric, value: null }))
 

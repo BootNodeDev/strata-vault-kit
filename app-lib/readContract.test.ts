@@ -1,4 +1,4 @@
-import { nativeToScVal, xdr } from "@stellar/stellar-sdk"
+import { Address, nativeToScVal, xdr } from "@stellar/stellar-sdk"
 import type { Api } from "@stellar/stellar-sdk/rpc"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { DepositRequest, EpochInfo, RedeemRequest } from "./contracts"
@@ -8,6 +8,7 @@ import {
 	readEpochs,
 	readEvents,
 	readLedgerTime,
+	readPendingAdmins,
 } from "./readContract"
 
 const {
@@ -643,5 +644,171 @@ describe("readEvents", () => {
 		)
 
 		expect(read).toEqual({ kind: "unreadable" })
+	})
+})
+
+const ORACLE_ID = "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3"
+const PENDING = "GDPO5SQDJY4E2XEE47MAOT2M2F3GR4H2AYYKSMIOT2YPOHAMC36VKWIA"
+
+const pendingAdminKey = (contractId: string): xdr.LedgerKey =>
+	xdr.LedgerKey.contractData(
+		new xdr.LedgerKeyContractData({
+			contract: Address.fromString(contractId).toScAddress(),
+			key: xdr.ScVal.scvVec([xdr.ScVal.scvSymbol("PendingAdmin")]),
+			durability: xdr.ContractDataDurability.temporary(),
+		}),
+	)
+
+const pendingEntry = (
+	contractId: string,
+	liveUntilLedger: number,
+	ttl = liveUntilLedger,
+): Api.LedgerEntryResult =>
+	entryFor(
+		pendingAdminKey(contractId).toXDR("base64"),
+		structScVal({
+			address: Address.fromString(PENDING).toScVal(),
+			live_until_ledger: xdr.ScVal.scvU32(liveUntilLedger),
+		}),
+		ttl,
+	)
+
+const archivalKey = xdr.LedgerKey.configSetting(
+	new xdr.LedgerKeyConfigSetting({
+		configSettingId: xdr.ConfigSettingId.configSettingStateArchival(),
+	}),
+)
+
+const archivalEntry = (maxEntryTtl: number): Api.LedgerEntryResult => ({
+	key: archivalKey,
+	val: xdr.LedgerEntryData.configSetting(
+		xdr.ConfigSettingEntry.configSettingStateArchival(
+			new xdr.StateArchivalSettings({
+				maxEntryTtl,
+				minTemporaryTtl: 16,
+				minPersistentTtl: 4096,
+				persistentRentRateDenominator: xdr.Int64.fromString("1"),
+				tempRentRateDenominator: xdr.Int64.fromString("1"),
+				maxEntriesToArchive: 0,
+				liveSorobanStateSizeWindowSampleSize: 0,
+				liveSorobanStateSizeWindowSamplePeriod: 0,
+				evictionScanSize: 0,
+				startingEvictionScanLevel: 0,
+			}),
+		),
+	),
+})
+
+describe("readPendingAdmins", () => {
+	beforeEach(() => {
+		getLedgerEntriesMock.mockReset()
+		getLatestLedgerMock.mockReset()
+		getLatestLedgerMock.mockResolvedValue({
+			sequence: 1_000,
+			closeTime: "1700000000",
+		})
+	})
+
+	it("asks for each contract's temporary PendingAdmin entry and the archival limits", async () => {
+		getLedgerEntriesMock.mockResolvedValue({ entries: [] })
+
+		await readPendingAdmins([CONTRACT_ID, ORACLE_ID])
+
+		const sent = (getLedgerEntriesMock.mock.calls[0] as xdr.LedgerKey[]).map(
+			(key) => key.toXDR("base64"),
+		)
+		expect(sent).toEqual([
+			pendingAdminKey(CONTRACT_ID).toXDR("base64"),
+			pendingAdminKey(ORACLE_ID).toXDR("base64"),
+			archivalKey.toXDR("base64"),
+		])
+	})
+
+	it("decodes a live transfer with the ledger it was read at and the furthest allowed expiry", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [pendingEntry(CONTRACT_ID, 1_500), archivalEntry(100_000)],
+		})
+
+		const read = await readPendingAdmins([CONTRACT_ID, ORACLE_ID])
+
+		expect(read).toEqual({
+			kind: "value",
+			value: {
+				ledger: {
+					sequence: 1_000,
+					closeTime: 1_700_000_000n,
+					maxLiveUntil: 100_999,
+				},
+				pending: new Map([
+					[
+						CONTRACT_ID,
+						{ address: PENDING, liveUntilLedger: 1_500, expired: false },
+					],
+					[ORACLE_ID, null],
+				]),
+			},
+		})
+	})
+
+	it("reads a transfer past its live_until_ledger as expired while the entry lingers", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [pendingEntry(CONTRACT_ID, 900, 1_200)],
+		})
+
+		const read = await readPendingAdmins([CONTRACT_ID])
+
+		expect(
+			read.kind === "value" && read.value.pending.get(CONTRACT_ID),
+		).toEqual({ address: PENDING, liveUntilLedger: 900, expired: true })
+		expect(read.kind === "value" && read.value.ledger.maxLiveUntil).toBeNull()
+	})
+
+	it("reads an entry whose TTL lapsed as no transfer", async () => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [pendingEntry(CONTRACT_ID, 900)],
+		})
+
+		const read = await readPendingAdmins([CONTRACT_ID])
+
+		expect(read.kind === "value" && read.value.pending.get(CONTRACT_ID)).toBe(
+			null,
+		)
+	})
+
+	it.each([
+		["a value that is not a transfer", xdr.ScVal.scvU32(7)],
+		[
+			"a transfer without an address",
+			structScVal({ live_until_ledger: xdr.ScVal.scvU32(1_500) }),
+		],
+		[
+			"a transfer with a non-numeric expiry",
+			structScVal({
+				address: Address.fromString(PENDING).toScVal(),
+				live_until_ledger: xdr.ScVal.scvString("later"),
+			}),
+		],
+	])("is unreadable when the entry holds %s", async (_, val) => {
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [
+				entryFor(pendingAdminKey(CONTRACT_ID).toXDR("base64"), val, 1_500),
+			],
+		})
+
+		expect(await readPendingAdmins([CONTRACT_ID])).toEqual({
+			kind: "unreadable",
+		})
+	})
+
+	it.each([
+		["the entries", () => getLedgerEntriesMock.mockRejectedValue(new Error())],
+		["the ledger", () => getLatestLedgerMock.mockRejectedValue(new Error())],
+	])("is unreadable when %s cannot be read", async (_, fail) => {
+		getLedgerEntriesMock.mockResolvedValue({ entries: [] })
+		fail()
+
+		expect(await readPendingAdmins([CONTRACT_ID])).toEqual({
+			kind: "unreadable",
+		})
 	})
 })

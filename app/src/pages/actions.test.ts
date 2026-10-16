@@ -39,7 +39,7 @@ describe("readiness", () => {
 		expect(readiness(actionWith({ enabled: true }))).toEqual({ kind: "ready" })
 	})
 
-	it("counts the conditions not met, an undecided one included", () => {
+	it("reads an action with a failing or undecided condition as blocked", () => {
 		const action = actionWith({
 			conditions: [
 				{ label: "Amount above zero", met: false },
@@ -48,7 +48,15 @@ describe("readiness", () => {
 			],
 		})
 
-		expect(readiness(action)).toEqual({ kind: "unmet", count: 2 })
+		expect(readiness(action)).toEqual({ kind: "blocked" })
+	})
+
+	it("reads a closed action as blocked even with every condition passing", () => {
+		const action = actionWith({
+			conditions: [{ label: "Expiry ≥ 1 day", met: true }],
+		})
+
+		expect(readiness(action)).toEqual({ kind: "blocked" })
 	})
 
 	it("reads an action whose only unmet condition is no change as unchanged", () => {
@@ -62,7 +70,7 @@ describe("readiness", () => {
 		expect(readiness(action)).toEqual({ kind: "unchanged" })
 	})
 
-	it("keeps counting when something besides no change is unmet", () => {
+	it("reads an action blocked when something besides no change fails", () => {
 		const action = actionWith({
 			conditions: [
 				{ label: "Notice ≤ 30d", met: false },
@@ -70,7 +78,7 @@ describe("readiness", () => {
 			],
 		})
 
-		expect(readiness(action)).toEqual({ kind: "unmet", count: 2 })
+		expect(readiness(action)).toEqual({ kind: "blocked" })
 	})
 
 	it("reads an action the wallet cannot sign as unavailable, keeping the reason", () => {

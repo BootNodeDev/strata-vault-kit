@@ -109,8 +109,10 @@ const WIND_DOWN_LABELS = {
 	active: "Active",
 } as const
 
+export const DAY = 86_400n
+
 const SECONDS_PER_UNIT: [string, bigint][] = [
-	["d", 86_400n],
+	["d", DAY],
 	["h", 3_600n],
 	["m", 60n],
 	["s", 1n],

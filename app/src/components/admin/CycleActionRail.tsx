@@ -2,10 +2,13 @@ import React, { useState } from "react"
 import {
 	type ActionField as ActionFieldSpec,
 	type Condition,
+	type ConfirmField,
 	type RailAction,
+	type RailField,
 	type Readiness,
 	readiness,
 	readyCount,
+	type SelectField,
 } from "../../pages/actions"
 import typeStyles from "../../styles/type.module.css"
 import Skeleton from "../Skeleton"
@@ -13,19 +16,111 @@ import styles from "./CycleActionRail.module.css"
 
 type OnInput<A> = (action: A, value: string, key?: string) => void
 
-const conditionValue = (condition: Condition): string => {
-	if (condition.met === null) return "—"
-	return condition.detail ?? (condition.met ? "Met" : "Not met")
+type Status = "pass" | "fail" | "pending"
+
+const statusOf = ({ met }: Condition): Status => {
+	if (met === null) return "pending"
+	return met ? "pass" : "fail"
+}
+
+const STATUS_PREFIX: Record<Status, string> = {
+	pass: "Pass: ",
+	fail: "Fail: ",
+	pending: "Pending: ",
+}
+
+const STATUS_CLASS: Record<Status, string | undefined> = {
+	pass: styles.pass,
+	fail: styles.fail,
+	pending: styles.pending,
+}
+
+const StatusIcon: React.FC<{ status: Status }> = ({ status }) =>
+	status === "pending" ? (
+		<span className={styles.dot} />
+	) : (
+		<svg viewBox="0 0 16 16" className={styles.icon}>
+			<path d={status === "pass" ? "M3 8.5l3 3 7-7" : "M4 4l8 8M12 4l-8 8"} />
+		</svg>
+	)
+
+const ConditionRow: React.FC<{ condition: Condition }> = ({ condition }) => {
+	const status = statusOf(condition)
+	return (
+		<li className={styles.condition}>
+			<span className={styles.check}>
+				<span aria-hidden="true" className={STATUS_CLASS[status]}>
+					<StatusIcon status={status} />
+				</span>
+				<span className={`${typeStyles.footnote} ${styles.conditionLabel}`}>
+					<span className={styles.srOnly}>{STATUS_PREFIX[status]}</span>
+					{condition.label}
+				</span>
+			</span>
+			{condition.detail !== undefined && (
+				<span className={`${typeStyles.railValue} ${styles.detail}`}>
+					{condition.detail}
+				</span>
+			)}
+		</li>
+	)
 }
 
 const summaryOf = (state: Readiness): string => {
 	if (state.kind === "ready") return "Ready"
 	if (state.kind === "unavailable") return "Unavailable"
 	if (state.kind === "unchanged") return "No change"
-	return `${state.count} unmet`
+	return "Blocked"
 }
 
-function ActionField<A extends RailAction>({
+type Report = (value: string) => void
+
+const SelectInput: React.FC<{
+	id: string
+	field: SelectField
+	report: Report
+}> = ({ id, field, report }) => (
+	<div className={styles.keyed}>
+		<label
+			htmlFor={id}
+			className={`${typeStyles.footnote} ${styles.fieldLabel}`}
+		>
+			{field.label}
+		</label>
+		<div className={styles.field}>
+			<select
+				id={id}
+				className={`${typeStyles.body} ${styles.fieldInput}`}
+				value={field.value}
+				onChange={(event) => report(event.target.value)}
+			>
+				{field.options.map((option) => (
+					<option key={option.value} value={option.value}>
+						{option.label}
+					</option>
+				))}
+			</select>
+		</div>
+	</div>
+)
+
+const ConfirmInput: React.FC<{
+	id: string
+	field: ConfirmField
+	report: Report
+}> = ({ id, field, report }) => (
+	<label htmlFor={id} className={styles.confirm}>
+		<input
+			id={id}
+			type="checkbox"
+			checked={field.checked}
+			onChange={(event) => report(event.target.checked ? field.value : "")}
+		/>
+		<span className={typeStyles.footnote}>{field.label}</span>
+	</label>
+)
+
+function RailInput<A extends RailAction<RailField>>({
 	id,
 	action,
 	field,
@@ -33,13 +128,32 @@ function ActionField<A extends RailAction>({
 }: {
 	id: string
 	action: A
-	field: ActionFieldSpec
+	field: RailField
 	onInput: OnInput<A> | undefined
 }) {
 	const report = (value: string) =>
 		field.key === undefined
 			? onInput?.(action, value)
 			: onInput?.(action, value, field.key)
+	switch (field.kind) {
+		case "select":
+			return <SelectInput id={id} field={field} report={report} />
+		case "confirm":
+			return <ConfirmInput id={id} field={field} report={report} />
+		case undefined:
+			return <TextInput id={id} field={field} report={report} />
+	}
+}
+
+function TextInput({
+	id,
+	field,
+	report,
+}: {
+	id: string
+	field: ActionFieldSpec
+	report: Report
+}) {
 	const label = (
 		<label
 			htmlFor={id}
@@ -93,15 +207,15 @@ function ActionField<A extends RailAction>({
 	)
 }
 
-const fieldsOf = (action: RailAction): ActionFieldSpec[] =>
+const fieldsOf = (action: RailAction<RailField>): RailField[] =>
 	action.fields ?? (action.field === undefined ? [] : [action.field])
 
-const buttonClass = (action: RailAction): string | undefined => {
+const buttonClass = (action: RailAction<RailField>): string | undefined => {
 	if (!action.enabled) return styles.actionUnavailable
 	return action.tone === "danger" ? styles.actionDanger : styles.actionPrimary
 }
 
-function ActionBody<A extends RailAction>({
+function ActionBody<A extends RailAction<RailField>>({
 	fieldId,
 	action,
 	onRun,
@@ -115,7 +229,7 @@ function ActionBody<A extends RailAction>({
 	return (
 		<>
 			{fieldsOf(action).map((field) => (
-				<ActionField
+				<RailInput
 					key={field.key ?? field.label}
 					id={field.key === undefined ? fieldId : `${fieldId}-${field.key}`}
 					action={action}
@@ -128,18 +242,7 @@ function ActionBody<A extends RailAction>({
 				className={styles.conditions}
 			>
 				{action.conditions.map((condition) => (
-					<li className={styles.condition} key={condition.label}>
-						<span className={`${typeStyles.footnote} ${styles.conditionLabel}`}>
-							{condition.label}
-						</span>
-						<span
-							className={`${typeStyles.railValue} ${
-								condition.met ? styles.met : styles.unmet
-							}`}
-						>
-							{conditionValue(condition)}
-						</span>
-					</li>
+					<ConditionRow key={condition.label} condition={condition} />
 				))}
 			</ul>
 			{action.note !== undefined && (
@@ -167,7 +270,7 @@ function ActionBody<A extends RailAction>({
 	)
 }
 
-function CycleActionRail<A extends RailAction>({
+function CycleActionRail<A extends RailAction<RailField>>({
 	scope,
 	actions,
 	pending,

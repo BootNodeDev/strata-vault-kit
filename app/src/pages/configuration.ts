@@ -29,6 +29,7 @@ import {
 	toAction,
 } from "./actions"
 import {
+	DAY,
 	depositCapValue,
 	exactAmount,
 	formatDuration,
@@ -75,7 +76,6 @@ export const EFFECTS = {
 	windDownDelay: "A proposed wind-down keeps its activation time.",
 } as const
 
-const DAY = 86_400n
 const MAX_NOTICE = 30n * DAY
 const MAX_WIND_DOWN_DELAY = 90n * DAY
 const MAX_BPS = 10_000

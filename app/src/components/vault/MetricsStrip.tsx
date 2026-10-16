@@ -6,6 +6,7 @@ import styles from "./MetricsStrip.module.css"
 export type Metric = {
 	label: string
 	value: string | null
+	title?: string
 	note?: string
 	pending?: boolean
 }
@@ -26,7 +27,10 @@ const MetricsStrip: React.FC<MetricsStripProps> = ({ metrics }) => (
 						className={`${typeStyles.metric} ${styles.valueSkeleton}`}
 					/>
 				) : (
-					<span className={`${typeStyles.metric} ${styles.value}`}>
+					<span
+						className={`${typeStyles.metric} ${styles.value}`}
+						title={metric.title}
+					>
 						{metric.value ?? "—"}
 					</span>
 				)}

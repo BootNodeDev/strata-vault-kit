@@ -1,6 +1,8 @@
+import { Buffer } from "buffer"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { governanceReadsKey } from "./pendingAdmins"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { adminAuthorityKey } from "./useAdminAuthority"
 import { configurationReadsKey } from "./useConfigurationState"
@@ -23,6 +25,30 @@ import {
 	useUnpauseToken,
 	useUnpauseVault,
 } from "./useEmergencyTransactions"
+import { upgradeProposalKey } from "./useGovernanceState"
+import {
+	useAcceptOracleAdmin,
+	useAcceptTokenAdmin,
+	useAcceptVaultAdmin,
+	useApplyUpgrade,
+	useCancelOracleHandover,
+	useCancelTokenHandover,
+	useCancelUpgrade,
+	useCancelVaultHandover,
+	useCancelWindDown,
+	useGrantOracleRole,
+	useGrantTokenRole,
+	useGrantVaultRole,
+	useHandOverOracleAdmin,
+	useHandOverTokenAdmin,
+	useHandOverVaultAdmin,
+	useProposeCodeUpgrade,
+	useProposeUpgradeDelay,
+	useProposeWindDown,
+	useRevokeOracleRole,
+	useRevokeTokenRole,
+	useRevokeVaultRole,
+} from "./useGovernanceTransactions"
 import { isAllowedKey } from "./useIsAllowed"
 import { oracleWriteKeys } from "./useOracleState"
 import { tokenPausedKey } from "./useTokenPaused"
@@ -37,18 +63,36 @@ const { vault, token, oracle } = vi.hoisted(() => ({
 		set_custodian: vi.fn(),
 		set_notice: vi.fn(),
 		set_wind_down_delay: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
+		propose_upgrade: vi.fn(),
+		propose_upgrade_delay: vi.fn(),
+		apply_upgrade: vi.fn(),
+		cancel_upgrade: vi.fn(),
+		propose_wind_down: vi.fn(),
+		cancel_wind_down_proposal: vi.fn(),
 	},
 	token: {
 		pause: vi.fn(),
 		unpause: vi.fn(),
 		set_compliance: vi.fn(),
 		set_identity_verifier: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
 	},
 	oracle: {
 		raise_ripcord: vi.fn(),
 		set_ripcord: vi.fn(),
 		clear_latest: vi.fn(),
 		set_config: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
 	},
 }))
 
@@ -76,7 +120,7 @@ type Case = {
 	}
 	method: ReturnType<typeof vi.fn>
 	arg: unknown
-	args: object
+	args?: object
 	keys: readonly (readonly string[])[]
 	refusal: number
 }
@@ -210,6 +254,171 @@ const cases: Case[] = [
 	},
 ]
 
+const ROLE_CHANGE = { role: "guardian", account: CONTRACT }
+const OFFER = { newAdmin: CONTRACT, liveUntilLedger: 1_234 }
+const WASM_HASH = "ab".repeat(32)
+
+type Hook = Case["useHook"]
+
+const governedContracts: {
+	name: string
+	client: typeof vault | typeof token | typeof oracle
+	hooks: Record<"grant" | "revoke" | "handOver" | "cancel" | "accept", Hook>
+	roleKeys: Case["keys"]
+	handoverKeys: Case["keys"]
+}[] = [
+	{
+		name: "Vault",
+		client: vault,
+		hooks: {
+			grant: useGrantVaultRole,
+			revoke: useRevokeVaultRole,
+			handOver: useHandOverVaultAdmin,
+			cancel: useCancelVaultHandover,
+			accept: useAcceptVaultAdmin,
+		},
+		roleKeys: [adminAuthorityKey, vaultAuthoritiesKey],
+		handoverKeys: [governanceReadsKey, adminAuthorityKey, vaultAuthoritiesKey],
+	},
+	{
+		name: "Oracle",
+		client: oracle,
+		hooks: {
+			grant: useGrantOracleRole,
+			revoke: useRevokeOracleRole,
+			handOver: useHandOverOracleAdmin,
+			cancel: useCancelOracleHandover,
+			accept: useAcceptOracleAdmin,
+		},
+		roleKeys: [adminAuthorityKey],
+		handoverKeys: [governanceReadsKey, adminAuthorityKey],
+	},
+	{
+		name: "Token",
+		client: token,
+		hooks: {
+			grant: useGrantTokenRole,
+			revoke: useRevokeTokenRole,
+			handOver: useHandOverTokenAdmin,
+			cancel: useCancelTokenHandover,
+			accept: useAcceptTokenAdmin,
+		},
+		roleKeys: [adminAuthorityKey],
+		handoverKeys: [governanceReadsKey, adminAuthorityKey],
+	},
+]
+
+const roleArgs = {
+	account: CONTRACT,
+	role: "guardian",
+	caller: investorAddress,
+}
+
+const governanceCases: Case[] = [
+	...governedContracts.flatMap(
+		({ name, client, hooks, roleKeys, handoverKeys }): Case[] => [
+			{
+				name: `useGrant${name}Role`,
+				useHook: hooks.grant,
+				method: client.grant_role,
+				arg: ROLE_CHANGE,
+				args: roleArgs,
+				keys: roleKeys,
+				refusal: 2000,
+			},
+			{
+				name: `useRevoke${name}Role`,
+				useHook: hooks.revoke,
+				method: client.revoke_role,
+				arg: ROLE_CHANGE,
+				args: roleArgs,
+				keys: roleKeys,
+				refusal: 2007,
+			},
+			{
+				name: `useHandOver${name}Admin`,
+				useHook: hooks.handOver,
+				method: client.transfer_admin_role,
+				arg: OFFER,
+				args: { new_admin: CONTRACT, live_until_ledger: 1_234 },
+				keys: handoverKeys,
+				refusal: 2201,
+			},
+			{
+				name: `useCancel${name}Handover`,
+				useHook: hooks.cancel,
+				method: client.transfer_admin_role,
+				arg: { ...OFFER, liveUntilLedger: 0 },
+				args: { new_admin: CONTRACT, live_until_ledger: 0 },
+				keys: handoverKeys,
+				refusal: 2200,
+			},
+			{
+				name: `useAccept${name}Admin`,
+				useHook: hooks.accept,
+				method: client.accept_admin_transfer,
+				arg: undefined,
+				keys: handoverKeys,
+				refusal: 2202,
+			},
+		],
+	),
+	{
+		name: "useProposeCodeUpgrade",
+		useHook: useProposeCodeUpgrade,
+		method: vault.propose_upgrade,
+		arg: WASM_HASH,
+		args: { wasm_hash: Buffer.alloc(32, 0xab), caller: investorAddress },
+		keys: [upgradeProposalKey, configurationReadsKey],
+		refusal: 6055,
+	},
+	{
+		name: "useProposeUpgradeDelay",
+		useHook: useProposeUpgradeDelay,
+		method: vault.propose_upgrade_delay,
+		arg: 604_800n,
+		args: { secs: 604_800n, caller: investorAddress },
+		keys: [upgradeProposalKey, configurationReadsKey],
+		refusal: 6058,
+	},
+	{
+		name: "useApplyUpgrade",
+		useHook: useApplyUpgrade,
+		method: vault.apply_upgrade,
+		arg: undefined,
+		args: { caller: investorAddress },
+		keys: [upgradeProposalKey, configurationReadsKey],
+		refusal: 6057,
+	},
+	{
+		name: "useCancelUpgrade",
+		useHook: useCancelUpgrade,
+		method: vault.cancel_upgrade,
+		arg: undefined,
+		args: { caller: investorAddress },
+		keys: [upgradeProposalKey, configurationReadsKey],
+		refusal: 6056,
+	},
+	{
+		name: "useProposeWindDown",
+		useHook: useProposeWindDown,
+		method: vault.propose_wind_down,
+		arg: undefined,
+		args: { caller: investorAddress },
+		keys: [cycleReadsKey],
+		refusal: 6046,
+	},
+	{
+		name: "useCancelWindDown",
+		useHook: useCancelWindDown,
+		method: vault.cancel_wind_down_proposal,
+		arg: undefined,
+		args: { caller: investorAddress },
+		keys: [cycleReadsKey],
+		refusal: 6047,
+	},
+]
+
 const confirmed = () => ({
 	simulation: undefined,
 	signAndSend: vi.fn().mockResolvedValue({
@@ -218,7 +427,7 @@ const confirmed = () => ({
 	}),
 })
 
-describe.each(cases)("$name", (testCase) => {
+describe.each([...cases, ...governanceCases])("$name", (testCase) => {
 	const { useHook, method, arg, args, keys, refusal } = testCase
 
 	beforeEach(() => {
@@ -251,7 +460,7 @@ describe.each(cases)("$name", (testCase) => {
 		await waitFor(() =>
 			expect(result.current.status).toEqual({ status: "confirmed" }),
 		)
-		expect(method).toHaveBeenCalledWith(args)
+		expect(method.mock.calls).toEqual([args === undefined ? [] : [args]])
 	})
 
 	it("refuses before asking for a signature and refreshes the state it read", async () => {
