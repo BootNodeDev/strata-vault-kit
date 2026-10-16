@@ -394,8 +394,7 @@ function forceTransferSpec(
 const build = <Id extends ComplianceActionId, Arg>(
 	spec: BuiltSpec<Id, Arg>,
 	grant: Grant,
-	wallet: string,
-) => ({ ...toAction(spec, grant, wallet), arg: spec.arg, next: spec.next })
+) => ({ ...toAction(spec, grant), arg: spec.arg, next: spec.next })
 
 const ADMIN_UNREADABLE = "Could not read the allowlist admin."
 
@@ -404,18 +403,9 @@ const allowActions = (
 	allowed: boolean | null,
 	inputs: Inputs,
 	grant: Grant,
-	wallet: string,
 ): ComplianceAction[] => [
-	build(
-		allowSpec(TOGGLES["allow-address"], allowed, state, inputs),
-		grant,
-		wallet,
-	),
-	build(
-		allowSpec(TOGGLES["disallow-address"], allowed, state, inputs),
-		grant,
-		wallet,
-	),
+	build(allowSpec(TOGGLES["allow-address"], allowed, state, inputs), grant),
+	build(allowSpec(TOGGLES["disallow-address"], allowed, state, inputs), grant),
 ]
 
 export function toComplianceActions(
@@ -431,32 +421,28 @@ export function toComplianceActions(
 	const admin = grantFor(grants, ROLES.verifierAdmin, wallet)
 	const officer = grantFor(grants, ROLES.compliance, wallet)
 	if (admin !== undefined)
-		actions.push(...allowActions(state, allowed, inputs, admin, wallet))
+		actions.push(...allowActions(state, allowed, inputs, admin))
 	else if (officer !== undefined && state.adminUnknown)
 		actions.push(
-			...allowActions(state, allowed, inputs, officer, wallet).map(
-				(action) => ({
-					...action,
-					enabled: false,
-					unavailable: ADMIN_UNREADABLE,
-				}),
-			),
+			...allowActions(state, allowed, inputs, officer).map((action) => ({
+				...action,
+				enabled: false,
+				unavailable: ADMIN_UNREADABLE,
+			})),
 		)
 	if (officer !== undefined)
 		actions.push(
 			build(
 				toggleSpec(TOGGLES["freeze-address"], frozen, state, inputs),
 				officer,
-				wallet,
 			),
 			build(
 				toggleSpec(TOGGLES["unfreeze-address"], frozen, state, inputs),
 				officer,
-				wallet,
 			),
-			build(sharesSpec("freeze-shares", state, inputs), officer, wallet),
-			build(sharesSpec("unfreeze-shares", state, inputs), officer, wallet),
-			build(forceTransferSpec(state, inputs), officer, wallet),
+			build(sharesSpec("freeze-shares", state, inputs), officer),
+			build(sharesSpec("unfreeze-shares", state, inputs), officer),
+			build(forceTransferSpec(state, inputs), officer),
 		)
 	return actions
 }
