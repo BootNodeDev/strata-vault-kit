@@ -1,4 +1,5 @@
 use soroban_sdk::{testutils::Events as _, Event as _};
+use stellar_contract_utils::pausable::PausableError;
 
 use super::*;
 use crate::{ChangeApplied, ChangeCancelled, ChangeProposed};
@@ -257,6 +258,25 @@ fn a_pause_freezes_the_upgrade_timelock_clock() {
     f.vault.apply_change(&id, &f.admin);
     assert_eq!(f.vault.pending_changes().len(), 0);
     assert_eq!(f.vault.upgrade_delay(), 14 * DAY_DURATION);
+}
+
+#[test]
+fn applying_while_paused_is_refused() {
+    let f = setup();
+    let id = propose(&f, VaultChange::UpgradeDelay(30 * DAY_DURATION));
+    f.advance(MIN_UPGRADE_DELAY);
+
+    // At the eta, with no paused time yet, only the pause stands in the way.
+    f.vault.pause(&f.guardian);
+    assert_eq!(
+        f.vault.try_apply_change(&id, &f.admin),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
+    assert_eq!(f.vault.upgrade_delay(), MIN_UPGRADE_DELAY);
+
+    f.vault.unpause(&f.admin);
+    f.vault.apply_change(&id, &f.admin);
+    assert_eq!(f.vault.upgrade_delay(), 30 * DAY_DURATION);
 }
 
 #[test]
