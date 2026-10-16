@@ -2176,6 +2176,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "timelock"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "soroban-sdk",
+ "storage",
+]
+
+[[package]]
 name = "tinyvec"
 version = "1.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
