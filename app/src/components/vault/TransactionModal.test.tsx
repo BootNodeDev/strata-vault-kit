@@ -20,6 +20,7 @@ import { type RequestRedeemStatus } from "../../hooks/useRequestRedeem"
 import TransactionModal, {
 	type ConfigurationModalAction,
 	type EmergencyModalAction,
+	type GovernanceModalAction,
 } from "./TransactionModal"
 
 const { explorerTransactionMock } = vi.hoisted(() => ({
@@ -2218,6 +2219,199 @@ describe("TransactionModal, configuration actions", () => {
 
 		expect(
 			screen.getByText(/check the Configuration tab before trying again/),
+		).toBeTruthy()
+	})
+})
+
+const renderGovernanceModal = (
+	action: GovernanceModalAction,
+	status: TransactionStatus,
+	value = "Manager to GABC...WXYZ",
+) =>
+	render(
+		<TransactionModal
+			action={action}
+			status={status}
+			value={value}
+			onClose={vi.fn()}
+			onRetry={vi.fn()}
+		/>,
+	)
+
+describe("TransactionModal, governance actions", () => {
+	it.each<[GovernanceModalAction, string, string, string, string]>([
+		[
+			"grant-vault-role",
+			"Manager to GABC...WXYZ",
+			"Signing grants Manager to GABC...WXYZ.",
+			"Role granted",
+			"Granted Manager to GABC...WXYZ.",
+		],
+		[
+			"revoke-token-role",
+			"Manager from CVAU...LTID",
+			"Signing revokes Manager from CVAU...LTID.",
+			"Role revoked",
+			"Revoked Manager from CVAU...LTID.",
+		],
+	])(
+		"names the role change of %s",
+		(action, value, signing, done, doneBody) => {
+			const { unmount } = renderGovernanceModal(
+				action,
+				{ status: "awaiting-signature" },
+				value,
+			)
+			expect(screen.getByText(signing)).toBeTruthy()
+			unmount()
+
+			renderGovernanceModal(action, { status: "confirmed" }, value)
+			expect(screen.getByRole("heading", { name: done })).toBeTruthy()
+			expect(screen.getByText(doneBody)).toBeTruthy()
+		},
+	)
+
+	it.each<[GovernanceModalAction, number, string, RegExp]>([
+		["grant-vault-role", 2000, "vault", /does not hold the role/],
+		["revoke-oracle-role", 2002, "oracle", /holders changed/],
+		["revoke-token-role", 2007, "share token", /does not hold this role/],
+		[
+			"grant-oracle-role",
+			2010,
+			"oracle",
+			/The oracle already has the maximum number of roles/,
+		],
+		["cancel-vault-handover", 2200, "vault", /no pending handover/],
+		["hand-over-oracle-admin", 2201, "oracle", /expiry is outside/],
+		["cancel-token-handover", 2202, "share token", /different address/],
+		["accept-vault-admin", 2203, "vault", /expired before it was accepted/],
+		["apply-upgrade", 1000, "vault", /The vault is paused/],
+		["propose-wind-down", 6046, "vault", /wind-down is already active/],
+		["cancel-wind-down", 6047, "vault", /No wind-down is proposed/],
+		["propose-wind-down", 6048, "vault", /wind-down is already proposed/],
+		["propose-code-upgrade", 6055, "vault", /upgrade is already pending/],
+		["cancel-upgrade", 6056, "vault", /No upgrade is pending/],
+		["apply-upgrade", 6057, "vault", /upgrade delay has not passed/],
+		["propose-upgrade-delay", 6058, "vault", /cannot be under 7 days/],
+		["propose-upgrade-delay", 6059, "vault", /cannot be under the notice/],
+		["propose-upgrade-delay", 6060, "vault", /cannot exceed 90 days/],
+	])(
+		"names the reason %s was refused with code %i",
+		(action, code, refuser, sentence) => {
+			renderGovernanceModal(action, {
+				status: "failed",
+				failure: { kind: "contract-error", code },
+			})
+
+			expect(
+				screen.getByRole("heading", {
+					name: `The ${refuser} refused this request`,
+				}),
+			).toBeTruthy()
+			expect(screen.getByText(sentence)).toBeTruthy()
+		},
+	)
+
+	it.each<[GovernanceModalAction, string, string, string, string]>([
+		[
+			"hand-over-vault-admin",
+			"GABC...WXYZ becomes admin once it accepts before 21 Nov, 22:13 UTC.",
+			"Signing proposes the handover.",
+			"Handover proposed",
+			"GABC...WXYZ becomes admin once it accepts before 21 Nov, 22:13 UTC.",
+		],
+		[
+			"cancel-oracle-handover",
+			"GABC...WXYZ",
+			"Signing withdraws the offer to GABC...WXYZ.",
+			"Handover cancelled",
+			"GABC...WXYZ can no longer accept.",
+		],
+		[
+			"accept-token-admin",
+			"share token",
+			"Signing makes this wallet the share token admin.",
+			"Admin accepted",
+			"This wallet is now the share token admin.",
+		],
+	])(
+		"names the handover step of %s",
+		(action, value, signing, done, doneBody) => {
+			const { unmount } = renderGovernanceModal(
+				action,
+				{ status: "awaiting-signature" },
+				value,
+			)
+			expect(screen.getByText(signing)).toBeTruthy()
+			unmount()
+
+			renderGovernanceModal(action, { status: "confirmed" }, value)
+			expect(screen.getByRole("heading", { name: done })).toBeTruthy()
+			expect(screen.getByText(doneBody)).toBeTruthy()
+		},
+	)
+
+	it.each<[GovernanceModalAction, string, string, string, string]>([
+		[
+			"propose-code-upgrade",
+			"Code abab...abab",
+			"Signing queues Code abab...abab.",
+			"Upgrade proposed",
+			"Code abab...abab can apply once the upgrade delay passes.",
+		],
+		[
+			"apply-upgrade",
+			"Delay 14d",
+			"Signing applies Delay 14d.",
+			"Upgrade applied",
+			"Delay 14d is in effect.",
+		],
+		[
+			"cancel-upgrade",
+			"Code abab...abab",
+			"Signing withdraws Code abab...abab.",
+			"Upgrade cancelled",
+			"Code abab...abab is withdrawn.",
+		],
+		[
+			"propose-wind-down",
+			"Activates 21 Nov, 22:13 UTC.",
+			"Signing starts the wind-down countdown.",
+			"Wind-down proposed",
+			"Activates 21 Nov, 22:13 UTC.",
+		],
+		[
+			"cancel-wind-down",
+			"",
+			"Signing withdraws the wind-down.",
+			"Wind-down cancelled",
+			"The vault stays open.",
+		],
+	])(
+		"names the vault proposal step of %s",
+		(action, value, signing, done, doneBody) => {
+			const { unmount } = renderGovernanceModal(
+				action,
+				{ status: "awaiting-signature" },
+				value,
+			)
+			expect(screen.getByText(signing)).toBeTruthy()
+			unmount()
+
+			renderGovernanceModal(action, { status: "confirmed" }, value)
+			expect(screen.getByRole("heading", { name: done })).toBeTruthy()
+			expect(screen.getByText(doneBody)).toBeTruthy()
+		},
+	)
+
+	it("sends an unknown outcome to the Governance tab", () => {
+		renderGovernanceModal("grant-token-role", {
+			status: "failed",
+			failure: { kind: "unknown" },
+		})
+
+		expect(
+			screen.getByText(/check the Governance tab before trying again/),
 		).toBeTruthy()
 	})
 })

@@ -42,6 +42,21 @@ const disconnectedAuthority: AdminAuthority = {
 	grants: [],
 	signersUnknown: false,
 	addresses: { oracle: null, shareToken: null, identityVerifier: null },
+	holders: {
+		"vault governance": [],
+		"vault manager": [],
+		"vault treasury": [],
+		"vault guardian": [],
+		"oracle attester": [],
+		"oracle guardian": [],
+		"oracle admin": [],
+		"share-token compliance": [],
+		"share-token manager": [],
+		"share-token admin": [],
+		"vault pending admin": [],
+		"oracle pending admin": [],
+		"share-token pending admin": [],
+	},
 }
 
 const renderAt = (path: string) => {

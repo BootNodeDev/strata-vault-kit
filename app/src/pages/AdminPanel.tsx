@@ -5,6 +5,7 @@ import ConfigurationSection from "../components/admin/ConfigurationSection"
 import CycleSection from "../components/admin/CycleSection"
 import Disclosure from "../components/admin/Disclosure"
 import EmergencySection from "../components/admin/EmergencySection"
+import GovernanceSection from "../components/admin/GovernanceSection"
 import SurfaceTabs from "../components/admin/SurfaceTabs"
 import Skeleton from "../components/Skeleton"
 import AddressRows, { type AddressRow } from "../components/vault/AddressRows"
@@ -13,6 +14,7 @@ import {
 	type AdminAddresses,
 	type AdminSurface,
 	type Grant,
+	type RoleHolders,
 	type Standing,
 	SURFACE_LABELS,
 	SURFACE_ORDER,
@@ -66,7 +68,8 @@ const SurfaceBody: React.FC<{
 	grantedBy: Record<AdminSurface, Grant[]>
 	wallet: string
 	addresses: AdminAddresses
-}> = ({ surface, active, grantedBy, wallet, addresses }) => {
+	holders: RoleHolders
+}> = ({ surface, active, grantedBy, wallet, addresses, holders }) => {
 	const contracts = <Contracts addresses={addresses} />
 	switch (surface) {
 		case "cycle":
@@ -96,8 +99,18 @@ const SurfaceBody: React.FC<{
 					contracts={contracts}
 				/>
 			)
-		case "compliance":
 		case "governance":
+			return (
+				<GovernanceSection
+					grants={grantedBy.governance}
+					wallet={wallet}
+					holders={holders}
+					addresses={addresses}
+					active={active}
+					contracts={contracts}
+				/>
+			)
+		case "compliance":
 			return contracts
 	}
 }
@@ -107,7 +120,8 @@ const HeldSurfaces: React.FC<{
 	grantedBy: Record<AdminSurface, Grant[]>
 	wallet: string
 	addresses: AdminAddresses
-}> = ({ held, grantedBy, wallet, addresses }) => {
+	holders: RoleHolders
+}> = ({ held, grantedBy, wallet, addresses, holders }) => {
 	const { surface } = useParams()
 	const active = held.find((candidate) => candidate === surface)
 	const headingRef = useRef<HTMLHeadingElement>(null)
@@ -151,6 +165,7 @@ const HeldSurfaces: React.FC<{
 						grantedBy={grantedBy}
 						wallet={wallet}
 						addresses={addresses}
+						holders={holders}
 					/>
 				</section>
 			))}
@@ -159,8 +174,15 @@ const HeldSurfaces: React.FC<{
 }
 
 const AdminPanel: React.FC = () => {
-	const { status, surfaces, grantedBy, grants, signersUnknown, addresses } =
-		useAdminAuthority()
+	const {
+		status,
+		surfaces,
+		grantedBy,
+		grants,
+		signersUnknown,
+		addresses,
+		holders,
+	} = useAdminAuthority()
 	const { address } = useWallet()
 	const held = SURFACE_ORDER.filter((surface) => surfaces.has(surface))
 
@@ -213,6 +235,7 @@ const AdminPanel: React.FC = () => {
 					grantedBy={grantedBy}
 					wallet={address ?? ""}
 					addresses={addresses}
+					holders={holders}
 				/>
 			)}
 		</div>

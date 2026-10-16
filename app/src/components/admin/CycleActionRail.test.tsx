@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { type RailAction } from "../../pages/actions"
+import { type RailAction, type RailField } from "../../pages/actions"
 import { type CycleAction } from "../../pages/cycle"
 import CycleActionRail from "./CycleActionRail"
 
@@ -158,15 +158,15 @@ describe("CycleActionRail", () => {
 				.map((toggle) => toggle.textContent),
 		).toEqual([
 			"Close epochUnavailable",
-			"Fulfill epoch1 unmet",
-			"Attest price1 unmet",
-			"Deploy to custodian1 unmet",
+			"Fulfill epochBlocked",
+			"Attest priceBlocked",
+			"Deploy to custodianBlocked",
 		])
 		for (const [name, description] of [
 			["Close epoch", "Unavailable"],
-			["Fulfill epoch", "1 unmet"],
-			["Attest price", "1 unmet"],
-			["Deploy to custodian", "1 unmet"],
+			["Fulfill epoch", "Blocked"],
+			["Attest price", "Blocked"],
+			["Deploy to custodian", "Blocked"],
 		] as const)
 			expect(
 				screen.getAllByRole("button", { name, description })[0],
@@ -301,18 +301,17 @@ describe("CycleActionRail", () => {
 		expect(screen.getByText("Could not read the emergency state.")).toBeTruthy()
 	})
 
-	it("lists each condition as met or not met", () => {
+	it("lists each condition as pass or fail, in words for screen readers", () => {
 		renderRail([fulfillAction])
 		expand("Fulfill epoch")
 
 		const list = screen.getByRole("list", { name: "Fulfill epoch conditions" })
-		const [awaiting, notice] = within(list).getAllByRole("listitem")
 		expect(
-			within(awaiting!).getByText("Sealed epoch awaiting a price"),
-		).toBeTruthy()
-		expect(within(awaiting!).getByText("Met")).toBeTruthy()
-		expect(within(notice!).getByText("Notice elapsed")).toBeTruthy()
-		expect(within(notice!).getByText("Not met")).toBeTruthy()
+			within(list)
+				.getAllByRole("listitem")
+				.map((item) => item.textContent),
+		).toEqual(["Pass: Sealed epoch awaiting a price", "Fail: Notice elapsed"])
+		expect(within(list).queryByText(/Met|Not met/)).toBeNull()
 	})
 
 	it("states the resulting state before the button and runs only an enabled action", () => {
@@ -374,16 +373,15 @@ describe("CycleActionRail", () => {
 		expect(screen.queryByRole("textbox")).toBeNull()
 	})
 
-	it("leaves a condition open with a dash while it cannot be judged yet", () => {
+	it("marks a condition pending while it cannot be judged yet", () => {
 		renderRail([attestAction])
 		expand("Attest price")
 
 		const band = screen.getByText("Within the band").closest("li")!
-		expect(within(band).getByText("—")).toBeTruthy()
-		expect(within(band).queryByText("Not met")).toBeNull()
+		expect(band.textContent).toBe("Pending: Within the band")
 	})
 
-	it("shows a condition's detail in place of Not met when it has one", () => {
+	it("keeps a failing condition's detail next to its label", () => {
 		renderRail([
 			{
 				...attestAction,
@@ -395,17 +393,16 @@ describe("CycleActionRail", () => {
 		expand("Attest price")
 
 		const band = screen.getByText("Within the band").closest("li")!
+		expect(band.textContent).toBe("Fail: Within the band0.5000 – 2.0000")
 		expect(within(band).getByText("0.5000 – 2.0000")).toBeTruthy()
-		expect(within(band).queryByText("Not met")).toBeNull()
 	})
 
-	it("shows a condition's detail in place of Met when it has one", () => {
+	it("keeps a passing condition's detail next to its label", () => {
 		renderRail([deployAction])
 		expand("Deploy to custodian")
 
 		const custodian = screen.getByText("Custodian set").closest("li")!
-		expect(within(custodian).getByText("CCUS...7890")).toBeTruthy()
-		expect(within(custodian).queryByText("Met")).toBeNull()
+		expect(custodian.textContent).toBe("Pass: Custodian setCCUS...7890")
 	})
 
 	it("offers to fill the field with its max, reporting the exact figure", () => {
@@ -520,4 +517,94 @@ describe("CycleActionRail with keyed fields", () => {
 				.inputMode,
 		).toBe("decimal")
 	})
+})
+
+describe("CycleActionRail choice fields", () => {
+	const grantRole = (checked = false): RailAction<RailField> => ({
+		id: "grant-vault-role",
+		label: "Grant a vault role",
+		conditions: [{ label: "Confirmed", met: checked }],
+		outcome: null,
+		fields: [
+			{
+				kind: "select",
+				key: "role",
+				label: "Role",
+				value: "treasury",
+				options: [
+					{ value: "manager", label: "Manager" },
+					{ value: "treasury", label: "Treasury" },
+				],
+			},
+			{
+				kind: "confirm",
+				key: "confirm",
+				label: "Merges two vault roles on one account.",
+				value: "treasury:GABC",
+				checked,
+			},
+		],
+		enabled: checked,
+	})
+
+	const renderChoices = (action: RailAction<RailField>) => {
+		const onInput = vi.fn()
+		render(
+			<CycleActionRail
+				scope="governance"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onInput={onInput}
+			/>,
+		)
+		const collapsed = screen.queryByRole("button", {
+			name: "Grant a vault role",
+			expanded: false,
+		})
+		if (collapsed !== null) fireEvent.click(collapsed)
+		return onInput
+	}
+
+	it("offers the options of a select and reports the chosen one with its key", () => {
+		const action = grantRole()
+		const onInput = renderChoices(action)
+		const select = screen.getByRole<HTMLSelectElement>("combobox", {
+			name: "Role",
+		})
+
+		expect(select.value).toBe("treasury")
+		expect(
+			within(select)
+				.getAllByRole("option")
+				.map((option) => option.textContent),
+		).toEqual(["Manager", "Treasury"])
+		fireEvent.change(select, { target: { value: "manager" } })
+		expect(onInput).toHaveBeenCalledWith(action, "manager", "role")
+	})
+
+	it("shows the label of a select", () => {
+		renderChoices(grantRole())
+
+		expect(screen.getByText("Role").className).not.toContain("srOnly")
+	})
+
+	it.each([
+		[false, "treasury:GABC"],
+		[true, ""],
+	])(
+		"toggles a confirmation checked %s by reporting %o",
+		(checked, reported) => {
+			const action = grantRole(checked)
+			const onInput = renderChoices(action)
+			const check = screen.getByRole<HTMLInputElement>("checkbox", {
+				name: "Merges two vault roles on one account.",
+			})
+
+			expect(check.checked).toBe(checked)
+			fireEvent.click(check)
+			expect(onInput).toHaveBeenCalledWith(action, reported, "confirm")
+		},
+	)
 })
