@@ -8,10 +8,13 @@ import {
 import { describe, expect, it } from "vitest"
 import {
 	describeCollected,
+	describeExpiry,
 	describePending,
 	type PendingStateInput,
 	pendingState,
+	primaryAction,
 	toModalProps,
+	uniformWeights,
 } from "./sign"
 
 const addresses = {
@@ -318,6 +321,74 @@ describe("describeCollected", () => {
 				thresholds: { low: 1, med: 3, high: 3 },
 			}),
 		).toBe("weight 2 of threshold 3")
+	})
+})
+
+describe("uniformWeights", () => {
+	it("holds when every signer weighs the same", () => {
+		expect(uniformWeights(signers)).toBe(true)
+	})
+
+	it("fails when one signer weighs more", () => {
+		expect(
+			uniformWeights({
+				...signers,
+				signers: [
+					{ key: account, weight: 2 },
+					{ key: other, weight: 1 },
+				],
+			}),
+		).toBe(false)
+	})
+})
+
+describe("describeExpiry", () => {
+	it("shows the date and the UTC time", () => {
+		expect(describeExpiry(new Date("2027-01-15T08:05:00Z"))).toBe(
+			"15 Jan 2027, 08:05 UTC",
+		)
+	})
+
+	it("names a transaction without expiry", () => {
+		expect(describeExpiry(null)).toBe("No expiry")
+	})
+})
+
+describe("primaryAction", () => {
+	it("offers Submit when the signatures are complete", () => {
+		expect(primaryAction("ready", false, false)).toEqual({
+			label: "Submit",
+			enabled: true,
+		})
+	})
+
+	it("offers Sign to a connected wallet while waiting", () => {
+		expect(primaryAction("valid", true, true)).toEqual({
+			label: "Sign",
+			enabled: true,
+		})
+		expect(primaryAction("valid", true, false)).toEqual({
+			label: "Sign",
+			enabled: false,
+		})
+	})
+
+	it("asks for a wallet when none is connected", () => {
+		expect(primaryAction("valid", false, false)).toEqual({
+			label: "Connect a wallet to sign",
+			enabled: false,
+		})
+	})
+
+	it("offers nothing in every other state", () => {
+		for (const state of [
+			"expired",
+			"consumed",
+			"not-signer",
+			"already-signed",
+		] as const) {
+			expect(primaryAction(state, true, false)).toBeNull()
+		}
 	})
 })
 

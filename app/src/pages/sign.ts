@@ -331,6 +331,90 @@ export const STATE_COPY: Record<PendingState, string> = {
 	ready: "Signatures complete. Anyone can submit.",
 }
 
+export type StateTone = "neutral" | "success" | "danger" | "muted"
+
+export type StateView = {
+	pill: string
+	tone: StateTone
+	nextStep: string
+	shareable: boolean
+}
+
+const SHARE_NEXT = "Share the link with the next signer."
+const NEW_LINK = "Ask the proposer for a new link."
+
+export const STATE_VIEW: Record<PendingState, StateView> = {
+	valid: {
+		pill: "Waiting for signatures",
+		tone: "neutral",
+		nextStep: SHARE_NEXT,
+		shareable: true,
+	},
+	ready: {
+		pill: "Ready to submit",
+		tone: "success",
+		nextStep: "Anyone can submit this transaction.",
+		shareable: true,
+	},
+	"already-signed": {
+		pill: "You already signed",
+		tone: "neutral",
+		nextStep: SHARE_NEXT,
+		shareable: true,
+	},
+	expired: {
+		pill: "Expired",
+		tone: "danger",
+		nextStep: NEW_LINK,
+		shareable: false,
+	},
+	consumed: {
+		pill: "Account moved on",
+		tone: "danger",
+		nextStep: NEW_LINK,
+		shareable: false,
+	},
+	"not-signer": {
+		pill: "Not a signer",
+		tone: "muted",
+		nextStep: "Only a signer of this account can sign.",
+		shareable: true,
+	},
+}
+
+export type PrimaryAction = {
+	label: "Sign" | "Submit" | "Connect a wallet to sign"
+	enabled: boolean
+}
+
+export const primaryAction = (
+	state: PendingState,
+	hasWallet: boolean,
+	canSign: boolean,
+): PrimaryAction | null => {
+	if (state === "ready") return { label: "Submit", enabled: true }
+	if (state !== "valid") return null
+	return hasWallet
+		? { label: "Sign", enabled: canSign }
+		: { label: "Connect a wallet to sign", enabled: false }
+}
+
+const clock = new Intl.DateTimeFormat("en-US", {
+	hour: "2-digit",
+	minute: "2-digit",
+	hourCycle: "h23",
+	timeZone: "UTC",
+})
+
+export const describeExpiry = (expiresAt: Date | null): string => {
+	if (expiresAt === null) return "No expiry"
+	const seconds = BigInt(Math.floor(expiresAt.getTime() / 1000))
+	return `${formatDate(seconds)}, ${clock.format(expiresAt)} UTC`
+}
+
+export const uniformWeights = (signers: AccountSigners): boolean =>
+	new Set(signers.signers.map(({ weight }) => weight)).size <= 1
+
 export const describeCollected = (
 	weight: number,
 	signers: AccountSigners,
