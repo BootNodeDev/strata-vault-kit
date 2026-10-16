@@ -4,6 +4,7 @@ mod deposit;
 mod epoch;
 mod error;
 mod event;
+mod governance;
 mod keys;
 mod pricing;
 mod redeem;
@@ -15,11 +16,12 @@ mod upgrade;
 mod wind_down;
 
 use bindings::ShareClient;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
 use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
+use timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
 use keys::DataKey;
 use roles::{GUARDIAN_ROLE, MANAGER_ROLE, TREASURY_ROLE};
@@ -27,21 +29,21 @@ use state::FIRST_EPOCH;
 
 pub use error::VaultError;
 pub use event::{
-    CustodianSet, Deployed, DepositCapUpdated, DepositClaimed, DepositRequested, EpochClosed,
-    EpochFulfilled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, UpgradeCancelled,
-    UpgradeDelayProposed, UpgradeDelaySet, UpgradeProposed, Upgraded, WindDownActivated,
-    WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled, WindDownProposed,
-    WindDownRoundFinalized,
+    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
+    DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded, NoticeSet,
+    RedeemClaimed, RedeemRequested, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
+pub use governance::{VaultChange, VaultPendingChange};
 pub use pricing::{DirectUnitPricing, PricingScheme};
 pub use roles::VaultRoles;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
-pub use upgrade::{UpgradeAction, UpgradeProposal, MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
+pub use upgrade::{MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
 pub use wind_down::{WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY};
 
 /// Thirty days. Longer than any notice a real structure uses, short enough that
 /// setting it by mistake is survivable.
-pub const MAX_NOTICE_SECS: u64 = 30 * 24 * 60 * 60;
+pub const MAX_NOTICE_SECS: u64 = 30 * DAY_DURATION;
 
 fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
     if access_control::get_role_member_count(e, role) == 0 {
@@ -88,6 +90,7 @@ impl AsyncVault {
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
         state::set_current_epoch(e, FIRST_EPOCH);
         upgradeable::set_schema_version(e, 1);
+        timelock::setup::finish::<AsyncVault>(e).unwrap_or_else(|r| governance::refuse(e, r));
     }
 
     pub fn asset(e: &Env) -> Address {
@@ -265,37 +268,33 @@ impl AsyncVault {
         NoticeSet { secs }.publish(e);
     }
 
+    /// Queues a change behind the timelock and returns its id.
     #[only_admin]
-    pub fn propose_upgrade(e: &Env, wasm_hash: BytesN<32>, caller: Address) {
+    pub fn propose_change(e: &Env, change: VaultChange, caller: Address) -> u32 {
         caller.require_auth();
-        upgrade::propose_wasm(e, wasm_hash);
+        governance::propose(e, change)
     }
 
     #[only_admin]
-    pub fn propose_upgrade_delay(e: &Env, secs: u64, caller: Address) {
+    pub fn cancel_change(e: &Env, id: u32, caller: Address) {
         caller.require_auth();
-        upgrade::propose_delay(e, secs);
+        governance::cancel(e, id);
     }
 
+    /// Lands a change whose delay has run. Refused while paused or winding
+    /// down.
     #[only_admin]
-    pub fn cancel_upgrade(e: &Env, caller: Address) {
+    pub fn apply_change(e: &Env, id: u32, caller: Address) {
         caller.require_auth();
-        upgrade::cancel(e);
+        governance::apply(e, id);
     }
 
-    #[only_admin]
-    #[when_not_paused]
-    pub fn apply_upgrade(e: &Env, caller: Address) {
-        caller.require_auth();
-        upgrade::apply(e);
+    pub fn pending_changes(e: &Env) -> Vec<VaultPendingChange> {
+        governance::pending(e)
     }
 
     pub fn upgrade_delay(e: &Env) -> u64 {
         upgrade::delay(e)
-    }
-
-    pub fn upgrade_proposal(e: &Env) -> Option<UpgradeProposal> {
-        upgrade::proposal(e)
     }
 
     pub fn schema_version(e: &Env) -> u32 {
@@ -393,14 +392,27 @@ impl Pausable for AsyncVault {
     #[only_role(caller, "guardian")]
     fn pause(e: &Env, caller: Address) {
         pausable::pause(e);
-        upgrade::on_pause(e);
+        timelock::pause::start(e);
     }
 
     #[only_admin]
     fn unpause(e: &Env, caller: Address) {
         caller.require_auth();
         pausable::unpause(e);
-        upgrade::on_unpause(e);
+        timelock::pause::end(e);
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl ClockSource for AsyncVault {
+    fn timelock_clock(e: &Env) -> Clock {
+        governance::clock(e)
+    }
+}
+
+impl TimelockHost for AsyncVault {
+    fn clock(e: &Env) -> Result<Clock, Refusal> {
+        Ok(governance::clock(e))
     }
 }
 

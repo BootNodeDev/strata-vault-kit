@@ -16,6 +16,7 @@ stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
 stellar-contract-utils = { workspace = true }
 bindings = { path = "../../crates/bindings" }
+timelock = { path = "../../crates/timelock" }
 
 
 [dev-dependencies]

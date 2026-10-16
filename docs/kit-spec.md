@@ -71,10 +71,13 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
 - **Testable Property**:
-  - Upgrade delay $\in [7 \text{ days}, 90 \text{ days}]$ and $\text{delay} \ge \text{notice}$.
+  - Upgrade delay $\in [7 \text{ days}, 90 \text{ days}]$ and $\text{delay} \ge \text{notice}$, checked when a delay change is proposed and again when it applies.
   - Wind-down delay $\le 90 \text{ days}$.
-  - Applying an upgrade before $\text{proposed\_time} + \text{delay}$ reverts with `UpgradeDelayNotElapsed`.
-  - Pausing freezes the upgrade timelock clock and pushes the ETA by the duration paused.
+  - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
+  - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
+  - Time spent paused does not count. Applying while paused is refused.
+  - Nothing is proposed or applied during an active wind-down (`WindDownActive`).
+  - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
@@ -137,7 +140,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | **Custodian Address** | `set_custodian(custodian: Address)` | Governance | Recipient address for off-chain capital deployment. Required before `deploy_to_custodian`. |
 | **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital. `None` = unbounded. Refuses negative cap. |
 | **Wind-Down Delay** | `set_wind_down_delay(secs: u64)` | Governance | Minimum notice before wind-down activation. Default: `0`. Capped at 90 days (`MAX_WIND_DOWN_DELAY`). |
-| **Upgrade Delay** | `propose_upgrade_delay(secs: u64)` | Governance | Timelock delay for wasm upgrades. Must be $\ge 7 \text{ days}$, $\le 90 \text{ days}$, and $\ge \text{notice}$. |
+| **Upgrade Delay** | `propose_change(UpgradeDelay(secs))` → `apply_change(id)` | Governance | Timelock delay for wasm upgrades. Must be $\ge 7 \text{ days}$, $\le 90 \text{ days}$, and $\ge \text{notice}$. |
 | **Oracle Configuration** | `set_config(config: OracleConfig)` | Governance | Updates oracle parameters. Follows same validation rules as constructor. |
 
 ---
@@ -185,10 +188,10 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `claim_wind_down` | Shareholder (Caller) | `caller.require_auth()` | No |
 | **`AsyncVault`** | `deploy_to_custodian` | Treasury | `#[only_role(caller, "treasury")]` | No (open during pause) |
 | **`AsyncVault`** | `fund` | Treasury | None (caller transfers funds) | No |
-| **`AsyncVault`** | `propose_upgrade` | Governance | `#[only_admin]` | No |
-| **`AsyncVault`** | `propose_upgrade_delay` | Governance | `#[only_admin]` | No |
-| **`AsyncVault`** | `cancel_upgrade` | Governance | `#[only_admin]` | No |
-| **`AsyncVault`** | `apply_upgrade` | Governance | `#[only_admin]` | Refused if paused |
+| **`AsyncVault`** | `propose_change` | Governance | `#[only_admin]` | No |
+| **`AsyncVault`** | `cancel_change` | Governance | `#[only_admin]` | No |
+| **`AsyncVault`** | `apply_change` | Governance | `#[only_admin]` | Refused if paused or winding down |
+| **`AsyncVault`** | `pending_changes` | Permissionless | None (view) | No |
 | **`AsyncVault`** | `transfer_admin_role` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | `caller.require_auth()` | No |
 | **`NavOracle`** | `attest` | Attester | `#[only_role(caller, "attester")]` | Refused if ripcord active |

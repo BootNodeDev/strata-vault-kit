@@ -58,7 +58,7 @@ fn a_later_notice_does_not_move_an_epoch_that_closed() {
     let id = f.close_epoch();
     let before = f.vault.get_epoch(&id).unwrap().priceable_at;
 
-    f.vault.set_notice(&86_400, &f.admin);
+    f.vault.set_notice(&DAY_DURATION, &f.admin);
 
     assert_eq!(f.vault.get_epoch(&id).unwrap().priceable_at, before);
 }
@@ -171,9 +171,11 @@ fn a_notice_at_the_maximum_is_accepted() {
     let f = setup();
 
     // The delay must be raised first, since notice cannot outgrow the upgrade delay.
-    f.vault.propose_upgrade_delay(&MAX_NOTICE_SECS, &f.admin);
+    let id = f
+        .vault
+        .propose_change(&VaultChange::UpgradeDelay(MAX_NOTICE_SECS), &f.admin);
     f.advance(MIN_UPGRADE_DELAY);
-    f.vault.apply_upgrade(&f.admin);
+    f.vault.apply_change(&id, &f.admin);
 
     f.vault.set_notice(&MAX_NOTICE_SECS, &f.admin);
 

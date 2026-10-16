@@ -1,5 +1,7 @@
 use soroban_sdk::{contractevent, Address};
 
+use crate::governance::VaultChange;
+
 #[contractevent]
 pub struct DepositRequested {
     #[topic]
@@ -94,27 +96,24 @@ pub struct RedeemCancelled {
 }
 
 #[contractevent]
-pub struct UpgradeProposed {
+pub struct ChangeProposed {
+    #[topic]
+    pub id: u32,
+    pub change: VaultChange,
     pub eta: u64,
 }
 
 #[contractevent]
-pub struct UpgradeDelayProposed {
-    pub secs: u64,
-    pub eta: u64,
+pub struct ChangeCancelled {
+    #[topic]
+    pub id: u32,
 }
 
 #[contractevent]
-pub struct UpgradeCancelled {}
-
-#[contractevent]
-pub struct UpgradeDelaySet {
-    pub secs: u64,
-}
-
-#[contractevent]
-pub struct Upgraded {
-    pub schema_version: u32,
+pub struct ChangeApplied {
+    #[topic]
+    pub id: u32,
+    pub change: VaultChange,
 }
 
 #[contractevent]

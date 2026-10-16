@@ -34,10 +34,11 @@ pub(crate) use nav_oracle::{NavOracleContract, NavOracleContractClient, NavRepor
 pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
+pub(crate) use timelock::DAY_DURATION;
 
 pub(crate) use crate::{
-    AsyncVault, AsyncVaultClient, DirectUnitPricing, EpochStatus, PricingScheme, UpgradeAction,
-    VaultError, VaultRoles, WindDownStatus, MAX_NOTICE_SECS, MAX_UPGRADE_DELAY,
+    AsyncVault, AsyncVaultClient, DirectUnitPricing, EpochStatus, PricingScheme, VaultChange,
+    VaultError, VaultPendingChange, VaultRoles, WindDownStatus, MAX_NOTICE_SECS, MAX_UPGRADE_DELAY,
     MAX_WIND_DOWN_DELAY, MIN_UPGRADE_DELAY,
 };
 

@@ -195,6 +195,7 @@ dependencies = [
  "stellar-contract-utils",
  "stellar-macros",
  "storage",
+ "timelock",
 ]
 
 [[package]]
