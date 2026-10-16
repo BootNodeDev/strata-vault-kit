@@ -1,10 +1,11 @@
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    testutils::{storage::Instance as _, Address as _, Ledger as _, MockAuth, MockAuthInvoke},
     Address, Env, IntoVal, String, Symbol,
 };
 use stellar_access::access_control::{self as access_control, AccessControlError};
 use stellar_tokens::rwa::RWAError;
+use storage::INSTANCE_EXTEND_AMOUNT;
 
 use crate::{ShareToken, ShareTokenClient};
 use compliance::{Compliance, ComplianceClient};
@@ -412,4 +413,100 @@ fn the_constructor_grants_the_compliance_role_and_no_manager() {
         .token
         .has_role(&f.admin, &symbol_short!("manager"))
         .is_none());
+}
+
+const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
+
+fn instance_ttl(e: &Env, id: &Address) -> u32 {
+    e.as_contract(id, || e.storage().instance().get_ttl())
+}
+
+fn age(e: &Env, ledgers: u32) {
+    e.ledger().with_mut(|l| l.sequence_number += ledgers);
+}
+
+/// A live token whose instance has decayed past the extend threshold, with
+/// two allowlisted holders, the first holding 100 shares.
+fn decayed_live_token(e: &Env) -> (Fixture<'_>, Address, Address) {
+    let (f, identity) = setup_live(e);
+    let holder = Address::generate(e);
+    let other = Address::generate(e);
+    identity.allow(&holder, &true, &f.admin);
+    identity.allow(&other, &true, &f.admin);
+    f.token.mint(&holder, &100, &f.manager);
+
+    age(e, TWO_DAYS_IN_LEDGERS);
+    assert!(instance_ttl(e, &f.token.address) < INSTANCE_EXTEND_AMOUNT);
+    (f, holder, other)
+}
+
+#[test]
+fn construction_writes_the_instance_with_the_full_ttl() {
+    let e = Env::default();
+    let f = setup_fixture(&e);
+
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+}
+
+#[test]
+fn a_transfer_restores_the_instance_ttl() {
+    let e = Env::default();
+    let (f, holder, other) = decayed_live_token(&e);
+
+    f.token.transfer(&holder, &other, &10);
+
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+}
+
+#[test]
+fn a_transfer_from_restores_the_instance_ttl() {
+    let e = Env::default();
+    let (f, holder, other) = decayed_live_token(&e);
+    let live_until = e.ledger().sequence() + 3 * 17_280;
+    f.token.approve(&holder, &other, &10, &live_until);
+    age(&e, TWO_DAYS_IN_LEDGERS);
+    assert!(instance_ttl(&e, &f.token.address) < INSTANCE_EXTEND_AMOUNT);
+
+    f.token.transfer_from(&other, &holder, &other, &10);
+
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+}
+
+#[test]
+fn an_approval_restores_the_instance_ttl() {
+    let e = Env::default();
+    let (f, holder, other) = decayed_live_token(&e);
+
+    let live_until = e.ledger().sequence() + 100;
+    f.token.approve(&holder, &other, &10, &live_until);
+
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+}
+
+#[test]
+fn the_vaults_mint_burn_and_escrow_restore_the_instance_ttl() {
+    let e = Env::default();
+    let (f, holder, other) = decayed_live_token(&e);
+
+    f.token.mint(&other, &5, &f.manager);
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+
+    age(&e, TWO_DAYS_IN_LEDGERS);
+    f.token.forced_transfer(&holder, &other, &5, &f.manager);
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+
+    age(&e, TWO_DAYS_IN_LEDGERS);
+    f.token.burn(&other, &5, &f.manager);
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+}
+
+#[test]
+fn compliance_interventions_restore_the_instance_ttl() {
+    let e = Env::default();
+    let (f, holder, _) = decayed_live_token(&e);
+
+    f.token
+        .set_address_frozen(&holder, &true, &f.compliance_authority);
+
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
 }
