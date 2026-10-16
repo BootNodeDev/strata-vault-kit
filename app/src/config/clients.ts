@@ -60,6 +60,22 @@ export const shareTokenWriter = writer((signer) =>
 	connectShareToken(addresses.share_token, signer),
 )
 
+const verifierWriters = new Map<
+	string,
+	(signer: Signer) => Promise<IdentityVerifierApi>
+>()
+
+export const identityVerifierWriter = (address: string) => {
+	let verifierWriter = verifierWriters.get(address)
+	if (verifierWriter === undefined) {
+		verifierWriter = writer((signer) =>
+			connectIdentityVerifier(address, signer),
+		)
+		verifierWriters.set(address, verifierWriter)
+	}
+	return verifierWriter
+}
+
 let oracle: Promise<NavOracleApi> | undefined
 
 export const navOracle = (): Promise<NavOracleApi> => {
@@ -70,16 +86,19 @@ export const navOracle = (): Promise<NavOracleApi> => {
 	return oracle
 }
 
-let identityVerifierClient: Promise<IdentityVerifierApi> | undefined
+const verifierReaders = new Map<string, Promise<IdentityVerifierApi>>()
 
-export const identityVerifier = (): Promise<IdentityVerifierApi> => {
-	identityVerifierClient ??= connectIdentityVerifier(
-		addresses.identity_verifier,
-	).catch((error: unknown) => {
-		identityVerifierClient = undefined
+export const identityVerifierAt = (
+	address: string,
+): Promise<IdentityVerifierApi> => {
+	const cached = verifierReaders.get(address)
+	if (cached !== undefined) return cached
+	const client = connectIdentityVerifier(address).catch((error: unknown) => {
+		verifierReaders.delete(address)
 		throw error
 	})
-	return identityVerifierClient
+	verifierReaders.set(address, client)
+	return client
 }
 
 let shareTokenClient: Promise<ShareTokenApi> | undefined

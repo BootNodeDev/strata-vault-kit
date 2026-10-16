@@ -46,6 +46,31 @@ vi.mock("../components/admin/CycleSection", () => ({
 	),
 }))
 
+vi.mock("../components/admin/ComplianceSection", () => ({
+	default: ({
+		grants,
+		contracts,
+		active,
+		verifierAdminUnknown,
+	}: {
+		grants: Grant[]
+		contracts: React.ReactNode
+		active: boolean
+		verifierAdminUnknown: boolean
+	}) => (
+		<div
+			data-testid="compliance-surface"
+			data-active={String(active)}
+			data-admin-unknown={String(verifierAdminUnknown)}
+		>
+			<p>
+				Compliance surface for {grants.map((grant) => grant.role).join(", ")}
+			</p>
+			{contracts}
+		</div>
+	),
+}))
+
 vi.mock("../components/admin/EmergencySection", () => ({
 	default: ({
 		grants,
@@ -133,6 +158,7 @@ const noHolders: RoleHolders = {
 	"oracle guardian": [],
 	"oracle admin": [],
 	"share-token compliance": [],
+	"identity-verifier admin": [],
 	"share-token manager": [],
 	"share-token admin": [],
 	"vault pending admin": [],
@@ -146,6 +172,7 @@ const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	grantedBy: emptyGrantedBy,
 	grants: [],
 	signersUnknown: false,
+	verifierAdminUnknown: false,
 	addresses: noAddresses,
 	holders: noHolders,
 	...overrides,
@@ -288,6 +315,57 @@ describe("AdminPanel", () => {
 				"GCON...7890 · Current roles: Vault Manager · Vault Guardian · Oracle Guardian · Vault Governance",
 			),
 		).toBeTruthy()
+	})
+
+	it("renders the compliance actions with the compliance grants, active only on its tab", () => {
+		const manager = holderOf("vault manager")
+		const officer = holderOf("share-token compliance")
+		const verifierAdmin = holderOf("identity-verifier admin")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["cycle", "compliance"]),
+				grantedBy: {
+					...emptyGrantedBy,
+					cycle: [manager],
+					compliance: [officer, verifierAdmin],
+				},
+				grants: [manager, officer, verifierAdmin],
+			}),
+		)
+		renderAt("/admin/compliance")
+
+		expect(
+			screen.getByText(
+				"Compliance surface for share-token compliance, identity-verifier admin",
+			),
+		).toBeTruthy()
+		expect(
+			screen.getByTestId("compliance-surface").getAttribute("data-active"),
+		).toBe("true")
+		expect(
+			screen.getByTestId("cycle-surface").getAttribute("data-active"),
+		).toBe("false")
+	})
+
+	it("tells the compliance surface when the verifier admin is unknown", () => {
+		const officer = holderOf("share-token compliance")
+		useAdminAuthorityMock.mockReturnValue(
+			authority({
+				status: "ready",
+				surfaces: new Set(["compliance"]),
+				grantedBy: { ...emptyGrantedBy, compliance: [officer] },
+				grants: [officer],
+				verifierAdminUnknown: true,
+			}),
+		)
+		renderAt("/admin/compliance")
+
+		expect(
+			screen
+				.getByTestId("compliance-surface")
+				.getAttribute("data-admin-unknown"),
+		).toBe("true")
 	})
 
 	it("renders the emergency actions with the emergency grants, active only on its tab", () => {

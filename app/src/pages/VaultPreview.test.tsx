@@ -354,6 +354,7 @@ vi.mock("../config/clients", () => {
 		balance: async () => ({ result: mockShares.balance }),
 		symbol: async () => ({ result: mockSymbols.shareToken }),
 		name: async () => ({ result: mockSymbols.vaultName }),
+		identity_verifier: async () => ({ result: "CVERIFIER" }),
 	}
 	const depositAsset = {
 		symbol: async () => ({ result: mockSymbols.token }),
@@ -364,7 +365,7 @@ vi.mock("../config/clients", () => {
 		asyncVault: async () => vault,
 		asyncVaultWriter: async () => vault,
 		navOracle: async () => oracle,
-		identityVerifier: async () => identity,
+		identityVerifierAt: async () => identity,
 		shareToken: async () => shares,
 		asset: async () => depositAsset,
 	}

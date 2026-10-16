@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { networkPassphrase } from "./env"
 import {
+	addAmounts,
 	AMOUNT_DECIMALS,
 	type Amount,
 	formatDate,
@@ -15,6 +16,7 @@ import {
 	PRICE_DECIMALS,
 	type Price,
 	shortAddress,
+	subtractAmounts,
 } from "./format"
 
 describe("shortAddress", () => {
@@ -97,6 +99,22 @@ describe("parseUnits", () => {
 
 	it("rejects more fraction digits than decimals instead of silently truncating", () => {
 		expect(parseUnits("1.12345678", AMOUNT_DECIMALS)).toBeNull()
+	})
+})
+
+describe("addAmounts", () => {
+	it("adds two amounts", () => {
+		expect(addAmounts(5n as Amount, 7n as Amount)).toBe(12n)
+	})
+})
+
+describe("subtractAmounts", () => {
+	it("subtracts the second amount from the first", () => {
+		expect(subtractAmounts(12n as Amount, 7n as Amount)).toBe(5n)
+	})
+
+	it("floors at zero instead of going negative", () => {
+		expect(subtractAmounts(7n as Amount, 12n as Amount)).toBe(0n)
 	})
 })
 

@@ -1,6 +1,7 @@
 import { shortAddress } from "@stellar-scaffold/app-lib"
 import React, { useEffect, useRef } from "react"
 import { Navigate, useParams } from "react-router-dom"
+import ComplianceSection from "../components/admin/ComplianceSection"
 import ConfigurationSection from "../components/admin/ConfigurationSection"
 import CycleSection from "../components/admin/CycleSection"
 import Disclosure from "../components/admin/Disclosure"
@@ -69,7 +70,16 @@ const SurfaceBody: React.FC<{
 	wallet: string
 	addresses: AdminAddresses
 	holders: RoleHolders
-}> = ({ surface, active, grantedBy, wallet, addresses, holders }) => {
+	verifierAdminUnknown: boolean
+}> = ({
+	surface,
+	active,
+	grantedBy,
+	wallet,
+	addresses,
+	holders,
+	verifierAdminUnknown,
+}) => {
 	const contracts = <Contracts addresses={addresses} />
 	switch (surface) {
 		case "cycle":
@@ -111,7 +121,16 @@ const SurfaceBody: React.FC<{
 				/>
 			)
 		case "compliance":
-			return contracts
+			return (
+				<ComplianceSection
+					grants={grantedBy.compliance}
+					wallet={wallet}
+					addresses={addresses}
+					verifierAdminUnknown={verifierAdminUnknown}
+					active={active}
+					contracts={contracts}
+				/>
+			)
 	}
 }
 
@@ -121,7 +140,15 @@ const HeldSurfaces: React.FC<{
 	wallet: string
 	addresses: AdminAddresses
 	holders: RoleHolders
-}> = ({ held, grantedBy, wallet, addresses, holders }) => {
+	verifierAdminUnknown: boolean
+}> = ({
+	held,
+	grantedBy,
+	wallet,
+	addresses,
+	holders,
+	verifierAdminUnknown,
+}) => {
 	const { surface } = useParams()
 	const active = held.find((candidate) => candidate === surface)
 	const headingRef = useRef<HTMLHeadingElement>(null)
@@ -166,6 +193,7 @@ const HeldSurfaces: React.FC<{
 						wallet={wallet}
 						addresses={addresses}
 						holders={holders}
+						verifierAdminUnknown={verifierAdminUnknown}
 					/>
 				</section>
 			))}
@@ -180,6 +208,7 @@ const AdminPanel: React.FC = () => {
 		grantedBy,
 		grants,
 		signersUnknown,
+		verifierAdminUnknown,
 		addresses,
 		holders,
 	} = useAdminAuthority()
@@ -236,6 +265,7 @@ const AdminPanel: React.FC = () => {
 					wallet={address ?? ""}
 					addresses={addresses}
 					holders={holders}
+					verifierAdminUnknown={verifierAdminUnknown}
 				/>
 			)}
 		</div>

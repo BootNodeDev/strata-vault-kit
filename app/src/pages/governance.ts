@@ -1,4 +1,3 @@
-import { StrKey } from "@stellar/stellar-sdk"
 import { type PendingTransfer, shortAddress } from "@stellar-scaffold/app-lib"
 import { type Metric } from "../components/vault/MetricsStrip"
 import {
@@ -17,9 +16,15 @@ import {
 } from "../hooks/useGovernanceTransactions"
 import {
 	allMet,
+	type Built,
+	type BuiltSpec,
 	type Condition,
+	type Confirmation,
+	confirmation,
+	confirmKey,
 	grantFor,
-	type RailAction,
+	type Inputs,
+	parseAccount,
 	type RailField,
 	ROLES,
 	type Spec,
@@ -65,12 +70,6 @@ export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
 	...VAULT_ACTION_IDS,
 ]
 
-export const confirmKey = (id: GovernanceActionId): string => `${id}-confirm`
-
-type Built<Id extends string, Arg> = Id extends string
-	? RailAction<RailField> & { id: Id; arg: Arg; next: string }
-	: never
-
 export type GovernanceAction =
 	| Built<RoleActionId, RoleChange | undefined>
 	| Built<OfferActionId, AdminOffer | undefined>
@@ -78,8 +77,6 @@ export type GovernanceAction =
 	| Built<"propose-code-upgrade", string | undefined>
 	| Built<"propose-upgrade-delay", bigint | undefined>
 	| Built<VaultActionId, undefined>
-
-export type GovernanceInputs = Partial<Record<string, string>>
 
 export type GovernanceState = {
 	holders: RoleHolders
@@ -172,14 +169,6 @@ const WARNINGS = {
 	mergedRoles: "Merges two vault roles on one account.",
 } as const
 
-const parseAccount = (text: string): string | undefined => {
-	const trimmed = text.trim()
-	return StrKey.isValidEd25519PublicKey(trimmed) ||
-		StrKey.isValidContract(trimmed)
-		? trimmed
-		: undefined
-}
-
 const holderList = (accounts: string[]): string =>
 	accounts.length === 0 ? "none" : accounts.map(shortAddress).join(", ")
 
@@ -234,25 +223,10 @@ const resultingHolders = ({
 		: current.filter((holder) => holder !== account)
 }
 
-type Confirmation = { field: RailField; condition: Condition }
-
-function confirmation(
-	key: string,
-	label: string,
-	value: string,
-	inputs: GovernanceInputs,
-): Confirmation {
-	const checked = inputs[key] === value
-	return {
-		field: { kind: "confirm", key, label, value, checked },
-		condition: { label: "Confirmed", met: checked },
-	}
-}
-
 const roleConfirmation = (
 	draft: Draft,
 	key: string,
-	inputs: GovernanceInputs,
+	inputs: Inputs,
 ): Confirmation | undefined => {
 	const label = warningOf(draft)
 	return label === undefined
@@ -273,11 +247,8 @@ function roleSpec(
 	operation: Operation,
 	contract: GovernedContract,
 	state: GovernanceState,
-	inputs: GovernanceInputs,
-): Spec<RoleActionId, RailField> & {
-	arg: RoleChange | undefined
-	next: string
-} {
+	inputs: Inputs,
+): BuiltSpec<RoleActionId, RoleChange | undefined> {
 	const id: RoleActionId = `${operation}-${contract}-role`
 	const { noun, roles } = CONTRACTS[contract]
 	const roleKey = `${id}-role`
@@ -365,11 +336,8 @@ const limitCondition = (
 function handOverSpec(
 	contract: GovernedContract,
 	state: GovernanceState,
-	inputs: GovernanceInputs,
-): Spec<OfferActionId, RailField> & {
-	arg: AdminOffer | undefined
-	next: string
-} {
+	inputs: Inputs,
+): BuiltSpec<OfferActionId, AdminOffer | undefined> {
 	const id: OfferActionId = `hand-over-${contract}-admin`
 	const accountKey = `${id}-account`
 	const expiryKey = `${id}-expiry`
@@ -476,10 +444,6 @@ const acceptSpec = (
 })
 
 type ReadyUpgrades = Extract<Upgrades, { status: "ready" }>
-type VaultSpec<Id extends string, Arg> = Spec<Id, RailField> & {
-	arg: Arg
-	next: string
-}
 
 const MIN_UPGRADE_DELAY = 7n * DAY
 const MAX_UPGRADE_DELAY = 90n * DAY
@@ -512,9 +476,9 @@ const aboveNotice = (
 })
 
 function codeUpgradeSpec(
-	inputs: GovernanceInputs,
+	inputs: Inputs,
 	upgrades?: ReadyUpgrades,
-): VaultSpec<"propose-code-upgrade", string | undefined> {
+): BuiltSpec<"propose-code-upgrade", string | undefined> {
 	const key = "propose-code-upgrade-hash"
 	const text = inputs[key] ?? ""
 	const hash = WASM_HASH.test(text.trim())
@@ -549,9 +513,9 @@ function codeUpgradeSpec(
 }
 
 function delayUpgradeSpec(
-	inputs: GovernanceInputs,
+	inputs: Inputs,
 	upgrades?: ReadyUpgrades,
-): VaultSpec<"propose-upgrade-delay", bigint | undefined> {
+): BuiltSpec<"propose-upgrade-delay", bigint | undefined> {
 	const key = "propose-upgrade-delay-secs"
 	const current = upgrades?.delay ?? undefined
 	const text =
@@ -600,8 +564,8 @@ const notPaused = (paused: ReadyUpgrades["paused"]): Condition => ({
 function applySpec(
 	proposal: PendingUpgrade,
 	upgrades: ReadyUpgrades,
-	inputs: GovernanceInputs,
-): VaultSpec<"apply-upgrade", undefined> {
+	inputs: Inputs,
+): BuiltSpec<"apply-upgrade", undefined> {
 	const conditions: Condition[] = [
 		{
 			label: "ETA reached",
@@ -641,7 +605,7 @@ function applySpec(
 
 const cancelUpgradeSpec = (
 	proposal: PendingUpgrade,
-): VaultSpec<"cancel-upgrade", undefined> => ({
+): BuiltSpec<"cancel-upgrade", undefined> => ({
 	id: "cancel-upgrade",
 	label: "Cancel the upgrade",
 	conditions: [],
@@ -651,9 +615,9 @@ const cancelUpgradeSpec = (
 })
 
 function windDownSpec(
-	inputs: GovernanceInputs,
+	inputs: Inputs,
 	upgrades?: ReadyUpgrades,
-): VaultSpec<"propose-wind-down", undefined> {
+): BuiltSpec<"propose-wind-down", undefined> {
 	const phase = upgrades?.windDown.phase ?? null
 	const confirm = confirmation(
 		confirmKey("propose-wind-down"),
@@ -690,7 +654,7 @@ function windDownSpec(
 	}
 }
 
-const cancelWindDownSpec = (): VaultSpec<"cancel-wind-down", undefined> => ({
+const cancelWindDownSpec = (): BuiltSpec<"cancel-wind-down", undefined> => ({
 	id: "cancel-wind-down",
 	label: "Cancel the wind-down",
 	conditions: [],
@@ -710,7 +674,7 @@ function adminActions(
 	state: GovernanceState,
 	grant: Grant,
 	wallet: string,
-	inputs: GovernanceInputs,
+	inputs: Inputs,
 ): GovernanceAction[] {
 	const pending =
 		state.handovers.status === "ready"
@@ -731,7 +695,7 @@ function vaultActions(
 	state: GovernanceState,
 	grant: Grant,
 	wallet: string,
-	inputs: GovernanceInputs,
+	inputs: Inputs,
 ): GovernanceAction[] {
 	const upgrades =
 		state.upgrades.status === "ready" ? state.upgrades : undefined
@@ -777,7 +741,7 @@ export function toGovernanceActions(
 	state: GovernanceState,
 	grants: Grant[],
 	wallet: string,
-	inputs: GovernanceInputs,
+	inputs: Inputs,
 ): GovernanceAction[] {
 	return GOVERNED_CONTRACTS.flatMap((contract) => {
 		const admin = grantFor(grants, CONTRACTS[contract].admin.grant, wallet)

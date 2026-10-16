@@ -3,7 +3,7 @@ import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { vaultContractId } from "../config/contracts"
 import { pendingAdminsQuery } from "./pendingAdmins"
-import { renderWithWallet, investorAddress } from "./testSupport"
+import { deferred, renderWithWallet, investorAddress } from "./testSupport"
 import {
 	type AdminSurface,
 	adminAuthorityKey,
@@ -26,6 +26,7 @@ const noHolders: RoleHolders = {
 	"oracle guardian": [],
 	"oracle admin": [],
 	"share-token compliance": [],
+	"identity-verifier admin": [],
 	"share-token manager": [],
 	"share-token admin": [],
 	"vault pending admin": [],
@@ -77,6 +78,7 @@ describe("toSurfaces", () => {
 		["vault treasury", ["cycle"]],
 		["oracle attester", ["cycle"]],
 		["share-token compliance", ["compliance"]],
+		["identity-verifier admin", ["compliance"]],
 		["vault guardian", ["emergency"]],
 		["oracle guardian", ["emergency"]],
 		["share-token admin", ["emergency", "configuration", "governance"]],
@@ -299,6 +301,7 @@ const {
 	connectShareTokenMock,
 	accountSignersMock,
 	readPendingAdminsMock,
+	readContractAdminMock,
 } = vi.hoisted(() => ({
 	vaultMock: {
 		governance: vi.fn(),
@@ -322,6 +325,7 @@ const {
 	connectShareTokenMock: vi.fn(),
 	accountSignersMock: vi.fn(),
 	readPendingAdminsMock: vi.fn(),
+	readContractAdminMock: vi.fn(),
 }))
 
 vi.mock("../config/clients", () => ({
@@ -336,6 +340,7 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 		connectShareToken: connectShareTokenMock,
 		accountSigners: accountSignersMock,
 		readPendingAdmins: readPendingAdminsMock,
+		readContractAdmin: readContractAdminMock,
 	}
 })
 
@@ -399,6 +404,80 @@ describe("useAdminAuthority", () => {
 		})
 		accountSignersMock.mockResolvedValue(singleKey)
 		readPendingAdminsMock.mockResolvedValue(pendingAdmins({}))
+		readContractAdminMock.mockResolvedValue({ kind: "value", value: null })
+	})
+
+	it("grants the compliance surface to the admin of the token's own identity verifier", async () => {
+		vaultRoles({})
+		readContractAdminMock.mockResolvedValue({
+			kind: "value",
+			value: investorAddress,
+		})
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(readContractAdminMock).toHaveBeenCalledWith("CVERIFIERADDRESS")
+		expect(result.current.surfaces).toEqual(new Set(["compliance"]))
+		expect(result.current.holders["identity-verifier admin"]).toEqual([
+			investorAddress,
+		])
+	})
+
+	it("grants nothing from a verifier whose admin is another account", async () => {
+		vaultRoles({})
+		readContractAdminMock.mockResolvedValue({
+			kind: "value",
+			value: contractHolder,
+		})
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+		expect(result.current.surfaces).toEqual(new Set())
+	})
+
+	it.each([
+		["cannot be read", { kind: "unreadable" }],
+		["is archived", { kind: "archived" }],
+	])(
+		"keeps the other surfaces and flags the verifier admin when it %s",
+		async (_, read) => {
+			readContractAdminMock.mockResolvedValue(read)
+			const { result } = renderWithWallet(useAdminAuthority)
+
+			await waitFor(() => expect(result.current.status).toBe("ready"))
+			expect(result.current.surfaces).toEqual(new Set(["cycle"]))
+			expect(result.current.holders["identity-verifier admin"]).toEqual([])
+			expect(result.current.verifierAdminUnknown).toBe(true)
+		},
+	)
+
+	it("does not flag the verifier admin when it is read, even with no admin", async () => {
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+		expect(result.current.verifierAdminUnknown).toBe(false)
+	})
+
+	it("skips the verifier admin read and flags it when the token's verifier is unknown", async () => {
+		tokenMock.identity_verifier.mockRejectedValue(new Error("rpc down"))
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+		expect(readContractAdminMock).not.toHaveBeenCalled()
+		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
+		expect(result.current.verifierAdminUnknown).toBe(true)
+	})
+
+	it("reads the verifier admin without waiting for the other token reads", async () => {
+		const tokenAdmin = deferred<{ result: null }>()
+		tokenMock.get_admin.mockReturnValue(tokenAdmin.promise)
+		renderWithWallet(useAdminAuthority)
+
+		await waitFor(() =>
+			expect(readContractAdminMock).toHaveBeenCalledWith("CVERIFIERADDRESS"),
+		)
+		tokenAdmin.resolve({ result: null })
 	})
 
 	it("reports the held surfaces and the derived addresses once every read resolves", async () => {

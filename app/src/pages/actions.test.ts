@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest"
 import { type Grant } from "../hooks/useAdminAuthority"
 import {
+	clearConfirmations,
 	grantFor,
+	parseAccount,
 	type RailAction,
 	readiness,
 	readyCount,
 	type Spec,
 	toAction,
 	unavailableFor,
+	withInput,
 } from "./actions"
 
 vi.mock("@stellar-scaffold/app-lib", () => ({
@@ -209,5 +212,60 @@ describe("toAction", () => {
 		expect(action.unavailable).toBe(
 			"Needs 2 signatures; collecting them is not supported yet.",
 		)
+	})
+})
+
+describe("parseAccount", () => {
+	const account = "GDPO5SQDJY4E2XEE47MAOT2M2F3GR4H2AYYKSMIOT2YPOHAMC36VKWIA"
+	const contract = "CADQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQOBYHA4DQP5KR"
+
+	it.each([account, contract])("accepts %s, trimmed", (address) => {
+		expect(parseAccount(`  ${address} `)).toBe(address)
+	})
+
+	it.each(["", "GABC", `${account.slice(0, -1)}B`, "SDPO5SQDJY4E2XEE"])(
+		"rejects %j",
+		(text) => {
+			expect(parseAccount(text)).toBeUndefined()
+		},
+	)
+})
+
+describe("withInput", () => {
+	it("sets the field and clears that action's confirmation only", () => {
+		expect(
+			withInput(
+				{ "fund-confirm": "ok", "other-confirm": "ok", keep: "1" },
+				"fund",
+				"fund-amount",
+				"5",
+			),
+		).toEqual({
+			"fund-confirm": "",
+			"other-confirm": "ok",
+			keep: "1",
+			"fund-amount": "5",
+		})
+	})
+})
+
+describe("clearConfirmations", () => {
+	it("clears the confirmation of every listed action and leaves other inputs", () => {
+		expect(
+			clearConfirmations(
+				{
+					"a-confirm": "x",
+					"b-confirm": "y",
+					"c-confirm": "z",
+					"a-amount": "1",
+				},
+				["a", "b"],
+			),
+		).toEqual({
+			"a-confirm": "",
+			"b-confirm": "",
+			"c-confirm": "z",
+			"a-amount": "1",
+		})
 	})
 })

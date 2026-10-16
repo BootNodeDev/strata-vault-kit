@@ -1,3 +1,4 @@
+import { StrKey } from "@stellar/stellar-sdk"
 import { shortAddress } from "@stellar-scaffold/app-lib"
 import { type Grant, type Standing } from "../hooks/useAdminAuthority"
 
@@ -7,7 +8,17 @@ export const ROLES = {
 	oracleGuardian: "oracle guardian",
 	oracleAdmin: "oracle admin",
 	tokenAdmin: "share-token admin",
+	compliance: "share-token compliance",
+	verifierAdmin: "identity-verifier admin",
 } as const
+
+export const parseAccount = (text: string): string | undefined => {
+	const trimmed = text.trim()
+	return StrKey.isValidEd25519PublicKey(trimmed) ||
+		StrKey.isValidContract(trimmed)
+		? trimmed
+		: undefined
+}
 
 export type Condition = {
 	label: string
@@ -139,5 +150,45 @@ export const toAction = <Id extends string, F extends RailField>(
 			spec.conditions.every((condition) => condition.met !== false),
 		...(spec.danger === true ? { tone: "danger" as const } : {}),
 		...(unavailable === undefined ? {} : { unavailable }),
+	}
+}
+
+export type Built<Id extends string, Arg> = Id extends string
+	? RailAction<RailField> & { id: Id; arg: Arg; next: string }
+	: never
+
+export type BuiltSpec<Id extends string, Arg> = Spec<Id, RailField> & {
+	arg: Arg
+	next: string
+}
+
+export type Inputs = Partial<Record<string, string>>
+
+export const confirmKey = (id: string): string => `${id}-confirm`
+
+export const clearConfirmations = (inputs: Inputs, ids: string[]): Inputs => ({
+	...inputs,
+	...Object.fromEntries(ids.map((id) => [confirmKey(id), ""])),
+})
+
+export const withInput = (
+	inputs: Inputs,
+	id: string,
+	key: string,
+	value: string,
+): Inputs => ({ ...clearConfirmations(inputs, [id]), [key]: value })
+
+export type Confirmation = { field: ConfirmField; condition: Condition }
+
+export function confirmation(
+	key: string,
+	label: string,
+	value: string,
+	inputs: Inputs,
+): Confirmation {
+	const checked = inputs[key] === value
+	return {
+		field: { kind: "confirm", key, label, value, checked },
+		condition: { label: "Confirmed", met: checked },
 	}
 }

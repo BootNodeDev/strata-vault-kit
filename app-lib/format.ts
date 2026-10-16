@@ -187,6 +187,11 @@ export function parseUnits<D extends Decimals>(
 	return (negative ? -magnitude : magnitude) as Scaled<D>
 }
 
+export const addAmounts = (a: Amount, b: Amount): Amount => (a + b) as Amount
+
+export const subtractAmounts = (a: Amount, b: Amount): Amount =>
+	(a > b ? a - b : 0n) as Amount
+
 export const parseAmount = (raw: string): number | null => {
 	const value = Number(raw.replace(/,/g, ""))
 	return Number.isFinite(value) && value > 0 ? value : null

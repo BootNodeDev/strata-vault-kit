@@ -5,6 +5,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { governanceReadsKey } from "./pendingAdmins"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { adminAuthorityKey } from "./useAdminAuthority"
+import { complianceReadsKey } from "./useComplianceState"
+import {
+	useAllowAddress,
+	useDisallowAddress,
+	useForceTransfer,
+	useFreezeAddress,
+	useFreezeShares,
+	useUnfreezeAddress,
+	useUnfreezeShares,
+} from "./useComplianceTransactions"
 import { configurationReadsKey } from "./useConfigurationState"
 import {
 	useSetCompliance,
@@ -55,51 +65,60 @@ import { tokenPausedKey } from "./useTokenPaused"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 import { vaultPausedKey } from "./useVaultPaused"
 
-const { vault, token, oracle } = vi.hoisted(() => ({
-	vault: {
-		pause: vi.fn(),
-		unpause: vi.fn(),
-		set_deposit_cap: vi.fn(),
-		set_custodian: vi.fn(),
-		set_notice: vi.fn(),
-		set_wind_down_delay: vi.fn(),
-		grant_role: vi.fn(),
-		revoke_role: vi.fn(),
-		transfer_admin_role: vi.fn(),
-		accept_admin_transfer: vi.fn(),
-		propose_upgrade: vi.fn(),
-		propose_upgrade_delay: vi.fn(),
-		apply_upgrade: vi.fn(),
-		cancel_upgrade: vi.fn(),
-		propose_wind_down: vi.fn(),
-		cancel_wind_down_proposal: vi.fn(),
-	},
-	token: {
-		pause: vi.fn(),
-		unpause: vi.fn(),
-		set_compliance: vi.fn(),
-		set_identity_verifier: vi.fn(),
-		grant_role: vi.fn(),
-		revoke_role: vi.fn(),
-		transfer_admin_role: vi.fn(),
-		accept_admin_transfer: vi.fn(),
-	},
-	oracle: {
-		raise_ripcord: vi.fn(),
-		set_ripcord: vi.fn(),
-		clear_latest: vi.fn(),
-		set_config: vi.fn(),
-		grant_role: vi.fn(),
-		revoke_role: vi.fn(),
-		transfer_admin_role: vi.fn(),
-		accept_admin_transfer: vi.fn(),
-	},
-}))
+const { vault, token, oracle, verifier, verifierWriterMock } = vi.hoisted(
+	() => ({
+		vault: {
+			pause: vi.fn(),
+			unpause: vi.fn(),
+			set_deposit_cap: vi.fn(),
+			set_custodian: vi.fn(),
+			set_notice: vi.fn(),
+			set_wind_down_delay: vi.fn(),
+			grant_role: vi.fn(),
+			revoke_role: vi.fn(),
+			transfer_admin_role: vi.fn(),
+			accept_admin_transfer: vi.fn(),
+			propose_upgrade: vi.fn(),
+			propose_upgrade_delay: vi.fn(),
+			apply_upgrade: vi.fn(),
+			cancel_upgrade: vi.fn(),
+			propose_wind_down: vi.fn(),
+			cancel_wind_down_proposal: vi.fn(),
+		},
+		token: {
+			pause: vi.fn(),
+			unpause: vi.fn(),
+			set_compliance: vi.fn(),
+			set_identity_verifier: vi.fn(),
+			grant_role: vi.fn(),
+			revoke_role: vi.fn(),
+			transfer_admin_role: vi.fn(),
+			accept_admin_transfer: vi.fn(),
+			set_address_frozen: vi.fn(),
+			freeze_partial_tokens: vi.fn(),
+			unfreeze_partial_tokens: vi.fn(),
+			forced_transfer: vi.fn(),
+		},
+		verifier: { allow: vi.fn() },
+		verifierWriterMock: vi.fn(),
+		oracle: {
+			raise_ripcord: vi.fn(),
+			set_ripcord: vi.fn(),
+			clear_latest: vi.fn(),
+			set_config: vi.fn(),
+			grant_role: vi.fn(),
+			revoke_role: vi.fn(),
+			transfer_admin_role: vi.fn(),
+			accept_admin_transfer: vi.fn(),
+		},
+	}),
+)
 
 vi.mock("../config/clients", () => ({
 	asyncVaultWriter: async () => vault,
 	shareTokenWriter: async () => token,
 	navOracleWriter: async () => oracle,
+	identityVerifierWriter: verifierWriterMock,
 }))
 
 const CONTRACT = "CCONTRACTADDRESS1234567890"
@@ -427,89 +446,173 @@ const confirmed = () => ({
 	}),
 })
 
-describe.each([...cases, ...governanceCases])("$name", (testCase) => {
-	const { useHook, method, arg, args, keys, refusal } = testCase
+const VERIFIER = "CVERIFIERADDRESS"
+const TARGET = "GTARGETADDRESS1234"
+const DESTINATION = "GDESTINATION5678"
 
-	beforeEach(() => {
-		vi.clearAllMocks()
-	})
+const complianceCases: Case[] = [
+	{
+		name: "useAllowAddress",
+		useHook: useAllowAddress,
+		method: verifier.allow,
+		arg: { verifier: VERIFIER, account: TARGET },
+		args: { account: TARGET, allowed: true, caller: investorAddress },
+		keys: [complianceReadsKey, isAllowedKey],
+		refusal: 2000,
+	},
+	{
+		name: "useDisallowAddress",
+		useHook: useDisallowAddress,
+		method: verifier.allow,
+		arg: { verifier: VERIFIER, account: TARGET },
+		args: { account: TARGET, allowed: false, caller: investorAddress },
+		keys: [complianceReadsKey, isAllowedKey],
+		refusal: 2001,
+	},
+	{
+		name: "useFreezeAddress",
+		useHook: useFreezeAddress,
+		method: token.set_address_frozen,
+		arg: TARGET,
+		args: { user_address: TARGET, freeze: true, operator: investorAddress },
+		keys: [complianceReadsKey],
+		refusal: 2000,
+	},
+	{
+		name: "useUnfreezeAddress",
+		useHook: useUnfreezeAddress,
+		method: token.set_address_frozen,
+		arg: TARGET,
+		args: { user_address: TARGET, freeze: false, operator: investorAddress },
+		keys: [complianceReadsKey],
+		refusal: 2000,
+	},
+	{
+		name: "useFreezeShares",
+		useHook: useFreezeShares,
+		method: token.freeze_partial_tokens,
+		arg: { account: TARGET, amount: 5n },
+		args: { user_address: TARGET, amount: 5n, operator: investorAddress },
+		keys: [complianceReadsKey],
+		refusal: 300,
+	},
+	{
+		name: "useUnfreezeShares",
+		useHook: useUnfreezeShares,
+		method: token.unfreeze_partial_tokens,
+		arg: { account: TARGET, amount: 5n },
+		args: { user_address: TARGET, amount: 5n, operator: investorAddress },
+		keys: [complianceReadsKey],
+		refusal: 303,
+	},
+	{
+		name: "useForceTransfer",
+		useHook: useForceTransfer,
+		method: token.forced_transfer,
+		arg: { from: TARGET, to: DESTINATION, amount: 5n },
+		args: {
+			from: TARGET,
+			to: DESTINATION,
+			amount: 5n,
+			operator: investorAddress,
+		},
+		keys: [complianceReadsKey, ["share", "balance"]],
+		refusal: 300,
+	},
+]
 
-	it("signs as the connected wallet and confirms", async () => {
-		const gate = deferred<void>()
-		method.mockResolvedValue({
-			simulation: undefined,
-			signAndSend: vi.fn(
-				async ({ watcher }: { watcher: { onSubmitted: () => void } }) => {
-					await gate.promise
-					watcher.onSubmitted()
-					return {
-						getTransactionResponse: { status: "SUCCESS" },
-						result: undefined,
-					}
-				},
-			),
+describe.each([...cases, ...governanceCases, ...complianceCases])(
+	"$name",
+	(testCase) => {
+		const { useHook, method, arg, args, keys, refusal } = testCase
+
+		beforeEach(() => {
+			vi.clearAllMocks()
+			verifierWriterMock.mockImplementation(
+				(address: string) => async () =>
+					address === VERIFIER ? verifier : undefined,
+			)
 		})
-		const { result } = renderWithWallet(useHook)
 
-		expect(result.current.submit(arg as never)).toBe(true)
-		await waitFor(() =>
-			expect(result.current.status).toEqual({ status: "awaiting-signature" }),
-		)
-
-		gate.resolve()
-		await waitFor(() =>
-			expect(result.current.status).toEqual({ status: "confirmed" }),
-		)
-		expect(method.mock.calls).toEqual([args === undefined ? [] : [args]])
-	})
-
-	it("refuses before asking for a signature and refreshes the state it read", async () => {
-		const signAndSend = vi.fn()
-		method.mockResolvedValue({
-			simulation: { error: `HostError: Error(Contract, #${refusal})` },
-			signAndSend,
-		})
-		const { result, queryClient } = renderWithWallet(useHook)
-		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
-
-		await act(() => result.current.submit(arg as never))
-
-		expect(result.current.status).toEqual({
-			status: "failed",
-			failure: { kind: "contract-error", code: refusal },
-		})
-		expect(signAndSend).not.toHaveBeenCalled()
-		for (const queryKey of keys)
-			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
-	})
-
-	it("tells a declined signature apart from a failure", async () => {
-		method.mockResolvedValue({
-			simulation: undefined,
-			signAndSend: vi
-				.fn()
-				.mockRejectedValue(
-					new AssembledTransaction.Errors.UserRejected("User declined access"),
+		it("signs as the connected wallet and confirms", async () => {
+			const gate = deferred<void>()
+			method.mockResolvedValue({
+				simulation: undefined,
+				signAndSend: vi.fn(
+					async ({ watcher }: { watcher: { onSubmitted: () => void } }) => {
+						await gate.promise
+						watcher.onSubmitted()
+						return {
+							getTransactionResponse: { status: "SUCCESS" },
+							result: undefined,
+						}
+					},
 				),
+			})
+			const { result } = renderWithWallet(useHook)
+
+			expect(result.current.submit(arg as never)).toBe(true)
+			await waitFor(() =>
+				expect(result.current.status).toEqual({ status: "awaiting-signature" }),
+			)
+
+			gate.resolve()
+			await waitFor(() =>
+				expect(result.current.status).toEqual({ status: "confirmed" }),
+			)
+			expect(method.mock.calls).toEqual([args === undefined ? [] : [args]])
 		})
-		const { result } = renderWithWallet(useHook)
 
-		await act(() => result.current.submit(arg as never))
+		it("refuses before asking for a signature and refreshes the state it read", async () => {
+			const signAndSend = vi.fn()
+			method.mockResolvedValue({
+				simulation: { error: `HostError: Error(Contract, #${refusal})` },
+				signAndSend,
+			})
+			const { result, queryClient } = renderWithWallet(useHook)
+			const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
 
-		expect(result.current.status).toEqual({
-			status: "failed",
-			failure: { kind: "declined" },
+			await act(() => result.current.submit(arg as never))
+
+			expect(result.current.status).toEqual({
+				status: "failed",
+				failure: { kind: "contract-error", code: refusal },
+			})
+			expect(signAndSend).not.toHaveBeenCalled()
+			for (const queryKey of keys)
+				expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
 		})
-	})
 
-	it("refreshes the state it changed once confirmed", async () => {
-		method.mockResolvedValue(confirmed())
-		const { result, queryClient } = renderWithWallet(useHook)
-		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+		it("tells a declined signature apart from a failure", async () => {
+			method.mockResolvedValue({
+				simulation: undefined,
+				signAndSend: vi
+					.fn()
+					.mockRejectedValue(
+						new AssembledTransaction.Errors.UserRejected(
+							"User declined access",
+						),
+					),
+			})
+			const { result } = renderWithWallet(useHook)
 
-		await act(() => result.current.submit(arg as never))
+			await act(() => result.current.submit(arg as never))
 
-		for (const queryKey of keys)
-			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
-	})
-})
+			expect(result.current.status).toEqual({
+				status: "failed",
+				failure: { kind: "declined" },
+			})
+		})
+
+		it("refreshes the state it changed once confirmed", async () => {
+			method.mockResolvedValue(confirmed())
+			const { result, queryClient } = renderWithWallet(useHook)
+			const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
+
+			await act(() => result.current.submit(arg as never))
+
+			for (const queryKey of keys)
+				expect(invalidateQueries).toHaveBeenCalledWith({ queryKey })
+		})
+	},
+)
