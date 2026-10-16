@@ -8,7 +8,7 @@ use stellar_access::access_control::{self as access_control, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_macros::{only_admin, only_any_role, only_role};
 use stellar_tokens::{
-    fungible::{Base, FungibleToken},
+    fungible::{Base, ContractOverrides, FungibleToken},
     rwa::{RWAToken, RWA},
 };
 
@@ -36,6 +36,7 @@ impl ShareToken {
         );
         RWA::set_compliance(e, &compliance);
         RWA::set_identity_verifier(e, &identity_verifier);
+        storage::bump_instance(e);
     }
 }
 
@@ -44,18 +45,43 @@ impl Pausable for ShareToken {
     #[only_admin]
     fn pause(e: &Env, caller: Address) {
         caller.require_auth();
+        storage::bump_instance(e);
         pausable::pause(e);
     }
     #[only_admin]
     fn unpause(e: &Env, caller: Address) {
         caller.require_auth();
+        storage::bump_instance(e);
         pausable::unpause(e);
     }
 }
 
+/// OpenZeppelin leaves the instance's lifetime to the token, so every call
+/// that moves shares extends it before handing over to the library.
 #[contractimpl(contracttrait)]
 impl FungibleToken for ShareToken {
     type ContractType = RWA;
+
+    fn transfer(e: &Env, from: Address, to: MuxedAddress, amount: i128) {
+        storage::bump_instance(e);
+        <Self::ContractType as ContractOverrides>::transfer(e, &from, &to, amount);
+    }
+
+    fn transfer_from(e: &Env, spender: Address, from: Address, to: Address, amount: i128) {
+        storage::bump_instance(e);
+        <Self::ContractType as ContractOverrides>::transfer_from(e, &spender, &from, &to, amount);
+    }
+
+    fn approve(e: &Env, owner: Address, spender: Address, amount: i128, live_until_ledger: u32) {
+        storage::bump_instance(e);
+        <Self::ContractType as ContractOverrides>::approve(
+            e,
+            &owner,
+            &spender,
+            amount,
+            live_until_ledger,
+        );
+    }
 }
 
 #[contractimpl(contracttrait)]
@@ -72,15 +98,18 @@ impl AccessControl for ShareToken {
 impl RWAToken for ShareToken {
     #[only_role(operator, "manager")]
     fn mint(e: &Env, to: Address, amount: i128, operator: Address) {
+        storage::bump_instance(e);
         RWA::mint(e, &to, amount);
     }
     #[only_role(operator, "manager")]
     fn burn(e: &Env, user_address: Address, amount: i128, operator: Address) {
+        storage::bump_instance(e);
         RWA::burn(e, &user_address, amount);
     }
     /// The vault escrows redemptions through it; compliance intervenes with it.
     #[only_any_role(operator, ["manager", "compliance"])]
     fn forced_transfer(e: &Env, from: Address, to: Address, amount: i128, operator: Address) {
+        storage::bump_instance(e);
         RWA::forced_transfer(e, &from, &to, amount);
     }
     #[only_role(operator, "compliance")]
@@ -90,28 +119,34 @@ impl RWAToken for ShareToken {
         new_account: Address,
         operator: Address,
     ) -> bool {
+        storage::bump_instance(e);
         RWA::recover_balance(e, &old_account, &new_account)
     }
     #[only_role(operator, "compliance")]
     fn set_address_frozen(e: &Env, user_address: Address, freeze: bool, operator: Address) {
+        storage::bump_instance(e);
         RWA::set_address_frozen(e, &user_address, freeze);
     }
     #[only_role(operator, "compliance")]
     fn freeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
+        storage::bump_instance(e);
         RWA::freeze_partial_tokens(e, &user_address, amount);
     }
     #[only_role(operator, "compliance")]
     fn unfreeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
+        storage::bump_instance(e);
         RWA::unfreeze_partial_tokens(e, &user_address, amount);
     }
     #[only_admin]
     fn set_compliance(e: &Env, compliance: Address, operator: Address) {
         operator.require_auth();
+        storage::bump_instance(e);
         RWA::set_compliance(e, &compliance);
     }
     #[only_admin]
     fn set_identity_verifier(e: &Env, identity_verifier: Address, operator: Address) {
         operator.require_auth();
+        storage::bump_instance(e);
         RWA::set_identity_verifier(e, &identity_verifier);
     }
 }
