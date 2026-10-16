@@ -32,7 +32,13 @@ export interface PendingTransaction {
 }
 
 export type SubmitFailure =
-	"sequence-consumed" | "expired" | "bad-auth" | "fee" | "unknown"
+	| "sequence-consumed"
+	| "expired"
+	| "bad-auth"
+	| "fee"
+	| "fee-too-low"
+	| "not-accepted"
+	| "unknown"
 
 export type SubmitResult =
 	| { status: "success"; hash: string; result: unknown }
@@ -56,6 +62,19 @@ const invocationOf = (transaction: Transaction) => {
 	if (operation.type !== "invokeHostFunction") {
 		throw new InvalidPendingTransaction("not a host function invocation")
 	}
+	if (
+		operation.source !== undefined &&
+		operation.source !== transaction.source
+	) {
+		throw new InvalidPendingTransaction("operation source differs")
+	}
+	for (const entry of operation.auth ?? []) {
+		if (
+			entry.credentials().switch().name !== "sorobanCredentialsSourceAccount"
+		) {
+			throw new InvalidPendingTransaction("unexpected authorization entry")
+		}
+	}
 	if (operation.func.switch().name !== "hostFunctionTypeInvokeContract") {
 		throw new InvalidPendingTransaction("not a contract invocation")
 	}
@@ -68,11 +87,19 @@ const expiryOf = (transaction: Transaction): Date | null => {
 	return new Date(Number(maxTime) * 1000)
 }
 
+const assertStarted = (transaction: Transaction) => {
+	const minTime = transaction.timeBounds?.minTime
+	if (minTime !== undefined && Number(minTime) > Date.now() / 1000) {
+		throw new InvalidPendingTransaction("not valid yet")
+	}
+}
+
 export function decodePending(encoded: string): PendingTransaction {
 	const transaction = parseEnvelope(encoded)
 	if (transaction instanceof FeeBumpTransaction) {
 		throw new InvalidPendingTransaction("fee bump envelope")
 	}
+	assertStarted(transaction)
 	const invocation = invocationOf(transaction)
 	return {
 		transaction,
@@ -131,6 +158,7 @@ const failureOf = (result: xdr.TransactionResult): SubmitFailure => {
 		case "txBadAuthExtra":
 			return "bad-auth"
 		case "txInsufficientFee":
+			return "fee-too-low"
 		case "txInsufficientBalance":
 			return "fee"
 		default:
@@ -143,6 +171,9 @@ export async function submitSigned(
 ): Promise<SubmitResult> {
 	const sent = await server.sendTransaction(transaction)
 	const hash = sent.hash
+	if (sent.status === "TRY_AGAIN_LATER") {
+		return { status: "failed", reason: "not-accepted", hash }
+	}
 	if (sent.status === "ERROR") {
 		const reason = sent.errorResult ? failureOf(sent.errorResult) : "unknown"
 		return { status: "failed", reason, hash }
@@ -159,4 +190,18 @@ export async function submitSigned(
 		return { status: "failed", reason: failureOf(polled.resultXdr), hash }
 	}
 	return { status: "failed", reason: "unknown", hash }
+}
+
+export async function transactionStatus(
+	hash: string,
+): Promise<"success" | "failed" | "not-found"> {
+	const found = await server.getTransaction(hash)
+	switch (found.status) {
+		case Api.GetTransactionStatus.SUCCESS:
+			return "success"
+		case Api.GetTransactionStatus.FAILED:
+			return "failed"
+		case Api.GetTransactionStatus.NOT_FOUND:
+			return "not-found"
+	}
 }

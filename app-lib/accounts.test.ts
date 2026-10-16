@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { accountSigners } from "./accounts"
+import { accountSigners, uniformWeights } from "./accounts"
 
 const { callMock, accountIdMock } = vi.hoisted(() => ({
 	callMock: vi.fn(),
@@ -70,5 +70,34 @@ describe("accountSigners", () => {
 	it("returns null for a contract address without asking Horizon", async () => {
 		expect(await accountSigners("CCONTRACTADDRESS")).toBeNull()
 		expect(accountIdMock).not.toHaveBeenCalled()
+	})
+})
+
+describe("uniformWeights", () => {
+	it("holds when every signer weighs one", () => {
+		expect(
+			uniformWeights([
+				{ key: "GSIGNERONE", weight: 1 },
+				{ key: "GSIGNERTWO", weight: 1 },
+			]),
+		).toBe(true)
+	})
+
+	it("fails when one signer weighs more than one", () => {
+		expect(
+			uniformWeights([
+				{ key: "GSIGNERONE", weight: 2 },
+				{ key: "GSIGNERTWO", weight: 1 },
+			]),
+		).toBe(false)
+	})
+
+	it("fails when every signer weighs the same but more than one", () => {
+		expect(
+			uniformWeights([
+				{ key: "GSIGNERONE", weight: 2 },
+				{ key: "GSIGNERTWO", weight: 2 },
+			]),
+		).toBe(false)
 	})
 })

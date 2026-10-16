@@ -6,6 +6,9 @@ export interface AccountSigners {
 	sequence: string
 }
 
+export const uniformWeights = (signers: AccountSigners["signers"]): boolean =>
+	signers.every(({ weight }) => weight <= 1)
+
 export async function accountSigners(
 	address: string,
 ): Promise<AccountSigners | null> {

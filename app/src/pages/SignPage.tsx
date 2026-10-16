@@ -1,4 +1,8 @@
-import { type AccountSigners, shortAddress } from "@stellar-scaffold/app-lib"
+import {
+	type AccountSigners,
+	shortAddress,
+	uniformWeights,
+} from "@stellar-scaffold/app-lib"
 import React from "react"
 import { useLocation } from "react-router-dom"
 import railStyles from "../components/admin/CycleActionRail.module.css"
@@ -16,7 +20,6 @@ import {
 	STATE_COPY,
 	STATE_VIEW,
 	toModalProps,
-	uniformWeights,
 } from "./sign"
 import styles from "./SignPage.module.css"
 
@@ -100,7 +103,7 @@ const Signatures: React.FC<SignaturesProps> = ({
 			</section>
 		)
 	}
-	const uniform = uniformWeights(signers)
+	const uniform = uniformWeights(signers.signers)
 	return (
 		<section className={styles.signatures}>
 			<p className={`${typeStyles.sectionHead} ${styles.caption}`}>
@@ -162,6 +165,13 @@ const PendingSign: React.FC<{ xdr: string }> = ({ xdr }) => {
 	const { address } = useWallet()
 	const sign = useSignPending(xdr)
 	const { pending, description, signers } = sign
+	if (sign.loading) {
+		return (
+			<Card>
+				<p className={typeStyles.body}>Checking the link</p>
+			</Card>
+		)
+	}
 	if (pending === null || description === null) {
 		return (
 			<Card>
@@ -218,15 +228,17 @@ const PendingSign: React.FC<{ xdr: string }> = ({ xdr }) => {
 						{action.label}
 					</button>
 				)}
-				<div className={styles.nextStep}>
-					<p className={`${typeStyles.label} ${styles.nextStepLabel}`}>
-						Next step
-					</p>
-					<p className={`${typeStyles.body} ${styles.nextStepText}`}>
-						{view.nextStep}
-					</p>
-					{view.shareable && <ShareLink xdr={sign.xdr} />}
-				</div>
+				{view.nextStep !== null && (
+					<div className={styles.nextStep}>
+						<p className={`${typeStyles.label} ${styles.nextStepLabel}`}>
+							Next step
+						</p>
+						<p className={`${typeStyles.body} ${styles.nextStepText}`}>
+							{view.nextStep}
+						</p>
+						{view.shareable && <ShareLink xdr={sign.xdr} />}
+					</div>
+				)}
 			</div>
 			{sign.status.status !== "idle" && (
 				<TransactionModal

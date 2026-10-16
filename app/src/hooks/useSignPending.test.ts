@@ -16,10 +16,21 @@ import {
 } from "../providers/WalletProvider"
 import { useSignPending } from "./useSignPending"
 
-const { accountSignersMock, submitSignedMock } = vi.hoisted(() => ({
+const {
+	accountSignersMock,
+	submitSignedMock,
+	transactionStatusMock,
+	tokenMock,
+	linkTarget,
+} = vi.hoisted(() => ({
 	accountSignersMock: vi.fn(),
 	submitSignedMock: vi.fn(),
+	transactionStatusMock: vi.fn(),
+	tokenMock: { identity_verifier: vi.fn() },
+	linkTarget: { contractId: "", expiresAt: new Date(0) },
 }))
+
+vi.mock("../config/clients", () => ({ shareToken: async () => tokenMock }))
 
 type Marker = { signedBy: string[] }
 
@@ -35,15 +46,16 @@ const pendingOf = (
 	fn: string,
 	args: unknown[],
 	signedBy: string[],
+	hash = "abc123",
 ): PendingTransaction => ({
 	transaction: { signedBy } as unknown as Transaction,
 	source: authority,
 	sequence: "42",
-	expiresAt: new Date("2027-01-15T08:00:00Z"),
-	contractId: addresses.async_vault,
+	expiresAt: linkTarget.expiresAt,
+	contractId: linkTarget.contractId,
 	fn,
 	args,
-	hash: "abc123",
+	hash,
 })
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
@@ -52,14 +64,22 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 		...actual,
 		accountSigners: accountSignersMock,
 		submitSigned: submitSignedMock,
+		transactionStatus: transactionStatusMock,
 		decodePending: (xdr: string) => {
 			const match = /^xdr:([a-z_]+):(.*)$/.exec(xdr)
 			if (match === null) {
 				throw new actual.InvalidPendingTransaction("not a transaction envelope")
 			}
 			const [, fn = "", signed = ""] = match
-			const args = fn === "set_custodian" ? ["GCUSTODIAN", "GAUTHORITY"] : []
-			return pendingOf(fn, args, signed === "" ? [] : signed.split(","))
+			const args =
+				fn === "set_custodian"
+					? ["GCUSTODIAN", "GAUTHORITY"]
+					: fn === "allow"
+						? ["GACCOUNT", true]
+						: []
+			const keys = signed === "" ? [] : signed.split(",")
+			const hash = keys.includes("GTAMPERED") ? "tampered" : "abc123"
+			return pendingOf(fn, args, keys, hash)
 		},
 		signatureWeight: (transaction: Transaction, signers: AccountSigners) => {
 			const signedBy = marked(transaction).signedBy.filter((key) =>
@@ -116,6 +136,9 @@ const renderSign = (xdr: string, address: string | undefined) => {
 describe("useSignPending", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
+		tokenMock.identity_verifier.mockResolvedValue({ result: "CLIVEVERIFIER" })
+		linkTarget.contractId = addresses.async_vault
+		linkTarget.expiresAt = new Date("2027-01-15T08:00:00Z")
 		window.history.replaceState(null, "", "/sign")
 	})
 
@@ -240,9 +263,200 @@ describe("useSignPending", () => {
 
 	it("detects a consumed sequence number", async () => {
 		accountSignersMock.mockResolvedValue({ ...signers(2), sequence: "42" })
+		transactionStatusMock.mockResolvedValue("not-found")
 		const { result } = renderSign(xdrSignedBy(first), wallet)
 
-		await waitFor(() => expect(result.current.state).toBe("consumed"))
+		await waitFor(() =>
+			expect(transactionStatusMock).toHaveBeenCalledWith("abc123"),
+		)
+		expect(result.current.state).toBe("consumed")
+	})
+
+	it("reports a consumed sequence whose transaction succeeded as executed", async () => {
+		accountSignersMock.mockResolvedValue({ ...signers(2), sequence: "42" })
+		transactionStatusMock.mockResolvedValue("success")
+		const { result } = renderSign(xdrSignedBy(first, third), wallet)
+
+		await waitFor(() => expect(result.current.state).toBe("executed"))
+		expect(result.current.canSubmit).toBe(false)
+	})
+
+	it("keeps a consumed sequence whose transaction failed as consumed", async () => {
+		accountSignersMock.mockResolvedValue({ ...signers(2), sequence: "42" })
+		transactionStatusMock.mockResolvedValue("failed")
+		const { result } = renderSign(xdrSignedBy(first, third), wallet)
+
+		await waitFor(() => expect(transactionStatusMock).toHaveBeenCalled())
+		expect(result.current.state).toBe("consumed")
+	})
+
+	it("never looks a transaction up while its sequence is live", async () => {
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign(xdrSignedBy(first, third), wallet)
+
+		await waitFor(() => expect(result.current.state).toBe("ready"))
+		expect(transactionStatusMock).not.toHaveBeenCalled()
+	})
+
+	it("lands on executed after its own successful submit", async () => {
+		accountSignersMock
+			.mockResolvedValueOnce(signers(2))
+			.mockResolvedValue({ ...signers(2), sequence: "42" })
+		transactionStatusMock.mockResolvedValue("not-found")
+		submitSignedMock.mockResolvedValue({
+			status: "success",
+			hash: "abc123",
+			result: undefined,
+		})
+		const { result } = renderSign(xdrSignedBy(first, third), wallet)
+		await waitFor(() => expect(result.current.canSubmit).toBe(true))
+
+		act(() => result.current.submit())
+
+		await waitFor(() => expect(result.current.state).toBe("executed"))
+		expect(transactionStatusMock).not.toHaveBeenCalled()
+	})
+
+	it("keeps the router state when it replaces the hash", async () => {
+		accountSignersMock.mockResolvedValue(signers(3))
+		window.history.replaceState({ idx: 7 }, "", "/sign")
+		const { result } = renderSign(xdrSignedBy(first), wallet)
+		await waitFor(() => expect(result.current.canSign).toBe(true))
+
+		act(() => result.current.sign())
+
+		await waitFor(() => expect(result.current.state).toBe("already-signed"))
+		expect(window.history.state).toEqual({ idx: 7 })
+	})
+
+	it("reports unsigned when the wallet returns something that is not a transaction", async () => {
+		accountSignersMock.mockResolvedValue(signers(2))
+		walletSigns.mockResolvedValueOnce({ signedTxXdr: "garbage" })
+		const { result } = renderSign(xdrSignedBy(first), wallet)
+		await waitFor(() => expect(result.current.canSign).toBe(true))
+
+		act(() => result.current.sign())
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "failed",
+				failure: { kind: "unsigned" },
+			}),
+		)
+		expect(result.current.xdr).toBe(xdrSignedBy(first))
+		expect(submitSignedMock).not.toHaveBeenCalled()
+	})
+
+	it("reports unsigned when the wallet returns a different transaction", async () => {
+		accountSignersMock.mockResolvedValue(signers(2))
+		walletSigns.mockResolvedValueOnce({
+			signedTxXdr: xdrSignedBy(first, wallet, "GTAMPERED"),
+		})
+		const { result } = renderSign(xdrSignedBy(first), wallet)
+		await waitFor(() => expect(result.current.canSign).toBe(true))
+
+		act(() => result.current.sign())
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "failed",
+				failure: { kind: "unsigned" },
+			}),
+		)
+		expect(result.current.xdr).toBe(xdrSignedBy(first))
+		expect(submitSignedMock).not.toHaveBeenCalled()
+	})
+
+	it("reports unsigned when the wallet drops a previous signature", async () => {
+		accountSignersMock.mockResolvedValue(signers(2))
+		walletSigns.mockResolvedValueOnce({ signedTxXdr: xdrSignedBy(wallet) })
+		const { result } = renderSign(xdrSignedBy(first), wallet)
+		await waitFor(() => expect(result.current.canSign).toBe(true))
+
+		act(() => result.current.sign())
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "failed",
+				failure: { kind: "unsigned" },
+			}),
+		)
+		expect(result.current.xdr).toBe(xdrSignedBy(first))
+		expect(submitSignedMock).not.toHaveBeenCalled()
+	})
+
+	it("reports unknown when the submit path throws", async () => {
+		accountSignersMock.mockResolvedValue(signers(2))
+		submitSignedMock.mockRejectedValue(new TypeError("Failed to fetch"))
+		const { result } = renderSign(xdrSignedBy(first, third), wallet)
+		await waitFor(() => expect(result.current.canSubmit).toBe(true))
+
+		act(() => result.current.submit())
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "failed",
+				failure: { kind: "unknown" },
+			}),
+		)
+	})
+
+	it("reports unsigned when the wallet returns without its own signature", async () => {
+		accountSignersMock.mockResolvedValue(signers(3))
+		walletSigns.mockResolvedValueOnce({
+			signedTxXdr: xdrSignedBy(first, third),
+		})
+		const { result } = renderSign(xdrSignedBy(first), wallet)
+		await waitFor(() => expect(result.current.canSign).toBe(true))
+
+		act(() => result.current.sign())
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "failed",
+				failure: { kind: "unsigned" },
+			}),
+		)
+		expect(result.current.xdr).toBe(xdrSignedBy(first))
+		expect(submitSignedMock).not.toHaveBeenCalled()
+	})
+
+	it("reports an expired link whose transaction succeeded as executed", async () => {
+		linkTarget.expiresAt = new Date("2020-01-01T00:00:00Z")
+		accountSignersMock.mockResolvedValue({ ...signers(2), sequence: "42" })
+		transactionStatusMock.mockResolvedValue("success")
+		const { result } = renderSign(xdrSignedBy(first, third), wallet)
+
+		await waitFor(() => expect(result.current.state).toBe("executed"))
+	})
+
+	it("describes a link for the verifier the share token reports now", async () => {
+		linkTarget.contractId = "CLIVEVERIFIER"
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:allow:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description?.contract).toBe("Identity verifier"),
+		)
+	})
+
+	it("falls back to the configured verifier when the live read fails", async () => {
+		linkTarget.contractId = addresses.identity_verifier
+		tokenMock.identity_verifier.mockRejectedValue(new Error("rpc down"))
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:allow:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description?.contract).toBe("Identity verifier"),
+		)
+	})
+
+	it("stays loading, not invalid, until the live verifier is read", async () => {
+		linkTarget.contractId = "CLIVEVERIFIER"
+		const { result } = renderSign("xdr:allow:", wallet)
+
+		expect(result.current.loading).toBe(true)
+		await waitFor(() => expect(result.current.loading).toBe(false))
 	})
 
 	it("reads nothing from an invalid link", () => {
@@ -253,8 +467,9 @@ describe("useSignPending", () => {
 		expect(accountSignersMock).not.toHaveBeenCalled()
 	})
 
-	it("refuses an operation the console does not propose", () => {
+	it("refuses an operation the console does not propose", async () => {
 		const { result } = renderSign("xdr:request_deposit:", wallet)
+		await waitFor(() => expect(result.current.loading).toBe(false))
 
 		expect(result.current.pending).toBeNull()
 	})

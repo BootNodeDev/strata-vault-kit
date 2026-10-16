@@ -14,13 +14,13 @@ import {
 	pendingState,
 	primaryAction,
 	toModalProps,
-	uniformWeights,
 } from "./sign"
 
 const addresses = {
 	vault: "CVAULT",
 	oracle: "CORACLE",
 	shareToken: "CTOKEN",
+	identityVerifier: "CVERIFIER",
 }
 
 const account = "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H"
@@ -179,10 +179,10 @@ describe("describePending", () => {
 		})
 	})
 
-	it("treats any other contract calling allow as the identity verifier", () => {
+	it("maps the configured identity verifier", () => {
 		expect(
 			describePending(
-				pending("CVERIFIER", "allow", [other, false, account]),
+				pending(addresses.identityVerifier, "allow", [other, false, account]),
 				addresses,
 			),
 		).toEqual({
@@ -191,6 +191,15 @@ describe("describePending", () => {
 			label: "Remove the address from the allowlist",
 			args: [{ label: "Address", value: "GDQN...KTL3" }],
 		})
+	})
+
+	it("refuses a contract that is not one of the configured four", () => {
+		expect(() =>
+			describePending(
+				pending("CFOREIGN", "allow", [other, true, account]),
+				addresses,
+			),
+		).toThrow(new InvalidPendingTransaction("unknown contract"))
 	})
 
 	it("maps the cycle operations the console can propose", () => {
@@ -236,7 +245,7 @@ describe("describePending", () => {
 		).toThrow(new InvalidPendingTransaction("unknown operation"))
 		expect(() =>
 			describePending(pending("CSOMEWHERE", "pause", [account]), addresses),
-		).toThrow(new InvalidPendingTransaction("unknown operation"))
+		).toThrow(new InvalidPendingTransaction("unknown contract"))
 	})
 
 	it("refuses arguments of the wrong shape", () => {
@@ -324,24 +333,6 @@ describe("describeCollected", () => {
 	})
 })
 
-describe("uniformWeights", () => {
-	it("holds when every signer weighs the same", () => {
-		expect(uniformWeights(signers)).toBe(true)
-	})
-
-	it("fails when one signer weighs more", () => {
-		expect(
-			uniformWeights({
-				...signers,
-				signers: [
-					{ key: account, weight: 2 },
-					{ key: other, weight: 1 },
-				],
-			}),
-		).toBe(false)
-	})
-})
-
 describe("describeExpiry", () => {
 	it("shows the date and the UTC time", () => {
 		expect(describeExpiry(new Date("2027-01-15T08:05:00Z"))).toBe(
@@ -384,6 +375,7 @@ describe("primaryAction", () => {
 		for (const state of [
 			"expired",
 			"consumed",
+			"executed",
 			"not-signer",
 			"already-signed",
 		] as const) {

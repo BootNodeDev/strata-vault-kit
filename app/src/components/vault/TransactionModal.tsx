@@ -408,8 +408,10 @@ const NETWORK_REASONS: Record<Exclude<SubmitFailure, "unknown">, string> = {
 	expired: "The transaction expired before it was submitted.",
 	"sequence-consumed":
 		"The account moved on; this transaction is no longer valid.",
-	"bad-auth": "The signatures do not meet the account's threshold.",
+	"bad-auth": "The signatures do not match the account's threshold.",
 	fee: "The account cannot pay the fee.",
+	"fee-too-low": "The fee is below the network minimum. Propose it again.",
+	"not-accepted": "The network did not accept it. Try again.",
 }
 
 const unknownOutcome = (followUp: string) => ({

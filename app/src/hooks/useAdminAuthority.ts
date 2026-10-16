@@ -8,6 +8,7 @@ import {
 	readContract,
 	readContractAdmin,
 	type ShareTokenApi,
+	uniformWeights,
 } from "@stellar-scaffold/app-lib"
 import {
 	type QueryClient,
@@ -156,10 +157,9 @@ const standingOf = (
 	if (weight === undefined || weight === 0) return null
 	const threshold = signers.thresholds.med
 	if (weight >= threshold) return "signs-alone"
-	const everySignerWeighsOne = signers.signers.every(
-		({ weight: other }) => other <= 1,
-	)
-	return everySignerWeighsOne ? { needs: threshold } : { weight, threshold }
+	return uniformWeights(signers.signers)
+		? { needs: threshold }
+		: { weight, threshold }
 }
 
 export function toSurfaces(

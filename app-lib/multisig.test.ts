@@ -22,11 +22,13 @@ import {
 	OPERATOR_TIMEOUT_SECONDS,
 	signatureWeight,
 	submitSigned,
+	transactionStatus,
 } from "./multisig"
 
-const { sendMock, pollMock, fromMock } = vi.hoisted(() => ({
+const { sendMock, pollMock, getMock, fromMock } = vi.hoisted(() => ({
 	sendMock: vi.fn(),
 	pollMock: vi.fn(),
+	getMock: vi.fn(),
 	fromMock: vi.fn(),
 }))
 
@@ -36,6 +38,7 @@ vi.mock("@stellar/stellar-sdk/rpc", async (importOriginal) => {
 	class MockServer {
 		sendTransaction = sendMock
 		pollTransaction = pollMock
+		getTransaction = getMock
 	}
 	return { ...actual, Server: MockServer }
 })
@@ -229,6 +232,106 @@ describe("decodePending", () => {
 	})
 })
 
+describe("decodePending authority", () => {
+	const encode = (tx: Transaction) => tx.toEnvelope().toXDR("base64")
+
+	const authEntry = (credentials: xdr.SorobanCredentials) =>
+		new xdr.SorobanAuthorizationEntry({
+			credentials,
+			rootInvocation: new xdr.SorobanAuthorizedInvocation({
+				function:
+					xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
+						new xdr.InvokeContractArgs({
+							contractAddress: new Address(contractId).toScAddress(),
+							functionName: "set_nav",
+							args: [],
+						}),
+					),
+				subInvocations: [],
+			}),
+		})
+
+	const withAuth = (entry: xdr.SorobanAuthorizationEntry) =>
+		builder()
+			.addOperation(
+				Operation.invokeContractFunction({
+					contract: contractId,
+					function: "set_nav",
+					args: [],
+					auth: [entry],
+				}),
+			)
+			.build()
+
+	it("refuses an operation with a source other than the transaction's", () => {
+		const tx = builder()
+			.addOperation(
+				Operation.invokeContractFunction({
+					contract: contractId,
+					function: "set_nav",
+					args: [],
+					source: outsider.publicKey(),
+				}),
+			)
+			.build()
+
+		expect(() => decodePending(encode(tx))).toThrow(InvalidPendingTransaction)
+	})
+
+	it("accepts an operation whose source is the transaction's", () => {
+		const tx = builder()
+			.addOperation(
+				Operation.invokeContractFunction({
+					contract: contractId,
+					function: "set_nav",
+					args: [],
+					source: authority.publicKey(),
+				}),
+			)
+			.build()
+
+		expect(decodePending(encode(tx)).source).toBe(authority.publicKey())
+	})
+
+	it("refuses an auth entry with address credentials", () => {
+		const entry = authEntry(
+			xdr.SorobanCredentials.sorobanCredentialsAddress(
+				new xdr.SorobanAddressCredentials({
+					address: new Address(outsider.publicKey()).toScAddress(),
+					nonce: xdr.Int64.fromString("1"),
+					signatureExpirationLedger: 10,
+					signature: xdr.ScVal.scvVoid(),
+				}),
+			),
+		)
+
+		expect(() => decodePending(encode(withAuth(entry)))).toThrow(
+			InvalidPendingTransaction,
+		)
+	})
+
+	it("accepts an auth entry with source account credentials", () => {
+		const entry = authEntry(
+			xdr.SorobanCredentials.sorobanCredentialsSourceAccount(),
+		)
+
+		expect(decodePending(encode(withAuth(entry))).fn).toBe("set_nav")
+	})
+
+	it("refuses a transaction that is not valid yet", () => {
+		const minTime = Math.floor(Date.now() / 1000) + 3600
+		const tx = builder({ minTime, maxTime }).addOperation(invokeOp()).build()
+
+		expect(() => decodePending(encode(tx))).toThrow(InvalidPendingTransaction)
+	})
+
+	it("accepts a transaction whose minimum time has passed", () => {
+		const tx = builder({ minTime: 1, maxTime }).addOperation(invokeOp()).build()
+
+		expect(decodePending(encode(tx)).fn).toBe("set_nav")
+	})
+})
+
 describe("signatureWeight", () => {
 	it("sums the weight of the signers whose signatures verify", () => {
 		expect(signatureWeight(signedBy(signerOne, signerTwo), signers)).toEqual({
@@ -328,7 +431,7 @@ describe("submitSigned", () => {
 		["txTooLate", "expired"],
 		["txBadAuth", "bad-auth"],
 		["txBadAuthExtra", "bad-auth"],
-		["txInsufficientFee", "fee"],
+		["txInsufficientFee", "fee-too-low"],
 		["txInsufficientBalance", "fee"],
 		["txFailed", "unknown"],
 	])("maps %s rejected on send to %s", async (code, reason) => {
@@ -383,12 +486,58 @@ describe("submitSigned", () => {
 		})
 	})
 
+	it("fails without polling when the network asks to try again later", async () => {
+		sendMock.mockResolvedValue(sent({ status: "TRY_AGAIN_LATER" }))
+
+		await expect(submitSigned(signedBy(signerOne))).resolves.toEqual({
+			status: "failed",
+			reason: "not-accepted",
+			hash: "abc123",
+		})
+		expect(pollMock).not.toHaveBeenCalled()
+	})
+
+	it("keeps polling a duplicate submission", async () => {
+		const tx = signedBy(signerOne)
+		sendMock.mockResolvedValue(sent({ status: "DUPLICATE" }))
+		pollMock.mockResolvedValue(
+			polled(
+				Api.GetTransactionStatus.SUCCESS,
+				transactionResult("txSuccess"),
+				tx,
+			),
+		)
+
+		await expect(submitSigned(tx)).resolves.toEqual({
+			status: "success",
+			hash: "abc123",
+		})
+		expect(pollMock).toHaveBeenCalledWith("abc123")
+	})
+
 	it("lets a transport error through", async () => {
 		sendMock.mockRejectedValue(new TypeError("Failed to fetch"))
 
 		await expect(submitSigned(signedBy(signerOne))).rejects.toThrow(
 			"Failed to fetch",
 		)
+	})
+})
+
+describe("transactionStatus", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it.each([
+		[Api.GetTransactionStatus.SUCCESS, "success"],
+		[Api.GetTransactionStatus.FAILED, "failed"],
+		[Api.GetTransactionStatus.NOT_FOUND, "not-found"],
+	] as const)("maps %s to %s", async (status, expected) => {
+		getMock.mockResolvedValue({ ...notFound(), status })
+
+		await expect(transactionStatus("abc123")).resolves.toBe(expected)
+		expect(getMock).toHaveBeenCalledWith("abc123")
 	})
 })
 

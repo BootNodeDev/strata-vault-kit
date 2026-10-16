@@ -22,9 +22,17 @@ import {
 } from "../providers/WalletProvider"
 import SignPage from "./SignPage"
 
-const { accountSignersMock, submitSignedMock } = vi.hoisted(() => ({
-	accountSignersMock: vi.fn(),
-	submitSignedMock: vi.fn(),
+const { accountSignersMock, submitSignedMock, transactionStatusMock } =
+	vi.hoisted(() => ({
+		accountSignersMock: vi.fn(),
+		submitSignedMock: vi.fn(),
+		transactionStatusMock: vi.fn(),
+	}))
+
+vi.mock("../config/clients", () => ({
+	shareToken: async () => ({
+		identity_verifier: async () => ({ result: "CLIVEVERIFIER" }),
+	}),
 }))
 
 type Marker = { signedBy: string[] }
@@ -44,6 +52,7 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 		...actual,
 		accountSigners: accountSignersMock,
 		submitSigned: submitSignedMock,
+		transactionStatus: transactionStatusMock,
 		decodePending: (xdr: string): PendingTransaction => {
 			const match = /^xdr:([^;]*)(;expired)?$/.exec(xdr)
 			if (match === null) {
@@ -153,11 +162,11 @@ describe("SignPage", () => {
 		window.history.replaceState(null, "", "/sign")
 	})
 
-	it("tells the visitor when the link carries no transaction", () => {
+	it("tells the visitor when the link carries no transaction", async () => {
 		renderSign("#not-an-envelope", undefined)
 
 		expect(
-			screen.getByText("This link does not carry a valid transaction."),
+			await screen.findByText("This link does not carry a valid transaction."),
 		).toBeTruthy()
 		expect(screen.queryByRole("button", { name: "Sign" })).toBeNull()
 	})
@@ -166,7 +175,7 @@ describe("SignPage", () => {
 		renderSign(`#${xdrSignedBy(first)}`, second)
 
 		expect(
-			screen.getByRole("heading", { name: "Set the deposit cap" }),
+			await screen.findByRole("heading", { name: "Set the deposit cap" }),
 		).toBeTruthy()
 		expect(screen.getByText("Vault")).toBeTruthy()
 		expect(screen.getByText("150.00")).toBeTruthy()
@@ -260,9 +269,10 @@ describe("SignPage", () => {
 		expect(screen.getByText("Anyone can submit this transaction.")).toBeTruthy()
 	})
 
-	it("sends an expired link back to the proposer without a share row", () => {
+	it("sends an expired link back to the proposer without a share row", async () => {
 		renderSign(`#${xdrSignedBy(first)};expired`, second)
 
+		await waitFor(() => expect(status().textContent).toBe("Expired"))
 		expect(status().textContent).toBe("Expired")
 		expect(status().getAttribute("aria-label")).toBe(
 			"This transaction expired.",
@@ -271,6 +281,21 @@ describe("SignPage", () => {
 		noButton("Submit")
 		noButton("Connect a wallet to sign")
 		expect(screen.getByText("Ask the proposer for a new link.")).toBeTruthy()
+		expect(screen.queryByLabelText("Signing link")).toBeNull()
+	})
+
+	it("shows a transaction that already went through as executed", async () => {
+		accountSignersMock.mockResolvedValue({ ...twoOfTwo, sequence: "42" })
+		transactionStatusMock.mockResolvedValue("success")
+		renderSign(`#${xdrSignedBy(first, second)}`, second)
+
+		await waitFor(() => expect(status().textContent).toBe("Executed"))
+		expect(status().getAttribute("aria-label")).toBe(
+			"This transaction was already submitted.",
+		)
+		noButton("Sign")
+		noButton("Submit")
+		expect(screen.queryByText("Next step")).toBeNull()
 		expect(screen.queryByLabelText("Signing link")).toBeNull()
 	})
 

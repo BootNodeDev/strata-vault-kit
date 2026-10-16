@@ -8,6 +8,7 @@ import {
 	type PendingTransaction,
 	signatureWeight,
 	submitSigned,
+	transactionStatus,
 } from "@stellar-scaffold/app-lib"
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useMemo, useRef, useState } from "react"
@@ -20,19 +21,24 @@ import {
 	type SignStatus,
 } from "../pages/sign"
 import { type TransactionFailure } from "./useContractTransaction"
+import { identityVerifierQuery } from "./useIsAllowed"
 import { useWallet } from "./useWallet"
 
 export const accountSignersKey = (source: string) =>
 	["account-signers", source] as const
 
-const SIGN_ADDRESSES = {
+export const transactionKey = (hash: string) => ["transaction", hash] as const
+
+const signAddresses = (identityVerifier: string) => ({
 	vault: addresses.async_vault,
 	oracle: addresses.nav_oracle,
 	shareToken: addresses.share_token,
-}
+	identityVerifier,
+})
 
 export interface UseSignPending {
 	xdr: string
+	loading: boolean
 	pending: PendingTransaction | null
 	description: SignDescription | null
 	signers: AccountSigners | null | undefined
@@ -49,14 +55,47 @@ export interface UseSignPending {
 
 type Decoded = { pending: PendingTransaction; description: SignDescription }
 
-const decode = (xdr: string): Decoded | null => {
+const decode = (xdr: string, identityVerifier: string): Decoded | null => {
 	try {
 		const pending = decodePending(xdr)
-		return { pending, description: describePending(pending, SIGN_ADDRESSES) }
+		return {
+			pending,
+			description: describePending(pending, signAddresses(identityVerifier)),
+		}
 	} catch (error) {
 		if (error instanceof InvalidPendingTransaction) return null
 		throw error
 	}
+}
+
+const isEnvelope = (xdr: string): boolean => {
+	try {
+		decodePending(xdr)
+		return true
+	} catch (error) {
+		if (error instanceof InvalidPendingTransaction) return false
+		throw error
+	}
+}
+
+const countersigned = (
+	signedXdr: string,
+	previous: PendingTransaction,
+	address: string,
+	signedBefore: string[],
+	signers: AccountSigners,
+): PendingTransaction | null => {
+	let next: PendingTransaction
+	try {
+		next = decodePending(signedXdr)
+	} catch (error) {
+		if (error instanceof InvalidPendingTransaction) return null
+		throw error
+	}
+	if (next.hash !== previous.hash) return null
+	if (!hasSigned(next.transaction, address)) return null
+	const { signedBy } = signatureWeight(next.transaction, signers)
+	return signedBefore.every((key) => signedBy.includes(key)) ? next : null
 }
 
 const NOBODY = { signedBy: [] as string[], weight: 0 }
@@ -79,7 +118,17 @@ export function useSignPending(initialXdr: string): UseSignPending {
 	const busy = useRef(false)
 	const dismissed = useRef(false)
 
-	const decoded = useMemo(() => decode(xdr), [xdr])
+	const { data: liveVerifier, isError: verifierFailed } = useQuery({
+		...identityVerifierQuery,
+		retry: false,
+	})
+	const verifier =
+		liveVerifier ?? (verifierFailed ? addresses.identity_verifier : undefined)
+	const envelope = useMemo(() => isEnvelope(xdr), [xdr])
+	const decoded = useMemo(
+		() => (verifier === undefined ? null : decode(xdr, verifier)),
+		[xdr, verifier],
+	)
 	const source = decoded?.pending.source
 	const { data: signers } = useQuery({
 		queryKey: accountSignersKey(source ?? ""),
@@ -101,7 +150,7 @@ export function useSignPending(initialXdr: string): UseSignPending {
 		signers && address !== undefined
 			? signers.signers.some(({ key, weight }) => key === address && weight > 0)
 			: null
-	const state: PendingState =
+	const sequenceState: PendingState =
 		decoded === null
 			? "valid"
 			: pendingState({
@@ -114,6 +163,21 @@ export function useSignPending(initialXdr: string): UseSignPending {
 					walletIsSigner,
 					walletHasSigned,
 				})
+	const hash = decoded?.pending.hash
+	const { data: outcome } = useQuery({
+		queryKey: transactionKey(hash ?? ""),
+		queryFn:
+			(sequenceState === "consumed" || sequenceState === "expired") &&
+			hash !== undefined
+				? () => transactionStatus(hash)
+				: skipToken,
+		staleTime: (query) => (query.state.data === "success" ? Infinity : 0),
+	})
+	const state: PendingState =
+		(sequenceState === "consumed" || sequenceState === "expired") &&
+		outcome === "success"
+			? "executed"
+			: sequenceState
 	const canSign = state === "valid" && walletIsSigner === true
 	const canSubmit = state === "ready"
 
@@ -132,6 +196,7 @@ export function useSignPending(initialXdr: string): UseSignPending {
 					hash: sent.hash,
 				})
 			} else {
+				queryClient.setQueryData(transactionKey(pending.hash), "success")
 				apply({ status: "confirmed", hash: sent.hash, result: sent.result })
 			}
 			void queryClient.invalidateQueries({
@@ -158,7 +223,8 @@ export function useSignPending(initialXdr: string): UseSignPending {
 	)
 
 	const sign = useCallback(() => {
-		if (!canSign || address === undefined || !signers) return
+		if (!canSign || address === undefined || !signers || decoded === null)
+			return
 		guarded(async () => {
 			const signed = await signTransaction(xdr, {
 				networkPassphrase,
@@ -168,13 +234,38 @@ export function useSignPending(initialXdr: string): UseSignPending {
 				apply({ status: "failed", failure: signed })
 				return
 			}
-			const next = decodePending(signed.signedTxXdr)
-			window.history.replaceState(null, "", `#${signed.signedTxXdr}`)
+			const next = countersigned(
+				signed.signedTxXdr,
+				decoded.pending,
+				address,
+				collected.signedBy,
+				signers,
+			)
+			if (next === null) {
+				apply({ status: "failed", failure: { kind: "unsigned" } })
+				return
+			}
+			window.history.replaceState(
+				window.history.state,
+				"",
+				`#${signed.signedTxXdr}`,
+			)
 			setXdr(signed.signedTxXdr)
 			const { weight } = signatureWeight(next.transaction, signers)
 			if (weight >= signers.thresholds.med) await run(next)
 		})
-	}, [canSign, address, signers, guarded, apply, signTransaction, xdr, run])
+	}, [
+		canSign,
+		address,
+		signers,
+		decoded,
+		collected.signedBy,
+		guarded,
+		apply,
+		signTransaction,
+		xdr,
+		run,
+	])
 
 	const submit = useCallback(() => {
 		if (!canSubmit || decoded === null) return
@@ -188,6 +279,7 @@ export function useSignPending(initialXdr: string): UseSignPending {
 
 	return {
 		xdr,
+		loading: envelope && verifier === undefined,
 		pending: decoded?.pending ?? null,
 		description: decoded?.description ?? null,
 		signers,

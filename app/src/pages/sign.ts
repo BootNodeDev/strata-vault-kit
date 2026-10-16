@@ -9,6 +9,7 @@ import {
 	PRICE_DECIMALS,
 	type Price,
 	shortAddress,
+	uniformWeights,
 } from "@stellar-scaffold/app-lib"
 import {
 	ADMIN_VERBS,
@@ -42,6 +43,7 @@ export type SignAddresses = {
 	vault: string
 	oracle: string
 	shareToken: string
+	identityVerifier: string
 }
 
 export type SignStatus = TransactionStatus<{ result: unknown }>
@@ -272,7 +274,10 @@ const contractOf = (
 		return { contract: "Oracle", table: ORACLE }
 	if (contractId === addresses.shareToken)
 		return { contract: "Share token", table: TOKEN }
-	return { contract: "Identity verifier", table: VERIFIER }
+	if (contractId === addresses.identityVerifier) {
+		return { contract: "Identity verifier", table: VERIFIER }
+	}
+	throw new InvalidPendingTransaction("unknown contract")
 }
 
 export function describePending(
@@ -295,7 +300,13 @@ export function describePending(
 }
 
 export type PendingState =
-	"valid" | "expired" | "consumed" | "not-signer" | "already-signed" | "ready"
+	| "valid"
+	| "expired"
+	| "consumed"
+	| "executed"
+	| "not-signer"
+	| "already-signed"
+	| "ready"
 
 export type PendingStateInput = {
 	now: Date
@@ -326,6 +337,7 @@ export const STATE_COPY: Record<PendingState, string> = {
 	valid: "Waiting for signatures.",
 	expired: "This transaction expired.",
 	consumed: "The account moved on; this transaction is no longer valid.",
+	executed: "This transaction was already submitted.",
 	"not-signer": "Your wallet does not sign for this account.",
 	"already-signed": "You already signed. Share the link with the next signer.",
 	ready: "Signatures complete. Anyone can submit.",
@@ -336,7 +348,7 @@ export type StateTone = "neutral" | "success" | "danger" | "muted"
 export type StateView = {
 	pill: string
 	tone: StateTone
-	nextStep: string
+	nextStep: string | null
 	shareable: boolean
 }
 
@@ -372,6 +384,12 @@ export const STATE_VIEW: Record<PendingState, StateView> = {
 		pill: "Account moved on",
 		tone: "danger",
 		nextStep: NEW_LINK,
+		shareable: false,
+	},
+	executed: {
+		pill: "Executed",
+		tone: "success",
+		nextStep: null,
 		shareable: false,
 	},
 	"not-signer": {
@@ -412,18 +430,12 @@ export const describeExpiry = (expiresAt: Date | null): string => {
 	return `${formatDate(seconds)}, ${clock.format(expiresAt)} UTC`
 }
 
-export const uniformWeights = (signers: AccountSigners): boolean =>
-	new Set(signers.signers.map(({ weight }) => weight)).size <= 1
-
 export const describeCollected = (
 	weight: number,
 	signers: AccountSigners,
 ): string => {
 	const threshold = signers.thresholds.med
-	const everySignerWeighsOne = signers.signers.every(
-		({ weight: other }) => other <= 1,
-	)
-	return everySignerWeighsOne
+	return uniformWeights(signers.signers)
 		? `${weight} of ${threshold} signatures`
 		: `weight ${weight} of threshold ${threshold}`
 }
