@@ -86,10 +86,10 @@ Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.
 | `set_wind_down_delay` | `#[only_admin]`, `caller.require_auth()` | `secs <= MAX_WIND_DOWN_DELAY`, not active | `test::wind_down::only_governance_sets_the_delay` |
 | `propose_wind_down` | `#[only_admin]`, `caller.require_auth()` | No proposal standing, not active | `test::wind_down::only_governance_proposes` |
 | `cancel_wind_down_proposal` | `#[only_admin]`, `caller.require_auth()` | Must be proposed, not active | `test::wind_down::governance_cancels_a_proposal_before_activation` |
-| `propose_upgrade` | `#[only_admin]`, `caller.require_auth()` | No proposal standing, delay >= notice | `test::upgrade::only_governance_proposes_and_cancels` |
-| `propose_upgrade_delay` | `#[only_admin]`, `caller.require_auth()` | `secs in [MIN, MAX]`, `secs >= notice` | `test::upgrade::only_governance_proposes_and_cancels` |
-| `cancel_upgrade` | `#[only_admin]`, `caller.require_auth()` | Proposal must stand | `test::upgrade::only_governance_proposes_and_cancels` |
-| `apply_upgrade` | `#[only_admin]`, `caller.require_auth()` | Timelock expired, `when_not_paused` | `test::upgrade::only_governance_applies` |
+| `propose_change` | `#[only_admin]`, `caller.require_auth()` | Not winding down, one code change at a time, an `UpgradeDelay` in `[MIN, MAX]` and `>= notice` | `test::upgrade::only_governance_proposes_and_cancels`, `test::upgrade::nothing_is_proposed_during_a_wind_down` |
+| `cancel_change` | `#[only_admin]`, `caller.require_auth()` | The change must be pending | `test::upgrade::only_governance_proposes_and_cancels` |
+| `apply_change` | `#[only_admin]`, `caller.require_auth()` | Eta passed, not paused, not winding down, delay `>= notice` | `test::upgrade::only_governance_applies` |
+| `pending_changes` | Open view | None | None (view) |
 | `renounce_admin` | Refused always (`VaultError::AdminRequired`) | None | `test::controls::governance_cannot_renounce_itself_out_of_the_vault` |
 
 ### 5.2 ShareToken (`contracts/share-token`)
