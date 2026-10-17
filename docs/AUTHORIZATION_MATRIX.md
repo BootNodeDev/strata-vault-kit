@@ -26,9 +26,9 @@ The symbol `"manager"` names two completely distinct roles living on separate co
 | Contract | Role Symbol | Held By | Scope & Privileges |
 |---|---|---|---|
 | **`AsyncVault`** | `symbol_short!("manager")` | Operator Multisig / Automation Bot | Strictly calls `close_epoch` to freeze orders for pricing. Holds **no** token minting or burning power. |
-| **`ShareToken`** | `symbol_short!("manager")` | `AsyncVault` Contract Instance | Authorized to call `mint` (claim deposits), `burn` (claim redemptions) and `forced_transfer` (escrow redemptions). Holds no freeze or recovery power. |
+| **`ShareToken`** | `symbol_short!("manager")` | `AsyncVault` Contract Instance | Authorized to call `mint` (claim deposits), `burn` (claim redemptions) and `forced_transfer` (escrow redemptions and return escrowed shares). Holds no freeze or recovery power. |
 
-The share token has a third role, `"compliance"`, held by the compliance authority: freezes and partial freezes, plus `legal_transfer` and `recover_balance` with governance's co-signature. Only `manager` reaches `forced_transfer`, which the vault uses to escrow redemptions.
+The share token has a third role, `"compliance"`, held by the compliance authority: freezes and partial freezes, plus `legal_transfer` and `recover_balance` with governance's co-signature. Only `manager` reaches `forced_transfer`, which the vault uses to escrow redemptions and to return escrowed shares after its own eligibility check.
 
 ### Deployment Script Safety
 In `scripts/harness/deploy.ts` and automated deployment scripts, the separation is enforced structurally:
@@ -107,7 +107,7 @@ Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
-The token's `admin` is governance; the guardian holds no role on the token. Until `finish_setup`, admin changes are instant, so the deploy can grant the vault the `manager` role. Setup cannot finish while an admin hand-over offered during setup is pending. After setup, the following wait for the vault's timelock through `propose_change`/`apply_change`: grants, revoking `manager`, admin hand-over, `set_compliance`, `set_identity_verifier` and upgrades. Revoking `compliance` and `pause`/`unpause` stay instant. The `manager` role is held by the vault and the `compliance` role by the compliance authority.
+The token's `admin` is governance; the guardian holds no role on the token. Until `finish_setup`, admin changes are instant, so the deploy can grant the vault the `manager` role. Setup cannot finish while an admin hand-over offered during setup is pending. After setup, the following wait for the vault's timelock through `propose_change`/`apply_change`: grants, revoking `manager`, admin hand-over, `set_compliance`, `set_identity_verifier` and upgrades. Revoking `compliance` and `pause`/`unpause` stay instant. The `manager` role is held by the vault and the `compliance` role by the compliance authority. The token's `pause` refuses SEP-41 transfers between holders only. The vault's own escrow moves (`forced_transfer`), mint and burn ignore it, so a token pause stops neither entry nor exit.
 
 Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs) and [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs).
 

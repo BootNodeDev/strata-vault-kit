@@ -19,6 +19,7 @@ mod pricing;
 mod redeem;
 mod settlement;
 mod setup;
+mod share_returns;
 mod supply;
 mod timing;
 mod treasury;
@@ -370,9 +371,7 @@ fn build<'a>(
         share.mint(&holder, &100, &admin);
         share.revoke_role(&admin, &symbol_short!("manager"), &admin);
     }
-    // The vault holds escrowed shares, so returning them on cancellation goes
-    // through the token's checked transfer. That verifies both sides, so the
-    // vault has to be a recognised holder itself.
+    // Converting a delisted holder's deposit mints into the vault's own escrow.
     if miswire != Miswire::NotAllowlisted {
         identity.allow(&contract_id, &true, &compliance_authority);
     }

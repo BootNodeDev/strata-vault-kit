@@ -1,11 +1,14 @@
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
-use stellar_tokens::{fungible::FungibleTokenClient, rwa::RWATokenClient};
+use stellar_tokens::{
+    fungible::FungibleTokenClient,
+    rwa::{compliance::ComplianceClient as RulesClient, RWATokenClient},
+};
 
 use crate::epoch;
 use crate::error::VaultError;
 use crate::event::{RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered};
 use crate::keys::DataKey;
-use crate::lock_policy::{self, Decision, Exit};
+use crate::lock_policy::{self, Decision, Exit, Standing};
 use crate::pricing::{Pricing, PricingScheme};
 use crate::settlement;
 use crate::state::{self, EpochStatus, RedeemRequest};
@@ -182,9 +185,7 @@ pub(crate) fn queue_escrowed(e: &Env, controller: &Address, shares: i128) -> u64
     epoch_id
 }
 
-/// Moves escrowed shares back to the controller and clears the request. Both
-/// callers ask the lock policy first; a delisted controller still meets the
-/// token's own checked transfer here.
+/// Moves escrowed shares back to the controller and clears the request.
 fn return_shares(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
@@ -192,9 +193,7 @@ fn return_shares(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
     state::set_epoch(e, epoch_id, &epoch);
     state::remove_redeem_request(e, epoch_id, controller);
 
-    let vault = e.current_contract_address();
-    FungibleTokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken))
-        .transfer(&vault, controller, &shares);
+    deliver(e, controller, shares);
 
     RedeemCancelled {
         controller: controller.clone(),
@@ -202,6 +201,20 @@ fn return_shares(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
         shares,
     }
     .publish(e);
+}
+
+/// Checks the receiver, then moves as manager, so the vault's listing and token pause never apply.
+fn deliver(e: &Env, controller: &Address, shares: i128) {
+    let vault = e.current_contract_address();
+    let token = state::get_addr(e, &DataKey::ShareToken);
+    let share = RWATokenClient::new(e, &token);
+    let rules = RulesClient::new(e, &share.compliance());
+    if lock_policy::standing(e, controller) != Standing::Listed
+        || !rules.can_transfer(&vault, controller, &shares, &token)
+    {
+        panic_with_error!(e, VaultError::HolderNotEligible);
+    }
+    share.forced_transfer(&vault, controller, &shares, &vault);
 }
 
 pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {

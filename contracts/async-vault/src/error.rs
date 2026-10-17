@@ -142,6 +142,10 @@ pub enum VaultError {
     /// The proposed feed does not name this vault as its own, or its setup is
     /// still open. Its admin could then change its limits with no delay.
     FeedNotBound = 6072,
+    /// The controller may not hold shares (delisted, frozen or refused by the
+    /// compliance rules), so the escrowed shares stay with the vault and the
+    /// request stays open.
+    HolderNotEligible = 6073,
     /// An admin hand-over offered during setup is still open. Setup finishes
     /// once it is accepted, cancelled or expired, so no nominee from setup can
     /// accept after changes start to wait.
