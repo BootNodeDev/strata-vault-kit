@@ -16,8 +16,14 @@ stellar-macros = { workspace = true }
 stellar-tokens = { workspace = true }
 stellar-contract-utils = { workspace = true }
 storage = { path = "../../crates/storage" }
+timelock = { path = "../../crates/timelock" }
+bindings = { path = "../../crates/bindings" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 compliance = { path = "../compliance" }
 identity-verifier = { path = "../identity-verifier" }
+
+[features]
+# Builds a stand-in for a later token version, used only by the upgrade tests.
+upgrade_probe = []

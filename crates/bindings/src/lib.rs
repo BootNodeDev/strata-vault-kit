@@ -1,6 +1,6 @@
 #![no_std]
 
-use soroban_sdk::{contracttrait, contracttype, Env};
+use soroban_sdk::{contracttrait, contracttype, Address, Env};
 
 #[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -20,4 +20,13 @@ pub trait OracleFeed {
     fn attested_at(e: &Env) -> u64;
     /// How long a report stays valid after it is accepted.
     fn freshness_duration(e: &Env) -> u64;
+}
+
+/// What a contract that runs on a vault's timelock reports to that vault.
+#[contracttrait]
+pub trait VaultBound {
+    /// The vault whose clock this contract reads, once bound.
+    fn vault(e: &Env) -> Option<Address>;
+    /// Whether this contract's admin changes are still instant.
+    fn setup_open(e: &Env) -> bool;
 }
