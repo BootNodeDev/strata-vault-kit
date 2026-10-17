@@ -119,7 +119,7 @@ Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs)
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
-| `attest` | `#[only_role(caller, "attester")]` | Refused while the NAV is paused; cooldown, deviation cap, bounds `[min, max]` | `test::attest_is_role_gated`, `test::attesting_is_refused_while_the_nav_is_paused` |
+| `attest` | `#[only_role(caller, "attester")]` | Refused while the NAV is paused; cooldown, deviation cap, bounds `[min, max]`; expiry capped at the freshness window | `test::attest_is_role_gated`, `test::attesting_is_refused_while_the_nav_is_paused` |
 | `pause_nav` | `#[only_role(caller, "guardian")]` | None | `test::pausing_the_nav_is_limited_to_the_guardian` |
 | `set_nav_paused` | `#[only_admin]`, `caller.require_auth()` | None | `test::the_guardian_pauses_the_nav_but_unpausing_needs_governance` |
 | `clear_latest` | `#[only_admin]`, `caller.require_auth()` | NAV must be paused | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_nav_is_paused` |

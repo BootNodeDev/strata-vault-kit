@@ -620,8 +620,8 @@ fn a_max_answer_past_the_ceiling_is_refused() {
     });
 }
 
-/// A report must always be replaceable before it expires, or the feed would
-/// sit stale through every cooldown.
+/// A new report must always be able to replace the last one before the
+/// freshness window ends, or the feed would sit stale through every cooldown.
 #[test]
 fn a_cooldown_longer_than_the_freshness_window_is_refused() {
     refuses_config(OracleConfig {
