@@ -34,6 +34,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Mathematical Statement**:
   $$\text{attested\_at} \ge \text{closed\_at}$$
 - **Testable Property**: If the latest oracle attestation timestamp precedes `closed_at`, `fulfill_epoch` is rejected with `AttestationBeforeClose`. A valuation accepted in the exact closing ledger timestamp or later is accepted.
+  `attested_at` is the ledger time the oracle accepted the report, not a valuation date: the reporter's own `timestamp` is ignored. So "accepted before the close" compares acceptance time. The reporter's `expires_at` can only shorten a report's life: the oracle stores `min(expires_at, attested_at + freshness_duration)`.
 
 ### Invariant 4: Covered Claims Always Pay (Exit Guarantee)
 - **Definition**: Once an exit is priced and covered by the liquid reserve, its cash payout cannot be blocked by an administrative pause, oracle staleness, or an investor's compliance delisting.
@@ -107,12 +108,12 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`nav_oracle`** | `admin` | `Address` | Oracle admin multisig (Governance) | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `attester` | `Address` | Authorized reporter multisig for NAV attestations | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `guardian` | `Address` | Guardian multisig authorized to pause the NAV | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.freshness_duration` | `u64` (seconds) | Validity window of an attestation before it is stale ($> 0$) | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.cooldown_secs` | `u64` (seconds) | Minimum time between consecutive price attestations | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Maximum allowable upward price jump (1 bps = 0.01%, $> 0$) | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.max_down_bps` | `Option<u32>` (bps) | Maximum allowable downward jump (`null` = loss of any size allowed) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.freshness_duration` | `u64` (seconds) | Validity window of an attestation before it is stale; from 1 s to 35 days (`MAX_FRESHNESS_SECS`) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.cooldown_secs` | `u64` (seconds) | Minimum time between consecutive attestations. At least 1 s (`MIN_COOLDOWN_SECS`), so at most one report per ledger. At most `freshness_duration`, so a new report can always replace the last one before it expires | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Largest upward move per attestation, 1 to 10,000 | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.max_down_bps` | `u32` (basis points) | Largest downward move per attestation, 1 to 10,000; 10,000 lets a loss of any size land at once | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share (cannot be zero or negative) | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($\ge \text{min\_answer}$) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($\ge \text{min\_answer}$, $\le 10^{6} \times 10^{18}$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
 | **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC) | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `oracle` | `Address` | Deployed NAV oracle contract address | `async_vault.constructor_args` |
