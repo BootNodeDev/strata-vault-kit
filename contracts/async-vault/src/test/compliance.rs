@@ -49,7 +49,6 @@ fn relisting_after_pricing_lets_the_claim_through() {
     f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
     f.identity.allow(&investor, &false, &f.compliance);
-    assert!(f.vault.try_claim_deposit(&investor, &1).is_err());
 
     f.identity.allow(&investor, &true, &f.compliance);
 
@@ -57,25 +56,17 @@ fn relisting_after_pricing_lets_the_claim_through() {
     assert_eq!(f.shares(&investor), 200);
 }
 
-/// Today's behaviour for a holder delisted after their deposit was priced:
-/// relisting is the only way out. The cash joined the reserve at pricing, so
-/// her claim is to shares, and the wind-down holds her part in `owed` where
-/// nobody can collect it.
+/// Delisted after pricing, she cannot cancel, and a wind-down still pays her slice.
 #[test]
-fn a_holder_delisted_after_pricing_can_only_leave_by_being_relisted() {
+fn a_holder_delisted_after_pricing_is_paid_through_a_wind_down() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
     assert_eq!(f.vault.cancellable_escrow(), 0);
     assert_eq!(f.vault.pending_mint_shares(), 200);
-
     f.identity.allow(&investor, &false, &f.compliance);
 
-    assert_eq!(
-        f.vault.try_claim_deposit(&investor, &epoch).err(),
-        Some(Ok(soroban_sdk::Error::from_contract_error(304)))
-    );
     refused(
         f.vault.try_cancel_deposit(&investor, &epoch),
         VaultError::AlreadyPriced,
@@ -83,15 +74,8 @@ fn a_holder_delisted_after_pricing_can_only_leave_by_being_relisted() {
 
     f.vault.propose_wind_down(&f.admin);
     f.vault.activate_wind_down();
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
     assert_eq!(f.vault.finalize_wind_down_round(), 400);
-    refused(
-        f.vault.try_claim_wind_down(&investor),
-        VaultError::NoEntitlement,
-    );
-    assert_eq!(f.vault.wind_down_owed(), 400);
-
-    f.identity.allow(&investor, &true, &f.compliance);
-    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 200);
     assert_eq!(f.vault.claim_wind_down(&investor), 400);
     assert_eq!(f.vault.wind_down_owed(), 0);
 }
@@ -180,8 +164,10 @@ fn a_delisted_holder_cannot_cancel_redemption_back_to_shares() {
     // Delisted before pricing
     f.identity.allow(&user, &false, &f.compliance);
 
-    // Cannot return shares to a delisted account (refused by share transfer compliance)
-    assert!(f.vault.try_cancel_redeem(&user, &epoch).is_err());
+    refused(
+        f.vault.try_cancel_redeem(&user, &epoch),
+        VaultError::NotAllowlisted,
+    );
     assert_eq!(f.shares(&user), 300);
 
     // Exit proceeds through cash claim once fulfilled
@@ -201,7 +187,7 @@ fn a_frozen_holder_cannot_cancel_redemption_back_to_shares() {
     assert!(f.share.is_frozen(&user));
 
     // Cannot return shares to a frozen account
-    assert!(f.vault.try_cancel_redeem(&user, &epoch).is_err());
+    refused(f.vault.try_cancel_redeem(&user, &epoch), VaultError::Frozen);
     assert_eq!(f.shares(&user), 300);
 
     // Exit proceeds through cash claim once fulfilled
@@ -231,16 +217,53 @@ fn a_frozen_or_delisted_holder_cannot_transfer_shares() {
 }
 
 #[test]
-fn a_frozen_investor_on_the_allowlist_is_still_minted() {
+fn a_frozen_investor_cannot_request_a_deposit() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
+
+    refused(
+        f.vault.try_request_deposit(&investor, &400),
+        VaultError::Frozen,
+    );
+    assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn a_frozen_investor_is_not_minted_until_unfrozen() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
-
     f.share.set_address_frozen(&investor, &true, &f.compliance);
 
+    refused(f.vault.try_claim_deposit(&investor, &1), VaultError::Frozen);
+    assert_eq!(f.shares(&investor), 0);
+    assert!(!f.vault.get_deposit_request(&1, &investor).unwrap().claimed);
+
+    f.share.set_address_frozen(&investor, &false, &f.compliance);
     assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
     assert_eq!(f.shares(&investor), 200);
+}
+
+#[test]
+fn a_frozen_investors_zero_share_refund_is_held() {
+    let f = setup();
+    let investor = f.investor(10);
+    let epoch = f.vault.request_deposit(&investor, &1);
+    f.fulfill_epoch(wad(2));
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
+
+    refused(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        VaultError::Frozen,
+    );
+    assert_eq!(f.balance(&investor), 9);
+    assert!(f.vault.get_deposit_request(&epoch, &investor).is_some());
+
+    f.share.set_address_frozen(&investor, &false, &f.compliance);
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+    assert_eq!(f.balance(&investor), 10);
 }
 
 #[test]

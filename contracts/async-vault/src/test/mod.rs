@@ -3,6 +3,7 @@ mod compliance;
 mod constructor;
 mod controls;
 mod conversions;
+mod delisted;
 mod deposit;
 mod deposit_cap;
 mod epochs;

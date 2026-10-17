@@ -149,15 +149,38 @@ pub(crate) fn supply_snapshot(e: &Env) -> i128 {
     storage::get_instance(e, &DataKey::WindDownSupply).unwrap_or(0)
 }
 
+fn credited_before_snapshot(e: &Env) -> i128 {
+    storage::get_instance(e, &DataKey::WindDownCredited).unwrap_or(0)
+}
+
 /// Shares that exist or are owed: circulating, escrowed against an unpriced
-/// redemption, and owed by a deposit that has been priced but not claimed.
+/// redemption, owed by a deposit that has been priced but not claimed, and
+/// credited straight to a holder's entitlement.
 fn snapshot_supply(e: &Env) -> i128 {
     let share_token = state::get_addr(e, &DataKey::ShareToken);
     FungibleTokenClient::new(e, &share_token)
         .total_supply()
         .saturating_sub(state::pending_burn_shares(e))
         .checked_add(state::pending_mint_shares(e))
+        .and_then(|supply| supply.checked_add(credited_before_snapshot(e)))
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+}
+
+/// Shares credited before the first round are counted into its snapshot, having left the supply.
+pub(crate) fn credit(e: &Env, holder: &Address, shares: i128) {
+    let mut p = position(e, holder);
+    p.entitlement = p
+        .entitlement
+        .checked_add(shares)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
+
+    if info(e).map(|wd| wd.round).unwrap_or(0) == 0 {
+        let credited = credited_before_snapshot(e)
+            .checked_add(shares)
+            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+        storage::set_instance(e, &DataKey::WindDownCredited, &credited);
+    }
 }
 
 pub(crate) fn finalize_round(e: &Env) -> i128 {

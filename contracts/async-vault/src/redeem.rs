@@ -3,8 +3,9 @@ use stellar_tokens::{fungible::FungibleTokenClient, rwa::RWATokenClient};
 
 use crate::epoch;
 use crate::error::VaultError;
-use crate::event::{RedeemCancelled, RedeemClaimed, RedeemRequested};
+use crate::event::{RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered};
 use crate::keys::DataKey;
+use crate::lock_policy::{self, Decision, Exit};
 use crate::pricing::{Pricing, PricingScheme};
 use crate::settlement;
 use crate::state::{self, EpochStatus, RedeemRequest};
@@ -84,7 +85,8 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         state::reduce(e, state::pending_burn_shares(e), request.shares),
     );
 
-    if assets == 0 {
+    // In a wind-down they are burned below instead: its snapshot left them out.
+    if assets == 0 && !wind_down::is_active(e) {
         return_shares(e, caller, epoch_id, request.shares);
         settlement::on_redeem_claimed(e, epoch_id, 0);
         return 0;
@@ -103,7 +105,9 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     state::set_redeem_request(e, epoch_id, caller, &request);
     state::set_committed(e, state::reduce(e, state::committed(e), assets));
 
-    TokenClient::new(e, &asset).transfer(&vault, caller, &assets);
+    if assets > 0 {
+        TokenClient::new(e, &asset).transfer(&vault, caller, &assets);
+    }
     RWATokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).burn(
         &vault,
         &request.shares,
@@ -122,10 +126,40 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     assets
 }
 
+/// Queues shares the vault already holds, adding to any redemption open in the epoch.
+pub(crate) fn queue_escrowed(e: &Env, controller: &Address, shares: i128) -> u64 {
+    let epoch_id = state::current_epoch(e);
+    let mut epoch = state::get_epoch(e, epoch_id)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
+    epoch.total_shares_redeeming = epoch
+        .total_shares_redeeming
+        .checked_add(shares)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+
+    let request = match state::get_redeem_request(e, epoch_id, controller) {
+        Some(mut open) => {
+            open.shares = open
+                .shares
+                .checked_add(shares)
+                .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+            open
+        }
+        None => {
+            settlement::on_redeem_requested(e, epoch_id);
+            RedeemRequest {
+                shares,
+                claimed: false,
+            }
+        }
+    };
+    state::set_redeem_request(e, epoch_id, controller, &request);
+    state::set_epoch(e, epoch_id, &epoch);
+    epoch_id
+}
+
 /// Moves escrowed shares back to the controller and clears the request. The
-/// checked transfer is deliberate: the share token decides whether this holder
-/// may receive a regulated share, so a frozen or de-listed controller is refused
-/// here and exits through the cash claim instead.
+/// transfer is the token's checked one: a cancel asks the lock policy first, but
+/// on a zero-asset claim the token alone refuses a frozen or delisted controller.
 fn return_shares(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
@@ -155,18 +189,47 @@ pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
         panic_with_error!(e, VaultError::AlreadyPriced);
     }
 
+    let winding_down = wind_down::is_active(e);
+
     // Cancellation is an escape hatch, not a choice. Once the feed can price a
     // sealed epoch, the price is knowable and the only way out is to take it.
     // Fulfilment is closed during a wind-down, so this epoch will never take a
     // price. There is nothing to decline.
-    if !wind_down::is_active(e) && epoch::is_priceable(e, &epoch) {
+    if !winding_down && epoch::is_priceable(e, &epoch) {
         panic_with_error!(e, VaultError::PriceAvailable);
     }
 
     let request = state::get_redeem_request(e, epoch_id, from)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
 
-    return_shares(e, from, epoch_id, request.shares);
+    let standing = lock_policy::standing(e, from);
+    match lock_policy::decide(Exit::CancelRedeem, standing, winding_down) {
+        Decision::Proceed => return_shares(e, from, epoch_id, request.shares),
+        Decision::Surrender => surrender_escrow(e, from, epoch_id, request.shares),
+        Decision::Refuse | Decision::Hold | Decision::ConvertToExit => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
+    }
     settlement::on_redeem_cancelled(e, epoch_id);
     request.shares
+}
+
+/// Burns the escrow into the entitlement, so no token pause or allowlist place can hold it.
+fn surrender_escrow(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
+    let mut epoch = state::get_epoch(e, epoch_id)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
+    epoch.total_shares_redeeming = state::reduce(e, epoch.total_shares_redeeming, shares);
+    state::set_epoch(e, epoch_id, &epoch);
+    state::remove_redeem_request(e, epoch_id, controller);
+
+    let vault = e.current_contract_address();
+    RWATokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).burn(&vault, &shares, &vault);
+    wind_down::credit(e, controller, shares);
+
+    RedemptionSurrendered {
+        controller: controller.clone(),
+        epoch: epoch_id,
+        shares,
+    }
+    .publish(e);
 }
