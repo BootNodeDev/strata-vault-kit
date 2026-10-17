@@ -199,6 +199,18 @@ fn setup<'a>() -> Fixture<'a> {
 /// Builds the vault against a caller-chosen feed, so cooldown, freshness and the
 /// deviation cap can be exercised from a vault test rather than only an oracle one.
 fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
+    setup_with(feed, |e, args| e.register(ShareToken, args))
+}
+
+/// The share token's constructor arguments, in order.
+type TokenArgs = (String, String, Address, Address, Address, Address);
+
+/// Builds the vault around a token the caller registers, so a test can run the
+/// token's built Wasm instead of its native code.
+fn setup_with<'a>(
+    feed: OracleConfig,
+    register_token: impl FnOnce(&Env, TokenArgs) -> Address,
+) -> Fixture<'a> {
     let e = Env::default();
     e.mock_all_auths();
     e.ledger().set_timestamp(10_000);
@@ -221,8 +233,8 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
 
     let share = ShareTokenClient::new(
         &e,
-        &e.register(
-            ShareToken,
+        &register_token(
+            &e,
             (
                 String::from_str(&e, "Strata Vault USDC"),
                 String::from_str(&e, "bvUSDC"),
