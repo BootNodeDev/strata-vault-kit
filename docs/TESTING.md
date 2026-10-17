@@ -128,3 +128,14 @@ fixture wires them as the deploy does and finishes the vault's setup;
 | Upgrading replaces the vault's code and migrates once | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `applying_a_wasm_change_replaces_the_code`, `a_migration_refuses_a_second_run` |
 | The share token upgrades through the vault's timelock under live balances, an open deposit and an open redemption, and migrates once; called directly, `upgrade` does not exist | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `the_token_upgrades_under_live_balances_and_open_requests`, `the_token_exposes_no_immediate_upgrade` |
 | The oracle upgrades through the vault's timelock under a live valuation, keeps its config, roles and vault, and migrates once; called directly, `upgrade` does not exist | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) (needs `upgrade_wasm`) | `the_oracle_upgrades_under_a_live_valuation`, `the_oracle_exposes_no_immediate_upgrade` |
+
+## Wind-down on the network
+
+`scripts/harness/wind-down.test.ts` deploys a throwaway vault set on the local
+network from a vault built with `--features short_wind_down`. That build drops
+the seven-day minimum and carries a `build` meta entry, and is never deployed
+elsewhere. The test runs a deposit, a claim, a redeem request, a wind-down, a
+round and a claim, then checks that every function in the vault's spec was
+called through the generated client. The full wind-down logic is tested in
+Rust (`contracts/async-vault/src/test/wind_down.rs`). The testnet run is
+spread over seven days in the Tranche 2 release.
