@@ -235,6 +235,7 @@ enum Miswire {
     SecondManager,
     PreMinted,
     NotAllowlisted,
+    VaultFrozen,
     ComplianceUnbound,
 }
 
@@ -360,6 +361,10 @@ fn build<'a>(
     // vault has to be a recognised holder itself.
     if miswire != Miswire::NotAllowlisted {
         identity.allow(&contract_id, &true, &compliance_authority);
+    }
+    if miswire == Miswire::VaultFrozen {
+        // Until `bind_vault`, the token does not know this address is its vault.
+        share.set_address_frozen(&contract_id, &true, &compliance_authority);
     }
     match miswire {
         Miswire::TokenUnbound => {}

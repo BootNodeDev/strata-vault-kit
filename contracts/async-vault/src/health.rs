@@ -17,6 +17,7 @@ pub struct Health {
     pub oracle_bound: bool,
     pub sole_token_manager: bool,
     pub allowlisted: bool,
+    pub vault_unfrozen: bool,
     pub compliance_bound: bool,
     pub feed_valid: bool,
     /// A report outlives the notice, so an epoch's cancellation window does
@@ -34,6 +35,7 @@ pub(crate) fn health(e: &Env) -> Health {
         oracle_bound: wiring.oracle_bound,
         sole_token_manager: wiring.sole_token_manager,
         allowlisted: wiring.allowlisted,
+        vault_unfrozen: wiring.vault_unfrozen,
         compliance_bound: wiring.compliance_bound,
         feed_valid: matches!(feed.try_state(), Ok(Ok(OracleState::Valid))),
         freshness_covers_notice: matches!(
