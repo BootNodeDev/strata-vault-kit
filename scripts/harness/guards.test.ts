@@ -201,15 +201,52 @@ describe("the compliance authority's reach", () => {
 		)
 	})
 
-	it("compliance cannot swap the identity verifier", async () => {
+	it("compliance cannot propose a new identity verifier", async () => {
 		await expect(
 			send(
-				shareToken(c, compliance).set_identity_verifier({
-					identity_verifier: c.deployment.contracts.compliance,
-					operator: compliance.publicKey(),
+				shareToken(c, compliance).propose_change({
+					change: {
+						tag: "IdentityVerifier",
+						values: [c.deployment.contracts.compliance],
+					},
+					caller: compliance.publicKey(),
 				}),
 			),
 		).rejects.toThrow(/signatures/)
+	})
+})
+
+describe("the share token after setup", () => {
+	const caller = () => governance.publicKey()
+	const verifier = () => c.deployment.contracts.identity_verifier
+
+	it("refuses an instant verifier swap, even from governance", async () => {
+		const token = shareToken(c, governance)
+		expectRefused(
+			await token.set_identity_verifier({
+				identity_verifier: verifier(),
+				operator: caller(),
+			}),
+			token,
+			"UseTimelock",
+		)
+	})
+
+	it("queues the swap behind the vault's delay", async () => {
+		const token = shareToken(c, governance)
+		const id = await send(
+			token.propose_change({
+				change: { tag: "IdentityVerifier", values: [verifier()] },
+				caller: caller(),
+			}),
+		)
+		expectRefused(
+			await token.apply_change({ id, caller: caller() }),
+			token,
+			"ChangeNotReady",
+		)
+		await send(token.cancel_change({ id, caller: caller() }))
+		expect((await token.pending_changes()).result).toEqual([])
 	})
 })
 
