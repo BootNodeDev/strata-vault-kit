@@ -1,17 +1,22 @@
 #![no_std]
 
+mod governance;
 mod state;
 
-use bindings::OracleFeed;
+use bindings::{OracleFeed, VaultBinding};
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env, Symbol,
     Vec,
 };
 use stellar_access::access_control::{self, AccessControl};
+use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role};
 
 use state::{get_config, get_latest, nav_paused, ATTESTER_ROLE, GUARDIAN_ROLE};
 
+pub use governance::{
+    shortens_freshness_only, OracleChange, OraclePendingChange, ADMIN_ACCEPT_LEDGERS,
+};
 pub use state::{NavReport, OracleConfig, OracleState};
 
 const BPS_DENOM: i128 = 10_000;
@@ -43,10 +48,40 @@ pub enum OracleError {
     NotConsumable = 3007,
     /// `clear_latest` was called while the NAV was not paused.
     NavNotPaused = 3008,
-    /// The oracle must always have an admin.
+    /// The oracle must always have an admin. Hand it over instead: propose and
+    /// apply an `Admin` change (`transfer_admin_role` during setup), then the
+    /// nominee calls `accept_admin_transfer`.
     AdminRequired = 3009,
     /// The NAV is paused. Unpause it first; a report never lifts it.
     NavPaused = 3010,
+    /// No pending change has this id.
+    ChangeNotFound = 3011,
+    /// The change's delay has not elapsed.
+    ChangeNotReady = 3012,
+    /// As many changes as the timelock holds already wait.
+    TooManyPendingChanges = 3013,
+    /// Changes are instant until setup finishes; there is nothing to propose yet.
+    SetupOpen = 3014,
+    /// A direct call cannot make this change. After setup it goes through
+    /// `propose_change`; setting a role admin is never allowed.
+    UseTimelock = 3015,
+    /// Only possible while setup is open, and only once.
+    SetupClosed = 3016,
+    /// Setup cannot finish before the oracle is bound to its vault.
+    VaultNotBound = 3017,
+    /// The vault is winding down, so no change may be proposed or applied.
+    WindDownActive = 3018,
+    /// The vault is paused, which holds every timelocked change.
+    VaultPaused = 3019,
+    /// The change's delay is shorter than the vault's notice, so an investor
+    /// could not complete an exit before it lands.
+    DelayBelowNotice = 3020,
+    /// An upgrade already waits. Cancel it before proposing another.
+    UpgradeAlreadyPending = 3021,
+    /// An admin hand-over offered during setup is still open. Setup finishes
+    /// once it is accepted, cancelled or expired, so no nominee from setup can
+    /// accept after changes start to wait.
+    AdminTransferPending = 3025,
 }
 
 #[contractevent]
@@ -66,6 +101,36 @@ pub struct NavPausedSet {
 }
 
 #[contractevent]
+pub struct ChangeProposed {
+    #[topic]
+    pub id: u32,
+    pub change: OracleChange,
+    pub eta: u64,
+}
+
+#[contractevent]
+pub struct ChangeCancelled {
+    #[topic]
+    pub id: u32,
+}
+
+#[contractevent]
+pub struct ChangeApplied {
+    #[topic]
+    pub id: u32,
+    pub change: OracleChange,
+}
+
+#[contractevent]
+pub struct SetupFinished {}
+
+#[contractevent]
+pub struct VaultBound {
+    #[topic]
+    pub vault: Address,
+}
+
+#[contractevent]
 pub struct ConfigSet {
     pub freshness_duration: u64,
     pub cooldown_secs: u64,
@@ -79,7 +144,7 @@ fn bps_in_range(bps: u32) -> bool {
     bps > 0 && bps as i128 <= BPS_DENOM
 }
 
-fn validate_config(e: &Env, cfg: &OracleConfig) {
+pub(crate) fn validate_config(e: &Env, cfg: &OracleConfig) {
     if cfg.freshness_duration == 0
         || cfg.freshness_duration > MAX_FRESHNESS_SECS
         || cfg.cooldown_secs < MIN_COOLDOWN_SECS
@@ -92,6 +157,19 @@ fn validate_config(e: &Env, cfg: &OracleConfig) {
     {
         panic_with_error!(e, OracleError::InvalidConfig);
     }
+}
+
+pub(crate) fn store_config(e: &Env, config: &OracleConfig) {
+    state::set_config(e, config);
+    ConfigSet {
+        freshness_duration: config.freshness_duration,
+        cooldown_secs: config.cooldown_secs,
+        max_up_bps: config.max_up_bps,
+        max_down_bps: config.max_down_bps,
+        min_answer: config.min_answer,
+        max_answer: config.max_answer,
+    }
+    .publish(e);
 }
 
 fn in_band(cfg: &OracleConfig, nav_per_share: i128) -> bool {
@@ -118,10 +196,47 @@ pub struct NavOracleContract;
 
 #[contractimpl(contracttrait)]
 impl AccessControl for NavOracleContract {
+    /// Instant during setup; after it, propose the grant through the timelock.
+    /// Revoking stays instant: taking an attester or a guardian away moves no
+    /// value.
+    fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
+        governance::require_setup_open(e);
+        storage::bump_instance(e);
+        access_control::grant_role(e, &account, &role, &caller);
+    }
+
+    /// Cancelling a pending hand-over (`live_until_ledger == 0`) keeps the
+    /// current admin, so it stays instant.
+    fn transfer_admin_role(e: &Env, new_admin: Address, live_until_ledger: u32) {
+        if live_until_ledger != 0 {
+            governance::require_setup_open(e);
+        }
+        storage::bump_instance(e);
+        access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
+    }
+
+    /// Refused. A role admin could grant that role with no delay.
+    fn set_role_admin(e: &Env, _role: Symbol, _admin_role: Symbol) {
+        panic_with_error!(e, OracleError::UseTimelock);
+    }
+
     /// Refused. An oracle with no admin can never be reconfigured, never clear a
-    /// stuck record and never unpause the NAV again.
+    /// stuck record and never unpause the NAV again. The way out is a hand-over:
+    /// propose and apply an `Admin` change (`transfer_admin_role` during setup),
+    /// then the nominee calls `accept_admin_transfer`.
     fn renounce_admin(e: &Env) {
         panic_with_error!(e, OracleError::AdminRequired);
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl VaultBinding for NavOracleContract {
+    fn vault(e: &Env) -> Option<Address> {
+        timelock::setup::source(e)
+    }
+
+    fn setup_open(e: &Env) -> bool {
+        timelock::setup::is_open(e)
     }
 }
 
@@ -141,6 +256,56 @@ impl NavOracleContract {
 
         state::set_config(e, &config);
         state::set_nav_paused(e, false);
+        upgradeable::set_schema_version(e, 1);
+    }
+
+    pub fn schema_version(e: &Env) -> u32 {
+        upgradeable::get_schema_version(e)
+    }
+
+    /// Names the vault whose clock this oracle's timelock reads. Once, and only
+    /// during setup.
+    #[only_admin]
+    pub fn bind_vault(e: &Env, vault: Address, caller: Address) {
+        caller.require_auth();
+        storage::bump_instance(e);
+        governance::bind_vault(e, &vault);
+    }
+
+    /// Ends the window in which admin changes are instant. It never reopens.
+    #[only_admin]
+    pub fn finish_setup(e: &Env, caller: Address) {
+        caller.require_auth();
+        storage::bump_instance(e);
+        governance::finish_setup(e);
+    }
+
+    /// Queues a change behind the vault's timelock and returns its id.
+    #[only_admin]
+    pub fn propose_change(e: &Env, change: OracleChange, caller: Address) -> u32 {
+        caller.require_auth();
+        storage::bump_instance(e);
+        governance::propose(e, change)
+    }
+
+    #[only_admin]
+    pub fn cancel_change(e: &Env, id: u32, caller: Address) {
+        caller.require_auth();
+        storage::bump_instance(e);
+        governance::cancel(e, id);
+    }
+
+    /// Lands a change whose delay has run. Refused while the vault is paused
+    /// or winding down.
+    #[only_admin]
+    pub fn apply_change(e: &Env, id: u32, caller: Address) {
+        caller.require_auth();
+        storage::bump_instance(e);
+        governance::apply(e, id);
+    }
+
+    pub fn pending_changes(e: &Env) -> Vec<OraclePendingChange> {
+        governance::pending(e)
     }
 
     pub fn latest(e: &Env) -> NavReport {
@@ -240,19 +405,16 @@ impl NavOracleContract {
         get_config(e)
     }
 
+    /// Instant during setup. Afterwards, instant only when the new config
+    /// changes nothing but a shorter `freshness_duration`; every other change
+    /// waits. Propose it as `OracleChange::Config`.
     #[only_admin]
     pub fn set_config(e: &Env, config: OracleConfig) {
         validate_config(e, &config);
-        state::set_config(e, &config);
-        ConfigSet {
-            freshness_duration: config.freshness_duration,
-            cooldown_secs: config.cooldown_secs,
-            max_up_bps: config.max_up_bps,
-            max_down_bps: config.max_down_bps,
-            min_answer: config.min_answer,
-            max_answer: config.max_answer,
+        if !timelock::setup::is_open(e) && !shortens_freshness_only(&get_config(e), &config) {
+            panic_with_error!(e, OracleError::UseTimelock);
         }
-        .publish(e);
+        store_config(e, &config);
     }
 }
 
@@ -277,5 +439,34 @@ impl OracleFeed for NavOracleContract {
     }
 }
 
+/// Stands in for a later oracle version in the upgrade test. Never deployed.
+#[cfg(feature = "upgrade_probe")]
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ProbeError {
+    AlreadyMigrated = 3100,
+}
+
+#[cfg(feature = "upgrade_probe")]
+#[contractimpl]
+impl NavOracleContract {
+    #[only_admin]
+    pub fn migrate(e: &Env, caller: Address) {
+        caller.require_auth();
+        storage::bump_instance(e);
+        if upgradeable::get_schema_version(e) >= 2 {
+            panic_with_error!(e, ProbeError::AlreadyMigrated);
+        }
+        upgradeable::set_schema_version(e, 2);
+    }
+
+    pub fn probe(_e: &Env) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod test_governance;

@@ -28,7 +28,7 @@ pub struct NavReport {
 }
 
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OracleConfig {
     pub freshness_duration: u64, // before nav is considered stale
     pub cooldown_secs: u64,      // before new record is admitted
