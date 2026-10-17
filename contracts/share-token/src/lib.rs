@@ -6,7 +6,9 @@ mod governance;
 mod roles;
 pub use contract::*;
 pub use error::ShareTokenError;
-pub use event::{ChangeApplied, ChangeCancelled, ChangeProposed, SetupFinished, VaultBound};
+pub use event::{
+    ChangeApplied, ChangeCancelled, ChangeProposed, LegalTransfer, SetupFinished, VaultBound,
+};
 pub use governance::{TokenChange, TokenPendingChange, ADMIN_ACCEPT_LEDGERS};
 
 #[cfg(test)]
