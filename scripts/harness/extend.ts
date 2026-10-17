@@ -35,6 +35,7 @@ const CONTRACTS_WITH_QUEUES = new Set([
 	"async_vault",
 	"share_token",
 	"nav_oracle",
+	"compliance",
 ])
 
 /**

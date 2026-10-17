@@ -35,12 +35,13 @@ pub(crate) use soroban_sdk::{
     Address, BytesN, Env, String,
 };
 
-pub(crate) use ::compliance::{Compliance, ComplianceClient};
+pub(crate) use ::compliance::{Compliance, ComplianceChange, ComplianceClient};
 pub(crate) use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
 pub(crate) use nav_oracle::{NavOracleContract, NavOracleContractClient, NavReport, OracleConfig};
 pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
+use stellar_tokens::rwa::compliance::ComplianceHook;
 pub(crate) use timelock::DAY_DURATION;
 
 pub(crate) use crate::{
@@ -169,6 +170,17 @@ impl Fixture<'_> {
             self.vault.deploy_to_custodian(&self.treasury, &free);
         }
     }
+
+    /// After setup, a module lands only through the compliance contract's timelock.
+    fn add_compliance_module(&self, hook: ComplianceHook, module: &Address) {
+        let rules = ComplianceClient::new(&self.e, &self.share.compliance());
+        let id = rules.propose_change(
+            &ComplianceChange::AddModule(hook, module.clone()),
+            &self.admin,
+        );
+        self.advance(MIN_UPGRADE_DELAY);
+        rules.apply_change(&id, &self.admin);
+    }
 }
 
 pub(crate) fn distinct_roles(e: &Env) -> VaultRoles {
@@ -237,6 +249,8 @@ enum Miswire {
     NotAllowlisted,
     VaultFrozen,
     ComplianceUnbound,
+    ComplianceBoundElsewhere,
+    ComplianceSetupOpen,
 }
 
 /// A vault left in setup, wired except for `miswire`.
@@ -388,6 +402,18 @@ fn build<'a>(
         _ => {
             oracle.bind_vault(&contract_id, &admin);
             oracle.finish_setup(&admin);
+        }
+    }
+    match miswire {
+        Miswire::ComplianceUnbound => {}
+        Miswire::ComplianceBoundElsewhere => {
+            compliance.bind_vault(&register_with(&e, distinct_roles(&e)), &admin);
+            compliance.finish_setup(&admin);
+        }
+        Miswire::ComplianceSetupOpen => compliance.bind_vault(&contract_id, &admin),
+        _ => {
+            compliance.bind_vault(&contract_id, &admin);
+            compliance.finish_setup(&admin);
         }
     }
     let vault = AsyncVaultClient::new(&e, &contract_id);
