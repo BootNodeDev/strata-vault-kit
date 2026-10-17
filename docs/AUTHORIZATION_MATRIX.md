@@ -35,9 +35,10 @@ In `scripts/harness/deploy.ts` and automated deployment scripts, the separation 
 - The vault's constructor receives `roles.manager = accounts.manager.publicKey()`.
 - The share token's constructor grants `compliance` to the compliance key and grants `manager` to no one; the identity verifier is constructed with the compliance key as admin.
 - The share token role is granted to the deployed vault contract: `token.grant_role({ account: asyncVault.address, role: "manager", caller: governance })`.
-- After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. It does not check that no other account holds it.
+- After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. That no other account holds it is checked by the vault's `finish_setup` below.
 - It then calls `token.bind_vault({ vault, caller: governance })` and `token.finish_setup({ caller: governance })`, and stops if `token.setup_open()` still reads true. From then on the token's admin changes wait for the vault's timelock (§5.2).
-- Last, it calls `oracle.bind_vault({ vault, caller: governance })` and `oracle.finish_setup({ caller: governance })`, and stops if `oracle.setup_open()` still reads true. From then on the oracle's admin changes wait for the vault's timelock (§5.3).
+- It calls `oracle.bind_vault({ vault, caller: governance })` and `oracle.finish_setup({ caller: governance })`, and stops if `oracle.setup_open()` still reads true. From then on the oracle's admin changes wait for the vault's timelock (§5.3).
+- Last, it calls `vault.set_custodian({ custodian, caller: governance })` and `vault.finish_setup({ caller: governance })`, and stops if `vault.setup_open()` still reads true. `finish_setup` refuses with `SetupIncomplete` unless the token and the oracle report this vault with their setup closed, the vault is the token's only `manager`, the vault passes the identity check and the token is bound to its compliance contract. From then on the vault takes deposits and its admin changes wait for its timelock (§5.1).
 
 ---
 
@@ -62,7 +63,7 @@ The following entrypoints are open to any caller on purpose:
 | **`AsyncVault`** | `activate_wind_down` | Open (Any caller) | Once governance announces wind-down and the timelock expires, anyone (including investors) can trigger activation. This ensures an operator cannot propose wind-down to block deposits and then stall activation indefinitely. |
 | **`AsyncVault`** | `finalize_wind_down_round` | Open (Any caller) | Distributing returned capital pro-rata across the supply snapshot is deterministic. Making finalisation open ensures investors or keepers can trigger payout rounds immediately when funds arrive. |
 | **`AsyncVault`** | `claim_wind_down` | `holder.require_auth()` | The holder signs their own claim; a keeper cannot claim for them. The payout goes to `holder`. |
-| **`AsyncVault`** | `request_deposit` | `from.require_auth()` | Investor entrypoint. Deposits escrowed cash; guarded by `when_not_paused` and not winding down. |
+| **`AsyncVault`** | `request_deposit` | `from.require_auth()` | Investor entrypoint. Deposits escrowed cash; guarded by `when_not_paused`, not winding down, and refused with `SetupOpen` until the vault's setup finishes, so every deposit is covered by the timelock. |
 | **`AsyncVault`** | `claim_deposit` | `caller.require_auth()` | Investor entrypoint. Claims shares once epoch fulfilled; gated by SEP-57 receiver check on `mint`. |
 | **`AsyncVault`** | `cancel_deposit` | `from.require_auth()` | Investor exit before epoch pricing. Single-step refund. |
 | **`AsyncVault`** | `request_redeem` | `from.require_auth()` | Investor exit. Always open, even during pause. |
@@ -75,7 +76,9 @@ The following entrypoints are open to any caller on purpose:
 
 ### 5.1 AsyncVault (`contracts/async-vault`)
 
-Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs), [`notice.rs`](../contracts/async-vault/src/test/notice.rs), [`treasury.rs`](../contracts/async-vault/src/test/treasury.rs), [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) and [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) in [`contracts/async-vault/src/test/`](../contracts/async-vault/src/test/).
+The vault's `admin` is governance. Until `finish_setup`, admin changes are instant and the vault takes no deposit (`SetupOpen`). Setup finishes once the wiring is complete and no admin hand-over offered during setup is pending, and it never reopens. After setup, the following wait for the timelock through `propose_change`/`apply_change`: the custodian, grants, revoking `manager`, admin hand-over, lowering the notice or the wind-down delay, and upgrades. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking `treasury` or `guardian` stay instant. During an active wind-down nothing timelocked is proposed or applied, a `manager` revoke included.
+
+Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs), [`governance.rs`](../contracts/async-vault/src/test/governance.rs), [`notice.rs`](../contracts/async-vault/src/test/notice.rs), [`setup.rs`](../contracts/async-vault/src/test/setup.rs), [`treasury.rs`](../contracts/async-vault/src/test/treasury.rs), [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) and [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) in [`contracts/async-vault/src/test/`](../contracts/async-vault/src/test/).
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
@@ -83,16 +86,21 @@ Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.
 | `deploy_to_custodian` | `#[only_role(caller, "treasury")]` | `assets <= free_reserve`, not winding down | `test::treasury::deploying_needs_the_treasury_role` |
 | `pause` | `#[only_role(caller, "guardian")]` | Contract not already paused | `test::controls::only_the_guardian_pauses` |
 | `unpause` | `#[only_admin]`, `caller.require_auth()` | Contract must be paused | `test::controls::the_guardian_pauses_but_only_governance_unpauses` |
-| `set_custodian` | `#[only_admin]`, `caller.require_auth()` | None | `test::treasury::setting_the_custodian_needs_the_admin_signature` |
-| `set_notice` | `#[only_admin]`, `caller.require_auth()` | `secs <= MAX_NOTICE_SECS`, `secs <= upgrade_delay` | `test::notice::setting_the_notice_needs_governance_authorisation` |
-| `set_wind_down_delay` | `#[only_admin]`, `caller.require_auth()` | `secs <= MAX_WIND_DOWN_DELAY`, not active | `test::wind_down::only_governance_sets_the_delay` |
+| `set_custodian` | `#[only_admin]`, `caller.require_auth()` | Instant during setup; `UseTimelock` after | `test::governance::the_custodian_changes_through_the_timelock`, `test::treasury::setting_the_custodian_needs_the_admin_signature` |
+| `set_notice` | `#[only_admin]`, `caller.require_auth()` | `secs <= MAX_NOTICE_SECS`, `secs <= upgrade_delay`. Raising is instant; lowering is `UseTimelock` after setup | `test::governance::raising_the_notice_is_instant_and_lowering_waits`, `test::notice::setting_the_notice_needs_governance_authorisation` |
+| `set_wind_down_delay` | `#[only_admin]`, `caller.require_auth()` | `MIN_WIND_DOWN_DELAY <= secs <= MAX_WIND_DOWN_DELAY`. Raising is instant; lowering is `UseTimelock` after setup | `test::governance::raising_the_wind_down_delay_is_instant_and_lowering_waits`, `test::governance::a_wind_down_delay_below_the_minimum_cannot_be_proposed`, `test::wind_down::only_governance_sets_the_delay` |
+| `set_deposit_cap` | `#[only_admin]`, `caller.require_auth()` | Not negative. Instant both ways, also after setup | `test::governance::the_deposit_cap_stays_instant_both_ways` |
+| `finish_setup` | `#[only_admin]`, `caller.require_auth()` | Once. The token and the oracle report this vault with their setup closed, the vault is the token's only `manager`, passes `verify_identity`, and the token is in its compliance contract's `linked_tokens`; no admin hand-over offered during setup is pending | `test::setup::every_wiring_step_is_checked_before_setup_finishes`, `test::setup::setup_cannot_finish_while_a_hand_over_is_pending`, `test::setup::setup_never_finishes_twice`, `test::setup::only_governance_finishes_setup` |
+| `grant_role` / `transfer_admin_role` | Admin | Instant during setup, `UseTimelock` after. A zero `live_until_ledger` cancels instantly | `test::governance::grants_and_manager_revokes_wait_for_the_timelock`, `test::governance::an_admin_hand_over_waits_but_cancelling_one_does_not` |
+| `revoke_role` | Admin | `treasury`, `guardian`: instant. `manager`: instant during setup, `UseTimelock` after | `test::governance::grants_and_manager_revokes_wait_for_the_timelock` (instant case: `test::governance::revoking_treasury_or_guardian_stays_instant`; caller check: `test::governance::only_the_admin_revokes_a_role`) |
+| `set_role_admin` | — | Always refused (`UseTimelock`) | `test::governance::no_role_ever_gets_a_role_admin` |
 | `propose_wind_down` | `#[only_admin]`, `caller.require_auth()` | No proposal standing, not active | `test::wind_down::only_governance_proposes` |
 | `cancel_wind_down_proposal` | `#[only_admin]`, `caller.require_auth()` | Must be proposed, not active | `test::wind_down::governance_cancels_a_proposal_before_activation` |
-| `propose_change` | `#[only_admin]`, `caller.require_auth()` | Not winding down, one code change at a time, an `UpgradeDelay` in `[MIN, MAX]` and `>= notice` | `test::upgrade::only_governance_proposes_and_cancels`, `test::upgrade::nothing_is_proposed_during_a_wind_down` |
+| `propose_change` | `#[only_admin]`, `caller.require_auth()` | Not winding down, setup finished, one code change at a time, an `UpgradeDelay` in `[MIN, MAX]` and `>= notice`, a `Notice` within its bounds, a `WindDownDelay` in `[MIN_WIND_DOWN_DELAY, MAX_WIND_DOWN_DELAY]` | `test::upgrade::only_governance_proposes_and_cancels`, `test::upgrade::nothing_is_proposed_during_a_wind_down`, `test::setup::nothing_is_proposed_during_setup` |
 | `cancel_change` | `#[only_admin]`, `caller.require_auth()` | The change must be pending | `test::upgrade::only_governance_proposes_and_cancels` |
-| `apply_change` | `#[only_admin]`, `caller.require_auth()` | Eta passed, not paused, not winding down, delay `>= notice` | `test::upgrade::only_governance_applies` |
+| `apply_change` | `#[only_admin]`, `caller.require_auth()` | Eta passed, not paused, not winding down, delay `>= notice`; an `UpgradeDelay`, `Notice` or `WindDownDelay` change is checked against its bounds again | `test::upgrade::only_governance_applies`, `test::governance::a_change_shorter_than_a_raised_notice_never_lands`, `test::governance::nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included` |
 | `pending_changes` | Open view | None | None (view) |
-| `renounce_admin` | Refused always (`VaultError::AdminRequired`) | None | `test::controls::governance_cannot_renounce_itself_out_of_the_vault` |
+| `renounce_admin` | Refused always (`VaultError::AdminRequired`) | None | `test::controls::governance_cannot_renounce_itself_out_of_the_vault`; `test::controls::governance_hands_over_in_two_steps_instead`; `test::governance::an_applied_admin_change_starts_a_hand_over_the_next_admin_accepts`. Hand over by proposing and applying an `Admin` change (`transfer_admin_role` during setup), then the nominee calls `accept_admin_transfer`. |
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
