@@ -329,19 +329,6 @@ fn an_expired_hand_over_does_not_hold_setup_open() {
 }
 
 #[test]
-fn the_token_exposes_no_immediate_upgrade() {
-    let f = setup();
-    f.finish();
-    let upgrader =
-        stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.token.address);
-
-    assert!(upgrader
-        .try_upgrade(&BytesN::from_array(&f.e, &[7; 32]), &f.admin)
-        .is_err());
-    assert_eq!(f.token.schema_version(), 1);
-}
-
-#[test]
 fn no_role_ever_gets_a_role_admin() {
     let f = setup();
 

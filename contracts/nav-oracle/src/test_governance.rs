@@ -267,7 +267,7 @@ fn a_shorter_freshness_window_stays_instant_after_setup() {
 }
 
 #[test]
-fn a_shorter_freshness_window_with_any_other_change_waits() {
+fn a_shorter_freshness_window_with_a_tighter_field_waits() {
     let f = setup();
     f.finish();
     let shorter_and_tighter = OracleConfig {
@@ -279,6 +279,39 @@ fn a_shorter_freshness_window_with_any_other_change_waits() {
     refused(
         f.oracle.try_set_config(&shorter_and_tighter),
         OracleError::UseTimelock,
+    );
+    assert_eq!(f.oracle.config(), config());
+}
+
+#[test]
+fn a_shorter_freshness_window_with_a_looser_field_waits() {
+    let f = setup();
+    f.finish();
+    let shorter_and_looser = OracleConfig {
+        freshness_duration: 1_800,
+        max_up_bps: 2_000,
+        ..config()
+    };
+
+    refused(
+        f.oracle.try_set_config(&shorter_and_looser),
+        OracleError::UseTimelock,
+    );
+    assert_eq!(f.oracle.config(), config());
+}
+
+#[test]
+fn a_freshness_cut_below_the_cooldown_is_refused() {
+    let f = setup();
+    f.finish();
+    let below_the_cooldown = OracleConfig {
+        freshness_duration: config().cooldown_secs - 1,
+        ..config()
+    };
+
+    refused(
+        f.oracle.try_set_config(&below_the_cooldown),
+        OracleError::InvalidConfig,
     );
     assert_eq!(f.oracle.config(), config());
 }
@@ -864,19 +897,6 @@ fn a_proposal_after_a_past_pause_waits_one_delay_from_now() {
 }
 
 #[test]
-fn the_oracle_exposes_no_immediate_upgrade() {
-    let f = setup();
-    f.finish();
-    let upgrader =
-        stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.oracle.address);
-
-    assert!(upgrader
-        .try_upgrade(&BytesN::from_array(&f.e, &[7; 32]), &f.admin)
-        .is_err());
-    assert_eq!(f.oracle.schema_version(), 1);
-}
-
-#[test]
 fn the_schema_version_is_one_after_construction() {
     let f = setup();
 
@@ -910,6 +930,8 @@ fn setup_grants_hand_overs_and_changes_restore_the_instance_ttl() {
 
 #[cfg(feature = "upgrade_wasm")]
 mod with_wasm {
+    use soroban_sdk::xdr::{ContractEventBody, ScError, ScErrorCode, ScErrorType, ScSymbol, ScVal};
+
     use super::*;
 
     mod oracle_v1 {
@@ -920,6 +942,50 @@ mod with_wasm {
         soroban_sdk::contractimport!(
             file = "../../target/upgrade-probe/wasm32v1-none/release/nav_oracle.wasm"
         );
+    }
+
+    /// What a caller sees when the host refuses a call: every host error is
+    /// narrowed to this one.
+    fn host_refusal() -> soroban_sdk::Error {
+        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
+    }
+
+    /// Whether the host refused a call to `function` because the contract
+    /// exports no function of that name. The reason is only in the
+    /// diagnostic events.
+    fn exports_no(e: &Env, function: &str) -> bool {
+        let missing = ScVal::Error(ScError::WasmVm(ScErrorCode::MissingValue));
+        let name = ScVal::Symbol(ScSymbol(function.try_into().unwrap()));
+        e.host()
+            .get_diagnostic_events()
+            .unwrap()
+            .0
+            .iter()
+            .any(|event| {
+                let ContractEventBody::V0(body) = &event.event.body;
+                body.topics.contains(&missing)
+                    && matches!(&body.data, ScVal::Vec(Some(args)) if args.contains(&name))
+            })
+    }
+
+    #[test]
+    fn the_oracle_exposes_no_immediate_upgrade() {
+        let f = setup_with(|e, args| e.register(oracle_v1::WASM, args));
+        let probe_hash = f.e.deployer().upload_contract_wasm(oracle_probe::WASM);
+        let upgrader =
+            stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.oracle.address);
+
+        assert_eq!(
+            upgrader.try_upgrade(&probe_hash, &f.admin),
+            Err(Ok(host_refusal()))
+        );
+        assert!(exports_no(&f.e, "upgrade"));
+        assert_eq!(
+            oracle_probe::Client::new(&f.e, &f.oracle.address).try_probe(),
+            Err(Ok(host_refusal()))
+        );
+        assert!(exports_no(&f.e, "probe"));
+        assert_eq!(f.oracle.schema_version(), 1);
     }
 
     #[test]

@@ -412,6 +412,7 @@ fn the_vault_reports_its_clock_to_the_token_and_the_oracle() {
 #[cfg(feature = "upgrade_wasm")]
 mod with_wasm {
     use share_token::TokenChange;
+    use soroban_sdk::xdr::{ContractEventBody, ScError, ScErrorCode, ScErrorType, ScSymbol, ScVal};
 
     use super::*;
 
@@ -427,6 +428,50 @@ mod with_wasm {
         soroban_sdk::contractimport!(
             file = "../../target/upgrade-probe/wasm32v1-none/release/share_token.wasm"
         );
+    }
+
+    /// What a caller sees when the host refuses a call: every host error is
+    /// narrowed to this one.
+    fn host_refusal() -> soroban_sdk::Error {
+        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
+    }
+
+    /// Whether the host refused a call to `function` because the contract
+    /// exports no function of that name. The reason is only in the
+    /// diagnostic events.
+    fn exports_no(e: &Env, function: &str) -> bool {
+        let missing = ScVal::Error(ScError::WasmVm(ScErrorCode::MissingValue));
+        let name = ScVal::Symbol(ScSymbol(function.try_into().unwrap()));
+        e.host()
+            .get_diagnostic_events()
+            .unwrap()
+            .0
+            .iter()
+            .any(|event| {
+                let ContractEventBody::V0(body) = &event.event.body;
+                body.topics.contains(&missing)
+                    && matches!(&body.data, ScVal::Vec(Some(args)) if args.contains(&name))
+            })
+    }
+
+    #[test]
+    fn the_token_exposes_no_immediate_upgrade() {
+        let f = setup_with(open_feed(), |e, args| e.register(token_v1::WASM, args));
+        let probe_hash = f.e.deployer().upload_contract_wasm(token_probe::WASM);
+        let upgrader =
+            stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.share.address);
+
+        assert_eq!(
+            upgrader.try_upgrade(&probe_hash, &f.admin),
+            Err(Ok(host_refusal()))
+        );
+        assert!(exports_no(&f.e, "upgrade"));
+        assert_eq!(
+            token_probe::Client::new(&f.e, &f.share.address).try_probe(),
+            Err(Ok(host_refusal()))
+        );
+        assert!(exports_no(&f.e, "probe"));
+        assert_eq!(f.share.schema_version(), 1);
     }
 
     #[test]

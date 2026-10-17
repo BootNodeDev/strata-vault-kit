@@ -124,7 +124,7 @@ Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.r
 | `revoke_role` | Admin, `caller.require_auth()` | `compliance`: instant. `manager`: instant during setup, `UseTimelock` after | `test_governance::grants_and_manager_revokes_wait_after_setup` (the instant case: `test_governance::revoking_compliance_stays_instant_after_setup`) |
 | `transfer_admin_role` | Admin | Instant during setup; `UseTimelock` after. A zero `live_until_ledger` cancels at once | `test_governance::an_admin_hand_over_waits_but_cancelling_one_does_not` |
 | `set_role_admin` | Refused always (`ShareTokenError::UseTimelock`) | None | `test_governance::no_role_ever_gets_a_role_admin`. A role admin could grant its role with no delay. |
-| `upgrade` | Not exposed | Upgrades go through `propose_change(Upgrade)` | `test_governance::the_token_exposes_no_immediate_upgrade` |
+| `upgrade` | Not exposed | Upgrades go through `propose_change(Upgrade)` | `test::upgrade::with_wasm::the_token_exposes_no_immediate_upgrade` in `contracts/async-vault` (needs `upgrade_wasm`): the built token refuses `upgrade` with a real uploaded hash because it exports no such function |
 
 ### 5.3 NavOracle (`contracts/nav-oracle`)
 
@@ -138,7 +138,7 @@ Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs)
 | `pause_nav` | `#[only_role(caller, "guardian")]` | None; instant after setup too | `test::pausing_the_nav_is_limited_to_the_guardian` (the instant case: `test_governance::the_nav_pause_and_clearing_stay_instant_after_setup`) |
 | `set_nav_paused` | `#[only_admin]`, `caller.require_auth()` | None; instant after setup too | `test::the_guardian_pauses_the_nav_but_unpausing_needs_governance` |
 | `clear_latest` | `#[only_admin]`, `caller.require_auth()` | NAV must be paused; instant after setup too | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_nav_is_paused` |
-| `set_config` | `#[only_admin]` (no caller argument; the stored admin signs) | Valid bounds. Instant while setup is open, or when the change is only a shorter `freshness_duration`; `UseTimelock` otherwise | `test::only_admin_can_set_config`, `test_governance::a_tighter_cap_or_band_waits_after_setup`, `test_governance::a_config_that_tightens_one_field_and_loosens_another_waits` |
+| `set_config` | `#[only_admin]` (no caller argument; the stored admin signs) | Valid bounds. Instant while setup is open, or when the change is only a shorter `freshness_duration`; `UseTimelock` otherwise. Applying a `Config` change sets every field, freshness included; to keep a cut made after the proposal, cancel the queued change and propose again | `test::only_admin_can_set_config`, `test_governance::a_tighter_cap_or_band_waits_after_setup`, `test_governance::a_config_that_tightens_one_field_and_loosens_another_waits`, `test_governance::a_shorter_freshness_window_with_a_looser_field_waits`, `test_governance::a_freshness_cut_below_the_cooldown_is_refused` |
 | `renounce_admin` | Refused always (`OracleError::AdminRequired`) | None | `test::the_oracle_admin_cannot_renounce_itself_away`; `test_governance::an_applied_admin_change_starts_a_hand_over_the_next_admin_accepts`. An oracle without an admin could never be reconfigured, clear a stuck record or unpause the NAV; hand over by proposing and applying an `Admin` change (`transfer_admin_role` during setup), then the nominee calls `accept_admin_transfer`. |
 | `bind_vault` | `#[only_admin]`, `caller.require_auth()` | During setup, once; the vault must answer `timelock_clock` | `test_governance::setup_is_open_until_finished_and_never_reopens`, `test_governance::a_second_vault_cannot_be_bound`, `test_governance::an_address_that_reports_no_clock_cannot_be_bound` |
 | `finish_setup` | `#[only_admin]`, `caller.require_auth()` | Needs a bound vault and no pending admin hand-over; once | `test_governance::setup_is_open_until_finished_and_never_reopens`, `test_governance::setup_cannot_finish_while_a_hand_over_is_pending` |
@@ -150,7 +150,7 @@ Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs)
 | `revoke_role` | Admin, `caller.require_auth()` | Instant: taking an attester or a guardian away moves no value | `test_governance::only_the_admin_revokes_a_role` (the instant case: `test_governance::revoking_an_attester_or_a_guardian_stays_instant_after_setup`) |
 | `transfer_admin_role` | Admin | Instant during setup; `UseTimelock` after. A zero `live_until_ledger` cancels at once | `test_governance::an_admin_hand_over_waits_but_cancelling_one_does_not` |
 | `set_role_admin` | Refused always (`OracleError::UseTimelock`) | None | `test_governance::no_role_ever_gets_a_role_admin`. A role admin could grant its role with no delay. |
-| `upgrade` | Not exposed | Upgrades go through `propose_change(Upgrade)` | `test_governance::the_oracle_exposes_no_immediate_upgrade` |
+| `upgrade` | Not exposed | Upgrades go through `propose_change(Upgrade)` | `test_governance::with_wasm::the_oracle_exposes_no_immediate_upgrade` (needs `upgrade_wasm`): the built oracle refuses `upgrade` with a real uploaded hash because it exports no such function |
 
 ### 5.4 IdentityVerifier (`contracts/identity-verifier`)
 
