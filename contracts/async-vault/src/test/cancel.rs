@@ -293,3 +293,48 @@ fn a_sealed_epoch_cancels_while_the_nav_is_paused() {
     assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
     assert_eq!(f.shares(&holder), 200);
 }
+
+/// A paused vault cannot price, so a readable price no longer closes the
+/// window: the investor may leave while the pause lasts, and the window closes
+/// again once governance lifts it.
+#[test]
+fn a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price() {
+    let f = setup();
+    let first = f.investor(1_000);
+    let second = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&first, &400);
+    f.vault.request_deposit(&second, &400);
+    f.close_epoch();
+    f.attest(wad(2));
+    refused(
+        f.vault.try_cancel_deposit(&first, &epoch),
+        VaultError::PriceAvailable,
+    );
+
+    f.vault.pause(&f.guardian);
+    assert_eq!(f.vault.cancel_deposit(&first, &epoch), 400);
+
+    f.vault.unpause(&f.admin);
+    refused(
+        f.vault.try_cancel_deposit(&second, &epoch),
+        VaultError::PriceAvailable,
+    );
+}
+
+/// The window closes on the first readable price after the close and reopens
+/// if that price lapses before the epoch is priced.
+#[test]
+fn cancellation_reopens_when_the_price_that_closed_it_expires() {
+    let f = setup();
+    let inv = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&inv, &400);
+    f.close_epoch();
+    f.attest(wad(2));
+    refused(
+        f.vault.try_cancel_deposit(&inv, &epoch),
+        VaultError::PriceAvailable,
+    );
+
+    f.advance(3_601); // past the freshness window
+    assert_eq!(f.vault.cancel_deposit(&inv, &epoch), 400);
+}
