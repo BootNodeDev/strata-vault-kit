@@ -34,20 +34,25 @@ pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
     DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
     EpochReconciled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, RedemptionSurrendered,
-    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
+    SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
     WindDownProposed, WindDownRoundFinalized,
 };
-pub use governance::{VaultChange, VaultPendingChange};
+pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use pricing::{DirectUnitPricing, PricingScheme};
 pub use roles::VaultRoles;
 pub use settlement::EpochSettlement;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
 pub use upgrade::{MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
-pub use wind_down::{WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY};
+pub use wind_down::{
+    WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY, MIN_WIND_DOWN_DELAY,
+};
 
 /// Thirty days. Longer than any notice a real structure uses, short enough that
 /// setting it by mistake is survivable.
 pub const MAX_NOTICE_SECS: u64 = 30 * DAY_DURATION;
+
+#[cfg(feature = "short_wind_down")]
+soroban_sdk::contractmeta!(key = "build", val = "short wind-down; local tests only");
 
 fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
     if access_control::get_role_member_count(e, role) == 0 {
@@ -94,7 +99,6 @@ impl AsyncVault {
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
         state::set_current_epoch(e, FIRST_EPOCH);
         upgradeable::set_schema_version(e, 1);
-        timelock::setup::finish::<AsyncVault>(e).unwrap_or_else(|r| governance::refuse(e, r));
     }
 
     pub fn asset(e: &Env) -> Address {
@@ -193,15 +197,23 @@ impl AsyncVault {
         .publish(e);
     }
 
+    /// Instant during setup; afterwards the custodian changes through the
+    /// timelock.
     #[only_admin]
     pub fn set_custodian(e: &Env, custodian: Address, caller: Address) {
         caller.require_auth();
+        governance::require_setup_open(e);
         treasury::set_custodian(e, &custodian);
     }
 
+    /// Raising is instant. Lowering shortens the warning holders get before a
+    /// wind-down starts, so after setup it waits for the timelock.
     #[only_admin]
     pub fn set_wind_down_delay(e: &Env, secs: u64, caller: Address) {
         caller.require_auth();
+        if secs < wind_down::delay(e) {
+            governance::require_setup_open(e);
+        }
         wind_down::set_delay(e, secs);
     }
 
@@ -260,17 +272,29 @@ impl AsyncVault {
         wind_down::claimable(e, &holder)
     }
 
+    /// Raising is instant. Lowering shortens the wait every closed epoch gives
+    /// before it prices, so after setup it waits for the timelock.
     #[only_admin]
     pub fn set_notice(e: &Env, secs: u64, caller: Address) {
         caller.require_auth();
-        if secs > MAX_NOTICE_SECS {
-            panic_with_error!(e, VaultError::NoticeTooLong);
+        if secs < state::notice(e) {
+            governance::require_setup_open(e);
         }
-        if secs > upgrade::delay(e) {
-            panic_with_error!(e, VaultError::NoticeAboveUpgradeDelay);
-        }
-        state::set_notice(e, secs);
-        NoticeSet { secs }.publish(e);
+        governance::set_notice(e, secs);
+    }
+
+    /// Ends the window in which admin changes are instant, once the token,
+    /// the oracle, the manager role, the allowlist and the compliance binding
+    /// are wired to this vault. Deposits open from here on, and it never
+    /// reopens.
+    #[only_admin]
+    pub fn finish_setup(e: &Env, caller: Address) {
+        caller.require_auth();
+        governance::finish_setup(e);
+    }
+
+    pub fn setup_open(e: &Env) -> bool {
+        timelock::setup::is_open(e)
     }
 
     /// Queues a change behind the timelock and returns its id.
@@ -393,9 +417,39 @@ impl AsyncVault {
 
 #[contractimpl(contracttrait)]
 impl AccessControl for AsyncVault {
+    /// Instant during setup; after it, propose the grant through the timelock.
+    fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
+        governance::require_setup_open(e);
+        access_control::grant_role(e, &account, &role, &caller);
+    }
+
+    /// Instant for every role but `manager`: taking `treasury` or `guardian`
+    /// away moves no value. After setup, revoking `manager` waits like a grant,
+    /// because without it no epoch closes and no exit is priced.
+    fn revoke_role(e: &Env, account: Address, role: Symbol, caller: Address) {
+        governance::require_revoke_allowed(e, &role);
+        access_control::revoke_role(e, &account, &role, &caller);
+    }
+
+    /// Cancelling a pending hand-over (`live_until_ledger == 0`) keeps the
+    /// current admin, so it stays instant.
+    fn transfer_admin_role(e: &Env, new_admin: Address, live_until_ledger: u32) {
+        if live_until_ledger != 0 {
+            governance::require_setup_open(e);
+        }
+        access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
+    }
+
+    /// Refused. A role admin could grant that role with no delay.
+    fn set_role_admin(e: &Env, _role: Symbol, _admin_role: Symbol) {
+        panic_with_error!(e, VaultError::UseTimelock);
+    }
+
     /// Refused. A vault without an admin could never be unpaused, never set a
-    /// custodian, never rotate a role and never be upgraded again.
-    /// `transfer_admin_role` and `accept_admin_transfer` are the way out.
+    /// custodian, never rotate a role and never be upgraded again. The way out
+    /// is a hand-over: propose and apply an `Admin` change
+    /// (`transfer_admin_role` during setup), then the nominee calls
+    /// `accept_admin_transfer`.
     fn renounce_admin(e: &Env) {
         panic_with_error!(e, VaultError::AdminRequired);
     }

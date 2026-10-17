@@ -122,7 +122,6 @@ fn deployed_capital_and_multi_epoch_accounting() {
     f.vault.fulfill_epoch(&1);
 
     // Deploy 800 to custodian
-    f.vault.set_custodian(&f.custodian, &f.admin);
     f.vault.deploy_to_custodian(&f.treasury, &800);
     assert_eq!(f.vault.net_deployed(), 800);
 

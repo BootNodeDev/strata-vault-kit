@@ -51,8 +51,14 @@ constructor_args = '--asset share_token --share_token share_token --oracle nav_o
 # The vault needs the share token's manager role and needs allowlisting on the
 # identity verifier, and both target other contracts while requiring the vault's
 # own address, which only exists after it deploys last. The deploy in
-# scripts/harness performs and verifies both. A deployment made only from
-# this file can take deposits but can neither deliver shares nor return them.
+# scripts/harness performs and verifies both.
+#
+# Setup cannot finish from this file either. The vault's `finish_setup` checks
+# the token and oracle bindings, the manager role, the allowlist and the
+# compliance binding, which only the harness deploy wires. A deploy made only
+# from this file leaves the token's, the oracle's and the vault's setup open, so
+# its vault refuses deposits with `SetupOpen`. The harness deploy closes all
+# three.
 
 
 ### Staging environment configuration

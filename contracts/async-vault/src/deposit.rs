@@ -4,6 +4,7 @@ use stellar_tokens::rwa::RWATokenClient;
 use crate::epoch;
 use crate::error::VaultError;
 use crate::event::{DepositCancelled, DepositClaimed, DepositConvertedToExit, DepositRequested};
+use crate::governance;
 use crate::keys::DataKey;
 use crate::lock_policy::{self, Decision, Exit, Standing};
 use crate::pricing::{Pricing, PricingScheme};
@@ -37,6 +38,7 @@ fn refuse_if_exceeds_cap(e: &Env, amount: i128) {
 
 pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     wind_down::refuse_if_active(e);
+    governance::refuse_if_setup_open(e);
     from.require_auth();
 
     if amount <= 0 {

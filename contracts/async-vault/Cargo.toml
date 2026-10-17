@@ -30,3 +30,5 @@ proptest = "1"
 
 [features]
 upgrade_wasm = []
+# Drops the wind-down minimum to zero for the local harness. Never deployed.
+short_wind_down = []
