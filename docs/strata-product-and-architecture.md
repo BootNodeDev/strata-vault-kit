@@ -310,7 +310,7 @@ batch boundary, though not the price it receives.
 
 #### Subscription
 
-- Request: moves the deposit asset into escrow; at most one active request per controller. (Target: verifying the receiver is allowlisted at request time is targeted for a future milestone; in current contracts the allowlist is verified on share mint at claim time via SEP-57 hooks).
+- Request: moves the deposit asset into escrow; at most one active request per controller. The vault first asks the share token's identity verifier and refuses an address that could not receive the shares, before any cash moves; the token checks again when it mints at claim time.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set at the epoch's price, and the economic supply liability is recorded. To avoid unbounded loops that exceed Soroban transaction resource limits, physical share minting occurs lazily when each investor executes `claim_deposit`.
 - Cancellation: atomic, and returns the escrowed asset in full. Open while the epoch is open. Once sealed, cancellation remains open only until the epoch becomes priceable (the notice period elapses and a fresh attestation is available) or is fulfilled, preventing arbitrage against known prices while preserving an escape hatch for stalled epochs. Cancellation also remains open during an active wind-down, allowing pending depositors to recover their escrowed assets when pricing is closed.
 - Share claim: verifies the receiver and delivers the shares via `mint`. If verification fails, the position remains in pending mint and exits through administrative resolution or once allowlisted. No nominal refund exists after pricing.

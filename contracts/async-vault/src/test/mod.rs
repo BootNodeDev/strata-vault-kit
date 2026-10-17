@@ -7,6 +7,7 @@ mod deposit;
 mod deposit_cap;
 mod epochs;
 mod events;
+mod lock_policy;
 mod multi_epoch;
 mod notice;
 mod oracle_pricing;

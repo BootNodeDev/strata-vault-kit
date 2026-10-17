@@ -1,32 +1,135 @@
+use soroban_sdk::{contract, contractimpl};
+use stellar_tokens::rwa::compliance::ComplianceHook;
+
 use super::*;
 
 #[test]
-fn a_non_allowlisted_investor_cannot_claim_shares() {
+fn an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves() {
     let f = setup();
     let stranger = f.unverified_investor(1_000);
 
-    f.vault.request_deposit(&stranger, &400);
-    f.fulfill_epoch(wad(2));
+    refused(
+        f.vault.try_request_deposit(&stranger, &400),
+        VaultError::NotAllowlisted,
+    );
 
-    assert!(f.vault.try_claim_deposit(&stranger, &1).is_err());
-    assert_eq!(f.shares(&stranger), 0);
-    assert!(!f.vault.get_deposit_request(&1, &stranger).unwrap().claimed);
+    assert_eq!(f.balance(&stranger), 1_000);
+    assert_eq!(f.balance(&f.vault.address), 0);
+    assert_eq!(f.vault.cancellable_escrow(), 0);
+    assert_eq!(f.vault.get_epoch(&1).unwrap().total_deposited, 0);
+    assert_eq!(f.vault.get_deposit_request(&1, &stranger), None);
+}
+
+#[test]
+fn a_delisted_investor_cannot_request_a_deposit() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.identity.allow(&investor, &false, &f.compliance);
+
+    refused(
+        f.vault.try_request_deposit(&investor, &400),
+        VaultError::NotAllowlisted,
+    );
+    assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn an_allowlisted_investor_still_requests_a_deposit() {
+    let f = setup();
+    let investor = f.investor(1_000);
+
+    assert_eq!(f.vault.request_deposit(&investor, &400), 1);
     assert_eq!(f.balance(&f.vault.address), 400);
 }
 
 #[test]
-fn allowlisting_after_the_fact_lets_the_claim_through() {
+fn relisting_after_pricing_lets_the_claim_through() {
     let f = setup();
-    let investor = f.unverified_investor(1_000);
-
+    let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
+    f.identity.allow(&investor, &false, &f.compliance);
     assert!(f.vault.try_claim_deposit(&investor, &1).is_err());
 
     f.identity.allow(&investor, &true, &f.compliance);
 
     assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
     assert_eq!(f.shares(&investor), 200);
+}
+
+/// Today's behaviour for a holder delisted after their deposit was priced:
+/// relisting is the only way out. The cash joined the reserve at pricing, so
+/// her claim is to shares, and the wind-down holds her part in `owed` where
+/// nobody can collect it.
+#[test]
+fn a_holder_delisted_after_pricing_can_only_leave_by_being_relisted() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+    assert_eq!(f.vault.cancellable_escrow(), 0);
+    assert_eq!(f.vault.pending_mint_shares(), 200);
+
+    f.identity.allow(&investor, &false, &f.compliance);
+
+    assert_eq!(
+        f.vault.try_claim_deposit(&investor, &epoch).err(),
+        Some(Ok(soroban_sdk::Error::from_contract_error(304)))
+    );
+    refused(
+        f.vault.try_cancel_deposit(&investor, &epoch),
+        VaultError::AlreadyPriced,
+    );
+
+    f.vault.propose_wind_down(&f.admin);
+    f.vault.activate_wind_down();
+    assert_eq!(f.vault.finalize_wind_down_round(), 400);
+    refused(
+        f.vault.try_claim_wind_down(&investor),
+        VaultError::NoEntitlement,
+    );
+    assert_eq!(f.vault.wind_down_owed(), 400);
+
+    f.identity.allow(&investor, &true, &f.compliance);
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 200);
+    assert_eq!(f.vault.claim_wind_down(&investor), 400);
+    assert_eq!(f.vault.wind_down_owed(), 0);
+}
+
+#[contract]
+struct RefusesEveryMint;
+
+#[contractimpl]
+impl RefusesEveryMint {
+    pub fn can_create(_e: Env, _to: Address, _amount: i128, _token: Address) -> bool {
+        false
+    }
+}
+
+/// A compliance module can refuse the mint of a priced deposit even for an
+/// allowlisted holder. The kit cannot stop it; it is a trust assumption.
+#[test]
+fn a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+
+    let module = f.e.register(RefusesEveryMint, ());
+    ComplianceClient::new(&f.e, &f.share.compliance()).add_module_to(
+        &ComplianceHook::CanCreate,
+        &module,
+        &f.admin,
+    );
+
+    assert_eq!(
+        f.vault.try_claim_deposit(&investor, &epoch).err(),
+        Some(Ok(soroban_sdk::Error::from_contract_error(306)))
+    );
+    refused(
+        f.vault.try_cancel_deposit(&investor, &epoch),
+        VaultError::AlreadyPriced,
+    );
 }
 
 #[test]

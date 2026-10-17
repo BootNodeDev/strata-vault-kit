@@ -6,6 +6,7 @@ mod error;
 mod event;
 mod governance;
 mod keys;
+mod lock_policy;
 mod pricing;
 mod redeem;
 mod roles;

@@ -5,10 +5,18 @@ use crate::epoch;
 use crate::error::VaultError;
 use crate::event::{DepositCancelled, DepositClaimed, DepositRequested};
 use crate::keys::DataKey;
+use crate::lock_policy::{self, Decision, Exit};
 use crate::pricing::{Pricing, PricingScheme};
 use crate::state::{self, DepositRequest, EpochStatus};
 use crate::treasury;
 use crate::wind_down;
+
+fn refuse_unless_allowlisted(e: &Env, from: &Address) {
+    let standing = lock_policy::standing(e, from);
+    if lock_policy::decide(Exit::RequestDeposit, standing) == Decision::Refuse {
+        panic_with_error!(e, VaultError::NotAllowlisted);
+    }
+}
 
 fn refuse_if_exceeds_cap(e: &Env, amount: i128) {
     let Some(cap) = state::deposit_cap(e) else {
@@ -30,6 +38,7 @@ pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     if amount <= 0 {
         panic_with_error!(e, VaultError::InvalidAmount);
     }
+    refuse_unless_allowlisted(e, from);
     refuse_if_exceeds_cap(e, amount);
 
     let epoch_id = state::current_epoch(e);
