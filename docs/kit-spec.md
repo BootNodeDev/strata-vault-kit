@@ -173,7 +173,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | `token_bound` | The share token names this vault through `vault()` and its own setup is finished. |
 | `oracle_bound` | The oracle names this vault through `vault()` and its own setup is finished. |
 | `sole_token_manager` | This vault is the share token's only `manager`. |
-| `allowlisted` | This vault passes the share token's identity verifier, so it can hold escrowed shares. |
+| `allowlisted` | This vault passes the share token's identity verifier, so it can hold escrowed shares. A delisted holder's deposit converts to an exit by minting the shares to the vault's own address, so that conversion needs this flag true. |
 | `compliance_bound` | The share token is in its compliance contract's `linked_tokens`. |
 | `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
