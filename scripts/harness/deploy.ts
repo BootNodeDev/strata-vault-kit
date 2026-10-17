@@ -44,8 +44,10 @@ const clientDir = (name: ContractName): string =>
 const clientEntry = (name: ContractName): string =>
 	pathToFileURL(join(clientDir(name), "dist", "index.js")).href
 
-function requireWasm(): void {
-	const missing = CONTRACT_NAMES.filter((name) => !existsSync(wasmOf(name)))
+function requireWasm(vaultWasm: string = wasmOf("async_vault")): void {
+	const missing = CONTRACT_NAMES.filter(
+		(name) => !existsSync(name === "async_vault" ? vaultWasm : wasmOf(name)),
+	)
 	if (missing.length > 0) {
 		throw new Error(
 			`no wasm for ${missing.join(", ")}; run \`stellar contract build\` first`,
@@ -301,6 +303,7 @@ export async function deployThrowaway(
 	net: Network,
 	vaultWasm: string,
 ): Promise<Deployment> {
+	requireWasm(vaultWasm)
 	const wasms = Object.fromEntries(
 		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
 	) as Record<ContractName, string>

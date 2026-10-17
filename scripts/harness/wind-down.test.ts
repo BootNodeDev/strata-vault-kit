@@ -8,6 +8,7 @@ import {
 	identityVerifier,
 	send,
 	shareToken,
+	usdcBalance,
 	vault,
 	type Connected,
 } from "./lib/clients.js"
@@ -134,12 +135,23 @@ describe("a wind-down on a throwaway vault", () => {
 		expect(await call("finalize_wind_down_round", "outsider", {}, true)).toBe(
 			"accepted",
 		)
-		expect(
-			await call("claim_wind_down", "holder-1", { holder: holder() }, true),
-		).toBe("accepted")
-		expect(
-			(await vault(c, c.keys.outsider).wind_down_owed()).result,
-		).toBeGreaterThanOrEqual(0n)
+
+		const reader = vault(c, c.keys.outsider)
+		const owedBefore = (await reader.wind_down_owed()).result
+		const claimableBefore = (
+			await reader.wind_down_claimable({ holder: holder() })
+		).result
+		const balanceBefore = await usdcBalance(c, holder())
+
+		called.add("claim_wind_down")
+		const paid = await send(
+			vault(c, c.keys["holder-1"]).claim_wind_down({ holder: holder() }),
+		)
+
+		expect(paid).toBeGreaterThan(0n)
+		expect(paid).toBe(claimableBefore)
+		expect(await usdcBalance(c, holder())).toBe(balanceBefore + paid)
+		expect((await reader.wind_down_owed()).result).toBe(owedBefore - paid)
 	})
 
 	it("reads the economic supply after the claim", async () => {
