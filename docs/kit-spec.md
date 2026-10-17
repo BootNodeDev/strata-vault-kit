@@ -50,7 +50,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - `request_deposit` is refused by `#[when_not_paused]` (`PausableError::EnforcedPause`).
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
-  - `cancel_redeem` remains open; a delisted controller exits through the cash claim instead, and a frozen one is held (Invariant 6).
+  - `cancel_redeem` remains open. Outside a wind-down, a delisted controller, or one the compliance rules refuse, exits through the cash claim instead; in a wind-down the escrow is surrendered. A frozen controller is held (Invariant 6).
   - `cancel_deposit` and `cancel_redeem` stay open for a sealed epoch while the vault is paused, because a paused vault cannot price it (Invariant 6).
 
 ### Invariant 6: Single-Step Atomic Cancellation
@@ -166,7 +166,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 ### Health View
 
-`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out one `finish_setup` check on purpose, that the share token has no shares outstanding, because a healthy vault has shares outstanding from its first claim on. If `finish_setup` refuses with `SetupIncomplete` while `token_bound`, `oracle_bound`, `sole_token_manager`, `allowlisted`, `vault_unfrozen` and `compliance_bound` are all true, shares were minted before setup; the token's `total_supply()` shows them.
+`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out two `finish_setup` checks: that the share token has no shares outstanding, which stops being true once the vault has holders, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while `token_bound`, `oracle_bound`, `sole_token_manager`, `allowlisted`, `vault_unfrozen` and `compliance_bound` are all true, shares were minted before setup; the token's `total_supply()` shows them.
 
 | Field | True when |
 |---|---|

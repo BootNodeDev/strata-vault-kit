@@ -288,8 +288,8 @@ impl AsyncVault {
 
     /// Ends the window in which admin changes are instant. Needs every wiring
     /// check `health()` reports (token, oracle and compliance bound, sole token
-    /// manager, allowlisted, not frozen) and no shares outstanding. Deposits
-    /// open from here on, and it never reopens.
+    /// manager, allowlisted, not frozen), no shares outstanding and no admin
+    /// hand-over pending. Deposits open from here on, and it never reopens.
     #[only_admin]
     pub fn finish_setup(e: &Env, caller: Address) {
         caller.require_auth();
@@ -300,8 +300,9 @@ impl AsyncVault {
         timelock::setup::is_open(e)
     }
 
-    /// The wiring `finish_setup` checks, plus the feed: whether it can price
-    /// now, and whether its reports outlive the notice.
+    /// Whether setup is open, the wiring `finish_setup` checks except the share
+    /// supply, and the feed: whether it can price now, and whether its reports
+    /// outlive the notice.
     pub fn health(e: &Env) -> Health {
         health::health(e)
     }

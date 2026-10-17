@@ -110,8 +110,8 @@ impl Fixture<'_> {
         assert_eq!(self.instance_ttl(), INSTANCE_EXTEND_AMOUNT);
     }
 
-    /// Signs one call to the oracle as `who` and nothing else, so the call's
-    /// admin check is the only thing that can refuse it.
+    /// Signs one call to the oracle as `who` and nothing else, so the call
+    /// carries the caller's signature but not the admin's.
     fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
         self.e.mock_auths(&[MockAuth {
             address: who,
