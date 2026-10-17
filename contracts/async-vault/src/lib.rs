@@ -211,6 +211,7 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_wind_down_delay(e: &Env, secs: u64, caller: Address) {
         caller.require_auth();
+        wind_down::check_delay(e, secs);
         if secs < wind_down::delay(e) {
             governance::require_setup_open(e);
         }
@@ -285,8 +286,8 @@ impl AsyncVault {
 
     /// Ends the window in which admin changes are instant, once the token,
     /// the oracle, the manager role, the allowlist and the compliance binding
-    /// are wired to this vault. Deposits open from here on, and it never
-    /// reopens.
+    /// are wired to this vault and the token has no shares outstanding.
+    /// Deposits open from here on, and it never reopens.
     #[only_admin]
     pub fn finish_setup(e: &Env, caller: Address) {
         caller.require_auth();

@@ -124,8 +124,8 @@ pub enum VaultError {
     /// Setup has finished, and it never reopens.
     SetupClosed = 6066,
     /// The token, the oracle, the manager role, the allowlist or the
-    /// compliance binding is not wired to this vault yet, so setup cannot
-    /// finish.
+    /// compliance binding is not wired to this vault yet, or the token already
+    /// has shares outstanding, so setup cannot finish.
     SetupIncomplete = 6067,
     /// The holder fails the share token's identity check, so the vault takes no
     /// deposit request from them and returns no escrowed shares to them.

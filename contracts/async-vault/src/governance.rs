@@ -1,5 +1,7 @@
 use bindings::VaultBindingClient;
-use soroban_sdk::{contracttype, panic_with_error, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{
+    contracttype, panic_with_error, symbol_short, Address, BytesN, Env, Symbol, Vec,
+};
 use stellar_access::{
     access_control::{self, AccessControlClient, AccessControlStorageKey},
     role_transfer,
@@ -8,9 +10,12 @@ use stellar_contract_utils::{
     pausable::{self, PausableError},
     upgradeable,
 };
-use stellar_tokens::rwa::{
-    identity_verification::IdentityVerifierClient, utils::token_binder::TokenBinderClient,
-    RWATokenClient,
+use stellar_tokens::{
+    fungible::FungibleTokenClient,
+    rwa::{
+        identity_verification::IdentityVerifierClient, utils::token_binder::TokenBinderClient,
+        RWATokenClient,
+    },
 };
 use timelock::{queue, setup, Clock, Refusal};
 
@@ -50,11 +55,16 @@ pub struct VaultPendingChange {
     pub eta: u64,
 }
 
+/// The share token's role that mints and burns. The vault must hold it alone.
+const TOKEN_MANAGER_ROLE: Symbol = symbol_short!("manager");
+
 /// What `finish_setup` needs to see before deposits open.
 pub(crate) struct Wiring {
     pub token_bound: bool,
     pub oracle_bound: bool,
     pub sole_token_manager: bool,
+    /// Shares minted before setup would redeem against depositors' money.
+    pub no_shares_outstanding: bool,
     pub allowlisted: bool,
     pub compliance_bound: bool,
 }
@@ -64,6 +74,7 @@ impl Wiring {
         self.token_bound
             && self.oracle_bound
             && self.sole_token_manager
+            && self.no_shares_outstanding
             && self.allowlisted
             && self.compliance_bound
     }
@@ -137,8 +148,9 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
     Wiring {
         token_bound: bound_here(e, &token),
         oracle_bound: bound_here(e, &oracle),
-        sole_token_manager: roles.get_role_member_count(&MANAGER_ROLE) == 1
-            && roles.get_role_member(&MANAGER_ROLE, &0) == me,
+        sole_token_manager: roles.get_role_member_count(&TOKEN_MANAGER_ROLE) == 1
+            && roles.get_role_member(&TOKEN_MANAGER_ROLE, &0) == me,
+        no_shares_outstanding: FungibleTokenClient::new(e, &token).total_supply() == 0,
         allowlisted: matches!(
             IdentityVerifierClient::new(e, &rwa.identity_verifier()).try_verify_identity(&me),
             Ok(Ok(()))

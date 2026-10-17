@@ -136,6 +136,11 @@ npm run test:happy-path -w scripts/harness
 npm run test:guards -w scripts/harness
 ```
 
+Deploy afresh before each run of the suites. The guards leave the vault's
+notice at 10 seconds, and lowering it back waits for the timelock, so a second
+run against the same deployment can fail wherever it prices an epoch right
+after closing it.
+
 ### Keeping a deployment alive
 
 Every contract extends its own storage when it is called, but a deployment

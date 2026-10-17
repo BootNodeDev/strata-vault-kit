@@ -1,4 +1,4 @@
-use soroban_sdk::{testutils::Events as _, Event as _};
+use soroban_sdk::{testutils::Events as _, Event as _, IntoVal};
 use stellar_access::role_transfer::RoleTransferError;
 
 use super::*;
@@ -56,7 +56,9 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
         Miswire::OracleBoundElsewhere,
         Miswire::OracleSetupOpen,
         Miswire::NoManagerRole,
+        Miswire::OtherManager,
         Miswire::SecondManager,
+        Miswire::PreMinted,
         Miswire::NotAllowlisted,
         Miswire::ComplianceUnbound,
     ] {
@@ -111,9 +113,10 @@ fn only_governance_finishes_setup() {
     let f = setup_unfinished();
     let stranger = Address::generate(&f.e);
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_finish_setup(&stranger).is_err());
-    assert!(f.vault.try_finish_setup(&f.manager).is_err());
+    for who in [&stranger, &f.manager] {
+        f.sign_only_as(who, "finish_setup", (who.clone(),).into_val(&f.e));
+        assert!(f.vault.try_finish_setup(who).is_err());
+    }
     assert!(f.vault.setup_open());
 }
 

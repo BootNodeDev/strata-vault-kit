@@ -78,6 +78,21 @@ impl Fixture<'_> {
         });
     }
 
+    /// Signs one call to the vault as `who` and nothing else, so the call's own
+    /// role check is the only thing that can refuse it.
+    fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        self.e.mock_auths(&[MockAuth {
+            address: who,
+            invoke: &MockAuthInvoke {
+                contract: &self.vault.address,
+                fn_name,
+                args,
+                sub_invokes: &[],
+            },
+        }]);
+    }
+
     fn investor(&self, funded: i128) -> Address {
         let who = self.unverified_investor(funded);
         self.identity.allow(&who, &true, &self.compliance);
@@ -214,7 +229,9 @@ enum Miswire {
     OracleBoundElsewhere,
     OracleSetupOpen,
     NoManagerRole,
+    OtherManager,
     SecondManager,
+    PreMinted,
     NotAllowlisted,
     ComplianceUnbound,
 }
@@ -318,11 +335,23 @@ fn build<'a>(
             },
         ),
     );
-    if miswire != Miswire::NoManagerRole {
-        share.grant_role(&contract_id, &symbol_short!("manager"), &admin);
+    match miswire {
+        Miswire::NoManagerRole => {}
+        Miswire::OtherManager => {
+            share.grant_role(&Address::generate(&e), &symbol_short!("manager"), &admin)
+        }
+        _ => share.grant_role(&contract_id, &symbol_short!("manager"), &admin),
     }
     if miswire == Miswire::SecondManager {
         share.grant_role(&Address::generate(&e), &symbol_short!("manager"), &admin);
+    }
+    if miswire == Miswire::PreMinted {
+        // The token's admin mints during the token's own setup, then steps back.
+        let holder = Address::generate(&e);
+        identity.allow(&holder, &true, &compliance_authority);
+        share.grant_role(&admin, &symbol_short!("manager"), &admin);
+        share.mint(&holder, &100, &admin);
+        share.revoke_role(&admin, &symbol_short!("manager"), &admin);
     }
     // The vault holds escrowed shares, so returning them on cancellation goes
     // through the token's checked transfer. That verifies both sides, so the

@@ -1,4 +1,5 @@
 use proptest::prelude::*;
+use soroban_sdk::IntoVal;
 
 use super::*;
 
@@ -27,12 +28,16 @@ fn the_delay_cannot_exceed_the_maximum() {
 fn only_governance_sets_the_delay() {
     let f = setup();
     let stranger = Address::generate(&f.e);
+    let longer = 2 * MIN_WIND_DOWN_DELAY;
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_set_wind_down_delay(&60, &stranger).is_err());
-    assert!(f.vault.try_set_wind_down_delay(&60, &f.manager).is_err());
-    assert!(f.vault.try_set_wind_down_delay(&60, &f.treasury).is_err());
-    assert!(f.vault.try_set_wind_down_delay(&60, &f.guardian).is_err());
+    for who in [&stranger, &f.manager, &f.treasury, &f.guardian] {
+        f.sign_only_as(
+            who,
+            "set_wind_down_delay",
+            (longer, who.clone()).into_val(&f.e),
+        );
+        assert!(f.vault.try_set_wind_down_delay(&longer, who).is_err());
+    }
     assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 }
 
@@ -163,13 +168,13 @@ fn an_unset_delay_still_waits_the_minimum() {
 
 #[test]
 fn a_delay_below_the_minimum_is_refused() {
-    let f = setup_unfinished();
-
-    refused(
-        f.vault
-            .try_set_wind_down_delay(&(MIN_WIND_DOWN_DELAY - 1), &f.admin),
-        VaultError::WindDownDelayTooShort,
-    );
+    for f in [setup_unfinished(), setup()] {
+        refused(
+            f.vault
+                .try_set_wind_down_delay(&(MIN_WIND_DOWN_DELAY - 1), &f.admin),
+            VaultError::WindDownDelayTooShort,
+        );
+    }
 }
 
 /// Proposes, waits and activates. Returns nothing; the vault is active after.

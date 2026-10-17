@@ -85,7 +85,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**:
   - Upgrade delay $\in [7 \text{ days}, 90 \text{ days}]$ and $\text{delay} \ge \text{notice}$, checked when a delay change is proposed and again when it applies.
   - Wind-down delay $\in [7 \text{ days}, 90 \text{ days}]$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
-  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, it passes the token's identity check, and the token is bound to its compliance contract. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
+  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, and the token is bound to its compliance contract. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
   - After setup, the vault's custodian, role grants, revoking `manager`, admin hand-overs and lowering the notice or the wind-down delay go through the queue; a direct call is refused with `UseTimelock`. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking any other role stay instant. A `Notice` or `WindDownDelay` change is checked against its bounds when proposed and again when it applies.
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
@@ -264,10 +264,9 @@ A clean deployment executes in three sequenced phases:
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so the vault can return escrowed shares on cancelled redemptions.
    - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
-   - Call `set_custodian(custodian)` on the vault, then `finish_setup()`. It refuses with `SetupIncomplete` until every wiring step above is in place, and with `AdminTransferPending` while an admin hand-over offered during setup is pending. The vault takes no deposit before it.
+   - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap.
+   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place and the token has no shares outstanding, and with `AdminTransferPending` while an admin hand-over offered during setup is pending. The vault takes no deposit before it.
 3. **Phase 3: Operational Parameterization**
-   - Governance calls `set_notice(secs)`.
-   - Governance sets `deposit_cap` if initial capital intake is bounded.
    - Oracle reporter submits the genesis NAV attestation (`attest`).
 
 ---
@@ -360,7 +359,8 @@ bound to, and `setup_open` says whether its admin changes are still instant.
 
 The vault's `finish_setup` reads both through `VaultBinding` and refuses until
 each reports this vault with its own setup closed. It also reads the token's
-`manager` members (OpenZeppelin `AccessControl`), runs `verify_identity` on its
-own address, and reads `linked_tokens` from the token's compliance contract
-(OpenZeppelin `TokenBinder`). A replacement for any of these must answer those
-calls, or the vault's setup cannot finish.
+`manager` members (OpenZeppelin `AccessControl`) and its `total_supply`
+(`FungibleToken`), runs `verify_identity` on its own address, and reads
+`linked_tokens` from the token's compliance contract (OpenZeppelin
+`TokenBinder`). A replacement for any of these must answer those calls, or the
+vault's setup cannot finish.
