@@ -29,7 +29,7 @@ Every investor account in the vault ecosystem exists in one of three primary com
 
 | Operation | Allowlisted | De-listed (Non-Frozen) | Frozen (Address or Partial) | Contract Mechanics & Regulatory Rationale |
 |---|---|---|---|---|
-| **`request_deposit`** | ✅ Allowed | ⚠️ Allowed by SAC | ⚠️ Allowed by SAC | SAC USDC transfer moves funds into cancellable escrow. The vault does not check `IdentityVerifier` at subscription time to avoid coupling to external registry gas or third-party downtime. |
+| **`request_deposit`** | ✅ Allowed | ❌ **Refused** | ⚠️ Allowed while still allowlisted | The vault asks the share token's identity verifier before any cash moves and refuses an address the token would not let hold shares (`NotAllowlisted`). Freezes are not checked at this step. |
 | **`cancel_deposit`** | ✅ Allowed | ✅ **Allowed** | ✅ **Allowed** | **Escape Hatch**: Calls `refund_deposit`. Escrowed settlement asset (USDC) is refunded directly to `controller`. Cash refunds bypass share token compliance checks. |
 | **`claim_deposit`** | ✅ Allowed | ❌ **Refused** | ⚠️ Minted if allowlisted | `RWATokenClient::mint` calls `verify_identity` and `can_create`, and does not check freezes. A de-listed receiver is refused with `IdentityVerificationFailed`. A frozen receiver still on the allowlist is minted, and cannot transfer those shares while frozen. |
 | **`request_redeem`** | ✅ Allowed | ✅ **Allowed** | ⚠️ Allowed, not guaranteed | **Exit Right**: the vault escrows the shares with `RWATokenClient::forced_transfer`, which checks neither the allowlist nor freezes, so a de-listed holder can start an exit. It also releases as much of a partial freeze as the escrow needs. |
@@ -57,13 +57,15 @@ If an investor deposits into an open epoch but is de-listed (or KYC expires) bef
 - `refund_deposit` transfers the escrowed USDC back to the investor.
 - Because no shares were minted, returning cash restores the investor's funds without violating share token compliance rules.
 
-### 3.3 De-Listing Between Deposit Request and Claim
-If an investor deposits while allowlisted, but is de-listed after the epoch is closed and priced:
-- **`claim_deposit` is refused**: The vault calls `RWATokenClient::mint`, which evaluates `can_create`. Because the receiver is no longer allowlisted, `verify_identity` fails with `IdentityVerificationFailed`.
-- **`cancel_deposit` is blocked**: The epoch is already `Fulfilled`. As an anti-arbitrage safeguard, once an epoch has taken a valuation, cancellation is permanently closed (`VaultError::AlreadyPriced`).
-- **Resolution**: The investor's settlement capital remains safely in vault escrow. The investor can either:
-  1. Complete KYC refresh, upon which compliance re-allowlists the account and `claim_deposit` succeeds; or
-  2. Compliance / governance resolves the claim out-of-band.
+### 3.3 De-Listing Between Pricing and Claim
+If an investor deposits while allowlisted but is de-listed after the epoch is priced:
+- **The cash is no longer escrow.** Pricing moved it out of the cancellable bucket into the reserve, where it backs the shares the epoch promised. The investor's claim is to those shares, counted in `pending_mint_shares`.
+- **`claim_deposit` is refused**: the share token calls `verify_identity` on the receiver when it mints, and fails with `IdentityVerificationFailed`.
+- **`cancel_deposit` is refused** with `AlreadyPriced`: once an epoch has a price, cancellation is closed.
+- **In a wind-down** her shares are counted in the supply snapshot, so her part of each round sits in `owed`, and `claim_wind_down` pays only shares the holder holds. Nobody can collect it.
+- **Resolution today**: relisting. Once compliance re-allowlists the address, `claim_deposit` mints the shares and the wind-down pays them (`a_holder_delisted_after_pricing_can_only_leave_by_being_relisted`).
+
+An address that was never allowlisted cannot reach this state: `request_deposit` refuses it before any cash moves.
 
 ### 3.4 Redemption Cancellation Refusal
 When an investor requests redemption, their shares are transferred to the vault.
@@ -95,8 +97,11 @@ The kit's compliance contract registers no modules, so `can_transfer` and `can_c
 
 The behavior specified in this matrix is verified by on-chain automated test suites in [`contracts/async-vault/src/test/compliance.rs`](../contracts/async-vault/src/test/compliance.rs):
 
-* `a_non_allowlisted_investor_cannot_claim_shares`: Verifies unallowlisted caller cannot mint shares on claim.
-* `allowlisting_after_the_fact_lets_the_claim_through`: Verifies KYC restoration unblocks claim.
+* `an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves`: Verifies a non-allowlisted depositor is refused and nothing moves.
+* `a_delisted_investor_cannot_request_a_deposit`: Verifies a de-listed depositor is refused at request time.
+* `relisting_after_pricing_lets_the_claim_through`: Verifies KYC restoration unblocks a priced claim.
+* `a_holder_delisted_after_pricing_can_only_leave_by_being_relisted`: Records the open case: no claim, no cancel, the wind-down holds her part.
+* `a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim`: Records that a compliance module can block a priced claim (a trust assumption).
 * `a_delisted_holder_can_still_queue_an_exit`: Verifies de-listed holders can queue redemption via forced transfer.
 * `a_delisted_holder_can_still_claim_their_exit`: Verifies de-listed holders always receive cash payout.
 * `a_delisted_investor_can_cancel_deposit_and_receive_asset`: Verifies de-listed depositors can cancel and receive cash back.
