@@ -14,7 +14,15 @@ use state::{get_config, get_latest, nav_paused, ATTESTER_ROLE, GUARDIAN_ROLE};
 pub use state::{NavReport, OracleConfig, OracleState};
 
 const BPS_DENOM: i128 = 10_000;
-const MAX_ANSWER: i128 = i128::MAX / BPS_DENOM;
+const WAD: i128 = 1_000_000_000_000_000_000;
+
+/// One report per ledger at most. A deployment sets a longer cooldown.
+pub const MIN_COOLDOWN_SECS: u64 = 1;
+/// Thirty-five days: a monthly valuation with slack, and no longer.
+pub const MAX_FRESHNESS_SECS: u64 = 35 * timelock::DAY_DURATION;
+/// A million units of the asset per share. Far above any real price, and far
+/// below where the deviation arithmetic could overflow.
+pub const MAX_ANSWER: i128 = 1_000_000 * WAD;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -36,6 +44,8 @@ pub enum OracleError {
     NavNotPaused = 3008,
     /// The oracle must always have an admin.
     AdminRequired = 3009,
+    /// The NAV is paused. Unpause it first; a report never lifts it.
+    NavPaused = 3010,
 }
 
 #[contractevent]
@@ -59,19 +69,25 @@ pub struct ConfigSet {
     pub freshness_duration: u64,
     pub cooldown_secs: u64,
     pub max_up_bps: u32,
-    pub max_down_bps: Option<u32>,
+    pub max_down_bps: u32,
     pub min_answer: i128,
     pub max_answer: i128,
 }
 
+fn bps_in_range(bps: u32) -> bool {
+    bps > 0 && bps as i128 <= BPS_DENOM
+}
+
 fn validate_config(e: &Env, cfg: &OracleConfig) {
     if cfg.freshness_duration == 0
+        || cfg.freshness_duration > MAX_FRESHNESS_SECS
+        || cfg.cooldown_secs < MIN_COOLDOWN_SECS
+        || cfg.cooldown_secs > cfg.freshness_duration
         || cfg.min_answer <= 0
         || cfg.max_answer < cfg.min_answer
         || cfg.max_answer > MAX_ANSWER
-        || cfg.max_up_bps == 0
-        || cfg.max_up_bps as i128 > BPS_DENOM
-        || cfg.max_down_bps.is_some_and(|d| d as i128 > BPS_DENOM)
+        || !bps_in_range(cfg.max_up_bps)
+        || !bps_in_range(cfg.max_down_bps)
     {
         panic_with_error!(e, OracleError::InvalidConfig);
     }
@@ -160,6 +176,9 @@ impl NavOracleContract {
     #[only_role(caller, "attester")]
     pub fn attest(e: &Env, report: NavReport, caller: Address) {
         storage::bump_instance(e);
+        if nav_paused(e) {
+            panic_with_error!(e, OracleError::NavPaused);
+        }
         let cfg = get_config(e);
         let now = e.ledger().timestamp();
 
@@ -175,27 +194,24 @@ impl NavOracleContract {
             if now < prev.timestamp.saturating_add(cfg.cooldown_secs) {
                 panic_with_error!(e, OracleError::CooldownActive);
             }
-            // Directional cap. A rise is always bounded. A fall is bounded only
-            // when the deployment asks for it, so a real loss can land at once.
-            let rising = report.nav_per_share >= prev.nav_per_share;
-            let bps = if rising {
-                Some(cfg.max_up_bps)
+            let bps = if report.nav_per_share >= prev.nav_per_share {
+                cfg.max_up_bps
             } else {
                 cfg.max_down_bps
             };
-            if let Some(bps) = bps {
-                let diff = (report.nav_per_share - prev.nav_per_share).abs();
-                let bound = prev.nav_per_share * (bps as i128) / BPS_DENOM;
-                if diff > bound {
-                    panic_with_error!(e, OracleError::DeviationExceeded);
-                }
+            let diff = (report.nav_per_share - prev.nav_per_share).abs();
+            let bound = prev.nav_per_share * (bps as i128) / BPS_DENOM;
+            if diff > bound {
+                panic_with_error!(e, OracleError::DeviationExceeded);
             }
         }
 
         let stored = NavReport {
             nav_per_share: report.nav_per_share,
             timestamp: now,
-            expires_at: now.saturating_add(cfg.freshness_duration),
+            expires_at: report
+                .expires_at
+                .min(now.saturating_add(cfg.freshness_duration)),
         };
         state::set_latest(e, &stored);
 
