@@ -10,15 +10,15 @@ fn fulfill_is_rejected_before_the_first_attestation() {
 }
 
 #[test]
-fn fulfill_is_rejected_while_the_ripcord_is_raised() {
+fn fulfill_is_rejected_while_the_nav_is_paused() {
     let f = setup();
     f.close_epoch();
     f.attest(wad(2));
-    f.oracle.set_ripcord(&true, &f.admin);
+    f.oracle.set_nav_paused(&true, &f.admin);
 
     refused(f.vault.try_fulfill_epoch(&1), VaultError::FeedNotValid);
 
-    f.oracle.set_ripcord(&false, &f.admin);
+    f.oracle.set_nav_paused(&false, &f.admin);
     assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
 }
 
@@ -56,7 +56,7 @@ fn a_paused_feed_is_refused_by_the_vault_not_the_oracle() {
     f.vault.request_redeem(&holder, &100);
     let epoch = f.close_epoch();
 
-    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.pause_nav(&f.guardian);
 
     refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
 }

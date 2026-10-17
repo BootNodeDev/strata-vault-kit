@@ -478,8 +478,8 @@ investor sees the exit-only path.
 
 Operates an existing vault; deploys nothing. Each privileged entrypoint is gated
 on one role of one contract, except the share token's `forced_transfer`, which
-accepts its `manager` (the vault) or `compliance` role. The oracle's ripcord has
-two entrypoints: `raise_ripcord` for its guardian and `set_ripcord` for its
+accepts its `manager` (the vault) or `compliance` role. The oracle's NAV pause has
+two entrypoints: `pause_nav` for its guardian and `set_nav_paused` for its
 admin. The panel groups the entrypoints into five domain surfaces. A surface is
 visible to the authorities that act in it, and each action only to its own
 (permissionless actions to any connected address):
@@ -488,7 +488,7 @@ visible to the authorities that act in it, and each action only to its own
 | ------------- | ----------------------------------------------------------------------------------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Cycle         | manager, attestation, treasury; anyone prices, funds, activates and finalizes                               | Continuous          | Epoch sealing (manager); attestations; transfers to the custodian (treasury); pricing, funding, wind-down activation and round finalization (permissionless)                                                           |
 | Compliance    | compliance; verifier admin (compliance by deploy)                                                           | Continuous          | Allowlist (verifier admin); freeze/unfreeze of an address or of part of its shares, forced transfer (compliance); recovery is not offered, the kit's verifier names no recovery target                                 |
-| Emergency     | guardian, governance; oracle admin and share-token admin (both governance by deploy)                        | Rare and urgent     | Vault pause (guardian) and unpause (governance); oracle ripcord raise (oracle guardian, or oracle admin through `set_ripcord`), reset and `clear_latest` (oracle admin); share-token pause/unpause (share-token admin) |
+| Emergency     | guardian, governance; oracle admin and share-token admin (both governance by deploy)                        | Rare and urgent     | Vault pause (guardian) and unpause (governance); oracle NAV pause (oracle guardian, or oracle admin through `set_nav_paused`), reset and `clear_latest` (oracle admin); share-token pause/unpause (share-token admin) |
 | Configuration | governance; oracle admin and share-token admin (both governance by deploy)                                  | Rare and deliberate | Custodian slot, deposit cap, notice and wind-down delay (governance); oracle guardrails (oracle admin); compliance and identity-verifier contracts (share-token admin)                                                 |
 | Governance    | governance; oracle admin and share-token admin for their own roles and handover (both governance by deploy) | Very rare           | Roles and admin handover on the vault, oracle and share token; upgrade and its delay, wind-down proposal and cancellation (governance)                                                                                 |
 
@@ -520,8 +520,8 @@ flowchart LR
 
     subgraph ORACLE["Oracle"]
         OATT[attest]
-        ORAISE[raise_ripcord]
-        OSET[set_ripcord · clear_latest]
+        ORAISE[pause_nav]
+        OSET[set_nav_paused · clear_latest]
         OCFG[set_config]
         OGOV[roles · admin handover]
     end

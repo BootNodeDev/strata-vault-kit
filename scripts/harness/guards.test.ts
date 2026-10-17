@@ -113,9 +113,9 @@ describe("an account with no role", () => {
 		)
 	})
 
-	it("cannot raise the ripcord", async () => {
+	it("cannot pause the NAV", async () => {
 		const o = oracle(c, outsider)
-		expectRefused(await o.raise_ripcord({ caller: who }), o, "Unauthorized")
+		expectRefused(await o.pause_nav({ caller: who }), o, "Unauthorized")
 	})
 
 	it("cannot pause the vault", async () => {
@@ -131,21 +131,19 @@ describe("an account with no role", () => {
 		await send(vault(c, governance).unpause({ caller: governance.publicKey() }))
 	})
 
-	it("cannot set the ripcord", async () => {
+	it("cannot set the NAV pause", async () => {
 		await expect(
-			send(oracle(c, outsider).set_ripcord({ paused: true, caller: who })),
+			send(oracle(c, outsider).set_nav_paused({ paused: true, caller: who })),
 		).rejects.toThrow(/signatures/)
 	})
 
 	it("cannot clear the latest report", async () => {
-		await send(
-			oracle(c, guardian).raise_ripcord({ caller: guardian.publicKey() }),
-		)
+		await send(oracle(c, guardian).pause_nav({ caller: guardian.publicKey() }))
 		await expect(
 			send(oracle(c, outsider).clear_latest({ caller: who })),
 		).rejects.toThrow(/signatures/)
 		await send(
-			oracle(c, governance).set_ripcord({
+			oracle(c, governance).set_nav_paused({
 				paused: false,
 				caller: governance.publicKey(),
 			}),
@@ -522,10 +520,8 @@ describe("a sealed epoch while the feed is down", () => {
 		)
 	})
 
-	it("the guardian raises the ripcord and pricing is refused", async () => {
-		await send(
-			oracle(c, guardian).raise_ripcord({ caller: guardian.publicKey() }),
-		)
+	it("the guardian pauses the NAV and pricing is refused", async () => {
+		await send(oracle(c, guardian).pause_nav({ caller: guardian.publicKey() }))
 		expect((await feed.state()).result.tag).toBe("Paused")
 		expectRefused(
 			await vault(c, outsider).fulfill_epoch({ epoch_id: epoch }),
@@ -578,7 +574,7 @@ describe("the notice period and valuation age rules", () => {
 
 	beforeAll(async () => {
 		await send(
-			oracle(c, governance).set_ripcord({
+			oracle(c, governance).set_nav_paused({
 				paused: false,
 				caller: governance.publicKey(),
 			}),

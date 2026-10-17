@@ -92,17 +92,17 @@ fn heartbeat_expiry_makes_it_stale() {
 }
 
 #[test]
-fn ripcord_pauses_regardless_of_freshness() {
+fn the_nav_pause_holds_regardless_of_freshness() {
     let f = setup();
     let r = report(&f.e, SCALE, 1, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
-    f.oracle.set_ripcord(&true, &f.admin);
+    f.oracle.set_nav_paused(&true, &f.admin);
     assert_eq!(f.oracle.state(), OracleState::Paused);
     assert!(f.oracle.try_ensure_consumable().is_err());
 
-    f.oracle.set_ripcord(&false, &f.admin);
+    f.oracle.set_nav_paused(&false, &f.admin);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 }
 
@@ -306,33 +306,33 @@ fn only_admin_can_set_config() {
 }
 
 #[test]
-fn the_guardian_raises_the_ripcord_but_lowering_needs_governance() {
+fn the_guardian_pauses_the_nav_but_unpausing_needs_governance() {
     let f = setup();
     let r = report(&f.e, SCALE, 1, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
-    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.pause_nav(&f.guardian);
     assert_eq!(f.oracle.state(), OracleState::Paused);
 
     f.e.set_auths(&[]);
-    assert!(f.oracle.try_set_ripcord(&false, &f.guardian).is_err());
-    assert!(f.oracle.try_set_ripcord(&false, &f.admin).is_err());
+    assert!(f.oracle.try_set_nav_paused(&false, &f.guardian).is_err());
+    assert!(f.oracle.try_set_nav_paused(&false, &f.admin).is_err());
     assert_eq!(f.oracle.state(), OracleState::Paused);
 
     f.e.mock_all_auths();
-    f.oracle.set_ripcord(&false, &f.admin);
+    f.oracle.set_nav_paused(&false, &f.admin);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 }
 
 #[test]
-fn raising_the_ripcord_is_limited_to_the_guardian() {
+fn pausing_the_nav_is_limited_to_the_guardian() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    assert!(f.oracle.try_raise_ripcord(&stranger).is_err());
-    assert!(f.oracle.try_raise_ripcord(&f.attester).is_err());
-    assert!(f.oracle.try_raise_ripcord(&f.admin).is_err());
+    assert!(f.oracle.try_pause_nav(&stranger).is_err());
+    assert!(f.oracle.try_pause_nav(&f.attester).is_err());
+    assert!(f.oracle.try_pause_nav(&f.admin).is_err());
     assert_eq!(f.oracle.state(), OracleState::Stale);
 }
 
@@ -417,18 +417,18 @@ fn constructor_rejects_a_zero_upside_cap() {
 }
 
 #[test]
-fn the_record_clears_only_while_the_ripcord_is_raised() {
+fn the_record_clears_only_while_the_nav_is_paused() {
     let f = setup();
     f.oracle
         .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
 
     assert!(f.oracle.try_clear_latest(&f.admin).is_err());
 
-    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.pause_nav(&f.guardian);
     f.oracle.clear_latest(&f.admin);
 
     // With no stored record, one in-band value lands however far it sits.
-    f.oracle.set_ripcord(&false, &f.admin);
+    f.oracle.set_nav_paused(&false, &f.admin);
     f.e.ledger().set_timestamp(10_100);
     let far = report(&f.e, SCALE * 50, 2, 1_000_000);
     f.oracle.attest(&far, &f.attester);
@@ -441,7 +441,7 @@ fn only_admin_can_clear_latest() {
     let stranger = Address::generate(&f.e);
     let r = report(&f.e, SCALE, 1, 1_000_000);
     f.oracle.attest(&r, &f.attester);
-    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.pause_nav(&f.guardian);
 
     f.e.set_auths(&[]);
     assert!(f.oracle.try_clear_latest(&stranger).is_err());
@@ -465,8 +465,8 @@ fn every_oracle_authority_is_readable_and_rotatable() {
     f.oracle
         .revoke_role(&f.guardian, &symbol_short!("guardian"), &f.admin);
 
-    assert!(f.oracle.try_raise_ripcord(&f.guardian).is_err());
-    f.oracle.raise_ripcord(&next);
+    assert!(f.oracle.try_pause_nav(&f.guardian).is_err());
+    f.oracle.pause_nav(&next);
 }
 
 #[test]

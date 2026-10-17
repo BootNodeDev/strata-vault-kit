@@ -282,13 +282,13 @@ fn a_sealed_epoch_cancels_once_the_feed_goes_stale() {
 }
 
 #[test]
-fn a_sealed_epoch_cancels_while_the_ripcord_is_raised() {
+fn a_sealed_epoch_cancels_while_the_nav_is_paused() {
     let f = setup();
     let holder = f.holder(200);
 
     let epoch = f.vault.request_redeem(&holder, &200);
     f.close_epoch();
-    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.pause_nav(&f.guardian);
 
     assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
     assert_eq!(f.shares(&holder), 200);
