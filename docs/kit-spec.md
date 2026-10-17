@@ -42,7 +42,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
   3. The caller has been de-listed in the `IdentityVerifier`.
-  Priced claims are never re-priced and never identity-gated. A frozen investor is outside this guarantee (design document §8.1).
+  Priced claims are never re-priced and never identity-gated. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`.
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
 - **Definition**: Investors cannot be trapped in the vault by a vault pause.

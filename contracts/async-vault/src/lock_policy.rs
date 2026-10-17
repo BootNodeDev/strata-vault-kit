@@ -1,5 +1,8 @@
 use soroban_sdk::{Address, Env};
-use stellar_tokens::rwa::{identity_verification::IdentityVerifierClient, RWATokenClient};
+use stellar_tokens::{
+    fungible::FungibleTokenClient,
+    rwa::{identity_verification::IdentityVerifierClient, RWATokenClient},
+};
 
 use crate::error::VaultError;
 use crate::keys::DataKey;
@@ -33,6 +36,10 @@ pub(crate) enum Exit {
     RequestDeposit,
     ClaimDeposit,
     CancelRedeem,
+    CancelDeposit,
+    RequestRedeem,
+    ClaimRedeem,
+    ClaimWindDown,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -62,6 +69,18 @@ pub(crate) fn decide(exit: Exit, standing: Standing, winding_down: bool) -> Deci
         (Exit::CancelRedeem, Standing::Delisted, false) => Decision::Refuse,
         (Exit::CancelRedeem, Standing::Listed | Standing::Delisted, true) => Decision::Surrender,
         (Exit::CancelRedeem, Standing::Frozen, _) => Decision::Hold,
+
+        (Exit::CancelDeposit, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
+        (Exit::CancelDeposit, Standing::Frozen, _) => Decision::Hold,
+
+        (Exit::RequestRedeem, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
+        (Exit::RequestRedeem, Standing::Frozen, _) => Decision::Hold,
+
+        (Exit::ClaimRedeem, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
+        (Exit::ClaimRedeem, Standing::Frozen, _) => Decision::Hold,
+
+        (Exit::ClaimWindDown, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
+        (Exit::ClaimWindDown, Standing::Frozen, _) => Decision::Hold,
     }
 }
 
@@ -71,4 +90,12 @@ pub(crate) fn refused_with(standing: Standing) -> VaultError {
         Standing::Frozen => VaultError::Frozen,
         Standing::Listed | Standing::Delisted => VaultError::NotAllowlisted,
     }
+}
+
+/// Shares the holder can move: the balance less any partial freeze.
+pub(crate) fn free_shares(e: &Env, holder: &Address) -> i128 {
+    let token = state::get_addr(e, &DataKey::ShareToken);
+    let balance = FungibleTokenClient::new(e, &token).balance(holder);
+    let frozen = RWATokenClient::new(e, &token).get_frozen_tokens(holder);
+    (balance - frozen).max(0)
 }

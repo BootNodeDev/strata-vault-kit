@@ -759,3 +759,62 @@ proptest! {
         prop_assert!(f.vault.wind_down_owed() < holders.len() as i128);
     }
 }
+
+#[test]
+fn a_frozen_holders_slice_stays_owed_until_the_freeze_lifts() {
+    let f = setup();
+    let frozen = f.holder(500);
+    let other = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    f.share.set_address_frozen(&frozen, &true, &f.compliance);
+
+    refused(f.vault.try_claim_wind_down(&frozen), VaultError::Frozen);
+    let paid = f.vault.claim_wind_down(&other);
+    assert_eq!(f.vault.wind_down_owed(), paid);
+    assert_eq!(f.shares(&frozen), 500);
+
+    f.share.set_address_frozen(&frozen, &false, &f.compliance);
+    assert_eq!(f.vault.claim_wind_down(&frozen), paid);
+    assert_eq!(f.vault.wind_down_owed(), 0);
+}
+
+#[test]
+fn a_frozen_holders_escrowed_exit_waits_through_a_wind_down() {
+    let f = setup();
+    let frozen = f.holder(500);
+    let _other = f.holder(500);
+    let epoch = f.vault.request_redeem(&frozen, &500);
+    f.share.set_address_frozen(&frozen, &true, &f.compliance);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+
+    refused(
+        f.vault.try_cancel_redeem(&frozen, &epoch),
+        VaultError::Frozen,
+    );
+    refused(f.vault.try_claim_wind_down(&frozen), VaultError::Frozen);
+
+    f.share.set_address_frozen(&frozen, &false, &f.compliance);
+    assert_eq!(f.vault.cancel_redeem(&frozen, &epoch), 500);
+    assert!(f.vault.claim_wind_down(&frozen) > 0);
+}
+
+#[test]
+fn a_partial_freeze_keeps_frozen_shares_out_of_a_wind_down_claim() {
+    let f = setup();
+    let holder = f.holder(500);
+    let _other = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    f.share.freeze_partial_tokens(&holder, &400, &f.compliance);
+
+    let first = f.vault.claim_wind_down(&holder);
+
+    assert_eq!(f.shares(&holder), 400);
+    assert_eq!(f.share.get_frozen_tokens(&holder), 400);
+    f.share
+        .unfreeze_partial_tokens(&holder, &400, &f.compliance);
+    let rest = f.vault.claim_wind_down(&holder);
+    assert_eq!(rest, 4 * first);
+}

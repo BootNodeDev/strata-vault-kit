@@ -8,6 +8,7 @@ use crate::event::{
     WindDownProposed, WindDownRoundFinalized,
 };
 use crate::keys::DataKey;
+use crate::lock_policy::{self, Decision, Exit};
 use crate::state;
 use crate::treasury;
 
@@ -258,8 +259,7 @@ pub(crate) fn claimable(e: &Env, holder: &Address) -> i128 {
         return 0;
     }
 
-    let share_token = state::get_addr(e, &DataKey::ShareToken);
-    let held = FungibleTokenClient::new(e, &share_token).balance(holder);
+    let held = lock_policy::free_shares(e, holder);
     let p = position(e, holder);
     let entitlement = p.entitlement.saturating_add(held);
 
@@ -276,10 +276,20 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
         panic_with_error!(e, VaultError::DistributionNotStarted);
     }
 
+    let standing = lock_policy::standing(e, holder);
+    match lock_policy::decide(Exit::ClaimWindDown, standing, is_active(e)) {
+        Decision::Proceed => {}
+        Decision::Refuse | Decision::Hold | Decision::ConvertToExit | Decision::Surrender => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
+    }
+
     let vault = e.current_contract_address();
     let share_token = state::get_addr(e, &DataKey::ShareToken);
 
-    let surrendered = FungibleTokenClient::new(e, &share_token).balance(holder);
+    // A partial freeze keeps its shares out of the surrender; they earn every
+    // round once the freeze is lifted and the holder claims again.
+    let surrendered = lock_policy::free_shares(e, holder);
     let mut p = position(e, holder);
     p.entitlement = p
         .entitlement

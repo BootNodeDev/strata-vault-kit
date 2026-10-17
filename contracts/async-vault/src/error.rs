@@ -121,7 +121,8 @@ pub enum VaultError {
     /// A running total would go below zero, which means the vault's books
     /// disagree with themselves. Fails loudly instead of clamping to zero.
     AccountingMismatch = 6070,
-    /// The holder is frozen: a deposit request is refused, and a share claim or
-    /// a redemption cancel waits until the freeze is lifted.
+    /// The holder is frozen. What the vault owes them is held, not paid,
+    /// returned or moved, until compliance lifts the freeze. A partial freeze
+    /// refuses only what would touch frozen shares.
     Frozen = 6071,
 }

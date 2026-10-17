@@ -165,8 +165,11 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
    stale valuation can block the payment of an already-priced, funded cash
    claim. A pause can delay unpriced requests. Priced claims are never re-priced
    and never identity-gated. A delisted, non-frozen investor exits through the
-   exit-only cash path. Outside this guarantee, disclosed as trust assumptions:
-   a frozen investor, deposit-asset issuer controls, and reserve liquidity.
+   exit-only cash path. A frozen investor's claims are held, not paid, until
+   the freeze is lifted ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1).
+   A legal-order transfer moves only shares in the investor's wallet, never
+   value the vault holds. Outside this guarantee, disclosed as trust
+   assumptions: deposit-asset issuer controls and reserve liquidity.
 
 6. **Split accounting, with priced and payable as separate states.** The vault
    exposes committed (priced redemption liabilities), cancellable escrow

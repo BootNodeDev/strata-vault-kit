@@ -177,23 +177,21 @@ fn a_delisted_holder_cannot_cancel_redemption_back_to_shares() {
 }
 
 #[test]
-fn a_frozen_holder_cannot_cancel_redemption_back_to_shares() {
+fn a_frozen_holder_is_paid_only_after_the_freeze_lifts() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-
-    // Freeze address
     f.share.set_address_frozen(&user, &true, &f.compliance);
-    assert!(f.share.is_frozen(&user));
 
-    // Cannot return shares to a frozen account
     refused(f.vault.try_cancel_redeem(&user, &epoch), VaultError::Frozen);
+    f.fulfill_epoch(wad(2));
+    refused(f.vault.try_claim_redeem(&user, &epoch), VaultError::Frozen);
+    assert_eq!(f.vault.committed(), 400);
     assert_eq!(f.shares(&user), 300);
 
-    // Exit proceeds through cash claim once fulfilled
-    f.fulfill_epoch(wad(2));
+    f.share.set_address_frozen(&user, &false, &f.compliance);
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
-    assert_eq!(f.balance(&user), 400);
+    assert_eq!(f.vault.committed(), 0);
 }
 
 #[test]
@@ -267,25 +265,74 @@ fn a_frozen_investors_zero_share_refund_is_held() {
 }
 
 #[test]
-fn a_frozen_holder_can_still_queue_an_exit() {
+fn a_frozen_holder_cannot_queue_an_exit() {
     let f = setup();
     let user = f.holder(500);
-    let epoch = f.vault.current_epoch();
-
     f.share.set_address_frozen(&user, &true, &f.compliance);
 
-    assert_eq!(f.vault.request_redeem(&user, &200), epoch);
-    assert_eq!(f.shares(&f.vault.address), 200);
+    refused(f.vault.try_request_redeem(&user, &200), VaultError::Frozen);
+    assert_eq!(f.shares(&user), 500);
+    assert_eq!(f.shares(&f.vault.address), 0);
 }
 
 #[test]
-fn queueing_an_exit_releases_a_partial_freeze() {
+fn a_partial_freeze_limits_an_exit_to_the_free_shares() {
     let f = setup();
     let user = f.holder(500);
     f.share.freeze_partial_tokens(&user, &400, &f.compliance);
 
-    f.vault.request_redeem(&user, &300);
+    refused(f.vault.try_request_redeem(&user, &101), VaultError::Frozen);
+    f.vault.request_redeem(&user, &100);
 
-    assert_eq!(f.shares(&user), 200);
-    assert_eq!(f.share.get_frozen_tokens(&user), 200);
+    assert_eq!(f.shares(&user), 400);
+    assert_eq!(f.share.get_frozen_tokens(&user), 400);
+}
+
+#[test]
+fn a_frozen_investors_escrow_stays_until_the_freeze_lifts() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
+
+    refused(
+        f.vault.try_cancel_deposit(&investor, &epoch),
+        VaultError::Frozen,
+    );
+    assert_eq!(f.vault.cancellable_escrow(), 400);
+
+    f.share.set_address_frozen(&investor, &false, &f.compliance);
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+}
+
+#[test]
+fn a_frozen_holder_does_not_get_a_worthless_exit_back() {
+    let f = setup();
+    let user = f.holder(1);
+    let epoch = f.vault.request_redeem(&user, &1);
+    f.fulfill_epoch(WAD_SCALE / 2);
+    f.share.set_address_frozen(&user, &true, &f.compliance);
+
+    refused(f.vault.try_claim_redeem(&user, &epoch), VaultError::Frozen);
+    assert_eq!(f.vault.pending_burn_shares(), 1);
+    assert!(f.vault.get_redeem_request(&epoch, &user).is_some());
+}
+
+#[test]
+fn a_frozen_holder_is_not_moved_into_the_exit_queue() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+    f.identity.allow(&investor, &false, &f.compliance);
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
+
+    refused(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        VaultError::Frozen,
+    );
+    assert!(f
+        .vault
+        .get_redeem_request(&f.vault.current_epoch(), &investor)
+        .is_none());
 }
