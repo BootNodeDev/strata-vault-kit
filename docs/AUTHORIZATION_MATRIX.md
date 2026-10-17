@@ -36,6 +36,7 @@ In `scripts/harness/deploy.ts` and automated deployment scripts, the separation 
 - The share token's constructor grants `compliance` to the compliance key and grants `manager` to no one; the identity verifier is constructed with the compliance key as admin.
 - The share token role is granted to the deployed vault contract: `token.grant_role({ account: asyncVault.address, role: "manager", caller: governance })`.
 - After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. It does not check that no other account holds it.
+- It then calls `token.bind_vault({ vault, caller: governance })` and `token.finish_setup({ caller: governance })`, and stops if `token.setup_open()` still reads true. From then on the token's admin changes wait for the vault's timelock (§5.2).
 
 ---
 
@@ -94,9 +95,9 @@ Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
-The token's `admin` is governance. `pause`, `unpause`, `set_compliance` and `set_identity_verifier` need the admin; the guardian holds no role on the token. The `manager` role is held by the vault and the `compliance` role by the compliance authority.
+The token's `admin` is governance; the guardian holds no role on the token. Until `finish_setup`, admin changes are instant, so the deploy can grant the vault the `manager` role. Setup cannot finish while an admin hand-over offered during setup is pending. After setup, the following wait for the vault's timelock through `propose_change`/`apply_change`: grants, revoking `manager`, admin hand-over, `set_compliance`, `set_identity_verifier` and upgrades. Revoking `compliance` and `pause`/`unpause` stay instant. The `manager` role is held by the vault and the `compliance` role by the compliance authority.
 
-Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs).
+Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs) and [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs).
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
@@ -109,9 +110,20 @@ Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.r
 | `freeze_partial_tokens` | `#[only_role(operator, "compliance")]` | Balance sufficient | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_manager_escrows_but_does_not_intervene` |
 | `unfreeze_partial_tokens`| `#[only_role(operator, "compliance")]` | Frozen amount sufficient | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_manager_escrows_but_does_not_intervene` |
 | `recover_balance` | `#[only_role(operator, "compliance")]` | Target allowlisted and named by the verifier's `recovery_target` (the testnet stub names none, so recovery always fails there) | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_compliance_authority_reaches_recovery` |
-| `set_compliance` | `#[only_admin]`, `operator.require_auth()` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier`, `test::the_compliance_authority_cannot_mint_burn_or_swap_the_rules` |
-| `set_identity_verifier` | `#[only_admin]`, `operator.require_auth()` | None | `test::unauthorized_caller_cannot_set_compliance_or_verifier`, `test::the_compliance_authority_cannot_mint_burn_or_swap_the_rules` |
+| `set_compliance` | `#[only_admin]`, `operator.require_auth()` | Instant during setup; `UseTimelock` after | `test::unauthorized_caller_cannot_set_compliance_or_verifier`, `test::the_compliance_authority_cannot_mint_burn_or_swap_the_rules`, `test_governance::rule_and_verifier_swaps_wait_after_setup` |
+| `set_identity_verifier` | `#[only_admin]`, `operator.require_auth()` | Instant during setup; `UseTimelock` after | `test::unauthorized_caller_cannot_set_compliance_or_verifier`, `test::the_compliance_authority_cannot_mint_burn_or_swap_the_rules`, `test_governance::rule_and_verifier_swaps_wait_after_setup` |
 | `renounce_admin` | Refused always (`ShareTokenError::AdminRequired`) | None | `test::the_admin_cannot_renounce_itself_out_of_the_token`; `test::admin_handover_in_two_steps_still_works`. A token without an admin could never be unpaused or rotate its manager; hand over through `transfer_admin_role` and `accept_admin_transfer`. |
+| `bind_vault` | `#[only_admin]`, `caller.require_auth()` | During setup, once; the vault must answer `timelock_clock` | `test_governance::a_second_vault_cannot_be_bound`, `test_governance::an_address_that_reports_no_clock_cannot_be_bound` |
+| `finish_setup` | `#[only_admin]`, `caller.require_auth()` | Needs a bound vault and no pending admin hand-over; once | `test_governance::setup_is_open_until_finished_and_never_reopens`, `test_governance::setup_cannot_finish_while_a_hand_over_is_pending` |
+| `propose_change` | `#[only_admin]`, `caller.require_auth()` | After setup; vault not winding down; one upgrade at a time | `test_governance::nothing_is_proposed_during_setup`, `test_governance::only_the_admin_proposes_cancels_and_applies` |
+| `cancel_change` | `#[only_admin]`, `caller.require_auth()` | The change must be pending | `test_governance::only_the_admin_proposes_cancels_and_applies` |
+| `apply_change` | `#[only_admin]`, `caller.require_auth()` | Delay run on the vault's clock, vault unpaused and not winding down, delay `>=` the vault's notice | `test_governance::a_vault_pause_moves_the_eta_and_holds_the_change`, `test_governance::a_change_shorter_than_a_raised_notice_never_lands` |
+| `pending_changes` | Open view | None | None (view) |
+| `grant_role` | Admin, `caller.require_auth()` | Instant during setup; `UseTimelock` after | `test_governance::grants_and_manager_revokes_wait_after_setup` |
+| `revoke_role` | Admin, `caller.require_auth()` | `compliance`: instant. `manager`: instant during setup, `UseTimelock` after | `test_governance::grants_and_manager_revokes_wait_after_setup` (the instant case: `test_governance::revoking_compliance_stays_instant_after_setup`) |
+| `transfer_admin_role` | Admin | Instant during setup; `UseTimelock` after. A zero `live_until_ledger` cancels at once | `test_governance::an_admin_hand_over_waits_but_cancelling_one_does_not` |
+| `set_role_admin` | Refused always (`ShareTokenError::UseTimelock`) | None | `test_governance::no_role_ever_gets_a_role_admin`. A role admin could grant its role with no delay. |
+| `upgrade` | Not exposed | Upgrades go through `propose_change(Upgrade)` | `test_governance::the_token_exposes_no_immediate_upgrade` |
 
 ### 5.3 NavOracle (`contracts/nav-oracle`)
 
