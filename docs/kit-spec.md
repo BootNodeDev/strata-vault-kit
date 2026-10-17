@@ -39,7 +39,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Definition**: Once an exit is priced and covered by the liquid reserve, its cash payout cannot be blocked by an administrative pause, oracle staleness, or an investor's compliance delisting.
 - **Testable Property**: If `liquid_reserve >= assets_owed`, `claim_redeem` succeeds when:
   1. The vault is paused (`paused == true`).
-  2. The oracle feed has expired (`is_stale == true`) or ripcord is raised.
+  2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
   3. The caller has been de-listed in the `IdentityVerifier`.
   Priced claims are never re-priced and never identity-gated. A frozen investor is outside this guarantee (design document §8.1).
 
@@ -106,7 +106,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`share_token`** | `identity_verifier` | `Address` | Address of deployed `identity_verifier` contract | `share_token.constructor_args` |
 | **`nav_oracle`** | `admin` | `Address` | Oracle admin multisig (Governance) | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `attester` | `Address` | Authorized reporter multisig for NAV attestations | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `guardian` | `Address` | Guardian multisig authorized to raise ripcord | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `guardian` | `Address` | Guardian multisig authorized to pause the NAV | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.freshness_duration` | `u64` (seconds) | Validity window of an attestation before it is stale ($> 0$) | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.cooldown_secs` | `u64` (seconds) | Minimum time between consecutive price attestations | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Maximum allowable upward price jump (1 bps = 0.01%, $> 0$) | `nav_oracle.constructor_args` |
@@ -154,7 +154,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 | Authority | Quorum / Profile | Authorized Capabilities | Anti-Capabilities (What It Cannot Do) |
 |---|---|---|---|
 | **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
-| **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `raise_ripcord` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
+| **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `pause_nav` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
 | **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve); `fund` (returns assets from custodian). | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
 | **Attester** | High-security attestation multisig | `attest` (submits NAV report with proof reference). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
 | **Compliance** | Legal / KYC operator multisig | Manage allowlist (`allow`), topic claims; token interventions (`freeze`, `forced_transfer`, `recovery`). | **Cannot touch vault reserve**; cannot pause vault operations; cannot bypass exit-only cash redemptions. |
@@ -194,11 +194,11 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `pending_changes` | Permissionless | None (view) | No |
 | **`AsyncVault`** | `transfer_admin_role` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | `caller.require_auth()` | No |
-| **`NavOracle`** | `attest` | Attester | `#[only_role(caller, "attester")]` | Refused if ripcord active |
-| **`NavOracle`** | `raise_ripcord` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
-| **`NavOracle`** | `set_ripcord` | Governance | `#[only_admin]` | N/A |
+| **`NavOracle`** | `attest` | Attester | `#[only_role(caller, "attester")]` | Refused if the NAV is paused |
+| **`NavOracle`** | `pause_nav` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
+| **`NavOracle`** | `set_nav_paused` | Governance | `#[only_admin]` | N/A |
 | **`NavOracle`** | `set_config` | Governance | `#[only_admin]` | No |
-| **`NavOracle`** | `clear_latest` | Governance | `#[only_admin]` (requires ripcord) | No |
+| **`NavOracle`** | `clear_latest` | Governance | `#[only_admin]` (requires NAV paused) | No |
 | **`ShareToken`** | `pause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
 | **`ShareToken`** | `unpause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
 | **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |

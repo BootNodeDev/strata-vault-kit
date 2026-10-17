@@ -10,10 +10,10 @@ This document provides the complete authorization and role model specification f
 2. **Strict Caller Authentication**: No entrypoint takes a caller argument that it does not authenticate. Every function accepting a `caller: Address` executes `caller.require_auth()`.
 3. **Exit-Only Guarantee**: A covered redemption claim always pays out cash, regardless of pause, staleness, or allowlist status. Delisted or frozen investors exit through the cash path and are prevented from re-entering share circulation.
 4. **Five Separate Authorities**:
-   - **Governance (Admin)**: Root authority; upgrades, timelock parameters, custodian settings, unpause, oracle parameters, emergency ripcord reset.
+   - **Governance (Admin)**: Root authority; upgrades, timelock parameters, custodian settings, unpause, oracle parameters, emergency NAV pause reset.
    - **Manager (Vault)**: Closes epochs.
    - **Treasury**: Deploys free reserve assets to custodian.
-   - **Guardian**: Emergency responder; pauses vault entries, raises oracle ripcord.
+   - **Guardian**: Emergency responder; pauses vault entries, pauses the oracle's NAV.
    - **Attester (Oracle)**: Submits off-chain valuation reports within strict deviation and rate bounds.
    - **Compliance**: Writes the allowlist on the identity verifier and holds the share token's `compliance` role for freezes, forced transfers and recovery. Cannot mint, burn or swap the token's compliance or identity-verifier contract.
 
@@ -120,9 +120,9 @@ Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs)
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
 | `attest` | `#[only_role(caller, "attester")]` | Cooldown, deviation cap, bounds `[min, max]` | `test::attest_is_role_gated` |
-| `raise_ripcord` | `#[only_role(caller, "guardian")]` | None | `test::raising_the_ripcord_is_limited_to_the_guardian` |
-| `set_ripcord` | `#[only_admin]`, `caller.require_auth()` | None | `test::the_guardian_raises_the_ripcord_but_lowering_needs_governance` |
-| `clear_latest` | `#[only_admin]`, `caller.require_auth()` | Ripcord must be raised | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_ripcord_is_raised` |
+| `pause_nav` | `#[only_role(caller, "guardian")]` | None | `test::pausing_the_nav_is_limited_to_the_guardian` |
+| `set_nav_paused` | `#[only_admin]`, `caller.require_auth()` | None | `test::the_guardian_pauses_the_nav_but_unpausing_needs_governance` |
+| `clear_latest` | `#[only_admin]`, `caller.require_auth()` | NAV must be paused | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_nav_is_paused` |
 | `set_config` | `#[only_admin]` (no caller argument; the stored admin signs) | Valid bounds | `test::only_admin_can_set_config` |
 | `renounce_admin` | Refused always (`OracleError::AdminRequired`) | None | `test::the_oracle_admin_cannot_renounce_itself_away` |
 
