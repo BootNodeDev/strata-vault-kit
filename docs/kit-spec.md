@@ -51,14 +51,20 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
   - `cancel_redeem` remains open; only the share token's own transfer pause can refuse it (Invariant 6).
+  - `cancel_deposit` and `cancel_redeem` stay open for a sealed epoch while the vault is paused, because a paused vault cannot price it (Invariant 6).
 
 ### Invariant 6: Single-Step Atomic Cancellation
-- **Definition**: Cancellation is an all-or-nothing operation, open while an epoch cannot be priced and subject to the share token's transfer pause for redemptions.
+- **Definition**: Cancellation is all-or-nothing, and it is open exactly while the vault could not price the epoch now. Three rules decide it:
+  1. A readable price closes cancellation, even while the notice still runs. A price is readable when the feed is valid and its report was accepted at or after the epoch closed.
+  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — cancellation opens again. That is the way out of a stalled feed, so escrow is never stuck. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, or a paused vault can.
+  3. The epoch is priced at the latest valid report at fulfil time that was accepted at or after the close — not necessarily the report that first closed the window.
 - **Testable Property**:
-  - While an epoch is `Open`, or `Pending` with `priceable_at > now` (or feed stale/paused), `cancel_deposit` and `cancel_redeem` return 100% of escrowed assets/shares atomically.
+  - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow.
+  - A readable price refuses cancellation with `PriceAvailable`, even before `priceable_at`; once that report expires, cancellation works again (`cancellation_reopens_when_the_price_that_closed_it_expires`).
+  - Pausing the vault reopens cancellation; unpausing closes it again while the price is still readable (`a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price`).
   - `cancel_redeem` is refused with `PausableError::EnforcedPause` while the share token's transfer pause is active; the request stays pending and the cash claim remains open.
-  - Once `now >= priceable_at` and a fresh attestation is available, cancellation is refused with `PriceAvailable`.
   - Once fulfilled, cancellation is refused with `AlreadyPriced`.
+- **Operating note**: keep `freshness_duration` longer than the notice, so a normal epoch's price does not lapse and reopen the window on its own.
 
 ### Invariant 7: Directional Rounding & Non-Creation of Value
 - **Definition**: Arithmetic conversions round in the vault's favor, preventing arbitrage and value creation from rounding residue.
