@@ -237,7 +237,7 @@ instance is archived refuses every call.
 | Contract | What it extends | When | To how long |
 |---|---|---|---|
 | `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once less than 29 days remain |
-| `nav_oracle` | Its instance and the latest report | Every `attest` and every read of the report | Same |
+| `nav_oracle` | Its instance and the latest report | `attest` extends both; every other call extends whichever of the two it reads or writes | Same |
 | `share_token` | Its instance | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause` | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
@@ -252,15 +252,15 @@ lives as a persistent entry, extended to 30 days when it is proposed. The wait
 itself can run up to 90 days (`timelock::MAX_DELAY`), so a change nobody
 touches can archive before it is due. Nothing is lost: the call that applies
 it restores the archived entry itself and pays the restore fee, the same as
-any other archived entry. To keep a long wait from archiving, extend its entry
-directly: `stellar contract extend --id <async_vault id> --key-xdr <the
-change's key> --ledgers-to-extend <n>`. `npm run extend` does not reach it,
-since it only knows each contract's instance and code, not an individual
-change's key.
+any other archived entry. `npm run extend` also keeps it alive: it reads the
+vault's open ids from its `pending_changes()` view, builds each one's storage
+key the way the timelock crate does, and extends it the same 30 days as every
+instance and Wasm.
 
 **What OpenZeppelin extends.** `stellar-tokens` 0.7.2 stores the share token's
-balances, frozen amounts and roles, and the compliance contract's modules and
-bound tokens, and extends each to 30 days when it is read or written.
+balances and frozen amounts, and the compliance contract's modules and bound
+tokens, and extends each to 30 days when it is read or written. `stellar-access`
+0.7.2 stores every contract's roles and extends them to 90 days the same way.
 Allowances are temporary entries that live until their `live_until_ledger`.
 OpenZeppelin never extends an instance; the kit does, as above. The token's
 total supply and metadata live in its instance.
