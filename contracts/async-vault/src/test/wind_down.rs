@@ -489,6 +489,26 @@ fn a_frozen_holders_redemption_stays_escrowed_in_a_wind_down() {
     assert_eq!(f.vault.claim_wind_down(&user), 400);
 }
 
+/// The snapshot left this escrow out, so its shares must not come back to be surrendered.
+#[test]
+fn a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down() {
+    let f = setup();
+    let a = f.holder(200);
+    let b = f.holder(200);
+    let epoch = f.vault.request_redeem(&a, &1);
+    f.fulfill_epoch(WAD_SCALE / 2);
+    wind_down_now(&f);
+    assert_eq!(f.vault.finalize_wind_down_round(), 799);
+
+    assert_eq!(f.vault.claim_redeem(&a, &epoch), 0);
+    let paid = f.vault.claim_wind_down(&a) + f.vault.claim_wind_down(&b);
+
+    assert_eq!(paid, 799);
+    assert_eq!(f.vault.wind_down_owed(), 0);
+    assert_eq!(f.shares(&a), 0);
+    assert_eq!(f.shares(&f.vault.address), 0);
+}
+
 #[test]
 fn the_payouts_never_exceed_what_the_rounds_credited() {
     let f = setup();

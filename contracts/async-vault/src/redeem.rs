@@ -85,7 +85,8 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         state::reduce(e, state::pending_burn_shares(e), request.shares),
     );
 
-    if assets == 0 {
+    // In a wind-down they are burned below instead: its snapshot left them out.
+    if assets == 0 && !wind_down::is_active(e) {
         return_shares(e, caller, epoch_id, request.shares);
         settlement::on_redeem_claimed(e, epoch_id, 0);
         return 0;
@@ -104,7 +105,9 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     state::set_redeem_request(e, epoch_id, caller, &request);
     state::set_committed(e, state::reduce(e, state::committed(e), assets));
 
-    TokenClient::new(e, &asset).transfer(&vault, caller, &assets);
+    if assets > 0 {
+        TokenClient::new(e, &asset).transfer(&vault, caller, &assets);
+    }
     RWATokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).burn(
         &vault,
         &request.shares,
