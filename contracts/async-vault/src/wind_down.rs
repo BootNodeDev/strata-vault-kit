@@ -279,7 +279,11 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
     }
 
     if assets > 0 {
-        storage::set_instance(e, &DataKey::WindDownOwed, &(owed(e) - assets));
+        storage::set_instance(
+            e,
+            &DataKey::WindDownOwed,
+            &state::reduce(e, owed(e), assets),
+        );
         let asset = state::get_addr(e, &DataKey::Asset);
         TokenClient::new(e, &asset).transfer(&vault, holder, &assets);
     }

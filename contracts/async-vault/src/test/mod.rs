@@ -13,6 +13,7 @@ mod notice;
 mod oracle_pricing;
 mod pricing;
 mod redeem;
+mod settlement;
 mod supply;
 mod timing;
 mod treasury;

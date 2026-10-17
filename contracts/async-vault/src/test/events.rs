@@ -1,7 +1,7 @@
 use soroban_sdk::{testutils::Events as _, Event as _};
 
 use super::*;
-use crate::{DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled};
+use crate::{DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, EpochReconciled};
 
 #[test]
 fn requesting_a_deposit_publishes_the_request() {
@@ -62,7 +62,7 @@ fn pricing_an_epoch_publishes_the_share_price() {
 }
 
 #[test]
-fn claiming_a_deposit_publishes_the_shares_paid() {
+fn claiming_the_last_deposit_publishes_the_shares_paid_and_the_settlement() {
     let f = setup();
     let user = f.investor(1_000);
     f.vault.request_deposit(&user, &400);
@@ -72,13 +72,21 @@ fn claiming_a_deposit_publishes_the_shares_paid() {
 
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
-        [DepositClaimed {
-            controller: user,
-            epoch: 1,
-            amount: 400,
-            shares: 200,
-        }
-        .to_xdr(&f.e, &f.vault.address)]
+        [
+            DepositClaimed {
+                controller: user,
+                epoch: 1,
+                amount: 400,
+                shares: 200,
+            }
+            .to_xdr(&f.e, &f.vault.address),
+            EpochReconciled {
+                epoch: 1,
+                share_dust: 0,
+                cash_dust: 0,
+            }
+            .to_xdr(&f.e, &f.vault.address),
+        ]
     );
 }
 

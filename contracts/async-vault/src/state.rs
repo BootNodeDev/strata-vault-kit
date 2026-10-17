@@ -5,6 +5,15 @@ use crate::keys::DataKey;
 
 pub(crate) const FIRST_EPOCH: u64 = 1;
 
+/// Takes `amount` off a running total that can never be negative. A result
+/// below zero means the books disagree, so it fails loudly.
+pub(crate) fn reduce(e: &Env, total: i128, amount: i128) -> i128 {
+    match total.checked_sub(amount) {
+        Some(left) if left >= 0 => left,
+        _ => panic_with_error!(e, VaultError::AccountingMismatch),
+    }
+}
+
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EpochStatus {

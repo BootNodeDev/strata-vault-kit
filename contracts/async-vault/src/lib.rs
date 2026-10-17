@@ -10,6 +10,7 @@ mod lock_policy;
 mod pricing;
 mod redeem;
 mod roles;
+mod settlement;
 mod state;
 mod timing;
 mod treasury;
@@ -31,13 +32,14 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
-    DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, Funded, NoticeSet,
-    RedeemClaimed, RedeemRequested, WindDownActivated, WindDownClaimed, WindDownDelaySet,
-    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
+    DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, EpochReconciled, Funded,
+    NoticeSet, RedeemClaimed, RedeemRequested, WindDownActivated, WindDownClaimed,
+    WindDownDelaySet, WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange};
 pub use pricing::{DirectUnitPricing, PricingScheme};
 pub use roles::VaultRoles;
+pub use settlement::EpochSettlement;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
 pub use upgrade::{MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
 pub use wind_down::{WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY};
@@ -321,6 +323,11 @@ impl AsyncVault {
 
     pub fn get_epoch(e: &Env, epoch_id: u64) -> Option<EpochInfo> {
         state::get_epoch(e, epoch_id)
+    }
+
+    /// What pricing promised the epoch and what has been paid against it.
+    pub fn get_epoch_settlement(e: &Env, epoch_id: u64) -> Option<EpochSettlement> {
+        settlement::get(e, epoch_id)
     }
 
     pub fn get_deposit_request(
