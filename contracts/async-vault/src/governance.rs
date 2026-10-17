@@ -59,7 +59,8 @@ pub struct VaultPendingChange {
 /// The share token's role that mints and burns. The vault must hold it alone.
 const TOKEN_MANAGER_ROLE: Symbol = symbol_short!("manager");
 
-/// What `finish_setup` needs to see before deposits open.
+/// What `finish_setup` needs to see before deposits open. `health()` reports
+/// the same checks.
 pub(crate) struct Wiring {
     pub token_bound: bool,
     pub oracle_bound: bool,
@@ -149,17 +150,31 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
     Wiring {
         token_bound: bound_here(e, &token),
         oracle_bound: bound_here(e, &oracle),
-        sole_token_manager: roles.get_role_member_count(&TOKEN_MANAGER_ROLE) == 1
-            && roles.get_role_member(&TOKEN_MANAGER_ROLE, &0) == me,
-        no_shares_outstanding: FungibleTokenClient::new(e, &token).total_supply() == 0,
-        allowlisted: matches!(
-            IdentityVerifierClient::new(e, &rwa.identity_verifier()).try_verify_identity(&me),
-            Ok(Ok(()))
+        sole_token_manager: matches!(
+            roles.try_get_role_member_count(&TOKEN_MANAGER_ROLE),
+            Ok(Ok(1))
+        ) && matches!(
+            roles.try_get_role_member(&TOKEN_MANAGER_ROLE, &0),
+            Ok(Ok(holder)) if holder == me
         ),
-        compliance_bound: matches!(
-            TokenBinderClient::new(e, &rwa.compliance()).try_linked_tokens(),
-            Ok(Ok(linked)) if linked.contains(&token)
+        no_shares_outstanding: matches!(
+            FungibleTokenClient::new(e, &token).try_total_supply(),
+            Ok(Ok(0))
         ),
+        allowlisted: match rwa.try_identity_verifier() {
+            Ok(Ok(verifier)) => matches!(
+                IdentityVerifierClient::new(e, &verifier).try_verify_identity(&me),
+                Ok(Ok(()))
+            ),
+            _ => false,
+        },
+        compliance_bound: match rwa.try_compliance() {
+            Ok(Ok(compliance)) => matches!(
+                TokenBinderClient::new(e, &compliance).try_linked_tokens(),
+                Ok(Ok(linked)) if linked.contains(&token)
+            ),
+            _ => false,
+        },
     }
 }
 

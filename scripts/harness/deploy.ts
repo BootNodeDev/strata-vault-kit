@@ -238,6 +238,19 @@ async function finishVaultSetup(
 	if ((await vault.setup_open()).result)
 		throw new Error("the vault's setup did not finish")
 	console.log("vault setup finished")
+
+	const health = (await vault.health()).result
+	console.log("health", JSON.stringify(health))
+	const wiring = [
+		"token_bound",
+		"oracle_bound",
+		"sole_token_manager",
+		"allowlisted",
+		"compliance_bound",
+	] as const
+	const broken = wiring.filter((flag) => !health[flag])
+	if (health.setup_open || broken.length > 0)
+		throw new Error(`the vault is not wired: ${broken.join(", ")}`)
 }
 
 async function main(): Promise<void> {
