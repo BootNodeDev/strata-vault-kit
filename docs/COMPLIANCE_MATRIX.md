@@ -98,7 +98,7 @@ The share token is OpenZeppelin's RWA token. The allowlist and freeze checks sit
 
 0.7.2 has five compliance hooks: `can_transfer` and `can_create` are asked before the state change, and `transferred`, `created` and `destroyed` are told after it. There is no `can_destroy`.
 
-The kit's compliance contract registers no modules, so `can_transfer` and `can_create` always allow today. Until rule modules are added, the allowlist and freeze rules are exactly the token checks in the table above.
+The kit's compliance contract registers no modules, so `can_transfer` and `can_create` always allow today. Until rule modules are added, the allowlist and freeze rules are exactly the token checks in the table above. Adding or removing a module waits for the vault's timelock once its setup is finished, so a rule change never lands sooner than an exit completes.
 
 ---
 

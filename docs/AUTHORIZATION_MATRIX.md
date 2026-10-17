@@ -1,13 +1,13 @@
 # Authorization & Access Control Matrix
 
-This document provides the complete authorization and role model specification for the Strata Vault Kit across all four contracts (`AsyncVault`, `ShareToken`, `NavOracle`, and `IdentityVerifier`).
+This document provides the complete authorization and role model specification for the Strata Vault Kit across all five contracts (`AsyncVault`, `ShareToken`, `NavOracle`, `IdentityVerifier` and `Compliance`).
 
 ---
 
 ## 1. Architectural Principles
 
 1. **Direct Role Membership Checks**: Role membership is checked directly via `has_role(e, &caller, &role)` or `stellar_macros::only_role` / `only_admin`, never by enumerating members.
-2. **Strict Caller Authentication**: No entrypoint takes a caller argument that it does not authenticate. Every function accepting a `caller: Address` executes `caller.require_auth()`.
+2. **Strict Caller Authentication**: No entrypoint takes a caller argument that it does not authenticate. Every function accepting a `caller: Address` executes `caller.require_auth()`. The testnet compliance stub is the exception: its admin calls check the stored admin's signature and ignore their `operator` argument (§5.5).
 3. **Exit guarantee, with one hold**: A covered redemption claim pays out cash regardless of pause, staleness or allowlist status. A delisted investor exits through the cash path and cannot re-enter share circulation. A frozen investor is held: the vault refuses their requests, cancellations and claims, and pays them only after the freeze lifts.
 4. **Five Separate Authorities**:
    - **Governance (Admin)**: Root authority; upgrades, timelock parameters, custodian settings, unpause, oracle parameters, emergency NAV pause reset. As the share token's admin, it co-signs compliance's `legal_transfer` and `recover_balance`.
@@ -37,8 +37,9 @@ In `scripts/harness/deploy.ts` and automated deployment scripts, the separation 
 - The share token role is granted to the deployed vault contract: `token.grant_role({ account: asyncVault.address, role: "manager", caller: governance })`.
 - After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. That no other account holds it is checked by the vault's `finish_setup` below.
 - It then calls `token.bind_vault({ vault, caller: governance })` and `token.finish_setup({ caller: governance })`, and stops if `token.setup_open()` still reads true. From then on the token's admin changes wait for the vault's timelock (§5.2).
+- It calls `compliance.bind_token({ token, operator: governance })`, then `compliance.bind_vault({ vault, operator: governance })` and `compliance.finish_setup({ operator: governance })`, and stops if `compliance.setup_open()` still reads true. From then on the compliance contract's module, token-binding and admin changes wait for the vault's timelock (§5.5).
 - It calls `oracle.bind_vault({ vault, caller: governance })` and `oracle.finish_setup({ caller: governance })`, and stops if `oracle.setup_open()` still reads true. From then on the oracle's admin changes wait for the vault's timelock (§5.3).
-- Last, it calls `vault.set_custodian({ custodian, caller: governance })` and `vault.finish_setup({ caller: governance })`, and stops if `vault.setup_open()` still reads true. `finish_setup` refuses with `SetupIncomplete` unless the token and the oracle report this vault with their setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the identity check, its address is not frozen on the token and the token is bound to its compliance contract. From then on the vault takes deposits and its admin changes wait for its timelock (§5.1).
+- Last, it calls `vault.set_custodian({ custodian, caller: governance })` and `vault.finish_setup({ caller: governance })`, and stops if `vault.setup_open()` still reads true. `finish_setup` refuses with `SetupIncomplete` unless the token and the oracle report this vault with their setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the identity check, its address is not frozen on the token and the token is bound to its compliance contract. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its setup closed; one that does not answer them is an external module and is accepted. From then on the vault takes deposits and its admin changes wait for its timelock (§5.1).
 
 ---
 
@@ -72,7 +73,7 @@ The following entrypoints are open to any caller on purpose:
 
 ---
 
-## 5. Complete Access Control Matrix Across All 4 Contracts
+## 5. Complete Access Control Matrix Across All 5 Contracts
 
 ### 5.1 AsyncVault (`contracts/async-vault`)
 
@@ -90,7 +91,7 @@ Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.
 | `set_notice` | `#[only_admin]`, `caller.require_auth()` | `secs <= MAX_NOTICE_SECS`, `secs <= upgrade_delay`. Raising is instant; lowering is `UseTimelock` after setup | `test::governance::raising_the_notice_is_instant_and_lowering_waits`, `test::notice::setting_the_notice_needs_governance_authorisation` |
 | `set_wind_down_delay` | `#[only_admin]`, `caller.require_auth()` | `MIN_WIND_DOWN_DELAY <= secs <= MAX_WIND_DOWN_DELAY`. Raising is instant; lowering is `UseTimelock` after setup | `test::governance::raising_the_wind_down_delay_is_instant_and_lowering_waits`, `test::governance::a_wind_down_delay_below_the_minimum_cannot_be_proposed`, `test::wind_down::only_governance_sets_the_delay` |
 | `set_deposit_cap` | `#[only_admin]`, `caller.require_auth()` | Not negative. Instant both ways, also after setup | `test::governance::the_deposit_cap_stays_instant_both_ways` |
-| `finish_setup` | `#[only_admin]`, `caller.require_auth()` | Once. The token and the oracle report this vault with their setup closed, the vault is the token's only `manager`, the token's `total_supply` is zero, the vault passes `verify_identity`, the token's `is_frozen` is false for the vault, and the token is in its compliance contract's `linked_tokens`; no admin hand-over offered during setup is pending | `test::setup::every_wiring_step_is_checked_before_setup_finishes`, `test::setup::setup_cannot_finish_while_a_hand_over_is_pending`, `test::setup::setup_never_finishes_twice`, `test::setup::only_governance_finishes_setup` |
+| `finish_setup` | `#[only_admin]`, `caller.require_auth()` | Once. The token and the oracle report this vault with their setup closed, the vault is the token's only `manager`, the token's `total_supply` is zero, the vault passes `verify_identity`, the token's `is_frozen` is false for the vault, and the token is in its compliance contract's `linked_tokens`; a compliance contract that answers `vault()` and `setup_open()` reports this vault with its setup closed (one that does not answer them is an external module and is accepted); no admin hand-over offered during setup is pending | `test::setup::every_wiring_step_is_checked_before_setup_finishes`, `test::setup::a_compliance_contract_from_outside_the_kit_is_accepted`, `test::setup::setup_cannot_finish_while_a_hand_over_is_pending`, `test::setup::setup_never_finishes_twice`, `test::setup::only_governance_finishes_setup` |
 | `grant_role` / `transfer_admin_role` | Admin | Instant during setup, `UseTimelock` after. A zero `live_until_ledger` cancels instantly | `test::governance::grants_and_manager_revokes_wait_for_the_timelock`, `test::governance::an_admin_hand_over_waits_but_cancelling_one_does_not` |
 | `revoke_role` | Admin | `treasury`, `guardian`: instant. `manager`: instant during setup, `UseTimelock` after | `test::governance::grants_and_manager_revokes_wait_for_the_timelock` (instant case: `test::governance::revoking_treasury_or_guardian_stays_instant`; caller check: `test::governance::only_the_admin_revokes_a_role`) |
 | `set_role_admin` | — | Always refused (`UseTimelock`) | `test::governance::no_role_ever_gets_a_role_admin` |
@@ -173,3 +174,21 @@ Tests: [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifie
 |---|---|---|---|
 | `allow` | `#[only_admin]` (the compliance key), `caller.require_auth()` | None | `test::only_admin_can_allow` |
 | `verify_identity` | Open check (Internal hook) | `is_allowed(account) == true` | `test::verify_identity_checks_allowlist` |
+
+### 5.5 Compliance (`contracts/compliance`)
+
+A testnet-only stub. Its admin is governance. Module changes, token bindings and admin hand-overs are instant during setup and wait for the vault's timelock after `finish_setup`. Each admin call checks the stored admin's signature; its `operator` argument is not checked.
+
+Tests: [`contracts/compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs).
+
+| Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
+|---|---|---|---|
+| `bind_vault` | `#[only_admin]` | During setup, once; the vault must answer `timelock_clock` | `test::changes::a_second_vault_or_a_late_vault_is_refused`, `test::changes::an_address_that_reports_no_clock_cannot_be_bound`, `test::changes::only_the_admin_binds_and_finishes` |
+| `finish_setup` | `#[only_admin]` | Needs a bound vault and no pending admin hand-over; once | `test::changes::setup_cannot_finish_without_a_vault`, `test::changes::setup_cannot_finish_while_a_hand_over_is_pending`, `test::changes::a_second_vault_or_a_late_vault_is_refused` |
+| `bind_token`, `unbind_token`, `add_module_to`, `remove_module_from` | `#[only_admin]` | Instant during setup; `UseTimelock` after | `test::changes::after_setup_rule_changes_wait_for_the_timelock` |
+| `propose_change` | `#[only_admin]` | After setup; vault not winding down | `test::changes::proposals_wait_until_setup_is_finished`, `test::changes::only_the_admin_proposes_cancels_and_applies` |
+| `cancel_change` | `#[only_admin]` | The change must be pending | `test::changes::a_cancelled_change_never_lands` |
+| `apply_change` | `#[only_admin]` | Delay run on the vault's clock, vault unpaused and not winding down, delay `>=` the vault's notice | `test::changes::a_proposed_binding_lands_after_the_delay`, `test::changes::nothing_lands_while_the_vault_is_paused_or_winding_down`, `test::changes::a_vault_pause_pushes_the_change_back`, `test::changes::a_change_shorter_than_a_raised_notice_never_lands` |
+| `pending_changes` | Open view | None | None (view) |
+| `transfer_admin_role` | Admin | Instant during setup; `UseTimelock` after. A zero `live_until_ledger` cancels at once | `test::changes::after_setup_the_admin_hands_over_through_the_timelock`, `test::changes::a_cancelled_hand_over_no_longer_holds_setup_open`, `test::changes::a_hand_over_after_setup_is_cancelled_at_once` |
+| `accept_admin_transfer` | The pending admin's auth | A hand-over is pending; an applied `Admin` change stays open for seven days of ledgers | `test::changes::setup_cannot_finish_while_a_hand_over_is_pending`, `test::changes::the_hand_over_offer_lasts_seven_days_of_ledgers` |
