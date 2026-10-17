@@ -19,8 +19,7 @@ use stellar_tokens::{
 /// Longest order reference a legal transfer accepts, in bytes.
 pub const MAX_REFERENCE_LEN: u32 = 128;
 
-/// The admin co-signs the call, and must be a different account from the
-/// compliance authority that asks for it.
+/// The co-signing admin must be a different account from the operator.
 fn require_admin_co_sign(e: &Env, operator: &Address) {
     let admin = access_control::enforce_admin_auth(e);
     if admin == *operator {
