@@ -1,7 +1,7 @@
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
-    testutils::{Address as _, Events as _, Ledger as _},
-    vec, Address, Env, Event as _,
+    testutils::{Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke},
+    vec, Address, Env, Event as _, IntoVal, Val, Vec,
 };
 use stellar_access::role_transfer::RoleTransferError;
 use stellar_tokens::rwa::compliance::ComplianceHook;
@@ -67,6 +67,20 @@ impl Fixture<'_> {
         let id = self.propose(change);
         self.e.ledger().with_mut(|l| l.timestamp += MIN_DELAY);
         self.rules.apply_change(&id, &self.admin);
+    }
+
+    /// Signs the next call to the compliance contract as `who` and nothing
+    /// else, so the call's own authorisation check is what refuses it.
+    fn sign_only_as(&self, who: &Address, fn_name: &str, args: Vec<Val>) {
+        self.e.mock_auths(&[MockAuth {
+            address: who,
+            invoke: &MockAuthInvoke {
+                contract: &self.rules.address,
+                fn_name,
+                args,
+                sub_invokes: &[],
+            },
+        }]);
     }
 
     /// Lets the instance decay past its extend threshold, then checks the call
@@ -192,12 +206,17 @@ fn the_contract_answers_the_view_the_vault_reads() {
 #[test]
 fn only_the_admin_binds_and_finishes() {
     let f = unbound();
-    let stranger = Address::generate(&f.e);
     f.e.set_auths(&[]);
-
-    assert!(f.rules.try_bind_vault(&f.clock.address, &stranger).is_err());
-    assert!(f.rules.try_finish_setup(&stranger).is_err());
+    assert!(f
+        .rules
+        .try_bind_vault(&f.clock.address, &Address::generate(&f.e))
+        .is_err());
     assert_eq!(f.rules.vault(), None);
+
+    let f = bound();
+    f.e.set_auths(&[]);
+    assert!(f.rules.try_finish_setup(&Address::generate(&f.e)).is_err());
+    assert!(f.rules.setup_open());
 }
 
 #[test]
@@ -456,6 +475,53 @@ fn setup_cannot_finish_while_a_hand_over_is_pending() {
     assert_eq!(f.rules.get_admin(), Some(next.clone()));
     f.rules.finish_setup(&next);
     assert!(!f.rules.setup_open());
+}
+
+#[test]
+fn only_the_admin_offers_or_cancels_a_hand_over() {
+    let f = bound();
+    let next = Address::generate(&f.e);
+    let stranger = Address::generate(&f.e);
+    let live_until = f.e.ledger().sequence() + 100;
+
+    f.sign_only_as(
+        &stranger,
+        "transfer_admin_role",
+        (next.clone(), live_until).into_val(&f.e),
+    );
+    assert!(f.rules.try_transfer_admin_role(&next, &live_until).is_err());
+    f.e.mock_all_auths();
+    assert!(f.rules.try_accept_admin_transfer().is_err());
+
+    f.rules.transfer_admin_role(&next, &live_until);
+    f.sign_only_as(
+        &stranger,
+        "transfer_admin_role",
+        (next.clone(), 0_u32).into_val(&f.e),
+    );
+    assert!(f.rules.try_transfer_admin_role(&next, &0).is_err());
+
+    f.e.mock_all_auths();
+    f.rules.accept_admin_transfer();
+    assert_eq!(f.rules.get_admin(), Some(next));
+}
+
+#[test]
+fn only_the_nominee_accepts_a_hand_over() {
+    let f = bound();
+    let next = Address::generate(&f.e);
+    f.rules
+        .transfer_admin_role(&next, &(f.e.ledger().sequence() + 100));
+
+    for other in [Address::generate(&f.e), f.admin.clone()] {
+        f.sign_only_as(&other, "accept_admin_transfer", Vec::new(&f.e));
+        assert!(f.rules.try_accept_admin_transfer().is_err());
+    }
+    assert_eq!(f.rules.get_admin(), Some(f.admin.clone()));
+
+    f.sign_only_as(&next, "accept_admin_transfer", Vec::new(&f.e));
+    f.rules.accept_admin_transfer();
+    assert_eq!(f.rules.get_admin(), Some(next));
 }
 
 #[test]

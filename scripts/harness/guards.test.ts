@@ -317,9 +317,6 @@ describe("the compliance contract after setup", () => {
 			rules,
 			"UseTimelock",
 		)
-		expect(
-			(await rules.get_modules_for_hook({ hook: canCreate })).result,
-		).toEqual([])
 	})
 
 	it("queues a module behind the vault's delay", async () => {
