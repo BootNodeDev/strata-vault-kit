@@ -133,6 +133,21 @@ npm run test:happy-path -w scripts/harness
 npm run test:guards -w scripts/harness
 ```
 
+### Keeping a deployment alive
+
+Every contract extends its own storage when it is called, but a deployment
+nobody calls archives after 30 days. Restore and extend all of it with:
+
+```sh
+STELLAR_ACCOUNT=<identity or secret> npm run extend -w scripts/harness
+```
+
+It reads the testnet contracts from `environments.toml`, restores any
+archived instance or Wasm, and extends each by 30 days. Any funded account
+pays, since extending needs no authority. Use `--env <name>` for another
+environment, or `--config <record>` for a deployment record. The
+[TTL policy](./docs/kit-spec.md#5-storage-lifetime-ttl-policy) says what each
+contract extends on its own.
 
 ## Reference base
 

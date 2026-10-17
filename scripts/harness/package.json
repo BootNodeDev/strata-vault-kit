@@ -6,6 +6,7 @@
   "description": "Deploys the vault set to a network and runs integration tests.",
   "scripts": {
     "deploy": "tsx deploy.ts",
+    "extend": "tsx extend.ts",
     "build:clients": "tsx build-clients.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",

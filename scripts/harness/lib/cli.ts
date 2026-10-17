@@ -36,14 +36,17 @@ async function exec(
 	}
 }
 
-async function stellar(
+export async function stellar(
 	args: readonly string[],
 	options: Record<string, unknown> = {},
 ): Promise<string> {
 	return exec("stellar", args, options)
 }
 
-function rpcArgs(net: Network): string[] {
+/** The two settings every network command needs. */
+export type Rpc = Pick<Network, "rpcUrl" | "passphrase">
+
+export function rpcArgs(net: Rpc): string[] {
 	return ["--rpc-url", net.rpcUrl, "--network-passphrase", net.passphrase]
 }
 
