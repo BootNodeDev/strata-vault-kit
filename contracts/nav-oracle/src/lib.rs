@@ -2,6 +2,7 @@
 
 mod state;
 
+use bindings::OracleFeed;
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env, Symbol,
     Vec,
@@ -142,16 +143,8 @@ impl NavOracleContract {
         state::set_nav_paused(e, false);
     }
 
-    pub fn nav_per_share(e: &Env) -> i128 {
-        Self::latest(e).nav_per_share
-    }
-
     pub fn latest(e: &Env) -> NavReport {
         get_latest(e).unwrap_or_else(|| panic_with_error!(e, OracleError::NoRecord))
-    }
-
-    pub fn state(e: &Env) -> OracleState {
-        compute_state(e)
     }
 
     pub fn is_stale(e: &Env) -> bool {
@@ -159,12 +152,6 @@ impl NavOracleContract {
             None => true,
             Some(r) => !trustworthy(e, &r),
         }
-    }
-
-    /// Ledger time the standing report was accepted. Not the valuation date
-    /// the reporter had in mind: the moment the contract took it.
-    pub fn attested_at(e: &Env) -> u64 {
-        Self::latest(e).timestamp
     }
 
     pub fn ensure_consumable(e: &Env) {
@@ -266,6 +253,27 @@ impl NavOracleContract {
             max_answer: config.max_answer,
         }
         .publish(e);
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl OracleFeed for NavOracleContract {
+    fn state(e: &Env) -> OracleState {
+        compute_state(e)
+    }
+
+    fn nav_per_share(e: &Env) -> i128 {
+        Self::latest(e).nav_per_share
+    }
+
+    /// Not the valuation date the reporter had in mind: the moment the
+    /// contract took the report.
+    fn attested_at(e: &Env) -> u64 {
+        Self::latest(e).timestamp
+    }
+
+    fn freshness_duration(e: &Env) -> u64 {
+        get_config(e).freshness_duration
     }
 }
 

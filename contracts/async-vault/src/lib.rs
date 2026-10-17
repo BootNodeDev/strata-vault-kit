@@ -15,12 +15,12 @@ mod treasury;
 mod upgrade;
 mod wind_down;
 
-use bindings::ShareClient;
 use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
 use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
+use stellar_tokens::fungible::FungibleTokenClient;
 use timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
 use keys::DataKey;
@@ -159,7 +159,7 @@ impl AsyncVault {
 
     pub fn total_economic_supply(e: &Env) -> i128 {
         let share_token = state::get_addr(e, &DataKey::ShareToken);
-        let client = ShareClient::new(e, &share_token);
+        let client = FungibleTokenClient::new(e, &share_token);
         let total_supply = client.total_supply();
         let vault_escrow = client.balance(&e.current_contract_address());
         let circulating = total_supply.saturating_sub(vault_escrow);

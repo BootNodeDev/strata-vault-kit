@@ -288,3 +288,22 @@ one instance at a time.
 repository are testnet stubs. A production compliance module or identity
 registry must extend its own instance and entries the same way, or the share
 token stops working when they archive.
+
+---
+
+## 6. Contract Interfaces for Adopters
+
+The vault reaches the other contracts only through these traits. An adopter
+who replaces one implements the trait, and the compiler checks the
+implementation against what the vault calls.
+
+| Interface | Defined in | Implemented here by | What the vault calls |
+|---|---|---|---|
+| `OracleFeed` | `crates/bindings` | `nav-oracle` | `state`, `nav_per_share`, `attested_at`, `freshness_duration` |
+| `FungibleToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `transfer`, `balance`, `total_supply` |
+| `RWAToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `mint`, `burn`, `forced_transfer` |
+| `IdentityVerifier` | OpenZeppelin `stellar-tokens` 0.7.2 | `identity-verifier` (testnet stub) | `verify_identity`, called by the share token |
+
+A feed that implements `OracleFeed` can replace `nav-oracle`; it must report
+`Stale` once its report outlives `freshness_duration`, and `attested_at` must
+be the ledger time the report was accepted, not a time the reporter supplies.
