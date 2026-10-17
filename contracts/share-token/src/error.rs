@@ -7,8 +7,9 @@ use soroban_sdk::contracterror;
 #[repr(u32)]
 pub enum ShareTokenError {
     /// The token must always have an admin: `pause`, `unpause` and role
-    /// management need it. The admin hands over through `transfer_admin_role`
-    /// and `accept_admin_transfer` instead.
+    /// management need it. Hand it over instead: propose and apply an `Admin`
+    /// change (`transfer_admin_role` during setup), then the nominee calls
+    /// `accept_admin_transfer`.
     AdminRequired = 7000,
     /// No pending change has this id.
     ChangeNotFound = 7001,
@@ -18,7 +19,8 @@ pub enum ShareTokenError {
     TooManyPendingChanges = 7003,
     /// Changes are instant until setup finishes; there is nothing to propose yet.
     SetupOpen = 7004,
-    /// Setup has finished, so this change waits for the timelock. Propose it.
+    /// A direct call cannot make this change. After setup it goes through
+    /// `propose_change`; setting a role admin is never allowed.
     UseTimelock = 7005,
     /// Only possible while setup is open, and only once.
     SetupClosed = 7006,

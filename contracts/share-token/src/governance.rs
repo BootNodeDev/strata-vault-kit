@@ -112,10 +112,11 @@ pub(crate) fn propose(e: &Env, change: TokenChange) -> u32 {
     let id = queue::propose::<ShareToken, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
         queue::pending::<TokenChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));
+    // No pause has run since the proposal, so the eta needs no second clock read.
     ChangeProposed {
         id,
         change,
-        eta: schedule.eta(&vault_clock(e)),
+        eta: schedule.proposed_at.saturating_add(schedule.delay),
     }
     .publish(e);
     id

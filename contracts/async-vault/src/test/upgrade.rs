@@ -452,7 +452,10 @@ mod with_wasm {
         assert_eq!(probe.schema_version(), 1);
         probe.migrate(&f.admin);
         assert_eq!(probe.schema_version(), 2);
-        assert!(probe.try_migrate(&f.admin).is_err());
+        assert_eq!(
+            probe.try_migrate(&f.admin),
+            Err(Ok(token_probe::ProbeError::AlreadyMigrated.into()))
+        );
 
         assert_eq!(f.shares(&holder), 60);
         assert_eq!(f.shares(&f.vault.address), 40);

@@ -337,5 +337,5 @@ be the ledger time the report was accepted, not a time the reporter supplies.
 Two more traits connect the share token to the vault's timelock. The vault
 implements `ClockSource` (`crates/timelock`), and the share token reads its
 `timelock_clock` to time its own changes. The share token implements
-`VaultBound` (`crates/bindings`): `vault` names the vault it is bound to, and
+`VaultBinding` (`crates/bindings`): `vault` names the vault it is bound to, and
 `setup_open` says whether its admin changes are still instant.

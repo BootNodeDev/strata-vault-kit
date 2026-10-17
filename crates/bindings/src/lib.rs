@@ -24,7 +24,7 @@ pub trait OracleFeed {
 
 /// What a contract that runs on a vault's timelock reports to that vault.
 #[contracttrait]
-pub trait VaultBound {
+pub trait VaultBinding {
     /// The vault whose clock this contract reads, once bound.
     fn vault(e: &Env) -> Option<Address>;
     /// Whether this contract's admin changes are still instant.

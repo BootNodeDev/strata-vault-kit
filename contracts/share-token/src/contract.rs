@@ -2,7 +2,7 @@ use crate::error::ShareTokenError;
 use crate::governance::{self, TokenChange, TokenPendingChange};
 use crate::roles::COMPLIANCE_ROLE;
 
-use bindings::VaultBound;
+use bindings::VaultBinding;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, MuxedAddress, String, Symbol, Vec,
 };
@@ -94,7 +94,7 @@ impl ShareToken {
 }
 
 #[contractimpl(contracttrait)]
-impl VaultBound for ShareToken {
+impl VaultBinding for ShareToken {
     fn vault(e: &Env) -> Option<Address> {
         timelock::setup::source(e)
     }
@@ -181,8 +181,9 @@ impl AccessControl for ShareToken {
     }
 
     /// Refused. A token without an admin could never be unpaused, never rotate
-    /// the manager role and never replace the vault that holds it.
-    /// `transfer_admin_role` and `accept_admin_transfer` are the way out.
+    /// the manager role and never replace the vault that holds it. The way out
+    /// is a hand-over: propose and apply an `Admin` change (`transfer_admin_role`
+    /// during setup), then the nominee calls `accept_admin_transfer`.
     fn renounce_admin(e: &Env) {
         panic_with_error!(e, ShareTokenError::AdminRequired);
     }

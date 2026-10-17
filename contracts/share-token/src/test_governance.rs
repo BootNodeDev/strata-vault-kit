@@ -5,6 +5,7 @@ use soroban_sdk::{
     },
     Address, BytesN, Env, Event as _, IntoVal, String, Symbol,
 };
+use stellar_access::role_transfer::RoleTransferError;
 use storage::INSTANCE_EXTEND_AMOUNT;
 use timelock::{Clock, DAY_DURATION, MIN_DELAY};
 
@@ -15,7 +16,7 @@ use crate::{
 
 const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
 
-/// Plays the vault: reports whatever clock a test sets.
+/// Plays the vault: reports whatever clock a test sets, and counts the reads.
 #[contract]
 struct ClockStub;
 
@@ -24,11 +25,20 @@ impl ClockStub {
     pub fn set(e: Env, clock: Clock) {
         e.storage().instance().set(&symbol_short!("clock"), &clock);
     }
+
+    pub fn reads(e: Env) -> u32 {
+        e.storage()
+            .instance()
+            .get(&symbol_short!("reads"))
+            .unwrap_or(0)
+    }
 }
 
 #[contractimpl(contracttrait)]
 impl timelock::ClockSource for ClockStub {
     fn timelock_clock(e: &Env) -> Clock {
+        let reads = Self::reads(e.clone()) + 1;
+        e.storage().instance().set(&symbol_short!("reads"), &reads);
         e.storage().instance().get(&symbol_short!("clock")).unwrap()
     }
 }
@@ -62,6 +72,14 @@ impl Fixture<'_> {
 
     fn propose(&self, change: TokenChange) -> u32 {
         self.token.propose_change(&change, &self.admin)
+    }
+
+    /// Lands an `Admin` change for `next` and returns the ledger of the offer.
+    fn offer_admin(&self, next: &Address) -> u32 {
+        let id = self.propose(TokenChange::Admin(next.clone()));
+        self.advance(MIN_DELAY);
+        self.token.apply_change(&id, &self.admin);
+        self.e.ledger().sequence()
     }
 
     fn instance_ttl(&self) -> u32 {
@@ -186,13 +204,13 @@ fn only_the_admin_binds_and_finishes() {
     assert!(f.token.setup_open());
 }
 
-fn implements_the_vault_view<T: bindings::VaultBound>() {}
+fn implements_the_vault_view<T: bindings::VaultBinding>() {}
 
 #[test]
 fn the_token_answers_the_view_the_vault_reads() {
     implements_the_vault_view::<ShareToken>();
     let f = setup();
-    let view = bindings::VaultBoundClient::new(&f.e, &f.token.address);
+    let view = bindings::VaultBindingClient::new(&f.e, &f.token.address);
     assert_eq!(view.vault(), None);
     assert!(view.setup_open());
 
@@ -303,6 +321,11 @@ fn an_expired_hand_over_does_not_hold_setup_open() {
     f.token.finish_setup(&f.admin);
 
     assert!(!f.token.setup_open());
+    assert_eq!(
+        f.token.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
+    assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
 }
 
 #[test]
@@ -514,18 +537,33 @@ fn an_applied_admin_change_starts_a_hand_over_the_next_admin_accepts() {
 }
 
 #[test]
-fn the_hand_over_offer_lasts_seven_days_of_ledgers() {
+fn the_hand_over_offer_is_open_on_its_last_ledger() {
     let f = setup();
     f.finish();
     let next = Address::generate(&f.e);
-    let id = f.propose(TokenChange::Admin(next));
-    f.advance(MIN_DELAY);
-    f.token.apply_change(&id, &f.admin);
+    let offered_at = f.offer_admin(&next);
 
     f.e.ledger()
-        .with_mut(|l| l.sequence_number += ADMIN_ACCEPT_LEDGERS + 1);
+        .with_mut(|l| l.sequence_number = offered_at + ADMIN_ACCEPT_LEDGERS);
+    f.token.accept_admin_transfer();
 
-    assert!(f.token.try_accept_admin_transfer().is_err());
+    assert_eq!(f.token.get_admin(), Some(next));
+}
+
+#[test]
+fn the_hand_over_offer_lasts_seven_days_of_ledgers() {
+    let f = setup();
+    f.finish();
+    let offered_at = f.offer_admin(&Address::generate(&f.e));
+
+    f.e.ledger()
+        .with_mut(|l| l.sequence_number = offered_at + ADMIN_ACCEPT_LEDGERS + 1);
+
+    assert_eq!(
+        f.token.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
+    assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
 }
 
 #[test]
@@ -570,6 +608,34 @@ fn proposing_and_applying_publish_the_change() {
         events.events().last(),
         Some(&ChangeApplied { id, change }.to_xdr(&f.e, &f.token.address))
     );
+}
+
+#[test]
+fn proposing_reads_the_vault_clock_once() {
+    let f = setup();
+    f.finish();
+    let before = f.vault.reads();
+
+    f.propose(TokenChange::Compliance(Address::generate(&f.e)));
+
+    assert_eq!(f.vault.reads(), before + 1);
+}
+
+#[test]
+fn a_proposal_after_a_past_pause_waits_one_delay_from_now() {
+    let f = setup();
+    f.finish();
+    f.clock(|c| c.paused_secs = 3 * DAY_DURATION);
+    let change = TokenChange::Compliance(Address::generate(&f.e));
+    let eta = f.e.ledger().timestamp() + MIN_DELAY;
+
+    let id = f.propose(change.clone());
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.token.address),
+        [ChangeProposed { id, change, eta }.to_xdr(&f.e, &f.token.address)]
+    );
+    assert_eq!(f.token.pending_changes().get(0).unwrap().eta, eta);
 }
 
 #[test]
