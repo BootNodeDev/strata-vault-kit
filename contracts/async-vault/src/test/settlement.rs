@@ -191,11 +191,7 @@ fn a_refused_mint_keeps_a_priced_deposit_epoch_open() {
     f.fulfill_epoch(wad(2));
 
     let module = f.e.register(super::compliance::RefusesEveryMint, ());
-    ComplianceClient::new(&f.e, &f.share.compliance()).add_module_to(
-        &ComplianceHook::CanCreate,
-        &module,
-        &f.admin,
-    );
+    f.add_compliance_module(ComplianceHook::CanCreate, &module);
 
     assert!(f.vault.try_claim_deposit(&investor, &epoch).is_err());
 

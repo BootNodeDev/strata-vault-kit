@@ -101,11 +101,7 @@ fn a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim() {
     f.fulfill_epoch(wad(2));
 
     let module = f.e.register(RefusesEveryMint, ());
-    ComplianceClient::new(&f.e, &f.share.compliance()).add_module_to(
-        &ComplianceHook::CanCreate,
-        &module,
-        &f.admin,
-    );
+    f.add_compliance_module(ComplianceHook::CanCreate, &module);
 
     assert_eq!(
         f.vault.try_claim_deposit(&investor, &epoch).err(),
