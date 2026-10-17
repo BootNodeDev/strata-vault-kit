@@ -13,6 +13,7 @@ mod lock_policy;
 mod multi_epoch;
 mod notice;
 mod oracle_pricing;
+mod oracle_swap;
 mod pricing;
 mod redeem;
 mod settlement;
