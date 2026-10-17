@@ -1214,6 +1214,7 @@ dependencies = [
  "bindings",
  "soroban-sdk",
  "stellar-access",
+ "stellar-contract-utils",
  "stellar-macros",
  "storage",
  "timelock",
