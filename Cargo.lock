@@ -1215,6 +1215,7 @@ dependencies = [
  "stellar-access",
  "stellar-macros",
  "storage",
+ "timelock",
 ]
 
 [[package]]
