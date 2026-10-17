@@ -27,10 +27,14 @@ pub(crate) fn request(e: &Env, from: &Address, shares: i128) -> u64 {
             panic_with_error!(e, lock_policy::refused_with(standing))
         }
     }
-    // The escrow transfer releases a partial freeze, so frozen shares are
-    // kept out of it here.
+    // A request within the balance but short of the free shares needs frozen
+    // ones; beyond the balance entirely, the token's own check applies instead.
     if shares > lock_policy::free_shares(e, from) {
-        panic_with_error!(e, VaultError::Frozen);
+        let held =
+            FungibleTokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).balance(from);
+        if shares <= held {
+            panic_with_error!(e, VaultError::Frozen);
+        }
     }
 
     let epoch_id = state::current_epoch(e);

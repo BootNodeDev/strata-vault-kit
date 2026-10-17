@@ -167,9 +167,8 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
    and never identity-gated. A delisted, non-frozen investor exits through the
    exit-only cash path. A frozen investor's claims are held, not paid, until
    the freeze is lifted ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1).
-   A legal-order transfer moves only shares in the investor's wallet, never
-   value the vault holds. Outside this guarantee, disclosed as trust
-   assumptions: deposit-asset issuer controls and reserve liquidity.
+   Outside this guarantee, disclosed as trust assumptions: deposit-asset
+   issuer controls and reserve liquidity.
 
 6. **Split accounting, with priced and payable as separate states.** The vault
    exposes committed (priced redemption liabilities), cancellable escrow
@@ -315,16 +314,16 @@ batch boundary, though not the price it receives.
 
 - Request: moves the deposit asset into escrow; at most one active request per controller. The vault first asks the share token whether the address is frozen and asks the token's identity verifier, and refuses a frozen address or one that could not receive the shares, before any cash moves; the token checks again when it mints at claim time.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set at the epoch's price, and the economic supply liability is recorded. To avoid unbounded loops that exceed Soroban transaction resource limits, physical share minting occurs lazily when each investor executes `claim_deposit`.
-- Cancellation: atomic, and returns the escrowed asset in full. Open while the epoch is open. Once sealed, a readable price closes it, even while the notice still runs: an investor who can see the price cannot decline it. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — it opens again, so escrow is never stuck behind a stalled feed. The epoch is then priced at the latest valid report at fulfil time. Cancellation also remains open during an active wind-down, allowing pending depositors to recover their escrowed assets when pricing is closed.
+- Cancellation: atomic, and returns the escrowed asset in full. Open while the epoch is open. Once sealed, a readable price closes it, even while the notice still runs: an investor who can see the price cannot decline it. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — it opens again, so escrow is never stuck behind a stalled feed. The epoch is then priced at the latest valid report at fulfil time. Cancellation also remains open during an active wind-down, allowing pending depositors to recover their escrowed assets when pricing is closed. A frozen depositor's cancellation is held until the freeze is lifted, in a wind-down too.
 - Share claim: verifies the receiver and delivers the shares via `mint`. A receiver off the allowlist gets no shares: they join the holder's redemption in the open epoch and are paid in cash at that epoch's price; in a wind-down they join the holder's wind-down entitlement. A frozen receiver is held until the freeze is lifted. No nominal refund exists after pricing.
 
 #### Redemption
 
-- Request: moves shares into escrow; at most one active request per controller per epoch.
+- Request: moves shares into escrow; at most one active request per controller per epoch. A frozen holder's request is held until the freeze is lifted; a partial freeze caps it to the free shares.
 - Cancellation: atomic, and returns the escrowed shares under the same rules as subscription cancellation; stays open during an active wind-down, where the escrow joins the holder's wind-down entitlement instead of coming back as shares. A frozen holder's cancellation is held until the freeze is lifted.
 - Pricing: the fixed cash liability enters committed at the epoch's price. Escrowed shares remain in the vault contract and are burned lazily as each claimant executes `claim_redeem`, preserving constant-bounded resource execution per transaction. Priced claims are never re-priced.
 - Coverage: a priced claim is payable when the liquid reserve covers that claim's own amount, in any order. An earlier unpaid claim never blocks a later one that is already covered. The gap between committed and liquid reserve is the uncovered amount treasury must top up.
-- Cash claim: pays the fixed amount; it does not depend on identity. A delisted, non-frozen investor uses the exit-only cash path and cannot cancel back to shares.
+- Cash claim: pays the fixed amount; it does not depend on identity. A delisted, non-frozen investor uses the exit-only cash path and cannot cancel back to shares. A frozen investor's claim is held until the freeze is lifted.
 
 ```mermaid
 sequenceDiagram

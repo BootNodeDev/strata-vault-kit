@@ -801,6 +801,17 @@ fn a_frozen_holders_escrowed_exit_waits_through_a_wind_down() {
 }
 
 #[test]
+fn wind_down_claimable_is_zero_for_a_frozen_holder() {
+    let f = setup();
+    let holder = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    f.share.set_address_frozen(&holder, &true, &f.compliance);
+
+    assert_eq!(f.vault.wind_down_claimable(&holder), 0);
+}
+
+#[test]
 fn a_partial_freeze_keeps_frozen_shares_out_of_a_wind_down_claim() {
     let f = setup();
     let holder = f.holder(500);

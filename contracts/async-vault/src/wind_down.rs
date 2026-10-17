@@ -8,7 +8,7 @@ use crate::event::{
     WindDownProposed, WindDownRoundFinalized,
 };
 use crate::keys::DataKey;
-use crate::lock_policy::{self, Decision, Exit};
+use crate::lock_policy::{self, Decision, Exit, Standing};
 use crate::state;
 use crate::treasury;
 
@@ -252,10 +252,13 @@ pub(crate) fn position(e: &Env, holder: &Address) -> WindDownPosition {
     )
 }
 
-/// What this holder would be paid if they claimed now, surrendering whatever
-/// they hold.
+/// What this holder would be paid if they claimed now, surrendering the free
+/// shares they hold. Zero for a fully frozen holder, whom `claim` refuses.
 pub(crate) fn claimable(e: &Env, holder: &Address) -> i128 {
     if info(e).map(|wd| wd.round).unwrap_or(0) == 0 {
+        return 0;
+    }
+    if lock_policy::standing(e, holder) == Standing::Frozen {
         return 0;
     }
 
@@ -288,7 +291,7 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
     let share_token = state::get_addr(e, &DataKey::ShareToken);
 
     // A partial freeze keeps its shares out of the surrender; they earn every
-    // round once the freeze is lifted and the holder claims again.
+    // round regardless, and are paid once unfrozen and claimed again.
     let surrendered = lock_policy::free_shares(e, holder);
     let mut p = position(e, holder);
     p.entitlement = p

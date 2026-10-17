@@ -169,7 +169,7 @@ fn a_delisted_holder_may_request_a_redemption() {
 }
 
 #[test]
-fn a_frozen_holder_may_not_request_a_redemption() {
+fn a_frozen_holders_redemption_request_is_held() {
     assert_eq!(
         in_and_out_of_a_wind_down(Exit::RequestRedeem, Standing::Frozen),
         [Decision::Hold; 2]
