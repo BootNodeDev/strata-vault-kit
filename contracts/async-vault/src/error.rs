@@ -115,12 +115,13 @@ pub enum VaultError {
     /// As many changes as the timelock holds already wait. Apply or cancel one
     /// first.
     TooManyPendingChanges = 6063,
-    /// The depositor fails the share token's identity check, so the vault
-    /// could never deliver the shares. Refused before any cash moves.
+    /// The holder fails the share token's identity check, so the vault takes no
+    /// deposit request from them and returns no escrowed shares to them.
     NotAllowlisted = 6068,
     /// A running total would go below zero, which means the vault's books
     /// disagree with themselves. Fails loudly instead of clamping to zero.
     AccountingMismatch = 6070,
-    /// The holder is frozen: nothing moves for them until the freeze is lifted.
+    /// The holder is frozen: a deposit request is refused, and a share claim or
+    /// a redemption cancel waits until the freeze is lifted.
     Frozen = 6071,
 }

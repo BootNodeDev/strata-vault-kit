@@ -158,9 +158,8 @@ pub(crate) fn queue_escrowed(e: &Env, controller: &Address, shares: i128) -> u64
 }
 
 /// Moves escrowed shares back to the controller and clears the request. The
-/// checked transfer is deliberate: the share token decides whether this holder
-/// may receive a regulated share, so a frozen or de-listed controller is refused
-/// here and exits through the cash claim instead.
+/// transfer is the token's checked one: a cancel asks the lock policy first, but
+/// on a zero-asset claim the token alone refuses a frozen or delisted controller.
 fn return_shares(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));

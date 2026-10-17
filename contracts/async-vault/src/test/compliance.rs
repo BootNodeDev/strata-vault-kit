@@ -243,6 +243,27 @@ fn a_frozen_investor_is_not_minted_until_unfrozen() {
 
     f.share.set_address_frozen(&investor, &false, &f.compliance);
     assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
+    assert_eq!(f.shares(&investor), 200);
+}
+
+#[test]
+fn a_frozen_investors_zero_share_refund_is_held() {
+    let f = setup();
+    let investor = f.investor(10);
+    let epoch = f.vault.request_deposit(&investor, &1);
+    f.fulfill_epoch(wad(2));
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
+
+    refused(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        VaultError::Frozen,
+    );
+    assert_eq!(f.balance(&investor), 9);
+    assert!(f.vault.get_deposit_request(&epoch, &investor).is_some());
+
+    f.share.set_address_frozen(&investor, &false, &f.compliance);
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+    assert_eq!(f.balance(&investor), 10);
 }
 
 #[test]

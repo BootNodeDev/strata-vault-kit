@@ -344,6 +344,9 @@ impl AsyncVault {
         deposit::request(e, &from, amount)
     }
 
+    /// Returns the shares minted to the caller. Zero means none were: a deposit
+    /// too small for one share was refunded, or the caller is off the allowlist
+    /// and the shares joined an exit instead (`DepositConvertedToExit`).
     pub fn claim_deposit(e: &Env, caller: Address, epoch_id: u64) -> i128 {
         deposit::claim(e, &caller, epoch_id)
     }

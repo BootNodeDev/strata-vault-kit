@@ -5,7 +5,7 @@ use crate::epoch;
 use crate::error::VaultError;
 use crate::event::{DepositCancelled, DepositClaimed, DepositConvertedToExit, DepositRequested};
 use crate::keys::DataKey;
-use crate::lock_policy::{self, Decision, Exit};
+use crate::lock_policy::{self, Decision, Exit, Standing};
 use crate::pricing::{Pricing, PricingScheme};
 use crate::redeem;
 use crate::settlement;
@@ -104,8 +104,11 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
 
     let standing = lock_policy::standing(e, caller);
     let decision = lock_policy::decide(Exit::ClaimDeposit, standing, wind_down::is_active(e));
-    if matches!(decision, Decision::Refuse | Decision::Hold) {
-        panic_with_error!(e, lock_policy::refused_with(standing));
+    match decision {
+        Decision::Proceed | Decision::ConvertToExit | Decision::Surrender => {}
+        Decision::Refuse | Decision::Hold => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
     }
 
     let shares = Pricing::deposit_shares(e, request.amount, epoch.share_price)
@@ -128,7 +131,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     state::set_pending_mint_shares(e, state::reduce(e, state::pending_mint_shares(e), shares));
 
     if decision != Decision::Proceed {
-        convert_to_exit(e, caller, epoch_id, shares, decision);
+        convert_to_exit(e, caller, epoch_id, shares, standing, decision);
         return 0;
     }
 
@@ -147,16 +150,29 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     shares
 }
 
-/// The token refuses this holder shares, so they exit in cash: next price, or the wind-down payout.
-fn convert_to_exit(e: &Env, holder: &Address, epoch_id: u64, shares: i128, decision: Decision) {
-    let into_epoch = if decision == Decision::Surrender {
-        wind_down::credit(e, holder, shares);
-        0
-    } else {
-        let vault = e.current_contract_address();
-        let share_token = state::get_addr(e, &DataKey::ShareToken);
-        RWATokenClient::new(e, &share_token).mint(&vault, &shares, &vault);
-        redeem::queue_escrowed(e, holder, shares)
+/// The holder is off the allowlist, so the shares exit in cash: next price, or the wind-down.
+fn convert_to_exit(
+    e: &Env,
+    holder: &Address,
+    epoch_id: u64,
+    shares: i128,
+    standing: Standing,
+    decision: Decision,
+) {
+    let into_epoch = match decision {
+        Decision::ConvertToExit => {
+            let vault = e.current_contract_address();
+            let share_token = state::get_addr(e, &DataKey::ShareToken);
+            RWATokenClient::new(e, &share_token).mint(&vault, &shares, &vault);
+            redeem::queue_escrowed(e, holder, shares)
+        }
+        Decision::Surrender => {
+            wind_down::credit(e, holder, shares);
+            0
+        }
+        Decision::Proceed | Decision::Refuse | Decision::Hold => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
     };
 
     DepositConvertedToExit {

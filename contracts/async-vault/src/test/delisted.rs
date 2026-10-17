@@ -111,6 +111,24 @@ fn in_a_wind_down_the_shares_are_credited_before_the_first_round() {
     f.vault.activate_wind_down();
 
     assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.vault.address),
+        [
+            DepositConvertedToExit {
+                controller: investor.clone(),
+                epoch,
+                into_epoch: 0,
+                shares: 200,
+            }
+            .to_xdr(&f.e, &f.vault.address),
+            EpochReconciled {
+                epoch,
+                share_dust: 0,
+                cash_dust: 0,
+            }
+            .to_xdr(&f.e, &f.vault.address),
+        ]
+    );
     assert_eq!(f.vault.finalize_wind_down_round(), 400);
 
     assert_eq!(f.vault.claim_wind_down(&investor), 400);
