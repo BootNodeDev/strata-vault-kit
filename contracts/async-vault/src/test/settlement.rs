@@ -179,9 +179,10 @@ fn a_request_that_cannot_settle_keeps_its_epoch_open() {
 }
 
 /// The other case that can never settle: a compliance module refuses a
-/// priced deposit's mint even for an allowlisted investor. The epoch stays
-/// open and its remainder is never reconciled, the same as a refused
-/// redemption.
+/// priced deposit's mint even for an allowlisted investor. Unlike a refused
+/// redemption, this is not rounding dust: the mint reverts, so the whole
+/// entitlement this deposit promised — all 200 shares, for 400 assets at a
+/// price of 2 — stays in `pending_mint_shares` until the mint is allowed.
 #[test]
 fn a_refused_mint_keeps_a_priced_deposit_epoch_open() {
     let f = setup();
@@ -198,7 +199,9 @@ fn a_refused_mint_keeps_a_priced_deposit_epoch_open() {
 
     assert!(f.vault.try_claim_deposit(&investor, &epoch).is_err());
 
+    assert_eq!(f.vault.pending_mint_shares(), 200);
     let s = f.vault.get_epoch_settlement(&epoch).unwrap();
+    assert_eq!((s.shares_promised, s.shares_settled), (200, 0));
     assert_eq!(s.deposits_open, 1);
     assert!(!s.reconciled);
 }
