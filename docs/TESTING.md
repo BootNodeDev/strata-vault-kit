@@ -20,7 +20,9 @@ build run only with `--features upgrade_wasm`, after the fixture in
 The contracts read and write through the shared helpers in
 [`crates/storage`](../crates/storage/src/lib.rs). A write extends the entry to
 30 days; a read that finds the entry extends it again once it has fallen more
-than a day short. The instance follows the same rule.
+than a day short. The instance follows the same rule. The
+[TTL policy](./kit-spec.md#5-storage-lifetime-ttl-policy) says what each
+contract extends, who pays, and how to restore an archived one.
 
 | Behaviour | Tests | Key test names |
 | --- | --- | --- |
