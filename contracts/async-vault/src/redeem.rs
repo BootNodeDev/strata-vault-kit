@@ -20,6 +20,23 @@ pub(crate) fn request(e: &Env, from: &Address, shares: i128) -> u64 {
         panic_with_error!(e, VaultError::InvalidAmount);
     }
 
+    let standing = lock_policy::standing(e, from);
+    match lock_policy::decide(Exit::RequestRedeem, standing, wind_down::is_active(e)) {
+        Decision::Proceed => {}
+        Decision::Refuse | Decision::Hold | Decision::ConvertToExit | Decision::Surrender => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
+    }
+    // A request within the balance but short of the free shares needs frozen
+    // ones; beyond the balance entirely, the token's own check applies instead.
+    if shares > lock_policy::free_shares(e, from) {
+        let held =
+            FungibleTokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).balance(from);
+        if shares <= held {
+            panic_with_error!(e, VaultError::Frozen);
+        }
+    }
+
     let epoch_id = state::current_epoch(e);
 
     if state::get_redeem_request(e, epoch_id, from).is_some() {
@@ -75,6 +92,14 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
 
     if request.claimed {
         panic_with_error!(e, VaultError::AlreadyClaimed);
+    }
+
+    let standing = lock_policy::standing(e, caller);
+    match lock_policy::decide(Exit::ClaimRedeem, standing, wind_down::is_active(e)) {
+        Decision::Proceed => {}
+        Decision::Refuse | Decision::Hold | Decision::ConvertToExit | Decision::Surrender => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
     }
 
     let assets = Pricing::redeem_assets(e, request.shares, epoch.share_price)
@@ -157,9 +182,9 @@ pub(crate) fn queue_escrowed(e: &Env, controller: &Address, shares: i128) -> u64
     epoch_id
 }
 
-/// Moves escrowed shares back to the controller and clears the request. The
-/// transfer is the token's checked one: a cancel asks the lock policy first, but
-/// on a zero-asset claim the token alone refuses a frozen or delisted controller.
+/// Moves escrowed shares back to the controller and clears the request. Both
+/// callers ask the lock policy first; a delisted controller still meets the
+/// token's own checked transfer here.
 fn return_shares(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));

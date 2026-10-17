@@ -129,6 +129,102 @@ fn in_a_wind_down_a_frozen_holders_redemption_is_held() {
 }
 
 #[test]
+fn a_listed_holder_may_cancel_a_deposit() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::CancelDeposit, Standing::Listed),
+        [Decision::Proceed; 2]
+    );
+}
+
+#[test]
+fn a_delisted_holder_may_cancel_a_deposit() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::CancelDeposit, Standing::Delisted),
+        [Decision::Proceed; 2]
+    );
+}
+
+#[test]
+fn a_frozen_holders_deposit_cancellation_is_held() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::CancelDeposit, Standing::Frozen),
+        [Decision::Hold; 2]
+    );
+}
+
+#[test]
+fn a_listed_holder_may_request_a_redemption() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::RequestRedeem, Standing::Listed),
+        [Decision::Proceed; 2]
+    );
+}
+
+#[test]
+fn a_delisted_holder_may_request_a_redemption() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::RequestRedeem, Standing::Delisted),
+        [Decision::Proceed; 2]
+    );
+}
+
+#[test]
+fn a_frozen_holders_redemption_request_is_held() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::RequestRedeem, Standing::Frozen),
+        [Decision::Hold; 2]
+    );
+}
+
+#[test]
+fn a_listed_holder_claims_the_redemption() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::ClaimRedeem, Standing::Listed),
+        [Decision::Proceed; 2]
+    );
+}
+
+#[test]
+fn a_delisted_holder_claims_the_redemption() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::ClaimRedeem, Standing::Delisted),
+        [Decision::Proceed; 2]
+    );
+}
+
+#[test]
+fn a_frozen_holders_redemption_claim_is_held() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::ClaimRedeem, Standing::Frozen),
+        [Decision::Hold; 2]
+    );
+}
+
+#[test]
+fn a_listed_holder_claims_the_wind_down() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::ClaimWindDown, Standing::Listed),
+        [Decision::Proceed; 2]
+    );
+}
+
+#[test]
+fn a_delisted_holder_claims_the_wind_down() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::ClaimWindDown, Standing::Delisted),
+        [Decision::Proceed; 2]
+    );
+}
+
+#[test]
+fn a_frozen_holders_wind_down_claim_is_held() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::ClaimWindDown, Standing::Frozen),
+        [Decision::Hold; 2]
+    );
+}
+
+#[test]
 fn a_frozen_holder_is_refused_as_frozen() {
     assert_eq!(
         lock_policy::refused_with(Standing::Frozen),
@@ -200,5 +296,28 @@ fn standing_is_frozen_for_a_holder_both_frozen_and_delisted() {
     assert_eq!(
         f.e.as_contract(&f.vault.address, || lock_policy::standing(&f.e, &holder)),
         Standing::Frozen
+    );
+}
+
+#[test]
+fn free_shares_is_the_full_balance_when_nothing_is_frozen() {
+    let f = setup();
+    let holder = f.holder(500);
+
+    assert_eq!(
+        f.e.as_contract(&f.vault.address, || lock_policy::free_shares(&f.e, &holder)),
+        500
+    );
+}
+
+#[test]
+fn free_shares_excludes_a_partial_freeze() {
+    let f = setup();
+    let holder = f.holder(500);
+    f.share.freeze_partial_tokens(&holder, &400, &f.compliance);
+
+    assert_eq!(
+        f.e.as_contract(&f.vault.address, || lock_policy::free_shares(&f.e, &holder)),
+        100
     );
 }

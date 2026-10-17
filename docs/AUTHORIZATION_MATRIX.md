@@ -8,7 +8,7 @@ This document provides the complete authorization and role model specification f
 
 1. **Direct Role Membership Checks**: Role membership is checked directly via `has_role(e, &caller, &role)` or `stellar_macros::only_role` / `only_admin`, never by enumerating members.
 2. **Strict Caller Authentication**: No entrypoint takes a caller argument that it does not authenticate. Every function accepting a `caller: Address` executes `caller.require_auth()`.
-3. **Exit-Only Guarantee**: A covered redemption claim always pays out cash, regardless of pause, staleness, or allowlist status. Delisted or frozen investors exit through the cash path and are prevented from re-entering share circulation.
+3. **Exit guarantee, with one hold**: A covered redemption claim pays out cash regardless of pause, staleness or allowlist status. A delisted investor exits through the cash path and cannot re-enter share circulation. A frozen investor is held: the vault refuses their requests, cancellations and claims, and pays them only after the freeze lifts.
 4. **Five Separate Authorities**:
    - **Governance (Admin)**: Root authority; upgrades, timelock parameters, custodian settings, unpause, oracle parameters, emergency NAV pause reset.
    - **Manager (Vault)**: Closes epochs.
