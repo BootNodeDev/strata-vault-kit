@@ -1,5 +1,6 @@
 use bindings::{OracleFeedClient, OracleState};
 use soroban_sdk::{panic_with_error, Env};
+use stellar_contract_utils::pausable;
 
 use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};
@@ -49,11 +50,12 @@ pub(crate) fn fulfilable(e: &Env, epoch: &EpochInfo) -> Result<(), VaultError> {
     price_readable(e, epoch)
 }
 
-/// True when the epoch's price can already be read, which is what closes the
-/// cancellation window: cancelling after this would be declining a price the
-/// investor has seen.
+/// True when the epoch's price can already be read and the vault could take
+/// it, which is what closes the cancellation window: cancelling after this
+/// would be declining a price the investor has seen. A paused vault cannot
+/// price, so its sealed epochs stay cancellable until the pause lifts.
 pub(crate) fn is_priceable(e: &Env, epoch: &EpochInfo) -> bool {
-    epoch.status == EpochStatus::Pending && price_readable(e, epoch).is_ok()
+    epoch.status == EpochStatus::Pending && !pausable::paused(e) && price_readable(e, epoch).is_ok()
 }
 
 pub(crate) fn close(e: &Env) -> u64 {
