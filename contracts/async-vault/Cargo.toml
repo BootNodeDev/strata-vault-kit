@@ -15,6 +15,7 @@ storage = { path = "../../crates/storage" }
 stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
 stellar-contract-utils = { workspace = true }
+stellar-tokens = { workspace = true }
 bindings = { path = "../../crates/bindings" }
 timelock = { path = "../../crates/timelock" }
 

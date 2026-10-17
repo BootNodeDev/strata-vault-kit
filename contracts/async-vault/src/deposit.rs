@@ -1,5 +1,5 @@
-use bindings::ShareClient;
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
+use stellar_tokens::rwa::RWATokenClient;
 
 use crate::epoch;
 use crate::error::VaultError;
@@ -106,7 +106,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     state::set_pending_mint_shares(e, state::pending_mint_shares(e).saturating_sub(shares));
 
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    ShareClient::new(e, &share_token).mint(caller, &shares, &e.current_contract_address());
+    RWATokenClient::new(e, &share_token).mint(caller, &shares, &e.current_contract_address());
 
     DepositClaimed {
         controller: caller.clone(),

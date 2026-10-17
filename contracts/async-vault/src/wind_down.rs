@@ -1,6 +1,6 @@
-use bindings::ShareClient;
 use soroban_sdk::{contracttype, panic_with_error, token::TokenClient, Address, Env};
 use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
+use stellar_tokens::{fungible::FungibleTokenClient, rwa::RWATokenClient};
 
 use crate::error::VaultError;
 use crate::event::{
@@ -153,7 +153,7 @@ pub(crate) fn supply_snapshot(e: &Env) -> i128 {
 /// redemption, and owed by a deposit that has been priced but not claimed.
 fn snapshot_supply(e: &Env) -> i128 {
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    ShareClient::new(e, &share_token)
+    FungibleTokenClient::new(e, &share_token)
         .total_supply()
         .saturating_sub(state::pending_burn_shares(e))
         .checked_add(state::pending_mint_shares(e))
@@ -236,7 +236,7 @@ pub(crate) fn claimable(e: &Env, holder: &Address) -> i128 {
     }
 
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    let held = ShareClient::new(e, &share_token).balance(holder);
+    let held = FungibleTokenClient::new(e, &share_token).balance(holder);
     let p = position(e, holder);
     let entitlement = p.entitlement.saturating_add(held);
 
@@ -255,9 +255,8 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
 
     let vault = e.current_contract_address();
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    let share = ShareClient::new(e, &share_token);
 
-    let surrendered = share.balance(holder);
+    let surrendered = FungibleTokenClient::new(e, &share_token).balance(holder);
     let mut p = position(e, holder);
     p.entitlement = p
         .entitlement
@@ -276,7 +275,7 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
     storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
 
     if surrendered > 0 {
-        share.burn(holder, &surrendered, &vault);
+        RWATokenClient::new(e, &share_token).burn(holder, &surrendered, &vault);
     }
 
     if assets > 0 {
