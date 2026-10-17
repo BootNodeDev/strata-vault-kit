@@ -135,7 +135,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
 
 /// Returns the settlement asset and clears the request. Used by cancellation and
 /// by a claim whose conversion floors to zero.
-fn refund_deposit(e: &Env, controller: &Address, epoch_id: u64, amount: i128) -> i128 {
+fn refund_deposit(e: &Env, controller: &Address, epoch_id: u64, amount: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
     epoch.total_deposited = state::reduce(e, epoch.total_deposited, amount);
@@ -151,8 +151,6 @@ fn refund_deposit(e: &Env, controller: &Address, epoch_id: u64, amount: i128) ->
         amount,
     }
     .publish(e);
-
-    0
 }
 
 pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {

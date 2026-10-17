@@ -1,5 +1,6 @@
 use proptest::prelude::*;
 use soroban_sdk::{testutils::Events as _, Event as _};
+use stellar_tokens::rwa::compliance::ComplianceHook;
 
 use super::*;
 use crate::{EpochFulfilled, EpochReconciled, RedeemClaimed};
@@ -177,6 +178,31 @@ fn a_request_that_cannot_settle_keeps_its_epoch_open() {
     assert_eq!(f.vault.committed(), s.assets_promised - s.assets_settled);
 }
 
+/// The other case that can never settle: a compliance module refuses a
+/// priced deposit's mint even for an allowlisted investor. The epoch stays
+/// open and its remainder is never reconciled, the same as a refused
+/// redemption.
+#[test]
+fn a_refused_mint_keeps_a_priced_deposit_epoch_open() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+
+    let module = f.e.register(super::compliance::RefusesEveryMint, ());
+    ComplianceClient::new(&f.e, &f.share.compliance()).add_module_to(
+        &ComplianceHook::CanCreate,
+        &module,
+        &f.admin,
+    );
+
+    assert!(f.vault.try_claim_deposit(&investor, &epoch).is_err());
+
+    let s = f.vault.get_epoch_settlement(&epoch).unwrap();
+    assert_eq!(s.deposits_open, 1);
+    assert!(!s.reconciled);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
@@ -185,9 +211,9 @@ proptest! {
     /// every request settles.
     #[test]
     fn a_settled_epoch_leaves_no_remainder_in_the_totals(
-        deposits in proptest::collection::vec(1i128..5_000, 1..5),
+        deposits in proptest::collection::vec(prop_oneof![Just(1i128), 1i128..5_000], 1..5),
         cancels in proptest::collection::vec(any::<bool>(), 5),
-        redeems in proptest::collection::vec(1i128..500, 0..4),
+        redeems in proptest::collection::vec(prop_oneof![Just(1i128), 1i128..500], 0..4),
         price_tenths in 5i128..=20,
         order in proptest::collection::vec(any::<u16>(), 8),
     ) {
