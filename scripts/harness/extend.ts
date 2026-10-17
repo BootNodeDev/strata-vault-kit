@@ -1,13 +1,15 @@
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 
+import { xdr } from "@stellar/stellar-sdk"
+
 import {
 	contractIds,
 	networkOf,
 	selectedEnvironment,
 } from "../lib/environments.mjs"
 
-import { type Rpc } from "./lib/cli.js"
+import { rpcArgs, stellar, type Rpc } from "./lib/cli.js"
 import { REPO_ROOT } from "./lib/deployment.js"
 import {
 	EXTEND_LEDGERS,
@@ -25,6 +27,38 @@ import {
 interface DeploymentRecord {
 	contracts: Record<string, string>
 	asset?: { contract: string }
+}
+
+// Contracts whose storage holds a timelock change queue, by the name they
+// deploy under. Only the vault keeps one today.
+const CONTRACTS_WITH_QUEUES = new Set(["async_vault"])
+
+/**
+ * The timelock's own storage key for a change still waiting:
+ * `Key::TimelockPending(id)`, a contracttype variant whose ScVal is a vec of
+ * its symbol and the id (`crates/timelock/src/keys.rs`, `queue.rs`).
+ */
+function pendingChangeKey(id: number): string {
+	return xdr.ScVal.scvVec([
+		xdr.ScVal.scvSymbol("TimelockPending"),
+		xdr.ScVal.scvU32(id),
+	]).toXDR("base64")
+}
+
+/** The ids still waiting in a contract's queue, read through its `pending_changes` view. */
+async function openChangeIds(rpc: Rpc, contractId: string): Promise<number[]> {
+	const out = await stellar([
+		"contract",
+		"invoke",
+		"--id",
+		contractId,
+		"--send",
+		"no",
+		...rpcArgs(rpc),
+		"--",
+		"pending_changes",
+	])
+	return (JSON.parse(out) as Array<{ id: number }>).map(({ id }) => id)
 }
 
 function option(flag: string): string | undefined {
@@ -83,6 +117,17 @@ async function main(): Promise<void> {
 	for (const [name, id] of contracts) {
 		const wasmHash = await keepAlive(rpc, { id }, `${name} instance`, latest)
 		if (wasmHash !== undefined) code.add(wasmHash)
+	}
+	for (const [name, id] of contracts) {
+		if (!CONTRACTS_WITH_QUEUES.has(name)) continue
+		for (const changeId of await openChangeIds(rpc, id)) {
+			await keepAlive(
+				rpc,
+				{ id, keyXdr: pendingChangeKey(changeId) },
+				`${name} pending change ${changeId}`,
+				latest,
+			)
+		}
 	}
 	for (const wasmHash of code) {
 		await keepAlive(rpc, { wasmHash }, `code ${wasmHash.slice(0, 8)}`, latest)
