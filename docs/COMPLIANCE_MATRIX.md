@@ -21,7 +21,7 @@ Every investor account in the vault ecosystem exists in one of three primary com
 3. **Frozen (`Frozen`)**:
    - The account is subject to sanctions, legal freezing, or security hold (`is_frozen(account) == true` via `ShareToken::set_address_frozen`).
    - The share token refuses a `transfer` from or to a frozen address. Minting does not check freezes, and `forced_transfer` ignores them.
-   - What the vault owes a frozen investor is **held**: not paid, not returned, not moved. Priced cash stays in `committed` and a wind-down slice stays in `wind_down_owed`, where no other holder can take it. Only an unfreeze releases it. A partial freeze limits exits to the free balance.
+   - What the vault owes a frozen investor is **held**: not paid, not returned, not moved. Priced cash stays in `committed` and a wind-down slice stays in `wind_down_owed`, where no other holder can take it. Only an unfreeze releases it. A legal-order transfer (`legal_transfer`), which compliance and governance sign together, can move shares in the investor's own wallet, but not value the vault holds for them: deposit escrow, priced but unminted shares, shares escrowed in a redemption, priced cash, or a wind-down slice. A partial freeze limits exits to the free balance.
 
      This follows how asset-freeze and blocking rules generally treat frozen property: held, not released, not returned to the owner and not confiscated, with the entitlement kept and recorded. It is not legal advice; counsel must confirm it for each jurisdiction.
 
@@ -39,6 +39,7 @@ Every investor account in the vault ecosystem exists in one of three primary com
 | **`claim_redeem`** | ✅ Allowed | ✅ **Allowed** | ❌ **Refused** (`Frozen`); the cash stays in `committed` | **Exit-Only Cash Path**: the settlement asset pays out from the liquid reserve and the escrowed shares are burned from the vault. The cash claim checks `is_frozen` on the share token first; it does not check the allowlist. A partial freeze is not checked. |
 | **`claim_wind_down`** | ✅ Allowed | ✅ **Allowed** | ❌ **Refused** (`Frozen`); the slice stays in `wind_down_owed` | **Wind-Down Payout**: pays the holder's pro-rata entitlement and burns the free shares it surrenders. The vault checks `is_frozen` and `get_frozen_tokens` on the share token first; a partial freeze surrenders only the free shares — the rest keeps earning every round and is paid once unfrozen. |
 | **`transfer`** (Secondary) | ✅ Allowed | ❌ **Refused** | ❌ **Refused** | Standard peer-to-peer share transfer via SEP-57. Requires both sender and receiver to be allowlisted and neither to be frozen. |
+| **`legal_transfer`** (compliance + governance) | ✅ Allowed | ✅ Allowed | ✅ Allowed | Moves shares in the holder's wallet under a legal order; the destination must pass `verify_identity`; never into or out of the vault. It cannot reach value the vault holds for a frozen holder; only an unfreeze releases that. |
 
 ---
 
@@ -92,6 +93,7 @@ The share token is OpenZeppelin's RWA token. The allowlist and freeze checks sit
 | `transfer` | Refuses if sender or receiver is frozen; the sender needs enough unfrozen balance | Sender and receiver | `can_transfer` before, `transferred` after |
 | `mint` | None | Receiver | `can_create` before, `created` after |
 | `forced_transfer` | None; releases as much of a partial freeze as the amount needs | None | `transferred` after |
+| `legal_transfer` (the kit's own, built on `forced_transfer`) | None; releases as much of a partial freeze as the amount needs | Receiver | `transferred` after |
 | `burn` | None; releases as much of a partial freeze as the amount needs | None | `destroyed` after |
 
 0.7.2 has five compliance hooks: `can_transfer` and `can_create` are asked before the state change, and `transferred`, `created` and `destroyed` are told after it. There is no `can_destroy`.
@@ -126,3 +128,4 @@ The behavior specified in this matrix is verified by on-chain automated test sui
 * `a_frozen_holders_slice_stays_owed_until_the_freeze_lifts` ([`test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs)): Verifies a frozen holder's wind-down slice stays in `wind_down_owed` until the freeze lifts.
 * `a_frozen_holders_escrowed_exit_waits_through_a_wind_down`: Verifies a frozen holder's escrowed redemption and wind-down claim are both held through a wind-down.
 * `a_partial_freeze_keeps_frozen_shares_out_of_a_wind_down_claim`: Verifies a partial freeze excludes frozen shares from a wind-down surrender.
+* `legal_transfer::*` ([`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs)): Verifies a legal-order transfer needs compliance and governance as two different accounts, never moves shares out of or into the vault's address, lands only on an allowlisted account and publishes its order reference; recovery needs the same co-signature, and the vault's address cannot be frozen.
