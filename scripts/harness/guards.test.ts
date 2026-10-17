@@ -250,6 +250,58 @@ describe("the share token after setup", () => {
 	})
 })
 
+describe("the oracle after setup", () => {
+	const caller = () => governance.publicKey()
+
+	it("governance cannot loosen the feed config at once", async () => {
+		const config = (await feed.config()).result
+		const o = oracle(c, governance)
+		expectRefused(
+			await o.set_config({
+				config: {
+					...config,
+					freshness_duration: config.freshness_duration + 60n,
+				},
+			}),
+			o,
+			"UseTimelock",
+		)
+	})
+
+	it("governance cannot tighten the fall cap at once either", async () => {
+		const config = (await feed.config()).result
+		const o = oracle(c, governance)
+		expectRefused(
+			await o.set_config({
+				config: { ...config, max_down_bps: config.max_down_bps - 1 },
+			}),
+			o,
+			"UseTimelock",
+		)
+	})
+
+	it("queues a config change behind the vault's delay", async () => {
+		const config = (await feed.config()).result
+		const o = oracle(c, governance)
+		const id = await send(
+			o.propose_change({
+				change: {
+					tag: "Config",
+					values: [{ ...config, max_down_bps: config.max_down_bps - 1 }],
+				},
+				caller: caller(),
+			}),
+		)
+		expectRefused(
+			await o.apply_change({ id, caller: caller() }),
+			o,
+			"ChangeNotReady",
+		)
+		await send(o.cancel_change({ id, caller: caller() }))
+		expect((await o.pending_changes()).result).toEqual([])
+	})
+})
+
 describe("invalid amounts and duplicate requests in an epoch", () => {
 	it("rejects zero deposit amount", async () => {
 		const v = vault(c, first)
