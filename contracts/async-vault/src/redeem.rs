@@ -6,6 +6,7 @@ use crate::error::VaultError;
 use crate::event::{RedeemCancelled, RedeemClaimed, RedeemRequested};
 use crate::keys::DataKey;
 use crate::pricing::{Pricing, PricingScheme};
+use crate::settlement;
 use crate::state::{self, EpochStatus, RedeemRequest};
 use crate::treasury;
 use crate::wind_down;
@@ -42,6 +43,7 @@ pub(crate) fn request(e: &Env, from: &Address, shares: i128) -> u64 {
         },
     );
     state::set_epoch(e, epoch_id, &epoch);
+    settlement::on_redeem_requested(e, epoch_id);
 
     let vault = e.current_contract_address();
     let share_token = state::get_addr(e, &DataKey::ShareToken);
@@ -79,11 +81,12 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
 
     state::set_pending_burn_shares(
         e,
-        state::pending_burn_shares(e).saturating_sub(request.shares),
+        state::reduce(e, state::pending_burn_shares(e), request.shares),
     );
 
     if assets == 0 {
         return_shares(e, caller, epoch_id, request.shares);
+        settlement::on_redeem_claimed(e, epoch_id, 0);
         return 0;
     }
 
@@ -98,7 +101,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
 
     request.claimed = true;
     state::set_redeem_request(e, epoch_id, caller, &request);
-    state::set_committed(e, state::committed(e).saturating_sub(assets));
+    state::set_committed(e, state::reduce(e, state::committed(e), assets));
 
     TokenClient::new(e, &asset).transfer(&vault, caller, &assets);
     RWATokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).burn(
@@ -114,6 +117,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         assets,
     }
     .publish(e);
+    settlement::on_redeem_claimed(e, epoch_id, assets);
 
     assets
 }
@@ -125,7 +129,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
 fn return_shares(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-    epoch.total_shares_redeeming -= shares;
+    epoch.total_shares_redeeming = state::reduce(e, epoch.total_shares_redeeming, shares);
     state::set_epoch(e, epoch_id, &epoch);
     state::remove_redeem_request(e, epoch_id, controller);
 
@@ -163,5 +167,6 @@ pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
 
     return_shares(e, from, epoch_id, request.shares);
+    settlement::on_redeem_cancelled(e, epoch_id);
     request.shares
 }

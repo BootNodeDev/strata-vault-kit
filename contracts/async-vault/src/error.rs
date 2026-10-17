@@ -118,4 +118,7 @@ pub enum VaultError {
     /// The depositor fails the share token's identity check, so the vault
     /// could never deliver the shares. Refused before any cash moves.
     NotAllowlisted = 6068,
+    /// A running total would go below zero, which means the vault's books
+    /// disagree with themselves. Fails loudly instead of clamping to zero.
+    AccountingMismatch = 6070,
 }
