@@ -1708,6 +1708,7 @@ dependencies = [
 name = "share-token"
 version = "0.1.0"
 dependencies = [
+ "bindings",
  "compliance",
  "identity-verifier",
  "soroban-sdk",
@@ -1716,6 +1717,7 @@ dependencies = [
  "stellar-macros",
  "stellar-tokens",
  "storage",
+ "timelock",
 ]
 
 [[package]]

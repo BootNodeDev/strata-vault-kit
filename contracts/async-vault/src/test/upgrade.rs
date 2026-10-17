@@ -411,11 +411,68 @@ fn the_vault_reports_its_clock_to_the_token_and_the_oracle() {
 
 #[cfg(feature = "upgrade_wasm")]
 mod with_wasm {
+    use share_token::TokenChange;
+
     use super::*;
 
     soroban_sdk::contractimport!(
         file = "../../fixtures/upgrade-target/target/wasm32v1-none/release/upgrade_target.wasm"
     );
+
+    mod token_v1 {
+        soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/share_token.wasm");
+    }
+
+    mod token_probe {
+        soroban_sdk::contractimport!(
+            file = "../../target/upgrade-probe/wasm32v1-none/release/share_token.wasm"
+        );
+    }
+
+    #[test]
+    fn the_token_upgrades_under_live_balances_and_open_requests() {
+        let f = setup_with(open_feed(), |e, args| e.register(token_v1::WASM, args));
+        let holder = f.holder(100);
+        let other = f.investor(1);
+        let epoch = f.vault.request_redeem(&holder, &40);
+        let depositor = f.investor(500);
+        assert_eq!(f.vault.request_deposit(&depositor, &500), epoch);
+
+        f.share.bind_vault(&f.vault.address, &f.admin);
+        f.share.finish_setup(&f.admin);
+        let probe_hash = f.e.deployer().upload_contract_wasm(token_probe::WASM);
+        let id = f
+            .share
+            .propose_change(&TokenChange::Upgrade(probe_hash), &f.admin);
+        f.advance(MIN_UPGRADE_DELAY);
+        f.share.apply_change(&id, &f.admin);
+
+        let probe = token_probe::Client::new(&f.e, &f.share.address);
+        assert!(probe.probe());
+        assert_eq!(probe.schema_version(), 1);
+        probe.migrate(&f.admin);
+        assert_eq!(probe.schema_version(), 2);
+        assert_eq!(
+            probe.try_migrate(&f.admin),
+            Err(Ok(token_probe::ProbeError::AlreadyMigrated.into()))
+        );
+
+        assert_eq!(f.shares(&holder), 60);
+        assert_eq!(f.shares(&f.vault.address), 40);
+        assert_eq!(
+            f.vault.get_redeem_request(&epoch, &holder).unwrap().shares,
+            40
+        );
+
+        f.fulfill_epoch_at(f.close_epoch(), wad(2));
+        assert_eq!(f.vault.claim_redeem(&holder, &epoch), 80);
+        assert_eq!(f.vault.claim_deposit(&depositor, &epoch), 250);
+        assert_eq!(f.shares(&depositor), 250);
+        assert_eq!(f.shares(&f.vault.address), 0);
+
+        f.share.transfer(&holder, &other, &10);
+        assert_eq!(f.shares(&other), 10);
+    }
 
     #[test]
     fn immediate_upgrade_with_valid_wasm_does_not_replace_code() {
