@@ -1,4 +1,5 @@
 use proptest::prelude::*;
+use soroban_sdk::IntoVal;
 
 use super::*;
 
@@ -6,10 +7,10 @@ use super::*;
 fn governance_sets_the_delay_within_the_maximum() {
     let f = setup();
 
-    assert_eq!(f.vault.wind_down_delay(), 0);
+    assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 
-    f.vault.set_wind_down_delay(&(7 * 24 * 60 * 60), &f.admin);
-    assert_eq!(f.vault.wind_down_delay(), 7 * 24 * 60 * 60);
+    f.vault.set_wind_down_delay(&(14 * DAY_DURATION), &f.admin);
+    assert_eq!(f.vault.wind_down_delay(), 14 * DAY_DURATION);
 }
 
 #[test]
@@ -20,20 +21,24 @@ fn the_delay_cannot_exceed_the_maximum() {
         .vault
         .try_set_wind_down_delay(&(MAX_WIND_DOWN_DELAY + 1), &f.admin)
         .is_err());
-    assert_eq!(f.vault.wind_down_delay(), 0);
+    assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 }
 
 #[test]
 fn only_governance_sets_the_delay() {
     let f = setup();
     let stranger = Address::generate(&f.e);
+    let longer = 2 * MIN_WIND_DOWN_DELAY;
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_set_wind_down_delay(&60, &stranger).is_err());
-    assert!(f.vault.try_set_wind_down_delay(&60, &f.manager).is_err());
-    assert!(f.vault.try_set_wind_down_delay(&60, &f.treasury).is_err());
-    assert!(f.vault.try_set_wind_down_delay(&60, &f.guardian).is_err());
-    assert_eq!(f.vault.wind_down_delay(), 0);
+    for who in [&stranger, &f.manager, &f.treasury, &f.guardian] {
+        f.sign_only_as(
+            who,
+            "set_wind_down_delay",
+            (longer, who.clone()).into_val(&f.e),
+        );
+        assert!(f.vault.try_set_wind_down_delay(&longer, who).is_err());
+    }
+    assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 }
 
 #[test]
@@ -146,18 +151,36 @@ fn activating_without_a_proposal_is_refused() {
 }
 
 #[test]
-fn a_zero_delay_activates_immediately() {
+fn an_unset_delay_still_waits_the_minimum() {
     let f = setup();
 
     f.vault.propose_wind_down(&f.admin);
-    f.vault.activate_wind_down();
+    f.advance(MIN_WIND_DOWN_DELAY - 1);
+    refused(
+        f.vault.try_activate_wind_down(),
+        VaultError::WindDownDelayNotElapsed,
+    );
 
+    f.advance(1);
+    f.vault.activate_wind_down();
     assert_eq!(f.vault.wind_down().unwrap().status, WindDownStatus::Active);
+}
+
+#[test]
+fn a_delay_below_the_minimum_is_refused() {
+    for f in [setup_unfinished(), setup()] {
+        refused(
+            f.vault
+                .try_set_wind_down_delay(&(MIN_WIND_DOWN_DELAY - 1), &f.admin),
+            VaultError::WindDownDelayTooShort,
+        );
+    }
 }
 
 /// Proposes, waits and activates. Returns nothing; the vault is active after.
 fn wind_down_now(f: &Fixture) {
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 }
 
@@ -188,7 +211,6 @@ fn an_active_wind_down_prices_nothing_and_closes_no_epoch() {
 #[test]
 fn an_active_wind_down_sends_nothing_to_the_custodian() {
     let f = setup();
-    f.vault.set_custodian(&f.custodian, &f.admin);
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
@@ -200,7 +222,6 @@ fn an_active_wind_down_sends_nothing_to_the_custodian() {
 #[test]
 fn funding_stays_open_during_a_wind_down() {
     let f = setup();
-    f.vault.set_custodian(&f.custodian, &f.admin);
     let backer = f.investor(1_000);
     wind_down_now(&f);
 
@@ -685,6 +706,7 @@ fn a_later_round_needs_the_units_an_earlier_round_left_in_owed() {
     let b = f.holder(1);
     f.empty_reserve();
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 
     f.vault.fund(&f.custodian, &1);
@@ -708,6 +730,7 @@ fn after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder() {
     let holders = [f.holder(1), f.holder(2), f.holder(4)];
     f.empty_reserve();
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
     f.vault.fund(&f.custodian, &5);
     f.vault.finalize_wind_down_round();
@@ -739,6 +762,7 @@ proptest! {
         let backer = f.investor(total_shares + 10_000);
         f.empty_reserve();
         f.vault.propose_wind_down(&f.admin);
+        f.advance(MIN_WIND_DOWN_DELAY);
         f.vault.activate_wind_down();
 
         // Funds exactly the snapshot, so the first round always credits

@@ -73,6 +73,7 @@ fn a_holder_delisted_after_pricing_is_paid_through_a_wind_down() {
     );
 
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
     assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
     assert_eq!(f.vault.finalize_wind_down_round(), 400);

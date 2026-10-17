@@ -112,18 +112,19 @@ Output of a real run from a fresh clone. Contract IDs differ on every run.
 
 deploying to local (http://localhost:8000/rpc)
 funded 13 accounts
-asset contract CDPQAISI45SS2INROW6YGBUJUZ23IO2IQ4OW4YN3TFCX6RDR4I4DGC45
-compliance CASCZWH44CPGC26FIEBDZKXHWLXEPF2SLCHBTIOMAH33TWA76P3V2QAW
-identity_verifier CCGG7IHN4D5P43DA32N2SVQM62ZSPBYY45AUY7AIO6U4TVKWP7X7C4CW
-share_token CC3OIIFWYZPRGYWX4GS2NTHLOD3OHMIZY6SAWD3W4LKZNU4ZMLZNSOP2
-nav_oracle CD4MEW2NM4WDXBGA4V53RCQTMXXKXIWXLBAXX6U4XYER343T7AEU52WP
-async_vault CBUOZYNWDS3BJ7W4JCZOHPKMWAOQLKPEOB7IY6GTPHJGQU7Q6ZHS2VPU
+asset contract CCAE3ZUI4B2LSOF7HBS4F35SOHYDG7FOLSQ4DPKAS7YU3JB7IN2U2WOR
+compliance CAFIN446IPMTL7E2RMHSSDFS5BRYKU6BJS7L7DBIDHLUDGPWEHVOSE2D
+identity_verifier CCNJIIWUXN76GHMGNJW4WIDWYOLBGL6JPUT2J5FU2F6T74VUYNT6M7PW
+share_token CCXMRDX67EUA563K3Z7BYJU5HM2PACTYQRHCGI7AXKZZDKEVZNPBYMDT
+nav_oracle CDNW5MROHAB2ULG3ODWEVSMSVBTOAHDATES74HYAEZIPQCJB4HUB7KXD
+async_vault CC2GSF7NZYFSUXX6UP7FFSIDXCKJV7SLN2HS7SD4XO42WHPXHQW3SJQM
 clients generated
 vault holds share_token manager role
 share_token bound to the vault, setup finished
 vault is allowlisted
 share_token bound to compliance
 nav_oracle bound to the vault, setup finished
+vault setup finished
 wrote deployed.local.json
 ```
 
@@ -134,6 +135,11 @@ integration suites against that deployment:
 npm run test:happy-path -w scripts/harness
 npm run test:guards -w scripts/harness
 ```
+
+Deploy afresh before each run of the suites. The guards leave the vault's
+notice at 10 seconds, and lowering it back waits for the timelock, so a second
+run against the same deployment can fail wherever it prices an epoch right
+after closing it.
 
 ### Keeping a deployment alive
 

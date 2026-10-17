@@ -108,6 +108,7 @@ fn in_a_wind_down_the_shares_are_credited_before_the_first_round() {
     let f = setup();
     let (investor, epoch) = delisted_with_a_priced_deposit(&f);
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 
     assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
@@ -140,6 +141,7 @@ fn in_a_wind_down_the_shares_are_credited_after_the_first_round() {
     let f = setup();
     let (investor, epoch) = delisted_with_a_priced_deposit(&f);
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
     assert_eq!(f.vault.finalize_wind_down_round(), 400);
 
@@ -156,6 +158,7 @@ fn a_credit_before_the_first_round_leaves_every_holder_their_share() {
     let other = f.holder(200);
     let (investor, epoch) = delisted_with_a_priced_deposit(&f);
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
     f.vault.claim_deposit(&investor, &epoch);
 
@@ -193,6 +196,7 @@ fn a_conversion_caught_by_a_wind_down_is_paid_from_the_rounds() {
     f.vault.propose_wind_down(&f.admin);
     f.vault.claim_deposit(&investor, &epoch);
     let open = f.vault.current_epoch();
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 
     assert_eq!(f.vault.cancel_redeem(&investor, &open), 200);
@@ -222,6 +226,7 @@ fn a_redemption_surrendered_after_the_first_round_keeps_the_rounds_solvent() {
     f.vault.propose_wind_down(&f.admin);
     f.vault.claim_deposit(&investor, &epoch);
     let open = f.vault.current_epoch();
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
     assert_eq!(f.vault.finalize_wind_down_round(), 800);
 
@@ -240,6 +245,7 @@ fn a_delisted_holders_unpriced_redemption_joins_the_wind_down_when_cancelled() {
     let epoch = f.vault.request_redeem(&investor, &200);
     f.identity.allow(&investor, &false, &f.compliance);
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 
     assert_eq!(f.vault.cancel_redeem(&investor, &epoch), 200);

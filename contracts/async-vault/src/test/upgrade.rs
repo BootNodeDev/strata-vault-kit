@@ -309,6 +309,7 @@ fn the_vault_exposes_no_immediate_upgrade() {
 fn nothing_is_proposed_during_a_wind_down() {
     let f = setup();
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 
     refused(
@@ -323,6 +324,7 @@ fn a_change_standing_when_the_wind_down_starts_never_applies() {
     let f = setup();
     let id = propose(&f, VaultChange::Upgrade(wasm(&f, 7)));
     f.vault.propose_wind_down(&f.admin);
+    f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
     f.advance(MAX_UPGRADE_DELAY);
 
@@ -483,8 +485,6 @@ mod with_wasm {
         let depositor = f.investor(500);
         assert_eq!(f.vault.request_deposit(&depositor, &500), epoch);
 
-        f.share.bind_vault(&f.vault.address, &f.admin);
-        f.share.finish_setup(&f.admin);
         let probe_hash = f.e.deployer().upload_contract_wasm(token_probe::WASM);
         let id = f
             .share

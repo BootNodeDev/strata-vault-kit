@@ -27,6 +27,12 @@ CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracl
 SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
 ```
 
+The `short_wind_down` feature builds a vault whose wind-down minimum is zero,
+for a local harness only; its WASM carries the meta entry `build = short
+wind-down; local tests only`. Check that it compiles with
+`cargo check -p async-vault --features short_wind_down`. Do not run the test
+suite under it: tests that subtract from the minimum assume seven days.
+
 ## Storage and TTL
 
 The contracts read and write through the shared helpers in
@@ -75,6 +81,7 @@ nothing.
 | Share token: only the admin binds the vault, finishes setup and runs the timelock | [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs) | `only_the_admin_binds_and_finishes`, `only_the_admin_proposes_cancels_and_applies` |
 | Oracle: only the attester posts, only the guardian pauses the NAV | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `attest_is_role_gated`, `pausing_the_nav_is_limited_to_the_guardian`, `only_admin_can_set_config` |
 | Oracle: only the admin binds the vault, finishes setup, runs the timelock and revokes a role | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) | `only_the_admin_binds_and_finishes`, `only_the_admin_proposes_cancels_and_applies`, `only_the_admin_revokes_a_role` |
+| Vault: only the admin finishes setup; after it, the custodian, grants, `manager` revokes, hand-overs and a lower notice or wind-down delay go through the timelock, while revoking the treasury or the guardian stays instant | [`contracts/async-vault/src/test/setup.rs`](../contracts/async-vault/src/test/setup.rs), [`contracts/async-vault/src/test/governance.rs`](../contracts/async-vault/src/test/governance.rs) | `only_governance_finishes_setup`, `the_custodian_changes_through_the_timelock`, `grants_and_manager_revokes_wait_for_the_timelock`, `revoking_treasury_or_guardian_stays_instant`, `only_the_admin_revokes_a_role` |
 | Identity verifier: only the admin edits the allowlist | [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs) | `only_admin_can_allow` |
 
 ## Ledger time and sequence
@@ -91,6 +98,7 @@ so time rules and TTL can be reached in one test.
 | Upgrade and wind-down timelocks follow the ledger clock | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs), [`contracts/async-vault/src/test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) | `applying_before_the_eta_is_refused`, `a_pause_freezes_the_upgrade_timelock_clock`, `governance_proposes_and_anyone_activates_after_the_delay` |
 | The share token's changes wait on the vault's clock: a vault pause moves the eta, a wind-down refuses them | [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs) | `a_grant_lands_one_vault_delay_after_it_was_proposed`, `a_vault_pause_moves_the_eta_and_holds_the_change`, `nothing_is_proposed_or_applied_while_the_vault_winds_down` |
 | The oracle's changes wait on the vault's clock the same way | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) | `a_loosened_config_lands_through_the_timelock`, `a_vault_pause_moves_the_eta_and_holds_the_change`, `nothing_is_proposed_or_applied_while_the_vault_winds_down` |
+| The vault's own changes wait on its clock: a raised notice blocks a shorter change, a pause holds one, a wind-down refuses them, and a wind-down waits at least seven days | [`contracts/async-vault/src/test/governance.rs`](../contracts/async-vault/src/test/governance.rs), [`contracts/async-vault/src/test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) | `a_change_shorter_than_a_raised_notice_never_lands`, `a_pending_role_change_lands_after_a_pause`, `nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included`, `an_unset_delay_still_waits_the_minimum` |
 | Timing rules hold for any clock values (property tests) | [`contracts/async-vault/src/test/timing.rs`](../contracts/async-vault/src/test/timing.rs) | `standard_priceable_at_never_precedes_the_close`, `a_notice_that_would_overflow_saturates` |
 
 ## Events
@@ -101,11 +109,14 @@ so time rules and TTL can be reached in one test.
 | A refused call publishes nothing | [`contracts/async-vault/src/test/events.rs`](../contracts/async-vault/src/test/events.rs) | `a_refused_call_publishes_nothing` |
 | An epoch's rounding remainder is cleared once its last request settles, a settled epoch leaves nothing in the totals whatever the claim order (property test), and a request that can never settle (a refused redemption or a refused mint) keeps its epoch open | [`contracts/async-vault/src/test/settlement.rs`](../contracts/async-vault/src/test/settlement.rs) | `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once`, `an_epoch_with_no_requests_settles_when_it_is_priced`, `a_settled_epoch_leaves_no_remainder_in_the_totals`, `a_request_that_cannot_settle_keeps_its_epoch_open`, `a_refused_mint_keeps_a_priced_deposit_epoch_open` |
 | The oracle publishes the valuation it stored | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `attesting_publishes_the_stored_valuation` |
+| The vault publishes the end of its setup, and an applied change publishes its own event before `ChangeApplied` | [`contracts/async-vault/src/test/setup.rs`](../contracts/async-vault/src/test/setup.rs), [`contracts/async-vault/src/test/governance.rs`](../contracts/async-vault/src/test/governance.rs) | `finishing_setup_publishes_it`, `applying_a_custodian_change_publishes_both_events` |
 
 ## Calls between contracts
 
 The vault tests deploy the real share token, identity verifier, compliance
-contract and oracle, plus a Stellar Asset Contract for the deposit asset.
+contract and oracle, plus a Stellar Asset Contract for the deposit asset. The
+fixture wires them as the deploy does and finishes the vault's setup;
+`setup_unfinished()` and `miswired(…)` leave the setup open.
 
 | Behaviour | Tests | Key test names |
 | --- | --- | --- |
@@ -113,6 +124,7 @@ contract and oracle, plus a Stellar Asset Contract for the deposit asset.
 | The vault mints and burns shares through its role on the share token | [`contracts/async-vault/src/test/constructor.rs`](../contracts/async-vault/src/test/constructor.rs), [`contracts/async-vault/src/test/redeem.rs`](../contracts/async-vault/src/test/redeem.rs) | `the_vault_holds_the_manager_role_on_the_share_token`, `claim_redeem_pays_assets_and_burns_the_shares` |
 | The vault checks the identity verifier at request; the share token checks it on mint and transfer | [`contracts/async-vault/src/test/compliance.rs`](../contracts/async-vault/src/test/compliance.rs), [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs) | `an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves`, `a_frozen_or_delisted_holder_cannot_transfer_shares`, `manager_mints_to_allowlisted_account` |
 | The vault reads the oracle and refuses a stale or paused feed | [`contracts/async-vault/src/test/oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs) | `the_epoch_is_priced_at_the_attestation`, `fulfill_is_rejected_once_the_feed_goes_stale`, `a_paused_feed_is_refused_by_the_vault_not_the_oracle` |
+| The vault finishes setup only once the token and the oracle report it with their own setup closed, it is the token's only `manager`, the token has no shares outstanding, it passes the identity check and the token is bound to compliance; before that it takes no deposit | [`contracts/async-vault/src/test/setup.rs`](../contracts/async-vault/src/test/setup.rs) | `every_wiring_step_is_checked_before_setup_finishes`, `a_deposit_before_setup_finishes_is_refused`, `setup_cannot_finish_while_a_hand_over_is_pending` |
 | Upgrading replaces the vault's code and migrates once | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `applying_a_wasm_change_replaces_the_code`, `a_migration_refuses_a_second_run` |
 | The share token upgrades through the vault's timelock under live balances, an open deposit and an open redemption, and migrates once; called directly, `upgrade` does not exist | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `the_token_upgrades_under_live_balances_and_open_requests`, `the_token_exposes_no_immediate_upgrade` |
 | The oracle upgrades through the vault's timelock under a live valuation, keeps its config, roles and vault, and migrates once; called directly, `upgrade` does not exist | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) (needs `upgrade_wasm`) | `the_oracle_upgrades_under_a_live_valuation`, `the_oracle_exposes_no_immediate_upgrade` |

@@ -5,7 +5,6 @@ fn capital_makes_the_round_trip_to_the_custodian() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     // Escrow stays refundable until the epoch prices, so none of it is free.
     assert_eq!(f.vault.free_reserve(), 0);
@@ -31,7 +30,6 @@ fn returning_more_than_was_deployed_shows_as_negative_net() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
     f.close_epoch();
     f.attest(wad(2));
     f.vault.fulfill_epoch(&epoch);
@@ -48,7 +46,6 @@ fn assets_owed_to_a_priced_redemption_cannot_be_deployed() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &500);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     assert_eq!(f.fulfill_epoch(wad(2)), epoch);
 
@@ -64,7 +61,6 @@ fn an_unpriced_redemption_does_not_reserve_anything_yet() {
     let f = setup();
     let holder = f.holder(500);
     f.vault.request_redeem(&holder, &500);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     assert_eq!(f.vault.free_reserve(), 1_000);
     assert_eq!(f.vault.deploy_to_custodian(&f.treasury, &1_000), 1_000);
@@ -95,7 +91,6 @@ fn deploying_needs_the_treasury_role() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     assert!(f.vault.try_deploy_to_custodian(&f.manager, &100).is_err());
     assert!(f.vault.try_deploy_to_custodian(&f.admin, &100).is_err());
@@ -104,17 +99,20 @@ fn deploying_needs_the_treasury_role() {
 
 #[test]
 fn deploying_without_a_custodian_is_rejected() {
-    let f = setup();
-    let investor = f.investor(1_000);
-    f.vault.request_deposit(&investor, &1_000);
+    let f = setup_unfinished();
+    let backer = f.investor(1_000);
+    f.vault.fund(&backer, &1_000);
 
     assert_eq!(f.vault.custodian(), None);
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &100).is_err());
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &100),
+        VaultError::CustodianNotSet,
+    );
 }
 
 #[test]
 fn setting_the_custodian_needs_the_admin_signature() {
-    let f = setup();
+    let f = setup_unfinished();
 
     f.e.set_auths(&[]);
     assert!(f.vault.try_set_custodian(&f.custodian, &f.admin).is_err());
@@ -130,7 +128,6 @@ fn deploying_a_non_positive_amount_is_rejected() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     assert!(f.vault.try_deploy_to_custodian(&f.treasury, &0).is_err());
     assert!(f.vault.try_deploy_to_custodian(&f.treasury, &-1).is_err());

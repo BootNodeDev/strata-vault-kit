@@ -121,7 +121,6 @@ async function main(): Promise<void> {
 
 	const c: Connected = connect()
 	const {
-		governance,
 		manager,
 		treasury,
 		custodian,
@@ -162,20 +161,13 @@ async function main(): Promise<void> {
 		await ensureAllowlist(c, key, name)
 	}
 
-	// Ensure vault custodian is configured
 	const currentCustodian = (await reader.custodian()).result
 	if (!currentCustodian) {
-		console.log("  + setting vault custodian...")
-		await send(
-			vault(c, governance).set_custodian({
-				custodian: custodian.publicKey(),
-				caller: governance.publicKey(),
-			}),
+		throw new Error(
+			"the vault has no custodian; the deploy sets it before setup closes",
 		)
-		console.log(`  ✓ custodian configured: ${custodian.publicKey()}`)
-	} else {
-		console.log(`  • vault custodian already configured: ${currentCustodian}`)
 	}
+	console.log(`  • vault custodian configured: ${currentCustodian}`)
 
 	// 2. Lifecycle Seeding
 	console.log("\nStep 2: Processing Vault Lifecycle...")

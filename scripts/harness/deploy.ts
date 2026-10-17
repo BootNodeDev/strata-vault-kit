@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url"
 import { Asset, rpc, type Keypair } from "@stellar/stellar-sdk"
 import { basicNodeSigner } from "@stellar/stellar-sdk/contract"
 
+import type * as AsyncVaultModule from "../../app-lib/clients/async_vault/dist/index.js"
 import type * as ComplianceModule from "../../app-lib/clients/compliance/dist/index.js"
 import type * as IdentityVerifierModule from "../../app-lib/clients/identity_verifier/dist/index.js"
 import type * as NavOracleModule from "../../app-lib/clients/nav_oracle/dist/index.js"
@@ -212,6 +213,33 @@ async function grantAndVerify(
 	console.log("nav_oracle bound to the vault, setup finished")
 }
 
+// The custodian is set while setup is open; afterwards it changes only through
+// the timelock. finish_setup refuses unless every wiring step above landed.
+async function finishVaultSetup(
+	net: Network,
+	accounts: Accounts,
+	contracts: Record<ContractName, string>,
+): Promise<void> {
+	const governance = accounts.governance
+	const caller = governance.publicKey()
+	const { Client: AsyncVault } = (await import(
+		clientEntry("async_vault")
+	)) as typeof AsyncVaultModule
+	const vault = new AsyncVault(
+		clientOptions(net, contracts.async_vault, governance),
+	)
+	await (
+		await vault.set_custodian({
+			custodian: accounts.custodian.publicKey(),
+			caller,
+		})
+	).signAndSend()
+	await (await vault.finish_setup({ caller })).signAndSend()
+	if ((await vault.setup_open()).result)
+		throw new Error("the vault's setup did not finish")
+	console.log("vault setup finished")
+}
+
 async function main(): Promise<void> {
 	requireWasm()
 	const net = network()
@@ -234,6 +262,7 @@ async function main(): Promise<void> {
 	console.log("clients generated")
 
 	await grantAndVerify(net, accounts, contracts)
+	await finishVaultSetup(net, accounts, contracts)
 
 	const record: Deployment = {
 		network: net.name,

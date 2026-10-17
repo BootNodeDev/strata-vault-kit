@@ -84,7 +84,9 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
 - **Testable Property**:
   - Upgrade delay $\in [7 \text{ days}, 90 \text{ days}]$ and $\text{delay} \ge \text{notice}$, checked when a delay change is proposed and again when it applies.
-  - Wind-down delay $\le 90 \text{ days}$.
+  - Wind-down delay $\in [7 \text{ days}, 90 \text{ days}]$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
+  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, and the token is bound to its compliance contract. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
+  - After setup, the vault's custodian, role grants, revoking `manager`, admin hand-overs and lowering the notice or the wind-down delay go through the queue; a direct call is refused with `UseTimelock`. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking any other role stay instant. A `Notice` or `WindDownDelay` change is checked against its bounds when proposed and again when it applies.
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
   - Time spent paused does not count. Applying while paused is refused.
@@ -153,10 +155,10 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 | Parameter | Method | Authority | Constraints & Defaults |
 |---|---|---|---|
-| **Standing Notice** | `set_notice(secs: u64)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $\text{secs} \le \text{upgrade\_delay}$ and $\text{secs} \le 30 \text{ days}$ (`MAX_NOTICE_SECS`). |
-| **Custodian Address** | `set_custodian(custodian: Address)` | Governance | Recipient address for off-chain capital deployment. Required before `deploy_to_custodian`. |
-| **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital. `None` = unbounded. Refuses negative cap. |
-| **Wind-Down Delay** | `set_wind_down_delay(secs: u64)` | Governance | Minimum notice before wind-down activation. Default: `0`. Capped at 90 days (`MAX_WIND_DOWN_DELAY`). |
+| **Standing Notice** | `set_notice(secs: u64)`; after setup, lowering goes through `propose_change(Notice(secs))` → `apply_change(id)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $\text{secs} \le \text{upgrade\_delay}$ and $\text{secs} \le 30 \text{ days}$ (`MAX_NOTICE_SECS`), checked again when a `Notice` change applies. Raising is instant. |
+| **Custodian Address** | `set_custodian(custodian: Address)` during setup; afterwards `propose_change(Custodian(address))` → `apply_change(id)` | Governance | Recipient address for off-chain capital deployment. Required before `deploy_to_custodian`. The deploy sets it before setup closes. |
+| **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital. `None` = unbounded. Refuses negative cap. Instant both ways, also after setup. |
+| **Wind-Down Delay** | `set_wind_down_delay(secs: u64)`; after setup, lowering goes through `propose_change(WindDownDelay(secs))` → `apply_change(id)` | Governance | Minimum notice before wind-down activation. Default and minimum 7 days (`MIN_WIND_DOWN_DELAY`), maximum 90 days (`MAX_WIND_DOWN_DELAY`). Raising is instant. |
 | **Upgrade Delay** | `propose_change(UpgradeDelay(secs))` → `apply_change(id)` | Governance | Timelock delay for wasm upgrades. Must be $\ge 7 \text{ days}$, $\le 90 \text{ days}$, and $\ge \text{notice}$. |
 | **Oracle Configuration** | `set_config(config: OracleConfig)`; after setup, `propose_change(Config(config))` → `apply_change(id)` | Governance | Updates oracle parameters within the constructor's bounds. `set_config` is instant during the oracle's setup. After it, `set_config` is instant only for a shorter `freshness_duration`: later reports go stale sooner, and no value moves. Every other change, tighter limits included, goes through `propose_change(Config(config))` → `apply_change(id)`, and the bounds are checked again when it applies. A tighter fall cap or a longer cooldown can hold the price above a real loss, and a narrower band can stop pricing. Applying a `Config` change sets every field, freshness included; to keep a cut made after the proposal, cancel the queued change and propose again. |
 
@@ -170,7 +172,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 
 | Authority | Quorum / Profile | Authorized Capabilities | Anti-Capabilities (What It Cannot Do) |
 |---|---|---|---|
-| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
+| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin, finish each contract's one-time setup. After setup, these wait for the timelock: role grants, revoking the manager, admin hand-over, the custodian, lowering the notice or the wind-down delay, upgrades, the token's compliance and verifier swaps, and oracle config changes other than a shorter freshness window. Revoking the treasury or the guardian stays instant, because taking a power away moves no value. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
 | **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `pause_nav` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
 | **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve); `fund` (returns assets from custodian). | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
 | **Attester** | High-security attestation multisig | `attest` (submits NAV report with proof reference). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
@@ -184,7 +186,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 
 | Contract | Entrypoint | Calling Authority | Access Control Guard | Pausable? |
 |---|---|---|---|---|
-| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `from.require_auth()` | Yes (halted by pause) |
+| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `from.require_auth()`; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
 | **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `from.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `caller.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `request_redeem` | Investor (Caller) | `from.require_auth()` | No (always open) |
@@ -194,10 +196,12 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `fulfill_epoch` | Permissionless | None | Yes (halted by pause) |
 | **`AsyncVault`** | `pause` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
 | **`AsyncVault`** | `unpause` | Governance | `#[only_admin]` | N/A |
-| **`AsyncVault`** | `set_notice` | Governance | `#[only_admin]` | No |
-| **`AsyncVault`** | `set_custodian` | Governance | `#[only_admin]` | No |
-| **`AsyncVault`** | `set_deposit_cap` | Governance | `#[only_admin]` | No |
-| **`AsyncVault`** | `set_wind_down_delay` | Governance | `#[only_admin]` | No |
+| **`AsyncVault`** | `set_notice` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change` | No |
+| **`AsyncVault`** | `set_custodian` | Governance | `#[only_admin]`; instant during setup, then `propose_change` | No |
+| **`AsyncVault`** | `set_deposit_cap` | Governance | `#[only_admin]`; instant both ways | No |
+| **`AsyncVault`** | `set_wind_down_delay` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change`; never below 7 days | No |
+| **`AsyncVault`** | `finish_setup` | Governance | `#[only_admin]`; needs the wiring complete and no pending admin hand-over; once | No |
+| **`AsyncVault`** | `setup_open` | Permissionless | None (view) | No |
 | **`AsyncVault`** | `propose_wind_down` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `cancel_wind_down_proposal` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `activate_wind_down` | Permissionless | None (requires timelock elapsed) | No |
@@ -205,11 +209,13 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `claim_wind_down` | Shareholder (Caller) | `caller.require_auth()` | No |
 | **`AsyncVault`** | `deploy_to_custodian` | Treasury | `#[only_role(caller, "treasury")]` | No (open during pause) |
 | **`AsyncVault`** | `fund` | Treasury | None (caller transfers funds) | No |
-| **`AsyncVault`** | `propose_change` | Governance | `#[only_admin]` | No |
+| **`AsyncVault`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
 | **`AsyncVault`** | `cancel_change` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `apply_change` | Governance | `#[only_admin]` | Refused if paused or winding down |
 | **`AsyncVault`** | `pending_changes` | Permissionless | None (view) | No |
-| **`AsyncVault`** | `transfer_admin_role` | Governance | `#[only_admin]` | No |
+| **`AsyncVault`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
+| **`AsyncVault`** | `revoke_role` | Governance | `treasury`, `guardian`: instant. `manager`: instant during setup, then `propose_change` | No |
+| **`AsyncVault`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | `caller.require_auth()` | No |
 | **`NavOracle`** | `attest` | Attester | `#[only_role(caller, "attester")]` | Refused if the NAV is paused |
 | **`NavOracle`** | `pause_nav` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
@@ -258,9 +264,9 @@ A clean deployment executes in three sequenced phases:
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so the vault can return escrowed shares on cancelled redemptions.
    - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
+   - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap.
+   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place and the token has no shares outstanding, and with `AdminTransferPending` while an admin hand-over offered during setup is pending. The vault takes no deposit before it.
 3. **Phase 3: Operational Parameterization**
-   - Governance calls `set_notice(secs)` and `set_custodian(custodian_address)`.
-   - Governance sets `deposit_cap` if initial capital intake is bounded.
    - Oracle reporter submits the genesis NAV attestation (`attest`).
 
 ---
@@ -350,3 +356,11 @@ timelock. The vault implements `ClockSource` (`crates/timelock`), and the share
 token and the oracle read its `timelock_clock` to time their own changes. Both
 implement `VaultBinding` (`crates/bindings`): `vault` names the vault each is
 bound to, and `setup_open` says whether its admin changes are still instant.
+
+The vault's `finish_setup` reads both through `VaultBinding` and refuses until
+each reports this vault with its own setup closed. It also reads the token's
+`manager` members (OpenZeppelin `AccessControl`) and its `total_supply`
+(`FungibleToken`), runs `verify_identity` on its own address, and reads
+`linked_tokens` from the token's compliance contract (OpenZeppelin
+`TokenBinder`). A replacement for any of these must answer those calls, or the
+vault's setup cannot finish.

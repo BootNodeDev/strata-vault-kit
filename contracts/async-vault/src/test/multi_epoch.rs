@@ -266,7 +266,6 @@ fn the_treasury_cannot_deploy_while_anything_is_uncovered() {
     let f = setup();
     let a = f.holder(200);
 
-    f.vault.set_custodian(&f.custodian, &f.admin);
     f.vault.request_redeem(&a, &200);
     let epoch = f.close_epoch();
     f.attest(wad(3));

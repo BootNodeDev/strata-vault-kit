@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises"
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import { beforeAll, describe, expect, it } from "vitest"
 
 import { pay, trustline } from "./lib/accounts.js"
 import { assetsFor, price, sharesFor, units } from "./lib/amounts.js"
@@ -65,12 +65,6 @@ beforeAll(async () => {
 			}),
 		)
 	}
-	await send(
-		vault(c, governance).set_custodian({
-			custodian: custodian.publicKey(),
-			caller: governance.publicKey(),
-		}),
-	)
 })
 
 describe("an account with no role", () => {
@@ -90,9 +84,14 @@ describe("an account with no role", () => {
 		)
 	})
 
-	it("cannot set the custodian", async () => {
+	it("cannot change the custodian", async () => {
 		await expect(
-			send(vault(c, outsider).set_custodian({ custodian: who, caller: who })),
+			send(
+				vault(c, outsider).propose_change({
+					change: { tag: "Custodian", values: [who] },
+					caller: who,
+				}),
+			),
 		).rejects.toThrow(/signatures/)
 	})
 
@@ -299,6 +298,40 @@ describe("the oracle after setup", () => {
 		)
 		await send(o.cancel_change({ id, caller: caller() }))
 		expect((await o.pending_changes()).result).toEqual([])
+	})
+})
+
+describe("the vault after setup", () => {
+	const caller = () => governance.publicKey()
+
+	it("governance cannot change the custodian at once", async () => {
+		const v = vault(c, governance)
+		expectRefused(
+			await v.set_custodian({
+				custodian: outsider.publicKey(),
+				caller: caller(),
+			}),
+			v,
+			"UseTimelock",
+		)
+		expect((await reader.custodian()).result).toBe(custodian.publicKey())
+	})
+
+	it("queues a custodian change behind its delay", async () => {
+		const v = vault(c, governance)
+		const id = await send(
+			v.propose_change({
+				change: { tag: "Custodian", values: [outsider.publicKey()] },
+				caller: caller(),
+			}),
+		)
+		expectRefused(
+			await v.apply_change({ id, caller: caller() }),
+			v,
+			"ChangeNotReady",
+		)
+		await send(v.cancel_change({ id, caller: caller() }))
+		expect((await v.pending_changes()).result).toEqual([])
 	})
 })
 
@@ -690,15 +723,6 @@ describe("the notice period and valuation age rules", () => {
 		)
 	})
 
-	afterAll(async () => {
-		await send(
-			vault(c, governance).set_notice({
-				secs: 0n,
-				caller: governance.publicKey(),
-			}),
-		)
-	})
-
 	it("records priceable_at at close and holds it through the notice", async () => {
 		await send(
 			vault(c, first).request_deposit({
@@ -765,5 +789,15 @@ describe("the notice period and valuation age rules", () => {
 			await sleep(waitMs)
 		}
 		expect(await fulfill(epochB)).toBe(secondPrice)
+	})
+
+	it("governance cannot lower the notice at once", async () => {
+		const v = vault(c, governance)
+		expectRefused(
+			await v.set_notice({ secs: 0n, caller: governance.publicKey() }),
+			v,
+			"UseTimelock",
+		)
+		expect((await reader.notice()).result).toBe(noticeSecs)
 	})
 })
