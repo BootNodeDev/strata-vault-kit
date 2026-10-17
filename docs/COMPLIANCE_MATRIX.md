@@ -31,9 +31,9 @@ Every investor account in the vault ecosystem exists in one of three primary com
 |---|---|---|---|---|
 | **`request_deposit`** | ✅ Allowed | ⚠️ Allowed by SAC | ⚠️ Allowed by SAC | SAC USDC transfer moves funds into cancellable escrow. The vault does not check `IdentityVerifier` at subscription time to avoid coupling to external registry gas or third-party downtime. |
 | **`cancel_deposit`** | ✅ Allowed | ✅ **Allowed** | ✅ **Allowed** | **Escape Hatch**: Calls `refund_deposit`. Escrowed settlement asset (USDC) is refunded directly to `controller`. Cash refunds bypass share token compliance checks. |
-| **`claim_deposit`** | ✅ Allowed | ❌ **Refused** | ⚠️ Minted if allowlisted | `ShareClient::mint` calls `verify_identity` and `can_create`, and does not check freezes. A de-listed receiver is refused with `IdentityVerificationFailed`. A frozen receiver still on the allowlist is minted, and cannot transfer those shares while frozen. |
-| **`request_redeem`** | ✅ Allowed | ✅ **Allowed** | ⚠️ Allowed, not guaranteed | **Exit Right**: the vault escrows the shares with `ShareClient::forced_transfer`, which checks neither the allowlist nor freezes, so a de-listed holder can start an exit. It also releases as much of a partial freeze as the escrow needs. |
-| **`cancel_redeem`** | ✅ Allowed | ❌ **Refused** | ❌ **Refused** | `return_shares` uses standard `ShareClient::transfer(vault, controller, shares)`, which executes `can_transfer`. Reverts if `controller` is de-listed or frozen. Holder cannot re-acquire shares. Refused with `EnforcedPause` while the share-token transfer pause is active; the request stays pending until the pause is lifted or the epoch prices. |
+| **`claim_deposit`** | ✅ Allowed | ❌ **Refused** | ⚠️ Minted if allowlisted | `RWATokenClient::mint` calls `verify_identity` and `can_create`, and does not check freezes. A de-listed receiver is refused with `IdentityVerificationFailed`. A frozen receiver still on the allowlist is minted, and cannot transfer those shares while frozen. |
+| **`request_redeem`** | ✅ Allowed | ✅ **Allowed** | ⚠️ Allowed, not guaranteed | **Exit Right**: the vault escrows the shares with `RWATokenClient::forced_transfer`, which checks neither the allowlist nor freezes, so a de-listed holder can start an exit. It also releases as much of a partial freeze as the escrow needs. |
+| **`cancel_redeem`** | ✅ Allowed | ❌ **Refused** | ❌ **Refused** | `return_shares` uses standard `FungibleTokenClient::transfer(vault, controller, shares)`, which executes `can_transfer`. Reverts if `controller` is de-listed or frozen. Holder cannot re-acquire shares. Refused with `EnforcedPause` while the share-token transfer pause is active; the request stays pending until the pause is lifted or the epoch prices. |
 | **`claim_redeem`** | ✅ Allowed | ✅ **Allowed** | ⚠️ Pays, not guaranteed | **Exit-Only Cash Path**: the settlement asset pays out from the liquid reserve and the escrowed shares are burned from the vault. The cash claim checks neither the allowlist nor freezes. |
 | **`transfer`** (Secondary) | ✅ Allowed | ❌ **Refused** | ❌ **Refused** | Standard peer-to-peer share transfer via SEP-57. Requires both sender and receiver to be allowlisted and neither to be frozen. |
 
@@ -59,7 +59,7 @@ If an investor deposits into an open epoch but is de-listed (or KYC expires) bef
 
 ### 3.3 De-Listing Between Deposit Request and Claim
 If an investor deposits while allowlisted, but is de-listed after the epoch is closed and priced:
-- **`claim_deposit` is refused**: The vault calls `ShareClient::mint`, which evaluates `can_create`. Because the receiver is no longer allowlisted, `verify_identity` fails with `IdentityVerificationFailed`.
+- **`claim_deposit` is refused**: The vault calls `RWATokenClient::mint`, which evaluates `can_create`. Because the receiver is no longer allowlisted, `verify_identity` fails with `IdentityVerificationFailed`.
 - **`cancel_deposit` is blocked**: The epoch is already `Fulfilled`. As an anti-arbitrage safeguard, once an epoch has taken a valuation, cancellation is permanently closed (`VaultError::AlreadyPriced`).
 - **Resolution**: The investor's settlement capital remains safely in vault escrow. The investor can either:
   1. Complete KYC refresh, upon which compliance re-allowlists the account and `claim_deposit` succeeds; or
