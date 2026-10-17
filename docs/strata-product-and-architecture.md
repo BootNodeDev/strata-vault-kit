@@ -310,15 +310,15 @@ batch boundary, though not the price it receives.
 
 #### Subscription
 
-- Request: moves the deposit asset into escrow; at most one active request per controller. The vault first asks the share token's identity verifier and refuses an address that could not receive the shares, before any cash moves; the token checks again when it mints at claim time.
+- Request: moves the deposit asset into escrow; at most one active request per controller. The vault first asks the share token whether the address is frozen and asks the token's identity verifier, and refuses a frozen address or one that could not receive the shares, before any cash moves; the token checks again when it mints at claim time.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set at the epoch's price, and the economic supply liability is recorded. To avoid unbounded loops that exceed Soroban transaction resource limits, physical share minting occurs lazily when each investor executes `claim_deposit`.
 - Cancellation: atomic, and returns the escrowed asset in full. Open while the epoch is open. Once sealed, a readable price closes it, even while the notice still runs: an investor who can see the price cannot decline it. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — it opens again, so escrow is never stuck behind a stalled feed. The epoch is then priced at the latest valid report at fulfil time. Cancellation also remains open during an active wind-down, allowing pending depositors to recover their escrowed assets when pricing is closed.
-- Share claim: verifies the receiver and delivers the shares via `mint`. If verification fails, the position remains in pending mint and exits through administrative resolution or once allowlisted. No nominal refund exists after pricing.
+- Share claim: verifies the receiver and delivers the shares via `mint`. A receiver the token would refuse gets no shares: they join the holder's redemption in the open epoch and are paid in cash at that epoch's price; in a wind-down they join the holder's wind-down entitlement. A frozen receiver is held until the freeze is lifted. No nominal refund exists after pricing.
 
 #### Redemption
 
 - Request: moves shares into escrow; at most one active request per controller per epoch.
-- Cancellation: atomic, and returns the escrowed shares under the same rules as subscription cancellation; stays open during an active wind-down.
+- Cancellation: atomic, and returns the escrowed shares under the same rules as subscription cancellation; stays open during an active wind-down, where the escrow joins the holder's wind-down entitlement instead of coming back as shares. A frozen holder's cancellation is held until the freeze is lifted.
 - Pricing: the fixed cash liability enters committed at the epoch's price. Escrowed shares remain in the vault contract and are burned lazily as each claimant executes `claim_redeem`, preserving constant-bounded resource execution per transaction. Priced claims are never re-priced.
 - Coverage: a priced claim is payable when the liquid reserve covers that claim's own amount, in any order. An earlier unpaid claim never blocks a later one that is already covered. The gap between committed and liquid reserve is the uncovered amount treasury must top up.
 - Cash claim: pays the fixed amount; it does not depend on identity. A delisted, non-frozen investor uses the exit-only cash path and cannot cancel back to shares.
@@ -448,8 +448,9 @@ interface today.
   holder who never surrenders their shares is never paid, because no entrypoint
   may iterate over holders; a refund owed to a deposit priced at zero shares
   is not tracked as a cash liability, so a round can credit the assets it needed;
-  and symmetrically, a redemption priced at zero assets before the snapshot
-  returns its shares outside the wind-down distribution.
+  and symmetrically, a redemption priced at zero assets pays nothing, and once
+  the wind-down is active its claim burns the escrowed shares instead of
+  returning them.
 - Funding a vault that is winding down cannot be undone. What arrives first
   covers priced exits and refundable escrow; the surplus is taken by the next
   round and credited to holders, and no entrypoint returns it. Treasury sends

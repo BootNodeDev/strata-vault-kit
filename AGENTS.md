@@ -26,7 +26,8 @@ What the contracts enforce:
 2. **A covered claim always pays.** Once priced and covered, a cash claim cannot
    be blocked by a pause, a stale valuation, or the investor losing their
    allowlist place. Priced claims are never re-priced and never identity-gated;
-   a delisted, non-frozen investor leaves through the exit-only cash path.
+   a delisted, non-frozen investor leaves through the exit-only cash path,
+   including a deposit that was priced before the delisting.
 3. **Cancellation is atomic and single-step**, open only until the attestation
    that prices the request is accepted. There is no instant exit.
 
