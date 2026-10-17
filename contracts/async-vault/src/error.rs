@@ -121,4 +121,6 @@ pub enum VaultError {
     /// A running total would go below zero, which means the vault's books
     /// disagree with themselves. Fails loudly instead of clamping to zero.
     AccountingMismatch = 6070,
+    /// The holder is frozen: nothing moves for them until the freeze is lifted.
+    Frozen = 6071,
 }

@@ -32,9 +32,10 @@ use state::FIRST_EPOCH;
 pub use error::VaultError;
 pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
-    DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, EpochReconciled, Funded,
-    NoticeSet, RedeemClaimed, RedeemRequested, WindDownActivated, WindDownClaimed,
-    WindDownDelaySet, WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
+    DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
+    EpochReconciled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, RedemptionSurrendered,
+    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
+    WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange};
 pub use pricing::{DirectUnitPricing, PricingScheme};
@@ -352,8 +353,9 @@ impl AsyncVault {
         deposit::cancel(e, &from, epoch_id)
     }
 
-    /// Cancels an unpriced redemption. Refused for a controller the share token
-    /// will not let hold shares; that controller exits through the cash claim.
+    /// Cancels an unpriced redemption. Outside a wind-down the shares come
+    /// back, so a delisted or frozen controller is refused; in one the escrow
+    /// joins the controller's entitlement, and a frozen controller is held.
     pub fn cancel_redeem(e: &Env, from: Address, epoch_id: u64) -> i128 {
         redeem::cancel(e, &from, epoch_id)
     }

@@ -149,6 +149,25 @@ pub struct WindDownClaimed {
     pub assets: i128,
 }
 
+/// An escrowed redemption burned into the controller's wind-down entitlement.
+#[contractevent]
+pub struct RedemptionSurrendered {
+    #[topic]
+    pub controller: Address,
+    pub epoch: u64,
+    pub shares: i128,
+}
+
+/// A priced deposit queued to exit in `into_epoch`; zero means the wind-down entitlement.
+#[contractevent]
+pub struct DepositConvertedToExit {
+    #[topic]
+    pub controller: Address,
+    pub epoch: u64,
+    pub into_epoch: u64,
+    pub shares: i128,
+}
+
 #[contractevent]
 pub struct EpochReconciled {
     #[topic]

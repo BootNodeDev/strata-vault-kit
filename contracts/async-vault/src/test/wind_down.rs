@@ -249,7 +249,7 @@ fn an_epoch_sealed_before_the_announcement_is_still_cancellable() {
 }
 
 #[test]
-fn an_escrowed_redemption_is_still_cancellable_after_the_announcement() {
+fn an_escrowed_redemption_cancelled_in_a_wind_down_joins_the_payout() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
@@ -258,7 +258,10 @@ fn an_escrowed_redemption_is_still_cancellable_after_the_announcement() {
     wind_down_now(&f);
 
     assert_eq!(f.vault.cancel_redeem(&user, &epoch), 200);
-    assert_eq!(f.shares(&user), 500);
+    assert_eq!(f.shares(&user), 300);
+
+    let pot = f.vault.finalize_wind_down_round();
+    assert_eq!(f.vault.claim_wind_down(&user), pot);
 }
 
 #[test]
@@ -439,20 +442,51 @@ fn a_holder_with_no_shares_cannot_claim() {
 }
 
 #[test]
-fn an_escrowed_redemption_is_recovered_then_surrendered() {
+fn a_cancelled_redemption_joins_the_wind_down_payout() {
     let f = setup();
     let user = f.holder(200);
     let epoch = f.vault.request_redeem(&user, &200);
     wind_down_now(&f);
     f.vault.finalize_wind_down_round();
 
-    // The escrowed shares are inside the snapshot, so they must come back first.
     assert!(f.vault.try_claim_wind_down(&user).is_err());
     f.vault.cancel_redeem(&user, &epoch);
-    let rest = f.vault.claim_wind_down(&user);
 
-    assert!(rest > 0);
     assert_eq!(f.shares(&user), 0);
+    assert!(f.vault.claim_wind_down(&user) > 0);
+}
+
+#[test]
+fn a_token_pause_does_not_hold_a_redemption_in_a_wind_down() {
+    let f = setup();
+    let user = f.holder(200);
+    let epoch = f.vault.request_redeem(&user, &200);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    f.share.pause(&f.admin);
+
+    f.vault.cancel_redeem(&user, &epoch);
+
+    assert!(f.vault.claim_wind_down(&user) > 0);
+}
+
+/// A freeze holds everything, even an escrow a wind-down would otherwise surrender.
+#[test]
+fn a_frozen_holders_redemption_stays_escrowed_in_a_wind_down() {
+    let f = setup();
+    let user = f.holder(200);
+    let epoch = f.vault.request_redeem(&user, &200);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    f.share.set_address_frozen(&user, &true, &f.compliance);
+
+    refused(f.vault.try_cancel_redeem(&user, &epoch), VaultError::Frozen);
+    assert_eq!(f.shares(&f.vault.address), 200);
+    assert!(f.vault.get_redeem_request(&epoch, &user).is_some());
+
+    f.share.set_address_frozen(&user, &false, &f.compliance);
+    f.vault.cancel_redeem(&user, &epoch);
+    assert_eq!(f.vault.claim_wind_down(&user), 400);
 }
 
 #[test]

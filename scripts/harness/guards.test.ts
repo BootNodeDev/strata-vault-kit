@@ -463,8 +463,8 @@ describe("a de-listed holder", () => {
 		)
 		expectRefused(
 			await vault(c, first).cancel_redeem({ from, epoch_id: epoch }),
-			shareToken(c, outsider),
-			"IdentityVerificationFailed",
+			vault(c, first),
+			"NotAllowlisted",
 		)
 	})
 
