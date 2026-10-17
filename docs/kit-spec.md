@@ -92,6 +92,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
   - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant.
+  - Once its one-time setup closes, the oracle's upgrades, grants, admin hand-overs and every config change except a shorter `freshness_duration` wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `attester` or `guardian`, the NAV pause and `clear_latest` stay instant.
 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
 - **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital credited to that round.
@@ -157,7 +158,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital. `None` = unbounded. Refuses negative cap. |
 | **Wind-Down Delay** | `set_wind_down_delay(secs: u64)` | Governance | Minimum notice before wind-down activation. Default: `0`. Capped at 90 days (`MAX_WIND_DOWN_DELAY`). |
 | **Upgrade Delay** | `propose_change(UpgradeDelay(secs))` → `apply_change(id)` | Governance | Timelock delay for wasm upgrades. Must be $\ge 7 \text{ days}$, $\le 90 \text{ days}$, and $\ge \text{notice}$. |
-| **Oracle Configuration** | `set_config(config: OracleConfig)` | Governance | Updates oracle parameters. Follows same validation rules as constructor. |
+| **Oracle Configuration** | `set_config(config: OracleConfig)`; after setup, `propose_change(Config(config))` → `apply_change(id)` | Governance | Updates oracle parameters within the constructor's bounds. `set_config` is instant during the oracle's setup. After it, `set_config` is instant only for a shorter `freshness_duration`: later reports go stale sooner, and no value moves. Every other change, tighter limits included, goes through `propose_change(Config(config))` → `apply_change(id)`, and the bounds are checked again when it applies. A tighter fall cap or a longer cooldown can hold the price above a real loss, and a narrower band can stop pricing. |
 
 ---
 
@@ -213,8 +214,17 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`NavOracle`** | `attest` | Attester | `#[only_role(caller, "attester")]` | Refused if the NAV is paused |
 | **`NavOracle`** | `pause_nav` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
 | **`NavOracle`** | `set_nav_paused` | Governance | `#[only_admin]` | N/A |
-| **`NavOracle`** | `set_config` | Governance | `#[only_admin]` | No |
+| **`NavOracle`** | `set_config` | Governance | `#[only_admin]`; instant during setup, then only for a shorter `freshness_duration`; otherwise `propose_change` | No |
 | **`NavOracle`** | `clear_latest` | Governance | `#[only_admin]` (requires NAV paused) | No |
+| **`NavOracle`** | `bind_vault` | Governance (oracle admin) | `#[only_admin]`; during setup, once | No |
+| **`NavOracle`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
+| **`NavOracle`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
+| **`NavOracle`** | `cancel_change` | Governance | `#[only_admin]` | No |
+| **`NavOracle`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
+| **`NavOracle`** | `pending_changes` | Permissionless | None (view) | No |
+| **`NavOracle`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
+| **`NavOracle`** | `revoke_role` | Governance | Instant (`attester`, `guardian`) | No |
+| **`NavOracle`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`ShareToken`** | `pause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
 | **`ShareToken`** | `unpause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
 | **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
@@ -247,6 +257,7 @@ A clean deployment executes in three sequenced phases:
    - Call `ShareToken::bind_vault(vault_address)`, then `ShareToken::finish_setup()`. The token's admin changes are instant until then and wait for the vault's timelock afterwards.
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so the vault can return escrowed shares on cancelled redemptions.
    - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification.
+   - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
 3. **Phase 3: Operational Parameterization**
    - Governance calls `set_notice(secs)` and `set_custodian(custodian_address)`.
    - Governance sets `deposit_cap` if initial capital intake is bounded.
@@ -263,7 +274,7 @@ instance is archived refuses every call.
 | Contract | What it extends | When | To how long |
 |---|---|---|---|
 | `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once less than 29 days remain |
-| `nav_oracle` | Its instance and the latest report | `attest` extends both; every other call extends whichever of the two it reads or writes | Same |
+| `nav_oracle` | Its instance, the latest report, and each pending governance change it reads or writes | `attest` extends the instance and the report; `bind_vault`, `finish_setup`, `grant_role`, `transfer_admin_role`, `propose_change`, `cancel_change` and `apply_change` extend the instance; every other call extends whichever entry it reads or writes | Same |
 | `share_token` | Its instance, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change` | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
@@ -274,8 +285,8 @@ shorter). They are fixed in code: a governance setting would add an admin power
 for little gain.
 
 **Pending governance changes.** A change waiting in the timelock of
-`async_vault` or `share_token` lives as a persistent entry, extended to 30 days
-when it is proposed. The wait itself can run up to 90 days
+`async_vault`, `share_token` or `nav_oracle` lives as a persistent entry,
+extended to 30 days when it is proposed. The wait itself can run up to 90 days
 (`timelock::MAX_DELAY`), so a change nobody touches can archive before it is
 due. Nothing is lost: the call that applies it restores the archived entry
 itself and pays the restore fee, the same as any other archived entry.
@@ -334,8 +345,8 @@ A feed that implements `OracleFeed` can replace `nav-oracle`; it must report
 `Stale` once its report outlives `freshness_duration`, and `attested_at` must
 be the ledger time the report was accepted, not a time the reporter supplies.
 
-Two more traits connect the share token to the vault's timelock. The vault
-implements `ClockSource` (`crates/timelock`), and the share token reads its
-`timelock_clock` to time its own changes. The share token implements
-`VaultBinding` (`crates/bindings`): `vault` names the vault it is bound to, and
-`setup_open` says whether its admin changes are still instant.
+Two more traits connect the share token and the oracle to the vault's
+timelock. The vault implements `ClockSource` (`crates/timelock`), and the share
+token and the oracle read its `timelock_clock` to time their own changes. Both
+implement `VaultBinding` (`crates/bindings`): `vault` names the vault each is
+bound to, and `setup_open` says whether its admin changes are still instant.

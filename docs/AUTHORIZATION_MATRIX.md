@@ -37,6 +37,7 @@ In `scripts/harness/deploy.ts` and automated deployment scripts, the separation 
 - The share token role is granted to the deployed vault contract: `token.grant_role({ account: asyncVault.address, role: "manager", caller: governance })`.
 - After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. It does not check that no other account holds it.
 - It then calls `token.bind_vault({ vault, caller: governance })` and `token.finish_setup({ caller: governance })`, and stops if `token.setup_open()` still reads true. From then on the token's admin changes wait for the vault's timelock (§5.2).
+- Last, it calls `oracle.bind_vault({ vault, caller: governance })` and `oracle.finish_setup({ caller: governance })`, and stops if `oracle.setup_open()` still reads true. From then on the oracle's admin changes wait for the vault's timelock (§5.3).
 
 ---
 
@@ -127,16 +128,29 @@ Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.r
 
 ### 5.3 NavOracle (`contracts/nav-oracle`)
 
-Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
+The oracle's `admin` is governance; its attester and guardian are constructor parameters. Until `finish_setup`, admin changes are instant. Setup cannot finish while an admin hand-over offered during setup is pending. After setup, the following wait for the vault's timelock through `propose_change`/`apply_change`: grants, admin hand-over, every `set_config` change except a shorter `freshness_duration`, and upgrades. Revoking `attester` or `guardian`, the NAV pause (`pause_nav`, `set_nav_paused`) and `clear_latest` stay instant.
+
+Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) and [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs).
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
 | `attest` | `#[only_role(caller, "attester")]` | Refused while the NAV is paused; cooldown, deviation cap, bounds `[min, max]`; expiry capped at the freshness window | `test::attest_is_role_gated`, `test::attesting_is_refused_while_the_nav_is_paused` |
-| `pause_nav` | `#[only_role(caller, "guardian")]` | None | `test::pausing_the_nav_is_limited_to_the_guardian` |
-| `set_nav_paused` | `#[only_admin]`, `caller.require_auth()` | None | `test::the_guardian_pauses_the_nav_but_unpausing_needs_governance` |
-| `clear_latest` | `#[only_admin]`, `caller.require_auth()` | NAV must be paused | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_nav_is_paused` |
-| `set_config` | `#[only_admin]` (no caller argument; the stored admin signs) | Valid bounds | `test::only_admin_can_set_config` |
-| `renounce_admin` | Refused always (`OracleError::AdminRequired`) | None | `test::the_oracle_admin_cannot_renounce_itself_away` |
+| `pause_nav` | `#[only_role(caller, "guardian")]` | None; instant after setup too | `test::pausing_the_nav_is_limited_to_the_guardian` (the instant case: `test_governance::the_nav_pause_and_clearing_stay_instant_after_setup`) |
+| `set_nav_paused` | `#[only_admin]`, `caller.require_auth()` | None; instant after setup too | `test::the_guardian_pauses_the_nav_but_unpausing_needs_governance` |
+| `clear_latest` | `#[only_admin]`, `caller.require_auth()` | NAV must be paused; instant after setup too | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_nav_is_paused` |
+| `set_config` | `#[only_admin]` (no caller argument; the stored admin signs) | Valid bounds. Instant while setup is open, or when the change is only a shorter `freshness_duration`; `UseTimelock` otherwise | `test::only_admin_can_set_config`, `test_governance::a_tighter_cap_or_band_waits_after_setup`, `test_governance::a_config_that_tightens_one_field_and_loosens_another_waits` |
+| `renounce_admin` | Refused always (`OracleError::AdminRequired`) | None | `test::the_oracle_admin_cannot_renounce_itself_away`; `test_governance::an_applied_admin_change_starts_a_hand_over_the_next_admin_accepts`. An oracle without an admin could never be reconfigured, clear a stuck record or unpause the NAV; hand over by proposing and applying an `Admin` change (`transfer_admin_role` during setup), then the nominee calls `accept_admin_transfer`. |
+| `bind_vault` | `#[only_admin]`, `caller.require_auth()` | During setup, once; the vault must answer `timelock_clock` | `test_governance::setup_is_open_until_finished_and_never_reopens`, `test_governance::a_second_vault_cannot_be_bound`, `test_governance::an_address_that_reports_no_clock_cannot_be_bound` |
+| `finish_setup` | `#[only_admin]`, `caller.require_auth()` | Needs a bound vault and no pending admin hand-over; once | `test_governance::setup_is_open_until_finished_and_never_reopens`, `test_governance::setup_cannot_finish_while_a_hand_over_is_pending` |
+| `propose_change` | `#[only_admin]`, `caller.require_auth()` | After setup; vault not winding down; one upgrade at a time; a `Config` change must pass the constructor's bounds | `test_governance::nothing_is_proposed_during_setup`, `test_governance::an_invalid_config_cannot_be_proposed`, `test_governance::only_the_admin_proposes_cancels_and_applies` |
+| `cancel_change` | `#[only_admin]`, `caller.require_auth()` | The change must be pending | `test_governance::only_the_admin_proposes_cancels_and_applies` |
+| `apply_change` | `#[only_admin]`, `caller.require_auth()` | Delay run on the vault's clock, vault unpaused and not winding down, delay `>=` the vault's notice; a `Config` change must still pass the bounds | `test_governance::a_vault_pause_moves_the_eta_and_holds_the_change`, `test_governance::nothing_is_proposed_or_applied_while_the_vault_winds_down`, `test_governance::a_change_shorter_than_a_raised_notice_never_lands`, `test_governance::a_config_outside_the_bounds_is_refused_when_it_applies` |
+| `pending_changes` | Open view | None | None (view) |
+| `grant_role` | Admin, `caller.require_auth()` | Instant during setup; `UseTimelock` after | `test_governance::grants_wait_after_setup_and_land_through_the_timelock` |
+| `revoke_role` | Admin, `caller.require_auth()` | Instant: taking an attester or a guardian away moves no value | `test_governance::only_the_admin_revokes_a_role` (the instant case: `test_governance::revoking_an_attester_or_a_guardian_stays_instant_after_setup`) |
+| `transfer_admin_role` | Admin | Instant during setup; `UseTimelock` after. A zero `live_until_ledger` cancels at once | `test_governance::an_admin_hand_over_waits_but_cancelling_one_does_not` |
+| `set_role_admin` | Refused always (`OracleError::UseTimelock`) | None | `test_governance::no_role_ever_gets_a_role_admin`. A role admin could grant its role with no delay. |
+| `upgrade` | Not exposed | Upgrades go through `propose_change(Upgrade)` | `test_governance::the_oracle_exposes_no_immediate_upgrade` |
 
 ### 5.4 IdentityVerifier (`contracts/identity-verifier`)
 
