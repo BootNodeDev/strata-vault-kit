@@ -95,9 +95,9 @@ function useGovernanceFlows() {
 type Flows = ReturnType<typeof useGovernanceFlows>
 
 const submitArg = <Arg,>(
-	{ submit }: { submit: (arg: Arg, label: string) => boolean },
-	{ arg, next }: { arg: Arg | undefined; next: string },
-) => arg !== undefined && submit(arg, next)
+	{ submit }: { submit: (arg: Arg, label: string, grant?: Grant) => boolean },
+	{ arg, next, grant }: { arg: Arg | undefined; next: string; grant?: Grant },
+) => arg !== undefined && submit(arg, next, grant)
 
 function submit(flows: Flows, action: GovernanceAction) {
 	switch (action.id) {
@@ -126,7 +126,7 @@ function submit(flows: Flows, action: GovernanceAction) {
 		case "cancel-upgrade":
 		case "propose-wind-down":
 		case "cancel-wind-down":
-			return flows[action.id].submit(undefined, action.next)
+			return flows[action.id].submit(undefined, action.next, action.grant)
 	}
 }
 

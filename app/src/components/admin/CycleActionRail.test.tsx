@@ -78,7 +78,7 @@ const deployAction: CycleAction = {
 const unavailableClose: CycleAction = {
 	...closeAction,
 	enabled: false,
-	unavailable: "Needs 2 signatures; collecting them is not supported yet.",
+	unavailable: "Could not read the manager's account.",
 }
 
 const renderRail = (
@@ -336,9 +336,7 @@ describe("CycleActionRail", () => {
 		expand("Close epoch")
 
 		expect(
-			screen.getByText(
-				"Needs 2 signatures; collecting them is not supported yet.",
-			),
+			screen.getByText("Could not read the manager's account."),
 		).toBeTruthy()
 		expect(submitButton("Close epoch")?.disabled).toBe(true)
 	})
