@@ -9,7 +9,7 @@ use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
 use crate::error::ShareTokenError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, SetupFinished, VaultBound};
-use crate::roles::MANAGER_ROLE;
+use crate::guards;
 use crate::ShareToken;
 
 /// Seven days of five-second ledgers: how long the next admin has to accept a
@@ -63,28 +63,6 @@ fn vault_clock(e: &Env) -> Clock {
     <ShareToken as TimelockHost>::clock(e).unwrap_or_else(|r| refuse(e, r))
 }
 
-/// Direct admin calls are instant only before setup finishes.
-pub(crate) fn require_setup_open(e: &Env) {
-    if !setup::is_open(e) {
-        panic_with_error!(e, ShareTokenError::UseTimelock);
-    }
-}
-
-/// Taking `manager` away stops every claim, so after setup it waits like a
-/// grant. Taking any other role away moves no value and stays instant.
-pub(crate) fn require_revoke_allowed(e: &Env, role: &Symbol) {
-    if *role == MANAGER_ROLE {
-        require_setup_open(e);
-    }
-}
-
-fn upgrade_pending(e: &Env) -> bool {
-    queue::open_ids(e).iter().any(|id| {
-        queue::pending::<TokenChange>(e, id)
-            .is_some_and(|(change, _)| matches!(change, TokenChange::Upgrade(_)))
-    })
-}
-
 pub(crate) fn bind_vault(e: &Env, vault: &Address) {
     setup::bind_source(e, vault).unwrap_or_else(|r| refuse(e, r));
     VaultBound {
@@ -93,22 +71,15 @@ pub(crate) fn bind_vault(e: &Env, vault: &Address) {
     .publish(e);
 }
 
-/// No nominee from setup may accept once changes wait, so a hand-over offered
-/// during setup holds it open.
 pub(crate) fn finish_setup(e: &Env) {
-    if setup::is_open(e)
-        && role_transfer::has_active_pending_transfer(e, &AccessControlStorageKey::PendingAdmin)
-    {
-        panic_with_error!(e, ShareTokenError::AdminTransferPending);
-    }
+    guards::setup_open(e);
+    guards::no_hand_over_pending(e);
     setup::finish::<ShareToken>(e).unwrap_or_else(|r| refuse(e, r));
     SetupFinished {}.publish(e);
 }
 
 pub(crate) fn propose(e: &Env, change: TokenChange) -> u32 {
-    if matches!(change, TokenChange::Upgrade(_)) && upgrade_pending(e) {
-        panic_with_error!(e, ShareTokenError::UpgradeAlreadyPending);
-    }
+    guards::no_upgrade_pending(e, &change);
     let id = queue::propose::<ShareToken, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
         queue::pending::<TokenChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));

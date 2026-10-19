@@ -3,6 +3,7 @@ mod contract;
 mod error;
 mod event;
 mod governance;
+mod guards;
 mod roles;
 pub use contract::*;
 pub use error::ShareTokenError;
@@ -15,3 +16,5 @@ pub use governance::{TokenChange, TokenPendingChange, ADMIN_ACCEPT_LEDGERS};
 mod test;
 #[cfg(test)]
 mod test_governance;
+#[cfg(test)]
+mod test_guards;
