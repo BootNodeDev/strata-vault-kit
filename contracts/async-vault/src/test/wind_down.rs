@@ -867,3 +867,27 @@ fn a_snapshot_with_more_shares_to_burn_than_exist_fails_loudly() {
         VaultError::AccountingMismatch,
     );
 }
+
+#[test]
+fn a_payout_below_what_was_already_paid_fails_loudly() {
+    let f = setup();
+    let _holder = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    let newcomer = f.investor(0);
+    f.e.as_contract(&f.vault.address, || {
+        strata_storage::set_persistent(
+            &f.e,
+            &crate::keys::DataKey::WindDownPosition(newcomer.clone()),
+            &crate::WindDownPosition {
+                entitlement: 0,
+                paid: 1,
+            },
+        )
+    });
+
+    refused(
+        f.vault.try_claim_wind_down(&newcomer),
+        VaultError::AccountingMismatch,
+    );
+}

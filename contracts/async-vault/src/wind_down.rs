@@ -189,7 +189,7 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
         checked_mul_div_floor(e, &snapshot, acc_value, &WAD_SCALE)
             .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
     };
-    let credited = promised(&acc_per_share) - promised(&acc_before);
+    let credited = state::reduce(e, promised(&acc_per_share), promised(&acc_before));
 
     let owed_total = owed(e)
         .checked_add(credited)
@@ -258,7 +258,7 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
 
     let earned = checked_mul_div_floor(e, &p.entitlement, &acc(e), &WAD_SCALE)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    let assets = earned - p.paid;
+    let assets = state::reduce(e, earned, p.paid);
     guards::has_entitlement(e, surrendered, assets);
 
     p.paid = earned;
