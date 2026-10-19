@@ -5,6 +5,7 @@ mod epoch;
 mod error;
 mod event;
 mod governance;
+mod guards;
 mod health;
 mod keys;
 mod lock_policy;
@@ -81,13 +82,7 @@ impl AsyncVault {
         // on the NAV oracle, the vault checks pairwise distinctness at construction
         // time to prevent role misconfiguration across the kit ecosystem. Neither
         // compliance nor attester is granted a direct role on the vault contract itself.
-        if roles.treasury == roles.guardian
-            || roles.treasury == roles.governance
-            || roles.compliance == roles.governance
-            || roles.compliance == roles.treasury
-        {
-            panic_with_error!(e, VaultError::RolesNotDistinct);
-        }
+        guards::roles_distinct(e, &roles);
 
         access_control::set_admin(e, &roles.governance);
         access_control::grant_role_no_auth(e, &roles.manager, &MANAGER_ROLE, &roles.governance);
@@ -185,11 +180,7 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_deposit_cap(e: &Env, cap: Option<i128>, caller: Address) {
         caller.require_auth();
-        if let Some(c) = cap {
-            if c < 0 {
-                panic_with_error!(e, VaultError::InvalidAmount);
-            }
-        }
+        guards::non_negative_cap(e, cap);
         let old_cap = state::deposit_cap(e);
         state::set_deposit_cap(e, cap);
         DepositCapUpdated {
@@ -204,7 +195,7 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_custodian(e: &Env, custodian: Address, caller: Address) {
         caller.require_auth();
-        governance::require_setup_open(e);
+        guards::direct_change_allowed(e);
         treasury::set_custodian(e, &custodian);
     }
 
@@ -213,10 +204,8 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_wind_down_delay(e: &Env, secs: u64, caller: Address) {
         caller.require_auth();
-        wind_down::check_delay(e, secs);
-        if secs < wind_down::delay(e) {
-            governance::require_setup_open(e);
-        }
+        guards::wind_down_delay_in_bounds(e, secs);
+        guards::not_lowered_after_setup(e, secs, wind_down::delay(e));
         wind_down::set_delay(e, secs);
     }
 
@@ -280,9 +269,8 @@ impl AsyncVault {
     #[only_admin]
     pub fn set_notice(e: &Env, secs: u64, caller: Address) {
         caller.require_auth();
-        if secs < state::notice(e) {
-            governance::require_setup_open(e);
-        }
+        guards::not_lowered_after_setup(e, secs, state::notice(e));
+        guards::notice_in_bounds(e, secs);
         governance::set_notice(e, secs);
     }
 
@@ -422,7 +410,7 @@ impl AsyncVault {
 impl AccessControl for AsyncVault {
     /// Instant during setup; after it, propose the grant through the timelock.
     fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
-        governance::require_setup_open(e);
+        guards::direct_change_allowed(e);
         access_control::grant_role(e, &account, &role, &caller);
     }
 
@@ -430,16 +418,14 @@ impl AccessControl for AsyncVault {
     /// away moves no value. After setup, revoking `manager` waits like a grant,
     /// because without it no epoch closes and no exit is priced.
     fn revoke_role(e: &Env, account: Address, role: Symbol, caller: Address) {
-        governance::require_revoke_allowed(e, &role);
+        guards::direct_revoke_allowed(e, &role);
         access_control::revoke_role(e, &account, &role, &caller);
     }
 
     /// Cancelling a pending hand-over (`live_until_ledger == 0`) keeps the
     /// current admin, so it stays instant.
     fn transfer_admin_role(e: &Env, new_admin: Address, live_until_ledger: u32) {
-        if live_until_ledger != 0 {
-            governance::require_setup_open(e);
-        }
+        guards::direct_hand_over_allowed(e, live_until_ledger);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
     }
 

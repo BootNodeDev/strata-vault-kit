@@ -1,57 +1,26 @@
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 use stellar_tokens::rwa::RWATokenClient;
 
-use crate::epoch;
 use crate::error::VaultError;
 use crate::event::{DepositCancelled, DepositClaimed, DepositConvertedToExit, DepositRequested};
-use crate::governance;
+use crate::guards;
 use crate::keys::DataKey;
 use crate::lock_policy::{self, Decision, Exit, Standing};
 use crate::pricing::{Pricing, PricingScheme};
 use crate::redeem;
 use crate::settlement;
-use crate::state::{self, DepositRequest, EpochStatus};
-use crate::treasury;
+use crate::state::{self, DepositRequest};
 use crate::wind_down;
 
-fn refuse_unless_allowed_in(e: &Env, holder: &Address) {
-    let standing = lock_policy::standing(e, holder);
-    if lock_policy::decide(Exit::RequestDeposit, standing, wind_down::is_active(e))
-        != Decision::Proceed
-    {
-        panic_with_error!(e, lock_policy::refused_with(standing));
-    }
-}
-
-fn refuse_if_exceeds_cap(e: &Env, amount: i128) {
-    let Some(cap) = state::deposit_cap(e) else {
-        return;
-    };
-    let current = treasury::deposited_capital(e);
-    let new_total = current
-        .checked_add(amount)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    if new_total > cap {
-        panic_with_error!(e, VaultError::DepositCapExceeded);
-    }
-}
-
 pub(crate) fn request(e: &Env, holder: &Address, amount: i128) -> u64 {
-    wind_down::refuse_if_active(e);
-    governance::refuse_if_setup_open(e);
+    guards::not_winding_down(e);
+    guards::setup_finished(e);
     holder.require_auth();
-
-    if amount <= 0 {
-        panic_with_error!(e, VaultError::InvalidAmount);
-    }
-    refuse_unless_allowed_in(e, holder);
-    refuse_if_exceeds_cap(e, amount);
-
+    guards::positive_amount(e, amount);
+    guards::allowed_to(e, Exit::RequestDeposit, holder);
+    guards::within_cap(e, amount);
     let epoch_id = state::current_epoch(e);
-
-    if state::get_deposit_request(e, epoch_id, holder).is_some() {
-        panic_with_error!(e, VaultError::RequestOutstanding);
-    }
+    guards::no_open_deposit(e, epoch_id, holder);
 
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
@@ -92,40 +61,21 @@ pub(crate) fn request(e: &Env, holder: &Address, amount: i128) -> u64 {
 
 pub(crate) fn claim(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
     holder.require_auth();
-
     let epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-
-    if epoch.status != EpochStatus::Fulfilled {
-        panic_with_error!(e, VaultError::EpochNotFulfilled);
-    }
-
+    guards::epoch_fulfilled(e, &epoch);
     let mut request = state::get_deposit_request(e, epoch_id, holder)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
-
-    if request.claimed {
-        panic_with_error!(e, VaultError::AlreadyClaimed);
-    }
-
+    guards::not_claimed(e, request.claimed);
     let standing = lock_policy::standing(e, holder);
     let decision = lock_policy::decide(Exit::ClaimDeposit, standing, wind_down::is_active(e));
-    match decision {
-        Decision::Proceed | Decision::ConvertToExit | Decision::Surrender => {}
-        Decision::Refuse | Decision::Hold => {
-            panic_with_error!(e, lock_policy::refused_with(standing))
-        }
-    }
+    guards::not_refused(e, decision, standing);
 
     let shares = Pricing::deposit_shares(e, request.amount, epoch.share_price)
         .unwrap_or_else(|err| panic_with_error!(e, err));
 
     if shares == 0 {
-        // Pricing already released this epoch's escrow into the reserve, so a
-        // refund now is an extra payout rather than part of committed. It comes
-        // out of free reserve and must not reach money owed to a priced exit.
-        if treasury::free_reserve(e) < request.amount {
-            panic_with_error!(e, VaultError::ClaimNotCovered);
-        }
+        guards::refund_covered(e, request.amount);
         refund_deposit(e, holder, epoch_id, request.amount);
         settlement::on_deposit_claimed(e, epoch_id, 0);
         return 0;
@@ -212,32 +162,13 @@ fn refund_deposit(e: &Env, holder: &Address, epoch_id: u64, amount: i128) {
 
 pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
     holder.require_auth();
-
     let epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-
-    if epoch.status == EpochStatus::Fulfilled {
-        panic_with_error!(e, VaultError::AlreadyPriced);
-    }
-
-    // Cancellation is an escape hatch, not a choice. Once the feed can price a
-    // sealed epoch, the price is knowable and the only way out is to take it.
-    // Fulfilment is closed during a wind-down, so this epoch will never take a
-    // price. There is nothing to decline.
-    if !wind_down::is_active(e) && epoch::is_priceable(e, &epoch) {
-        panic_with_error!(e, VaultError::PriceAvailable);
-    }
-
+    guards::not_priced(e, &epoch);
+    guards::no_price_available(e, &epoch);
     let request = state::get_deposit_request(e, epoch_id, holder)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
-
-    let standing = lock_policy::standing(e, holder);
-    match lock_policy::decide(Exit::CancelDeposit, standing, wind_down::is_active(e)) {
-        Decision::Proceed => {}
-        Decision::Refuse | Decision::Hold | Decision::ConvertToExit | Decision::Surrender => {
-            panic_with_error!(e, lock_policy::refused_with(standing))
-        }
-    }
+    guards::allowed_to(e, Exit::CancelDeposit, holder);
 
     state::set_cancellable_escrow(
         e,

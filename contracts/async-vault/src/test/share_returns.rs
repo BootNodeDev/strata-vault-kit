@@ -5,7 +5,7 @@ use stellar_tokens::rwa::compliance::ComplianceHook;
 use super::*;
 
 #[contract]
-struct RefusesEveryTransfer;
+pub(super) struct RefusesEveryTransfer;
 
 #[contractimpl]
 impl RefusesEveryTransfer {

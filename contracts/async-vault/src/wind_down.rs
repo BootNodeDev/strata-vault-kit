@@ -7,8 +7,9 @@ use crate::event::{
     WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
     WindDownProposed, WindDownRoundFinalized,
 };
+use crate::guards;
 use crate::keys::DataKey;
-use crate::lock_policy::{self, Decision, Exit, Standing};
+use crate::lock_policy::{self, Exit, Standing};
 use crate::state;
 use crate::treasury;
 
@@ -53,18 +54,7 @@ pub(crate) fn delay(e: &Env) -> u64 {
     strata_storage::get_instance(e, &DataKey::WindDownDelay).unwrap_or(MIN_WIND_DOWN_DELAY)
 }
 
-#[cfg_attr(feature = "short_wind_down", allow(clippy::absurd_extreme_comparisons))]
-pub(crate) fn check_delay(e: &Env, secs: u64) {
-    if secs < MIN_WIND_DOWN_DELAY {
-        panic_with_error!(e, VaultError::WindDownDelayTooShort);
-    }
-    if secs > MAX_WIND_DOWN_DELAY {
-        panic_with_error!(e, VaultError::WindDownDelayTooLong);
-    }
-}
-
 pub(crate) fn set_delay(e: &Env, secs: u64) {
-    check_delay(e, secs);
     strata_storage::set_instance(e, &DataKey::WindDownDelay, &secs);
     WindDownDelaySet { secs }.publish(e);
 }
@@ -87,25 +77,9 @@ pub(crate) fn is_active(e: &Env) -> bool {
     }
 }
 
-/// Called at the top of every entrypoint the wind-down closes.
-pub(crate) fn refuse_if_active(e: &Env) {
-    if is_active(e) {
-        panic_with_error!(e, VaultError::WindDownActive);
-    }
-}
-
 pub(crate) fn propose(e: &Env) {
-    match info(e) {
-        Some(WindDownInfo {
-            status: WindDownStatus::Active,
-            ..
-        }) => panic_with_error!(e, VaultError::WindDownActive),
-        Some(WindDownInfo {
-            status: WindDownStatus::Proposed,
-            ..
-        }) => panic_with_error!(e, VaultError::WindDownAlreadyProposed),
-        None => {}
-    }
+    guards::not_winding_down(e);
+    guards::no_wind_down_proposed(e);
 
     let active_at = e.ledger().timestamp().saturating_add(delay(e));
     strata_storage::set_instance(
@@ -122,17 +96,8 @@ pub(crate) fn propose(e: &Env) {
 }
 
 pub(crate) fn cancel_proposal(e: &Env) {
-    match info(e) {
-        Some(WindDownInfo {
-            status: WindDownStatus::Proposed,
-            ..
-        }) => {}
-        Some(WindDownInfo {
-            status: WindDownStatus::Active,
-            ..
-        }) => panic_with_error!(e, VaultError::WindDownActive),
-        None => panic_with_error!(e, VaultError::WindDownNotProposed),
-    }
+    guards::not_winding_down(e);
+    guards::wind_down_proposed(e);
 
     e.storage().instance().remove(&DataKey::WindDown);
     WindDownProposalCancelled {}.publish(e);
@@ -140,13 +105,8 @@ pub(crate) fn cancel_proposal(e: &Env) {
 
 pub(crate) fn activate(e: &Env) {
     let mut wd = info(e).unwrap_or_else(|| panic_with_error!(e, VaultError::WindDownNotProposed));
-
-    if wd.status == WindDownStatus::Active {
-        panic_with_error!(e, VaultError::WindDownActive);
-    }
-    if e.ledger().timestamp() < wd.active_at {
-        panic_with_error!(e, VaultError::WindDownDelayNotElapsed);
-    }
+    guards::not_winding_down(e);
+    guards::wind_down_delay_elapsed(e, &wd);
 
     wd.status = WindDownStatus::Active;
     strata_storage::set_instance(e, &DataKey::WindDown, &wd);
@@ -201,9 +161,7 @@ pub(crate) fn credit(e: &Env, holder: &Address, shares: i128) {
 
 pub(crate) fn finalize_round(e: &Env) -> i128 {
     let mut wd = info(e).unwrap_or_else(|| panic_with_error!(e, VaultError::WindDownNotActive));
-    if wd.status != WindDownStatus::Active {
-        panic_with_error!(e, VaultError::WindDownNotActive);
-    }
+    guards::winding_down(e);
 
     let snapshot = if wd.round == 0 {
         let s = snapshot_supply(e);
@@ -212,17 +170,12 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
     } else {
         supply_snapshot(e)
     };
-
-    if snapshot <= 0 {
-        panic_with_error!(e, VaultError::NothingToDistribute);
-    }
+    guards::something_to_distribute(e, snapshot);
 
     let pot = treasury::free_reserve(e);
     let delta = checked_mul_div_floor(e, &pot, &WAD_SCALE, &snapshot)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    if delta <= 0 {
-        panic_with_error!(e, VaultError::NothingToDistribute);
-    }
+    guards::something_to_distribute(e, delta);
 
     let acc_before = acc(e);
     let acc_per_share = acc_before
@@ -288,19 +241,8 @@ pub(crate) fn claimable(e: &Env, holder: &Address) -> i128 {
 
 pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
     holder.require_auth();
-
-    let round = info(e).map(|wd| wd.round).unwrap_or(0);
-    if round == 0 {
-        panic_with_error!(e, VaultError::DistributionNotStarted);
-    }
-
-    let standing = lock_policy::standing(e, holder);
-    match lock_policy::decide(Exit::ClaimWindDown, standing, is_active(e)) {
-        Decision::Proceed => {}
-        Decision::Refuse | Decision::Hold | Decision::ConvertToExit | Decision::Surrender => {
-            panic_with_error!(e, lock_policy::refused_with(standing))
-        }
-    }
+    guards::distribution_started(e);
+    guards::allowed_to(e, Exit::ClaimWindDown, holder);
 
     let vault = e.current_contract_address();
     let share_token = state::get_addr(e, &DataKey::ShareToken);
@@ -317,10 +259,7 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
     let earned = checked_mul_div_floor(e, &p.entitlement, &acc(e), &WAD_SCALE)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
     let assets = earned - p.paid;
-
-    if surrendered == 0 && assets == 0 {
-        panic_with_error!(e, VaultError::NoEntitlement);
-    }
+    guards::has_entitlement(e, surrendered, assets);
 
     p.paid = earned;
     strata_storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
