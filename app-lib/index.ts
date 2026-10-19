@@ -8,5 +8,6 @@ export * from "./contracts" // AsyncVaultApi, connectAsyncVault
 export * from "./env" // rpcUrl, networkPassphrase, stellarNetwork, horizonUrl, network, labPrefix
 export * from "./format" // shortAddress, formatNetworkName, networkStatus, NetworkState
 export * from "./friendbot" // getFriendbotUrl
+export * from "./multisig" // decodePending, signatureWeight, hasSigned, submitSigned, OPERATOR_TIMEOUT_SECONDS
 export * from "./readContract" // ContractRead, readContract
 export * from "./wallet" // connectWallet, disconnectWallet, profileModal, signTransaction, onWalletChange, fetchBalances, wallet, MappedBalances, WalletState

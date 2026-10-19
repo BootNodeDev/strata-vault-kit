@@ -231,10 +231,13 @@ describe("ComplianceSection", () => {
 		enterTarget(TARGET)
 
 		fireEvent.click(button("Allow the address"))
-		expect(txs.useAllowAddress.submit).toHaveBeenCalledWith({
-			verifier: "CVERIFIERADDRESS",
-			account: TARGET,
-		})
+		expect(txs.useAllowAddress.submit).toHaveBeenCalledWith(
+			{
+				verifier: "CVERIFIERADDRESS",
+				account: TARGET,
+			},
+			verifierAdmin,
+		)
 
 		txs.useAllowAddress.status = { status: "preparing" }
 		rerender(
@@ -266,10 +269,13 @@ describe("ComplianceSection", () => {
 		fireEvent.change(amount!, { target: { value: "5" } })
 		fireEvent.click(button("Freeze shares"))
 
-		expect(txs.useFreezeShares.submit).toHaveBeenCalledWith({
-			account: TARGET,
-			amount: 5n * UNIT,
-		})
+		expect(txs.useFreezeShares.submit).toHaveBeenCalledWith(
+			{
+				account: TARGET,
+				amount: 5n * UNIT,
+			},
+			officer,
+		)
 		expect(screen.getByText("Frozen shares 10.00 → 15.00.")).toBeTruthy()
 	})
 
