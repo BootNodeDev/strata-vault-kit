@@ -303,7 +303,7 @@ describe("the oracle after setup", () => {
 })
 
 describe("the compliance contract after setup", () => {
-	const operator = () => governance.publicKey()
+	const caller = () => governance.publicKey()
 	const canCreate = { tag: "CanCreate", values: undefined } as const
 
 	it("governance cannot add a module at once", async () => {
@@ -312,7 +312,7 @@ describe("the compliance contract after setup", () => {
 			await rules.add_module_to({
 				hook: canCreate,
 				module: outsider.publicKey(),
-				operator: operator(),
+				operator: caller(),
 			}),
 			rules,
 			"UseTimelock",
@@ -324,15 +324,15 @@ describe("the compliance contract after setup", () => {
 		const id = await send(
 			rules.propose_change({
 				change: { tag: "AddModule", values: [canCreate, outsider.publicKey()] },
-				operator: operator(),
+				caller: caller(),
 			}),
 		)
 		expectRefused(
-			await rules.apply_change({ id, operator: operator() }),
+			await rules.apply_change({ id, caller: caller() }),
 			rules,
 			"ChangeNotReady",
 		)
-		await send(rules.cancel_change({ id, operator: operator() }))
+		await send(rules.cancel_change({ id, caller: caller() }))
 		expect((await rules.pending_changes()).result).toEqual([])
 	})
 })
@@ -375,7 +375,7 @@ describe("invalid amounts and duplicate requests in an epoch", () => {
 	it("rejects zero deposit amount", async () => {
 		const v = vault(c, first)
 		expectRefused(
-			await v.request_deposit({ from: first.publicKey(), amount: 0n }),
+			await v.request_deposit({ holder: first.publicKey(), amount: 0n }),
 			v,
 			"InvalidAmount",
 		)
@@ -384,7 +384,7 @@ describe("invalid amounts and duplicate requests in an epoch", () => {
 	it("rejects zero redeem shares", async () => {
 		const v = vault(c, first)
 		expectRefused(
-			await v.request_redeem({ from: first.publicKey(), shares: 0n }),
+			await v.request_redeem({ holder: first.publicKey(), shares: 0n }),
 			v,
 			"InvalidAmount",
 		)
@@ -393,14 +393,14 @@ describe("invalid amounts and duplicate requests in an epoch", () => {
 	it("rejects a second request from the same account in one epoch", async () => {
 		const v = vault(c, first)
 		const epoch = await send(
-			v.request_deposit({ from: first.publicKey(), amount: usdc(10) }),
+			v.request_deposit({ holder: first.publicKey(), amount: usdc(10) }),
 		)
 		expectRefused(
-			await v.request_deposit({ from: first.publicKey(), amount: usdc(10) }),
+			await v.request_deposit({ holder: first.publicKey(), amount: usdc(10) }),
 			v,
 			"RequestOutstanding",
 		)
-		await send(v.cancel_deposit({ from: first.publicKey(), epoch_id: epoch }))
+		await send(v.cancel_deposit({ holder: first.publicKey(), epoch_id: epoch }))
 	})
 })
 
@@ -409,7 +409,7 @@ describe("who may subscribe", () => {
 		const v = vault(c, outsider)
 		expectRefused(
 			await v.request_deposit({
-				from: outsider.publicKey(),
+				holder: outsider.publicKey(),
 				amount: usdc(10),
 			}),
 			v,
@@ -427,14 +427,14 @@ describe("two epochs pending at once", () => {
 	it("both read Pending", async () => {
 		epochA = await send(
 			vault(c, first).request_deposit({
-				from: first.publicKey(),
+				holder: first.publicKey(),
 				amount: usdc(100),
 			}),
 		)
 		expect(await closeEpoch()).toBe(epochA)
 		epochB = await send(
 			vault(c, second).request_deposit({
-				from: second.publicKey(),
+				holder: second.publicKey(),
 				amount: usdc(100),
 			}),
 		)
@@ -443,7 +443,7 @@ describe("two epochs pending at once", () => {
 		expect((await epochOf(epochB))?.status.tag).toBe("Pending")
 		expectRefused(
 			await vault(c, first).claim_deposit({
-				caller: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: epochA,
 			}),
 			vault(c, first),
@@ -464,7 +464,7 @@ describe("two epochs pending at once", () => {
 		expect(
 			await send(
 				vault(c, first).claim_deposit({
-					caller: first.publicKey(),
+					holder: first.publicKey(),
 					epoch_id: epochA,
 				}),
 			),
@@ -472,14 +472,14 @@ describe("two epochs pending at once", () => {
 		expect(
 			await send(
 				vault(c, second).claim_deposit({
-					caller: second.publicKey(),
+					holder: second.publicKey(),
 					epoch_id: epochB,
 				}),
 			),
 		).toBe(sharesFor(usdc(100), secondPrice))
 		expectRefused(
 			await vault(c, first).claim_deposit({
-				caller: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: epochA,
 			}),
 			vault(c, first),
@@ -487,7 +487,7 @@ describe("two epochs pending at once", () => {
 		)
 		expectRefused(
 			await vault(c, outsider).claim_deposit({
-				caller: outsider.publicKey(),
+				holder: outsider.publicKey(),
 				epoch_id: epochA,
 			}),
 			vault(c, outsider),
@@ -506,13 +506,13 @@ describe("a small covered claim pays while a larger one waits", () => {
 		large = await shares(second.publicKey())
 		await send(
 			vault(c, first).request_redeem({
-				from: first.publicKey(),
+				holder: first.publicKey(),
 				shares: small,
 			}),
 		)
 		epoch = await send(
 			vault(c, second).request_redeem({
-				from: second.publicKey(),
+				holder: second.publicKey(),
 				shares: large,
 			}),
 		)
@@ -534,7 +534,7 @@ describe("a small covered claim pays while a larger one waits", () => {
 		const before = await usdcBalance(c, first.publicKey())
 		const paid = await send(
 			vault(c, first).claim_redeem({
-				caller: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: epoch,
 			}),
 		)
@@ -545,7 +545,7 @@ describe("a small covered claim pays while a larger one waits", () => {
 	it("the large claim waits", async () => {
 		const v = vault(c, second)
 		expectRefused(
-			await v.claim_redeem({ caller: second.publicKey(), epoch_id: epoch }),
+			await v.claim_redeem({ holder: second.publicKey(), epoch_id: epoch }),
 			v,
 			"ClaimNotCovered",
 		)
@@ -555,13 +555,13 @@ describe("a small covered claim pays while a larger one waits", () => {
 	it("pays once the capital returns", async () => {
 		await send(
 			vault(c, custodian).fund({
-				from: custodian.publicKey(),
+				caller: custodian.publicKey(),
 				assets: usdc(150),
 			}),
 		)
 		const paid = await send(
 			vault(c, second).claim_redeem({
-				caller: second.publicKey(),
+				holder: second.publicKey(),
 				epoch_id: epoch,
 			}),
 		)
@@ -569,7 +569,7 @@ describe("a small covered claim pays while a larger one waits", () => {
 		expect((await reader.uncovered()).result).toBe(0n)
 		expectRefused(
 			await vault(c, second).claim_redeem({
-				caller: second.publicKey(),
+				holder: second.publicKey(),
 				epoch_id: epoch,
 			}),
 			vault(c, second),
@@ -584,7 +584,10 @@ describe("a deposit too small to mint a share", () => {
 	it("is refunded at claim", async () => {
 		const before = await usdcBalance(c, third.publicKey())
 		epoch = await send(
-			vault(c, third).request_deposit({ from: third.publicKey(), amount: 1n }),
+			vault(c, third).request_deposit({
+				holder: third.publicKey(),
+				amount: 1n,
+			}),
 		)
 		expect(await closeEpoch()).toBe(epoch)
 		await attest(c, secondPrice)
@@ -592,7 +595,7 @@ describe("a deposit too small to mint a share", () => {
 		expect(
 			await send(
 				vault(c, third).claim_deposit({
-					caller: third.publicKey(),
+					holder: third.publicKey(),
 					epoch_id: epoch,
 				}),
 			),
@@ -603,14 +606,14 @@ describe("a deposit too small to mint a share", () => {
 })
 
 describe("a de-listed holder", () => {
-	const from = first.publicKey()
+	const holder = first.publicKey()
 	let epoch = 0n
 	let redeeming = 0n
 
 	it("cannot cancel a redemption back to shares", async () => {
 		redeeming = sharesFor(usdc(10), secondPrice)
 		epoch = await send(
-			vault(c, first).request_redeem({ from, shares: redeeming }),
+			vault(c, first).request_redeem({ holder, shares: redeeming }),
 		)
 		await send(
 			identityVerifier(c, compliance).allow({
@@ -620,7 +623,7 @@ describe("a de-listed holder", () => {
 			}),
 		)
 		expectRefused(
-			await vault(c, first).cancel_redeem({ from, epoch_id: epoch }),
+			await vault(c, first).cancel_redeem({ holder, epoch_id: epoch }),
 			vault(c, first),
 			"NotAllowlisted",
 		)
@@ -633,7 +636,7 @@ describe("a de-listed holder", () => {
 		const before = await usdcBalance(c, first.publicKey())
 		const paid = await send(
 			vault(c, first).claim_redeem({
-				caller: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: epoch,
 			}),
 		)
@@ -667,13 +670,13 @@ describe("a sealed epoch while the feed is down", () => {
 		redeeming = await shares(first.publicKey())
 		await send(
 			vault(c, first).request_deposit({
-				from: first.publicKey(),
+				holder: first.publicKey(),
 				amount: usdc(100),
 			}),
 		)
 		epoch = await send(
 			vault(c, first).request_redeem({
-				from: first.publicKey(),
+				holder: first.publicKey(),
 				shares: redeeming,
 			}),
 		)
@@ -681,12 +684,12 @@ describe("a sealed epoch while the feed is down", () => {
 		await attest(c, secondPrice)
 		const v = vault(c, first)
 		expectRefused(
-			await v.cancel_deposit({ from: first.publicKey(), epoch_id: epoch }),
+			await v.cancel_deposit({ holder: first.publicKey(), epoch_id: epoch }),
 			v,
 			"PriceAvailable",
 		)
 		expectRefused(
-			await v.cancel_redeem({ from: first.publicKey(), epoch_id: epoch }),
+			await v.cancel_redeem({ holder: first.publicKey(), epoch_id: epoch }),
 			v,
 			"PriceAvailable",
 		)
@@ -707,7 +710,7 @@ describe("a sealed epoch while the feed is down", () => {
 		expect(
 			await send(
 				vault(c, first).cancel_deposit({
-					from: first.publicKey(),
+					holder: first.publicKey(),
 					epoch_id: epoch,
 				}),
 			),
@@ -719,7 +722,7 @@ describe("a sealed epoch while the feed is down", () => {
 		expect(
 			await send(
 				vault(c, first).cancel_redeem({
-					from: first.publicKey(),
+					holder: first.publicKey(),
 					epoch_id: epoch,
 				}),
 			),
@@ -730,7 +733,7 @@ describe("a sealed epoch while the feed is down", () => {
 	it("a second cancel finds no request", async () => {
 		expectRefused(
 			await vault(c, first).cancel_redeem({
-				from: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: epoch,
 			}),
 			reader,
@@ -762,7 +765,7 @@ describe("the notice period and valuation age rules", () => {
 	it("records priceable_at at close and holds it through the notice", async () => {
 		await send(
 			vault(c, first).request_deposit({
-				from: first.publicKey(),
+				holder: first.publicKey(),
 				amount: usdc(100),
 			}),
 		)
@@ -801,7 +804,7 @@ describe("the notice period and valuation age rules", () => {
 	it("refuses cancellation while the notice is running once price is readable", async () => {
 		await send(
 			vault(c, first).request_deposit({
-				from: first.publicKey(),
+				holder: first.publicKey(),
 				amount: usdc(100),
 			}),
 		)
@@ -809,7 +812,7 @@ describe("the notice period and valuation age rules", () => {
 		await attest(c, secondPrice)
 		const v = vault(c, first)
 		expectRefused(
-			await v.cancel_deposit({ from: first.publicKey(), epoch_id: epochB }),
+			await v.cancel_deposit({ holder: first.publicKey(), epoch_id: epochB }),
 			v,
 			"PriceAvailable",
 		)

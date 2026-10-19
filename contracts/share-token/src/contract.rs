@@ -113,17 +113,17 @@ impl ShareToken {
     /// Moves shares under a legal order, at once. The compliance authority
     /// asks and the admin co-signs the same call. Never out of or into the
     /// vault's address, and only to an account the identity verifier accepts.
-    #[only_role(operator, "compliance")]
+    #[only_role(caller, "compliance")]
     pub fn legal_transfer(
         e: &Env,
         from: Address,
         to: Address,
         amount: i128,
         reference: String,
-        operator: Address,
+        caller: Address,
     ) {
         strata_storage::bump_instance(e);
-        require_admin_co_sign(e, &operator);
+        require_admin_co_sign(e, &caller);
         if reference.is_empty() || reference.len() > MAX_REFERENCE_LEN {
             panic_with_error!(e, ShareTokenError::InvalidReference);
         }

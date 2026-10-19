@@ -84,7 +84,7 @@ describe("a wind-down on a throwaway vault", () => {
 			await call(
 				"request_deposit",
 				"holder-1",
-				{ from: holder(), amount: usdc(200) },
+				{ holder: holder(), amount: usdc(200) },
 				true,
 			),
 		).toBe("accepted")
@@ -104,7 +104,7 @@ describe("a wind-down on a throwaway vault", () => {
 			await call(
 				"claim_deposit",
 				"holder-1",
-				{ caller: holder(), epoch_id: 1n },
+				{ holder: holder(), epoch_id: 1n },
 				true,
 			),
 		).toBe("accepted")
@@ -115,7 +115,7 @@ describe("a wind-down on a throwaway vault", () => {
 			await call(
 				"request_redeem",
 				"holder-1",
-				{ from: holder(), shares: usdc(10) },
+				{ holder: holder(), shares: usdc(10) },
 				true,
 			),
 		).toBe("accepted")
@@ -204,8 +204,8 @@ describe("a wind-down on a throwaway vault", () => {
 			["wind_down_claimable", { holder: holder() }],
 			["get_epoch", { epoch_id: 1n }],
 			["get_epoch_settlement", { epoch_id: 1n }],
-			["get_deposit_request", { epoch_id: 1n, controller: holder() }],
-			["get_redeem_request", { epoch_id: 2n, controller: holder() }],
+			["get_deposit_request", { epoch_id: 1n, holder: holder() }],
+			["get_redeem_request", { epoch_id: 2n, holder: holder() }],
 			["has_role", { account: gov, role: "manager" }],
 			["get_role_member_count", { role: "manager" }],
 			["get_role_member", { role: "manager", index: 0 }],
@@ -264,23 +264,23 @@ describe("a wind-down on a throwaway vault", () => {
 				{ caller: c.keys.treasury.publicKey(), assets: 1n },
 				"refused: WindDownActive",
 			],
-			["fund", "holder-1", { from: holder(), assets: 1n }, "accepted"],
+			["fund", "holder-1", { caller: holder(), assets: 1n }, "accepted"],
 			[
 				"cancel_deposit",
 				"holder-1",
-				{ from: holder(), epoch_id: 1n },
+				{ holder: holder(), epoch_id: 1n },
 				"refused: AlreadyPriced",
 			],
 			[
 				"cancel_redeem",
 				"holder-1",
-				{ from: holder(), epoch_id: 2n },
+				{ holder: holder(), epoch_id: 2n },
 				"accepted",
 			],
 			[
 				"claim_redeem",
 				"holder-1",
-				{ caller: holder(), epoch_id: 2n },
+				{ holder: holder(), epoch_id: 2n },
 				"refused: EpochNotFulfilled",
 			],
 			[

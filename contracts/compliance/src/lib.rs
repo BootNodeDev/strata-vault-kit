@@ -96,7 +96,7 @@ impl Compliance {
     /// Names the vault whose clock this contract's timelock reads. Once, and
     /// only during setup.
     #[only_admin]
-    pub fn bind_vault(e: &Env, vault: Address, _operator: Address) {
+    pub fn bind_vault(e: &Env, vault: Address, _caller: Address) {
         strata_storage::bump_instance(e);
         governance::bind_vault(e, &vault);
     }
@@ -104,20 +104,20 @@ impl Compliance {
     /// Ends the window in which module and binding changes are instant. It
     /// never reopens.
     #[only_admin]
-    pub fn finish_setup(e: &Env, _operator: Address) {
+    pub fn finish_setup(e: &Env, _caller: Address) {
         strata_storage::bump_instance(e);
         governance::finish_setup(e);
     }
 
     /// Queues a change behind the vault's timelock and returns its id.
     #[only_admin]
-    pub fn propose_change(e: &Env, change: ComplianceChange, _operator: Address) -> u32 {
+    pub fn propose_change(e: &Env, change: ComplianceChange, _caller: Address) -> u32 {
         strata_storage::bump_instance(e);
         governance::propose(e, change)
     }
 
     #[only_admin]
-    pub fn cancel_change(e: &Env, id: u32, _operator: Address) {
+    pub fn cancel_change(e: &Env, id: u32, _caller: Address) {
         strata_storage::bump_instance(e);
         governance::cancel(e, id);
     }
@@ -125,7 +125,7 @@ impl Compliance {
     /// Lands a change whose delay has run. Refused while the vault is paused
     /// or winding down.
     #[only_admin]
-    pub fn apply_change(e: &Env, id: u32, _operator: Address) {
+    pub fn apply_change(e: &Env, id: u32, _caller: Address) {
         strata_storage::bump_instance(e);
         governance::apply(e, id);
     }

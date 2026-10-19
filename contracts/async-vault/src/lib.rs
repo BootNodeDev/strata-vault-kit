@@ -345,8 +345,8 @@ impl AsyncVault {
         treasury::deploy(e, assets)
     }
 
-    pub fn fund(e: &Env, from: Address, assets: i128) -> i128 {
-        treasury::fund(e, &from, assets)
+    pub fn fund(e: &Env, caller: Address, assets: i128) -> i128 {
+        treasury::fund(e, &caller, assets)
     }
 
     pub fn notice(e: &Env) -> u64 {
@@ -366,53 +366,45 @@ impl AsyncVault {
         settlement::get(e, epoch_id)
     }
 
-    pub fn get_deposit_request(
-        e: &Env,
-        epoch_id: u64,
-        controller: Address,
-    ) -> Option<DepositRequest> {
-        state::get_deposit_request(e, epoch_id, &controller)
+    pub fn get_deposit_request(e: &Env, epoch_id: u64, holder: Address) -> Option<DepositRequest> {
+        state::get_deposit_request(e, epoch_id, &holder)
     }
 
     #[when_not_paused]
-    pub fn request_deposit(e: &Env, from: Address, amount: i128) -> u64 {
-        deposit::request(e, &from, amount)
+    pub fn request_deposit(e: &Env, holder: Address, amount: i128) -> u64 {
+        deposit::request(e, &holder, amount)
     }
 
-    /// Returns the shares minted to the caller. Zero means none were: a deposit
-    /// too small for one share was refunded, or the caller is off the allowlist
+    /// Returns the shares minted to the holder. Zero means none were: a deposit
+    /// too small for one share was refunded, or the holder is off the allowlist
     /// and the shares joined an exit instead (`DepositConvertedToExit`).
-    pub fn claim_deposit(e: &Env, caller: Address, epoch_id: u64) -> i128 {
-        deposit::claim(e, &caller, epoch_id)
+    pub fn claim_deposit(e: &Env, holder: Address, epoch_id: u64) -> i128 {
+        deposit::claim(e, &holder, epoch_id)
     }
 
     /// Cancels an unpriced deposit. Never blocked by the pause.
-    pub fn cancel_deposit(e: &Env, from: Address, epoch_id: u64) -> i128 {
-        deposit::cancel(e, &from, epoch_id)
+    pub fn cancel_deposit(e: &Env, holder: Address, epoch_id: u64) -> i128 {
+        deposit::cancel(e, &holder, epoch_id)
     }
 
     /// Cancels an unpriced redemption. Outside a wind-down the shares come
-    /// back, even while the token is paused, unless the controller is delisted,
+    /// back, even while the token is paused, unless the holder is delisted,
     /// frozen or refused by the compliance rules; in one the escrow joins the
-    /// controller's entitlement, and a frozen controller is held.
-    pub fn cancel_redeem(e: &Env, from: Address, epoch_id: u64) -> i128 {
-        redeem::cancel(e, &from, epoch_id)
+    /// holder's entitlement, and a frozen holder is held.
+    pub fn cancel_redeem(e: &Env, holder: Address, epoch_id: u64) -> i128 {
+        redeem::cancel(e, &holder, epoch_id)
     }
 
-    pub fn request_redeem(e: &Env, from: Address, shares: i128) -> u64 {
-        redeem::request(e, &from, shares)
+    pub fn request_redeem(e: &Env, holder: Address, shares: i128) -> u64 {
+        redeem::request(e, &holder, shares)
     }
 
-    pub fn get_redeem_request(
-        e: &Env,
-        epoch_id: u64,
-        controller: Address,
-    ) -> Option<RedeemRequest> {
-        state::get_redeem_request(e, epoch_id, &controller)
+    pub fn get_redeem_request(e: &Env, epoch_id: u64, holder: Address) -> Option<RedeemRequest> {
+        state::get_redeem_request(e, epoch_id, &holder)
     }
 
-    pub fn claim_redeem(e: &Env, caller: Address, epoch_id: u64) -> i128 {
-        redeem::claim(e, &caller, epoch_id)
+    pub fn claim_redeem(e: &Env, holder: Address, epoch_id: u64) -> i128 {
+        redeem::claim(e, &holder, epoch_id)
     }
 
     #[only_role(caller, "manager")]
