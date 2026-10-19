@@ -1,5 +1,4 @@
 import { StrKey } from "@stellar/stellar-sdk"
-import { shortAddress } from "@stellar-scaffold/app-lib"
 import { type Grant, type Standing } from "../hooks/useAdminAuthority"
 
 export const ROLES = {
@@ -69,6 +68,7 @@ export type RailAction<F extends RailField = ActionField> = {
 	enabled: boolean
 	unavailable?: string
 	tone?: "danger"
+	grant?: Grant
 }
 
 export type Readiness =
@@ -94,9 +94,10 @@ export const readyCount = (actions: RailAction<RailField>[]): number =>
 export const allMet = (conditions: Condition[]): boolean =>
 	conditions.every((condition) => condition.met === true)
 
-const signaturesNeeded = (standing: Standing): number | null => {
-	if (standing === "signs-alone") return null
-	return "needs" in standing ? standing.needs : standing.threshold
+export const describeStanding = (standing: Standing): string => {
+	if (standing === "signs-alone") return "signs alone"
+	if ("needs" in standing) return `1 of ${standing.needs} signatures`
+	return `weight ${standing.weight} of threshold ${standing.threshold}`
 }
 
 export const grantFor = (
@@ -106,18 +107,6 @@ export const grantFor = (
 ): Grant | undefined => {
 	const ofRole = grants.filter((grant) => grant.role === role)
 	return ofRole.find((grant) => grant.authority === wallet) ?? ofRole[0]
-}
-
-export const unavailableFor = (
-	grant: Grant,
-	wallet: string,
-): string | undefined => {
-	const needed = signaturesNeeded(grant.standing)
-	if (needed !== null)
-		return `Needs ${needed} signatures; collecting them is not supported yet.`
-	if (grant.authority !== wallet)
-		return `Signs for ${shortAddress(grant.authority)}; acting on its behalf is not supported yet.`
-	return undefined
 }
 
 export type Spec<Id extends string, F extends RailField = ActionField> = {
@@ -134,24 +123,19 @@ export type Spec<Id extends string, F extends RailField = ActionField> = {
 export const toAction = <Id extends string, F extends RailField>(
 	spec: Spec<Id, F>,
 	grant: Grant,
-	wallet: string,
-): RailAction<F> & { id: Id } => {
-	const unavailable = unavailableFor(grant, wallet)
-	return {
-		id: spec.id,
-		label: spec.label,
-		conditions: spec.conditions,
-		outcome: spec.outcome,
-		...(spec.note === undefined ? {} : { note: spec.note }),
-		...(spec.fields === undefined ? {} : { fields: spec.fields }),
-		enabled:
-			unavailable === undefined &&
-			spec.ready !== false &&
-			spec.conditions.every((condition) => condition.met !== false),
-		...(spec.danger === true ? { tone: "danger" as const } : {}),
-		...(unavailable === undefined ? {} : { unavailable }),
-	}
-}
+): RailAction<F> & { id: Id } => ({
+	id: spec.id,
+	label: spec.label,
+	conditions: spec.conditions,
+	outcome: spec.outcome,
+	...(spec.note === undefined ? {} : { note: spec.note }),
+	...(spec.fields === undefined ? {} : { fields: spec.fields }),
+	enabled:
+		spec.ready !== false &&
+		spec.conditions.every((condition) => condition.met !== false),
+	...(spec.danger === true ? { tone: "danger" as const } : {}),
+	grant,
+})
 
 export type Built<Id extends string, Arg> = Id extends string
 	? RailAction<RailField> & { id: Id; arg: Arg; next: string }

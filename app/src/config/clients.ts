@@ -6,6 +6,7 @@ import {
 	connectShareToken,
 	type AssetApi,
 	type AsyncVaultApi,
+	type ConnectOptions,
 	type IdentityVerifierApi,
 	type NavOracleApi,
 	type ShareTokenApi,
@@ -23,24 +24,33 @@ export const asyncVault = (): Promise<AsyncVaultApi> => {
 	return vault
 }
 
+export type WriterSigner = Signer & { timeoutInSeconds?: number }
+
 interface WriterEntry<T> {
-	signer: Signer
+	signer: WriterSigner
 	client: Promise<T>
 }
 
-const sameSigner = (a: Signer, b: Signer) =>
-	a.publicKey === b.publicKey && a.signTransaction === b.signTransaction
+const sameSigner = (a: WriterSigner, b: WriterSigner) =>
+	a.publicKey === b.publicKey &&
+	a.signTransaction === b.signTransaction &&
+	a.timeoutInSeconds === b.timeoutInSeconds
 
-const writer = <T>(connect: (signer: Signer) => Promise<T>) => {
+const writer = <T>(
+	connect: (signer: Signer, options: ConnectOptions) => Promise<T>,
+) => {
 	let current: WriterEntry<T> | undefined
-	return (signer: Signer): Promise<T> => {
+	return (signer: WriterSigner): Promise<T> => {
 		if (!current || !sameSigner(current.signer, signer)) {
+			const { timeoutInSeconds } = signer
 			const entry: WriterEntry<T> = {
 				signer,
-				client: connect(signer).catch((error: unknown) => {
-					if (current === entry) current = undefined
-					throw error
-				}),
+				client: connect(signer, { timeoutInSeconds }).catch(
+					(error: unknown) => {
+						if (current === entry) current = undefined
+						throw error
+					},
+				),
 			}
 			current = entry
 		}
@@ -48,16 +58,16 @@ const writer = <T>(connect: (signer: Signer) => Promise<T>) => {
 	}
 }
 
-export const asyncVaultWriter = writer((signer) =>
-	connectAsyncVault(addresses.async_vault, signer),
+export const asyncVaultWriter = writer((signer, options) =>
+	connectAsyncVault(addresses.async_vault, signer, options),
 )
 
-export const navOracleWriter = writer((signer) =>
-	connectNavOracle(addresses.nav_oracle, signer),
+export const navOracleWriter = writer((signer, options) =>
+	connectNavOracle(addresses.nav_oracle, signer, options),
 )
 
-export const shareTokenWriter = writer((signer) =>
-	connectShareToken(addresses.share_token, signer),
+export const shareTokenWriter = writer((signer, options) =>
+	connectShareToken(addresses.share_token, signer, options),
 )
 
 const verifierWriters = new Map<
@@ -68,8 +78,8 @@ const verifierWriters = new Map<
 export const identityVerifierWriter = (address: string) => {
 	let verifierWriter = verifierWriters.get(address)
 	if (verifierWriter === undefined) {
-		verifierWriter = writer((signer) =>
-			connectIdentityVerifier(address, signer),
+		verifierWriter = writer((signer, options) =>
+			connectIdentityVerifier(address, signer, options),
 		)
 		verifierWriters.set(address, verifierWriter)
 	}
