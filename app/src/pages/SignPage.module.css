@@ -1,0 +1,225 @@
+.page {
+	display: flex;
+	justify-content: center;
+	padding: 32px 0;
+}
+
+.card {
+	display: flex;
+	flex-direction: column;
+	gap: 28px;
+	width: 100%;
+	max-width: 46rem;
+	padding: 28px;
+	border: 1px solid var(--vault-ink);
+	background: var(--vault-surface-card);
+}
+
+.invalid {
+	margin: 0;
+	color: var(--vault-text-body);
+}
+
+.heading {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.contract {
+	margin: 0;
+	color: var(--vault-text-muted);
+}
+
+.titleRow {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px 16px;
+}
+
+.title {
+	margin: 0;
+	color: var(--vault-ink);
+}
+
+.pill {
+	display: inline-flex;
+	align-items: center;
+	padding: 7px 10px;
+	border: 1px solid currentColor;
+	color: var(--vault-ink);
+	background: var(--vault-surface-inset);
+}
+
+.pill[data-tone="success"] {
+	color: var(--vault-success);
+	background: var(--vault-success-fill);
+}
+
+.pill[data-tone="danger"] {
+	color: var(--vault-danger);
+	background: var(--vault-danger-fill);
+}
+
+.pill[data-tone="muted"] {
+	color: var(--vault-text-muted);
+	border-color: var(--vault-border-inactive);
+}
+
+.signatures {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.caption {
+	margin: 0;
+	color: var(--vault-ink);
+}
+
+.bar {
+	display: flex;
+	gap: 4px;
+	height: 10px;
+}
+
+.segment,
+.segmentFilled {
+	flex: 1;
+	border: 1.5px solid var(--vault-border-inactive);
+	background: transparent;
+}
+
+.segmentFilled {
+	border-color: var(--vault-ink);
+	background: var(--vault-ink);
+}
+
+.signers {
+	display: flex;
+	flex-direction: column;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.signer {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 10px;
+	min-height: 40px;
+	padding: 8px 0;
+	border-top: 1px solid var(--vault-border-hairline);
+	color: var(--vault-text-body);
+}
+
+.signerKey {
+	flex: 1;
+	min-width: 0;
+	color: var(--vault-ink);
+	overflow-wrap: anywhere;
+}
+
+.signerMeta {
+	color: var(--vault-text-muted);
+}
+
+.signed {
+	color: var(--vault-success);
+}
+
+.you {
+	padding: 4px 6px;
+	border: 1px solid var(--vault-action);
+	color: var(--vault-action);
+}
+
+.tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+	gap: 12px;
+	margin: 0;
+	padding: 0;
+}
+
+.tile {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+	padding: 12px 14px;
+	border: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-card);
+}
+
+.tileLabel {
+	color: var(--vault-text-muted);
+}
+
+.tileValue {
+	margin: 0;
+	color: var(--vault-ink);
+	overflow-wrap: anywhere;
+}
+
+.actions {
+	display: flex;
+	flex-direction: column;
+	gap: 14px;
+}
+
+.actionPrimary,
+.actionUnavailable {
+	align-self: flex-start;
+	min-height: 48px;
+	padding: 13px 22px;
+	border-radius: 0;
+	font-family: var(--vault-font-sans);
+	font-size: 15.5px;
+	font-weight: 500;
+}
+
+@media (max-width: 620px) {
+	.actionPrimary,
+	.actionUnavailable {
+		align-self: stretch;
+	}
+}
+
+.actionPrimary {
+	border: 1px solid var(--vault-action);
+	background: var(--vault-action);
+	color: var(--vault-surface-card);
+}
+
+.actionPrimary:hover {
+	background: var(--vault-action-ring);
+	color: var(--vault-action);
+}
+
+.actionUnavailable {
+	border: 1px solid var(--vault-border-hairline);
+	background: var(--vault-surface-inset);
+	color: var(--vault-text-muted);
+	cursor: not-allowed;
+}
+
+.nextStep {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	padding: 16px;
+	background: var(--vault-surface-inset);
+}
+
+.nextStepLabel {
+	margin: 0;
+	color: var(--vault-text-muted);
+}
+
+.nextStepText {
+	margin: 0;
+	color: var(--vault-text-body);
+}
