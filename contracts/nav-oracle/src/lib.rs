@@ -83,6 +83,9 @@ pub enum OracleError {
     /// once it is accepted, cancelled or expired, so no nominee from setup can
     /// accept after changes start to wait.
     AdminTransferPending = 3025,
+    /// The configuration the constructor writes is absent from instance
+    /// storage.
+    NotInitialized = 3026,
 }
 
 #[contractevent]
