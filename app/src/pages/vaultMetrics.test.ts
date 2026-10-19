@@ -32,7 +32,7 @@ const readAuthorities: VaultAuthorities = {
 	manager: null,
 	treasury: null,
 	guardian: null,
-	custodian: null,
+	custodian: { kind: "unreadable" },
 }
 
 describe("toMetrics", () => {
@@ -119,6 +119,33 @@ describe("toAuthorityRows", () => {
 
 		const [, missingManager] = toAuthorityRows(undefined, false)
 		expect(missingManager).toEqual({ label: "Manager", address: null })
+	})
+
+	it("tells an unset custodian apart from one it could not read", () => {
+		const custodianOf = (authorities: VaultAuthorities | undefined) =>
+			toAuthorityRows(authorities, false).at(-1)
+
+		expect(
+			custodianOf({
+				...readAuthorities,
+				custodian: { kind: "set", address: "GCUSTODIAN" },
+			}),
+		).toEqual({ label: "Custodian", address: "GCUSTODIAN" })
+		expect(
+			custodianOf({ ...readAuthorities, custodian: { kind: "unset" } }),
+		).toEqual({
+			label: "Custodian",
+			address: null,
+			placeholder: "Not set",
+		})
+		expect(custodianOf(readAuthorities)).toEqual({
+			label: "Custodian",
+			address: null,
+		})
+		expect(custodianOf(undefined)).toEqual({
+			label: "Custodian",
+			address: null,
+		})
 	})
 
 	it("sets pending and never an address while loading", () => {

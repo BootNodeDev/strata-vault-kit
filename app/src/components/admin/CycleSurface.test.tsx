@@ -131,6 +131,24 @@ describe("CycleSurface", () => {
 		).toBe("https://explorer.test/CCUSTODIAN1234567890")
 	})
 
+	it("shows an address row placeholder in place of Unavailable", () => {
+		renderSurface({
+			groups: [
+				{
+					title: "Reserve",
+					tiles: [],
+					rows: [],
+					addresses: [
+						{ label: "Custodian", address: null, placeholder: "Not set" },
+					],
+				},
+			],
+		})
+
+		expect(screen.getByText("Not set")).toBeTruthy()
+		expect(screen.queryByText("Unavailable")).toBeNull()
+	})
+
 	it("renders pending tiles and rows as loading indicators", () => {
 		renderSurface({
 			groups: [
