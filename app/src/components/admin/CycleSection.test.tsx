@@ -336,7 +336,7 @@ describe("CycleSection", () => {
 		})
 		fireEvent.click(button("Deploy to custodian"))
 
-		expect(deployMock.submit).toHaveBeenCalledWith(amount(250n))
+		expect(deployMock.submit).toHaveBeenCalledWith(amount(250n), treasury)
 
 		deployMock.status = { status: "preparing" }
 		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)
@@ -467,7 +467,7 @@ describe("CycleSection", () => {
 		})
 		fireEvent.click(button("Fund the reserve"))
 
-		expect(fundMock.submit).toHaveBeenCalledWith(amount(100n))
+		expect(fundMock.submit).toHaveBeenCalledWith(amount(100n), undefined)
 
 		fundMock.status = { status: "awaiting-signature" }
 		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
@@ -479,30 +479,16 @@ describe("CycleSection", () => {
 		).toBeTruthy()
 	})
 
-	it("tells a treasury signing through a multisig that collecting signatures is not supported yet, while funding stays open", () => {
-		render(
-			<CycleSection
-				grants={[grant("vault treasury", { needs: 2 })]}
-				wallet={WALLET}
-			/>,
-		)
+	it("lets a treasury signing through a multisig deploy, passing its grant", () => {
+		const shared = grant("vault treasury", { needs: 2 })
+		render(<CycleSection grants={[shared]} wallet={WALLET} />)
 
 		fireEvent.change(fieldOf("Amount to deploy"), {
 			target: { value: "250" },
 		})
+		fireEvent.click(button("Deploy to custodian"))
 
-		expect(button("Deploy to custodian").disabled).toBe(true)
-		expect(
-			screen.getByText(
-				"Needs 2 signatures; collecting them is not supported yet.",
-			),
-		).toBeTruthy()
-
-		fireEvent.change(fieldOf("Amount to fund"), {
-			target: { value: "100" },
-		})
-
-		expect(button("Fund the reserve").disabled).toBe(false)
+		expect(deployMock.submit).toHaveBeenCalledWith(amount(250n), shared)
 	})
 
 	it("offers the attester a price field in the Actions rail, with the button held until a price is typed", () => {
@@ -536,10 +522,13 @@ describe("CycleSection", () => {
 		})
 		fireEvent.click(button("Attest price"))
 
-		expect(attestMock.submit).toHaveBeenCalledWith({
-			price: 1_040_000_000_000_000_000n,
-			freshness: 86_400n,
-		})
+		expect(attestMock.submit).toHaveBeenCalledWith(
+			{
+				price: 1_040_000_000_000_000_000n,
+				freshness: 86_400n,
+			},
+			attester,
+		)
 
 		attestMock.status = { status: "preparing" }
 		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
@@ -618,37 +607,22 @@ describe("CycleSection", () => {
 		expect(notice.textContent).toMatch(/^Fail: Notice elapsed/)
 	})
 
-	it("tells a manager signing through a multisig that collecting signatures is not supported yet", () => {
-		render(
-			<CycleSection
-				grants={[grant("vault manager", { needs: 2 })]}
-				wallet={WALLET}
-			/>,
-		)
+	it("lets a manager signing through a multisig close the epoch, passing its grant", () => {
+		const shared = grant("vault manager", { needs: 2 })
+		render(<CycleSection grants={[shared]} wallet={WALLET} />)
 
-		expect(button("Close epoch").disabled).toBe(true)
-		expect(
-			screen.getByText(
-				"Needs 2 signatures; collecting them is not supported yet.",
-			),
-		).toBeTruthy()
-		expect(button("Fulfill epoch").disabled).toBe(false)
+		fireEvent.click(button("Close epoch"))
+
+		expect(closeEpochMock.submit).toHaveBeenCalledWith(undefined, shared)
 	})
 
-	it("tells a signer of another account that acting on its behalf is not supported yet", () => {
-		render(
-			<CycleSection
-				grants={[{ ...manager, authority: "GOTHERACCOUNT9876543210" }]}
-				wallet={WALLET}
-			/>,
-		)
+	it("lets a signer of another account close the epoch, passing that account's grant", () => {
+		const other = { ...manager, authority: "GOTHERACCOUNT9876543210" }
+		render(<CycleSection grants={[other]} wallet={WALLET} />)
 
-		expect(button("Close epoch").disabled).toBe(true)
-		expect(
-			screen.getByText(
-				"Signs for GOTH...3210; acting on its behalf is not supported yet.",
-			),
-		).toBeTruthy()
+		fireEvent.click(button("Close epoch"))
+
+		expect(closeEpochMock.submit).toHaveBeenCalledWith(undefined, other)
 	})
 
 	it("shows no actions while the cycle is still being read", () => {
@@ -680,7 +654,7 @@ describe("CycleSection", () => {
 		)
 
 		fireEvent.click(button("Fulfill epoch"))
-		expect(fulfillEpochMock.submit).toHaveBeenCalledWith(4n)
+		expect(fulfillEpochMock.submit).toHaveBeenCalledWith(4n, undefined)
 
 		fulfillEpochMock.status = { status: "awaiting-signature" }
 		rerender(<CycleSection grants={[treasury]} wallet={WALLET} />)

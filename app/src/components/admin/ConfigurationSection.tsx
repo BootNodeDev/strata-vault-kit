@@ -87,19 +87,19 @@ const ConfigurationSection: React.FC<{
 		if (action.arg === undefined) return
 		switch (action.id) {
 			case "set-deposit-cap":
-				return depositCap.submit(action.arg, action.next)
+				return depositCap.submit(action.arg, action.next, action.grant)
 			case "set-custodian":
-				return custodian.submit(action.arg, action.next)
+				return custodian.submit(action.arg, action.next, action.grant)
 			case "set-notice":
-				return notice.submit(action.arg, action.next)
+				return notice.submit(action.arg, action.next, action.grant)
 			case "set-wind-down-delay":
-				return windDownDelay.submit(action.arg, action.next)
+				return windDownDelay.submit(action.arg, action.next, action.grant)
 			case "set-oracle-config":
-				return oracleConfig.submit(action.arg, action.next)
+				return oracleConfig.submit(action.arg, action.next, action.grant)
 			case "set-compliance":
-				return compliance.submit(action.arg, action.next)
+				return compliance.submit(action.arg, action.next, action.grant)
 			case "set-identity-verifier":
-				return identityVerifier.submit(action.arg, action.next)
+				return identityVerifier.submit(action.arg, action.next, action.grant)
 		}
 	}
 
