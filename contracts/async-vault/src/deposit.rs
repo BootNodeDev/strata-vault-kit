@@ -71,7 +71,10 @@ pub(crate) fn request(e: &Env, holder: &Address, amount: i128) -> u64 {
         },
     );
     state::set_epoch(e, epoch_id, &epoch);
-    state::set_cancellable_escrow(e, state::cancellable_escrow(e) + amount);
+    let escrow = state::cancellable_escrow(e)
+        .checked_add(amount)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    state::set_cancellable_escrow(e, escrow);
     settlement::on_deposit_requested(e, epoch_id);
 
     let asset = state::get_addr(e, &DataKey::Asset);

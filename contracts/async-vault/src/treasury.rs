@@ -39,7 +39,11 @@ pub(crate) fn uncovered(e: &Env) -> i128 {
 /// Capital in the vault and deployed to the custodian, less liabilities already
 /// committed to priced exits. Used to evaluate headroom against the deposit cap.
 pub(crate) fn deposited_capital(e: &Env) -> i128 {
-    (held(e) + state::net_deployed(e)).saturating_sub(state::committed(e))
+    held(e)
+        .checked_add(state::net_deployed(e))
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+        .checked_sub(state::committed(e))
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AccountingMismatch))
 }
 
 pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {

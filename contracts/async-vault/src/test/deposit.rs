@@ -230,3 +230,17 @@ fn deposits_after_fulfilling_land_in_the_new_epoch() {
     );
     assert_eq!(f.balance(&f.vault.address), 700);
 }
+
+#[test]
+fn escrow_that_would_overflow_is_refused_by_name() {
+    let f = setup();
+    let investor = f.investor(1);
+    f.e.as_contract(&f.vault.address, || {
+        crate::state::set_cancellable_escrow(&f.e, i128::MAX)
+    });
+
+    refused(
+        f.vault.try_request_deposit(&investor, &1),
+        VaultError::AmountTooLarge,
+    );
+}

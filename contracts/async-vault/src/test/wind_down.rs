@@ -853,3 +853,17 @@ fn a_partial_freeze_keeps_frozen_shares_out_of_a_wind_down_claim() {
     let rest = f.vault.claim_wind_down(&holder);
     assert_eq!(rest, 4 * first);
 }
+
+#[test]
+fn a_snapshot_with_more_shares_to_burn_than_exist_fails_loudly() {
+    let f = setup();
+    wind_down_now(&f);
+    f.e.as_contract(&f.vault.address, || {
+        crate::state::set_pending_burn_shares(&f.e, 1)
+    });
+
+    refused(
+        f.vault.try_finalize_wind_down_round(),
+        VaultError::AccountingMismatch,
+    );
+}

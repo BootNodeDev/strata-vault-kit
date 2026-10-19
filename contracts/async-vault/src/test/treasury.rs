@@ -132,3 +132,27 @@ fn deploying_a_non_positive_amount_is_rejected() {
     assert!(f.vault.try_deploy_to_custodian(&f.treasury, &0).is_err());
     assert!(f.vault.try_deploy_to_custodian(&f.treasury, &-1).is_err());
 }
+
+/// Exits priced after a gain can owe more than the capital the vault counts,
+/// so the result may be negative; only leaving the type's range is refused.
+#[test]
+fn deposited_capital_fails_by_name_instead_of_overflowing() {
+    let f = setup();
+    let investor = f.investor(1);
+    f.vault.request_deposit(&investor, &1);
+    let capital = |net_deployed: i128, committed: i128| {
+        f.e.try_as_contract::<i128, VaultError>(&f.vault.address, || {
+            crate::state::set_net_deployed(&f.e, net_deployed);
+            crate::state::set_committed(&f.e, committed);
+            crate::treasury::deposited_capital(&f.e)
+        })
+    };
+
+    assert_eq!(capital(10, 3), Ok(8));
+    assert_eq!(capital(0, 5), Ok(-4));
+    assert_eq!(capital(i128::MAX, 0), Err(Ok(VaultError::AmountTooLarge)));
+    assert_eq!(
+        capital(i128::MIN, 2),
+        Err(Ok(VaultError::AccountingMismatch))
+    );
+}

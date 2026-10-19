@@ -175,9 +175,8 @@ fn credited_before_snapshot(e: &Env) -> i128 {
 /// credited straight to a holder's entitlement.
 fn snapshot_supply(e: &Env) -> i128 {
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    FungibleTokenClient::new(e, &share_token)
-        .total_supply()
-        .saturating_sub(state::pending_burn_shares(e))
+    let total_supply = FungibleTokenClient::new(e, &share_token).total_supply();
+    state::reduce(e, total_supply, state::pending_burn_shares(e))
         .checked_add(state::pending_mint_shares(e))
         .and_then(|supply| supply.checked_add(credited_before_snapshot(e)))
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))

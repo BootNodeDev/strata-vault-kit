@@ -153,6 +153,35 @@ fn a_total_that_would_go_below_zero_fails_loudly() {
     f.e.as_contract(&f.vault.address, || crate::state::reduce(&f.e, 1, 2));
 }
 
+#[test]
+fn a_settlement_total_that_would_overflow_fails_by_name() {
+    let f = setup();
+    let epoch = f.vault.current_epoch();
+    let full = crate::EpochSettlement {
+        deposits_open: u32::MAX,
+        redeems_open: u32::MAX,
+        shares_settled: i128::MAX,
+        assets_settled: i128::MAX,
+        ..Default::default()
+    };
+    f.e.as_contract(&f.vault.address, || {
+        strata_storage::set_persistent(&f.e, &crate::keys::DataKey::Settlement(epoch), &full)
+    });
+
+    let steps: [&dyn Fn(); 4] = [
+        &|| crate::settlement::on_deposit_requested(&f.e, epoch),
+        &|| crate::settlement::on_redeem_requested(&f.e, epoch),
+        &|| crate::settlement::on_deposit_claimed(&f.e, epoch, 1),
+        &|| crate::settlement::on_redeem_claimed(&f.e, epoch, 1),
+    ];
+    for step in steps {
+        assert_eq!(
+            f.e.try_as_contract::<(), VaultError>(&f.vault.address, step),
+            Err(Ok(VaultError::AmountTooLarge))
+        );
+    }
+}
+
 /// A request that can never settle holds its epoch open, so the remainder
 /// stays in the totals. Here the redemption pays nothing and the holder, since
 /// delisted, cannot take the shares back.

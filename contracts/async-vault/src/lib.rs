@@ -172,7 +172,7 @@ impl AsyncVault {
         let client = FungibleTokenClient::new(e, &share_token);
         let total_supply = client.total_supply();
         let vault_escrow = client.balance(&e.current_contract_address());
-        let circulating = total_supply.saturating_sub(vault_escrow);
+        let circulating = state::reduce(e, total_supply, vault_escrow);
         circulating
             .checked_add(state::pending_mint_shares(e))
             .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
