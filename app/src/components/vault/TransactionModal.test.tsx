@@ -1,6 +1,11 @@
-import { type Amount, type Price } from "@stellar-scaffold/app-lib"
+import {
+	type Amount,
+	formatDate,
+	type Price,
+	type SubmitFailure,
+} from "@stellar-scaffold/app-lib"
 import type * as AppLib from "@stellar-scaffold/app-lib"
-import { fireEvent, render, screen, within } from "@testing-library/react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { StrictMode } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { type ActivateWindDownStatus } from "../../hooks/useActivateWindDown"
@@ -444,6 +449,24 @@ describe("TransactionModal", () => {
 		).toBeTruthy()
 		expect(screen.getByText(/chose not to sign/)).toBeTruthy()
 		expect(screen.queryByText(/Transaction/)).toBeNull()
+
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+
+	it("tells apart a wallet that failed to sign from a declined request", () => {
+		const { onRetry } = renderModal({
+			status: "failed",
+			failure: { kind: "unsigned" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The wallet did not sign" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText("Nothing was sent. Try again when you're ready."),
+		).toBeTruthy()
+		expect(screen.queryByText(/chose not to sign/)).toBeNull()
 
 		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
 		expect(onRetry).toHaveBeenCalledTimes(1)
@@ -1968,6 +1991,117 @@ const renderEmergencyModal = (
 	)
 
 describe("TransactionModal, emergency actions", () => {
+	it("shows the signatures collected, the expiry and the signing link to copy", async () => {
+		const writeText = vi.fn().mockResolvedValue(undefined)
+		Object.defineProperty(navigator, "clipboard", {
+			value: { writeText },
+			configurable: true,
+		})
+		const expiresAt = new Date(Date.UTC(2026, 9, 22))
+		renderEmergencyModal("pause-vault", {
+			status: "shared",
+			xdr: "AAAAXDR",
+			standing: { needs: 2 },
+			expiresAt,
+		})
+		const link = `${window.location.origin}/sign#AAAAXDR`
+
+		expect(
+			screen.getByRole("heading", { name: "1 of 2 signatures" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				`Share the link with the next signer. Valid until ${formatDate(BigInt(expiresAt.getTime() / 1000))}.`,
+			),
+		).toBeTruthy()
+		expect(
+			screen.getByRole<HTMLInputElement>("textbox", { name: "Signing link" })
+				.value,
+		).toBe(link)
+		expect(screen.getByText("Approved in your wallet").textContent).toMatch(
+			/done/,
+		)
+
+		fireEvent.click(screen.getByRole("button", { name: "Copy link" }))
+
+		expect(writeText).toHaveBeenCalledWith(link)
+		expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy()
+	})
+
+	it("names the weight a weighted signer adds against the threshold", () => {
+		renderEmergencyModal("pause-vault", {
+			status: "shared",
+			xdr: "AAAAXDR",
+			standing: { weight: 1, threshold: 3 },
+			expiresAt: null,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "weight 1 of threshold 3" }),
+		).toBeTruthy()
+	})
+
+	it("keeps offering the copy when the clipboard refuses, leaving the link to select", async () => {
+		const writeText = vi.fn().mockRejectedValue(new Error("denied"))
+		Object.defineProperty(navigator, "clipboard", {
+			value: { writeText },
+			configurable: true,
+		})
+		renderEmergencyModal("pause-vault", {
+			status: "shared",
+			xdr: "AAAAXDR",
+			standing: { needs: 2 },
+			expiresAt: null,
+		})
+
+		fireEvent.click(screen.getByRole("button", { name: "Copy link" }))
+		await act(() => Promise.resolve())
+
+		expect(writeText).toHaveBeenCalledTimes(1)
+		expect(screen.getByRole("button", { name: "Copy link" })).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Copied" })).toBeNull()
+	})
+
+	it.each<[SubmitFailure, string]>([
+		["expired", "The transaction expired before it was submitted."],
+		[
+			"sequence-consumed",
+			"The account moved on; this transaction is no longer valid.",
+		],
+		["bad-auth", "The signatures do not match the account's threshold."],
+		["fee", "The account cannot pay the fee."],
+		["fee-too-low", "The fee is below the network minimum. Propose it again."],
+		["not-accepted", "The network did not accept it. Try again."],
+	])("explains a %s rejection from the network", (reason, sentence) => {
+		renderEmergencyModal("pause-vault", {
+			status: "failed",
+			failure: { kind: "network", reason },
+			hash: "d".repeat(64),
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The network rejected it" }),
+		).toBeTruthy()
+		expect(screen.getByText(sentence)).toBeTruthy()
+		expect(screen.getByText("Sent to the network").textContent).toMatch(
+			/failed/,
+		)
+	})
+
+	it("treats an unexplained network rejection as an unknown outcome", () => {
+		renderEmergencyModal("pause-vault", {
+			status: "failed",
+			failure: { kind: "network", reason: "unknown" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Something went wrong" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(/check the Emergency tab before trying again/),
+		).toBeTruthy()
+	})
+
 	it.each<[EmergencyModalAction, string, string]>([
 		["pause-vault", "Preparing to pause the vault", "Vault paused"],
 		["unpause-vault", "Preparing to unpause the vault", "Vault unpaused"],
