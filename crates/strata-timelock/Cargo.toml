@@ -14,4 +14,4 @@ strata-storage = { path = "../strata-storage" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
-proptest = "1"
+proptest = "=1.11.0"
