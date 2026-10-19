@@ -22,7 +22,7 @@ pub struct EpochSettlement {
 }
 
 pub(crate) fn get(e: &Env, epoch: u64) -> Option<EpochSettlement> {
-    storage::get_persistent(e, &DataKey::Settlement(epoch))
+    strata_storage::get_persistent(e, &DataKey::Settlement(epoch))
 }
 
 fn load(e: &Env, epoch: u64) -> EpochSettlement {
@@ -30,7 +30,7 @@ fn load(e: &Env, epoch: u64) -> EpochSettlement {
 }
 
 fn save(e: &Env, epoch: u64, s: &EpochSettlement) {
-    storage::set_persistent(e, &DataKey::Settlement(epoch), s);
+    strata_storage::set_persistent(e, &DataKey::Settlement(epoch), s);
 }
 
 fn close_one(e: &Env, open: u32) -> u32 {

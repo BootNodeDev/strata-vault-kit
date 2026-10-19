@@ -5,7 +5,7 @@ use stellar_access::{
 };
 use stellar_contract_utils::upgradeable;
 use stellar_tokens::rwa::RWA;
-use timelock::{queue, setup, Clock, Refusal, TimelockHost};
+use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
 use crate::error::ShareTokenError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, SetupFinished, VaultBound};
@@ -39,7 +39,7 @@ pub struct TokenPendingChange {
 /// The token keeps no clock of its own: it reads the vault's.
 impl TimelockHost for ShareToken {
     fn clock(e: &Env) -> Result<Clock, Refusal> {
-        timelock::clock::from_source(e)
+        strata_timelock::clock::from_source(e)
     }
 }
 

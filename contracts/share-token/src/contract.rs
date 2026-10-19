@@ -3,7 +3,6 @@ use crate::event::LegalTransfer;
 use crate::governance::{self, TokenChange, TokenPendingChange};
 use crate::roles::COMPLIANCE_ROLE;
 
-use bindings::VaultBinding;
 use soroban_sdk::{
     contract, contractimpl, panic_with_error, Address, Env, MuxedAddress, String, Symbol, Vec,
 };
@@ -15,6 +14,7 @@ use stellar_tokens::{
     fungible::{Base, ContractOverrides, FungibleToken},
     rwa::{identity_verification::IdentityVerifierClient, RWAToken, RWA},
 };
+use strata_bindings::VaultBinding;
 
 /// Longest order reference a legal transfer accepts, in bytes.
 pub const MAX_REFERENCE_LEN: u32 = 128;
@@ -28,7 +28,7 @@ fn require_admin_co_sign(e: &Env, operator: &Address) {
 }
 
 fn refuse_vault_address(e: &Env, account: &Address) {
-    if timelock::setup::source(e).as_ref() == Some(account) {
+    if strata_timelock::setup::source(e).as_ref() == Some(account) {
         panic_with_error!(e, ShareTokenError::VaultAddress);
     }
 }
@@ -58,7 +58,7 @@ impl ShareToken {
         RWA::set_compliance(e, &compliance);
         RWA::set_identity_verifier(e, &identity_verifier);
         upgradeable::set_schema_version(e, 1);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
     }
 
     pub fn schema_version(e: &Env) -> u32 {
@@ -70,7 +70,7 @@ impl ShareToken {
     #[only_admin]
     pub fn bind_vault(e: &Env, vault: Address, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::bind_vault(e, &vault);
     }
 
@@ -78,7 +78,7 @@ impl ShareToken {
     #[only_admin]
     pub fn finish_setup(e: &Env, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::finish_setup(e);
     }
 
@@ -86,14 +86,14 @@ impl ShareToken {
     #[only_admin]
     pub fn propose_change(e: &Env, change: TokenChange, caller: Address) -> u32 {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::propose(e, change)
     }
 
     #[only_admin]
     pub fn cancel_change(e: &Env, id: u32, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::cancel(e, id);
     }
 
@@ -102,7 +102,7 @@ impl ShareToken {
     #[only_admin]
     pub fn apply_change(e: &Env, id: u32, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::apply(e, id);
     }
 
@@ -122,7 +122,7 @@ impl ShareToken {
         reference: String,
         operator: Address,
     ) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         require_admin_co_sign(e, &operator);
         if reference.is_empty() || reference.len() > MAX_REFERENCE_LEN {
             panic_with_error!(e, ShareTokenError::InvalidReference);
@@ -144,11 +144,11 @@ impl ShareToken {
 #[contractimpl(contracttrait)]
 impl VaultBinding for ShareToken {
     fn vault(e: &Env) -> Option<Address> {
-        timelock::setup::source(e)
+        strata_timelock::setup::source(e)
     }
 
     fn setup_open(e: &Env) -> bool {
-        timelock::setup::is_open(e)
+        strata_timelock::setup::is_open(e)
     }
 }
 
@@ -157,13 +157,13 @@ impl Pausable for ShareToken {
     #[only_admin]
     fn pause(e: &Env, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         pausable::pause(e);
     }
     #[only_admin]
     fn unpause(e: &Env, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         pausable::unpause(e);
     }
 }
@@ -175,17 +175,17 @@ impl FungibleToken for ShareToken {
     type ContractType = RWA;
 
     fn transfer(e: &Env, from: Address, to: MuxedAddress, amount: i128) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::transfer(e, &from, &to, amount);
     }
 
     fn transfer_from(e: &Env, spender: Address, from: Address, to: Address, amount: i128) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::transfer_from(e, &spender, &from, &to, amount);
     }
 
     fn approve(e: &Env, owner: Address, spender: Address, amount: i128, live_until_ledger: u32) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::approve(
             e,
             &owner,
@@ -201,7 +201,7 @@ impl AccessControl for ShareToken {
     /// Instant during setup; after it, propose the grant through the timelock.
     fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
         governance::require_setup_open(e);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         access_control::grant_role(e, &account, &role, &caller);
     }
 
@@ -209,7 +209,7 @@ impl AccessControl for ShareToken {
     /// because the vault needs it to pay claims.
     fn revoke_role(e: &Env, account: Address, role: Symbol, caller: Address) {
         governance::require_revoke_allowed(e, &role);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         access_control::revoke_role(e, &account, &role, &caller);
     }
 
@@ -219,7 +219,7 @@ impl AccessControl for ShareToken {
         if live_until_ledger != 0 {
             governance::require_setup_open(e);
         }
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
     }
 
@@ -241,19 +241,19 @@ impl AccessControl for ShareToken {
 impl RWAToken for ShareToken {
     #[only_role(operator, "manager")]
     fn mint(e: &Env, to: Address, amount: i128, operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         RWA::mint(e, &to, amount);
     }
     #[only_role(operator, "manager")]
     fn burn(e: &Env, user_address: Address, amount: i128, operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         RWA::burn(e, &user_address, amount);
     }
     /// The vault escrows redemptions through it. Compliance moves shares with
     /// `legal_transfer` instead.
     #[only_role(operator, "manager")]
     fn forced_transfer(e: &Env, from: Address, to: Address, amount: i128, operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         RWA::forced_transfer(e, &from, &to, amount);
     }
     /// Moves a whole balance to the account the identity verifier names, so
@@ -266,7 +266,7 @@ impl RWAToken for ShareToken {
         new_account: Address,
         operator: Address,
     ) -> bool {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         require_admin_co_sign(e, &operator);
         refuse_vault_address(e, &old_account);
         refuse_vault_address(e, &new_account);
@@ -274,7 +274,7 @@ impl RWAToken for ShareToken {
     }
     #[only_role(operator, "compliance")]
     fn set_address_frozen(e: &Env, user_address: Address, freeze: bool, operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         if freeze {
             refuse_vault_address(e, &user_address);
         }
@@ -282,27 +282,27 @@ impl RWAToken for ShareToken {
     }
     #[only_role(operator, "compliance")]
     fn freeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         refuse_vault_address(e, &user_address);
         RWA::freeze_partial_tokens(e, &user_address, amount);
     }
     #[only_role(operator, "compliance")]
     fn unfreeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         RWA::unfreeze_partial_tokens(e, &user_address, amount);
     }
     #[only_admin]
     fn set_compliance(e: &Env, compliance: Address, operator: Address) {
         operator.require_auth();
         governance::require_setup_open(e);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         RWA::set_compliance(e, &compliance);
     }
     #[only_admin]
     fn set_identity_verifier(e: &Env, identity_verifier: Address, operator: Address) {
         operator.require_auth();
         governance::require_setup_open(e);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         RWA::set_identity_verifier(e, &identity_verifier);
     }
 }
@@ -322,7 +322,7 @@ impl ShareToken {
     #[only_admin]
     pub fn migrate(e: &Env, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         if upgradeable::get_schema_version(e) >= 2 {
             panic_with_error!(e, ProbeError::AlreadyMigrated);
         }

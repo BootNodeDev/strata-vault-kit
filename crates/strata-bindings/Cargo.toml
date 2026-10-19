@@ -1,11 +1,8 @@
 [package]
-name = "storage"
+name = "strata-bindings"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 soroban-sdk = { workspace = true }
-
-[dev-dependencies]
-soroban-sdk = { workspace = true, features = ["testutils"] }

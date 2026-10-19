@@ -43,7 +43,7 @@ pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
 use stellar_tokens::rwa::compliance::ComplianceHook;
-pub(crate) use timelock::DAY_DURATION;
+pub(crate) use strata_timelock::DAY_DURATION;
 
 pub(crate) use crate::{
     AsyncVault, AsyncVaultClient, DirectUnitPricing, EpochStatus, PricingScheme, VaultChange,

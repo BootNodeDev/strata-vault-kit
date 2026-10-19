@@ -4,7 +4,7 @@ use stellar_access::{
     role_transfer,
 };
 use stellar_tokens::rwa::{compliance, compliance::ComplianceHook, utils::token_binder};
-use timelock::{queue, setup, Clock, Refusal, TimelockHost};
+use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
 use crate::{
     ChangeApplied, ChangeCancelled, ChangeProposed, Compliance, ComplianceContractError,
@@ -37,7 +37,7 @@ pub struct CompliancePendingChange {
 /// The compliance contract keeps no clock of its own: it reads the vault's.
 impl TimelockHost for Compliance {
     fn clock(e: &Env) -> Result<Clock, Refusal> {
-        timelock::clock::from_source(e)
+        strata_timelock::clock::from_source(e)
     }
 }
 

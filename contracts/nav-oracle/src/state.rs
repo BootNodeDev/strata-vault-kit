@@ -8,7 +8,7 @@ use soroban_sdk::{contracttype, symbol_short, Env, Symbol};
 //             Value untrusted; BOTH mint and redeem halt.
 // - `Paused`: the NAV is paused (issuer freeze). Value ignored entirely, both
 //             directions, until the issuer clears the NAV pause.
-pub use bindings::OracleState;
+pub use strata_bindings::OracleState;
 
 pub const ATTESTER_ROLE: Symbol = symbol_short!("attester");
 
@@ -49,23 +49,23 @@ pub(crate) enum DataKey {
 }
 
 pub(crate) fn set_config(e: &Env, config: &OracleConfig) {
-    storage::set_instance(e, &DataKey::Config, config);
+    strata_storage::set_instance(e, &DataKey::Config, config);
 }
 
 pub(crate) fn get_config(e: &Env) -> OracleConfig {
-    storage::get_instance(e, &DataKey::Config).unwrap()
+    strata_storage::get_instance(e, &DataKey::Config).unwrap()
 }
 
 pub(crate) fn set_nav_paused(e: &Env, paused: bool) {
-    storage::set_instance(e, &DataKey::NavPaused, &paused);
+    strata_storage::set_instance(e, &DataKey::NavPaused, &paused);
 }
 
 pub(crate) fn nav_paused(e: &Env) -> bool {
-    storage::get_instance(e, &DataKey::NavPaused).unwrap_or(false)
+    strata_storage::get_instance(e, &DataKey::NavPaused).unwrap_or(false)
 }
 
 pub(crate) fn set_latest(e: &Env, report: &NavReport) {
-    storage::set_persistent(e, &DataKey::Latest, report);
+    strata_storage::set_persistent(e, &DataKey::Latest, report);
 }
 
 pub(crate) fn clear_latest(e: &Env) {
@@ -73,5 +73,5 @@ pub(crate) fn clear_latest(e: &Env) {
 }
 
 pub(crate) fn get_latest(e: &Env) -> Option<NavReport> {
-    storage::get_persistent(e, &DataKey::Latest)
+    strata_storage::get_persistent(e, &DataKey::Latest)
 }

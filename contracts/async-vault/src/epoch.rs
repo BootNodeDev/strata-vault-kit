@@ -1,6 +1,6 @@
-use bindings::{OracleFeedClient, OracleState};
 use soroban_sdk::{panic_with_error, Env};
 use stellar_contract_utils::pausable;
+use strata_bindings::{OracleFeedClient, OracleState};
 
 use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};

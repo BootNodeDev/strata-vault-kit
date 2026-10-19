@@ -12,10 +12,10 @@ contractmeta!(
     key = "stub",
     val = "testnet-only; prod = external compliance module"
 );
-use bindings::VaultBinding;
 use stellar_access::access_control;
 use stellar_macros::only_admin;
 use stellar_tokens::rwa::{compliance, compliance::ComplianceHook, utils::token_binder};
+use strata_bindings::VaultBinding;
 
 pub use governance::{ComplianceChange, CompliancePendingChange, ADMIN_ACCEPT_LEDGERS};
 
@@ -90,14 +90,14 @@ pub struct Compliance;
 impl Compliance {
     pub fn __constructor(e: &Env, admin: Address) {
         access_control::set_admin(e, &admin);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
     }
 
     /// Names the vault whose clock this contract's timelock reads. Once, and
     /// only during setup.
     #[only_admin]
     pub fn bind_vault(e: &Env, vault: Address, _operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::bind_vault(e, &vault);
     }
 
@@ -105,20 +105,20 @@ impl Compliance {
     /// never reopens.
     #[only_admin]
     pub fn finish_setup(e: &Env, _operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::finish_setup(e);
     }
 
     /// Queues a change behind the vault's timelock and returns its id.
     #[only_admin]
     pub fn propose_change(e: &Env, change: ComplianceChange, _operator: Address) -> u32 {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::propose(e, change)
     }
 
     #[only_admin]
     pub fn cancel_change(e: &Env, id: u32, _operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::cancel(e, id);
     }
 
@@ -126,7 +126,7 @@ impl Compliance {
     /// or winding down.
     #[only_admin]
     pub fn apply_change(e: &Env, id: u32, _operator: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::apply(e, id);
     }
 
@@ -141,12 +141,12 @@ impl Compliance {
         if live_until_ledger != 0 {
             governance::require_setup_open(e);
         }
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
     }
 
     pub fn accept_admin_transfer(e: &Env) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         access_control::accept_admin_transfer(e);
     }
 
@@ -158,11 +158,11 @@ impl Compliance {
 #[contractimpl(contracttrait)]
 impl VaultBinding for Compliance {
     fn vault(e: &Env) -> Option<Address> {
-        timelock::setup::source(e)
+        strata_timelock::setup::source(e)
     }
 
     fn setup_open(e: &Env) -> bool {
-        timelock::setup::is_open(e)
+        strata_timelock::setup::is_open(e)
     }
 }
 
@@ -173,14 +173,14 @@ impl token_binder::TokenBinder for Compliance {
     #[only_admin]
     fn bind_token(e: &Env, token: Address, _operator: Address) {
         governance::require_setup_open(e);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         token_binder::bind_token(e, &token);
     }
 
     #[only_admin]
     fn unbind_token(e: &Env, token: Address, _operator: Address) {
         governance::require_setup_open(e);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         token_binder::unbind_token(e, &token);
     }
 }
@@ -194,39 +194,39 @@ impl compliance::Compliance for Compliance {
     #[only_admin]
     fn add_module_to(e: &Env, hook: ComplianceHook, module: Address, _operator: Address) {
         governance::require_setup_open(e);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         compliance::storage::add_module_to(e, hook, module);
     }
 
     #[only_admin]
     fn remove_module_from(e: &Env, hook: ComplianceHook, module: Address, _operator: Address) {
         governance::require_setup_open(e);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         compliance::storage::remove_module_from(e, hook, module);
     }
 
     fn transferred(e: &Env, from: Address, to: Address, amount: i128, token: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         compliance::storage::transferred(e, from, to, amount, token);
     }
 
     fn created(e: &Env, to: Address, amount: i128, token: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         compliance::storage::created(e, to, amount, token);
     }
 
     fn destroyed(e: &Env, from: Address, amount: i128, token: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         compliance::storage::destroyed(e, from, amount, token);
     }
 
     fn can_transfer(e: &Env, from: Address, to: Address, amount: i128, token: Address) -> bool {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         compliance::storage::can_transfer(e, from, to, amount, token)
     }
 
     fn can_create(e: &Env, to: Address, amount: i128, token: Address) -> bool {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         compliance::storage::can_create(e, to, amount, token)
     }
 }

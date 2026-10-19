@@ -12,13 +12,13 @@ impl FeedStub {
         e.storage().instance().set(&symbol_short!("vault"), &vault);
     }
 
-    pub fn state(_e: Env) -> bindings::OracleState {
-        bindings::OracleState::Valid
+    pub fn state(_e: Env) -> strata_bindings::OracleState {
+        strata_bindings::OracleState::Valid
     }
 }
 
 #[contractimpl(contracttrait)]
-impl bindings::VaultBinding for FeedStub {
+impl strata_bindings::VaultBinding for FeedStub {
     fn vault(e: &Env) -> Option<Address> {
         e.storage()
             .instance()

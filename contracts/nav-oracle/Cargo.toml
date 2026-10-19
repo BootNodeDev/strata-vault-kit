@@ -11,11 +11,11 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-storage = { path = "../../crates/storage" }
+strata-storage = { path = "../../crates/strata-storage" }
 stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
-bindings = { path = "../../crates/bindings" }
-timelock = { path = "../../crates/timelock" }
+strata-bindings = { path = "../../crates/strata-bindings" }
+strata-timelock = { path = "../../crates/strata-timelock" }
 stellar-contract-utils = { workspace = true }
 
 [dev-dependencies]

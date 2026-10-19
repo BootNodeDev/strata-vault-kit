@@ -184,7 +184,6 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 name = "async-vault"
 version = "0.1.0"
 dependencies = [
- "bindings",
  "compliance",
  "identity-verifier",
  "nav-oracle",
@@ -195,8 +194,9 @@ dependencies = [
  "stellar-contract-utils",
  "stellar-macros",
  "stellar-tokens",
- "storage",
- "timelock",
+ "strata-bindings",
+ "strata-storage",
+ "strata-timelock",
 ]
 
 [[package]]
@@ -222,13 +222,6 @@ name = "base64ct"
 version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
-
-[[package]]
-name = "bindings"
-version = "0.1.0"
-dependencies = [
- "soroban-sdk",
-]
 
 [[package]]
 name = "bit-set"
@@ -351,13 +344,13 @@ dependencies = [
 name = "compliance"
 version = "0.1.0"
 dependencies = [
- "bindings",
  "soroban-sdk",
  "stellar-access",
  "stellar-macros",
  "stellar-tokens",
- "storage",
- "timelock",
+ "strata-bindings",
+ "strata-storage",
+ "strata-timelock",
 ]
 
 [[package]]
@@ -1036,7 +1029,7 @@ dependencies = [
  "stellar-access",
  "stellar-macros",
  "stellar-tokens",
- "storage",
+ "strata-storage",
 ]
 
 [[package]]
@@ -1213,13 +1206,13 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 name = "nav-oracle"
 version = "0.1.0"
 dependencies = [
- "bindings",
  "soroban-sdk",
  "stellar-access",
  "stellar-contract-utils",
  "stellar-macros",
- "storage",
- "timelock",
+ "strata-bindings",
+ "strata-storage",
+ "strata-timelock",
 ]
 
 [[package]]
@@ -1711,7 +1704,6 @@ dependencies = [
 name = "share-token"
 version = "0.1.0"
 dependencies = [
- "bindings",
  "compliance",
  "identity-verifier",
  "soroban-sdk",
@@ -1719,8 +1711,9 @@ dependencies = [
  "stellar-contract-utils",
  "stellar-macros",
  "stellar-tokens",
- "storage",
- "timelock",
+ "strata-bindings",
+ "strata-storage",
+ "strata-timelock",
 ]
 
 [[package]]
@@ -2062,10 +2055,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "storage"
+name = "strata-bindings"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
+]
+
+[[package]]
+name = "strata-storage"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
+name = "strata-timelock"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "soroban-sdk",
+ "strata-storage",
 ]
 
 [[package]]
@@ -2183,15 +2192,6 @@ checksum = "7e689342a48d2ea927c87ea50cabf8594854bf940e9310208848d680d668ed85"
 dependencies = [
  "num-conv",
  "time-core",
-]
-
-[[package]]
-name = "timelock"
-version = "0.1.0"
-dependencies = [
- "proptest",
- "soroban-sdk",
- "storage",
 ]
 
 [[package]]

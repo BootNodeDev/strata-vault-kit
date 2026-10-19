@@ -24,7 +24,7 @@ use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
 use stellar_tokens::fungible::FungibleTokenClient;
-use timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
+use strata_timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
 use keys::DataKey;
 use roles::{GUARDIAN_ROLE, MANAGER_ROLE, TREASURY_ROLE};
@@ -297,7 +297,7 @@ impl AsyncVault {
     }
 
     pub fn setup_open(e: &Env) -> bool {
-        timelock::setup::is_open(e)
+        strata_timelock::setup::is_open(e)
     }
 
     /// Whether setup is open, the wiring `finish_setup` checks except the share
@@ -471,14 +471,14 @@ impl Pausable for AsyncVault {
     #[only_role(caller, "guardian")]
     fn pause(e: &Env, caller: Address) {
         pausable::pause(e);
-        timelock::pause::start(e);
+        strata_timelock::pause::start(e);
     }
 
     #[only_admin]
     fn unpause(e: &Env, caller: Address) {
         caller.require_auth();
         pausable::unpause(e);
-        timelock::pause::end(e);
+        strata_timelock::pause::end(e);
     }
 }
 

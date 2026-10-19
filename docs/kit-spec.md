@@ -316,7 +316,7 @@ instance is archived refuses every call.
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
 
-The lengths are the constants in `crates/storage`
+The lengths are the constants in `crates/strata-storage`
 (`PERSISTENT_EXTEND_AMOUNT`, `INSTANCE_EXTEND_AMOUNT`, and thresholds one day
 shorter). They are fixed in code: a governance setting would add an admin power
 for little gain.
@@ -324,7 +324,7 @@ for little gain.
 **Pending governance changes.** A change waiting in the timelock of
 `async_vault`, `share_token`, `nav_oracle` or `compliance` lives as a persistent entry,
 extended to 30 days when it is proposed. The wait itself can run up to 90 days
-(`timelock::MAX_DELAY`), so a change nobody touches can archive before it is
+(`strata_timelock::MAX_DELAY`), so a change nobody touches can archive before it is
 due. Nothing is lost: the call that applies it restores the archived entry
 itself and pays the restore fee, the same as any other archived entry.
 `npm run extend` also keeps it alive: it reads each contract's open ids from
@@ -375,7 +375,7 @@ implementation against what the vault calls.
 
 | Interface | Defined in | Implemented here by | What the vault calls |
 |---|---|---|---|
-| `OracleFeed` | `crates/bindings` | `nav-oracle` | `state`, `nav_per_share`, `attested_at`, `freshness_duration` |
+| `OracleFeed` | `crates/strata-bindings` | `nav-oracle` | `state`, `nav_per_share`, `attested_at`, `freshness_duration` |
 | `FungibleToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `transfer`, `balance`, `total_supply` |
 | `RWAToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `mint`, `burn`, `forced_transfer` |
 | `IdentityVerifier` | OpenZeppelin `stellar-tokens` 0.7.2 | `identity-verifier` (testnet stub) | `verify_identity`, called by the share token |
@@ -386,8 +386,8 @@ be the ledger time the report was accepted, not a time the reporter supplies.
 
 Two more traits connect the share token, the oracle and the kit's compliance
 contract to the vault's timelock. The vault implements `ClockSource`
-(`crates/timelock`), and the three read its `timelock_clock` to time their own
-changes. Each implements `VaultBinding` (`crates/bindings`): `vault` names the
+(`crates/strata-timelock`), and the three read its `timelock_clock` to time their own
+changes. Each implements `VaultBinding` (`crates/strata-bindings`): `vault` names the
 vault it is bound to, and `setup_open` says whether its admin changes are still
 instant.
 

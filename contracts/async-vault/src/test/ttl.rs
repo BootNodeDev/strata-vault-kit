@@ -1,5 +1,5 @@
 use soroban_sdk::testutils::storage::{Instance as _, Persistent as _};
-use storage::{INSTANCE_EXTEND_AMOUNT, PERSISTENT_EXTEND_AMOUNT};
+use strata_storage::{INSTANCE_EXTEND_AMOUNT, PERSISTENT_EXTEND_AMOUNT};
 
 use super::*;
 use crate::keys::DataKey;
