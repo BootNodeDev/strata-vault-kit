@@ -309,7 +309,6 @@ impl NavOracleContract {
 
     #[only_role(caller, "attester")]
     pub fn attest(e: &Env, report: NavReport, caller: Address) {
-        strata_storage::bump_instance(e);
         guards::nav_not_paused(e);
         let cfg = get_config(e);
         guards::nav_in_band(e, &cfg, report.nav_per_share);
@@ -319,6 +318,7 @@ impl NavOracleContract {
             guards::within_deviation(e, &cfg, &last, report.nav_per_share);
         }
 
+        strata_storage::bump_instance(e);
         let now = e.ledger().timestamp();
         let stored = NavReport {
             nav_per_share: report.nav_per_share,

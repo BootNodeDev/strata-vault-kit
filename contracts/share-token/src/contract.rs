@@ -109,12 +109,12 @@ impl ShareToken {
         reference: String,
         caller: Address,
     ) {
-        strata_storage::bump_instance(e);
         guards::admin_co_signs(e, &caller);
         guards::valid_reference(e, &reference);
         guards::not_vault_address(e, &from);
         guards::not_vault_address(e, &to);
         guards::identity_verified(e, &to);
+        strata_storage::bump_instance(e);
         RWA::forced_transfer(e, &from, &to, amount);
         LegalTransfer {
             from,
@@ -249,22 +249,22 @@ impl RWAToken for ShareToken {
         new_account: Address,
         operator: Address,
     ) -> bool {
-        strata_storage::bump_instance(e);
         guards::admin_co_signs(e, &operator);
         guards::not_vault_address(e, &old_account);
         guards::not_vault_address(e, &new_account);
+        strata_storage::bump_instance(e);
         RWA::recover_balance(e, &old_account, &new_account)
     }
     #[only_role(operator, "compliance")]
     fn set_address_frozen(e: &Env, user_address: Address, freeze: bool, operator: Address) {
-        strata_storage::bump_instance(e);
         guards::not_freezing_vault(e, &user_address, freeze);
+        strata_storage::bump_instance(e);
         RWA::set_address_frozen(e, &user_address, freeze);
     }
     #[only_role(operator, "compliance")]
     fn freeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
-        strata_storage::bump_instance(e);
         guards::not_vault_address(e, &user_address);
+        strata_storage::bump_instance(e);
         RWA::freeze_partial_tokens(e, &user_address, amount);
     }
     #[only_role(operator, "compliance")]
