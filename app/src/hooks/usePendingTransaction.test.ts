@@ -1,10 +1,11 @@
 import { renderHook } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+import { type Grant } from "./useAdminAuthority"
 import { type UseContractTransaction } from "./useContractTransaction"
 import { usePendingTransaction } from "./usePendingTransaction"
 
 const makeTransaction = <TArg = bigint>(
-	submit: (arg: TArg) => boolean,
+	submit: (arg: TArg, grant?: Grant) => boolean,
 ): UseContractTransaction<TArg, Record<never, never>> => ({
 	status: { status: "idle" },
 	submit,
@@ -30,7 +31,7 @@ describe("usePendingTransaction", () => {
 		accepted = result.current.submit(5n, "5.00 USDC")
 
 		expect(accepted).toBe(true)
-		expect(submit).toHaveBeenCalledWith(5n)
+		expect(submit).toHaveBeenCalledWith(5n, undefined)
 	})
 
 	it("leaves the label unset when the underlying submit refuses", () => {
@@ -54,7 +55,24 @@ describe("usePendingTransaction", () => {
 		result.current.submit(5n, "5.00 USDC")
 		result.current.retry()
 
-		expect(submit).toHaveBeenNthCalledWith(2, 5n)
+		expect(submit).toHaveBeenNthCalledWith(2, 5n, undefined)
+	})
+
+	it("retries with the grant that was submitted", () => {
+		const submit = vi.fn().mockReturnValue(true)
+		const grant: Grant = {
+			role: "vault guardian",
+			authority: "GAUTHORITY",
+			standing: { needs: 2 },
+		}
+		const { result } = renderHook(() =>
+			usePendingTransaction(makeTransaction(submit)),
+		)
+
+		result.current.submit(5n, "5.00 USDC", grant)
+		result.current.retry()
+
+		expect(submit).toHaveBeenNthCalledWith(2, 5n, grant)
 	})
 
 	it("retries a submission whose argument was null", () => {
@@ -66,7 +84,7 @@ describe("usePendingTransaction", () => {
 		result.current.submit(null, "No cap")
 		result.current.retry()
 
-		expect(submit).toHaveBeenNthCalledWith(2, null)
+		expect(submit).toHaveBeenNthCalledWith(2, null, undefined)
 	})
 
 	it("does nothing on retry before any submission was accepted", () => {

@@ -321,17 +321,15 @@ describe("toConfigurationActions", () => {
 		expect(config.fields?.[3]?.next).toBe("12.5%")
 	})
 
-	it("explains why a grant the wallet cannot sign alone leaves an action unavailable", () => {
+	it("opens an action to a grant the wallet cannot sign alone, carrying the grant", () => {
 		const multisig = grantOf("oracle admin", {
 			authority: ACCOUNT,
 			standing: { needs: 2 },
 		})
 		const config = find("set-oracle-config", [multisig], { maxRise: "5" })
 
-		expect(config.enabled).toBe(false)
-		expect(config.unavailable).toBe(
-			"Needs 2 signatures; collecting them is not supported yet.",
-		)
+		expect(config.enabled).toBe(true)
+		expect(config.grant).toBe(multisig)
 	})
 })
 

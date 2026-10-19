@@ -136,7 +136,7 @@ describe("ConfigurationSection", () => {
 			target: { value: "2d" },
 		})
 		fireEvent.click(submit("Set the notice"))
-		expect(noticeMock.submit).toHaveBeenCalledWith(2n * DAY)
+		expect(noticeMock.submit).toHaveBeenCalledWith(2n * DAY, governance)
 
 		noticeMock.status = { status: "awaiting-signature" }
 		rerender(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
@@ -152,14 +152,17 @@ describe("ConfigurationSection", () => {
 		})
 		fireEvent.click(submit("Set the oracle limits"))
 
-		expect(oracleConfigMock.submit).toHaveBeenCalledWith({
-			freshness_duration: DAY,
-			cooldown_secs: 3_600n,
-			max_up_bps: 500,
-			max_down_bps: null,
-			min_answer: PRICE_ONE / 2n,
-			max_answer: 2n * PRICE_ONE,
-		})
+		expect(oracleConfigMock.submit).toHaveBeenCalledWith(
+			{
+				freshness_duration: DAY,
+				cooldown_secs: 3_600n,
+				max_up_bps: 500,
+				max_down_bps: null,
+				min_answer: PRICE_ONE / 2n,
+				max_answer: 2n * PRICE_ONE,
+			},
+			oracleAdmin,
+		)
 	})
 
 	it("returns the fields to the current values once a change is recorded", () => {
