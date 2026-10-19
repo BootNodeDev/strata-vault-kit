@@ -145,7 +145,7 @@ describe("EmergencySection", () => {
 		)
 
 		fireEvent.click(button("Pause the vault"))
-		expect(pauseVaultMock.submit).toHaveBeenCalled()
+		expect(pauseVaultMock.submit).toHaveBeenCalledWith(undefined, guardian)
 
 		pauseVaultMock.status = { status: "preparing" }
 		rerender(<EmergencySection grants={[guardian]} wallet={WALLET} />)
@@ -161,7 +161,7 @@ describe("EmergencySection", () => {
 		)
 
 		fireEvent.click(button("Raise the ripcord"))
-		expect(setRipcordMock.submit).toHaveBeenCalledWith(true)
+		expect(setRipcordMock.submit).toHaveBeenCalledWith(true, oracleAdmin)
 		expect(raiseRipcordMock.submit).not.toHaveBeenCalled()
 
 		setRipcordMock.status = { status: "preparing" }
@@ -179,7 +179,7 @@ describe("EmergencySection", () => {
 		)
 
 		fireEvent.click(button("Lower the ripcord"))
-		expect(setRipcordMock.submit).toHaveBeenCalledWith(false)
+		expect(setRipcordMock.submit).toHaveBeenCalledWith(false, oracleAdmin)
 
 		setRipcordMock.status = { status: "preparing" }
 		rerender(<EmergencySection grants={[oracleAdmin]} wallet={WALLET} />)
