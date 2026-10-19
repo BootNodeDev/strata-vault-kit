@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { type Grant } from "../hooks/useAdminAuthority"
 import {
 	clearConfirmations,
+	describeStanding,
 	grantFor,
 	parseAccount,
 	type RailAction,
@@ -9,14 +10,8 @@ import {
 	readyCount,
 	type Spec,
 	toAction,
-	unavailableFor,
 	withInput,
 } from "./actions"
-
-vi.mock("@stellar-scaffold/app-lib", () => ({
-	shortAddress: (address: string) =>
-		`${address.slice(0, 4)}...${address.slice(-4)}`,
-}))
 
 const wallet = "GWALLETADDRESS1234"
 const multisig = "GMULTISIGADDRESS5678"
@@ -85,7 +80,7 @@ describe("readiness", () => {
 	})
 
 	it("reads an action the wallet cannot sign as unavailable, keeping the reason", () => {
-		const reason = "Needs 2 signatures; collecting them is not supported yet."
+		const reason = "Could not read the allowlist admin."
 		const action = actionWith({
 			conditions: [{ label: "Amount above zero", met: false }],
 			unavailable: reason,
@@ -108,6 +103,16 @@ describe("readyCount", () => {
 	})
 })
 
+describe("describeStanding", () => {
+	it.each<[Grant["standing"], string]>([
+		["signs-alone", "signs alone"],
+		[{ needs: 2 }, "1 of 2 signatures"],
+		[{ weight: 1, threshold: 3 }, "weight 1 of threshold 3"],
+	])("describes %j as %s", (standing, text) => {
+		expect(describeStanding(standing)).toBe(text)
+	})
+})
+
 describe("grantFor", () => {
 	it("prefers the grant the wallet holds itself over one it signs for", () => {
 		const own = grant({})
@@ -121,24 +126,6 @@ describe("grantFor", () => {
 
 		expect(grantFor([viaMultisig], "vault guardian", wallet)).toBe(viaMultisig)
 		expect(grantFor([viaMultisig], "oracle admin", wallet)).toBeUndefined()
-	})
-})
-
-describe("unavailableFor", () => {
-	it("lets a single key sign for itself", () => {
-		expect(unavailableFor(grant({}), wallet)).toBeUndefined()
-	})
-
-	it("explains the signatures a multisig grant still needs", () => {
-		expect(unavailableFor(grant({ standing: { needs: 2 } }), wallet)).toBe(
-			"Needs 2 signatures; collecting them is not supported yet.",
-		)
-	})
-
-	it("explains that signing for another account is not supported", () => {
-		expect(unavailableFor(grant({ authority: multisig }), wallet)).toBe(
-			"Signs for GMUL...5678; acting on its behalf is not supported yet.",
-		)
 	})
 })
 
@@ -157,7 +144,6 @@ describe("toAction", () => {
 		const action = toAction(
 			spec({ conditions: [{ label: "Vault is open", met: null }] }),
 			grant({}),
-			wallet,
 		)
 
 		expect(action.enabled).toBe(true)
@@ -165,16 +151,13 @@ describe("toAction", () => {
 	})
 
 	it("keeps a spec that is not ready closed, even with every condition met", () => {
-		expect(toAction(spec({ ready: false }), grant({}), wallet).enabled).toBe(
-			false,
-		)
+		expect(toAction(spec({ ready: false }), grant({})).enabled).toBe(false)
 	})
 
 	it("keeps a refused condition closing the action", () => {
 		const action = toAction(
 			spec({ conditions: [{ label: "Notice ≤ 30d", met: false }] }),
 			grant({}),
-			wallet,
 		)
 
 		expect(action.enabled).toBe(false)
@@ -191,7 +174,6 @@ describe("toAction", () => {
 		const action = toAction(
 			spec({ fields: [field], note: "Heads up.", danger: true }),
 			grant({}),
-			wallet,
 		)
 
 		expect(action).toMatchObject({
@@ -201,17 +183,12 @@ describe("toAction", () => {
 		})
 	})
 
-	it("explains a grant the wallet cannot sign alone and keeps it closed", () => {
-		const action = toAction(
-			spec({}),
-			grant({ authority: multisig, standing: { needs: 2 } }),
-			wallet,
-		)
+	it("opens a grant the wallet cannot sign alone and carries it for the signing flow", () => {
+		const shared = grant({ authority: multisig, standing: { needs: 2 } })
+		const action = toAction(spec({}), shared)
 
-		expect(action.enabled).toBe(false)
-		expect(action.unavailable).toBe(
-			"Needs 2 signatures; collecting them is not supported yet.",
-		)
+		expect(action.enabled).toBe(true)
+		expect(action.grant).toBe(shared)
 	})
 })
 
