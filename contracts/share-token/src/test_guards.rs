@@ -2,8 +2,10 @@
 //! it does not.
 
 use soroban_sdk::{
-    contract, contractimpl, symbol_short, testutils::Address as _, Address, BytesN, Env,
-    InvokeError, String, Symbol,
+    contract, contractimpl, symbol_short,
+    testutils::Address as _,
+    xdr::{ScErrorCode, ScErrorType},
+    Address, BytesN, Env, InvokeError, String, Symbol,
 };
 use stellar_tokens::rwa::RWAError;
 use strata_timelock::{Clock, MIN_DELAY};
@@ -117,18 +119,18 @@ fn no_hand_over_pending_refuses_while_an_offer_is_open() {
 }
 
 #[test]
-fn no_upgrade_pending_refuses_a_second_upgrade() {
+fn not_a_second_upgrade_refuses_an_upgrade_while_one_waits() {
     let f = setup();
     f.finish_setup();
     let upgrade = TokenChange::Upgrade(BytesN::from_array(&f.e, &[1; 32]));
     let grant = TokenChange::GrantRole(symbol_short!("manager"), Address::generate(&f.e));
-    holds(&f, || guards::no_upgrade_pending(&f.e, &upgrade));
+    holds(&f, || guards::not_a_second_upgrade(&f.e, &upgrade));
 
     f.token.propose_change(&upgrade, &f.admin);
     refuses(&f, ShareTokenError::UpgradeAlreadyPending, || {
-        guards::no_upgrade_pending(&f.e, &upgrade)
+        guards::not_a_second_upgrade(&f.e, &upgrade)
     });
-    holds(&f, || guards::no_upgrade_pending(&f.e, &grant));
+    holds(&f, || guards::not_a_second_upgrade(&f.e, &grant));
 }
 
 #[test]
@@ -140,7 +142,13 @@ fn admin_co_signs_refuses_one_account_signing_as_both() {
     });
 
     f.e.set_auths(&[]);
-    assert!(run(&f, || guards::admin_co_signs(&f.e, &f.compliance_authority)).is_err());
+    assert_eq!(
+        run(&f, || guards::admin_co_signs(&f.e, &f.compliance_authority)),
+        Err(Ok(soroban_sdk::Error::from_type_and_code(
+            ScErrorType::Auth,
+            ScErrorCode::InvalidAction
+        )))
+    );
 }
 
 #[test]

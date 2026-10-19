@@ -178,7 +178,7 @@ fn a_delay_below_the_minimum_is_refused() {
 }
 
 /// Proposes, waits and activates. Returns nothing; the vault is active after.
-fn wind_down_now(f: &Fixture) {
+pub(super) fn wind_down_now(f: &Fixture) {
     f.vault.propose_wind_down(&f.admin);
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();

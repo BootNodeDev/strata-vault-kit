@@ -79,7 +79,7 @@ pub(crate) fn finish_setup(e: &Env) {
 }
 
 pub(crate) fn propose(e: &Env, change: TokenChange) -> u32 {
-    guards::no_upgrade_pending(e, &change);
+    guards::not_a_second_upgrade(e, &change);
     let id = queue::propose::<ShareToken, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
         queue::pending::<TokenChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));

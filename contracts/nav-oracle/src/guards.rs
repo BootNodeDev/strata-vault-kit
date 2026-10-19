@@ -69,7 +69,8 @@ pub(crate) fn change_in_bounds(e: &Env, change: &OracleChange) {
     }
 }
 
-pub(crate) fn no_upgrade_pending(e: &Env, change: &OracleChange) {
+/// One upgrade at a time, so a standing eta is never quietly replaced.
+pub(crate) fn not_a_second_upgrade(e: &Env, change: &OracleChange) {
     if matches!(change, OracleChange::Upgrade(_)) && upgrade_pending(e) {
         panic_with_error!(e, OracleError::UpgradeAlreadyPending);
     }

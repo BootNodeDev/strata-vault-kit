@@ -93,7 +93,7 @@ pub(crate) fn finish_setup(e: &Env) {
 
 pub(crate) fn propose(e: &Env, change: OracleChange) -> u32 {
     guards::change_in_bounds(e, &change);
-    guards::no_upgrade_pending(e, &change);
+    guards::not_a_second_upgrade(e, &change);
     let id = queue::propose::<NavOracleContract, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
         queue::pending::<OracleChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));

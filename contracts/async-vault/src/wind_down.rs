@@ -104,8 +104,8 @@ pub(crate) fn cancel_proposal(e: &Env) {
 }
 
 pub(crate) fn activate(e: &Env) {
-    let mut wd = info(e).unwrap_or_else(|| panic_with_error!(e, VaultError::WindDownNotProposed));
     guards::not_winding_down(e);
+    let mut wd = info(e).unwrap_or_else(|| panic_with_error!(e, VaultError::WindDownNotProposed));
     guards::wind_down_delay_elapsed(e, &wd);
 
     wd.status = WindDownStatus::Active;

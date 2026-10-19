@@ -187,7 +187,7 @@ pub(crate) fn propose(e: &Env, change: VaultChange) -> u32 {
     guards::not_winding_down(e);
     guards::setup_finished(e);
     guards::change_in_bounds(e, &change);
-    guards::no_code_change_pending(e, &change);
+    guards::not_a_second_code_change(e, &change);
     let id = queue::propose::<AsyncVault, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     ChangeProposed {
         id,

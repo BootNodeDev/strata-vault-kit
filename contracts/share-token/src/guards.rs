@@ -47,7 +47,8 @@ pub(crate) fn direct_hand_over_allowed(e: &Env, live_until_ledger: u32) {
     }
 }
 
-pub(crate) fn no_upgrade_pending(e: &Env, change: &TokenChange) {
+/// One upgrade at a time, so a standing eta is never quietly replaced.
+pub(crate) fn not_a_second_upgrade(e: &Env, change: &TokenChange) {
     if matches!(change, TokenChange::Upgrade(_)) && upgrade_pending(e) {
         panic_with_error!(e, ShareTokenError::UpgradeAlreadyPending);
     }

@@ -5,6 +5,7 @@ use soroban_sdk::InvokeError;
 use stellar_tokens::rwa::compliance::ComplianceHook;
 
 use super::share_returns::RefusesEveryTransfer;
+use super::wind_down::wind_down_now;
 use super::*;
 use crate::guards;
 use crate::lock_policy::{Decision, Exit, Standing};
@@ -25,12 +26,6 @@ fn refuses(f: &Fixture, error: VaultError, guard: impl FnOnce()) {
 
 fn epoch(f: &Fixture, id: u64) -> EpochInfo {
     f.vault.get_epoch(&id).unwrap()
-}
-
-fn wind_down_now(f: &Fixture) {
-    f.vault.propose_wind_down(&f.admin);
-    f.advance(MIN_WIND_DOWN_DELAY);
-    f.vault.activate_wind_down();
 }
 
 #[test]
@@ -323,21 +318,21 @@ fn change_in_bounds_checks_the_bounds_of_each_change() {
 }
 
 #[test]
-fn no_code_change_pending_refuses_a_second_code_change() {
+fn not_a_second_code_change_refuses_a_code_change_while_one_waits() {
     let f = setup();
     let upgrade = VaultChange::Upgrade(BytesN::from_array(&f.e, &[1; 32]));
-    holds(&f, || guards::no_code_change_pending(&f.e, &upgrade));
+    holds(&f, || guards::not_a_second_code_change(&f.e, &upgrade));
 
     f.vault
         .propose_change(&VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY), &f.admin);
     refuses(&f, VaultError::UpgradeProposalExists, || {
-        guards::no_code_change_pending(&f.e, &upgrade)
+        guards::not_a_second_code_change(&f.e, &upgrade)
     });
     refuses(&f, VaultError::UpgradeProposalExists, || {
-        guards::no_code_change_pending(&f.e, &VaultChange::UpgradeDelay(MAX_UPGRADE_DELAY))
+        guards::not_a_second_code_change(&f.e, &VaultChange::UpgradeDelay(MAX_UPGRADE_DELAY))
     });
     holds(&f, || {
-        guards::no_code_change_pending(&f.e, &VaultChange::Notice(0))
+        guards::not_a_second_code_change(&f.e, &VaultChange::Notice(0))
     });
 }
 

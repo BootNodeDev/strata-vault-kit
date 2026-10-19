@@ -263,18 +263,18 @@ fn change_in_bounds_refuses_an_invalid_config() {
 }
 
 #[test]
-fn no_upgrade_pending_refuses_a_second_upgrade() {
+fn not_a_second_upgrade_refuses_an_upgrade_while_one_waits() {
     let f = setup();
     f.finish_setup();
     let upgrade = OracleChange::Upgrade(BytesN::from_array(&f.e, &[1; 32]));
     let grant = OracleChange::GrantRole(symbol_short!("attester"), Address::generate(&f.e));
-    holds(&f, || guards::no_upgrade_pending(&f.e, &upgrade));
+    holds(&f, || guards::not_a_second_upgrade(&f.e, &upgrade));
 
     f.oracle.propose_change(&upgrade, &f.admin);
     refuses(&f, OracleError::UpgradeAlreadyPending, || {
-        guards::no_upgrade_pending(&f.e, &upgrade)
+        guards::not_a_second_upgrade(&f.e, &upgrade)
     });
-    holds(&f, || guards::no_upgrade_pending(&f.e, &grant));
+    holds(&f, || guards::not_a_second_upgrade(&f.e, &grant));
 }
 
 #[test]

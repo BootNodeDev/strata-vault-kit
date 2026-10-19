@@ -30,7 +30,8 @@ pub(crate) fn roles_distinct(e: &Env, roles: &VaultRoles) {
     }
 }
 
-/// Called at the top of every entrypoint the wind-down closes.
+/// The first check in every entrypoint body the wind-down closes; `apply_change`
+/// is closed by the timelock's own refusal instead.
 pub(crate) fn not_winding_down(e: &Env) {
     if wind_down::is_active(e) {
         panic_with_error!(e, VaultError::WindDownActive);
@@ -160,7 +161,7 @@ pub(crate) fn change_in_bounds(e: &Env, change: &VaultChange) {
 }
 
 /// One code change at a time, so a standing eta is never quietly replaced.
-pub(crate) fn no_code_change_pending(e: &Env, change: &VaultChange) {
+pub(crate) fn not_a_second_code_change(e: &Env, change: &VaultChange) {
     if changes_code(change) && code_change_pending(e) {
         panic_with_error!(e, VaultError::UpgradeProposalExists);
     }
@@ -282,9 +283,7 @@ pub(crate) fn needs_no_frozen_shares(e: &Env, holder: &Address, shares: i128) {
     }
 }
 
-/// Pricing already released the epoch's escrow into the reserve, so a refund
-/// is an extra payout rather than part of committed. It comes out of free
-/// reserve and must not reach money owed to a priced exit.
+/// A refund after pricing comes out of free reserve, never out of money owed to exits.
 pub(crate) fn refund_covered(e: &Env, amount: i128) {
     if treasury::free_reserve(e) < amount {
         panic_with_error!(e, VaultError::ClaimNotCovered);
@@ -329,10 +328,7 @@ pub(crate) fn not_priced(e: &Env, epoch: &EpochInfo) {
     }
 }
 
-/// Cancellation is an escape hatch, not a choice. Once the feed can price a
-/// sealed epoch, the price is knowable and the only way out is to take it.
-/// Fulfilment is closed during a wind-down, so this epoch will never take a
-/// price. There is nothing to decline.
+/// A readable price closes cancellation, except in a wind-down, which prices nothing.
 pub(crate) fn no_price_available(e: &Env, epoch: &EpochInfo) {
     if !wind_down::is_active(e) && epoch::is_priceable(e, epoch) {
         panic_with_error!(e, VaultError::PriceAvailable);
@@ -353,8 +349,7 @@ pub(crate) fn allowed_to(e: &Env, exit: Exit, holder: &Address) {
     }
 }
 
-/// The lock policy neither refuses nor holds the exit: it goes ahead, or its
-/// value moves to an exit.
+/// The lock policy neither refuses nor holds the exit.
 pub(crate) fn not_refused(e: &Env, decision: Decision, standing: Standing) {
     if matches!(decision, Decision::Refuse | Decision::Hold) {
         panic_with_error!(e, lock_policy::refused_with(standing));
