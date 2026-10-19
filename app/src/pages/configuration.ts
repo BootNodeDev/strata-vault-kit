@@ -470,7 +470,7 @@ export function toConfigurationActions(
 	const build = <Id extends ConfigurationAction["id"], T>(
 		spec: Spec<Id> & { arg: T | undefined; next: string },
 		grant: Grant,
-	) => ({ ...toAction(spec, grant, wallet), arg: spec.arg, next: spec.next })
+	) => ({ ...toAction(spec, grant), arg: spec.arg, next: spec.next })
 
 	const actions: ConfigurationAction[] = []
 	const governance = grantFor(grants, ROLES.governance, wallet)

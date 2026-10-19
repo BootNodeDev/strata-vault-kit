@@ -45,11 +45,13 @@ const oneSignatureOf = (med: number, weight = 1) => ({
 		{ key: otherAddress, weight: 1 },
 	],
 	thresholds: { low: 0, med, high: med },
+	sequence: "1",
 })
 
 const singleKey = {
 	signers: [{ key: investorAddress, weight: 1 }],
 	thresholds: { low: 0, med: 0, high: 0 },
+	sequence: "1",
 }
 
 const emptyGrantedBy = {
@@ -198,6 +200,7 @@ describe("toSurfaces", () => {
 						{ key: otherAddress, weight: 3 },
 					],
 					thresholds: { low: 0, med: 3, high: 3 },
+					sequence: "1",
 				},
 			},
 		)
@@ -229,6 +232,7 @@ describe("toSurfaces", () => {
 				[multisig]: {
 					signers: [{ key: otherAddress, weight: 1 }],
 					thresholds: { low: 0, med: 1, high: 1 },
+					sequence: "1",
 				},
 			},
 		)

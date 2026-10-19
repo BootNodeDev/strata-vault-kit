@@ -90,6 +90,16 @@ describe("App", () => {
 		expect(screen.getByText("GitHub")).toBeTruthy()
 	})
 
+	it("serves the public signing page inside the app layout", () => {
+		useAdminAuthorityMock.mockReturnValue(disconnectedAuthority)
+		renderAt("/sign")
+
+		expect(screen.getByText("Strata Vault Kit")).toBeTruthy()
+		expect(
+			screen.getByText("This link does not carry a valid transaction."),
+		).toBeTruthy()
+	})
+
 	it("serves the admin panel at a surface path too", () => {
 		useAdminAuthorityMock.mockReturnValue(disconnectedAuthority)
 		renderAt("/admin/cycle")

@@ -55,26 +55,26 @@ const EmergencySection: React.FC<{
 	const run = (action: EmergencyAction) => {
 		switch (action.id) {
 			case "pause-vault":
-				pauseVault.submit(undefined, "")
+				pauseVault.submit(undefined, "", action.grant)
 				return
 			case "unpause-vault":
-				unpauseVault.submit(undefined, "")
+				unpauseVault.submit(undefined, "", action.grant)
 				return
 			case "raise-ripcord":
-				if (action.viaAdmin) setRipcord.submit(true, RAISE)
-				else raiseRipcord.submit(undefined, "")
+				if (action.viaAdmin) setRipcord.submit(true, RAISE, action.grant)
+				else raiseRipcord.submit(undefined, "", action.grant)
 				return
 			case "lower-ripcord":
-				setRipcord.submit(false, LOWER)
+				setRipcord.submit(false, LOWER, action.grant)
 				return
 			case "clear-latest":
-				clearLatest.submit(undefined, "")
+				clearLatest.submit(undefined, "", action.grant)
 				return
 			case "pause-token":
-				pauseToken.submit(undefined, "")
+				pauseToken.submit(undefined, "", action.grant)
 				return
 			case "unpause-token":
-				unpauseToken.submit(undefined, "")
+				unpauseToken.submit(undefined, "", action.grant)
 		}
 	}
 
