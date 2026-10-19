@@ -66,9 +66,9 @@ function useComplianceFlows() {
 type Flows = ReturnType<typeof useComplianceFlows>
 
 const submitArg = <Arg,>(
-	{ submit }: { submit: (arg: Arg, label: string) => boolean },
-	{ arg, next }: { arg: Arg | undefined; next: string },
-) => arg !== undefined && submit(arg, next)
+	{ submit }: { submit: (arg: Arg, label: string, grant?: Grant) => boolean },
+	{ arg, next, grant }: { arg: Arg | undefined; next: string; grant?: Grant },
+) => arg !== undefined && submit(arg, next, grant)
 
 function submit(flows: Flows, action: ComplianceAction) {
 	switch (action.id) {
