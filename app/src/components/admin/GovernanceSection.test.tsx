@@ -219,10 +219,13 @@ describe("GovernanceSection", () => {
 		})
 		fireEvent.click(submit("Grant a vault role"))
 
-		expect(txs.useGrantVaultRole.submit).toHaveBeenCalledWith({
-			role: "guardian",
-			account: ACCOUNT,
-		})
+		expect(txs.useGrantVaultRole.submit).toHaveBeenCalledWith(
+			{
+				role: "guardian",
+				account: ACCOUNT,
+			},
+			governance,
+		)
 	})
 
 	it("holds a dangerous revoke until its confirmation is checked", () => {
@@ -244,10 +247,13 @@ describe("GovernanceSection", () => {
 		)
 		expect(submit("Revoke a share-token role").disabled).toBe(false)
 		fireEvent.click(submit("Revoke a share-token role"))
-		expect(txs.useRevokeTokenRole.submit).toHaveBeenCalledWith({
-			role: "manager",
-			account: VAULT,
-		})
+		expect(txs.useRevokeTokenRole.submit).toHaveBeenCalledWith(
+			{
+				role: "manager",
+				account: VAULT,
+			},
+			tokenAdmin,
+		)
 	})
 
 	it("asks again for a confirmation when a typed value comes back", () => {
@@ -332,10 +338,13 @@ describe("GovernanceSection", () => {
 		)
 		fireEvent.click(submit("Hand over vault admin"))
 
-		expect(txs.useHandOverVaultAdmin.submit).toHaveBeenCalledWith({
-			newAdmin: ACCOUNT,
-			liveUntilLedger: 1_000 + 2 * 17_280,
-		})
+		expect(txs.useHandOverVaultAdmin.submit).toHaveBeenCalledWith(
+			{
+				newAdmin: ACCOUNT,
+				liveUntilLedger: 1_000 + 2 * 17_280,
+			},
+			governance,
+		)
 	})
 
 	it("lets the pending wallet accept and the admin cancel", () => {
@@ -354,11 +363,17 @@ describe("GovernanceSection", () => {
 		expand("Cancel the oracle handover")
 		fireEvent.click(submit("Cancel the oracle handover"))
 
-		expect(txs.useAcceptOracleAdmin.submit).toHaveBeenCalledWith(undefined)
-		expect(txs.useCancelOracleHandover.submit).toHaveBeenCalledWith({
-			newAdmin: WALLET,
-			liveUntilLedger: 0,
-		})
+		expect(txs.useAcceptOracleAdmin.submit).toHaveBeenCalledWith(
+			undefined,
+			grantOf("oracle pending admin"),
+		)
+		expect(txs.useCancelOracleHandover.submit).toHaveBeenCalledWith(
+			{
+				newAdmin: WALLET,
+				liveUntilLedger: 0,
+			},
+			grantOf("oracle admin"),
+		)
 		expect(useGovernanceStateMock).toHaveBeenCalledWith({
 			contracts: { vault: VAULT, oracle: "CORACLE", token: "CTOKEN" },
 			active: true,
@@ -383,8 +398,14 @@ describe("GovernanceSection", () => {
 		expand("Cancel the wind-down")
 		fireEvent.click(submit("Cancel the wind-down"))
 
-		expect(txs.useApplyUpgrade.submit).toHaveBeenCalledWith(undefined)
-		expect(txs.useCancelWindDown.submit).toHaveBeenCalledWith(undefined)
+		expect(txs.useApplyUpgrade.submit).toHaveBeenCalledWith(
+			undefined,
+			governance,
+		)
+		expect(txs.useCancelWindDown.submit).toHaveBeenCalledWith(
+			undefined,
+			governance,
+		)
 		expect(screen.getByText("Pending upgrade")).toBeTruthy()
 		expect(screen.getByTitle(`Code ${hash}`).textContent).toBe(
 			"Code abab...abab",
