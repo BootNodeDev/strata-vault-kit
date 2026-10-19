@@ -6,6 +6,7 @@ use stellar_access::{
 use stellar_tokens::rwa::{compliance, compliance::ComplianceHook, utils::token_binder};
 use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
+use crate::guards;
 use crate::{
     ChangeApplied, ChangeCancelled, ChangeProposed, Compliance, ComplianceContractError,
     SetupFinished, VaultBound,
@@ -63,13 +64,6 @@ fn vault_clock(e: &Env) -> Clock {
     <Compliance as TimelockHost>::clock(e).unwrap_or_else(|r| refuse(e, r))
 }
 
-/// Direct rule changes are instant only before setup finishes.
-pub(crate) fn require_setup_open(e: &Env) {
-    if !setup::is_open(e) {
-        panic_with_error!(e, ComplianceContractError::UseTimelock);
-    }
-}
-
 pub(crate) fn bind_vault(e: &Env, vault: &Address) {
     setup::bind_source(e, vault).unwrap_or_else(|r| refuse(e, r));
     VaultBound {
@@ -78,14 +72,9 @@ pub(crate) fn bind_vault(e: &Env, vault: &Address) {
     .publish(e);
 }
 
-/// No nominee from setup may accept once changes wait, so a hand-over offered
-/// during setup holds it open.
 pub(crate) fn finish_setup(e: &Env) {
-    if setup::is_open(e)
-        && role_transfer::has_active_pending_transfer(e, &AccessControlStorageKey::PendingAdmin)
-    {
-        panic_with_error!(e, ComplianceContractError::AdminTransferPending);
-    }
+    guards::setup_open(e);
+    guards::no_hand_over_pending(e);
     setup::finish::<Compliance>(e).unwrap_or_else(|r| refuse(e, r));
     SetupFinished {}.publish(e);
 }
