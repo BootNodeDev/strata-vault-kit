@@ -9,7 +9,6 @@ import {
 	ROLES,
 	type Spec,
 	toAction,
-	unavailableFor,
 } from "./actions"
 
 export type EmergencyState = {
@@ -112,12 +111,9 @@ const tokenSpecs = (token: PauseState): [Spec<PlainId>, Spec<PlainId>] => [
 const raiseGrant = (
 	guardian: Grant | undefined,
 	admin: Grant | undefined,
-	wallet: string,
 ): Grant | undefined => {
-	if (guardian !== undefined && unavailableFor(guardian, wallet) === undefined)
-		return guardian
-	if (admin !== undefined && unavailableFor(admin, wallet) === undefined)
-		return admin
+	if (guardian?.standing === "signs-alone") return guardian
+	if (admin?.standing === "signs-alone") return admin
 	return guardian ?? admin
 }
 
@@ -143,29 +139,24 @@ export function toEmergencyActions(
 	const [pauseToken, unpauseToken] = tokenSpecs(state.token)
 	const oracleAdmin = held(ROLES.oracleAdmin)
 	const tokenAdmin = held(ROLES.tokenAdmin)
-	const raiser = raiseGrant(held(ROLES.oracleGuardian), oracleAdmin, wallet)
+	const raiser = raiseGrant(held(ROLES.oracleGuardian), oracleAdmin)
 
 	const actions: EmergencyAction[] = []
 	const guardian = held(ROLES.vaultGuardian)
-	if (guardian !== undefined)
-		actions.push(toAction(pauseVault, guardian, wallet))
+	if (guardian !== undefined) actions.push(toAction(pauseVault, guardian))
 	const governance = held(ROLES.governance)
-	if (governance !== undefined)
-		actions.push(toAction(unpauseVault, governance, wallet))
+	if (governance !== undefined) actions.push(toAction(unpauseVault, governance))
 	if (raiser !== undefined)
 		actions.push({
-			...toAction(raiseSpec(state.oracle), raiser, wallet),
+			...toAction(raiseSpec(state.oracle), raiser),
 			viaAdmin: raiser.role === ROLES.oracleAdmin,
 		})
 	if (oracleAdmin !== undefined)
-		actions.push(
-			toAction(lower, oracleAdmin, wallet),
-			toAction(clear, oracleAdmin, wallet),
-		)
+		actions.push(toAction(lower, oracleAdmin), toAction(clear, oracleAdmin))
 	if (tokenAdmin !== undefined)
 		actions.push(
-			toAction(pauseToken, tokenAdmin, wallet),
-			toAction(unpauseToken, tokenAdmin, wallet),
+			toAction(pauseToken, tokenAdmin),
+			toAction(unpauseToken, tokenAdmin),
 		)
 	return actions
 }
