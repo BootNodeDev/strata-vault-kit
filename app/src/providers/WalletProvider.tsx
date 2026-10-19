@@ -37,13 +37,12 @@ export interface WalletContextType {
 	updateBalances: () => Promise<void>
 }
 
-export const WalletContext = // @ts-ignore
-	createContext<WalletContextType>({
-		isPending: true,
-		balances: {},
-		updateBalances: async () => {},
-		signTransaction,
-	})
+export const WalletContext = createContext<WalletContextType>({
+	isPending: true,
+	balances: {},
+	updateBalances: async () => {},
+	signTransaction,
+})
 
 export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 	const [balances, setBalances] = useState<MappedBalances>({})
