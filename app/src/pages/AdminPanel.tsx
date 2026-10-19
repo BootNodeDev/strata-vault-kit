@@ -16,13 +16,13 @@ import {
 	type AdminSurface,
 	type Grant,
 	type RoleHolders,
-	type Standing,
 	SURFACE_LABELS,
 	SURFACE_ORDER,
 	useAdminAuthority,
 } from "../hooks/useAdminAuthority"
 import { useWallet } from "../hooks/useWallet"
 import typeStyles from "../styles/type.module.css"
+import { describeStanding } from "./actions"
 import styles from "./AdminPanel.module.css"
 
 const toAddressRows = (addresses: AdminAddresses): AddressRow[] => [
@@ -31,12 +31,6 @@ const toAddressRows = (addresses: AdminAddresses): AddressRow[] => [
 	{ label: "Oracle", address: addresses.oracle },
 	{ label: "Identity verifier", address: addresses.identityVerifier },
 ]
-
-const describeStanding = (standing: Standing): string => {
-	if (standing === "signs-alone") return "signs alone"
-	if ("needs" in standing) return `1 of ${standing.needs} signatures`
-	return `weight ${standing.weight} of threshold ${standing.threshold}`
-}
 
 const isSingleKey = (grant: Grant, wallet: string): boolean =>
 	grant.authority === wallet && grant.standing === "signs-alone"
