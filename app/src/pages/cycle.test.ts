@@ -741,30 +741,24 @@ describe("toCycleActions", () => {
 		expect(conditionsOf(close)["Wind-down not active"]).toBe(false)
 	})
 
-	it("makes the close unavailable when the manager's authority needs more signatures than the wallet's", () => {
-		const close = actionOf(
-			actionsFor(ready({}), [grant("vault manager", { needs: 2 })]),
-			"close-epoch",
-		)
+	it("opens the close to a manager whose authority needs more signatures, carrying the grant", () => {
+		const shared = grant("vault manager", { needs: 2 })
+		const close = actionOf(actionsFor(ready({}), [shared]), "close-epoch")
 
-		expect(close?.unavailable).toBe(
-			"Needs 2 signatures; collecting them is not supported yet.",
-		)
-		expect(close?.enabled).toBe(false)
+		expect(close?.enabled).toBe(true)
+		expect(close?.grant).toEqual(shared)
 	})
 
-	it("makes the close unavailable when the manager's authority is an account the wallet only signs for", () => {
-		const close = actionOf(
-			actionsFor(ready({}), [
-				grant("vault manager", "signs-alone", "GOTHERACCOUNT9876543210"),
-			]),
-			"close-epoch",
+	it("opens the close to a signer of another account, carrying that account's grant", () => {
+		const other = grant(
+			"vault manager",
+			"signs-alone",
+			"GOTHERACCOUNT9876543210",
 		)
+		const close = actionOf(actionsFor(ready({}), [other]), "close-epoch")
 
-		expect(close?.unavailable).toBe(
-			"Signs for GOTH...3210; acting on its behalf is not supported yet.",
-		)
-		expect(close?.enabled).toBe(false)
+		expect(close?.enabled).toBe(true)
+		expect(close?.grant).toEqual(other)
 	})
 
 	it("prefers the grant whose authority is the wallet over an earlier one for the same role", () => {
@@ -780,17 +774,11 @@ describe("toCycleActions", () => {
 		expect(close?.enabled).toBe(true)
 	})
 
-	it("reads the threshold as the signatures needed for a weighted authority", () => {
-		const close = actionOf(
-			actionsFor(ready({}), [
-				grant("vault manager", { weight: 1, threshold: 3 }),
-			]),
-			"close-epoch",
-		)
+	it("carries a weighted authority's standing on the close", () => {
+		const weighted = grant("vault manager", { weight: 1, threshold: 3 })
+		const close = actionOf(actionsFor(ready({}), [weighted]), "close-epoch")
 
-		expect(close?.unavailable).toBe(
-			"Needs 3 signatures; collecting them is not supported yet.",
-		)
+		expect(close?.grant?.standing).toEqual({ weight: 1, threshold: 3 })
 	})
 
 	it("enables the settlement when every condition is met, pricing the oldest sealed epoch at the current price", () => {
@@ -1159,15 +1147,16 @@ describe("toCycleActions, attesting", () => {
 		)
 	})
 
-	it("makes the attestation unavailable when the attester's authority is an account the wallet only signs for", () => {
-		const attest = attestOf("1.04", {}, [
-			grant("oracle attester", "signs-alone", "GOTHERACCOUNT9876543210"),
-		])
-
-		expect(attest?.unavailable).toBe(
-			"Signs for GOTH...3210; acting on its behalf is not supported yet.",
+	it("opens the attestation to a signer of another account, carrying that account's grant", () => {
+		const other = grant(
+			"oracle attester",
+			"signs-alone",
+			"GOTHERACCOUNT9876543210",
 		)
-		expect(attest?.enabled).toBe(false)
+		const attest = attestOf("1.04", {}, [other])
+
+		expect(attest?.enabled).toBe(true)
+		expect(attest?.grant).toEqual(other)
 	})
 
 	it("cannot vouch for the band or the move when the oracle's limits could not be read", () => {
@@ -1192,15 +1181,12 @@ describe("toCycleActions, attesting", () => {
 		expect(attest?.enabled).toBe(true)
 	})
 
-	it("makes the attestation unavailable when the attester's authority needs more signatures than the wallet's", () => {
-		const attest = attestOf("1.04", {}, [
-			grant("oracle attester", { needs: 2 }),
-		])
+	it("opens the attestation to an attester whose authority needs more signatures, carrying the grant", () => {
+		const shared = grant("oracle attester", { needs: 2 })
+		const attest = attestOf("1.04", {}, [shared])
 
-		expect(attest?.unavailable).toBe(
-			"Needs 2 signatures; collecting them is not supported yet.",
-		)
-		expect(attest?.enabled).toBe(false)
+		expect(attest?.enabled).toBe(true)
+		expect(attest?.grant).toEqual(shared)
 	})
 })
 
@@ -1394,15 +1380,12 @@ describe("toCycleActions, deploying to the custodian", () => {
 		expect(deploy?.enabled).toBe(false)
 	})
 
-	it("makes the deployment unavailable when the treasury's authority needs more signatures than the wallet's", () => {
-		const deploy = deployOf("250", {}, [
-			grant("vault treasury", { weight: 1, threshold: 3 }),
-		])
+	it("opens the deployment to a treasury whose authority needs more signatures, carrying the grant", () => {
+		const weighted = grant("vault treasury", { weight: 1, threshold: 3 })
+		const deploy = deployOf("250", {}, [weighted])
 
-		expect(deploy?.unavailable).toBe(
-			"Needs 3 signatures; collecting them is not supported yet.",
-		)
-		expect(deploy?.enabled).toBe(false)
+		expect(deploy?.enabled).toBe(true)
+		expect(deploy?.grant).toEqual(weighted)
 	})
 })
 

@@ -3,6 +3,7 @@ import styles from "./App.module.css"
 import ConnectAccount from "./components/ConnectAccount"
 import ExternalLink from "./components/icons/ExternalLink"
 import AdminPanel from "./pages/AdminPanel"
+import SignPage from "./pages/SignPage"
 import VaultPreview from "./pages/VaultPreview"
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
 				<Route path="/" element={<VaultPreview />} />
 				<Route path="/admin" element={<AdminPanel />} />
 				<Route path="/admin/:surface" element={<AdminPanel />} />
+				<Route path="/sign" element={<SignPage />} />
 			</Route>
 		</Routes>
 	)
