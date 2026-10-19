@@ -13,7 +13,7 @@ fn requesting_a_deposit_publishes_the_request() {
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
         [DepositRequested {
-            controller: user,
+            holder: user,
             epoch: 1,
             amount: 400,
         }
@@ -74,7 +74,7 @@ fn claiming_the_last_deposit_publishes_the_shares_paid_and_the_settlement() {
         f.e.events().all().filter_by_contract(&f.vault.address),
         [
             DepositClaimed {
-                controller: user,
+                holder: user,
                 epoch: 1,
                 amount: 400,
                 shares: 200,

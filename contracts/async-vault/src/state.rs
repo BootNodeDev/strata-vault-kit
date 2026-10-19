@@ -99,38 +99,20 @@ pub(crate) fn get_epoch(e: &Env, id: u64) -> Option<EpochInfo> {
     strata_storage::get_persistent(e, &DataKey::Epoch(id))
 }
 
-pub(crate) fn set_deposit_request(
-    e: &Env,
-    epoch: u64,
-    controller: &Address,
-    request: &DepositRequest,
-) {
-    strata_storage::set_persistent(e, &DataKey::UserDeposit(epoch, controller.clone()), request);
+pub(crate) fn set_deposit_request(e: &Env, epoch: u64, holder: &Address, request: &DepositRequest) {
+    strata_storage::set_persistent(e, &DataKey::UserDeposit(epoch, holder.clone()), request);
 }
 
-pub(crate) fn get_deposit_request(
-    e: &Env,
-    epoch: u64,
-    controller: &Address,
-) -> Option<DepositRequest> {
-    strata_storage::get_persistent(e, &DataKey::UserDeposit(epoch, controller.clone()))
+pub(crate) fn get_deposit_request(e: &Env, epoch: u64, holder: &Address) -> Option<DepositRequest> {
+    strata_storage::get_persistent(e, &DataKey::UserDeposit(epoch, holder.clone()))
 }
 
-pub(crate) fn set_redeem_request(
-    e: &Env,
-    epoch: u64,
-    controller: &Address,
-    request: &RedeemRequest,
-) {
-    strata_storage::set_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()), request);
+pub(crate) fn set_redeem_request(e: &Env, epoch: u64, holder: &Address, request: &RedeemRequest) {
+    strata_storage::set_persistent(e, &DataKey::UserRedeem(epoch, holder.clone()), request);
 }
 
-pub(crate) fn get_redeem_request(
-    e: &Env,
-    epoch: u64,
-    controller: &Address,
-) -> Option<RedeemRequest> {
-    strata_storage::get_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()))
+pub(crate) fn get_redeem_request(e: &Env, epoch: u64, holder: &Address) -> Option<RedeemRequest> {
+    strata_storage::get_persistent(e, &DataKey::UserRedeem(epoch, holder.clone()))
 }
 
 /// Cash owed to holders whose exit is priced but not yet claimed.
@@ -152,16 +134,16 @@ pub(crate) fn cancellable_escrow(e: &Env) -> i128 {
     strata_storage::get_instance(e, &DataKey::CancellableEscrow).unwrap_or(0)
 }
 
-pub(crate) fn remove_deposit_request(e: &Env, epoch: u64, controller: &Address) {
+pub(crate) fn remove_deposit_request(e: &Env, epoch: u64, holder: &Address) {
     e.storage()
         .persistent()
-        .remove(&DataKey::UserDeposit(epoch, controller.clone()));
+        .remove(&DataKey::UserDeposit(epoch, holder.clone()));
 }
 
-pub(crate) fn remove_redeem_request(e: &Env, epoch: u64, controller: &Address) {
+pub(crate) fn remove_redeem_request(e: &Env, epoch: u64, holder: &Address) {
     e.storage()
         .persistent()
-        .remove(&DataKey::UserRedeem(epoch, controller.clone()));
+        .remove(&DataKey::UserRedeem(epoch, holder.clone()));
 }
 
 pub(crate) fn set_pending_mint_shares(e: &Env, shares: i128) {

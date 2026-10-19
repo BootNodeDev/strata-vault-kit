@@ -19,10 +19,10 @@ use strata_bindings::VaultBinding;
 /// Longest order reference a legal transfer accepts, in bytes.
 pub const MAX_REFERENCE_LEN: u32 = 128;
 
-/// The co-signing admin must be a different account from the operator.
-fn require_admin_co_sign(e: &Env, operator: &Address) {
+/// The co-signing admin must be a different account from the caller.
+fn require_admin_co_sign(e: &Env, caller: &Address) {
     let admin = access_control::enforce_admin_auth(e);
-    if admin == *operator {
+    if admin == *caller {
         panic_with_error!(e, ShareTokenError::CoSignRequired);
     }
 }
