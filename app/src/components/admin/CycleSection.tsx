@@ -66,7 +66,7 @@ const CycleSection: React.FC<{
 		switch (action.id) {
 			case "close-epoch":
 				if (action.epochId !== null)
-					closeEpoch.submit(undefined, String(action.epochId))
+					closeEpoch.submit(undefined, String(action.epochId), action.grant)
 				return
 			case "fulfill-epoch":
 				if (action.epochId !== null)
@@ -77,11 +77,12 @@ const CycleSection: React.FC<{
 					attest.submit(
 						{ price: action.price, freshness: action.freshness },
 						formatSignedPrice(action.price),
+						action.grant,
 					)
 				return
 			case "deploy":
 				if (action.amount !== null)
-					deploy.submit(action.amount, exactAmount(action.amount))
+					deploy.submit(action.amount, exactAmount(action.amount), action.grant)
 				return
 			case "fund":
 				if (action.amount !== null)

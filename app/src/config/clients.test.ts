@@ -28,10 +28,31 @@ describe("asyncVaultWriter", () => {
 		})
 
 		expect(result).toBe(client)
-		expect(connectAsyncVaultMock).toHaveBeenCalledWith(expect.any(String), {
+		expect(connectAsyncVaultMock).toHaveBeenCalledWith(
+			expect.any(String),
+			{ publicKey: "GONE", signTransaction },
+			{ timeoutInSeconds: undefined },
+		)
+	})
+
+	it("forwards the timeout and does not reuse a client built with a different one", async () => {
+		connectAsyncVaultMock.mockResolvedValue({})
+		const signTransaction = vi.fn()
+		const { asyncVaultWriter } = await import("./clients")
+
+		await asyncVaultWriter({ publicKey: "GONE", signTransaction })
+		await asyncVaultWriter({
 			publicKey: "GONE",
 			signTransaction,
+			timeoutInSeconds: 604_800,
 		})
+
+		expect(connectAsyncVaultMock).toHaveBeenCalledTimes(2)
+		expect(connectAsyncVaultMock).toHaveBeenLastCalledWith(
+			expect.any(String),
+			{ publicKey: "GONE", signTransaction, timeoutInSeconds: 604_800 },
+			{ timeoutInSeconds: 604_800 },
+		)
 	})
 
 	it("does not hand back a client bound to the previous address once it switches", async () => {
