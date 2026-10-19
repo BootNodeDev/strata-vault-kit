@@ -39,7 +39,6 @@ import {
 	type Condition,
 	grantFor,
 	type RailAction,
-	unavailableFor,
 } from "./actions"
 
 type ReadyState = Extract<CycleState, { status: "ready" }>
@@ -427,7 +426,7 @@ const toEpochAction = (
 	conditions: Condition[],
 	outcome: string | null,
 	epochId: bigint | null,
-	unavailable?: string,
+	grant?: Grant,
 ): EpochAction => ({
 	id,
 	group: "Epoch",
@@ -435,15 +434,11 @@ const toEpochAction = (
 	conditions,
 	outcome,
 	epochId,
-	enabled: unavailable === undefined && epochId !== null && allMet(conditions),
-	...(unavailable === undefined ? {} : { unavailable }),
+	enabled: epochId !== null && allMet(conditions),
+	...(grant === undefined ? {} : { grant }),
 })
 
-function toCloseAction(
-	state: ReadyState,
-	grant: Grant,
-	wallet: string,
-): EpochAction {
+function toCloseAction(state: ReadyState, grant: Grant): EpochAction {
 	const { epoch } = state
 	return toEpochAction(
 		"close-epoch",
@@ -454,7 +449,7 @@ function toCloseAction(
 		],
 		`Seals epoch ${epoch.id} and opens epoch ${epoch.id + 1n}.`,
 		epoch.id,
-		unavailableFor(grant, wallet),
+		grant,
 	)
 }
 
@@ -548,7 +543,6 @@ const withinAllowedMove = (
 function toAttestAction(
 	state: ReadyState,
 	grant: Grant,
-	wallet: string,
 	input: string,
 ): AttestAction {
 	const { oracle, ledgerTime } = state
@@ -559,7 +553,6 @@ function toAttestAction(
 		cooldownElapsed(oracle, ledgerTime),
 		withinAllowedMove(oracle, price),
 	]
-	const unavailable = unavailableFor(grant, wallet)
 	return {
 		id: "attest",
 		group: "Price",
@@ -580,12 +573,8 @@ function toAttestAction(
 		},
 		price,
 		freshness,
-		enabled:
-			unavailable === undefined &&
-			price !== null &&
-			freshness !== null &&
-			allMet(conditions),
-		...(unavailable === undefined ? {} : { unavailable }),
+		enabled: price !== null && freshness !== null && allMet(conditions),
+		grant,
 	}
 }
 
@@ -645,7 +634,6 @@ const reserveAfter = (
 function toDeployAction(
 	state: ReadyState,
 	grant: Grant,
-	wallet: string,
 	input: string,
 ): TreasuryAction {
 	const { free, custodian } = state.reserve
@@ -661,7 +649,6 @@ function toDeployAction(
 			(available) => `Free ${available}`,
 		),
 	]
-	const unavailable = unavailableFor(grant, wallet)
 	const remaining =
 		amount !== null && free !== null && amount > free
 			? null
@@ -682,8 +669,8 @@ function toDeployAction(
 			free === null ? undefined : exactAmount(free),
 		),
 		amount,
-		enabled: unavailable === undefined && amount !== null && allMet(conditions),
-		...(unavailable === undefined ? {} : { unavailable }),
+		enabled: amount !== null && allMet(conditions),
+		grant,
 	}
 }
 
@@ -815,12 +802,12 @@ export function toCycleActions(
 	const attester = grantFor(grants, ATTESTER_ROLE, wallet)
 	const treasury = grantFor(grants, TREASURY_ROLE, wallet)
 	const actions: CycleAction[] = []
-	if (manager !== undefined) actions.push(toCloseAction(state, manager, wallet))
+	if (manager !== undefined) actions.push(toCloseAction(state, manager))
 	actions.push(toFulfillAction(state))
 	if (attester !== undefined)
-		actions.push(toAttestAction(state, attester, wallet, inputs.price ?? ""))
+		actions.push(toAttestAction(state, attester, inputs.price ?? ""))
 	if (treasury !== undefined)
-		actions.push(toDeployAction(state, treasury, wallet, inputs.deploy ?? ""))
+		actions.push(toDeployAction(state, treasury, inputs.deploy ?? ""))
 	actions.push(
 		toFundAction(state, inputs.fund ?? "", inputs.walletBalance ?? null),
 		...toWindDownActions(state),
