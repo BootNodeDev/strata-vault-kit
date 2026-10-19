@@ -34,7 +34,7 @@ fn a_delisted_vault_still_returns_escrowed_shares() {
 }
 
 #[test]
-fn a_delisted_controller_cannot_take_shares_back() {
+fn a_delisted_holder_cannot_take_shares_back() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &200);
@@ -49,7 +49,7 @@ fn a_delisted_controller_cannot_take_shares_back() {
 }
 
 #[test]
-fn a_frozen_controller_cannot_take_shares_back() {
+fn a_frozen_holder_cannot_take_shares_back() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &200);
@@ -121,7 +121,7 @@ fn a_partial_freeze_does_not_stop_a_return() {
 }
 
 #[test]
-fn a_delisted_controller_with_a_worthless_exit_keeps_the_request() {
+fn a_delisted_holder_with_a_worthless_exit_keeps_the_request() {
     let f = setup();
     let holder = f.holder(10);
     let epoch = f.vault.request_redeem(&holder, &1);
