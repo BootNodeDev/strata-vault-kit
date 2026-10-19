@@ -228,17 +228,12 @@ describe("toEmergencyActions", () => {
 		})
 	})
 
-	it("disables an action whose grant the wallet cannot sign alone, saying why", () => {
-		const pause = actionOf(
-			calm,
-			[grantOf("vault guardian", { standing: { needs: 2 } })],
-			"pause-vault",
-		)
+	it("offers an action whose grant needs more signatures, carrying the grant", () => {
+		const shared = grantOf("vault guardian", { standing: { needs: 2 } })
+		const pause = actionOf(calm, [shared], "pause-vault")
 
-		expect(pause.enabled).toBe(false)
-		expect(pause.unavailable).toBe(
-			"Needs 2 signatures; collecting them is not supported yet.",
-		)
+		expect(pause.enabled).toBe(true)
+		expect(pause.grant).toEqual(shared)
 	})
 })
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { accountSigners } from "./accounts"
+import { accountSigners, uniformWeights } from "./accounts"
 
 const { callMock, accountIdMock } = vi.hoisted(() => ({
 	callMock: vi.fn(),
@@ -25,6 +25,7 @@ describe("accountSigners", () => {
 				{ key: "GSIGNERTWO", weight: 2, type: "ed25519_public_key" },
 			],
 			thresholds: { low_threshold: 1, med_threshold: 2, high_threshold: 3 },
+			sequence: "4294967296",
 		})
 
 		expect(await accountSigners(holder)).toEqual({
@@ -33,6 +34,7 @@ describe("accountSigners", () => {
 				{ key: "GSIGNERTWO", weight: 2 },
 			],
 			thresholds: { low: 1, med: 2, high: 3 },
+			sequence: "4294967296",
 		})
 		expect(accountIdMock).toHaveBeenCalledWith(holder)
 	})
@@ -45,6 +47,7 @@ describe("accountSigners", () => {
 				{ key: "TPREAUTH", weight: 1, type: "preauth_tx" },
 			],
 			thresholds: { low_threshold: 0, med_threshold: 0, high_threshold: 0 },
+			sequence: "1",
 		})
 
 		const result = await accountSigners(holder)
@@ -67,5 +70,34 @@ describe("accountSigners", () => {
 	it("returns null for a contract address without asking Horizon", async () => {
 		expect(await accountSigners("CCONTRACTADDRESS")).toBeNull()
 		expect(accountIdMock).not.toHaveBeenCalled()
+	})
+})
+
+describe("uniformWeights", () => {
+	it("holds when every signer weighs one", () => {
+		expect(
+			uniformWeights([
+				{ key: "GSIGNERONE", weight: 1 },
+				{ key: "GSIGNERTWO", weight: 1 },
+			]),
+		).toBe(true)
+	})
+
+	it("fails when one signer weighs more than one", () => {
+		expect(
+			uniformWeights([
+				{ key: "GSIGNERONE", weight: 2 },
+				{ key: "GSIGNERTWO", weight: 1 },
+			]),
+		).toBe(false)
+	})
+
+	it("fails when every signer weighs the same but more than one", () => {
+		expect(
+			uniformWeights([
+				{ key: "GSIGNERONE", weight: 2 },
+				{ key: "GSIGNERTWO", weight: 2 },
+			]),
+		).toBe(false)
 	})
 })
