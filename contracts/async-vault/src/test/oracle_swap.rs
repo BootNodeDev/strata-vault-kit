@@ -48,8 +48,8 @@ fn unbound_feed<'a>(f: &Fixture<'a>) -> NavOracleContractClient<'a> {
 
 fn second_feed<'a>(f: &Fixture<'a>) -> NavOracleContractClient<'a> {
     let feed = unbound_feed(f);
-    feed.bind_vault(&f.vault.address, &f.admin);
-    feed.finish_setup(&f.admin);
+    feed.bind_vault(&f.vault.address);
+    feed.finish_setup();
     feed
 }
 
@@ -127,10 +127,10 @@ fn a_sealed_epoch_is_priced_by_the_feed_standing_at_fulfilment() {
 fn a_feed_outside_this_vault_is_never_proposed() {
     let f = setup();
     let open = unbound_feed(&f);
-    open.bind_vault(&f.vault.address, &f.admin);
+    open.bind_vault(&f.vault.address);
     let elsewhere = unbound_feed(&f);
-    elsewhere.bind_vault(&register_with(&f.e, distinct_roles(&f.e)), &f.admin);
-    elsewhere.finish_setup(&f.admin);
+    elsewhere.bind_vault(&register_with(&f.e, distinct_roles(&f.e)));
+    elsewhere.finish_setup();
 
     for feed in [
         Address::generate(&f.e),

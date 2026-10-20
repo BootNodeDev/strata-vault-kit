@@ -132,19 +132,18 @@ describe("an account with no role", () => {
 
 	it("cannot set the NAV pause", async () => {
 		await expect(
-			send(oracle(c, outsider).set_nav_paused({ paused: true, caller: who })),
+			send(oracle(c, outsider).set_nav_paused({ paused: true })),
 		).rejects.toThrow(/signatures/)
 	})
 
 	it("cannot clear the latest report", async () => {
 		await send(oracle(c, guardian).pause_nav({ caller: guardian.publicKey() }))
-		await expect(
-			send(oracle(c, outsider).clear_latest({ caller: who })),
-		).rejects.toThrow(/signatures/)
+		await expect(send(oracle(c, outsider).clear_latest())).rejects.toThrow(
+			/signatures/,
+		)
 		await send(
 			oracle(c, governance).set_nav_paused({
 				paused: false,
-				caller: governance.publicKey(),
 			}),
 		)
 	})
@@ -249,8 +248,6 @@ describe("the share token after setup", () => {
 })
 
 describe("the oracle after setup", () => {
-	const caller = () => governance.publicKey()
-
 	it("governance cannot loosen the feed config at once", async () => {
 		const config = (await feed.config()).result
 		const o = oracle(c, governance)
@@ -287,15 +284,10 @@ describe("the oracle after setup", () => {
 					tag: "Config",
 					values: [{ ...config, max_down_bps: config.max_down_bps - 1 }],
 				},
-				caller: caller(),
 			}),
 		)
-		expectRefused(
-			await o.apply_change({ id, caller: caller() }),
-			o,
-			"ChangeNotReady",
-		)
-		await send(o.cancel_change({ id, caller: caller() }))
+		expectRefused(await o.apply_change({ id }), o, "ChangeNotReady")
+		await send(o.cancel_change({ id }))
 		expect((await o.pending_changes()).result).toEqual([])
 	})
 })
@@ -742,7 +734,6 @@ describe("the notice period and valuation age rules", () => {
 		await send(
 			oracle(c, governance).set_nav_paused({
 				paused: false,
-				caller: governance.publicKey(),
 			}),
 		)
 		await send(

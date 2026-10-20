@@ -392,13 +392,13 @@ fn build<'a>(
     match miswire {
         Miswire::OracleUnbound => {}
         Miswire::OracleBoundElsewhere => {
-            oracle.bind_vault(&register_with(&e, distinct_roles(&e)), &admin);
-            oracle.finish_setup(&admin);
+            oracle.bind_vault(&register_with(&e, distinct_roles(&e)));
+            oracle.finish_setup();
         }
-        Miswire::OracleSetupOpen => oracle.bind_vault(&contract_id, &admin),
+        Miswire::OracleSetupOpen => oracle.bind_vault(&contract_id),
         _ => {
-            oracle.bind_vault(&contract_id, &admin);
-            oracle.finish_setup(&admin);
+            oracle.bind_vault(&contract_id);
+            oracle.finish_setup();
         }
     }
     match miswire {

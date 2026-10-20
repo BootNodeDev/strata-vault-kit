@@ -2,8 +2,10 @@ extern crate std;
 
 use soroban_sdk::{
     symbol_short,
-    testutils::{storage::Persistent as _, Address as _, Events as _, Ledger as _},
-    Address, Env, Event as _,
+    testutils::{
+        storage::Persistent as _, Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke,
+    },
+    Address, Env, Event as _, IntoVal,
 };
 
 use crate::state::DataKey;
@@ -19,6 +21,21 @@ struct Fixture<'a> {
     admin: Address,
     attester: Address,
     guardian: Address,
+}
+
+impl Fixture<'_> {
+    /// Signs one call to the oracle as `who` and nothing else.
+    fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
+        self.e.mock_auths(&[MockAuth {
+            address: who,
+            invoke: &MockAuthInvoke {
+                contract: &self.oracle.address,
+                fn_name,
+                args,
+                sub_invokes: &[],
+            },
+        }]);
+    }
 }
 
 fn config() -> OracleConfig {
@@ -98,11 +115,11 @@ fn the_nav_pause_holds_regardless_of_freshness() {
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
-    f.oracle.set_nav_paused(&true, &f.admin);
+    f.oracle.set_nav_paused(&true);
     assert_eq!(f.oracle.state(), OracleState::Paused);
     assert!(f.oracle.try_ensure_consumable().is_err());
 
-    f.oracle.set_nav_paused(&false, &f.admin);
+    f.oracle.set_nav_paused(&false);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 }
 
@@ -315,13 +332,14 @@ fn the_guardian_pauses_the_nav_but_unpausing_needs_governance() {
     f.oracle.pause_nav(&f.guardian);
     assert_eq!(f.oracle.state(), OracleState::Paused);
 
+    f.sign_only_as(&f.guardian, "set_nav_paused", (false,).into_val(&f.e));
+    assert!(f.oracle.try_set_nav_paused(&false).is_err());
     f.e.set_auths(&[]);
-    assert!(f.oracle.try_set_nav_paused(&false, &f.guardian).is_err());
-    assert!(f.oracle.try_set_nav_paused(&false, &f.admin).is_err());
+    assert!(f.oracle.try_set_nav_paused(&false).is_err());
     assert_eq!(f.oracle.state(), OracleState::Paused);
 
     f.e.mock_all_auths();
-    f.oracle.set_nav_paused(&false, &f.admin);
+    f.oracle.set_nav_paused(&false);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 }
 
@@ -422,13 +440,13 @@ fn the_record_clears_only_while_the_nav_is_paused() {
     f.oracle
         .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
 
-    assert!(f.oracle.try_clear_latest(&f.admin).is_err());
+    assert!(f.oracle.try_clear_latest().is_err());
 
     f.oracle.pause_nav(&f.guardian);
-    f.oracle.clear_latest(&f.admin);
+    f.oracle.clear_latest();
 
     // With no stored record, one in-band value lands however far it sits.
-    f.oracle.set_nav_paused(&false, &f.admin);
+    f.oracle.set_nav_paused(&false);
     f.e.ledger().set_timestamp(10_100);
     let far = report(&f.e, SCALE * 50, 2, 1_000_000);
     f.oracle.attest(&far, &f.attester);
@@ -443,10 +461,10 @@ fn only_admin_can_clear_latest() {
     f.oracle.attest(&r, &f.attester);
     f.oracle.pause_nav(&f.guardian);
 
-    f.e.set_auths(&[]);
-    assert!(f.oracle.try_clear_latest(&stranger).is_err());
-    assert!(f.oracle.try_clear_latest(&f.attester).is_err());
-    assert!(f.oracle.try_clear_latest(&f.guardian).is_err());
+    for who in [&stranger, &f.attester, &f.guardian] {
+        f.sign_only_as(who, "clear_latest", soroban_sdk::Vec::new(&f.e));
+        assert!(f.oracle.try_clear_latest().is_err());
+    }
 }
 
 #[test]
@@ -561,7 +579,7 @@ fn attesting_is_refused_while_the_nav_is_paused() {
         Some(Ok(crate::OracleError::NavPaused.into()))
     );
 
-    f.oracle.set_nav_paused(&false, &f.admin);
+    f.oracle.set_nav_paused(&false);
     f.oracle
         .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);

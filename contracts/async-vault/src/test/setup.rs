@@ -160,8 +160,8 @@ fn a_token_that_cannot_answer_fails_its_checks_instead_of_trapping() {
             },
         ),
     );
-    oracle.bind_vault(&contract_id, &admin);
-    oracle.finish_setup(&admin);
+    oracle.bind_vault(&contract_id);
+    oracle.finish_setup();
 
     let vault = AsyncVaultClient::new(&e, &contract_id);
 

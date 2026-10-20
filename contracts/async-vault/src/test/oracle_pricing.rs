@@ -14,11 +14,11 @@ fn fulfill_is_rejected_while_the_nav_is_paused() {
     let f = setup();
     f.close_epoch();
     f.attest(wad(2));
-    f.oracle.set_nav_paused(&true, &f.admin);
+    f.oracle.set_nav_paused(&true);
 
     refused(f.vault.try_fulfill_epoch(&1), VaultError::FeedNotValid);
 
-    f.oracle.set_nav_paused(&false, &f.admin);
+    f.oracle.set_nav_paused(&false);
     assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
 }
 

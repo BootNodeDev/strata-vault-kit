@@ -215,8 +215,8 @@ async function grantAndVerify(
 	const feed = new NavOracle(
 		clientOptions(net, contracts.nav_oracle, governance),
 	)
-	await (await feed.bind_vault({ vault, caller })).signAndSend()
-	await (await feed.finish_setup({ caller })).signAndSend()
+	await (await feed.bind_vault({ vault })).signAndSend()
+	await (await feed.finish_setup()).signAndSend()
 	if ((await feed.setup_open()).result)
 		throw new Error("the oracle's setup did not finish")
 	console.log("nav_oracle bound to the vault, setup finished")
