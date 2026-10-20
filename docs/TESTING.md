@@ -53,14 +53,21 @@ contract extends, who pays, and how to restore an archived one.
 | A request still claims, and a wind-down position still pays, after most of a month | [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs), [`contracts/async-vault/src/test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) | `a_pending_request_still_claims_after_most_of_a_month`, `a_position_survives_the_ledger_advancing` |
 | The oracle's latest valuation keeps a full TTL while it is read | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `the_latest_valuation_keeps_a_full_ttl_while_it_is_read` |
 | The oracle's setup, grant, hand-over and change calls extend its instance | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) | `setup_grants_hand_overs_and_changes_restore_the_instance_ttl` |
+| Every call that writes a share balance or a freeze gives a new one its full TTL, under testnet's minimum lifetime; so do a deposit claim and the first redemption, through the vault | [`contracts/share-token/src/test_ttl.rs`](../contracts/share-token/src/test_ttl.rs), [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs) | `a_mint_writes_the_new_balance_with_the_full_ttl`, `an_escrow_writes_the_receiving_balance_with_the_full_ttl`, `a_recovery_writes_the_new_balance_with_the_full_ttl`, `sending_nothing_from_an_empty_account_writes_its_balance_with_the_full_ttl`, `a_partial_freeze_writes_its_entry_with_the_full_ttl`, `the_first_redemption_writes_the_vaults_share_balance_with_the_full_ttl` |
+| Every role grant in the vault, the token and the oracle gives the role's entries their full TTL: in the constructor, during setup and through the timelock | [`contracts/share-token/src/test_ttl.rs`](../contracts/share-token/src/test_ttl.rs), [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs), [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) | `the_constructor_writes_each_role_with_the_full_ttl`, `a_grant_during_setup_writes_the_role_with_the_full_ttl`, `a_grant_through_the_timelock_writes_the_role_with_the_full_ttl` |
+| A network minimum longer than the target, as on mainnet, is kept | [`contracts/share-token/src/test_ttl.rs`](../contracts/share-token/src/test_ttl.rs) | `a_network_minimum_longer_than_the_extend_target_is_kept` |
 | An epoch that was never written reads as nothing | [`contracts/async-vault/src/test/constructor.rs`](../contracts/async-vault/src/test/constructor.rs) | `unwritten_epoch_reads_as_none`, `epoch_zero_is_the_absent_id` |
 
 The test `Env` does not archive an entry whose TTL runs out; it still reads it.
 So these tests check the TTL numbers the contracts set, not what the network
 does once an entry is archived.
 
-The share token's balances and roles are stored by the OpenZeppelin Stellar
-library, which extends them when they are read or written. It never extends the
+The share token's balances and freezes, and the roles of the vault, the token
+and the oracle, are stored by the OpenZeppelin Stellar library. It extends an
+entry when it reads it, not when it creates it, so the contracts read back each
+one they write. Without that, a new entry would start at the network's minimum
+lifetime. The tests for it set the ledger's minimum to testnet's 120,960
+ledgers; the test `Env` defaults to 4,096. OpenZeppelin never extends the
 instance, so the token, the identity verifier and the compliance contract
 extend their own on every call that does work.
 

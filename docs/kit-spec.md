@@ -312,18 +312,29 @@ Soroban archives a ledger entry when its time to live (TTL) runs out. An
 archived entry cannot be read until it is restored, so a contract whose
 instance is archived refuses every call.
 
+The kit runs the same code on every network. Each persistent entry, the
+contract instance included, has a target lifetime and a threshold one day
+shorter. A call that reads or writes an entry extends it back to its target
+once its TTL has fallen to the threshold. The transaction that creates an entry
+extends it to its target at once; the compliance stub's modules and bound
+tokens are the one exception (see **What OpenZeppelin extends**). The network
+decides only how long a new entry lives before any extension (see **Network
+settings**).
+
 | Contract | What it extends | When | To how long |
 |---|---|---|---|
-| `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once less than 29 days remain |
+| `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once 29 days or less remain |
 | `nav_oracle` | Its instance, the latest report, and each pending governance change it reads or writes | `attest` extends the instance and the report; `bind_vault`, `finish_setup`, `grant_role`, `transfer_admin_role`, `propose_change`, `cancel_change` and `apply_change` extend the instance; every other call extends whichever entry it reads or writes | Same |
-| `share_token` | Its instance, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change` | Same |
+| `share_token` | Its instance, each balance and freeze entry it writes, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change` | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
+| `async_vault`, `share_token`, `nav_oracle` | The role entries each grant writes | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change), then every role check | 90 days (1,555,200 ledgers), once 89 days or less remain |
 
-The lengths are the constants in `crates/strata-storage`
+The kit's own lengths are the constants in `crates/strata-storage`
 (`PERSISTENT_EXTEND_AMOUNT`, `INSTANCE_EXTEND_AMOUNT`, and thresholds one day
-shorter). They are fixed in code: a governance setting would add an admin power
-for little gain.
+shorter). The entries OpenZeppelin stores keep OpenZeppelin's own lengths. All
+of them are fixed in code: a governance setting would add an admin power for
+little gain.
 
 **Pending governance changes.** A change waiting in the timelock of
 `async_vault`, `share_token`, `nav_oracle` or `compliance` lives as a persistent entry,
@@ -336,19 +347,90 @@ its `pending_changes()` view, builds each one's storage key the way the
 timelock crate does, and extends it the same 30 days as every instance and
 Wasm.
 
-**What OpenZeppelin extends.** `stellar-tokens` 0.7.2 stores the share token's
-balances and frozen amounts, and the compliance contract's modules and bound
-tokens, and extends each to 30 days when it is read or written. `stellar-access`
-0.7.2 stores every contract's roles and extends them to 90 days the same way.
-Allowances are temporary entries that live until their `live_until_ledger`.
-OpenZeppelin never extends an instance; the kit does, as above. The token's
-total supply and metadata live in its instance.
+**What OpenZeppelin extends, and what the kit adds.** `stellar-tokens` 0.7.2
+stores the share token's balances and freeze entries, and the compliance
+contract's modules and bound tokens. `stellar-access` 0.7.2 stores the roles of
+the vault, the token and the oracle. OpenZeppelin extends an existing entry
+when it reads it: balances, freezes, modules and bound tokens to 30 days, roles
+to 90. It does not extend an entry when it creates one, so a new entry would
+start at the network's minimum lifetime and wait for a later caller to read it.
+The kit closes that gap by reading back what it writes, through OpenZeppelin's
+own reads, in the same call:
+
+- the share token reads back each balance and freeze entry after `mint`,
+  `burn`, `transfer`, `transfer_from`, `forced_transfer`, `legal_transfer`,
+  `recover_balance`, `set_address_frozen`, `freeze_partial_tokens` and
+  `unfreeze_partial_tokens`;
+- the vault, the token and the oracle read back every entry a grant writes (the
+  account's role, its place in the member list, the member count and the list
+  of roles) after each grant in their constructors, in `grant_role`, and in an
+  applied `GrantRole` change.
+
+So a new balance, freeze or role entry reaches its target in the transaction
+that creates it, and the kit keeps OpenZeppelin's thresholds without copying
+them. The compliance stub does not read back its modules and bound tokens when
+it writes them. The vault's `finish_setup` reads the bound tokens, which
+extends them, and every hook the token calls reads its modules; the hooks after
+a mint, transfer or burn read the bound tokens too. Allowances are temporary
+entries that live until their `live_until_ledger`. OpenZeppelin never extends an
+instance; the kit does, as above. The token's total supply and metadata live in
+its instance.
+
+**Network settings.** Each network sets how long a new persistent entry lives
+and how far one extension can reach. Validators can change these settings by
+vote; the kit hardcodes neither. Check
+[Stellar Lab's network limits](https://lab.stellar.org/network-limits) for
+current values.
+
+| Setting | Testnet | Mainnet |
+|---|---|---|
+| Minimum lifetime of a new persistent entry | 120,960 ledgers (about 7 days) | 2,073,600 ledgers (about 120 days) |
+| Longest lifetime one extension can reach | 3,110,400 ledgers (about 180 days) | 3,110,400 ledgers (about 180 days) |
+
+Read over RPC on 2026-10-20.
+
+**What this means on each network.** On testnet a new entry would live about 7
+days, less than any threshold, so renewals start in its first week: the
+transaction that creates it extends it to its target, and from the next day any
+call that touches it renews it. On mainnet a new entry already lives 120
+days, more than any target, so the extension in the creating transaction
+changes nothing. No call renews a 30-day entry there until about the fourth
+month (day 91), or a role until day 31. A restored entry comes back with the
+network's minimum lifetime, so a mainnet restore pays at least 120 days of
+rent.
+
+**Why the same values on every network.** The protocol already applies each
+network's minimum, so mainnet entries start at 120 days without the kit knowing
+it. The same Wasm runs on testnet and on mainnet, so what is tested on testnet
+is what ships; a build-time network profile would mean two Wasm files to
+review. The threshold one day under the target means an entry in daily use is
+renewed at most once a day, for about a day of rent. Capping each extension
+(`extend_ttl_with_limits`) would let rarely used entries archive sooner, and
+each of those restores would pay at least 120 days of rent on mainnet.
 
 **Who pays.** The account that sends a transaction pays the rent for every
-extension that transaction triggers. One call extends each entry it touches to
-at most 30 days, so no caller pays for more than 30 days of any entry.
+extension that transaction triggers. The transaction that creates an entry pays
+for its target, or for the network's minimum when that is longer: 30 or 90 days
+on testnet, 120 days on mainnet. A later call pays only to bring an entry back
+to its target once it has fallen to its threshold: about a day of rent when
+the entry is read daily, up to a whole target after a long quiet period. A
+restore pays for the network's minimum, as above.
 
-**Idle deployments.** A deployment nobody calls for 30 days archives. Run
+**What frontends should do.**
+
+- Expect uneven renewal fees. The first call after a quiet period pays to renew
+  every entry it touches that has fallen to its threshold, so the same call can
+  cost more after a quiet week than on a busy day.
+- Simulate again just before submitting. The fee comes from the simulation. If
+  an entry falls to its threshold between simulation and submission, the call
+  pays a renewal the fee does not cover, and the transaction fails.
+- Let RPC add a restore when simulation asks for one. When a call needs an
+  archived entry, simulation adds its restore to the transaction (see
+  **Restoring**). Submit the transaction as simulated, restore included.
+
+**Idle deployments.** An entry nobody reads archives when its lifetime runs
+out: 30 days after its last renewal (90 for a role), and on mainnet never
+sooner than 120 days after it was created. Run
 `STELLAR_ACCOUNT=<funded account> npm run extend -w scripts/harness` after
 every deploy and before a long quiet period. It restores, when archived, and
 extends by 30 days three kinds of entry only: each contract instance, the Wasm
@@ -366,8 +448,9 @@ one instance at a time.
 
 **Production modules.** The compliance and identity contracts in this
 repository are testnet stubs. A production compliance module or identity
-registry must extend its own instance and entries the same way, or the share
-token stops working when they archive.
+registry must extend its own instance and entries the same way, each entry in
+the transaction that creates it, or the share token stops working when they
+archive.
 
 ---
 
