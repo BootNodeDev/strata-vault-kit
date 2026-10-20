@@ -557,6 +557,19 @@ fn a_legal_transfer_restores_the_instance_ttl() {
 }
 
 #[test]
+fn reading_a_balance_or_the_supply_restores_the_instance_ttl() {
+    let e = Env::default();
+    let (f, holder, _) = decayed_live_token(&e);
+
+    f.token.balance(&holder);
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+
+    age(&e, TWO_DAYS_IN_LEDGERS);
+    f.token.total_supply();
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+}
+
+#[test]
 fn each_role_call_asks_its_holder_for_one_signature() {
     let e = Env::default();
     let (f, identity) = setup_live(&e);
