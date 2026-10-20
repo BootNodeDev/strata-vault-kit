@@ -1,5 +1,4 @@
-//! An entry the token creates reaches its extend target in the call that
-//! creates it, even where the network's minimum lifetime is shorter.
+//! A new balance, freeze or role entry gets its full TTL in the call that creates it.
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short,
@@ -20,6 +19,7 @@ use compliance::{Compliance, ComplianceClient};
 const TESTNET_MIN_PERSISTENT_TTL: u32 = 120_960;
 /// Mainnet's, in ledgers: longer than any extend target.
 const MAINNET_MIN_PERSISTENT_TTL: u32 = 2_073_600;
+const DAY_IN_LEDGERS: u32 = 17_280;
 
 /// Accepts every account and names the recovery target a test sets.
 #[contract]
@@ -67,8 +67,7 @@ impl strata_timelock::ClockSource for VaultStub {
     }
 }
 
-/// OpenZeppelin keeps the type of a role's member-list key private. A type
-/// with the same variant name and fields encodes the same key.
+/// Mirrors OpenZeppelin's private member-list key: same variant and fields, same encoding.
 #[contracttype]
 struct RoleAccountKey {
     role: Symbol,
@@ -128,6 +127,12 @@ impl Fixture<'_> {
 
     fn order(&self) -> String {
         String::from_str(&self.e, "court-order-2026-117")
+    }
+
+    fn age_days(&self, days: u32) {
+        self.e
+            .ledger()
+            .with_mut(|l| l.sequence_number += days * DAY_IN_LEDGERS);
     }
 }
 
@@ -265,8 +270,7 @@ fn a_recovery_writes_the_freezes_it_carries_with_the_full_ttl() {
     );
 }
 
-/// OpenZeppelin writes a zero balance for an account that sends nothing and
-/// held nothing.
+/// OpenZeppelin writes a zero balance for an empty account that sends nothing.
 #[test]
 fn sending_nothing_from_an_empty_account_writes_its_balance_with_the_full_ttl() {
     let f = setup();
@@ -367,12 +371,43 @@ fn a_grant_through_the_timelock_writes_the_role_with_the_full_ttl() {
 }
 
 #[test]
-fn a_network_minimum_longer_than_the_extend_target_is_kept() {
+fn under_mainnets_minimum_a_new_balance_is_first_renewed_on_day_91() {
     let f = setup();
     f.e.ledger()
         .set_min_persistent_entry_ttl(MAINNET_MIN_PERSISTENT_TTL);
-
     let (_, holder) = f.holder(100);
-
     assert_eq!(f.balance_ttl(&holder), MAINNET_MIN_PERSISTENT_TTL - 1);
+
+    f.age_days(90);
+    f.token.balance(&holder);
+    assert_eq!(
+        f.balance_ttl(&holder),
+        MAINNET_MIN_PERSISTENT_TTL - 1 - 90 * DAY_IN_LEDGERS
+    );
+
+    f.age_days(1);
+    f.token.balance(&holder);
+    assert_eq!(f.balance_ttl(&holder), BALANCE_EXTEND_AMOUNT);
+}
+
+#[test]
+fn under_mainnets_minimum_a_new_role_is_first_renewed_on_day_31() {
+    let f = setup();
+    f.e.ledger()
+        .set_min_persistent_entry_ttl(MAINNET_MIN_PERSISTENT_TTL);
+    let vault = Address::generate(&f.e);
+    f.token.grant_role(&vault, &manager_role(), &f.admin);
+    let has_role = AccessControlStorageKey::HasRole(vault.clone(), manager_role());
+    assert_eq!(f.persistent_ttl(&has_role), MAINNET_MIN_PERSISTENT_TTL - 1);
+
+    f.age_days(30);
+    f.token.has_role(&vault, &manager_role());
+    assert_eq!(
+        f.persistent_ttl(&has_role),
+        MAINNET_MIN_PERSISTENT_TTL - 1 - 30 * DAY_IN_LEDGERS
+    );
+
+    f.age_days(1);
+    f.token.has_role(&vault, &manager_role());
+    assert_eq!(f.persistent_ttl(&has_role), ROLE_EXTEND_AMOUNT);
 }

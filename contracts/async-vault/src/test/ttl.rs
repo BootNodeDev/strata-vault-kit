@@ -21,8 +21,7 @@ fn ttl_in<K: IntoVal<Env, Val>>(e: &Env, contract: &Address, key: &K) -> u32 {
     e.as_contract(contract, || e.storage().persistent().get_ttl(key))
 }
 
-/// OpenZeppelin keeps the type of a role's member-list key private. A type
-/// with the same variant name and fields encodes the same key.
+/// Mirrors OpenZeppelin's private member-list key: same variant and fields, same encoding.
 #[contracttype]
 struct RoleAccountKey {
     role: Symbol,

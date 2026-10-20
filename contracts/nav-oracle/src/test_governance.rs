@@ -941,8 +941,7 @@ fn setup_grants_hand_overs_and_changes_restore_the_instance_ttl() {
     f.restores_the_instance(|| f.oracle.apply_change(&id));
 }
 
-/// OpenZeppelin keeps the type of a role's member-list key private. A type
-/// with the same variant name and fields encodes the same key.
+/// Mirrors OpenZeppelin's private member-list key: same variant and fields, same encoding.
 #[contracttype]
 struct RoleAccountKey {
     role: Symbol,
