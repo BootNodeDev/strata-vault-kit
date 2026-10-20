@@ -148,6 +148,12 @@ pub(crate) fn upgrade_delay_in_bounds(e: &Env, secs: u64) {
     }
 }
 
+pub(crate) fn custodian_not_the_vault(e: &Env, custodian: &Address) {
+    if *custodian == e.current_contract_address() {
+        panic_with_error!(e, VaultError::InvalidCustodian);
+    }
+}
+
 pub(crate) fn feed_bound_here(e: &Env, feed: &Address) {
     if !governance::bound_here(e, feed) {
         panic_with_error!(e, VaultError::FeedNotBound);
@@ -162,8 +168,8 @@ pub(crate) fn change_in_bounds(e: &Env, change: &VaultChange) {
         VaultChange::Notice(secs) => notice_in_bounds(e, *secs),
         VaultChange::WindDownDelay(secs) => wind_down_delay_in_bounds(e, *secs),
         VaultChange::Oracle(feed) => feed_bound_here(e, feed),
+        VaultChange::Custodian(custodian) => custodian_not_the_vault(e, custodian),
         VaultChange::Upgrade(_)
-        | VaultChange::Custodian(_)
         | VaultChange::GrantRole(..)
         | VaultChange::RevokeRole(..)
         | VaultChange::Admin(_) => {}

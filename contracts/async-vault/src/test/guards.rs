@@ -272,6 +272,15 @@ fn upgrade_delay_in_bounds_refuses_a_delay_outside_the_bounds_or_below_the_notic
 }
 
 #[test]
+fn custodian_not_the_vault_refuses_the_vault_itself() {
+    let f = setup();
+    holds(&f, || guards::custodian_not_the_vault(&f.e, &f.custodian));
+    refuses(&f, VaultError::InvalidCustodian, || {
+        guards::custodian_not_the_vault(&f.e, &f.vault.address)
+    });
+}
+
+#[test]
 fn feed_bound_here_refuses_a_feed_not_bound_to_this_vault() {
     let f = setup();
     holds(&f, || guards::feed_bound_here(&f.e, &f.oracle.address));
@@ -324,6 +333,10 @@ fn change_in_bounds_checks_the_bounds_of_each_change() {
         (
             VaultChange::Oracle(stranger.clone()),
             VaultError::FeedNotBound,
+        ),
+        (
+            VaultChange::Custodian(f.vault.address.clone()),
+            VaultError::InvalidCustodian,
         ),
     ] {
         refuses(&f, error, || guards::change_in_bounds(&f.e, &change));

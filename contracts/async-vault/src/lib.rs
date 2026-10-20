@@ -190,9 +190,10 @@ impl AsyncVault {
     }
 
     /// Instant during setup; afterwards the custodian changes through the
-    /// timelock.
+    /// timelock. Never the vault itself (`InvalidCustodian`).
     #[only_admin]
     pub fn set_custodian(e: &Env, custodian: Address) {
+        guards::custodian_not_the_vault(e, &custodian);
         guards::direct_change_allowed(e);
         treasury::set_custodian(e, &custodian);
     }

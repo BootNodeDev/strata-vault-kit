@@ -152,4 +152,7 @@ pub enum VaultError {
     /// once it is accepted, cancelled or expired, so no nominee from setup can
     /// accept after changes start to wait.
     AdminTransferPending = 6074,
+    /// The custodian would be the vault itself. Capital deployed to it would
+    /// never leave, and the books would count it as both held and deployed.
+    InvalidCustodian = 6075,
 }

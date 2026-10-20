@@ -128,6 +128,18 @@ fn setting_the_custodian_needs_the_admin_signature() {
 }
 
 #[test]
+fn setting_the_vault_as_its_own_custodian_is_refused() {
+    for f in [setup_unfinished(), setup()] {
+        let before = f.vault.custodian();
+        refused(
+            f.vault.try_set_custodian(&f.vault.address),
+            VaultError::InvalidCustodian,
+        );
+        assert_eq!(f.vault.custodian(), before);
+    }
+}
+
+#[test]
 fn deploying_a_non_positive_amount_is_rejected() {
     let f = setup();
     let investor = f.investor(1_000);
