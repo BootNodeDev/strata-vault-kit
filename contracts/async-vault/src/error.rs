@@ -92,17 +92,18 @@ pub enum VaultError {
     /// Nothing to surrender and nothing owed. Claiming is idempotent by
     /// rejection, as elsewhere in this contract.
     NoEntitlement = 6054,
-    /// A proposal already stands. Replacing one means cancelling it first, so
+    /// A code change already waits. Replacing one means cancelling it first, so
     /// the standing eta is never quietly moved.
     UpgradeProposalExists = 6055,
-    /// No proposal stands.
-    UpgradeProposalNotFound = 6056,
-    /// The delay has not elapsed.
-    UpgradeDelayNotElapsed = 6057,
+    /// No pending change has this id.
+    ChangeNotFound = 6056,
+    /// The change's delay has not elapsed.
+    ChangeNotReady = 6057,
     /// The delay is below the shortest the vault accepts.
     UpgradeDelayTooShort = 6058,
     /// The delay is shorter than the notice, so an investor could not complete
-    /// an exit before the change applies.
+    /// an exit before the change applies. Checked when a change is proposed and
+    /// again when it applies, since the notice may have risen in between.
     UpgradeDelayBelowNotice = 6059,
     /// The delay exceeds the longest the vault accepts.
     UpgradeDelayTooLong = 6060,
@@ -111,4 +112,7 @@ pub enum VaultError {
     NoticeAboveUpgradeDelay = 6061,
     /// A deposit request would breach the vault's configured deposit cap.
     DepositCapExceeded = 6062,
+    /// As many changes as the timelock holds already wait. Apply or cancel one
+    /// first.
+    TooManyPendingChanges = 6063,
 }

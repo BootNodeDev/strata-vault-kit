@@ -13,7 +13,7 @@ use crate::treasury;
 
 /// Ninety days. Long enough for a real announcement period, short enough that
 /// governance cannot set a delay the vault would never outlive.
-pub const MAX_WIND_DOWN_DELAY: u64 = 90 * 24 * 60 * 60;
+pub const MAX_WIND_DOWN_DELAY: u64 = 90 * timelock::DAY_DURATION;
 
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
