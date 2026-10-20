@@ -154,8 +154,9 @@ pub(crate) fn custodian_not_the_vault(e: &Env, custodian: &Address) {
     }
 }
 
+/// A feed that cannot answer would stall every epoch after the swap.
 pub(crate) fn feed_bound_here(e: &Env, feed: &Address) {
-    if !governance::bound_here(e, feed) {
+    if !governance::bound_here(e, feed) || !governance::answers_as_feed(e, feed) {
         panic_with_error!(e, VaultError::FeedNotBound);
     }
 }

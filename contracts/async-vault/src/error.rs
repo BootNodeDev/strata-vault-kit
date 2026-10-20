@@ -142,8 +142,10 @@ pub enum VaultError {
     /// returned or moved, until compliance lifts the freeze. A partial freeze
     /// refuses only what would touch frozen shares.
     Frozen = 6071,
-    /// The proposed feed does not name this vault as its own, or its setup is
-    /// still open. Its admin could then change its limits with no delay.
+    /// The proposed feed does not name this vault as its own, its setup is
+    /// still open, or it does not answer `state()` and `freshness_duration()`.
+    /// Its admin could then change its limits with no delay, or no epoch could
+    /// be priced from it.
     FeedNotBound = 6072,
     /// The holder may not receive shares (delisted, frozen or refused by the
     /// compliance rules), so the escrowed shares stay with the vault and the

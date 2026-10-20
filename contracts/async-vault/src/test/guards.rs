@@ -281,7 +281,7 @@ fn custodian_not_the_vault_refuses_the_vault_itself() {
 }
 
 #[test]
-fn feed_bound_here_refuses_a_feed_not_bound_to_this_vault() {
+fn feed_bound_here_refuses_an_unbound_feed_or_a_contract_that_is_not_a_feed() {
     let f = setup();
     holds(&f, || guards::feed_bound_here(&f.e, &f.oracle.address));
 
@@ -294,9 +294,12 @@ fn feed_bound_here_refuses_a_feed_not_bound_to_this_vault() {
             open_feed(),
         ),
     );
-    refuses(&f, VaultError::FeedNotBound, || {
-        guards::feed_bound_here(&f.e, &unbound)
-    });
+    // The compliance contract is bound to this vault but answers no feed view.
+    for not_a_feed_here in [unbound, f.share.compliance()] {
+        refuses(&f, VaultError::FeedNotBound, || {
+            guards::feed_bound_here(&f.e, &not_a_feed_here)
+        });
+    }
 }
 
 #[test]
@@ -332,6 +335,10 @@ fn change_in_bounds_checks_the_bounds_of_each_change() {
         ),
         (
             VaultChange::Oracle(stranger.clone()),
+            VaultError::FeedNotBound,
+        ),
+        (
+            VaultChange::Oracle(f.share.compliance()),
             VaultError::FeedNotBound,
         ),
         (

@@ -75,7 +75,6 @@ pub(crate) struct Wiring {
     pub decimals_match: bool,
     pub addresses_distinct: bool,
     pub custodian_set: bool,
-    /// A new feed has no report yet, so this asks only that the feed answers.
     pub feed_answers: bool,
 }
 
@@ -131,6 +130,13 @@ pub(crate) fn bound_here(e: &Env, contract: &Address) -> bool {
         && matches!(binding.try_setup_open(), Ok(Ok(false)))
 }
 
+/// True when `feed` answers the views the vault prices from. A new feed has no
+/// report yet, so this asks only for answers, not for a valid price.
+pub(crate) fn answers_as_feed(e: &Env, feed: &Address) -> bool {
+    let feed = OracleFeedClient::new(e, feed);
+    matches!(feed.try_state(), Ok(Ok(_))) && matches!(feed.try_freshness_duration(), Ok(Ok(_)))
+}
+
 fn compliance_bound(e: &Env, compliance: &Address, token: &Address) -> bool {
     let linked = matches!(
         TokenBinderClient::new(e, compliance).try_linked_tokens(),
@@ -160,7 +166,6 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
     let roles = AccessControlClient::new(e, &token);
     let rwa = RWATokenClient::new(e, &token);
     let shares = FungibleTokenClient::new(e, &token);
-    let feed = OracleFeedClient::new(e, &oracle);
     Wiring {
         token_bound: bound_here(e, &token),
         oracle_bound: bound_here(e, &oracle),
@@ -191,8 +196,7 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
         addresses_distinct: all_different(&[&asset, &token, &oracle, &me]),
         custodian_set: state::get_addr_opt(e, &DataKey::Custodian)
             .is_some_and(|custodian| custodian != me),
-        feed_answers: matches!(feed.try_state(), Ok(Ok(_)))
-            && matches!(feed.try_freshness_duration(), Ok(Ok(_))),
+        feed_answers: answers_as_feed(e, &oracle),
     }
 }
 
@@ -249,11 +253,7 @@ pub(crate) fn apply(e: &Env, id: u32) {
             access_control::revoke_role_no_auth(e, account, role, &admin)
         }
         VaultChange::Admin(next) => offer_admin(e, &admin, next),
-        VaultChange::Oracle(feed) => {
-            // A feed that cannot answer would stall every epoch after the swap.
-            OracleFeedClient::new(e, feed).state();
-            state::set_addr(e, &DataKey::Oracle, feed);
-        }
+        VaultChange::Oracle(feed) => state::set_addr(e, &DataKey::Oracle, feed),
     }
     ChangeApplied { id, change }.publish(e);
 }
