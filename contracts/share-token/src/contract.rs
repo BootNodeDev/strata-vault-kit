@@ -1,5 +1,6 @@
 use crate::error::ShareTokenError;
 use crate::event::LegalTransfer;
+use crate::extend;
 use crate::governance::{self, TokenChange, TokenPendingChange};
 use crate::guards;
 use crate::roles::COMPLIANCE_ROLE;
@@ -111,6 +112,7 @@ impl ShareToken {
         guards::identity_verified(e, &to);
         strata_storage::bump_instance(e);
         RWA::forced_transfer(e, &from, &to, amount);
+        extend::balances(e, &[&from, &to]);
         LegalTransfer {
             from,
             to,
@@ -157,11 +159,13 @@ impl FungibleToken for ShareToken {
     fn transfer(e: &Env, from: Address, to: MuxedAddress, amount: i128) {
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::transfer(e, &from, &to, amount);
+        extend::balances(e, &[&from, &to.address()]);
     }
 
     fn transfer_from(e: &Env, spender: Address, from: Address, to: Address, amount: i128) {
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::transfer_from(e, &spender, &from, &to, amount);
+        extend::balances(e, &[&from, &to]);
     }
 
     fn approve(e: &Env, owner: Address, spender: Address, amount: i128, live_until_ledger: u32) {
@@ -221,11 +225,13 @@ impl RWAToken for ShareToken {
     fn mint(e: &Env, to: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
         RWA::mint(e, &to, amount);
+        extend::balances(e, &[&to]);
     }
     #[only_role(operator, "manager")]
     fn burn(e: &Env, user_address: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
         RWA::burn(e, &user_address, amount);
+        extend::balances(e, &[&user_address]);
     }
     /// The vault escrows redemptions through it. Compliance moves shares with
     /// `legal_transfer` instead.
@@ -233,6 +239,7 @@ impl RWAToken for ShareToken {
     fn forced_transfer(e: &Env, from: Address, to: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
         RWA::forced_transfer(e, &from, &to, amount);
+        extend::balances(e, &[&from, &to]);
     }
     /// Moves a whole balance to the account the identity verifier names, so
     /// it needs the admin's co-signature like a legal transfer, and never
@@ -248,24 +255,31 @@ impl RWAToken for ShareToken {
         guards::not_vault_address(e, &old_account);
         guards::not_vault_address(e, &new_account);
         strata_storage::bump_instance(e);
-        RWA::recover_balance(e, &old_account, &new_account)
+        let recovered = RWA::recover_balance(e, &old_account, &new_account);
+        extend::balances(e, &[&new_account]);
+        extend::address_frozen(e, &new_account);
+        extend::frozen_tokens(e, &new_account);
+        recovered
     }
     #[only_role(operator, "compliance")]
     fn set_address_frozen(e: &Env, user_address: Address, freeze: bool, operator: Address) {
         guards::not_freezing_vault(e, &user_address, freeze);
         strata_storage::bump_instance(e);
         RWA::set_address_frozen(e, &user_address, freeze);
+        extend::address_frozen(e, &user_address);
     }
     #[only_role(operator, "compliance")]
     fn freeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
         guards::not_vault_address(e, &user_address);
         strata_storage::bump_instance(e);
         RWA::freeze_partial_tokens(e, &user_address, amount);
+        extend::frozen_tokens(e, &user_address);
     }
     #[only_role(operator, "compliance")]
     fn unfreeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
         RWA::unfreeze_partial_tokens(e, &user_address, amount);
+        extend::frozen_tokens(e, &user_address);
     }
     fn set_compliance(e: &Env, compliance: Address, operator: Address) {
         guards::caller_is_admin(e, &operator);
