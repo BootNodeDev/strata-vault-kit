@@ -186,7 +186,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 ## 3. Role & Authority Matrix
 
-Strata distributes control across five native Stellar multisig authorities and permissionless public entrypoints. Every privileged function is mapped to exactly one authority, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An `#[only_admin]` entrypoint takes no caller argument: the stored admin signs it.
+Strata distributes control across five native Stellar multisig authorities and permissionless public entrypoints. Every privileged function is mapped to exactly one authority, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An admin entrypoint the kit defines takes no caller argument: the stored admin signs it.
 
 ### Authority Capabilities & Anti-Capabilities
 
@@ -290,10 +290,10 @@ A clean deployment executes in three sequenced phases:
 1. **Phase 1: Contract Deployment**
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
 2. **Phase 2: Post-Deployment Role Wiring**
-   - Call `ShareToken::grant_role("manager", vault_address)` to authorize lazy share minting and burning.
+   - Call `ShareToken::grant_role(vault_address, "manager", governance)` to authorize lazy share minting and burning.
    - Call `ShareToken::bind_vault(vault_address)`, then `ShareToken::finish_setup()`. The token's admin changes are instant until then and wait for the vault's timelock afterwards.
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so a delisted holder's priced deposit can be minted into the vault's escrow; `finish_setup` requires it.
-   - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
+   - Call `Compliance::bind_token(share_token_address, governance)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
    - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap.
    - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it, and with `AdminTransferPending` while an admin hand-over offered during setup is pending. The vault takes no deposit before it.
