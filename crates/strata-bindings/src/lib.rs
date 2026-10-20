@@ -1,22 +1,16 @@
 //! # Design
 //!
-//! The interfaces the kit's contracts share, and each contract's block of
-//! error codes.
+//! The interfaces the kit's contracts share, and their error code blocks.
 //!
 //! - **The compiler checks the feed.** The vault prices from `OracleFeed`,
-//!   which the kit's oracle and any feed an adopter brings both implement. The
-//!   cost: a feed must answer the trait's four calls as written; any other
-//!   shape needs an adapter.
-//! - **Bound contracts report their binding.** A contract that runs on a
-//!   vault's timelock answers `VaultBinding`, and the vault's `finish_setup`
-//!   reads it. The cost: a compliance contract that does not answer it is
-//!   accepted as an external module, so its own governance is a trust
-//!   assumption.
-//! - **A block of codes per contract.** Each kit contract owns a block of error
-//!   codes, and `error_enum!` fails the build if a code leaves its block or two
-//!   blocks overlap, so a code inside the blocks names the contract that raised
-//!   it. The cost: a code is never reused, so a removed variant leaves its
-//!   number retired.
+//!   which the kit's oracle and any adopter's feed implement. The cost: a feed
+//!   must answer its four calls as written, or use an adapter.
+//! - **Bound contracts report their binding.** The vault's `finish_setup` reads
+//!   `VaultBinding`. The cost: a compliance contract that does not answer it is
+//!   accepted, on trust, as external.
+//! - **Fixed blocks of error codes.** The vault, token, oracle and compliance
+//!   contract each own one; `error_enum!` fails the build outside it,
+//!   `errors.rs` on overlaps. The cost: removed codes stay retired.
 
 #![no_std]
 

@@ -1,40 +1,27 @@
 //! # Design
 //!
-//! The vault's share token: OpenZeppelin's RWA token, which asks the identity
-//! verifier about every receiver and the compliance contract about every move.
-//! The kit adds its roles, its guards and the vault's timelock.
+//! The vault's share token: OpenZeppelin's RWA token, which checks identity and
+//! the compliance rules on every `transfer` and mint; forced transfers skip
+//! both. The kit adds its roles, its guards and the vault's timelock.
 //!
-//! - **No clock of its own.** After setup, upgrades, grants, revoking
-//!   `manager`, admin hand-overs and compliance or verifier swaps wait for the
-//!   vault's timelock. Revoking `compliance` and the transfer pause stay
-//!   instant. The cost: a paused vault holds every token change, and none
-//!   lands during a wind-down.
-//! - **The vault is the only manager.** `mint`, `burn` and `forced_transfer`
-//!   need `manager`, which the vault must hold alone for its setup to finish.
-//!   `forced_transfer` skips the pause, freezes, the identity check and the
-//!   compliance rules' check, so the vault checks the receiver itself before it
-//!   returns shares. The cost: a `manager` can move any holder's shares without
-//!   their signature, so after setup granting or revoking it waits for the
-//!   timelock.
-//! - **Two signers move a holder's shares.** `legal_transfer` and
-//!   `recover_balance` need a `compliance` holder and the admin to sign as two
-//!   different accounts, and the shares land only on an allowlisted account.
-//!   The cost: a legal order needs both signers. A legal transfer of zero
-//!   shares is accepted: it moves nothing but publishes its order reference.
-//! - **The vault's address is off limits.** Once the token is bound to the
-//!   vault, its address cannot be frozen, in full or in part, and no legal
-//!   transfer or recovery moves shares into or out of it: its balance is other
-//!   holders' escrow. The cost: an order cannot reach shares escrowed in the
-//!   vault; compliance freezes the holder instead, which holds that holder's
-//!   exits.
-//! - **The pause halts trading only.** The transfer pause is the admin's, not
-//!   the guardian's. It stops `transfer` and `transfer_from`; mints, burns,
-//!   escrow moves and legal transfers go on. The cost: it is not an emergency
-//!   stop for the vault.
-//! - **A compliance swap is not checked.** Swapping the compliance contract
-//!   does not check that the new contract lists this token. The cost: if it
-//!   does not, every mint, transfer and burn fails until it binds the token,
-//!   and the vault's `health()` reports `compliance_bound` false.
+//! - **No clock of its own.** After setup, upgrades, grants, `manager` revokes,
+//!   hand-overs and swaps wait for the vault's timelock. The cost: a vault
+//!   pause holds them; a wind-down refuses them.
+//! - **Only the vault is manager.** It mints, burns and moves anyone's shares;
+//!   a forced move skips the token's checks, so the vault checks receivers. The
+//!   cost: granting it waits; revoking too, as claims need it.
+//! - **Two signers move a holder's shares.** A legal transfer or recovery needs
+//!   `compliance` and the admin, as two accounts. The cost: an order needs
+//!   both. A zero-share order passes and is published.
+//! - **The vault's address is off limits:** once bound, it is never frozen and
+//!   no order moves shares in or out, since it holds others' escrow. The cost:
+//!   orders cannot reach escrow; a frozen holder's exits wait.
+//! - **The pause halts trading only.** The admin's transfer pause stops
+//!   `transfer` and `transfer_from`; mints, burns, escrow moves and legal
+//!   transfers go on. The cost: it is no emergency stop for the vault.
+//! - **A compliance swap is not checked.** The new contract need not list this
+//!   token. The cost: if it does not, every mint, transfer and burn fails until
+//!   it binds the token, and the vault's `health()` shows it.
 
 #![no_std]
 mod contract;
