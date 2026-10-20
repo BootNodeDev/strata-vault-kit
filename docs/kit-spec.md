@@ -189,7 +189,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 ### Supply and Capital Figures
 
-- `total_economic_supply()` counts share base units held outside the vault plus those priced for deposits and not yet minted: the token's `total_supply()`, less the vault's own share balance, plus `pending_mint_shares()`. It leaves out every share in the vault's escrow, including those of a redemption that is not priced yet, which the next price still applies to and a cancellation can return (`economic_supply_excludes_shares_locked_in_redemption_escrow`). The first wind-down round's supply snapshot counts those shares, so the two figures differ while redemptions wait to be priced.
+- `total_economic_supply()` counts share base units held outside the vault plus those priced for deposits and not yet minted: the token's `total_supply()`, less the vault's own share balance, plus `pending_mint_shares()`. It leaves out every share in the vault's escrow. That includes the shares of a redemption that is not priced yet: the next price still applies to them, and a cancellation can return them (`economic_supply_excludes_shares_locked_in_redemption_escrow`). The first wind-down round's supply snapshot counts those shares, so the two figures differ while redemptions wait to be priced.
 - Deposited capital, which the deposit cap limits, is the asset the vault holds plus `net_deployed()`, less `committed()`. It counts asset units at cost: a gain or a loss at the custodian never moves it, even once funded back.
 - `net_deployed()` is what `deploy_to_custodian` sent less what `fund` brought back; it goes negative once more came back than went out. The custodian repays through `fund`. A plain transfer to the vault raises the vault's balance but leaves `net_deployed` as it was, so from then on the same money counts twice in deposited capital and the cap refuses deposits sooner.
 
@@ -221,7 +221,7 @@ Pause first, so no report lands while the roles change, and lift the pause last:
 3. Grant a replacement. During the oracle's setup, `grant_role` is instant. After it, propose a `GrantRole` change and apply it once the vault's delay has run, plus any time the vault spends paused. The NAV stays paused that whole time, at least seven days.
 4. If the stored report is wrong, call `clear_latest` (admin; only while the NAV is paused). The next report then has no earlier price to cap its move: only `min_answer` and `max_answer` bound it.
 5. Lift the NAV pause: `set_nav_paused(false)` (admin).
-6. The new attester posts a report. An epoch is priced once a report accepted after its seal is valid.
+6. The new attester posts a report. Pricing resumes: an epoch can be priced once a report accepted after its seal is valid.
 
 ---
 
