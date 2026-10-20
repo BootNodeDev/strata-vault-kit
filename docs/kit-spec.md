@@ -219,7 +219,7 @@ Pause first, so no report lands while the roles change, and lift the pause last:
 1. Pause the NAV: the oracle's guardian calls `pause_nav`, or its admin calls `set_nav_paused(true)`. The oracle refuses every report and the vault prices nothing; sealed epochs reopen to cancellation.
 2. Revoke the compromised attester: `revoke_role(attester, "attester", admin)` on the oracle. It is instant, during setup and after it.
 3. Grant a replacement. During the oracle's setup, `grant_role` is instant. After it, propose a `GrantRole` change and apply it once the vault's delay has run, plus any time the vault spends paused. The NAV stays paused that whole time, at least seven days.
-4. If the stored report is wrong, call `clear_latest` (admin; only while the NAV is paused). The next report then has no earlier price to cap its move: only `min_answer` and `max_answer` bound it.
+4. Clear the stored report: `clear_latest` (admin; only while the NAV is paused). Left in place, it is valid again once the pause lifts, and anyone can price with it any epoch sealed before it was accepted, until it expires. Skip this only if you know the report predates the compromise. The next report then has no earlier price to cap its move: only `min_answer` and `max_answer` bound it.
 5. Lift the NAV pause: `set_nav_paused(false)` (admin).
 6. The new attester posts a report. Pricing resumes: an epoch can be priced once a report accepted after its seal is valid.
 
