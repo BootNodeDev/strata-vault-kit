@@ -65,7 +65,7 @@ does once an entry is archived.
 The share token's balances and freezes, and the roles of the vault, the token
 and the oracle, are stored by the OpenZeppelin Stellar library. It extends an
 entry when it reads it, not when it creates it, so the contracts read back each
-one they write. Without that, a new entry would start at the network's minimum
+one they create. Without that, a new entry would start at the network's minimum
 lifetime. The tests for it set the ledger's minimum to testnet's 120,960
 ledgers; the test `Env` defaults to 4,096. OpenZeppelin never extends the
 instance, so the token, the identity verifier and the compliance contract

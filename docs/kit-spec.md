@@ -314,12 +314,15 @@ instance is archived refuses every call.
 
 The kit runs the same code on every network. Each persistent entry, the
 contract instance included, has a target lifetime and a threshold one day
-shorter. A call that reads or writes an entry extends it back to its target
-once its TTL has fallen to the threshold. The transaction that creates an entry
-extends it to its target at once; the compliance stub's modules and bound
-tokens are the one exception (see **What OpenZeppelin extends**). The network
-decides only how long a new entry lives before any extension (see **Network
-settings**).
+shorter. Writing an entry does not extend it on its own: an entry goes back to
+its target only when a call asks for that and its TTL has fallen to the
+threshold. The kit's storage helpers ask on every read and every write of the
+kit's own entries. OpenZeppelin asks when it reads an entry that already
+exists, never when it writes one, so the kit reads back each entry it creates
+through OpenZeppelin. The transaction that creates an entry therefore extends
+it to its target at once; the compliance stub's modules and bound tokens are
+the one exception (see **What OpenZeppelin extends**). The network decides only
+how long a new entry lives before any extension (see **Network settings**).
 
 | Contract | What it extends | When | To how long |
 |---|---|---|---|
@@ -328,7 +331,7 @@ settings**).
 | `share_token` | Its instance, each balance and freeze entry it writes, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change` | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
-| `async_vault`, `share_token`, `nav_oracle` | The role entries each grant writes | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change), then every role check | 90 days (1,555,200 ledgers), once 89 days or less remain |
+| `async_vault`, `share_token`, `nav_oracle` | The four entries a grant writes: the account's role, its member-list slot, the member count and the role list | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change) extends all four. After that, a role check extends only that account's role entry; the slot, the count and the list are extended only by grants and by calls that list role members (such as the vault's `manager()` or the token's `get_role_member_count`) | 90 days (1,555,200 ledgers), once 89 days or less remain |
 
 The kit's own lengths are the constants in `crates/strata-storage`
 (`PERSISTENT_EXTEND_AMOUNT`, `INSTANCE_EXTEND_AMOUNT`, and thresholds one day
@@ -352,7 +355,7 @@ stores the share token's balances and freeze entries, and the compliance
 contract's modules and bound tokens. `stellar-access` 0.7.2 stores the roles of
 the vault, the token and the oracle. OpenZeppelin extends an existing entry
 when it reads it: balances, freezes, modules and bound tokens to 30 days, roles
-to 90. It does not extend an entry when it creates one, so a new entry would
+to 90. It does not extend an entry when it writes one, so a new entry would
 start at the network's minimum lifetime and wait for a later caller to read it.
 The kit closes that gap by reading back what it writes, through OpenZeppelin's
 own reads, in the same call:
@@ -368,13 +371,15 @@ own reads, in the same call:
 
 So a new balance, freeze or role entry reaches its target in the transaction
 that creates it, and the kit keeps OpenZeppelin's thresholds without copying
-them. The compliance stub does not read back its modules and bound tokens when
-it writes them. The vault's `finish_setup` reads the bound tokens, which
+them. A revoke creates nothing: it rewrites the member count and moves the last
+member into the freed slot with plain writes, and extends none of the entries
+it moves. The compliance stub does not read back its modules and bound tokens
+when it writes them. The vault's `finish_setup` reads the bound tokens, which
 extends them, and every hook the token calls reads its modules; the hooks after
 a mint, transfer or burn read the bound tokens too. Allowances are temporary
-entries that live until their `live_until_ledger`. OpenZeppelin never extends an
-instance; the kit does, as above. The token's total supply and metadata live in
-its instance.
+entries that live until their `live_until_ledger`. OpenZeppelin never extends
+an instance; the kit does, as above. The token's total supply and metadata live
+in its instance.
 
 **Network settings.** Each network sets how long a new persistent entry lives
 and how far one extension can reach. Validators can change these settings by
@@ -392,7 +397,7 @@ Read over RPC on 2026-10-20.
 **What this means on each network.** On testnet a new entry would live about 7
 days, less than any threshold, so renewals start in its first week: the
 transaction that creates it extends it to its target, and from the next day any
-call that touches it renews it. On mainnet a new entry already lives 120
+call that reads it renews it. On mainnet a new entry already lives 120
 days, more than any target, so the extension in the creating transaction
 changes nothing. No call renews a 30-day entry there until about the fourth
 month (day 91), or a role until day 31. A restored entry comes back with the
@@ -419,7 +424,7 @@ restore pays for the network's minimum, as above.
 **What frontends should do.**
 
 - Expect uneven renewal fees. The first call after a quiet period pays to renew
-  every entry it touches that has fallen to its threshold, so the same call can
+  every entry it reads that has fallen to its threshold, so the same call can
   cost more after a quiet week than on a busy day.
 - Simulate again just before submitting. The fee comes from the simulation. If
   an entry falls to its threshold between simulation and submission, the call
