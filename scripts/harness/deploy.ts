@@ -177,7 +177,6 @@ async function grantAndVerify(
 		await verifier.allow({
 			account: vault,
 			allowed: true,
-			caller: accounts.compliance.publicKey(),
 		})
 	).signAndSend()
 	const allowed = (await verifier.is_allowed({ account: vault })).result

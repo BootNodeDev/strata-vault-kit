@@ -9,7 +9,7 @@ fn delisted_with_a_priced_deposit(f: &Fixture) -> (Address, u64) {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
-    f.identity.allow(&investor, &false, &f.compliance);
+    f.identity.allow(&investor, &false);
     (investor, epoch)
 }
 
@@ -88,7 +88,7 @@ fn a_conversion_adds_to_a_redemption_already_open_in_the_epoch() {
     f.fulfill_epoch(wad(2));
     let open = f.vault.current_epoch();
     f.vault.request_redeem(&investor, &100);
-    f.identity.allow(&investor, &false, &f.compliance);
+    f.identity.allow(&investor, &false);
 
     f.vault.claim_deposit(&investor, &epoch);
 
@@ -243,7 +243,7 @@ fn a_delisted_holders_unpriced_redemption_joins_the_wind_down_when_cancelled() {
     let investor = f.holder(200);
     let other = f.holder(200);
     let epoch = f.vault.request_redeem(&investor, &200);
-    f.identity.allow(&investor, &false, &f.compliance);
+    f.identity.allow(&investor, &false);
     f.vault.propose_wind_down(&f.admin);
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
@@ -261,8 +261,8 @@ fn a_conversion_waits_while_the_vault_is_delisted() {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &1_000);
     f.fulfill_epoch(wad(2));
-    f.identity.allow(&investor, &false, &f.compliance);
-    f.identity.allow(&f.vault.address, &false, &f.compliance);
+    f.identity.allow(&investor, &false);
+    f.identity.allow(&f.vault.address, &false);
 
     assert_eq!(
         f.vault.try_claim_deposit(&investor, &epoch),
@@ -270,7 +270,7 @@ fn a_conversion_waits_while_the_vault_is_delisted() {
     );
     assert!(f.vault.get_deposit_request(&epoch, &investor).is_some());
 
-    f.identity.allow(&f.vault.address, &true, &f.compliance);
+    f.identity.allow(&f.vault.address, &true);
     assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
     let open = f.vault.current_epoch();
     assert_eq!(
@@ -309,7 +309,7 @@ proptest! {
         for (_, i) in claims {
             let who = &investors[i];
             if delisted[i] {
-                f.identity.allow(who, &false, &f.compliance);
+                f.identity.allow(who, &false);
             }
             let queued = || f.vault.get_redeem_request(&open, who).map_or(0, |r| r.shares);
             let before = queued();

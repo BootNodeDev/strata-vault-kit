@@ -204,7 +204,7 @@ fn identity_verified_refuses_an_account_the_verifier_rejects() {
     let f = setup();
     let listed = Address::generate(&f.e);
     let stranger = Address::generate(&f.e);
-    f.identity.allow(&listed, &true, &f.admin);
+    f.identity.allow(&listed, &true);
 
     holds(&f, || guards::identity_verified(&f.e, &listed));
     refuses(&f, RWAError::IdentityVerificationFailed, || {

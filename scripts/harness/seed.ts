@@ -105,7 +105,6 @@ async function ensureAllowlist(
 			verifier.allow({
 				account: holder.publicKey(),
 				allowed: true,
-				caller: c.keys.compliance.publicKey(),
 			}),
 		)
 		console.log(`  ✓ ${name} allowlisted`)

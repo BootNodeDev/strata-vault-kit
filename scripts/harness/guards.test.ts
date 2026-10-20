@@ -62,7 +62,6 @@ beforeAll(async () => {
 			verifier.allow({
 				account: holder.publicKey(),
 				allowed: true,
-				caller: compliance.publicKey(),
 			}),
 		)
 	}
@@ -167,7 +166,6 @@ describe("the compliance authority's reach", () => {
 				identityVerifier(c, governance).allow({
 					account: outsider.publicKey(),
 					allowed: true,
-					caller: governance.publicKey(),
 				}),
 			),
 		).rejects.toThrow(/signatures/)
@@ -619,7 +617,6 @@ describe("a de-listed holder", () => {
 			identityVerifier(c, compliance).allow({
 				account: first.publicKey(),
 				allowed: false,
-				caller: compliance.publicKey(),
 			}),
 		)
 		expectRefused(
@@ -649,7 +646,6 @@ describe("a de-listed holder", () => {
 			identityVerifier(c, compliance).allow({
 				account: first.publicKey(),
 				allowed: true,
-				caller: compliance.publicKey(),
 			}),
 		)
 		expect(

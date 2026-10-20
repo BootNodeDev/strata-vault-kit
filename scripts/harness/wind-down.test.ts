@@ -71,7 +71,6 @@ beforeAll(async () => {
 		identityVerifier(c, c.keys.compliance).allow({
 			account: holder.publicKey(),
 			allowed: true,
-			caller: c.keys.compliance.publicKey(),
 		}),
 	)
 })

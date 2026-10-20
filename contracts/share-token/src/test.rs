@@ -41,7 +41,7 @@ fn manager_mints_to_allowlisted_account() {
     token.grant_role(&manager, &symbol_short!("manager"), &admin);
 
     compliance.bind_token(&token.address, &admin); // compliance rejects ops from unbound tokens
-    identity.allow(&receiver, &true, &admin);
+    identity.allow(&receiver, &true);
 
     token.mint(&receiver, &100, &manager);
 
@@ -281,7 +281,7 @@ fn the_compliance_authority_freezes_and_moves_balances() {
     let (f, identity) = setup_live(&e);
     let holder = Address::generate(&e);
     let target = Address::generate(&e);
-    identity.allow(&holder, &true, &f.admin);
+    identity.allow(&holder, &true);
     f.token.mint(&holder, &1_000, &f.manager);
 
     f.token
@@ -298,7 +298,7 @@ fn the_compliance_authority_freezes_and_moves_balances() {
         .unfreeze_partial_tokens(&holder, &400, &f.compliance_authority);
     assert_eq!(f.token.get_frozen_tokens(&holder), 0);
 
-    identity.allow(&target, &true, &f.admin);
+    identity.allow(&target, &true);
     f.token.legal_transfer(
         &holder,
         &target,
@@ -315,7 +315,7 @@ fn the_compliance_authority_reaches_recovery() {
     let (f, identity) = setup_live(&e);
     let lost = Address::generate(&e);
     let replacement = Address::generate(&e);
-    identity.allow(&replacement, &true, &f.admin);
+    identity.allow(&replacement, &true);
 
     // The role check passes; the testnet verifier names no recovery target.
     assert_eq!(
@@ -368,7 +368,7 @@ fn the_manager_escrows_but_does_not_intervene() {
     let (f, identity) = setup_live(&e);
     let holder = Address::generate(&e);
     let new_holder = Address::generate(&e);
-    identity.allow(&holder, &true, &f.admin);
+    identity.allow(&holder, &true);
     f.token.mint(&holder, &1_000, &f.manager);
 
     assert_unauthorized(f.token.try_set_address_frozen(&holder, &true, &f.manager));
@@ -437,8 +437,8 @@ fn decayed_live_token(e: &Env) -> (Fixture<'_>, Address, Address) {
     let (f, identity) = setup_live(e);
     let holder = Address::generate(e);
     let other = Address::generate(e);
-    identity.allow(&holder, &true, &f.admin);
-    identity.allow(&other, &true, &f.admin);
+    identity.allow(&holder, &true);
+    identity.allow(&other, &true);
     f.token.mint(&holder, &100, &f.manager);
 
     age(e, TWO_DAYS_IN_LEDGERS);
@@ -576,7 +576,7 @@ mod legal_transfer {
         let destination = Address::generate(e);
         let vault = e.register(VaultStub, ());
         for who in [&holder, &destination, &vault] {
-            identity.allow(who, &true, &f.admin);
+            identity.allow(who, &true);
         }
         f.token.mint(&holder, &1_000, &f.manager);
         f.token.mint(&vault, &500, &f.manager);

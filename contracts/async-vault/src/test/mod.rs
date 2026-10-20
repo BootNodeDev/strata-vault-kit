@@ -100,7 +100,7 @@ impl Fixture<'_> {
 
     fn investor(&self, funded: i128) -> Address {
         let who = self.unverified_investor(funded);
-        self.identity.allow(&who, &true, &self.compliance);
+        self.identity.allow(&who, &true);
         who
     }
 
@@ -367,14 +367,14 @@ fn build<'a>(
     if miswire == Miswire::PreMinted {
         // The token's admin mints during the token's own setup, then steps back.
         let holder = Address::generate(&e);
-        identity.allow(&holder, &true, &compliance_authority);
+        identity.allow(&holder, &true);
         share.grant_role(&admin, &symbol_short!("manager"), &admin);
         share.mint(&holder, &100, &admin);
         share.revoke_role(&admin, &symbol_short!("manager"), &admin);
     }
     // Converting a delisted holder's deposit mints into the vault's own escrow.
     if miswire != Miswire::NotAllowlisted {
-        identity.allow(&contract_id, &true, &compliance_authority);
+        identity.allow(&contract_id, &true);
     }
     if miswire == Miswire::VaultFrozen {
         // Until `bind_vault`, the token does not know this address is its vault.
