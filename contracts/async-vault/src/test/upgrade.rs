@@ -502,19 +502,17 @@ mod with_wasm {
         assert_eq!(f.vault.request_deposit(&depositor, &500), epoch);
 
         let probe_hash = f.e.deployer().upload_contract_wasm(token_probe::WASM);
-        let id = f
-            .share
-            .propose_change(&TokenChange::Upgrade(probe_hash), &f.admin);
+        let id = f.share.propose_change(&TokenChange::Upgrade(probe_hash));
         f.advance(MIN_UPGRADE_DELAY);
-        f.share.apply_change(&id, &f.admin);
+        f.share.apply_change(&id);
 
         let probe = token_probe::Client::new(&f.e, &f.share.address);
         assert!(probe.probe());
         assert_eq!(probe.schema_version(), 1);
-        probe.migrate(&f.admin);
+        probe.migrate();
         assert_eq!(probe.schema_version(), 2);
         assert_eq!(
-            probe.try_migrate(&f.admin),
+            probe.try_migrate(),
             Err(Ok(token_probe::ProbeError::AlreadyMigrated.into()))
         );
 

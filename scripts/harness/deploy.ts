@@ -161,8 +161,8 @@ async function grantAndVerify(
 	console.log("vault holds share_token manager role")
 
 	// Grants are instant only during setup, so the token's setup closes after them.
-	await (await token.bind_vault({ vault, caller })).signAndSend()
-	await (await token.finish_setup({ caller })).signAndSend()
+	await (await token.bind_vault({ vault })).signAndSend()
+	await (await token.finish_setup()).signAndSend()
 	if ((await token.setup_open()).result)
 		throw new Error("the share token's setup did not finish")
 	console.log("share_token bound to the vault, setup finished")

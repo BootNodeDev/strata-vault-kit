@@ -114,7 +114,7 @@ impl Fixture<'_> {
     }
 
     /// Signs one call to the oracle as `who` and nothing else, so the call
-    /// carries the caller's signature but not the admin's.
+    /// carries that account's signature but not the admin's.
     fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
         self.e.mock_auths(&[MockAuth {
             address: who,

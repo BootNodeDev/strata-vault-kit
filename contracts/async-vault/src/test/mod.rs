@@ -380,13 +380,13 @@ fn build<'a>(
     match miswire {
         Miswire::TokenUnbound => {}
         Miswire::TokenBoundElsewhere => {
-            share.bind_vault(&register_with(&e, distinct_roles(&e)), &admin);
-            share.finish_setup(&admin);
+            share.bind_vault(&register_with(&e, distinct_roles(&e)));
+            share.finish_setup();
         }
-        Miswire::TokenSetupOpen => share.bind_vault(&contract_id, &admin),
+        Miswire::TokenSetupOpen => share.bind_vault(&contract_id),
         _ => {
-            share.bind_vault(&contract_id, &admin);
-            share.finish_setup(&admin);
+            share.bind_vault(&contract_id);
+            share.finish_setup();
         }
     }
     match miswire {

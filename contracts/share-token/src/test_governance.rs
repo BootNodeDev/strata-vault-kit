@@ -1,7 +1,10 @@
+extern crate std;
+
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
     testutils::{
-        storage::Instance as _, Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke,
+        storage::Instance as _, Address as _, AuthorizedFunction, AuthorizedInvocation,
+        Events as _, Ledger as _, MockAuth, MockAuthInvoke,
     },
     Address, BytesN, Env, Event as _, IntoVal, String, Symbol,
 };
@@ -66,19 +69,19 @@ impl Fixture<'_> {
     }
 
     fn finish(&self) {
-        self.token.bind_vault(&self.vault.address, &self.admin);
-        self.token.finish_setup(&self.admin);
+        self.token.bind_vault(&self.vault.address);
+        self.token.finish_setup();
     }
 
     fn propose(&self, change: TokenChange) -> u32 {
-        self.token.propose_change(&change, &self.admin)
+        self.token.propose_change(&change)
     }
 
     /// Lands an `Admin` change for `next` and returns the ledger of the offer.
     fn offer_admin(&self, next: &Address) -> u32 {
         let id = self.propose(TokenChange::Admin(next.clone()));
         self.advance(MIN_DELAY);
-        self.token.apply_change(&id, &self.admin);
+        self.token.apply_change(&id);
         self.e.ledger().sequence()
     }
 
@@ -100,7 +103,7 @@ impl Fixture<'_> {
     }
 
     /// Signs one call to the token as `who` and nothing else, so the call
-    /// carries the caller's signature but not the admin's.
+    /// carries that account's signature but not the admin's.
     fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
         self.e.mock_auths(&[MockAuth {
             address: who,
@@ -111,6 +114,29 @@ impl Fixture<'_> {
                 sub_invokes: &[],
             },
         }]);
+    }
+
+    /// The last call asked `who` alone to sign, once, on exactly this call.
+    fn signed_once_by(
+        &self,
+        who: &Address,
+        fn_name: &str,
+        args: soroban_sdk::Vec<soroban_sdk::Val>,
+    ) {
+        assert_eq!(
+            self.e.auths(),
+            std::vec![(
+                who.clone(),
+                AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        self.token.address.clone(),
+                        Symbol::new(&self.e, fn_name),
+                        args,
+                    )),
+                    sub_invocations: std::vec![],
+                },
+            )]
+        );
     }
 }
 
@@ -165,21 +191,15 @@ fn compliance(e: &Env) -> Symbol {
 fn setup_is_open_until_finished_and_never_reopens() {
     let f = setup();
     assert!(f.token.setup_open());
-    refused(
-        f.token.try_finish_setup(&f.admin),
-        ShareTokenError::VaultNotBound,
-    );
+    refused(f.token.try_finish_setup(), ShareTokenError::VaultNotBound);
 
     f.finish();
 
     assert!(!f.token.setup_open());
     assert_eq!(f.token.vault(), Some(f.vault.address.clone()));
+    refused(f.token.try_finish_setup(), ShareTokenError::SetupClosed);
     refused(
-        f.token.try_finish_setup(&f.admin),
-        ShareTokenError::SetupClosed,
-    );
-    refused(
-        f.token.try_bind_vault(&Address::generate(&f.e), &f.admin),
+        f.token.try_bind_vault(&Address::generate(&f.e)),
         ShareTokenError::SetupClosed,
     );
 }
@@ -187,10 +207,10 @@ fn setup_is_open_until_finished_and_never_reopens() {
 #[test]
 fn a_second_vault_cannot_be_bound() {
     let f = setup();
-    f.token.bind_vault(&f.vault.address, &f.admin);
+    f.token.bind_vault(&f.vault.address);
 
     refused(
-        f.token.try_bind_vault(&Address::generate(&f.e), &f.admin),
+        f.token.try_bind_vault(&Address::generate(&f.e)),
         ShareTokenError::SetupClosed,
     );
     assert_eq!(f.token.vault(), Some(f.vault.address.clone()));
@@ -200,10 +220,7 @@ fn a_second_vault_cannot_be_bound() {
 fn an_address_that_reports_no_clock_cannot_be_bound() {
     let f = setup();
 
-    assert!(f
-        .token
-        .try_bind_vault(&Address::generate(&f.e), &f.admin)
-        .is_err());
+    assert!(f.token.try_bind_vault(&Address::generate(&f.e)).is_err());
     assert_eq!(f.token.vault(), None);
 }
 
@@ -215,19 +232,15 @@ fn only_the_admin_binds_and_finishes() {
     f.sign_only_as(
         &stranger,
         "bind_vault",
-        (f.vault.address.clone(), stranger.clone()).into_val(&f.e),
+        (f.vault.address.clone(),).into_val(&f.e),
     );
-    assert!(f.token.try_bind_vault(&f.vault.address, &stranger).is_err());
+    assert!(f.token.try_bind_vault(&f.vault.address).is_err());
     assert_eq!(f.token.vault(), None);
 
     f.e.mock_all_auths();
-    f.token.bind_vault(&f.vault.address, &f.admin);
-    f.sign_only_as(
-        &stranger,
-        "finish_setup",
-        (stranger.clone(),).into_val(&f.e),
-    );
-    assert!(f.token.try_finish_setup(&stranger).is_err());
+    f.token.bind_vault(&f.vault.address);
+    f.sign_only_as(&stranger, "finish_setup", soroban_sdk::Vec::new(&f.e));
+    assert!(f.token.try_finish_setup().is_err());
     assert!(f.token.setup_open());
 }
 
@@ -311,7 +324,7 @@ fn an_admin_hand_over_waits_but_cancelling_one_does_not() {
 
     let id = f.propose(TokenChange::Admin(next.clone()));
     f.advance(MIN_DELAY);
-    f.token.apply_change(&id, &f.admin);
+    f.token.apply_change(&id);
     f.token.transfer_admin_role(&next, &0);
 
     assert!(f.token.try_accept_admin_transfer().is_err());
@@ -322,17 +335,17 @@ fn an_admin_hand_over_waits_but_cancelling_one_does_not() {
 fn setup_cannot_finish_while_a_hand_over_is_pending() {
     let f = setup();
     let next = Address::generate(&f.e);
-    f.token.bind_vault(&f.vault.address, &f.admin);
+    f.token.bind_vault(&f.vault.address);
     f.token
         .transfer_admin_role(&next, &(f.e.ledger().sequence() + 100));
 
     refused(
-        f.token.try_finish_setup(&f.admin),
+        f.token.try_finish_setup(),
         ShareTokenError::AdminTransferPending,
     );
 
     f.token.transfer_admin_role(&next, &0);
-    f.token.finish_setup(&f.admin);
+    f.token.finish_setup();
     assert!(f.token.try_accept_admin_transfer().is_err());
     assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
 }
@@ -340,12 +353,12 @@ fn setup_cannot_finish_while_a_hand_over_is_pending() {
 #[test]
 fn an_expired_hand_over_does_not_hold_setup_open() {
     let f = setup();
-    f.token.bind_vault(&f.vault.address, &f.admin);
+    f.token.bind_vault(&f.vault.address);
     f.token
         .transfer_admin_role(&Address::generate(&f.e), &(f.e.ledger().sequence() + 10));
     f.e.ledger().with_mut(|l| l.sequence_number += 11);
 
-    f.token.finish_setup(&f.admin);
+    f.token.finish_setup();
 
     assert!(!f.token.setup_open());
     assert_eq!(
@@ -371,10 +384,8 @@ fn nothing_is_proposed_during_setup() {
     let f = setup();
 
     refused(
-        f.token.try_propose_change(
-            &TokenChange::GrantRole(manager(), f.admin.clone()),
-            &f.admin,
-        ),
+        f.token
+            .try_propose_change(&TokenChange::GrantRole(manager(), f.admin.clone())),
         ShareTokenError::SetupOpen,
     );
     assert_eq!(f.token.pending_changes().len(), 0);
@@ -396,12 +407,12 @@ fn a_grant_lands_one_vault_delay_after_it_was_proposed() {
 
     f.advance(MIN_DELAY - 1);
     refused(
-        f.token.try_apply_change(&id, &f.admin),
+        f.token.try_apply_change(&id),
         ShareTokenError::ChangeNotReady,
     );
 
     f.advance(1);
-    f.token.apply_change(&id, &f.admin);
+    f.token.apply_change(&id);
     assert!(f.token.has_role(&next, &manager()).is_some());
     assert_eq!(f.token.pending_changes().len(), 0);
 }
@@ -415,7 +426,7 @@ fn a_revoke_lands_through_the_timelock() {
 
     let id = f.propose(TokenChange::RevokeRole(manager(), holder.clone()));
     f.advance(MIN_DELAY);
-    f.token.apply_change(&id, &f.admin);
+    f.token.apply_change(&id);
 
     assert!(f.token.has_role(&holder, &manager()).is_none());
 }
@@ -433,10 +444,7 @@ fn a_vault_pause_moves_the_eta_and_holds_the_change() {
     f.clock(|c| c.paused_secs = 3 * DAY_DURATION);
     f.advance(MIN_DELAY);
 
-    refused(
-        f.token.try_apply_change(&id, &f.admin),
-        ShareTokenError::VaultPaused,
-    );
+    refused(f.token.try_apply_change(&id), ShareTokenError::VaultPaused);
 
     f.clock(|c| c.paused = false);
     assert_eq!(
@@ -444,7 +452,7 @@ fn a_vault_pause_moves_the_eta_and_holds_the_change() {
         eta + 3 * DAY_DURATION
     );
     f.advance(3 * DAY_DURATION);
-    f.token.apply_change(&id, &f.admin);
+    f.token.apply_change(&id);
 }
 
 #[test]
@@ -457,14 +465,14 @@ fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
 
     refused(
         f.token
-            .try_propose_change(&TokenChange::Compliance(Address::generate(&f.e)), &f.admin),
+            .try_propose_change(&TokenChange::Compliance(Address::generate(&f.e))),
         ShareTokenError::WindDownActive,
     );
     refused(
-        f.token.try_apply_change(&id, &f.admin),
+        f.token.try_apply_change(&id),
         ShareTokenError::WindDownActive,
     );
-    f.token.cancel_change(&id, &f.admin);
+    f.token.cancel_change(&id);
 }
 
 #[test]
@@ -479,7 +487,7 @@ fn a_change_shorter_than_a_raised_notice_never_lands() {
     f.advance(30 * DAY_DURATION);
 
     refused(
-        f.token.try_apply_change(&id, &f.admin),
+        f.token.try_apply_change(&id),
         ShareTokenError::DelayBelowNotice,
     );
 }
@@ -491,10 +499,8 @@ fn one_upgrade_waits_at_a_time() {
     f.propose(TokenChange::Upgrade(BytesN::from_array(&f.e, &[7; 32])));
 
     refused(
-        f.token.try_propose_change(
-            &TokenChange::Upgrade(BytesN::from_array(&f.e, &[9; 32])),
-            &f.admin,
-        ),
+        f.token
+            .try_propose_change(&TokenChange::Upgrade(BytesN::from_array(&f.e, &[9; 32]))),
         ShareTokenError::UpgradeAlreadyPending,
     );
 }
@@ -511,21 +517,13 @@ fn only_the_admin_proposes_cancels_and_applies() {
     f.sign_only_as(
         &stranger,
         "propose_change",
-        (change.clone(), stranger.clone()).into_val(&f.e),
+        (change.clone(),).into_val(&f.e),
     );
-    assert!(f.token.try_propose_change(&change, &stranger).is_err());
-    f.sign_only_as(
-        &stranger,
-        "cancel_change",
-        (id, stranger.clone()).into_val(&f.e),
-    );
-    assert!(f.token.try_cancel_change(&id, &stranger).is_err());
-    f.sign_only_as(
-        &stranger,
-        "apply_change",
-        (id, stranger.clone()).into_val(&f.e),
-    );
-    assert!(f.token.try_apply_change(&id, &stranger).is_err());
+    assert!(f.token.try_propose_change(&change).is_err());
+    f.sign_only_as(&stranger, "cancel_change", (id,).into_val(&f.e));
+    assert!(f.token.try_cancel_change(&id).is_err());
+    f.sign_only_as(&stranger, "apply_change", (id,).into_val(&f.e));
+    assert!(f.token.try_apply_change(&id).is_err());
     assert_eq!(f.token.pending_changes().len(), 1);
 }
 
@@ -537,26 +535,9 @@ fn an_applied_admin_change_starts_a_hand_over_the_next_admin_accepts() {
     let id = f.propose(TokenChange::Admin(next.clone()));
     f.advance(MIN_DELAY);
 
-    // The admin authorises this call and nothing else: the hand-over inside it
-    // asks for no further signature. The entrypoint checks the admin and the
-    // caller, so the same authorisation appears twice, as simulation records it.
-    let apply = MockAuthInvoke {
-        contract: &f.token.address,
-        fn_name: "apply_change",
-        args: (id, f.admin.clone()).into_val(&f.e),
-        sub_invokes: &[],
-    };
-    f.e.mock_auths(&[
-        MockAuth {
-            address: &f.admin,
-            invoke: &apply,
-        },
-        MockAuth {
-            address: &f.admin,
-            invoke: &apply,
-        },
-    ]);
-    f.token.apply_change(&id, &f.admin);
+    // One admin signature covers the call; the hand-over inside asks for none.
+    f.sign_only_as(&f.admin, "apply_change", (id,).into_val(&f.e));
+    f.token.apply_change(&id);
 
     f.e.mock_all_auths();
     assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
@@ -604,8 +585,8 @@ fn applied_rule_and_verifier_changes_take_effect() {
     let second = f.propose(TokenChange::IdentityVerifier(verifier.clone()));
     f.advance(MIN_DELAY);
 
-    f.token.apply_change(&first, &f.admin);
-    f.token.apply_change(&second, &f.admin);
+    f.token.apply_change(&first);
+    f.token.apply_change(&second);
 
     assert_eq!(f.token.compliance(), rules);
     assert_eq!(f.token.identity_verifier(), verifier);
@@ -630,7 +611,7 @@ fn proposing_and_applying_publish_the_change() {
     );
 
     f.advance(MIN_DELAY);
-    f.token.apply_change(&id, &f.admin);
+    f.token.apply_change(&id);
     let events = f.e.events().all().filter_by_contract(&f.token.address);
     assert_eq!(
         events.events().last(),
@@ -686,15 +667,115 @@ fn every_admin_call_restores_the_instance_ttl() {
             .transfer_admin_role(&next, &(f.e.ledger().sequence() + ADMIN_ACCEPT_LEDGERS))
     });
     f.restores_the_instance(|| f.token.transfer_admin_role(&next, &0));
-    f.restores_the_instance(|| f.token.bind_vault(&f.vault.address, &f.admin));
-    f.restores_the_instance(|| f.token.finish_setup(&f.admin));
+    f.restores_the_instance(|| f.token.bind_vault(&f.vault.address));
+    f.restores_the_instance(|| f.token.finish_setup());
 
     let rules = TokenChange::Compliance(Address::generate(&f.e));
     let mut id = 0;
     f.restores_the_instance(|| id = f.propose(rules.clone()));
-    f.restores_the_instance(|| f.token.cancel_change(&id, &f.admin));
+    f.restores_the_instance(|| f.token.cancel_change(&id));
 
     let id = f.propose(rules);
     f.advance(MIN_DELAY);
-    f.restores_the_instance(|| f.token.apply_change(&id, &f.admin));
+    f.restores_the_instance(|| f.token.apply_change(&id));
+}
+
+#[test]
+fn each_admin_call_asks_the_admin_for_one_signature() {
+    let f = setup();
+    let holder = Address::generate(&f.e);
+    let rules = Address::generate(&f.e);
+    let verifier = Address::generate(&f.e);
+    let live_until = f.e.ledger().sequence() + ADMIN_ACCEPT_LEDGERS;
+
+    f.token.pause(&f.admin);
+    f.signed_once_by(&f.admin, "pause", (f.admin.clone(),).into_val(&f.e));
+    f.token.unpause(&f.admin);
+    f.signed_once_by(&f.admin, "unpause", (f.admin.clone(),).into_val(&f.e));
+    f.token.set_compliance(&rules, &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "set_compliance",
+        (rules.clone(), f.admin.clone()).into_val(&f.e),
+    );
+    f.token.set_identity_verifier(&verifier, &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "set_identity_verifier",
+        (verifier, f.admin.clone()).into_val(&f.e),
+    );
+    f.token.grant_role(&holder, &manager(), &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "grant_role",
+        (holder.clone(), manager(), f.admin.clone()).into_val(&f.e),
+    );
+    f.token.revoke_role(&holder, &manager(), &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "revoke_role",
+        (holder.clone(), manager(), f.admin.clone()).into_val(&f.e),
+    );
+    f.token.transfer_admin_role(&holder, &live_until);
+    f.signed_once_by(
+        &f.admin,
+        "transfer_admin_role",
+        (holder.clone(), live_until).into_val(&f.e),
+    );
+    f.token.transfer_admin_role(&holder, &0);
+    f.signed_once_by(
+        &f.admin,
+        "transfer_admin_role",
+        (holder.clone(), 0_u32).into_val(&f.e),
+    );
+
+    f.token.bind_vault(&f.vault.address);
+    f.signed_once_by(
+        &f.admin,
+        "bind_vault",
+        (f.vault.address.clone(),).into_val(&f.e),
+    );
+    f.token.finish_setup();
+    f.signed_once_by(&f.admin, "finish_setup", soroban_sdk::Vec::new(&f.e));
+
+    let change = TokenChange::Compliance(rules);
+    let id = f.token.propose_change(&change);
+    f.signed_once_by(&f.admin, "propose_change", (change.clone(),).into_val(&f.e));
+    f.token.cancel_change(&id);
+    f.signed_once_by(&f.admin, "cancel_change", (id,).into_val(&f.e));
+
+    let id = f.token.propose_change(&TokenChange::Admin(holder.clone()));
+    f.advance(MIN_DELAY);
+    f.token.apply_change(&id);
+    f.signed_once_by(&f.admin, "apply_change", (id,).into_val(&f.e));
+    f.token.accept_admin_transfer();
+    f.signed_once_by(
+        &holder,
+        "accept_admin_transfer",
+        soroban_sdk::Vec::new(&f.e),
+    );
+}
+
+#[test]
+fn a_caller_other_than_the_admin_is_refused_even_when_it_signs() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+
+    refused(f.token.try_pause(&stranger), ShareTokenError::AdminRequired);
+    f.token.pause(&f.admin);
+    refused(
+        f.token.try_unpause(&stranger),
+        ShareTokenError::AdminRequired,
+    );
+    refused(
+        f.token
+            .try_set_compliance(&Address::generate(&f.e), &stranger),
+        ShareTokenError::AdminRequired,
+    );
+    refused(
+        f.token
+            .try_set_identity_verifier(&Address::generate(&f.e), &stranger),
+        ShareTokenError::AdminRequired,
+    );
+    assert!(f.token.paused());
 }

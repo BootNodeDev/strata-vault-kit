@@ -130,6 +130,11 @@ describe("an account with no role", () => {
 		await send(vault(c, governance).unpause({ caller: governance.publicKey() }))
 	})
 
+	it("cannot pause the share token", async () => {
+		const token = shareToken(c, outsider)
+		expectRefused(await token.pause({ caller: who }), token, "AdminRequired")
+	})
+
 	it("cannot set the NAV pause", async () => {
 		await expect(
 			send(oracle(c, outsider).set_nav_paused({ paused: true })),
@@ -206,7 +211,6 @@ describe("the compliance authority's reach", () => {
 						tag: "IdentityVerifier",
 						values: [c.deployment.contracts.compliance],
 					},
-					caller: compliance.publicKey(),
 				}),
 			),
 		).rejects.toThrow(/signatures/)
@@ -234,15 +238,10 @@ describe("the share token after setup", () => {
 		const id = await send(
 			token.propose_change({
 				change: { tag: "IdentityVerifier", values: [verifier()] },
-				caller: caller(),
 			}),
 		)
-		expectRefused(
-			await token.apply_change({ id, caller: caller() }),
-			token,
-			"ChangeNotReady",
-		)
-		await send(token.cancel_change({ id, caller: caller() }))
+		expectRefused(await token.apply_change({ id }), token, "ChangeNotReady")
+		await send(token.cancel_change({ id }))
 		expect((await token.pending_changes()).result).toEqual([])
 	})
 })

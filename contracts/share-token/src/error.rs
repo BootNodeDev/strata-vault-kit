@@ -6,9 +6,11 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 pub enum ShareTokenError {
-    /// The token must always have an admin: `pause`, `unpause` and role
-    /// management need it. Hand it over instead: propose and apply an `Admin`
-    /// change (`transfer_admin_role` during setup), then the nominee calls
+    /// The call needs the admin. `pause`, `unpause`, `set_compliance` and
+    /// `set_identity_verifier` refuse any other caller. `renounce_admin` is
+    /// always refused, because the token must always have an admin: hand it
+    /// over instead by proposing and applying an `Admin` change
+    /// (`transfer_admin_role` during setup), then the nominee calls
     /// `accept_admin_transfer`.
     AdminRequired = 7000,
     /// No pending change has this id.

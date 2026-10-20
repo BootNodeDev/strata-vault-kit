@@ -61,6 +61,13 @@ fn upgrade_pending(e: &Env) -> bool {
     })
 }
 
+/// Stands in for `#[only_admin]` where an OpenZeppelin trait fixes the caller.
+pub(crate) fn caller_is_admin(e: &Env, caller: &Address) {
+    if access_control::get_admin(e).as_ref() != Some(caller) {
+        panic_with_error!(e, ShareTokenError::AdminRequired);
+    }
+}
+
 /// The admin signs too, and is a different account from the caller.
 pub(crate) fn admin_co_signs(e: &Env, caller: &Address) {
     let admin = access_control::enforce_admin_auth(e);
