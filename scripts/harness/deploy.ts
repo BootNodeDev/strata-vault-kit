@@ -23,6 +23,7 @@ import {
 	type Deployment,
 } from "./lib/deployment.js"
 import { network, type Network } from "./lib/network.js"
+import { assignedKeys, loadPeople } from "./lib/people.js"
 
 const wasmOf = (name: ContractName): string =>
 	join(REPO_ROOT, "target", "wasm32v1-none", "release", `${name}.wasm`)
@@ -198,9 +199,17 @@ async function main(): Promise<void> {
 	const server = new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" })
 	console.log(`deploying to ${net.name} (${net.rpcUrl})`)
 
-	const accounts = freshAccounts()
-	await fund(net, server, Object.values(accounts))
-	console.log(`funded ${Object.keys(accounts).length} accounts`)
+	const accounts: Accounts = {
+		...freshAccounts(),
+		...assignedKeys(loadPeople(net.name)),
+	}
+	const distinct = [
+		...new Map(
+			Object.values(accounts).map((key) => [key.publicKey(), key]),
+		).values(),
+	]
+	await fund(net, server, distinct)
+	console.log(`funded ${distinct.length} accounts`)
 
 	const asset = new Asset("USDC", accounts.issuer.publicKey())
 	const assetContract = await deployAssetContract(net, asset, accounts.issuer)

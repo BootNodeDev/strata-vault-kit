@@ -1,0 +1,5 @@
+# Public testnet-only keys for the e2e runbook accounts
+scripts/harness/people.testnet.json:generic-api-key:4
+scripts/harness/people.testnet.json:generic-api-key:9
+scripts/harness/people.testnet.json:generic-api-key:14
+scripts/harness/people.testnet.json:generic-api-key:19

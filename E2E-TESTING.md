@@ -1,71 +1,81 @@
 # E2E testing on testnet
 
-A fresh testnet deployment of `main` at `45e0e23`, seeded with a known state for end-to-end and manual testing.
+Deploy fresco de `main` (`45e0e23`) en Stellar testnet, con una cuenta por persona para correr el runbook a mano.
 
-These are **testnet-only** keys. They hold no real value. Never reuse them on mainnet.
+Son keys **solo de testnet**. No tienen valor real y son públicas a propósito. No las uses nunca en mainnet.
 
-- Network: Stellar testnet (`https://soroban-testnet.stellar.org`)
-- Deployed: 2026-10-20T18:45:08.110Z (ledger 5299664)
-- Machine-readable copy: `scripts/harness/deployed.testnet.json` (gitignored, local to the deployer)
+- Red: Stellar testnet (`https://soroban-testnet.stellar.org`, passphrase `Test SDF Network ; September 2015`)
+- Deploy: 2026-10-20T19:02:22.970Z (ledger 5299871)
 
-## Contracts
+## Personas
 
-| Contract | Address |
+Importá el secret en una wallet (por ejemplo Freighter, en testnet). Cada cuenta tiene unos 10.000 XLM, trustline de USDC, 50.000 USDC y está en el allowlist, así que también puede operar como holder.
+
+| Persona | Roles | Public key | Secret key |
+| --- | --- | --- | --- |
+| **Maxi** | governance (admin del vault, del oracle y del share token) | `GD4E4AI7LVHIRX7QXAHQGRPABC6NFWFKHKJ6ZUAQNIGELVVN7MSFJWLF` | `SDHNHV6MEJP26WLCHC6F27XRLJ6H34R33KGKTQFECS7PYVQVB3RW2CE4` |
+| **Pablo** | manager<br>guardian (vault y oracle) | `GBE43ELIMD3CUR6WMAMTCMI5UWXNFWX3GWJ3RSSIKUGJGTSRHF5X645V` | `SBW54VWPHJTS4O2VVTU4PTV5KNJZR4BXM4QOMFJAKSAC4BQM2GRQ2MDG` |
+| **Luciano** | attester<br>treasury<br>custodian | `GCBLIOHMFFYK3GORQL2JIILW2YOGIGCDM6SUKX6RVF4U66E2XTXX42KW` | `SAOAAERXFPPJP4L7EUVECIHLOXIIVALC2CDD7OMIERCKWMQJ3247XUQT` |
+| **Iñaky** | compliance (admin del identity verifier, autoridad de compliance del share token)<br>outsider | `GCFUDBW2N26PBMMAMI3RVTA5O2WOGJO7GCH6E4PNFAVQNRVW2YEOELXE` | `SBD4TKZWYGHJDUS237S53UEJB45QO6WUOXRABUUNUYHLKNMCYTDLCK5G` |
+
+Luciano es a la vez treasury y custodian: `deploy_to_custodian` le manda el USDC a su propia cuenta.
+
+## Quién firma qué
+
+| Acción | Firma |
 | --- | --- |
-| `compliance` | `CCUKJYBN5KBCOX43RUPQPIPXMHLG2DT5WKAQA67BYDO7HPUWDGCOKJUR` |
-| `identity_verifier` | `CA3SPHMKVYLVODOD7YMB2SYPOFAYATHNMFPQ4INFCEXTIMAWYXRDKFU4` |
-| `share_token` | `CBJVWDMYIK2ZTN3XPXVRV3OXRHX6GN4BKDXGDHFYGP2XKFM5H5OBIRAF` |
-| `nav_oracle` | `CBV2X3SRCIVWTQ5OHX3FIBTHF5YO4KSUJKXHLD4FVDZGDMEYPOAOBXTS` |
-| `async_vault` | `CANQQHXL7W5NCQFSWP457EEP7FXR3PUWZZDO7APFKJ72SZYXMJ77ET7G` |
-| `asset` (USDC SAC) | `CDILNUCY2KIO6UE4J2MKJYEM2G2DJ5PBZDR7JYUJUXZ7LXG6L7JNSFDL` |
+| `request_deposit`, `request_redeem`, `claim_*`, cancelaciones | cualquier persona (todas son holders) |
+| `close_epoch` | Pablo |
+| Atestar el NAV en el oracle | Luciano |
+| `fulfill_epoch` | cualquiera (sin permisos); Iñaky como outsider |
+| `deploy_to_custodian` | Luciano (treasury) |
+| `fund` (devolver USDC al vault) | Luciano como custodian; en realidad cualquiera puede |
+| Pausar / despausar el vault o el oracle | Pablo |
+| Allowlist, freeze, transferencias forzadas | Iñaky |
+| Parámetros, roles, custodian, upgrades (timelock), wind-down | Maxi |
 
-USDC: code `USDC`, issuer `GA35PEYTIHOJWYYMEFOSTLLQYJD3NJLFRNP56XSRLNLW7YAQEC5ALQLX`.
+## Estado inicial
 
-## Seeded state
+- Epoch #1 **abierto**, sin requests.
+- Oracle sin NAV atestado todavía.
+- Custodian del vault: Luciano.
+- Vault sin fondos.
 
-Produced by `HARNESS_NETWORK=testnet npm run seed` in `scripts/harness`.
+## Contratos
 
-- Epoch #1: holder-1 deposited 5,000 USDC and holder-2 3,000 USDC at a NAV of $1.00. Both claimed their shares.
-- Treasury moved 4,000 USDC to the custodian.
-- Epoch #2 is **open** with two pending requests:
-  - holder-1: redeem 1,000 shares
-  - holder-3: deposit 2,500 USDC
-
-| Metric | Value |
+| Contrato | Address |
 | --- | --- |
-| Vault liquid USDC | 6,500 (4,000 free reserve + 2,500 pending escrow) |
-| Custodian | 4,000 USDC |
-| Total value (NAV basis) | 8,000 USDC |
-| Latest NAV | $1.00 |
+| `compliance` | `CCCA6XDCXBZWWTIDYGLTL5GEHROCZTGYAIRAFA2KBO2JAWOJFU3TMZCB` |
+| `identity_verifier` | `CDMV7DGGLGIWDWI4ERIBZ5YS2FZA3QVZPVUWCAWR5VBLVJMLFYCW6DML` |
+| `share_token` | `CCB23VF4CSI7QNWNDOAAAVOKOLWO5EEQFZIODWEXHS6OB3MMHGFZ3VA6` |
+| `nav_oracle` | `CDDRBLB3GHZGKHGFATZBKFSXC6XRVFLHNPVWHTIE67FVNDYHU2RRRNRO` |
+| `async_vault` | `CAGHFSATIJHNDXQA577APGG6GF2L7Q7KP6H2IUXVW6IT3CJ2OBE3QCEB` |
+| `asset` (USDC SAC) | `CAU7LDCUCLAWSJZS72B7VIPIE7FSN3T63D7MZMSSXTNLKYDYECVGH522` |
 
-## Accounts
+USDC: código `USDC`, issuer `GCUYFZRTNQ6WIIN5XBEYWVENKNVCBPK5BRXK4PDBCOGCYA4BZIRGMVIN`.
 
-Import a secret key into a wallet (e.g. Freighter, set to testnet) to act as that role. All accounts are funded with testnet XLM. Holders are allowlisted.
+## Cuentas del harness
 
-| Role | Public key | Secret key | USDC | Shares | Notes |
-| --- | --- | --- | --- | --- | --- |
-| **deployer** | `GAYUAX4KX7UTEFDEH74ZQ4UVFFHIDI4QQMZBG5HGROB2RWT43ETODZ2D` | `SCCXUU65HAO763EWNTKDB34RAWP2AXCPNCHUAD5J6NVMQIS77ZPT2JNT` | 0 | 0 | Deployed the contracts. No role after setup. |
-| **governance** | `GBKHGH6YL67A7BJK2EMUHVVW5SVRQPFM4UGQPTSTP5RZPFSVAS5DEKQB` | `SBTXJRZWYI3UROKMMLBD2RLMYIXLGAMIIPICAUPQMVA4L6KFLPM4INU3` | 0 | 0 | Admin: upgrades, timelock config, custodian, role grants. |
-| **manager** | `GBM4K7KKPTYX7VYQ3OMZXNSJBXRMYC3Y5NY7QUGXV3Q2N2CWLZ6TGP4U` | `SAXJN6H4PCIQUYD4J6L3IUHL2P7UACRKBYCQPTZTKIJCMQZV6JAXDSWY` | 0 | 0 | Closes epochs (`close_epoch`). |
-| **treasury** | `GDXJFM42WBF3PY5DRDIKYFN7NCEMJOYAZCVZ724H7FYNA52D4B67OVTD` | `SBCI3NC7T2VTBRI4XFILDK5NX2RWSZI3EEANQE6OE4L6L5Q4XUB4VKUI` | 0 | 0 | Moves capital to the custodian (`deploy_to_custodian`). |
-| **guardian** | `GC6RITGKYFPPPFISVDYTLOMI5N2O5NXIPWXXZJE66KJ44TAQWOGS7X7L` | `SAPHVL77L7VNRAWIEMBIJB7T5GB2Y3DP4BHLXQSRYZCL4T2SBLVFF5H5` | 0 | 0 | Pauses the vault and the oracle. |
-| **compliance** | `GA7PI44ZKEZGJBRNFMWUPSI7RHLDE5SZGJS7JJY3VS7QA3QQKSN5JGXH` | `SABRR7WK7SW77JSMBQODJ5QQK52H7F42C7T7333XM6FGDAZUVQUPV4EH` | 0 | 0 | Allowlists identities (identity verifier admin) and freezes shares (share token compliance authority). |
-| **attester** | `GAEVLCCCP37SOINVUSQ3O7PEMT3IUSWL6CWQSR4IW6KSA7QMCGJYP555` | `SDINAZ6PYB2EEWA3IH4TINXO2OGHJVEBKB5OA42YAAZ2BUEWOGKC77EI` | 0 | 0 | Attests NAV reports on the oracle. |
-| **custodian** | `GBWRU6F5VBZCD2VTBZALUF5FRDR5532R5343KIAU2O6V6OLL7R7VJK63` | `SCDEZ545RZTWLWIZRI6FZCIIFUYZUO4D5GHN3P4ZRIVNIN7467GSD7PK` | 4,000 | 0 | Off-chain custodian. Receives deployed capital. |
-| **issuer** | `GA35PEYTIHOJWYYMEFOSTLLQYJD3NJLFRNP56XSRLNLW7YAQEC5ALQLX` | `SALYIQ74ZJJD4AKVNWQWAVDOWDL5IJYVMV4EOSK6YUIRWETBSME2LZP7` | 0 | 0 | Issues the test USDC. |
-| **holder-1** | `GBWHFQWQBELRT4FP4TP3DOYPTTTZKTH6CXJAVK7ZKY6W6SXR6U4733OF` | `SARGZUA34SWPZJU43VK24EO5W5FTMCBVIFLNWILWRKB3G6TIVPHZD6JG` | 45,000 | 4,000 | Investor. 4,000 liquid shares + 1,000 pending redeem in epoch #2. |
-| **holder-2** | `GDNAITVEJZ45ITSUANJJK5FN7PKHB5KFZPZLKH5JB57BNVGKR576FPOE` | `SBKHH4Z6J275PMTA4HLUBRO37H54ZB7F4NBURW3EDM5XRRR55CPLTUHJ` | 47,000 | 3,000 | Investor. Shares claimed from epoch #1. |
-| **holder-3** | `GCES4U4XR3CFTLSDYK4BRJEWVVWSP5NKFYXLNRIIXCW2SV35SSUAHJ6A` | `SB7XGSJUGL7VUQPQKBNBMKXYYOCGTSZFHKZWAQIHQX544TFVWVQFMY7V` | 47,500 | 0 | Investor. 2,500 USDC pending deposit in epoch #2. |
-| **outsider** | `GDO3FXQIDRWYKOLAAKWLEUZRHIPJLTWFTFSLJBQ4R4A3FRAAPVXSMPRD` | `SAEH6PLTQTWSKYCX5XYOOKZH6HRQRSYI4P346QIYXR4R45PCZXG3WVO3` | 0 | 0 | No role. Permissionless calls (`fulfill_epoch`) and reads. |
+Las usan los scripts. No hacen falta para el runbook.
 
-## Redeploying
+| Cuenta | Para qué | Public key | Secret key |
+| --- | --- | --- | --- |
+| deployer | Deployó los contratos. Sin rol después. | `GC7UTBTYBYIXKBX3DWURKQQJNDKM35FEBIHJN63NT5OZIJRWFUP3VEC5` | `SBTOLGY2AMHDJSDTZRMSWOVOFN236M56YO57ZIA5WTRA7QCSIJEVWUQF` |
+| issuer | Emite el USDC de prueba. Usala para darle más USDC a alguien. | `GCUYFZRTNQ6WIIN5XBEYWVENKNVCBPK5BRXK4PDBCOGCYA4BZIRGMVIN` | `SBKDWFFTWAXKKZEIBG3XREEZ7KFHIUGKXNMOKLAJIW44HUUEB46GAYZA` |
+| holder-1 | Holder extra. | `GB6GENHQQWI3PRD6MVDIRO72VMIJCWENMHRSJU3Z53R372K5ZPHT7ILL` | `SB5RVYBJXKNOWMNBBXGWUHYJRKW75PY7PSX56GHPKXTOB7NW22MXYMHD` |
+| holder-2 | Holder extra. | `GDJ7VTRMJ5XGALSIJDV4V6PBZRQEZZ6NUQOFUDW6TNYOMZMSL536XNAK` | `SASZ5BFK2W6LOJR4UNVUHPICW4VRDYSATCQQAOF7ISPO3OZSKTTF6NVQ` |
+| holder-3 | Holder extra. | `GA6PAYUT232UAQKUYJ7QWF27JQWTKOVNRUHAF6B4CI3QT3XFKQAKSTXD` | `SAR27ZG7NEIKNBIC3U2ZFEP2MUKOOLJAPFZJXT4R2ZKIGOM5GO6T3EFX` |
+
+## Redeploy
+
+Los roles salen de `scripts/harness/people.testnet.json`. Si existe, `deploy` usa esas keys para los roles que lista, y keys nuevas para el resto.
 
 ```sh
 nix develop
 stellar contract build
 cd scripts/harness
-HARNESS_NETWORK=testnet npm run deploy
-HARNESS_NETWORK=testnet npm run seed
+HARNESS_NETWORK=testnet npm run deploy   # contratos nuevos, mismas keys de personas
+HARNESS_NETWORK=testnet npm run onboard  # trustline, USDC y allowlist por persona; custodian
 ```
 
-The deploy creates new accounts and contracts, so update this file afterwards.
+Los contratos cambian en cada deploy, así que después actualizá la tabla de contratos de este archivo.

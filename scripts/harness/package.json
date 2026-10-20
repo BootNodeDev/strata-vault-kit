@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test:happy-path": "vitest run happy-path.test.ts",
     "test:guards": "vitest run guards.test.ts",
-    "seed": "tsx seed.ts"
+    "seed": "tsx seed.ts",
+    "onboard": "tsx onboard.ts"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "16.1.0"
