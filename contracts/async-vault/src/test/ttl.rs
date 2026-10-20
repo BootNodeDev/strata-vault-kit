@@ -1,10 +1,12 @@
 use soroban_sdk::testutils::storage::{Instance as _, Persistent as _};
-use soroban_sdk::{IntoVal, Val};
+use soroban_sdk::{contracttype, IntoVal, Symbol, Val};
+use stellar_access::access_control::{AccessControlStorageKey, ROLE_EXTEND_AMOUNT};
 use stellar_tokens::fungible::{FungibleStorageKey, BALANCE_EXTEND_AMOUNT};
 use strata_storage::{INSTANCE_EXTEND_AMOUNT, PERSISTENT_EXTEND_AMOUNT};
 
 use super::*;
 use crate::keys::DataKey;
+use crate::roles::{GUARDIAN_ROLE, MANAGER_ROLE, TREASURY_ROLE};
 
 const TWO_DAYS: u64 = 2 * DAY_DURATION;
 
@@ -17,6 +19,44 @@ fn persistent_ttl(f: &Fixture, key: &DataKey) -> u32 {
 
 fn ttl_in<K: IntoVal<Env, Val>>(e: &Env, contract: &Address, key: &K) -> u32 {
     e.as_contract(contract, || e.storage().persistent().get_ttl(key))
+}
+
+/// OpenZeppelin keeps the type of a role's member-list key private. A type
+/// with the same variant name and fields encodes the same key.
+#[contracttype]
+struct RoleAccountKey {
+    role: Symbol,
+    index: u32,
+}
+
+#[contracttype]
+enum RoleMemberKey {
+    RoleAccounts(RoleAccountKey),
+}
+
+/// Every entry a grant writes: the role, its member-list slot, the member count, the role list.
+fn role_entry_ttls(e: &Env, contract: &Address, account: &Address, role: &Symbol) -> [u32; 4] {
+    let has_role = AccessControlStorageKey::HasRole(account.clone(), role.clone());
+    let index: u32 = e.as_contract(contract, || {
+        e.storage().persistent().get(&has_role).unwrap()
+    });
+    [
+        ttl_in(e, contract, &has_role),
+        ttl_in(
+            e,
+            contract,
+            &RoleMemberKey::RoleAccounts(RoleAccountKey {
+                role: role.clone(),
+                index,
+            }),
+        ),
+        ttl_in(
+            e,
+            contract,
+            &AccessControlStorageKey::RoleAccountsCount(role.clone()),
+        ),
+        ttl_in(e, contract, &AccessControlStorageKey::ExistingRoles),
+    ]
 }
 
 fn share_balance_ttl(f: &Fixture, account: &Address) -> u32 {
@@ -153,5 +193,57 @@ fn the_first_redemption_writes_the_vaults_share_balance_with_the_full_ttl() {
     assert_eq!(
         share_balance_ttl(&f, &f.vault.address),
         BALANCE_EXTEND_AMOUNT
+    );
+}
+
+#[test]
+fn the_constructor_writes_each_role_with_the_full_ttl() {
+    let e = Env::default();
+    testnet_minimum(&e);
+    let roles = distinct_roles(&e);
+
+    let vault = register_with(&e, roles.clone());
+
+    for (account, role) in [
+        (&roles.manager, MANAGER_ROLE),
+        (&roles.treasury, TREASURY_ROLE),
+        (&roles.guardian, GUARDIAN_ROLE),
+    ] {
+        assert_eq!(
+            role_entry_ttls(&e, &vault, account, &role),
+            [ROLE_EXTEND_AMOUNT; 4]
+        );
+    }
+}
+
+#[test]
+fn a_grant_during_setup_writes_the_role_with_the_full_ttl() {
+    let f = setup_unfinished();
+    let next = Address::generate(&f.e);
+    testnet_minimum(&f.e);
+
+    f.vault.grant_role(&next, &GUARDIAN_ROLE, &f.admin);
+
+    assert_eq!(
+        role_entry_ttls(&f.e, &f.vault.address, &next, &GUARDIAN_ROLE),
+        [ROLE_EXTEND_AMOUNT; 4]
+    );
+}
+
+#[test]
+fn a_grant_through_the_timelock_writes_the_role_with_the_full_ttl() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+    let id = f
+        .vault
+        .propose_change(&VaultChange::GrantRole(GUARDIAN_ROLE, next.clone()));
+    f.advance(MIN_UPGRADE_DELAY);
+    testnet_minimum(&f.e);
+
+    f.vault.apply_change(&id);
+
+    assert_eq!(
+        role_entry_ttls(&f.e, &f.vault.address, &next, &GUARDIAN_ROLE),
+        [ROLE_EXTEND_AMOUNT; 4]
     );
 }

@@ -1,17 +1,19 @@
-//! A balance or freeze the token creates reaches its extend target in the call that
+//! An entry the token creates reaches its extend target in the call that
 //! creates it, even where the network's minimum lifetime is shorter.
 
 use soroban_sdk::{
-    contract, contractimpl, symbol_short,
+    contract, contractimpl, contracttype, symbol_short,
     testutils::{storage::Persistent as _, Address as _, Ledger as _},
     Address, Env, IntoVal, String, Symbol, Val,
 };
+use stellar_access::access_control::{AccessControlStorageKey, ROLE_EXTEND_AMOUNT};
 use stellar_tokens::{
     fungible::{FungibleStorageKey, BALANCE_EXTEND_AMOUNT},
     rwa::{identity_verification, RWAStorageKey, FROZEN_EXTEND_AMOUNT},
 };
+use strata_timelock::{Clock, MIN_DELAY};
 
-use crate::{ShareToken, ShareTokenClient};
+use crate::{ShareToken, ShareTokenClient, TokenChange};
 use compliance::{Compliance, ComplianceClient};
 
 /// Testnet's minimum lifetime of a new persistent entry, in ledgers.
@@ -48,6 +50,36 @@ impl identity_verification::IdentityVerifier for OpenVerifier {
     }
 }
 
+/// Plays the vault: its clock lets a timelocked change land.
+#[contract]
+struct VaultStub;
+
+#[contractimpl(contracttrait)]
+impl strata_timelock::ClockSource for VaultStub {
+    fn timelock_clock(_e: &Env) -> Clock {
+        Clock {
+            delay: MIN_DELAY,
+            exit_window: 0,
+            paused_secs: 0,
+            paused: false,
+            winding_down: false,
+        }
+    }
+}
+
+/// OpenZeppelin keeps the type of a role's member-list key private. A type
+/// with the same variant name and fields encodes the same key.
+#[contracttype]
+struct RoleAccountKey {
+    role: Symbol,
+    index: u32,
+}
+
+#[contracttype]
+enum RoleMemberKey {
+    RoleAccounts(RoleAccountKey),
+}
+
 struct Fixture<'a> {
     e: Env,
     token: ShareTokenClient<'a>,
@@ -65,6 +97,23 @@ impl Fixture<'_> {
 
     fn balance_ttl(&self, account: &Address) -> u32 {
         self.persistent_ttl(&FungibleStorageKey::Balance(account.clone()))
+    }
+
+    /// Every entry a grant writes: the role, its member-list slot, the member count, the role list.
+    fn role_entry_ttls(&self, account: &Address, role: &Symbol) -> [u32; 4] {
+        let has_role = AccessControlStorageKey::HasRole(account.clone(), role.clone());
+        let index: u32 = self.e.as_contract(&self.token.address, || {
+            self.e.storage().persistent().get(&has_role).unwrap()
+        });
+        [
+            self.persistent_ttl(&has_role),
+            self.persistent_ttl(&RoleMemberKey::RoleAccounts(RoleAccountKey {
+                role: role.clone(),
+                index,
+            })),
+            self.persistent_ttl(&AccessControlStorageKey::RoleAccountsCount(role.clone())),
+            self.persistent_ttl(&AccessControlStorageKey::ExistingRoles),
+        ]
     }
 
     /// A manager to mint with, and a holder of `shares`.
@@ -270,6 +319,51 @@ fn a_partial_freeze_writes_its_entry_with_the_full_ttl() {
             FROZEN_EXTEND_AMOUNT
         );
     }
+}
+
+#[test]
+fn the_constructor_writes_the_compliance_role_with_the_full_ttl() {
+    let f = setup();
+
+    assert_eq!(
+        f.role_entry_ttls(&f.compliance_authority, &Symbol::new(&f.e, "compliance")),
+        [ROLE_EXTEND_AMOUNT; 4]
+    );
+}
+
+#[test]
+fn a_grant_during_setup_writes_the_role_with_the_full_ttl() {
+    let f = setup();
+    let vault = Address::generate(&f.e);
+
+    f.token.grant_role(&vault, &manager_role(), &f.admin);
+
+    assert_eq!(
+        f.role_entry_ttls(&vault, &manager_role()),
+        [ROLE_EXTEND_AMOUNT; 4]
+    );
+}
+
+#[test]
+fn a_grant_through_the_timelock_writes_the_role_with_the_full_ttl() {
+    let f = setup();
+    f.token.bind_vault(&f.e.register(VaultStub, ()));
+    f.token.finish_setup();
+    let next = Address::generate(&f.e);
+    let id = f
+        .token
+        .propose_change(&TokenChange::GrantRole(manager_role(), next.clone()));
+    f.e.ledger().with_mut(|l| {
+        l.timestamp += MIN_DELAY;
+        l.sequence_number += (MIN_DELAY / 5) as u32;
+    });
+
+    f.token.apply_change(&id);
+
+    assert_eq!(
+        f.role_entry_ttls(&next, &manager_role()),
+        [ROLE_EXTEND_AMOUNT; 4]
+    );
 }
 
 #[test]

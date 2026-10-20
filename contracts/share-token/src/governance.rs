@@ -9,6 +9,7 @@ use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
 use crate::error::ShareTokenError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, SetupFinished, VaultBound};
+use crate::extend;
 use crate::guards;
 use crate::ShareToken;
 
@@ -106,7 +107,8 @@ pub(crate) fn apply(e: &Env, id: u32) {
     match &change {
         TokenChange::Upgrade(hash) => upgradeable::upgrade(e, hash),
         TokenChange::GrantRole(role, account) => {
-            access_control::grant_role_no_auth(e, account, role, &admin)
+            access_control::grant_role_no_auth(e, account, role, &admin);
+            extend::role_entries(e, account, role);
         }
         TokenChange::RevokeRole(role, account) => {
             access_control::revoke_role_no_auth(e, account, role, &admin)

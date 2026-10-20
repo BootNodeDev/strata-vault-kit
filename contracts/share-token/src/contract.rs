@@ -37,12 +37,9 @@ impl ShareToken {
     ) {
         Base::set_metadata(e, 7, name, symbol);
         access_control::set_admin(e, &admin);
-        access_control::grant_role_no_auth(
-            e,
-            &compliance_authority,
-            &Symbol::new(e, COMPLIANCE_ROLE),
-            &admin,
-        );
+        let compliance_role = Symbol::new(e, COMPLIANCE_ROLE);
+        access_control::grant_role_no_auth(e, &compliance_authority, &compliance_role, &admin);
+        extend::role_entries(e, &compliance_authority, &compliance_role);
         RWA::set_compliance(e, &compliance);
         RWA::set_identity_verifier(e, &identity_verifier);
         upgradeable::set_schema_version(e, 1);
@@ -187,6 +184,7 @@ impl AccessControl for ShareToken {
         guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         access_control::grant_role(e, &account, &role, &caller);
+        extend::role_entries(e, &account, &role);
     }
 
     /// Instant for `compliance`. Revoking `manager` waits like a grant,
