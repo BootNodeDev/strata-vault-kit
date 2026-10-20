@@ -135,7 +135,8 @@ pub(crate) fn wind_down_delay_in_bounds(e: &Env, secs: u64) {
     }
 }
 
-/// An exit takes a full notice, so a delay shorter than one is not a window.
+/// A shorter delay than the notice would let a change land before an epoch
+/// sealed at its proposal could be priced.
 pub(crate) fn upgrade_delay_in_bounds(e: &Env, secs: u64) {
     if secs < MIN_UPGRADE_DELAY {
         panic_with_error!(e, VaultError::UpgradeDelayTooShort);

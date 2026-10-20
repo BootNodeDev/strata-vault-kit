@@ -140,7 +140,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`async_vault`** | `roles.governance` | `Address` | Governance multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.treasury` | `Address` | Treasury multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.guardian` | `Address` | Guardian multisig authority | `async_vault.constructor_args` |
-| **`async_vault`** | `roles.manager` | `Address` | Manager authority (closes epochs) | `async_vault.constructor_args` |
+| **`async_vault`** | `roles.manager` | `Address` | Account that gets the vault's `manager` role (closes epochs); a role, not one of the five authorities | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.compliance` | `Address` | Compliance multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.attester` | `Address` | Attestation authority (mirrors oracle reporter) | `async_vault.constructor_args` |
 
@@ -197,7 +197,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 ## 3. Role & Authority Matrix
 
-Strata distributes control across five native Stellar multisig authorities and permissionless public entrypoints. Every privileged function is mapped to exactly one authority, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An admin entrypoint the kit defines takes no caller argument: the stored admin signs it.
+Strata distributes control across five native Stellar multisig authorities, two `manager` roles and permissionless public entrypoints. Every privileged function needs exactly one of these authorities or roles, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An admin entrypoint the kit defines takes no caller argument: the stored admin signs it.
 
 ### Authority Capabilities & Anti-Capabilities
 

@@ -138,7 +138,6 @@ impl AsyncVault {
         oracle: Address,
         roles: VaultRoles,
     ) {
-        // `roles` holds the five authorities and the manager; the attester is not read.
         guards::roles_distinct(e, &roles);
 
         access_control::set_admin(e, &roles.governance);
