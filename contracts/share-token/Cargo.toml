@@ -15,6 +15,7 @@ stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
 stellar-tokens = { workspace = true }
 stellar-contract-utils = { workspace = true }
+storage = { path = "../../crates/storage" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

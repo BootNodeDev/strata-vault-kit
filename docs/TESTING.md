@@ -27,6 +27,7 @@ than a day short. The instance follows the same rule.
 | Persistent entries round-trip and get the full TTL on write | [`crates/storage/src/test.rs`](../crates/storage/src/test.rs) | `persistent_round_trips`, `writing_sets_the_full_ttl` |
 | A read restores a decayed entry; a missing entry is not created | [`crates/storage/src/test.rs`](../crates/storage/src/test.rs) | `reading_a_decayed_entry_restores_the_full_ttl`, `reading_a_missing_entry_creates_nothing` |
 | Instance writes and reads extend the contract instance | [`crates/storage/src/test.rs`](../crates/storage/src/test.rs) | `instance_writes_bump_the_instance`, `reading_the_instance_restores_its_ttl` |
+| The share token, identity verifier and compliance contract extend their own instance on every call that does work | [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs), [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs), [`contracts/compliance/src/test.rs`](../contracts/compliance/src/test.rs) | `a_transfer_restores_the_instance_ttl`, `the_vaults_mint_burn_and_escrow_restore_the_instance_ttl`, `allowing_and_checking_restore_the_instance_ttl`, `the_hooks_a_token_calls_after_moving_shares_restore_the_instance_ttl` |
 | Vault requests and epochs are written with the full TTL | [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs) | `a_request_and_its_epoch_are_written_with_the_full_ttl`, `a_redemption_request_is_written_with_the_full_ttl` |
 | Reading a vault request, epoch or the instance restores its TTL | [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs) | `reading_a_decayed_request_restores_its_full_ttl`, `reading_a_decayed_epoch_restores_its_full_ttl`, `any_vault_read_restores_the_instance_ttl` |
 | A request still claims, and a wind-down position still pays, after most of a month | [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs), [`contracts/async-vault/src/test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) | `a_pending_request_still_claims_after_most_of_a_month`, `a_position_survives_the_ledger_advancing` |
@@ -38,7 +39,9 @@ So these tests check the TTL numbers the contracts set, not what the network
 does once an entry is archived.
 
 The share token's balances and roles are stored by the OpenZeppelin Stellar
-library, which manages their TTL itself.
+library, which extends them when they are read or written. It never extends the
+instance, so the token, the identity verifier and the compliance contract
+extend their own on every call that does work.
 
 ## Authorization
 
