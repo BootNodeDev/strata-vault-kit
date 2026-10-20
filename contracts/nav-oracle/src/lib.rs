@@ -32,62 +32,75 @@ pub const MAX_FRESHNESS_SECS: u64 = 35 * strata_timelock::DAY_DURATION;
 /// below where the deviation arithmetic could overflow.
 pub const MAX_ANSWER: i128 = 1_000_000 * WAD;
 
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(u32)]
-pub enum OracleError {
-    InvalidConfig = 3001,
-    /// `nav_per_share <= 0`, or outside `[min_answer, max_answer]`.
-    NavOutOfBand = 3002,
-    /// Attested before `cooldown_secs` elapsed since the last record.
-    CooldownActive = 3003,
-    /// The move from the last record exceeds `max_up_bps` (a rise) or
-    /// `max_down_bps` (a fall).
-    DeviationExceeded = 3004,
-    /// `expires_at` not in the future — the record would be born stale.
-    ExpiresInPast = 3005,
-    NoRecord = 3006,
-    /// `ensure_consumable` found the feed in a state other than `Valid`.
-    NotConsumable = 3007,
-    /// `clear_latest` was called while the NAV was not paused.
-    NavNotPaused = 3008,
-    /// The oracle must always have an admin. Hand it over instead: propose and
-    /// apply an `Admin` change (`transfer_admin_role` during setup), then the
-    /// nominee calls `accept_admin_transfer`.
-    AdminRequired = 3009,
-    /// The NAV is paused. Unpause it first; a report never lifts it.
-    NavPaused = 3010,
-    /// No pending change has this id.
-    ChangeNotFound = 3011,
-    /// The change's delay has not elapsed.
-    ChangeNotReady = 3012,
-    /// As many changes as the timelock holds already wait.
-    TooManyPendingChanges = 3013,
-    /// Changes are instant until setup finishes; there is nothing to propose yet.
-    SetupOpen = 3014,
-    /// A direct call cannot make this change. After setup it goes through
-    /// `propose_change`; setting a role admin is never allowed.
-    UseTimelock = 3015,
-    /// Only possible while setup is open, and only once.
-    SetupClosed = 3016,
-    /// Setup cannot finish before the oracle is bound to its vault.
-    VaultNotBound = 3017,
-    /// The vault is winding down, so no change may be proposed or applied.
-    WindDownActive = 3018,
-    /// The vault is paused, which holds every timelocked change.
-    VaultPaused = 3019,
-    /// The change's delay is shorter than the vault's notice, so an investor
-    /// could not complete an exit before it lands.
-    DelayBelowNotice = 3020,
-    /// An upgrade already waits. Cancel it before proposing another.
-    UpgradeAlreadyPending = 3021,
-    /// An admin hand-over offered during setup is still open. Setup finishes
-    /// once it is accepted, cancelled or expired, so no nominee from setup can
-    /// accept after changes start to wait.
-    AdminTransferPending = 3025,
-    /// The configuration the constructor writes is absent from instance
-    /// storage.
-    NotInitialized = 3026,
+strata_bindings::error_enum! {
+    strata_bindings::ORACLE_ERRORS,
+
+    /// Oracle failures, coded 3000 to 3999. Codes are stable once assigned and
+    /// are never reused; a removed variant leaves its number retired.
+    #[contracterror]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    #[repr(u32)]
+    pub enum OracleError {
+        /// A config breaks a bound: `freshness_duration` from 1 s to 35 days,
+        /// `cooldown_secs` from 1 s to `freshness_duration`, `min_answer` above
+        /// zero and at most `max_answer`, `max_answer` at most `MAX_ANSWER`,
+        /// and each move cap from 1 to 10,000 bps.
+        InvalidConfig = 3001,
+        /// `nav_per_share <= 0`, or outside `[min_answer, max_answer]`.
+        NavOutOfBand = 3002,
+        /// Attested before `cooldown_secs` elapsed since the last record.
+        CooldownActive = 3003,
+        /// The move from the last record exceeds `max_up_bps` (a rise) or
+        /// `max_down_bps` (a fall).
+        DeviationExceeded = 3004,
+        /// `expires_at` not in the future — the record would be born stale.
+        ExpiresInPast = 3005,
+        /// No report is stored: none has been accepted yet, or `clear_latest`
+        /// removed it. `latest`, `nav_per_share` and `attested_at` fail with it.
+        NoRecord = 3006,
+        /// `ensure_consumable` found the feed in a state other than `Valid`.
+        NotConsumable = 3007,
+        /// `clear_latest` was called while the NAV was not paused.
+        NavNotPaused = 3008,
+        /// `renounce_admin` is always refused: the oracle must always have an
+        /// admin. Hand it over instead: propose and apply an `Admin` change
+        /// (`transfer_admin_role` during setup), then the nominee calls
+        /// `accept_admin_transfer`.
+        AdminRequired = 3009,
+        /// The NAV is paused. Unpause it first; a report never lifts it.
+        NavPaused = 3010,
+        /// No pending change has this id.
+        ChangeNotFound = 3011,
+        /// The change's delay has not elapsed.
+        ChangeNotReady = 3012,
+        /// As many changes as the timelock holds already wait.
+        TooManyPendingChanges = 3013,
+        /// Changes are instant until setup finishes; there is nothing to propose yet.
+        SetupOpen = 3014,
+        /// A direct call cannot make this change. After setup it goes through
+        /// `propose_change`; setting a role admin is never allowed.
+        UseTimelock = 3015,
+        /// Only possible while setup is open, and only once.
+        SetupClosed = 3016,
+        /// Setup cannot finish before the oracle is bound to its vault.
+        VaultNotBound = 3017,
+        /// The vault is winding down, so no change may be proposed or applied.
+        WindDownActive = 3018,
+        /// The vault is paused, which holds every timelocked change.
+        VaultPaused = 3019,
+        /// The change's delay is shorter than the vault's notice, so an investor
+        /// could not complete an exit before it lands.
+        DelayBelowNotice = 3020,
+        /// An upgrade already waits. Cancel it before proposing another.
+        UpgradeAlreadyPending = 3021,
+        /// An admin hand-over offered during setup is still open. Setup finishes
+        /// once it is accepted, cancelled or expired, so no nominee from setup can
+        /// accept after changes start to wait.
+        AdminTransferPending = 3025,
+        /// The configuration the constructor writes is absent from instance
+        /// storage.
+        NotInitialized = 3026,
+    }
 }
 
 #[contractevent]

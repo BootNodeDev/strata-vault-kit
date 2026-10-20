@@ -20,38 +20,43 @@ use strata_bindings::VaultBinding;
 
 pub use governance::{ComplianceChange, CompliancePendingChange, ADMIN_ACCEPT_LEDGERS};
 
-/// Compliance contract failures. Codes are stable once assigned and are never
-/// reused; a removed variant leaves its number retired.
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(u32)]
-pub enum ComplianceContractError {
-    /// No pending change has this id.
-    ChangeNotFound = 8001,
-    /// The change's delay has not elapsed.
-    ChangeNotReady = 8002,
-    /// As many changes as the timelock holds already wait.
-    TooManyPendingChanges = 8003,
-    /// Changes are instant until setup finishes; there is nothing to propose yet.
-    SetupOpen = 8004,
-    /// A direct call cannot make this change after setup: it goes through
-    /// `propose_change`.
-    UseTimelock = 8005,
-    /// Only possible while setup is open, and only once.
-    SetupClosed = 8006,
-    /// Setup cannot finish before the contract is bound to its vault.
-    VaultNotBound = 8007,
-    /// The vault is winding down, so no change may be proposed or applied.
-    WindDownActive = 8008,
-    /// The vault is paused, which holds every timelocked change.
-    VaultPaused = 8009,
-    /// The change's delay is shorter than the vault's notice, so an investor
-    /// could not complete an exit before it lands.
-    DelayBelowNotice = 8010,
-    /// An admin hand-over offered during setup is still open. Setup finishes
-    /// once it is accepted, cancelled or expired, so no nominee from setup can
-    /// accept after changes start to wait.
-    AdminTransferPending = 8011,
+strata_bindings::error_enum! {
+    strata_bindings::COMPLIANCE_ERRORS,
+
+    /// Compliance contract failures, coded 8000 to 8999. Codes are stable once
+    /// assigned and are never reused; a removed variant leaves its number
+    /// retired.
+    #[contracterror]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    #[repr(u32)]
+    pub enum ComplianceContractError {
+        /// No pending change has this id.
+        ChangeNotFound = 8001,
+        /// The change's delay has not elapsed.
+        ChangeNotReady = 8002,
+        /// As many changes as the timelock holds already wait.
+        TooManyPendingChanges = 8003,
+        /// Changes are instant until setup finishes; there is nothing to propose yet.
+        SetupOpen = 8004,
+        /// A direct call cannot make this change after setup: it goes through
+        /// `propose_change`.
+        UseTimelock = 8005,
+        /// Only possible while setup is open, and only once.
+        SetupClosed = 8006,
+        /// Setup cannot finish before the contract is bound to its vault.
+        VaultNotBound = 8007,
+        /// The vault is winding down, so no change may be proposed or applied.
+        WindDownActive = 8008,
+        /// The vault is paused, which holds every timelocked change.
+        VaultPaused = 8009,
+        /// The change's delay is shorter than the vault's notice, so an investor
+        /// could not complete an exit before it lands.
+        DelayBelowNotice = 8010,
+        /// An admin hand-over offered during setup is still open. Setup finishes
+        /// once it is accepted, cancelled or expired, so no nominee from setup can
+        /// accept after changes start to wait.
+        AdminTransferPending = 8011,
+    }
 }
 
 #[contractevent]
