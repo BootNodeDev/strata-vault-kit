@@ -316,7 +316,7 @@ batch boundary, though not the price it receives.
 - Request: moves the deposit asset into escrow; at most one active request per holder. The vault first asks the share token whether the address is frozen and asks the token's identity verifier, and refuses a frozen address or one that could not receive the shares, before any cash moves; the token checks again when it mints at claim time.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set at the epoch's price, and the economic supply liability is recorded. To avoid unbounded loops that exceed Soroban transaction resource limits, physical share minting occurs lazily when each investor executes `claim_deposit`.
 - Cancellation: atomic, and returns the escrowed asset in full. Open while the epoch is open. Once sealed, a readable price closes it, even while the notice still runs: an investor who can see the price cannot decline it. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — it opens again, so escrow is never stuck behind a stalled feed. The epoch is then priced at the latest valid report at fulfil time. Cancellation also remains open during an active wind-down, allowing pending depositors to recover their escrowed assets when pricing is closed. A frozen depositor's cancellation is held until the freeze is lifted, in a wind-down too.
-- Share claim: verifies the receiver and delivers the shares via `mint`. A receiver off the allowlist gets no shares: they join the holder's redemption in the open epoch and are paid in cash at that epoch's price; in a wind-down they join the holder's wind-down entitlement. A frozen receiver is held until the freeze is lifted. No nominal refund exists after pricing.
+- Share claim: verifies the receiver and delivers the shares via `mint`. A receiver off the allowlist gets no shares: they join the holder's redemption in the open epoch and are paid in cash at that epoch's price; in a wind-down they join the holder's wind-down entitlement. A frozen receiver is held until the freeze is lifted. The only refund after pricing is for a deposit worth less than one share base unit, which mints nothing: its asset comes back at claim, from the free reserve. Pricing does not set that refund aside, because it sees only the epoch's totals and reserving it would mean visiting every request for less than one share base unit each. Treasury can deploy that cash, or a wind-down round credit it, before the claim, which then waits until the free reserve covers it again.
 
 #### Redemption
 
@@ -375,6 +375,13 @@ uncovered      = max(committed - liquid_reserve, 0)
 
 `wind_down_owed` is what the wind-down rounds have credited to holders and they
 have not claimed yet. It is zero outside a wind-down.
+
+The vault also reports `total_economic_supply`: shares held outside the vault
+plus shares priced for deposits and not yet minted. It leaves out the shares
+escrowed by a redemption that is not priced yet, although the next price still
+applies to them. The deposit cap limits deposited capital: what the vault holds
+plus `net_deployed` (sent to the custodian less funded back), less `committed`,
+in asset units at cost, so a gain or a loss at the custodian never moves it.
 
 **Attestation guardrails:** the reporter is a multisig, never a single key.
 Attestations are ordered by their acceptance time on the ledger. The price must
@@ -437,8 +444,11 @@ interface today.
 - The custodian is a genesis-configured slot; only governance can rotate it.
   Transfers to the custodian move free reserve only, only to that address, and
   only while nothing is uncovered.
-- Transfers from the custodian are always open and credit only assets actually
-  received.
+- Transfers from the custodian are always open: `fund`, which anyone may call,
+  credits only the assets it receives and lowers `net_deployed` by them. The
+  custodian repays through `fund`. A plain transfer to the vault also lands in
+  the reserve but leaves `net_deployed` as it was, so from then on the same
+  money counts twice toward the deposit cap.
 - The exposed figures (share price, liquid reserve, committed, uncovered) make
   reserve coverage legible to investors and integrators.
 - Closing a vault is a dedicated, announced state. Governance proposes a
@@ -456,10 +466,11 @@ interface today.
   joins the next round's pot.
 - A wind-down distributes what is on chain. The vault cannot compel the custodian
   to return capital; recovering the rest is off-chain work, and nothing here is a
-  guarantee that it will be recovered. Two further limits are on the record: a
+  guarantee that it will be recovered. Three further limits are on the record: a
   holder who never surrenders their shares is never paid, because no entrypoint
   may iterate over holders; a refund owed to a deposit priced at zero shares
-  is not tracked as a cash liability, so a round can credit the assets it needed;
+  is not tracked as a cash liability, so a round can credit the assets it needed
+  (§8.4);
   and symmetrically, a redemption priced at zero assets pays nothing, and once
   the wind-down is active its claim burns the escrowed shares instead of
   returning them.
