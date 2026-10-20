@@ -122,6 +122,10 @@ async function main(): Promise<void> {
 		const wasmHash = await keepAlive(rpc, { id }, `${name} instance`, latest)
 		if (wasmHash !== undefined) code.add(wasmHash)
 	}
+	for (const wasmHash of code) {
+		await keepAlive(rpc, { wasmHash }, `code ${wasmHash.slice(0, 8)}`, latest)
+	}
+	// Reading a queue simulates a call, so the instance and its Wasm come first.
 	for (const [name, id] of contracts) {
 		if (!CONTRACTS_WITH_QUEUES.has(name)) continue
 		for (const changeId of await openChangeIds(rpc, id)) {
@@ -132,9 +136,6 @@ async function main(): Promise<void> {
 				latest,
 			)
 		}
-	}
-	for (const wasmHash of code) {
-		await keepAlive(rpc, { wasmHash }, `code ${wasmHash.slice(0, 8)}`, latest)
 	}
 }
 
