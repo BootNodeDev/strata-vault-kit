@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, testutils::Events as _, vec, Event as _, IntoVal, Vec};
+use soroban_sdk::{contract, contractimpl, testutils::Events as _, vec, Event as _, Vec};
 use stellar_access::role_transfer::RoleTransferError;
 
 use super::*;
@@ -20,7 +20,7 @@ fn a_deposit_before_setup_finishes_is_refused() {
 fn setup_finishes_once_the_wiring_is_complete() {
     let f = setup_unfinished();
 
-    f.vault.finish_setup(&f.admin);
+    f.vault.finish_setup();
 
     assert!(!f.vault.setup_open());
     let investor = f.investor(1_000);
@@ -31,7 +31,7 @@ fn setup_finishes_once_the_wiring_is_complete() {
 fn finishing_setup_publishes_it() {
     let f = setup_unfinished();
 
-    f.vault.finish_setup(&f.admin);
+    f.vault.finish_setup();
 
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
@@ -43,7 +43,7 @@ fn finishing_setup_publishes_it() {
 fn setup_never_finishes_twice() {
     let f = setup();
 
-    refused(f.vault.try_finish_setup(&f.admin), VaultError::SetupClosed);
+    refused(f.vault.try_finish_setup(), VaultError::SetupClosed);
 }
 
 #[test]
@@ -68,7 +68,7 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
         let f = miswired(miswire);
 
         assert_eq!(
-            f.vault.try_finish_setup(&f.admin),
+            f.vault.try_finish_setup(),
             Err(Ok(VaultError::SetupIncomplete.into())),
             "{miswire:?}"
         );
@@ -173,7 +173,7 @@ fn a_token_that_cannot_answer_fails_its_checks_instead_of_trapping() {
     assert!(!health.vault_unfrozen);
     assert!(!health.compliance_bound);
 
-    refused(vault.try_finish_setup(&admin), VaultError::SetupIncomplete);
+    refused(vault.try_finish_setup(), VaultError::SetupIncomplete);
 }
 
 #[test]
@@ -183,13 +183,10 @@ fn setup_cannot_finish_while_a_hand_over_is_pending() {
     f.vault
         .transfer_admin_role(&next, &(f.e.ledger().sequence() + 100));
 
-    refused(
-        f.vault.try_finish_setup(&f.admin),
-        VaultError::AdminTransferPending,
-    );
+    refused(f.vault.try_finish_setup(), VaultError::AdminTransferPending);
 
     f.vault.transfer_admin_role(&next, &0);
-    f.vault.finish_setup(&f.admin);
+    f.vault.finish_setup();
     assert!(f.vault.try_accept_admin_transfer().is_err());
     assert_eq!(f.vault.governance(), Some(f.admin.clone()));
 }
@@ -201,7 +198,7 @@ fn an_expired_hand_over_does_not_hold_setup_open() {
         .transfer_admin_role(&Address::generate(&f.e), &(f.e.ledger().sequence() + 10));
     f.e.ledger().with_mut(|l| l.sequence_number += 11);
 
-    f.vault.finish_setup(&f.admin);
+    f.vault.finish_setup();
 
     assert!(!f.vault.setup_open());
     assert_eq!(
@@ -217,8 +214,8 @@ fn only_governance_finishes_setup() {
     let stranger = Address::generate(&f.e);
 
     for who in [&stranger, &f.manager] {
-        f.sign_only_as(who, "finish_setup", (who.clone(),).into_val(&f.e));
-        assert!(f.vault.try_finish_setup(who).is_err());
+        f.sign_only_as(who, "finish_setup", Vec::new(&f.e));
+        assert!(f.vault.try_finish_setup().is_err());
     }
     assert!(f.vault.setup_open());
 }
@@ -228,12 +225,11 @@ fn admin_changes_are_instant_during_setup() {
     let f = setup_unfinished();
     let next = Address::generate(&f.e);
 
-    f.vault.set_custodian(&f.custodian, &f.admin);
-    f.vault.set_notice(&3_600, &f.admin);
-    f.vault.set_notice(&0, &f.admin);
-    f.vault
-        .set_wind_down_delay(&(2 * MIN_WIND_DOWN_DELAY), &f.admin);
-    f.vault.set_wind_down_delay(&MIN_WIND_DOWN_DELAY, &f.admin);
+    f.vault.set_custodian(&f.custodian);
+    f.vault.set_notice(&3_600);
+    f.vault.set_notice(&0);
+    f.vault.set_wind_down_delay(&(2 * MIN_WIND_DOWN_DELAY));
+    f.vault.set_wind_down_delay(&MIN_WIND_DOWN_DELAY);
     f.vault
         .grant_role(&next, &symbol_short!("guardian"), &f.admin);
     f.vault
@@ -255,14 +251,12 @@ fn nothing_is_proposed_during_setup() {
 
     refused(
         f.vault
-            .try_propose_change(&VaultChange::Custodian(f.custodian.clone()), &f.admin),
+            .try_propose_change(&VaultChange::Custodian(f.custodian.clone())),
         VaultError::SetupOpen,
     );
     refused(
-        f.vault.try_propose_change(
-            &VaultChange::WindDownDelay(MIN_WIND_DOWN_DELAY - 1),
-            &f.admin,
-        ),
+        f.vault
+            .try_propose_change(&VaultChange::WindDownDelay(MIN_WIND_DOWN_DELAY - 1)),
         VaultError::SetupOpen,
     );
     assert_eq!(f.vault.pending_changes().len(), 0);

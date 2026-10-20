@@ -21,6 +21,7 @@ mod redeem;
 mod settlement;
 mod setup;
 mod share_returns;
+mod signatures;
 mod supply;
 mod timing;
 mod treasury;
@@ -96,6 +97,30 @@ impl Fixture<'_> {
                 sub_invokes: &[],
             },
         }]);
+    }
+
+    /// The last call asked `who` alone to sign, once, on exactly this call.
+    fn signed_once_by(
+        &self,
+        who: &Address,
+        fn_name: &str,
+        args: soroban_sdk::Vec<soroban_sdk::Val>,
+    ) {
+        use soroban_sdk::testutils::{AuthorizedFunction, AuthorizedInvocation};
+        assert_eq!(
+            self.e.auths(),
+            std::vec![(
+                who.clone(),
+                AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        self.vault.address.clone(),
+                        soroban_sdk::Symbol::new(&self.e, fn_name),
+                        args,
+                    )),
+                    sub_invocations: std::vec![],
+                },
+            )]
+        );
     }
 
     fn investor(&self, funded: i128) -> Address {
@@ -415,8 +440,8 @@ fn build<'a>(
     }
     let vault = AsyncVaultClient::new(&e, &contract_id);
     if finish {
-        vault.set_custodian(&custodian, &admin);
-        vault.finish_setup(&admin);
+        vault.set_custodian(&custodian);
+        vault.finish_setup();
     }
 
     Fixture {

@@ -9,7 +9,7 @@ fn governance_sets_the_delay_within_the_maximum() {
 
     assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 
-    f.vault.set_wind_down_delay(&(14 * DAY_DURATION), &f.admin);
+    f.vault.set_wind_down_delay(&(14 * DAY_DURATION));
     assert_eq!(f.vault.wind_down_delay(), 14 * DAY_DURATION);
 }
 
@@ -19,7 +19,7 @@ fn the_delay_cannot_exceed_the_maximum() {
 
     assert!(f
         .vault
-        .try_set_wind_down_delay(&(MAX_WIND_DOWN_DELAY + 1), &f.admin)
+        .try_set_wind_down_delay(&(MAX_WIND_DOWN_DELAY + 1))
         .is_err());
     assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 }
@@ -31,12 +31,8 @@ fn only_governance_sets_the_delay() {
     let longer = 2 * MIN_WIND_DOWN_DELAY;
 
     for who in [&stranger, &f.manager, &f.treasury, &f.guardian] {
-        f.sign_only_as(
-            who,
-            "set_wind_down_delay",
-            (longer, who.clone()).into_val(&f.e),
-        );
-        assert!(f.vault.try_set_wind_down_delay(&longer, who).is_err());
+        f.sign_only_as(who, "set_wind_down_delay", (longer,).into_val(&f.e));
+        assert!(f.vault.try_set_wind_down_delay(&longer).is_err());
     }
     assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 }
@@ -54,9 +50,9 @@ const WEEK: u64 = 7 * DAY_DURATION;
 fn governance_proposes_and_anyone_activates_after_the_delay() {
     let f = setup();
     let stranger = Address::generate(&f.e);
-    f.vault.set_wind_down_delay(&WEEK, &f.admin);
+    f.vault.set_wind_down_delay(&WEEK);
 
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     let proposed = f.vault.wind_down().unwrap();
     assert_eq!(proposed.status, WindDownStatus::Proposed);
     assert_eq!(proposed.round, 0);
@@ -73,8 +69,8 @@ fn governance_proposes_and_anyone_activates_after_the_delay() {
 #[test]
 fn activation_is_open_to_a_stranger() {
     let f = setup();
-    f.vault.set_wind_down_delay(&WEEK, &f.admin);
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.set_wind_down_delay(&WEEK);
+    f.vault.propose_wind_down();
     f.advance(WEEK);
 
     f.e.set_auths(&[]);
@@ -88,22 +84,22 @@ fn only_governance_proposes() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_propose_wind_down(&stranger).is_err());
-    assert!(f.vault.try_propose_wind_down(&f.manager).is_err());
-    assert!(f.vault.try_propose_wind_down(&f.guardian).is_err());
+    for who in [&stranger, &f.manager, &f.guardian] {
+        f.sign_only_as(who, "propose_wind_down", soroban_sdk::Vec::new(&f.e));
+        assert!(f.vault.try_propose_wind_down().is_err());
+    }
     assert_eq!(f.vault.wind_down(), None);
 }
 
 #[test]
 fn a_second_proposal_cannot_push_the_date_back() {
     let f = setup();
-    f.vault.set_wind_down_delay(&WEEK, &f.admin);
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.set_wind_down_delay(&WEEK);
+    f.vault.propose_wind_down();
     let first = f.vault.wind_down().unwrap().active_at;
 
     f.advance(WEEK / 2);
-    assert!(f.vault.try_propose_wind_down(&f.admin).is_err());
+    assert!(f.vault.try_propose_wind_down().is_err());
 
     assert_eq!(f.vault.wind_down().unwrap().active_at, first);
 }
@@ -111,20 +107,24 @@ fn a_second_proposal_cannot_push_the_date_back() {
 #[test]
 fn governance_cancels_a_proposal_before_activation() {
     let f = setup();
-    f.vault.set_wind_down_delay(&WEEK, &f.admin);
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.set_wind_down_delay(&WEEK);
+    f.vault.propose_wind_down();
 
     let stranger = Address::generate(&f.e);
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_cancel_wind_down_proposal(&stranger).is_err());
-    assert!(f.vault.try_cancel_wind_down_proposal(&f.manager).is_err());
-    assert!(f.vault.try_cancel_wind_down_proposal(&f.guardian).is_err());
+    for who in [&stranger, &f.manager, &f.guardian] {
+        f.sign_only_as(
+            who,
+            "cancel_wind_down_proposal",
+            soroban_sdk::Vec::new(&f.e),
+        );
+        assert!(f.vault.try_cancel_wind_down_proposal().is_err());
+    }
 
     f.e.mock_all_auths();
-    f.vault.cancel_wind_down_proposal(&f.admin);
+    f.vault.cancel_wind_down_proposal();
     assert_eq!(f.vault.wind_down(), None);
 
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     assert_eq!(
         f.vault.wind_down().unwrap().status,
         WindDownStatus::Proposed
@@ -134,12 +134,12 @@ fn governance_cancels_a_proposal_before_activation() {
 #[test]
 fn an_active_wind_down_cannot_be_cancelled() {
     let f = setup();
-    f.vault.set_wind_down_delay(&WEEK, &f.admin);
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.set_wind_down_delay(&WEEK);
+    f.vault.propose_wind_down();
     f.advance(WEEK);
     f.vault.activate_wind_down();
 
-    assert!(f.vault.try_cancel_wind_down_proposal(&f.admin).is_err());
+    assert!(f.vault.try_cancel_wind_down_proposal().is_err());
     assert_eq!(f.vault.wind_down().unwrap().status, WindDownStatus::Active);
 }
 
@@ -154,7 +154,7 @@ fn activating_without_a_proposal_is_refused() {
 fn an_unset_delay_still_waits_the_minimum() {
     let f = setup();
 
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     f.advance(MIN_WIND_DOWN_DELAY - 1);
     refused(
         f.vault.try_activate_wind_down(),
@@ -170,8 +170,7 @@ fn an_unset_delay_still_waits_the_minimum() {
 fn a_delay_below_the_minimum_is_refused() {
     for f in [setup_unfinished(), setup()] {
         refused(
-            f.vault
-                .try_set_wind_down_delay(&(MIN_WIND_DOWN_DELAY - 1), &f.admin),
+            f.vault.try_set_wind_down_delay(&(MIN_WIND_DOWN_DELAY - 1)),
             VaultError::WindDownDelayTooShort,
         );
     }
@@ -179,7 +178,7 @@ fn a_delay_below_the_minimum_is_refused() {
 
 /// Proposes, waits and activates. Returns nothing; the vault is active after.
 pub(super) fn wind_down_now(f: &Fixture) {
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 }
@@ -334,7 +333,7 @@ fn a_round_with_nothing_to_distribute_is_refused() {
 fn a_round_before_activation_is_refused() {
     let f = setup();
     let _user = f.holder(500);
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
 
     assert!(f.vault.try_finalize_wind_down_round().is_err());
 }
@@ -688,11 +687,7 @@ fn propose_wind_down_reports_active_when_active() {
     let _user = f.holder(500);
     wind_down_now(&f);
 
-    let err = f
-        .vault
-        .try_propose_wind_down(&f.admin)
-        .unwrap_err()
-        .unwrap();
+    let err = f.vault.try_propose_wind_down().unwrap_err().unwrap();
     assert_eq!(err, VaultError::WindDownActive.into());
 }
 
@@ -705,7 +700,7 @@ fn a_later_round_needs_the_units_an_earlier_round_left_in_owed() {
     let a = f.holder(1);
     let b = f.holder(1);
     f.empty_reserve();
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 
@@ -729,7 +724,7 @@ fn after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder() {
     let f = setup();
     let holders = [f.holder(1), f.holder(2), f.holder(4)];
     f.empty_reserve();
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
     f.vault.fund(&f.custodian, &5);
@@ -761,7 +756,7 @@ proptest! {
         let total_shares: i128 = holdings.iter().sum();
         let backer = f.investor(total_shares + 10_000);
         f.empty_reserve();
-        f.vault.propose_wind_down(&f.admin);
+        f.vault.propose_wind_down();
         f.advance(MIN_WIND_DOWN_DELAY);
         f.vault.activate_wind_down();
 

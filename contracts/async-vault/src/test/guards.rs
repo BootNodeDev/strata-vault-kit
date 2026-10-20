@@ -63,7 +63,7 @@ fn not_winding_down_refuses_once_the_wind_down_is_active() {
     let f = setup();
     holds(&f, || guards::not_winding_down(&f.e));
 
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     holds(&f, || guards::not_winding_down(&f.e));
 
     f.advance(MIN_WIND_DOWN_DELAY);
@@ -80,7 +80,7 @@ fn winding_down_refuses_until_the_wind_down_is_active() {
         guards::winding_down(&f.e)
     });
 
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     refuses(&f, VaultError::WindDownNotActive, || {
         guards::winding_down(&f.e)
     });
@@ -181,6 +181,19 @@ fn no_hand_over_pending_refuses_while_an_offer_is_open() {
 
     f.vault.transfer_admin_role(&next, &0);
     holds(&f, || guards::no_hand_over_pending(&f.e));
+}
+
+#[test]
+fn caller_is_admin_refuses_anyone_but_the_admin() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    holds(&f, || guards::caller_is_admin(&f.e, &f.admin));
+
+    for who in [&f.guardian, &f.manager, &stranger] {
+        refuses(&f, VaultError::AdminRequired, || {
+            guards::caller_is_admin(&f.e, who)
+        });
+    }
 }
 
 #[test]
@@ -324,7 +337,7 @@ fn not_a_second_code_change_refuses_a_code_change_while_one_waits() {
     holds(&f, || guards::not_a_second_code_change(&f.e, &upgrade));
 
     f.vault
-        .propose_change(&VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY), &f.admin);
+        .propose_change(&VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY));
     refuses(&f, VaultError::UpgradeProposalExists, || {
         guards::not_a_second_code_change(&f.e, &upgrade)
     });
@@ -341,7 +354,7 @@ fn no_wind_down_proposed_refuses_a_standing_proposal() {
     let f = setup();
     holds(&f, || guards::no_wind_down_proposed(&f.e));
 
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     refuses(&f, VaultError::WindDownAlreadyProposed, || {
         guards::no_wind_down_proposed(&f.e)
     });
@@ -354,7 +367,7 @@ fn wind_down_proposed_refuses_without_a_standing_proposal() {
         guards::wind_down_proposed(&f.e)
     });
 
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     holds(&f, || guards::wind_down_proposed(&f.e));
 
     f.advance(MIN_WIND_DOWN_DELAY);
@@ -436,7 +449,7 @@ fn within_cap_refuses_a_deposit_past_the_cap() {
     let f = setup();
     holds(&f, || guards::within_cap(&f.e, i128::MAX));
 
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
     let investor = f.investor(400);
     f.vault.request_deposit(&investor, &400);
     holds(&f, || guards::within_cap(&f.e, 600));
@@ -647,7 +660,7 @@ fn fulfilable_refuses_an_epoch_the_vault_cannot_price_yet() {
         guards::fulfilable(&f.e, &behind_the_report)
     });
 
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
     let within_the_notice = epoch(&f, f.close_epoch());
     refuses(&f, VaultError::NoticeNotElapsed, || {
         guards::fulfilable(&f.e, &within_the_notice)

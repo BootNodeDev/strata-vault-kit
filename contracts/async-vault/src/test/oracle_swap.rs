@@ -71,16 +71,13 @@ fn the_oracle_changes_only_through_the_timelock() {
 
     let id = f
         .vault
-        .propose_change(&VaultChange::Oracle(next.address.clone()), &f.admin);
+        .propose_change(&VaultChange::Oracle(next.address.clone()));
     f.advance(MIN_UPGRADE_DELAY - 1);
-    refused(
-        f.vault.try_apply_change(&id, &f.admin),
-        VaultError::ChangeNotReady,
-    );
+    refused(f.vault.try_apply_change(&id), VaultError::ChangeNotReady);
     assert_eq!(f.vault.oracle(), f.oracle.address);
 
     f.advance(1);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     assert_eq!(f.vault.oracle(), next.address);
 }
 
@@ -90,9 +87,9 @@ fn the_next_epoch_prices_from_the_new_feed() {
     let next = second_feed(&f);
     let id = f
         .vault
-        .propose_change(&VaultChange::Oracle(next.address.clone()), &f.admin);
+        .propose_change(&VaultChange::Oracle(next.address.clone()));
     f.advance(MIN_UPGRADE_DELAY);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
     let epoch = f.close_epoch();
@@ -114,9 +111,9 @@ fn a_sealed_epoch_is_priced_by_the_feed_standing_at_fulfilment() {
 
     let id = f
         .vault
-        .propose_change(&VaultChange::Oracle(next.address.clone()), &f.admin);
+        .propose_change(&VaultChange::Oracle(next.address.clone()));
     f.advance(MIN_UPGRADE_DELAY);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     attest_on(&f, &next, wad(4));
     f.vault.fulfill_epoch(&epoch);
 
@@ -139,8 +136,7 @@ fn a_feed_outside_this_vault_is_never_proposed() {
         elsewhere.address,
     ] {
         refused(
-            f.vault
-                .try_propose_change(&VaultChange::Oracle(feed), &f.admin),
+            f.vault.try_propose_change(&VaultChange::Oracle(feed)),
             VaultError::FeedNotBound,
         );
     }
@@ -154,14 +150,11 @@ fn a_feed_that_stops_naming_this_vault_is_never_installed() {
     stub.report(&Some(f.vault.address.clone()));
     let id = f
         .vault
-        .propose_change(&VaultChange::Oracle(stub.address.clone()), &f.admin);
+        .propose_change(&VaultChange::Oracle(stub.address.clone()));
 
     stub.report(&Some(Address::generate(&f.e)));
     f.advance(MIN_UPGRADE_DELAY);
 
-    refused(
-        f.vault.try_apply_change(&id, &f.admin),
-        VaultError::FeedNotBound,
-    );
+    refused(f.vault.try_apply_change(&id), VaultError::FeedNotBound);
     assert_eq!(f.vault.oracle(), f.oracle.address);
 }

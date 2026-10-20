@@ -1,3 +1,5 @@
+use soroban_sdk::IntoVal;
+
 use super::*;
 
 #[test]
@@ -15,15 +17,15 @@ fn governance_sets_updates_and_clears_cap() {
     let f = setup();
 
     // Set cap
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
     assert_eq!(f.vault.deposit_cap(), Some(1_000));
 
     // Update cap
-    f.vault.set_deposit_cap(&Some(2_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(2_000));
     assert_eq!(f.vault.deposit_cap(), Some(2_000));
 
     // Clear cap
-    f.vault.set_deposit_cap(&None, &f.admin);
+    f.vault.set_deposit_cap(&None);
     assert_eq!(f.vault.deposit_cap(), None);
 }
 
@@ -31,7 +33,7 @@ fn governance_sets_updates_and_clears_cap() {
 fn negative_cap_rejected() {
     let f = setup();
     refused(
-        f.vault.try_set_deposit_cap(&Some(-1), &f.admin),
+        f.vault.try_set_deposit_cap(&Some(-1)),
         VaultError::InvalidAmount,
     );
 }
@@ -41,26 +43,17 @@ fn unauthorized_caller_rejected() {
     let f = setup();
     let rando = Address::generate(&f.e);
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_set_deposit_cap(&Some(1_000), &rando).is_err());
-    assert!(f
-        .vault
-        .try_set_deposit_cap(&Some(1_000), &f.manager)
-        .is_err());
-    assert!(f
-        .vault
-        .try_set_deposit_cap(&Some(1_000), &f.guardian)
-        .is_err());
-    assert!(f
-        .vault
-        .try_set_deposit_cap(&Some(1_000), &f.treasury)
-        .is_err());
+    for who in [&rando, &f.manager, &f.guardian, &f.treasury] {
+        f.sign_only_as(who, "set_deposit_cap", (Some(1_000_i128),).into_val(&f.e));
+        assert!(f.vault.try_set_deposit_cap(&Some(1_000)).is_err());
+    }
+    assert_eq!(f.vault.deposit_cap(), None);
 }
 
 #[test]
 fn boundary_value_enforcement() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
 
     let investor1 = f.investor(2_000);
     let investor2 = f.investor(2_000);
@@ -85,7 +78,7 @@ fn boundary_value_enforcement() {
 #[test]
 fn cancellation_frees_capacity() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
 
     let investor1 = f.investor(1_000);
     let investor2 = f.investor(1_000);
@@ -110,7 +103,7 @@ fn cancellation_frees_capacity() {
 #[test]
 fn deployed_capital_and_multi_epoch_accounting() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
 
     let investor1 = f.investor(1_000);
     let investor2 = f.investor(1_000);
@@ -132,7 +125,7 @@ fn deployed_capital_and_multi_epoch_accounting() {
     );
 
     // Governance raises cap to 1_500
-    f.vault.set_deposit_cap(&Some(1_500), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_500));
 
     // Now investor2 can deposit 500
     let epoch2 = f.vault.request_deposit(&investor2, &500);
@@ -142,7 +135,7 @@ fn deployed_capital_and_multi_epoch_accounting() {
 #[test]
 fn redemptions_free_capacity() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
 
     let investor1 = f.investor(1_000);
     let investor2 = f.investor(1_000);
@@ -177,7 +170,7 @@ fn redemptions_free_capacity() {
 #[test]
 fn zero_cap_blocks_all_deposits() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(0), &f.admin);
+    f.vault.set_deposit_cap(&Some(0));
 
     let investor = f.investor(100);
     refused(

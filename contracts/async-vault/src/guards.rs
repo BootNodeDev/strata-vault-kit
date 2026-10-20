@@ -1,5 +1,8 @@
 use soroban_sdk::{panic_with_error, Address, Env, Symbol};
-use stellar_access::{access_control::AccessControlStorageKey, role_transfer};
+use stellar_access::{
+    access_control::{self, AccessControlStorageKey},
+    role_transfer,
+};
 use stellar_tokens::{
     fungible::FungibleTokenClient,
     rwa::{compliance::ComplianceClient as RulesClient, RWATokenClient},
@@ -91,6 +94,13 @@ pub(crate) fn not_lowered_after_setup(e: &Env, new: u64, current: u64) {
 pub(crate) fn no_hand_over_pending(e: &Env) {
     if role_transfer::has_active_pending_transfer(e, &AccessControlStorageKey::PendingAdmin) {
         panic_with_error!(e, VaultError::AdminTransferPending);
+    }
+}
+
+/// Stands in for `#[only_admin]` where an OpenZeppelin trait fixes the caller.
+pub(crate) fn caller_is_admin(e: &Env, caller: &Address) {
+    if access_control::get_admin(e).as_ref() != Some(caller) {
+        panic_with_error!(e, VaultError::AdminRequired);
     }
 }
 

@@ -1,3 +1,5 @@
+use soroban_sdk::IntoVal;
+
 use super::*;
 
 #[test]
@@ -115,11 +117,13 @@ fn setting_the_custodian_needs_the_admin_signature() {
     let f = setup_unfinished();
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_set_custodian(&f.custodian, &f.admin).is_err());
-    assert!(f
-        .vault
-        .try_set_custodian(&f.custodian, &f.treasury)
-        .is_err());
+    assert!(f.vault.try_set_custodian(&f.custodian).is_err());
+    f.sign_only_as(
+        &f.treasury,
+        "set_custodian",
+        (f.custodian.clone(),).into_val(&f.e),
+    );
+    assert!(f.vault.try_set_custodian(&f.custodian).is_err());
     assert_eq!(f.vault.custodian(), None);
 }
 

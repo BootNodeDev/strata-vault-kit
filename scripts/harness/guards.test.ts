@@ -89,7 +89,6 @@ describe("an account with no role", () => {
 			send(
 				vault(c, outsider).propose_change({
 					change: { tag: "Custodian", values: [who] },
-					caller: who,
 				}),
 			),
 		).rejects.toThrow(/signatures/)
@@ -124,9 +123,8 @@ describe("an account with no role", () => {
 
 	it("cannot unpause the vault", async () => {
 		await send(vault(c, guardian).pause({ caller: guardian.publicKey() }))
-		await expect(
-			send(vault(c, outsider).unpause({ caller: who })),
-		).rejects.toThrow(/signatures/)
+		const v = vault(c, outsider)
+		expectRefused(await v.unpause({ caller: who }), v, "AdminRequired")
 		await send(vault(c, governance).unpause({ caller: governance.publicKey() }))
 	})
 
@@ -322,14 +320,11 @@ describe("the compliance contract after setup", () => {
 })
 
 describe("the vault after setup", () => {
-	const caller = () => governance.publicKey()
-
 	it("governance cannot change the custodian at once", async () => {
 		const v = vault(c, governance)
 		expectRefused(
 			await v.set_custodian({
 				custodian: outsider.publicKey(),
-				caller: caller(),
 			}),
 			v,
 			"UseTimelock",
@@ -342,15 +337,10 @@ describe("the vault after setup", () => {
 		const id = await send(
 			v.propose_change({
 				change: { tag: "Custodian", values: [outsider.publicKey()] },
-				caller: caller(),
 			}),
 		)
-		expectRefused(
-			await v.apply_change({ id, caller: caller() }),
-			v,
-			"ChangeNotReady",
-		)
-		await send(v.cancel_change({ id, caller: caller() }))
+		expectRefused(await v.apply_change({ id }), v, "ChangeNotReady")
+		await send(v.cancel_change({ id }))
 		expect((await v.pending_changes()).result).toEqual([])
 	})
 })
@@ -738,7 +728,6 @@ describe("the notice period and valuation age rules", () => {
 		await send(
 			vault(c, governance).set_notice({
 				secs: noticeSecs,
-				caller: governance.publicKey(),
 			}),
 		)
 	})
@@ -813,11 +802,7 @@ describe("the notice period and valuation age rules", () => {
 
 	it("governance cannot lower the notice at once", async () => {
 		const v = vault(c, governance)
-		expectRefused(
-			await v.set_notice({ secs: 0n, caller: governance.publicKey() }),
-			v,
-			"UseTimelock",
-		)
+		expectRefused(await v.set_notice({ secs: 0n }), v, "UseTimelock")
 		expect((await reader.notice()).result).toBe(noticeSecs)
 	})
 })

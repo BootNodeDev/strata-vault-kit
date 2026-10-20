@@ -230,7 +230,6 @@ async function finishVaultSetup(
 	contracts: Record<ContractName, string>,
 ): Promise<void> {
 	const governance = accounts.governance
-	const caller = governance.publicKey()
 	const { Client: AsyncVault } = (await import(
 		clientEntry("async_vault")
 	)) as typeof AsyncVaultModule
@@ -240,10 +239,9 @@ async function finishVaultSetup(
 	await (
 		await vault.set_custodian({
 			custodian: accounts.custodian.publicKey(),
-			caller,
 		})
 	).signAndSend()
-	await (await vault.finish_setup({ caller })).signAndSend()
+	await (await vault.finish_setup()).signAndSend()
 	if ((await vault.setup_open()).result)
 		throw new Error("the vault's setup did not finish")
 	console.log("vault setup finished")

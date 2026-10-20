@@ -1,4 +1,4 @@
-use soroban_sdk::{testutils::Events as _, Event as _};
+use soroban_sdk::{testutils::Events as _, Event as _, IntoVal};
 use stellar_contract_utils::pausable::PausableError;
 
 use super::*;
@@ -9,14 +9,14 @@ fn wasm(f: &Fixture, byte: u8) -> BytesN<32> {
 }
 
 fn propose(f: &Fixture, change: VaultChange) -> u32 {
-    f.vault.propose_change(&change, &f.admin)
+    f.vault.propose_change(&change)
 }
 
 /// Raises the upgrade delay through the timelock, which costs one current delay.
 fn raise_delay(f: &Fixture, secs: u64) {
     let id = propose(f, VaultChange::UpgradeDelay(secs));
     f.advance(f.vault.upgrade_delay());
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
 }
 
 fn only_pending(f: &Fixture) -> VaultPendingChange {
@@ -52,12 +52,12 @@ fn a_second_code_change_while_one_stands_is_refused() {
 
     refused(
         f.vault
-            .try_propose_change(&VaultChange::Upgrade(wasm(&f, 9)), &f.admin),
+            .try_propose_change(&VaultChange::Upgrade(wasm(&f, 9))),
         VaultError::UpgradeProposalExists,
     );
     refused(
         f.vault
-            .try_propose_change(&VaultChange::UpgradeDelay(30 * DAY_DURATION), &f.admin),
+            .try_propose_change(&VaultChange::UpgradeDelay(30 * DAY_DURATION)),
         VaultError::UpgradeProposalExists,
     );
 }
@@ -68,7 +68,7 @@ fn a_cancelled_proposal_leaves_the_slot_free() {
     let hash = wasm(&f, 7);
     let id = propose(&f, VaultChange::Upgrade(hash.clone()));
 
-    f.vault.cancel_change(&id, &f.admin);
+    f.vault.cancel_change(&id);
     assert_eq!(f.vault.pending_changes().len(), 0);
 
     propose(&f, VaultChange::Upgrade(hash));
@@ -79,10 +79,7 @@ fn a_cancelled_proposal_leaves_the_slot_free() {
 fn cancelling_nothing_is_refused() {
     let f = setup();
 
-    refused(
-        f.vault.try_cancel_change(&1, &f.admin),
-        VaultError::ChangeNotFound,
-    );
+    refused(f.vault.try_cancel_change(&1), VaultError::ChangeNotFound);
 }
 
 #[test]
@@ -91,7 +88,7 @@ fn a_delay_below_the_minimum_is_refused() {
 
     refused(
         f.vault
-            .try_propose_change(&VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY - 1), &f.admin),
+            .try_propose_change(&VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY - 1)),
         VaultError::UpgradeDelayTooShort,
     );
     assert_eq!(f.vault.pending_changes().len(), 0);
@@ -103,7 +100,7 @@ fn a_delay_above_the_maximum_is_refused() {
 
     refused(
         f.vault
-            .try_propose_change(&VaultChange::UpgradeDelay(MAX_UPGRADE_DELAY + 1), &f.admin),
+            .try_propose_change(&VaultChange::UpgradeDelay(MAX_UPGRADE_DELAY + 1)),
         VaultError::UpgradeDelayTooLong,
     );
     assert_eq!(f.vault.pending_changes().len(), 0);
@@ -114,12 +111,12 @@ fn a_delay_below_the_standing_notice_is_refused() {
     let f = setup();
     raise_delay(&f, 30 * DAY_DURATION);
 
-    f.vault.set_notice(&(20 * DAY_DURATION), &f.admin);
+    f.vault.set_notice(&(20 * DAY_DURATION));
 
     // Above the minimum, below the notice: an exit could not complete.
     refused(
         f.vault
-            .try_propose_change(&VaultChange::UpgradeDelay(10 * DAY_DURATION), &f.admin),
+            .try_propose_change(&VaultChange::UpgradeDelay(10 * DAY_DURATION)),
         VaultError::UpgradeDelayBelowNotice,
     );
 
@@ -133,20 +130,24 @@ fn only_governance_proposes_and_cancels() {
     let change = VaultChange::Upgrade(wasm(&f, 7));
     let stranger = Address::generate(&f.e);
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_propose_change(&change, &stranger).is_err());
-    assert!(f.vault.try_propose_change(&change, &f.manager).is_err());
-    assert!(f.vault.try_propose_change(&change, &f.guardian).is_err());
-    assert!(f
-        .vault
-        .try_propose_change(&VaultChange::UpgradeDelay(30 * DAY_DURATION), &f.treasury)
-        .is_err());
+    for who in [&stranger, &f.manager, &f.guardian] {
+        f.sign_only_as(who, "propose_change", (change.clone(),).into_val(&f.e));
+        assert!(f.vault.try_propose_change(&change).is_err());
+    }
+    let delay = VaultChange::UpgradeDelay(30 * DAY_DURATION);
+    f.sign_only_as(
+        &f.treasury,
+        "propose_change",
+        (delay.clone(),).into_val(&f.e),
+    );
+    assert!(f.vault.try_propose_change(&delay).is_err());
 
     f.e.mock_all_auths();
     let id = propose(&f, change);
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_cancel_change(&id, &stranger).is_err());
-    assert!(f.vault.try_cancel_change(&id, &f.guardian).is_err());
+    for who in [&stranger, &f.guardian] {
+        f.sign_only_as(who, "cancel_change", (id,).into_val(&f.e));
+        assert!(f.vault.try_cancel_change(&id).is_err());
+    }
 }
 
 #[test]
@@ -161,19 +162,13 @@ fn applying_before_the_eta_is_refused() {
     let f = setup();
     let id = propose(&f, VaultChange::UpgradeDelay(30 * DAY_DURATION));
 
-    refused(
-        f.vault.try_apply_change(&id, &f.admin),
-        VaultError::ChangeNotReady,
-    );
+    refused(f.vault.try_apply_change(&id), VaultError::ChangeNotReady);
 
     f.advance(MIN_UPGRADE_DELAY - 1);
-    refused(
-        f.vault.try_apply_change(&id, &f.admin),
-        VaultError::ChangeNotReady,
-    );
+    refused(f.vault.try_apply_change(&id), VaultError::ChangeNotReady);
 
     f.advance(1);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     assert_eq!(f.vault.upgrade_delay(), 30 * DAY_DURATION);
     assert_eq!(f.vault.pending_changes().len(), 0);
 }
@@ -199,13 +194,10 @@ fn shortening_the_delay_cannot_be_rushed() {
     // Back down to the minimum: still costs the full thirty days.
     let id = propose(&f, VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY));
     f.advance(30 * DAY_DURATION - 1);
-    refused(
-        f.vault.try_apply_change(&id, &f.admin),
-        VaultError::ChangeNotReady,
-    );
+    refused(f.vault.try_apply_change(&id), VaultError::ChangeNotReady);
 
     f.advance(1);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     assert_eq!(f.vault.upgrade_delay(), MIN_UPGRADE_DELAY);
 }
 
@@ -215,7 +207,7 @@ fn the_notice_cannot_outgrow_the_delay() {
     propose(&f, VaultChange::UpgradeDelay(10 * DAY_DURATION));
 
     refused(
-        f.vault.try_set_notice(&(20 * DAY_DURATION), &f.admin),
+        f.vault.try_set_notice(&(20 * DAY_DURATION)),
         VaultError::NoticeAboveUpgradeDelay,
     );
     assert_eq!(f.vault.notice(), 0);
@@ -225,10 +217,7 @@ fn the_notice_cannot_outgrow_the_delay() {
 fn applying_nothing_is_refused() {
     let f = setup();
 
-    refused(
-        f.vault.try_apply_change(&1, &f.admin),
-        VaultError::ChangeNotFound,
-    );
+    refused(f.vault.try_apply_change(&1), VaultError::ChangeNotFound);
 }
 
 #[test]
@@ -241,7 +230,7 @@ fn a_pause_freezes_the_upgrade_timelock_clock() {
     f.vault.pause(&f.guardian);
     f.advance(10 * DAY_DURATION);
 
-    assert!(f.vault.try_apply_change(&id, &f.admin).is_err());
+    assert!(f.vault.try_apply_change(&id).is_err());
 
     // Unpause: the eta has moved by the ten days spent paused.
     f.vault.unpause(&f.admin);
@@ -249,13 +238,10 @@ fn a_pause_freezes_the_upgrade_timelock_clock() {
 
     // Six unpaused days out of seven: still refused.
     f.advance(3 * DAY_DURATION);
-    refused(
-        f.vault.try_apply_change(&id, &f.admin),
-        VaultError::ChangeNotReady,
-    );
+    refused(f.vault.try_apply_change(&id), VaultError::ChangeNotReady);
 
     f.advance(DAY_DURATION);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     assert_eq!(f.vault.pending_changes().len(), 0);
     assert_eq!(f.vault.upgrade_delay(), 14 * DAY_DURATION);
 }
@@ -269,13 +255,13 @@ fn applying_while_paused_is_refused() {
     // At the eta, with no paused time yet, only the pause stands in the way.
     f.vault.pause(&f.guardian);
     assert_eq!(
-        f.vault.try_apply_change(&id, &f.admin),
+        f.vault.try_apply_change(&id),
         Err(Ok(PausableError::EnforcedPause.into()))
     );
     assert_eq!(f.vault.upgrade_delay(), MIN_UPGRADE_DELAY);
 
     f.vault.unpause(&f.admin);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     assert_eq!(f.vault.upgrade_delay(), 30 * DAY_DURATION);
 }
 
@@ -286,10 +272,10 @@ fn only_governance_applies() {
     let id = propose(&f, VaultChange::UpgradeDelay(30 * DAY_DURATION));
     f.advance(MIN_UPGRADE_DELAY);
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_apply_change(&id, &stranger).is_err());
-    assert!(f.vault.try_apply_change(&id, &f.manager).is_err());
-    assert!(f.vault.try_apply_change(&id, &f.guardian).is_err());
+    for who in [&stranger, &f.manager, &f.guardian] {
+        f.sign_only_as(who, "apply_change", (id,).into_val(&f.e));
+        assert!(f.vault.try_apply_change(&id).is_err());
+    }
     assert_eq!(f.vault.pending_changes().len(), 1);
 }
 
@@ -324,13 +310,13 @@ fn the_vault_exposes_no_immediate_upgrade() {
 #[test]
 fn nothing_is_proposed_during_a_wind_down() {
     let f = setup();
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 
     refused(
         f.vault
-            .try_propose_change(&VaultChange::Upgrade(wasm(&f, 7)), &f.admin),
+            .try_propose_change(&VaultChange::Upgrade(wasm(&f, 7))),
         VaultError::WindDownActive,
     );
 }
@@ -339,16 +325,13 @@ fn nothing_is_proposed_during_a_wind_down() {
 fn a_change_standing_when_the_wind_down_starts_never_applies() {
     let f = setup();
     let id = propose(&f, VaultChange::Upgrade(wasm(&f, 7)));
-    f.vault.propose_wind_down(&f.admin);
+    f.vault.propose_wind_down();
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
     f.advance(MAX_UPGRADE_DELAY);
 
-    refused(
-        f.vault.try_apply_change(&id, &f.admin),
-        VaultError::WindDownActive,
-    );
-    f.vault.cancel_change(&id, &f.admin);
+    refused(f.vault.try_apply_change(&id), VaultError::WindDownActive);
+    f.vault.cancel_change(&id);
     assert_eq!(f.vault.pending_changes().len(), 0);
 }
 
@@ -359,11 +342,11 @@ fn applying_a_delay_change_checks_the_notice_again() {
     let id = propose(&f, VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY));
 
     // The notice rises while the shorter delay waits.
-    f.vault.set_notice(&(20 * DAY_DURATION), &f.admin);
+    f.vault.set_notice(&(20 * DAY_DURATION));
     f.advance(30 * DAY_DURATION);
 
     refused(
-        f.vault.try_apply_change(&id, &f.admin),
+        f.vault.try_apply_change(&id),
         VaultError::UpgradeDelayBelowNotice,
     );
     assert_eq!(f.vault.upgrade_delay(), 30 * DAY_DURATION);
@@ -387,7 +370,7 @@ fn proposing_and_applying_publish_the_change() {
     );
 
     f.advance(MIN_UPGRADE_DELAY);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
         [ChangeApplied { id, change }.to_xdr(&f.e, &f.vault.address)]
@@ -399,7 +382,7 @@ fn cancelling_publishes_the_change_id() {
     let f = setup();
     let id = propose(&f, VaultChange::Upgrade(wasm(&f, 7)));
 
-    f.vault.cancel_change(&id, &f.admin);
+    f.vault.cancel_change(&id);
 
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
@@ -552,11 +535,9 @@ mod with_wasm {
         let hash = f.e.deployer().upload_contract_wasm(WASM);
         assert_eq!(f.vault.schema_version(), 1);
 
-        let id = f
-            .vault
-            .propose_change(&VaultChange::Upgrade(hash), &f.admin);
+        let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
         f.advance(MIN_UPGRADE_DELAY);
-        f.vault.apply_change(&id, &f.admin);
+        f.vault.apply_change(&id);
 
         let target = Client::new(&f.e, &f.vault.address);
         assert_eq!(target.schema_version(), 1);
@@ -569,11 +550,9 @@ mod with_wasm {
     fn a_migration_refuses_a_second_run() {
         let f = setup();
         let hash = f.e.deployer().upload_contract_wasm(WASM);
-        let id = f
-            .vault
-            .propose_change(&VaultChange::Upgrade(hash), &f.admin);
+        let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
         f.advance(MIN_UPGRADE_DELAY);
-        f.vault.apply_change(&id, &f.admin);
+        f.vault.apply_change(&id);
 
         let target = Client::new(&f.e, &f.vault.address);
         target.migrate(&f.admin);
