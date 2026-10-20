@@ -448,8 +448,11 @@ Extending needs no authority, so any funded account can pay.
 **Restoring.** Since Protocol 23 an invocation can restore archived entries
 itself, so a call to an archived contract usually goes through once simulation
 adds the restore. Restoring many entries in one transaction can still hit
-per-transaction limits; `stellar contract restore --id <contract>` restores
-one instance at a time.
+per-transaction limits. Restore them first, in batches: each
+`RestoreFootprintOp` transaction takes as many entries as the limits allow.
+`stellar contract restore` sends one: `--id <contract>` restores an instance,
+`--id <contract> --key-xdr <key>` a data entry, and `--wasm-hash <hash>` a
+Wasm. After a restore, simulate the call again before sending it.
 
 **Production modules.** The compliance and identity contracts in this
 repository are testnet stubs. A production compliance module or identity
