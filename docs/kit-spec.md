@@ -142,10 +142,10 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`async_vault`** | `roles.guardian` | `Address` | Guardian multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.manager` | `Address` | Account that gets the vault's `manager` role (closes epochs); a role, not one of the five authorities | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.compliance` | `Address` | Compliance multisig authority | `async_vault.constructor_args` |
-| **`async_vault`** | `roles.attester` | `Address` | Attestation authority (mirrors oracle reporter) | `async_vault.constructor_args` |
+| **`async_vault`** | `roles.attester` | `Address` | Attestation authority. Not read: nothing checks that it matches the oracle's attester | `async_vault.constructor_args` |
 
-#### Pairwise Role Separation Enforced at Construction
-The `async_vault` constructor strictly verifies pairwise separation across authorities:
+#### Role Separation Checked at Construction
+The `async_vault` constructor refuses these four pairs of equal addresses and compares no other:
 - `treasury != guardian`
 - `treasury != governance`
 - `compliance != governance`
@@ -182,7 +182,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | `addresses_distinct` | The asset, the share token, the oracle and the vault are four different addresses. |
 | `custodian_set` | A custodian is set, and it is not the vault itself. |
 | `feed_answers` | The oracle answers `state()` and `freshness_duration()`. A new feed with no report passes. `oracle_bound` cannot tell a feed from another contract bound to this vault, such as the compliance contract. |
-| `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired and the NAV is not paused. |
+| `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired, it is in band and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
 
 `freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation.
@@ -232,7 +232,7 @@ Pause first, so no report lands while the roles change, and lift the pause last:
 | **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
 | **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
-| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()` | No (always open) |
+| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause; refused in a wind-down) |
 | **`AsyncVault`** | `cancel_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_redeem` | Investor (Caller) | `holder.require_auth()` | No (always open) |
 | **`AsyncVault`** | `close_epoch` | Manager | `#[only_role(caller, "manager")]` | No |

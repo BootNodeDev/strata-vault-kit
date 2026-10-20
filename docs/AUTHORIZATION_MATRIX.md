@@ -50,10 +50,10 @@ In `scripts/harness/deploy.ts` and automated deployment scripts, the separation 
 ## 3. Vault Constructor Authority Handling
 
 `AsyncVault::__constructor` accepts `VaultRoles`, which includes `governance`, `manager`, `treasury`, `guardian`, `compliance`, and `attester`.
-- **Why `compliance` and `attester` are kept in the constructor**:
-  The vault kit enforces an end-to-end separation of duties. At construction, the vault validates pairwise distinctness:
+- **What the constructor does with `compliance` and `attester`**:
+  It checks four pairs and refuses an address that appears in both seats (`RolesNotDistinct`):
   `treasury != guardian`, `treasury != governance`, `compliance != governance`, and `compliance != treasury`.
-  Although compliance is enforced on `IdentityVerifier` / `Compliance` and attestation on `NavOracle`, the vault records and validates the full 5-authority topology at instantiation time to prevent cross-contamination of duties. Neither `compliance` nor `attester` is granted a direct role on the vault itself.
+  No other pair is compared: governance and guardian may be one account, and the manager is unconstrained. The vault stores neither `compliance` nor `attester` and grants neither a role. `compliance` is read only by that check; `attester` is neither stored nor compared, so nothing ties it to the oracle's attester. Compliance acts on the identity verifier and the share token, and attestation on the oracle.
 
 ---
 
@@ -71,7 +71,7 @@ The following entrypoints are open to any caller on purpose:
 | **`AsyncVault`** | `request_deposit` | `holder.require_auth()` | Investor entrypoint. Deposits escrowed cash; guarded by `when_not_paused`, not winding down, and refused with `SetupOpen` until the vault's setup finishes, so every deposit is covered by the timelock. |
 | **`AsyncVault`** | `claim_deposit` | `holder.require_auth()` | Investor entrypoint. Mints the shares once the epoch is priced; the token checks the receiver on `mint`. A delisted holder's shares become an exit instead (`DepositConvertedToExit`): they join the holder's redemption in the open epoch, or the holder's wind-down entitlement during a wind-down. A frozen holder's claim is held (`Frozen`). |
 | **`AsyncVault`** | `cancel_deposit` | `holder.require_auth()` | Investor exit while the epoch cannot be priced. Refunds the whole escrowed deposit in one step, delisted or not. A frozen holder is held (`Frozen`). |
-| **`AsyncVault`** | `request_redeem` | `holder.require_auth()` | Investor exit. Always open, even during pause. |
+| **`AsyncVault`** | `request_redeem` | `holder.require_auth()` | Investor exit. Open during a pause and to a delisted holder; refused during a wind-down (`WindDownActive`). |
 | **`AsyncVault`** | `claim_redeem` | `holder.require_auth()` | Investor exit. Pays settlement asset once covered. |
 | **`AsyncVault`** | `cancel_redeem` | `holder.require_auth()` | Investor exit while the epoch cannot be priced. Outside a wind-down the vault checks the holder itself and returns the escrowed shares with the manager `forced_transfer`; it refuses a delisted holder (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`). In an active wind-down the escrow is surrendered into the holder's wind-down entitlement instead (`RedemptionSurrendered`). A frozen holder is held (`Frozen`) either way. |
 

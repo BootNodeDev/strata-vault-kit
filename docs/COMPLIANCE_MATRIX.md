@@ -99,7 +99,7 @@ The share token is OpenZeppelin's RWA token. The allowlist and freeze checks sit
 
 When the vault returns escrowed shares with `forced_transfer`, it makes the receiver checks itself first: the freeze, `verify_identity` and `can_transfer`. It does not check the token pause.
 
-The kit's compliance contract registers no modules, so `can_transfer` and `can_create` always allow today. Until rule modules are added, the allowlist and freeze rules are exactly the token checks in the table above. Adding or removing a module waits for the vault's timelock once its setup is finished, so a rule change never lands sooner than an exit completes.
+The kit's compliance contract registers no modules, so `can_transfer` and `can_create` always allow today. Until rule modules are added, the allowlist and freeze rules are exactly the token checks in the table above. Adding or removing a module waits for the vault's timelock once its setup is finished, so holders get at least the delay as notice of a rule change. An exit still needs a sealed epoch, a price and cash, so the delay does not promise that one completes first.
 
 ---
 
