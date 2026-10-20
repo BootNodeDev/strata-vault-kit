@@ -1,3 +1,25 @@
+//! # Design
+//!
+//! Storage helpers that keep the kit's own entries alive. Every read and every
+//! write through them asks the network to renew the entry it touches.
+//!
+//! - **Thirty days, renewed a day short.** Each entry, the contract instance
+//!   included, goes back to 30 days once it falls a day short of that. The
+//!   cost: an entry in daily use renews about once a day, for about a day of
+//!   rent, and one nobody reads archives when its lifetime runs out.
+//! - **Extended in the call that creates it.** A write asks for the renewal
+//!   too, so a new entry lives at least its target from the call that creates
+//!   it. The cost: that call pays for the target, or for the network's minimum
+//!   when that is longer.
+//! - **The same lengths on every network.** They are fixed in code, and each
+//!   network applies its own minimum lifetime on top, so the Wasm tested on
+//!   testnet is the Wasm that ships. The cost: no network gets lengths of its
+//!   own, and changing them takes an upgrade.
+//! - **No cap per call.** An extension always reaches the full target. A cap
+//!   would let rarely read entries archive sooner, and a restore on mainnet
+//!   pays at least 120 days of rent. The cost: the first call after a quiet
+//!   period pays to renew everything it touches.
+
 #![no_std]
 
 use core::fmt::Debug;
