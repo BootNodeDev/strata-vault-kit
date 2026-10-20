@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, symbol_short, Address, Symbol};
 
-/// Closes an epoch and sets its share price. Held by the Manager contract.
+/// Seals the open epoch. Not the share token's `manager`, which the vault holds.
 pub const MANAGER_ROLE: Symbol = symbol_short!("manager");
 
 /// Moves capital to the custodian and funds the vault back.

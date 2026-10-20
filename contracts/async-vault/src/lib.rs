@@ -169,12 +169,7 @@ impl AsyncVault {
         oracle: Address,
         roles: VaultRoles,
     ) {
-        // The vault kit white-label topology specifies five distinct authorities:
-        // governance, manager, treasury, guardian, compliance, and attester.
-        // Although compliance is enforced on the identity verifier and attestation
-        // on the NAV oracle, the vault checks pairwise distinctness at construction
-        // time to prevent role misconfiguration across the kit ecosystem. Neither
-        // compliance nor attester is granted a direct role on the vault contract itself.
+        // `roles` holds the five authorities and the manager; the attester is not read.
         guards::roles_distinct(e, &roles);
 
         access_control::set_admin(e, &roles.governance);

@@ -76,7 +76,7 @@ or legal solution, and not a vault for on-chain RWA tokens.
 | Actor | On-chain authority | Does |
 |---|---|---|
 | Investor (LP) | None (allowlisted address) | Requests deposits and redemptions, claims shares or cash, cancels pending requests, views position |
-| Valuation reporter | attestation | Attests the share price with a proof reference, under on-chain guardrails |
+| Valuation reporter | attestation | Attests the share price under on-chain guardrails |
 | Treasury ops | treasury | Moves free reserve between the vault and the custodian |
 | Epoch sealer | manager (vault role, not an authority) | Seals the open epoch (`close_epoch`), nothing else; a vault role with its own key at deploy, meant to become permissionless (§8.4) |
 | Compliance | compliance | Maintains the allowlist; token interventions (freeze; legal-order transfer and recovery, each co-signed by governance) |
@@ -222,7 +222,7 @@ flowchart TB
 
     LP -->|"requests · claims"| V
     ADM -->|"admin operations"| AUTH
-    OR ---|"attested value + proof ref ↑"| VS
+    OR ---|"attested value ↑"| VS
     IVC ---|"verified addresses ↑"| KYC
     SAC ---|"reserve in / out"| TR
     TR -->|"deploy_to_custodian"| CU
@@ -280,7 +280,7 @@ under the [Admin panel](#admin-panel) table in §8.8.
 Both interfaces are backend-free: they read contract state and build
 transactions that the authority multisigs sign. The chain never sees KYC data or
 valuation methodology, only their outputs: an allowlisted address, an attested
-number with a proof reference.
+number.
 
 ### 8.3 Components and authorities
 
@@ -361,9 +361,10 @@ sequenceDiagram
 
 ### 8.5 Valuation and accounting
 
-The NAV is a permissioned attestation of the share price, published with a proof
-reference. The reporter computes it off-chain under a published methodology. The
-contract checks bounds, cooldown and the deviation cap, then stores the price
+The NAV is a permissioned attestation of the share price. The reporter computes
+it off-chain under a published methodology. A report carries the price and the
+time until which the reporter vouches for it; it carries no proof reference yet.
+The contract checks bounds, cooldown and the deviation cap, then stores the price
 and exposes it with the liquidity figures it owns:
 
 ```text
@@ -375,17 +376,16 @@ uncovered      = max(committed - liquid_reserve, 0)
 `wind_down_owed` is what the wind-down rounds have credited to holders and they
 have not claimed yet. It is zero outside a wind-down.
 
-**Attestation guardrails:** the reporter is a multisig, never a single key. Each
-attestation carries the share price and a proof reference; attestations are
-ordered by their acceptance time on the ledger. The price must stay within
-configured bounds, a minimum cooldown bounds frequency, and the deviation cap is
-directional: the upward bound is mandatory and non-zero, the downward bound is
-required too, and setting it to 100% lets a loss of any size land in one
-attestation. A report's own expiry can shorten its life but never extend it past
-the freshness window, and no report is accepted while the NAV is paused:
-unpausing it is a deliberate act before reporting resumes. An epoch is never
-priced against a valuation accepted before it closed, and the oracle's cooldown
-therefore bounds how soon a closed epoch can be priced.
+**Attestation guardrails:** the reporter is a multisig, never a single key.
+Attestations are ordered by their acceptance time on the ledger. The price must
+stay within configured bounds, a minimum cooldown bounds frequency, and the
+deviation cap is directional: the upward bound is mandatory and non-zero, the
+downward bound is required too, and setting it to 100% lets a loss of any size
+land in one attestation. A report's own expiry can shorten its life but never
+extend it past the freshness window, and no report is accepted while the NAV is
+paused: unpausing it is a deliberate act before reporting resumes. An epoch is
+never priced against a valuation accepted before it closed, and the oracle's
+cooldown therefore bounds how soon a closed epoch can be priced.
 
 **Freshness and pause:** each attestation opens a validity window; when it
 lapses the feed is stale and new requests stop being priced. The guardian can
@@ -406,9 +406,10 @@ pricing, share and cash claims, mint, burn and forced transfer are unaffected.
 It is a trading restriction, not an emergency stop for the vault, and only
 governance lifts it.
 
-**Integrator surface:** the oracle exposes the attested share price directly, as
-the latest report with its proof reference and acceptance time (`nav_per_share`).
-The SEP-40 feed named in section 4 is an adapter over that surface scheduled for
+**Integrator surface:** the oracle exposes the attested share price directly:
+the latest report with its acceptance time and expiry (`latest`), the price
+alone (`nav_per_share`) and the acceptance time alone (`attested_at`). The
+SEP-40 feed named in section 4 is an adapter over that surface scheduled for
 Tranche 3 and is not implemented yet; integrators read the oracle's own
 interface today.
 
@@ -605,7 +606,7 @@ public surface given the vault address.
 
 | Boundary               | Risk                                           | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the deviation cap bounds a single report in both directions, and a downward cap of 100% leaves `min_answer` as the only floor; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts |
+| Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the deviation cap bounds a single report in both directions, and a downward cap of 100% leaves `min_answer` as the only floor; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts. A compromised attester is replaced in this order: pause the NAV, revoke the attester (instant), grant a replacement (through the timelock after setup, so the NAV stays paused that long), clear the stored report if it is wrong, then lift the pause ([`kit-spec.md`](./kit-spec.md) §3) |
 | Governance keys        | Malicious upgrade                              | Timelock on every code change and on the delay itself, bounded by a minimum no shorter than the standing notice and a maximum ceiling (90 days). A pause freezes the timelock clock and pushes the ETA by the duration paused, guaranteeing that investors have an unpaused exit window before any code change applies; applying while paused is refused; nothing is proposed or applied while the vault winds down. The vault's own custodian, role grants, `manager` revocations, admin handovers and lowering of the notice or the wind-down delay wait on that clock once its one-time setup closes, and it takes no deposit before then; revoking its treasury or guardian stays instant. Setup closes only once the token and the oracle run on the vault's clock with their own setup closed, the vault is the token's only minter, no shares exist yet (shares minted earlier would redeem against depositors' money), the vault passes the identity check, its address is not frozen on the token, the token is bound to its compliance contract, the asset has the token's decimals, the asset, the token, the oracle and the vault are four different addresses, the oracle answers the feed interface, and a custodian other than the vault is set; the kit's own compliance contract must also run on the vault's clock with its setup closed. The share token's upgrades, grants, `manager` revocations, admin handovers and compliance or verifier swaps wait on the same clock once its setup closes. So do the oracle's upgrades, grants, admin handovers and every guardrail change except a shorter freshness window; its NAV pause, `clear_latest` and revoking its attester or guardian stay instant. On the kit's compliance contract, adding or removing a module, binding or unbinding a token and handing over the admin wait on the same clock once its setup closes. |
 | Mis-wired deployment   | A vault goes live without every binding wired  | `health()` reports each wiring step; `finish_setup` refuses until all hold, and the vault takes no deposit before that                                                                                                                                                                                                                                                                                                                                             |
 | Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while anything is uncovered, and escrowed subscriptions never leave the vault                                                                                                                                                                                                                                                          |

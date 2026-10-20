@@ -13,9 +13,9 @@ This document provides the complete authorization and role model specification f
    - A role entrypoint checks the role of the `caller` or `operator` it names, then asks that account to sign. `legal_transfer` and `recover_balance` also ask the admin, a different account, to sign the same call.
    - The testnet stubs are the exception. The compliance contract's `bind_token`, `unbind_token`, `add_module_to` and `remove_module_from`, and the identity verifier's `set_claim_topics_and_issuers`, keep the `operator` argument their trait fixes but do not read it. `#[only_admin]` asks the stored admin to sign, so each still asks for one signature. Production replaces both stubs with external contracts (§5.4, §5.5).
 3. **Exit guarantee, with one hold**: A covered redemption claim pays out cash regardless of pause, staleness or allowlist status. A delisted investor exits through the cash path and cannot re-enter share circulation. A frozen investor is held: the vault refuses their requests, cancellations and claims, and pays them only after the freeze lifts.
-4. **Five Separate Authorities**:
+4. **Five Separate Authorities, plus the Vault's `manager` Role**:
    - **Governance (Admin)**: Root authority; upgrades, timelock parameters, custodian settings, unpause, oracle parameters, emergency NAV pause reset. As the share token's admin, it co-signs compliance's `legal_transfer` and `recover_balance`.
-   - **Manager (Vault)**: Closes epochs.
+   - **Manager (vault role, not an authority)**: Closes epochs.
    - **Treasury**: Deploys free reserve assets to custodian.
    - **Guardian**: Emergency responder; pauses vault entries, pauses the oracle's NAV.
    - **Attester (Oracle)**: Submits off-chain valuation reports within strict deviation and rate bounds.
