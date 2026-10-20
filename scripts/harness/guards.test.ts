@@ -322,15 +322,10 @@ describe("the compliance contract after setup", () => {
 		const id = await send(
 			rules.propose_change({
 				change: { tag: "AddModule", values: [canCreate, outsider.publicKey()] },
-				caller: caller(),
 			}),
 		)
-		expectRefused(
-			await rules.apply_change({ id, caller: caller() }),
-			rules,
-			"ChangeNotReady",
-		)
-		await send(rules.cancel_change({ id, caller: caller() }))
+		expectRefused(await rules.apply_change({ id }), rules, "ChangeNotReady")
+		await send(rules.cancel_change({ id }))
 		expect((await rules.pending_changes()).result).toEqual([])
 	})
 })

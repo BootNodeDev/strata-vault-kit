@@ -176,12 +176,9 @@ impl Fixture<'_> {
     /// After setup, a module lands only through the compliance contract's timelock.
     fn add_compliance_module(&self, hook: ComplianceHook, module: &Address) {
         let rules = ComplianceClient::new(&self.e, &self.share.compliance());
-        let id = rules.propose_change(
-            &ComplianceChange::AddModule(hook, module.clone()),
-            &self.admin,
-        );
+        let id = rules.propose_change(&ComplianceChange::AddModule(hook, module.clone()));
         self.advance(MIN_UPGRADE_DELAY);
-        rules.apply_change(&id, &self.admin);
+        rules.apply_change(&id);
     }
 }
 
@@ -407,13 +404,13 @@ fn build<'a>(
     match miswire {
         Miswire::ComplianceUnbound => {}
         Miswire::ComplianceBoundElsewhere => {
-            compliance.bind_vault(&register_with(&e, distinct_roles(&e)), &admin);
-            compliance.finish_setup(&admin);
+            compliance.bind_vault(&register_with(&e, distinct_roles(&e)));
+            compliance.finish_setup();
         }
-        Miswire::ComplianceSetupOpen => compliance.bind_vault(&contract_id, &admin),
+        Miswire::ComplianceSetupOpen => compliance.bind_vault(&contract_id),
         _ => {
-            compliance.bind_vault(&contract_id, &admin);
-            compliance.finish_setup(&admin);
+            compliance.bind_vault(&contract_id);
+            compliance.finish_setup();
         }
     }
     let vault = AsyncVaultClient::new(&e, &contract_id);
