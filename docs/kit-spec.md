@@ -328,7 +328,7 @@ how long a new entry lives before any extension (see **Network settings**).
 |---|---|---|---|
 | `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once 29 days or less remain |
 | `nav_oracle` | Its instance, the latest report, and each pending governance change it reads or writes | `attest` extends the instance and the report; `bind_vault`, `finish_setup`, `grant_role`, `transfer_admin_role`, `propose_change`, `cancel_change` and `apply_change` extend the instance; every other call extends whichever entry it reads or writes | Same |
-| `share_token` | Its instance, each balance and freeze entry it writes, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change` | Same |
+| `share_token` | Its instance, each balance and freeze entry it writes, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change`; also the reads `balance` and `total_supply`, which may be the only token calls during a wind-down | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
 | `async_vault`, `share_token`, `nav_oracle` | The four entries a grant writes: the account's role, its member-list slot, the member count and the role list | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change) extends all four. After that, a role check extends only that account's role entry; the slot, the count and the list are extended only by grants and by calls that list role members (such as the vault's `manager()` or the token's `get_role_member_count`) | 90 days (1,555,200 ledgers), once 89 days or less remain |
@@ -448,8 +448,11 @@ Extending needs no authority, so any funded account can pay.
 **Restoring.** Since Protocol 23 an invocation can restore archived entries
 itself, so a call to an archived contract usually goes through once simulation
 adds the restore. Restoring many entries in one transaction can still hit
-per-transaction limits; `stellar contract restore --id <contract>` restores
-one instance at a time.
+per-transaction limits. Restore them first, in batches: each
+`RestoreFootprintOp` transaction takes as many entries as the limits allow.
+`stellar contract restore` sends one: `--id <contract>` restores an instance,
+`--id <contract> --key-xdr <key>` a data entry, and `--wasm-hash <hash>` a
+Wasm. After a restore, simulate the call again before sending it.
 
 **Production modules.** The compliance and identity contracts in this
 repository are testnet stubs. A production compliance module or identity
