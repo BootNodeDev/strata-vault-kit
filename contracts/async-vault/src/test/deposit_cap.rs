@@ -178,3 +178,40 @@ fn zero_cap_blocks_all_deposits() {
         VaultError::DepositCapExceeded,
     );
 }
+
+/// 1,000 deposited, priced and sent to the custodian; the cap is then 1,500.
+fn capital_deployed_under_a_cap(f: &Fixture) -> Address {
+    let investor = f.investor(2_000);
+    f.vault.set_deposit_cap(&Some(1_000));
+    let epoch = f.vault.request_deposit(&investor, &1_000);
+    f.close_epoch();
+    f.fulfill_epoch_at(epoch, wad(1));
+    f.vault.deploy_to_custodian(&f.treasury, &1_000);
+    f.vault.set_deposit_cap(&Some(1_500));
+    investor
+}
+
+#[test]
+fn capital_funded_back_counts_once_toward_the_cap() {
+    let f = setup();
+    let investor = capital_deployed_under_a_cap(&f);
+
+    f.vault.fund(&f.custodian, &500);
+
+    assert_eq!(f.vault.net_deployed(), 500);
+    f.vault.request_deposit(&investor, &500);
+}
+
+#[test]
+fn a_plain_transfer_back_counts_twice_toward_the_cap() {
+    let f = setup();
+    let investor = capital_deployed_under_a_cap(&f);
+
+    TokenClient::new(&f.e, &f.asset).transfer(&f.custodian, &f.vault.address, &500);
+
+    assert_eq!(f.vault.net_deployed(), 1_000);
+    refused(
+        f.vault.try_request_deposit(&investor, &1),
+        VaultError::DepositCapExceeded,
+    );
+}

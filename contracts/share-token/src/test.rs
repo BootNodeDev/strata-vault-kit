@@ -708,6 +708,36 @@ mod legal_transfer {
     }
 
     #[test]
+    fn a_zero_share_legal_transfer_passes_and_is_published() {
+        let e = Env::default();
+        let (f, holder, destination, _) = live(&e);
+
+        f.token.legal_transfer(
+            &holder,
+            &destination,
+            &0,
+            &order(&e),
+            &f.compliance_authority,
+        );
+
+        let events = e.events().all().filter_by_contract(&f.token.address);
+        assert_eq!(
+            events.events().last(),
+            Some(
+                &LegalTransfer {
+                    from: holder.clone(),
+                    to: destination.clone(),
+                    amount: 0,
+                    reference: order(&e),
+                }
+                .to_xdr(&e, &f.token.address)
+            )
+        );
+        assert_eq!(f.token.balance(&holder), 1_000);
+        assert_eq!(f.token.balance(&destination), 0);
+    }
+
+    #[test]
     fn compliance_alone_cannot_move_shares() {
         let e = Env::default();
         let (f, holder, destination, _) = live(&e);

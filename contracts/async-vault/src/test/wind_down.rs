@@ -1,5 +1,5 @@
 use proptest::prelude::*;
-use soroban_sdk::IntoVal;
+use soroban_sdk::{contract, contracterror, contractimpl, panic_with_error, IntoVal};
 
 use super::*;
 
@@ -407,6 +407,51 @@ fn a_holder_who_waits_collects_every_round_at_once() {
     let all_at_once = f.vault.claim_wind_down(&patient);
 
     assert_eq!(all_at_once, first + second);
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+enum ModuleError {
+    BurnRefused = 1,
+}
+
+#[contract]
+struct FailsEveryBurn;
+
+#[contractimpl]
+impl FailsEveryBurn {
+    pub fn on_destroyed(e: Env, _from: Address, _amount: i128, _token: Address) {
+        panic_with_error!(&e, ModuleError::BurnRefused);
+    }
+}
+
+#[test]
+fn a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed() {
+    let f = setup();
+    let holder = f.holder(500);
+    let module = f.e.register(FailsEveryBurn, ());
+    f.add_compliance_module(ComplianceHook::Destroyed, &module);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+
+    assert_eq!(
+        f.vault.try_claim_wind_down(&holder),
+        Err(Ok(ModuleError::BurnRefused.into()))
+    );
+    assert_eq!(f.shares(&holder), 500);
+    assert_eq!(f.balance(&holder), 0);
+
+    let rules = ComplianceClient::new(&f.e, &f.share.compliance());
+    assert_eq!(
+        rules.try_propose_change(&ComplianceChange::RemoveModule(
+            ComplianceHook::Destroyed,
+            module,
+        )),
+        Err(Ok(
+            ::compliance::ComplianceContractError::WindDownActive.into()
+        ))
+    );
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use soroban_sdk::{contract, contractimpl};
-use stellar_tokens::rwa::compliance::ComplianceHook;
+use stellar_tokens::rwa::compliance::{ComplianceError, ComplianceHook};
 
 use super::*;
 
@@ -111,6 +111,39 @@ fn a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim() {
         f.vault.try_cancel_deposit(&investor, &epoch),
         VaultError::AlreadyPriced,
     );
+}
+
+#[test]
+fn an_unbound_compliance_swap_lands_and_stops_every_move() {
+    let f = setup();
+    let holder = f.holder(10);
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &100);
+    f.vault.request_redeem(&holder, &4);
+    f.fulfill_epoch(wad(2));
+
+    let unbound = f.e.register(Compliance, (f.admin.clone(),));
+    let id = f
+        .share
+        .propose_change(&share_token::TokenChange::Compliance(unbound.clone()));
+    f.advance(MIN_UPGRADE_DELAY);
+    f.share.apply_change(&id);
+    assert_eq!(f.share.compliance(), unbound);
+
+    let token_not_bound = Some(Ok(ComplianceError::TokenNotBound.into()));
+    assert_eq!(
+        f.share.try_transfer(&holder, &investor, &1).err(),
+        token_not_bound
+    );
+    assert_eq!(
+        f.vault.try_claim_deposit(&investor, &epoch).err(),
+        token_not_bound
+    );
+    assert_eq!(
+        f.vault.try_claim_redeem(&holder, &epoch).err(),
+        token_not_bound
+    );
+    assert!(!f.vault.health().compliance_bound);
 }
 
 #[test]
