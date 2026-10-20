@@ -54,7 +54,6 @@ fn manager_mints_to_allowlisted_account() {
 }
 
 struct Fixture<'a> {
-    #[allow(dead_code)]
     e: Env,
     token: ShareTokenClient<'a>,
     admin: Address,
@@ -603,6 +602,14 @@ fn each_role_call_asks_its_holder_for_one_signature() {
         &[compliance],
         "set_address_frozen",
         (holder, true, compliance.clone()).into_val(&e),
+    );
+
+    let role = Symbol::new(&e, "compliance");
+    f.token.renounce_role(&role, compliance);
+    f.signed_once_by(
+        &[compliance],
+        "renounce_role",
+        (role, compliance.clone()).into_val(&e),
     );
 }
 

@@ -1013,6 +1013,12 @@ fn each_role_call_asks_its_holder_for_one_signature() {
         "pause_nav",
         (f.guardian.clone(),).into_val(&f.e),
     );
+    f.oracle.renounce_role(&ATTESTER_ROLE, &f.attester);
+    f.signed_once_by(
+        &f.attester,
+        "renounce_role",
+        (ATTESTER_ROLE, f.attester.clone()).into_val(&f.e),
+    );
 
     f.oracle
         .transfer_admin_role(&next, &(f.e.ledger().sequence() + ADMIN_ACCEPT_LEDGERS));

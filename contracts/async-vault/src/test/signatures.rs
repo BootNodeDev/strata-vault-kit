@@ -107,4 +107,12 @@ fn each_role_call_asks_its_holder_for_one_signature() {
     );
     f.vault.pause(&f.guardian);
     f.signed_once_by(&f.guardian, "pause", (f.guardian.clone(),).into_val(&f.e));
+
+    let guardian = symbol_short!("guardian");
+    f.vault.renounce_role(&guardian, &f.guardian);
+    f.signed_once_by(
+        &f.guardian,
+        "renounce_role",
+        (guardian, f.guardian.clone()).into_val(&f.e),
+    );
 }
