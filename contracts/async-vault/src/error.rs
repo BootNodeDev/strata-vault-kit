@@ -126,7 +126,8 @@ pub enum VaultError {
     /// Setup has finished, and it never reopens.
     SetupClosed = 6066,
     /// A wiring check `health()` reports is false (token, oracle and compliance
-    /// bound, sole token manager, allowlisted, not frozen) or the token has
+    /// bound, sole token manager, allowlisted, not frozen, matching decimals,
+    /// distinct addresses, a feed that answers, a custodian) or the token has
     /// shares outstanding, so setup cannot finish.
     SetupIncomplete = 6067,
     /// The holder fails the share token's identity check, so the vault takes no

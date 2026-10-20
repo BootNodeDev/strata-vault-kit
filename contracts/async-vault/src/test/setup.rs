@@ -64,6 +64,11 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
         Miswire::ComplianceUnbound,
         Miswire::ComplianceBoundElsewhere,
         Miswire::ComplianceSetupOpen,
+        Miswire::AssetDecimalsDiffer,
+        Miswire::AssetIsShareToken,
+        Miswire::OracleNotAFeed,
+        Miswire::NoCustodian,
+        Miswire::CustodianIsVault,
     ] {
         let f = miswired(miswire);
 
@@ -172,6 +177,7 @@ fn a_token_that_cannot_answer_fails_its_checks_instead_of_trapping() {
     assert!(!health.allowlisted);
     assert!(!health.vault_unfrozen);
     assert!(!health.compliance_bound);
+    assert!(!health.decimals_match);
 
     refused(vault.try_finish_setup(), VaultError::SetupIncomplete);
 }

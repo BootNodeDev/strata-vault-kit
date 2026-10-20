@@ -31,6 +31,7 @@ mod wind_down;
 
 extern crate std;
 
+use soroban_sdk::{contract, contractimpl};
 pub(crate) use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger as _},
@@ -275,6 +276,23 @@ enum Miswire {
     ComplianceUnbound,
     ComplianceBoundElsewhere,
     ComplianceSetupOpen,
+    AssetDecimalsDiffer,
+    AssetIsShareToken,
+    /// The compliance contract passed as the oracle: bound here, but no feed.
+    OracleNotAFeed,
+    NoCustodian,
+    CustodianIsVault,
+}
+
+/// An asset with six decimals, where the share token has seven.
+#[contract]
+struct SixDecimalAsset;
+
+#[contractimpl]
+impl SixDecimalAsset {
+    pub fn decimals(_e: Env) -> u32 {
+        6
+    }
 }
 
 /// A vault left in setup, wired except for `miswire`.
@@ -306,8 +324,8 @@ fn setup_with<'a>(
 /// The share token's constructor arguments, in order.
 type TokenArgs = (String, String, Address, Address, Address, Address);
 
-/// Wires the set the way the deploy does, apart from `miswire`, then sets the
-/// custodian and finishes the vault's setup when `finish` is set.
+/// Wires the set the way the deploy does, custodian included, apart from
+/// `miswire`, then finishes the vault's setup when `finish` is set.
 fn build<'a>(
     feed: OracleConfig,
     register_token: impl FnOnce(&Env, TokenArgs) -> Address,
@@ -360,12 +378,21 @@ fn build<'a>(
         ),
     );
 
+    let vault_asset = match miswire {
+        Miswire::AssetDecimalsDiffer => e.register(SixDecimalAsset, ()),
+        Miswire::AssetIsShareToken => share.address.clone(),
+        _ => asset.clone(),
+    };
+    let vault_oracle = match miswire {
+        Miswire::OracleNotAFeed => compliance.address.clone(),
+        _ => oracle.address.clone(),
+    };
     let contract_id = e.register(
         AsyncVault,
         (
-            &asset,
+            &vault_asset,
             &share.address,
-            &oracle.address,
+            &vault_oracle,
             VaultRoles {
                 governance: admin.clone(),
                 manager: manager.clone(),
@@ -439,8 +466,15 @@ fn build<'a>(
         }
     }
     let vault = AsyncVaultClient::new(&e, &contract_id);
+    match miswire {
+        Miswire::NoCustodian => {}
+        // No entrypoint takes the vault as its own custodian, so the test stores it.
+        Miswire::CustodianIsVault => e.as_contract(&contract_id, || {
+            crate::state::set_addr(&e, &crate::keys::DataKey::Custodian, &contract_id)
+        }),
+        _ => vault.set_custodian(&custodian),
+    }
     if finish {
-        vault.set_custodian(&custodian);
         vault.finish_setup();
     }
 
