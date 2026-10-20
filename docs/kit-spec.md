@@ -338,17 +338,35 @@ Wasm.
 
 **What OpenZeppelin extends.** `stellar-tokens` 0.7.2 stores the share token's
 balances and frozen amounts, and the compliance contract's modules and bound
-tokens, and extends each to 30 days when it is read or written. `stellar-access`
-0.7.2 stores every contract's roles and extends them to 90 days the same way.
-Allowances are temporary entries that live until their `live_until_ledger`.
-OpenZeppelin never extends an instance; the kit does, as above. The token's
-total supply and metadata live in its instance.
+tokens. `stellar-access` 0.7.2 stores every contract's roles. OpenZeppelin
+extends an existing entry when it reads it: balances, frozen amounts, modules
+and bound tokens to 30 days, roles to 90. It does not extend an entry when it
+writes one, so a new entry starts at the network's minimum lifetime (see
+**Network settings**) and waits for a later caller to read it. Allowances are
+temporary entries that live until their `live_until_ledger`. OpenZeppelin
+never extends an instance; the kit does, as above. The token's total supply
+and metadata live in its instance.
+
+**Network settings.** Each network sets how long a new persistent entry lives,
+and a restored entry comes back with the same lifetime: 120,960 ledgers (about
+7 days) on testnet, 2,073,600 ledgers (about 120 days) on mainnet. Validators
+can change these values by vote, so the kit does not hardcode them; check
+[Stellar Lab's network limits](https://lab.stellar.org/network-limits) for
+current values.
 
 **Who pays.** The account that sends a transaction pays the rent for every
-extension that transaction triggers. One call extends each entry it touches to
-at most 30 days, so no caller pays for more than 30 days of any entry.
+extension that transaction triggers. A call pays only to bring an entry back
+to its target once it has fallen to its threshold: about a day of rent when
+the entry is read daily, up to a whole target (30 days, or 90 for a role) after
+a long quiet period. Creating or restoring an entry pays for at least the
+network's minimum lifetime, 120 days on mainnet. The kit does not cap each
+extension with `extend_ttl_with_limits`: a cap would let rarely used entries
+archive sooner, and each of those restores pays at least 120 days of rent on
+mainnet.
 
-**Idle deployments.** A deployment nobody calls for 30 days archives. Run
+**Idle deployments.** An entry nobody reads archives when its lifetime runs
+out: 30 days after it was last extended (90 for a role), or the network's
+minimum lifetime after it was created, whichever is later. Run
 `STELLAR_ACCOUNT=<funded account> npm run extend -w scripts/harness` after
 every deploy and before a long quiet period. It restores, when archived, and
 extends by 30 days three kinds of entry only: each contract instance, the Wasm
@@ -361,8 +379,11 @@ Extending needs no authority, so any funded account can pay.
 **Restoring.** Since Protocol 23 an invocation can restore archived entries
 itself, so a call to an archived contract usually goes through once simulation
 adds the restore. Restoring many entries in one transaction can still hit
-per-transaction limits; `stellar contract restore --id <contract>` restores
-one instance at a time.
+per-transaction limits. Restore them first, in batches: each
+`RestoreFootprintOp` transaction takes as many entries as the limits allow.
+`stellar contract restore` sends one: `--id <contract>` restores an instance,
+`--id <contract> --key-xdr <key>` a data entry, and `--wasm-hash <hash>` a
+Wasm. After a restore, simulate the call again before sending it.
 
 **Production modules.** The compliance and identity contracts in this
 repository are testnet stubs. A production compliance module or identity
