@@ -1,3 +1,47 @@
+//! # Design
+//!
+//! The feed the vault prices epochs from. An attester reports the share price,
+//! and the oracle keeps the latest report that passes the limits the admin
+//! sets.
+//!
+//! - **The ledger dates a report.** The oracle stores the time it accepts a
+//!   report and ignores the reporter's own timestamp. The report expires at the
+//!   earlier of the reporter's `expires_at` and that time plus
+//!   `freshness_duration`, so a reporter can shorten a report's life but never
+//!   extend it. The cost: the vault's rule that a price must come after an
+//!   epoch's seal compares acceptance times, not valuation dates.
+//! - **No report while the NAV is paused.** The guardian or the admin pauses
+//!   the NAV, and only the admin lifts the pause, so reporting resumes by a
+//!   deliberate act. The cost: while the pause lasts the vault prices nothing,
+//!   and sealed epochs reopen to cancellation.
+//! - **Tightening waits too.** After setup every config change waits for the
+//!   vault's timelock; only a shorter `freshness_duration` is instant. A
+//!   tighter fall cap can hold the price above a real loss, and a narrower band
+//!   can stop pricing, so tightening moves value too. The cost: an urgent
+//!   change to the limits takes the full delay; the NAV pause is the instant
+//!   stop.
+//! - **The band applies on read.** A stored report outside the current band
+//!   reads as stale. The cost: narrowing the band can stop pricing the moment
+//!   the change lands, until a report inside the new band arrives.
+//! - **Both moves are capped.** A report may move from the last one by at most
+//!   `max_up_bps` up and `max_down_bps` down, and both caps are required. A
+//!   fall cap of 10,000 bps lets a loss of any size land at once, leaving
+//!   `min_answer` as the only floor. The cost of a lower fall cap: a real loss
+//!   takes several reports, at least a cooldown apart, and redemptions priced
+//!   meanwhile are paid above value.
+//! - **Revoking is instant, granting waits.** Taking the `attester` or
+//!   `guardian` role away moves no value and stays instant; after setup a grant
+//!   waits for the timelock. The cost: replacing a compromised attester keeps
+//!   the NAV paused for the whole delay.
+//! - **Clearing needs a paused NAV.** `clear_latest` removes the stored report
+//!   only while the NAV is paused, so the admin clears and the attester's next
+//!   report is a separate act. The cost: that report has no earlier price to
+//!   cap its move; only the band bounds it.
+//! - **One report per cooldown.** The cooldown is at least one second and at
+//!   most `freshness_duration`: never two reports in one ledger, and the next
+//!   report is always allowed before the freshness window ends. The cost: an
+//!   epoch sealed just after a report waits up to a cooldown for the next one.
+
 #![no_std]
 
 mod extend;

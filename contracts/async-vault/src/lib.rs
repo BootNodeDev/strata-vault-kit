@@ -1,3 +1,71 @@
+//! # Design
+//!
+//! Deposits and redemptions are requests. Each joins the open epoch; the
+//! epoch is sealed and priced at the oracle's report, and each holder claims
+//! the result.
+//!
+//! - **The manager seals, anyone prices.** Sealing an epoch needs the
+//!   `manager` role. Pricing it is open to anyone once its notice has run and
+//!   a valid report accepted after the seal exists, so the price is the
+//!   oracle's, not the caller's. The cost: a manager that stops sealing, or an
+//!   attester that stops reporting, stalls every request until it is
+//!   replaced, and after setup a replacement waits for the timelock.
+//! - **Pricing records totals; claims mint and burn.** Pricing costs the same
+//!   whatever the number of requests: it fixes the price and the epoch's
+//!   totals, and each claim then mints or burns its own shares. The cost: the
+//!   token's supply is not the economic supply until every claim is made, and
+//!   since each claim rounds down, the epoch's remainder stays in
+//!   `pending_mint_shares` and `committed` until its last request settles. A
+//!   request that can never settle keeps that remainder there.
+//! - **A readable price closes cancellation.** Cancellation closes once a
+//!   valid report accepted after the seal exists, even while the notice runs,
+//!   and reopens whenever the vault could not price the epoch now: the feed
+//!   goes stale, the NAV is paused or the vault is paused. Nobody declines a
+//!   price they have seen, and no escrow waits on a stalled feed. The cost: a
+//!   report that lapses lets requests leave a sealed epoch late, so
+//!   `freshness_duration` should outlast the notice.
+//! - **Priced before paid.** A redemption is priced whether or not the reserve
+//!   holds the cash, and its claim fails with `ClaimNotCovered` until the
+//!   liquid reserve covers it. Covered claims pay in any order, and nothing
+//!   goes to the custodian while anything is uncovered. The cost: a priced
+//!   exit can wait on treasury, and a later, smaller claim can be paid before
+//!   an earlier, larger one.
+//! - **A refund below one share is not reserved.** A deposit worth less than
+//!   one share base unit mints nothing and is refunded at claim, from the free
+//!   reserve. Pricing sees only the epoch's totals, and setting these refunds
+//!   aside would mean visiting every request, for less than one share base
+//!   unit each. The cost: treasury can deploy that cash, or a wind-down round
+//!   credit it, before the claim, which then fails with `ClaimNotCovered`
+//!   until the free reserve covers it again.
+//! - **Checked totals.** Every running total of assets or shares changes
+//!   through checked arithmetic and fails by name: `AmountTooLarge` when it
+//!   would overflow, `AccountingMismatch` when it would go below zero. None
+//!   wraps or clamps. The cost: if the books ever disagree, the call that finds
+//!   it fails instead of carrying on with a clamped figure.
+//! - **A freeze holds every exit.** A frozen address cannot request a deposit,
+//!   and its claims, cancellations, redemption requests and wind-down claims
+//!   fail with `Frozen` until the freeze lifts. Compliance can delay a payout
+//!   this way, never redirect it. The cost: even a covered cash claim waits for
+//!   the unfreeze.
+//! - **A delisted holder leaves in cash.** A holder delisted after pricing gets
+//!   no shares. Outside a wind-down the priced shares are minted into the
+//!   vault's escrow and join the holder's redemption in the open epoch; in a
+//!   wind-down they are credited to the holder's entitlement. No share reaches
+//!   an unlisted address, and the holder keeps a way out. The cost: the holder
+//!   waits another epoch and takes its price, and the conversion waits while
+//!   the vault's own address is delisted.
+//! - **Setup, then the timelock.** Admin changes are instant during setup,
+//!   which takes no deposit and ends only once `finish_setup` finds every
+//!   wiring check true; it never reopens. After it, the changes that can move
+//!   value or shorten a wait go through the timelock. The cost: a mistake
+//!   found after setup takes a full delay, at least seven days, to fix.
+//! - **Wind-down claims run the compliance hooks.** A wind-down claim that
+//!   surrenders shares burns them through the token, which runs the compliance
+//!   contract's `destroyed` modules. The cost: a module that starts failing
+//!   during a wind-down blocks those claims, and it cannot be removed then,
+//!   because removing a module waits for the timelock and no timelocked change
+//!   lands during a wind-down.
+
 #![no_std]
 
 mod deposit;
