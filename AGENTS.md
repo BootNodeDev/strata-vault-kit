@@ -139,7 +139,10 @@ contracts. The addresses emitted by the deploy script are authoritative.
   one-line summary, then `# Arguments` with units (asset base units, share base
   units, WAD prices, seconds or ledgers), `# Errors`, `# Events` and
   `# Authorization`. Every error variant's doc says when it happens. Keep them
-  short: they are stored in the Wasm as part of the contract spec.
+  short: they are stored in the Wasm as part of the contract spec, which keeps
+  1,024 bytes of each doc and drops the rest without a warning.
+  `every_contract_doc_fits_the_spec` (`crates/strata-bindings/tests/spec_docs.rs`)
+  fails when one is longer.
 - **Design notes.** Each contract's `lib.rs` opens with a `//! # Design`
   section: five to ten bullets, each a choice and its trade-off, in plain words
   and with no issue numbers or decision ids.
