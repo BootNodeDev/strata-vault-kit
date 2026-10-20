@@ -179,10 +179,6 @@ impl FungibleToken for ShareToken {
 
     /// All shares in circulation, in share base units. Reading it extends
     /// the token's instance.
-    ///
-    /// # Authorization
-    ///
-    /// None: anyone may call.
     fn total_supply(e: &Env) -> i128 {
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::total_supply(e)
@@ -194,10 +190,6 @@ impl FungibleToken for ShareToken {
     /// # Arguments
     ///
     /// * `account` - The holder.
-    ///
-    /// # Authorization
-    ///
-    /// None: anyone may call.
     fn balance(e: &Env, account: Address) -> i128 {
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::balance(e, &account)
