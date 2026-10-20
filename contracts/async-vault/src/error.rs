@@ -50,8 +50,9 @@ strata_bindings::error_enum! {
         /// The vault does not hold enough to pay this claim yet. The liability
         /// stands and the claim succeeds once the reserve covers it.
         ClaimNotCovered = 6037,
-        /// The amount would deploy assets already owed to holders whose exit has
-        /// been priced but not yet claimed.
+        /// The amount would deploy assets that are not free: escrow depositors
+        /// can still cancel, or cash owed to holders whose exit has been priced
+        /// but not yet claimed.
         ReserveCommittedToExits = 6005,
         /// No custodian has been set, so capital has nowhere to go.
         CustodianNotSet = 6012,
@@ -79,8 +80,8 @@ strata_bindings::error_enum! {
         /// could outlive would strand their exit with no way to undo it.
         NoticeTooLong = 6045,
         /// The vault is winding down. New requests, epoch closes, pricing,
-        /// transfers to the custodian and governance changes are closed for the
-        /// rest of its life.
+        /// transfers to the custodian, wind-down proposals and timelocked
+        /// changes are closed for the rest of its life.
         WindDownActive = 6046,
         /// No wind-down proposal stands.
         WindDownNotProposed = 6047,

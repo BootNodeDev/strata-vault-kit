@@ -502,7 +502,9 @@ must answer those calls, or the vault's setup cannot finish.
 Each kit contract owns a block of error codes. A call that fails inside
 another contract returns that contract's code: a deposit claim the identity
 verifier refuses returns `304`, not a vault code. The blocks never overlap, so
-a code always names the contract that raised it.
+a code inside them always names the kit contract that raised it. OpenZeppelin's
+codes are shared: every contract built on its libraries returns the same code
+for the same failure, so `304` says what failed, not where.
 
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|

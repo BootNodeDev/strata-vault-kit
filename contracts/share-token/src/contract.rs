@@ -231,7 +231,8 @@ impl ShareToken {
     ///
     /// # Events
     ///
-    /// * `Transfer`, then `LegalTransfer`.
+    /// * `Transfer`, then `LegalTransfer`; `TokensUnfrozen` first when frozen
+    ///   shares move.
     ///
     /// # Authorization
     ///

@@ -79,8 +79,8 @@ impl AsyncVault {
     /// * `share_token` - The share token.
     /// * `oracle` - The feed epochs are priced from.
     /// * `roles` - `governance` becomes the admin; `manager`, `treasury` and
-    ///   `guardian` get their roles. `compliance` and `attester` are only
-    ///   checked for distinctness.
+    ///   `guardian` get their roles. `compliance` is read only by the
+    ///   distinctness check; `attester` is not read.
     ///
     /// # Errors
     ///
@@ -438,6 +438,7 @@ impl AsyncVault {
     /// * `DistributionNotStarted` - No round has been finalised.
     /// * `Frozen` - `holder` is frozen.
     /// * `NoEntitlement` - Nothing to surrender and nothing owed.
+    /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
     ///
@@ -763,8 +764,8 @@ impl AsyncVault {
     }
 
     /// Mints a priced deposit's shares and returns them, in share base units.
-    /// Zero means none: a deposit worth less than one share was refunded, or a
-    /// delisted holder's shares joined an exit (`DepositConvertedToExit`).
+    /// Zero means none: a deposit worth less than one share base unit was
+    /// refunded, or a delisted holder's shares joined an exit.
     ///
     /// # Arguments
     ///
@@ -780,13 +781,14 @@ impl AsyncVault {
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The free reserve cannot cover a refund yet.
     /// * `RWAError::MintNotCompliant` - The compliance rules refuse the mint.
-    /// * `RWAError::IdentityVerificationFailed` - A conversion while the vault
-    ///   is off the allowlist.
+    /// * `RWAError::IdentityVerificationFailed` - The vault is delisted, for a
+    ///   conversion.
+    /// * The asset's own error when `holder` cannot receive a refund.
     ///
     /// # Events
     ///
-    /// * `DepositClaimed`, `DepositConvertedToExit`, or `DepositCancelled`
-    ///   for a refund.
+    /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
+    ///   `DepositCancelled`.
     /// * `EpochReconciled` once the epoch's last request settles.
     ///
     /// # Authorization
@@ -809,9 +811,11 @@ impl AsyncVault {
     ///
     /// * `EpochNotFound` - No such epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
-    /// * `PriceAvailable` - The epoch can be priced now.
+    /// * `PriceAvailable` - A report accepted after the close is valid, so the
+    ///   price is known, even while the notice runs.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `Frozen` - `holder` is frozen.
+    /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
     ///
@@ -838,7 +842,8 @@ impl AsyncVault {
     ///
     /// * `EpochNotFound` - No such epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
-    /// * `PriceAvailable` - The epoch can be priced now.
+    /// * `PriceAvailable` - A report accepted after the close is valid, so the
+    ///   price is known, even while the notice runs.
     /// * `RequestNotFound` - `holder` has no redemption in the epoch.
     /// * `NotAllowlisted` - `holder` is delisted.
     /// * `Frozen` - `holder` is frozen.
@@ -914,6 +919,7 @@ impl AsyncVault {
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
     /// * `HolderNotEligible` - Shares priced at nothing cannot come back.
+    /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
     ///
