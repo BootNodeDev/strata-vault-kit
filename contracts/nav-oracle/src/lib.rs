@@ -196,9 +196,28 @@ pub struct NavOracleContract;
 
 #[contractimpl(contracttrait)]
 impl AccessControl for NavOracleContract {
-    /// Instant during setup; after it, propose the grant through the timelock.
-    /// Revoking stays instant: taking an attester or a guardian away moves no
-    /// value.
+    /// Grants `role` to `account` at once. Only during setup; after it, propose
+    /// a `GrantRole` change. Revoking stays instant: taking an attester or a
+    /// guardian away moves no value.
+    ///
+    /// # Arguments
+    ///
+    /// * `account` - The account that gets the role.
+    /// * `role` - `attester` or `guardian`.
+    /// * `caller` - The admin.
+    ///
+    /// # Errors
+    ///
+    /// * `UseTimelock` - Setup has finished.
+    /// * `AccessControlError::Unauthorized` - `caller` is not the admin.
+    ///
+    /// # Events
+    ///
+    /// * `RoleGranted`, unless `account` already holds `role`.
+    ///
+    /// # Authorization
+    ///
+    /// `caller` signs.
     fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
         guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
@@ -206,8 +225,32 @@ impl AccessControl for NavOracleContract {
         extend::role_entries(e, &account, &role);
     }
 
-    /// Cancelling a pending hand-over (`live_until_ledger == 0`) keeps the
-    /// current admin, so it stays instant.
+    /// Offers the admin role to `new_admin`, who takes it with
+    /// `accept_admin_transfer`. An offer is instant only during setup; after
+    /// it, propose an `Admin` change. Cancelling an offer stays instant.
+    ///
+    /// # Arguments
+    ///
+    /// * `new_admin` - The nominee, or the pending nominee when cancelling.
+    /// * `live_until_ledger` - The last ledger number the nominee can accept
+    ///   in; `0` cancels the pending offer.
+    ///
+    /// # Errors
+    ///
+    /// * `UseTimelock` - An offer after setup.
+    /// * `RoleTransferError::InvalidLiveUntilLedger` - The ledger has passed or
+    ///   is beyond the longest entry lifetime.
+    /// * `RoleTransferError::NoPendingTransfer` - Nothing to cancel.
+    /// * `RoleTransferError::InvalidPendingAccount` - The cancel names another
+    ///   nominee.
+    ///
+    /// # Events
+    ///
+    /// * `AdminTransferInitiated`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     fn transfer_admin_role(e: &Env, new_admin: Address, live_until_ledger: u32) {
         guards::direct_hand_over_allowed(e, live_until_ledger);
         strata_storage::bump_instance(e);
@@ -215,6 +258,14 @@ impl AccessControl for NavOracleContract {
     }
 
     /// Refused. A role admin could grant that role with no delay.
+    ///
+    /// # Arguments
+    ///
+    /// * `role`, `admin_role` - Not read.
+    ///
+    /// # Errors
+    ///
+    /// * `UseTimelock` - Always.
     fn set_role_admin(e: &Env, _role: Symbol, _admin_role: Symbol) {
         panic_with_error!(e, OracleError::UseTimelock);
     }
@@ -223,6 +274,10 @@ impl AccessControl for NavOracleContract {
     /// stuck record and never unpause the NAV again. The way out is a hand-over:
     /// propose and apply an `Admin` change (`transfer_admin_role` during setup),
     /// then the nominee calls `accept_admin_transfer`.
+    ///
+    /// # Errors
+    ///
+    /// * `AdminRequired` - Always.
     fn renounce_admin(e: &Env) {
         panic_with_error!(e, OracleError::AdminRequired);
     }
@@ -230,10 +285,13 @@ impl AccessControl for NavOracleContract {
 
 #[contractimpl(contracttrait)]
 impl VaultBinding for NavOracleContract {
+    /// The vault whose timelock this oracle's changes wait for, once
+    /// `bind_vault` has named it.
     fn vault(e: &Env) -> Option<Address> {
         strata_timelock::setup::source(e)
     }
 
+    /// Whether setup is still open, so admin changes are instant.
     fn setup_open(e: &Env) -> bool {
         strata_timelock::setup::is_open(e)
     }
@@ -241,6 +299,26 @@ impl VaultBinding for NavOracleContract {
 
 #[contractimpl]
 impl NavOracleContract {
+    /// Creates the oracle with its admin, its two roles and its limits.
+    ///
+    /// # Arguments
+    ///
+    /// * `admin` - Reconfigures the oracle and lifts a NAV pause.
+    /// * `attester` - Gets the `attester` role, which submits reports.
+    /// * `guardian` - Gets the `guardian` role, which pauses the NAV.
+    /// * `config` - The limits reports must meet; see `config`.
+    ///
+    /// # Errors
+    ///
+    /// * `InvalidConfig` - `config` breaks a bound.
+    ///
+    /// # Events
+    ///
+    /// * `RoleGranted` for `attester` and for `guardian`.
+    ///
+    /// # Authorization
+    ///
+    /// None: it runs once, at deployment.
     pub fn __constructor(
         e: &Env,
         admin: Address,
@@ -260,12 +338,30 @@ impl NavOracleContract {
         upgradeable::set_schema_version(e, 1);
     }
 
+    /// The storage layout version, `1` until an upgrade migrates it.
     pub fn schema_version(e: &Env) -> u32 {
         upgradeable::get_schema_version(e)
     }
 
-    /// Names the vault whose clock this oracle's timelock reads. Once, and only
-    /// during setup.
+    /// Names the vault whose timelock this oracle's changes wait for. Once,
+    /// and only during setup.
+    ///
+    /// # Arguments
+    ///
+    /// * `vault` - The vault. A contract that does not answer
+    ///   `timelock_clock` fails the call.
+    ///
+    /// # Errors
+    ///
+    /// * `SetupClosed` - Setup has finished, or a vault is already bound.
+    ///
+    /// # Events
+    ///
+    /// * `VaultBound`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     #[only_admin]
     pub fn bind_vault(e: &Env, vault: Address) {
         strata_storage::bump_instance(e);
@@ -273,6 +369,21 @@ impl NavOracleContract {
     }
 
     /// Ends the window in which admin changes are instant. It never reopens.
+    ///
+    /// # Errors
+    ///
+    /// * `SetupClosed` - Setup has already finished.
+    /// * `AdminTransferPending` - An admin hand-over offered during setup is
+    ///   still open.
+    /// * `VaultNotBound` - No vault is bound.
+    ///
+    /// # Events
+    ///
+    /// * `SetupFinished`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     #[only_admin]
     pub fn finish_setup(e: &Env) {
         strata_storage::bump_instance(e);
@@ -280,34 +391,108 @@ impl NavOracleContract {
     }
 
     /// Queues a change behind the vault's timelock and returns its id.
+    ///
+    /// # Arguments
+    ///
+    /// * `change` - An upgrade, a role grant or revoke, an admin hand-over or
+    ///   a new config.
+    ///
+    /// # Errors
+    ///
+    /// * `InvalidConfig` - A `Config` change breaks a bound.
+    /// * `UpgradeAlreadyPending` - An upgrade already waits.
+    /// * `SetupOpen` - Setup has not finished; change it directly.
+    /// * `WindDownActive` - The vault is winding down.
+    /// * `TooManyPendingChanges` - The queue is full.
+    ///
+    /// # Events
+    ///
+    /// * `ChangeProposed`, with its `eta` in seconds.
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     #[only_admin]
     pub fn propose_change(e: &Env, change: OracleChange) -> u32 {
         strata_storage::bump_instance(e);
         governance::propose(e, change)
     }
 
+    /// Drops a pending change.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The id `propose_change` returned.
+    ///
+    /// # Errors
+    ///
+    /// * `ChangeNotFound` - No pending change has this id.
+    ///
+    /// # Events
+    ///
+    /// * `ChangeCancelled`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     #[only_admin]
     pub fn cancel_change(e: &Env, id: u32) {
         strata_storage::bump_instance(e);
         governance::cancel(e, id);
     }
 
-    /// Lands a change whose delay has run. Refused while the vault is paused
-    /// or winding down.
+    /// Lands a change whose delay has run.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - The id `propose_change` returned.
+    ///
+    /// # Errors
+    ///
+    /// * `ChangeNotFound` - No pending change has this id.
+    /// * `WindDownActive` - The vault is winding down.
+    /// * `VaultPaused` - The vault is paused.
+    /// * `DelayBelowNotice` - The change's delay is shorter than the vault's
+    ///   notice now.
+    /// * `ChangeNotReady` - The delay, plus any time the vault spent paused
+    ///   since, has not run.
+    /// * `InvalidConfig` - A `Config` change breaks a bound.
+    /// * `AccessControlError::RoleNotHeld` - A `RevokeRole` names an account
+    ///   without the role.
+    /// * An `Upgrade` whose Wasm is not on the network fails the call.
+    ///
+    /// # Events
+    ///
+    /// * `ChangeApplied`, after the change's own: `ConfigSet`, `RoleGranted`,
+    ///   `RoleRevoked` or `AdminTransferInitiated`.
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     #[only_admin]
     pub fn apply_change(e: &Env, id: u32) {
         strata_storage::bump_instance(e);
         governance::apply(e, id);
     }
 
+    /// Every change still waiting, with the time in seconds it may land on
+    /// the vault's clock as it reads now.
     pub fn pending_changes(e: &Env) -> Vec<OraclePendingChange> {
         governance::pending(e)
     }
 
+    /// The stored report: `nav_per_share` in WAD, `timestamp` and
+    /// `expires_at` in seconds.
+    ///
+    /// # Errors
+    ///
+    /// * `NoRecord` - No report is stored.
     pub fn latest(e: &Env) -> NavReport {
         get_latest(e).unwrap_or_else(|| panic_with_error!(e, OracleError::NoRecord))
     }
 
+    /// True when no report is stored, it has expired, or its value is outside
+    /// the configured band. The NAV pause is not counted; `state` reports it.
     pub fn is_stale(e: &Env) -> bool {
         match get_latest(e) {
             None => true,
@@ -315,10 +500,43 @@ impl NavOracleContract {
         }
     }
 
+    /// Succeeds only while `state` is `Valid`.
+    ///
+    /// # Errors
+    ///
+    /// * `NotConsumable` - The NAV is paused, or the report is missing,
+    ///   expired or out of band.
     pub fn ensure_consumable(e: &Env) {
         guards::consumable(e);
     }
 
+    /// Stores a valuation for the vault to price epochs from. The stored
+    /// `expires_at` is the earlier of the report's and the time of acceptance
+    /// plus `freshness_duration`.
+    ///
+    /// # Arguments
+    ///
+    /// * `report` - `nav_per_share` in WAD: asset base units per share base
+    ///   unit. `expires_at` in seconds: the last moment the attester vouches
+    ///   for it. `timestamp` is ignored; the ledger time is stored.
+    /// * `caller` - An `attester`.
+    ///
+    /// # Errors
+    ///
+    /// * `AccessControlError::Unauthorized` - `caller` is not an `attester`.
+    /// * `NavPaused` - The NAV is paused.
+    /// * `NavOutOfBand` - `nav_per_share` is outside the band.
+    /// * `ExpiresInPast` - `expires_at` is not in the future.
+    /// * `CooldownActive` - The last report is younger than `cooldown_secs`.
+    /// * `DeviationExceeded` - The move from the last report exceeds its cap.
+    ///
+    /// # Events
+    ///
+    /// * `NavAttested`
+    ///
+    /// # Authorization
+    ///
+    /// `caller` signs.
     #[only_role(caller, "attester")]
     pub fn attest(e: &Env, report: NavReport, caller: Address) {
         guards::nav_not_paused(e);
@@ -349,12 +567,43 @@ impl NavOracleContract {
         .publish(e);
     }
 
+    /// Pauses the NAV: the feed reports `Paused`, no report is accepted and
+    /// the vault prices nothing. Only the admin lifts it.
+    ///
+    /// # Arguments
+    ///
+    /// * `caller` - A `guardian`.
+    ///
+    /// # Errors
+    ///
+    /// * `AccessControlError::Unauthorized` - `caller` is not a `guardian`.
+    ///
+    /// # Events
+    ///
+    /// * `NavPausedSet`, with `paused` true.
+    ///
+    /// # Authorization
+    ///
+    /// `caller` signs.
     #[only_role(caller, "guardian")]
     pub fn pause_nav(e: &Env, caller: Address) {
         state::set_nav_paused(e, true);
         NavPausedSet { paused: true }.publish(e);
     }
 
+    /// Pauses the NAV, or lifts the pause.
+    ///
+    /// # Arguments
+    ///
+    /// * `paused` - True pauses, false lifts the pause.
+    ///
+    /// # Events
+    ///
+    /// * `NavPausedSet`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     #[only_admin]
     pub fn set_nav_paused(e: &Env, paused: bool) {
         state::set_nav_paused(e, paused);
@@ -364,6 +613,18 @@ impl NavOracleContract {
     /// Removes the stored record, so one in-band value can land again whatever
     /// its distance from the last. Only while the NAV is paused, so
     /// resuming is always a deliberate second act.
+    ///
+    /// # Errors
+    ///
+    /// * `NavNotPaused` - The NAV is not paused.
+    ///
+    /// # Events
+    ///
+    /// * `LatestCleared`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     #[only_admin]
     pub fn clear_latest(e: &Env) {
         guards::nav_paused(e);
@@ -371,13 +632,35 @@ impl NavOracleContract {
         LatestCleared {}.publish(e);
     }
 
+    /// The limits a report must meet: `freshness_duration` and
+    /// `cooldown_secs` in seconds, `max_up_bps` and `max_down_bps` in basis
+    /// points, `min_answer` and `max_answer` in WAD.
     pub fn config(e: &Env) -> OracleConfig {
         get_config(e)
     }
 
-    /// Instant during setup. Afterwards, instant only when the new config
-    /// changes nothing but a shorter `freshness_duration`; every other change
-    /// waits. Propose it as `OracleChange::Config`.
+    /// Replaces the limits. Instant during setup. Afterwards, instant only
+    /// when the new config changes nothing but a shorter
+    /// `freshness_duration`; every other change waits. Propose it as
+    /// `OracleChange::Config`.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - The new limits, in the units `config` returns.
+    ///
+    /// # Errors
+    ///
+    /// * `InvalidConfig` - `config` breaks a bound.
+    /// * `UseTimelock` - After setup, it changes more than a shorter
+    ///   `freshness_duration`.
+    ///
+    /// # Events
+    ///
+    /// * `ConfigSet`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
     #[only_admin]
     pub fn set_config(e: &Env, config: OracleConfig) {
         guards::valid_config(e, &config);
@@ -388,20 +671,33 @@ impl NavOracleContract {
 
 #[contractimpl(contracttrait)]
 impl OracleFeed for NavOracleContract {
+    /// `Paused` while the NAV is paused. Otherwise `Valid` when a report is
+    /// stored, unexpired and in band, and `Stale` when not.
     fn state(e: &Env) -> OracleState {
         compute_state(e)
     }
 
+    /// The stored report's value in WAD: asset base units per share base
+    /// unit.
+    ///
+    /// # Errors
+    ///
+    /// * `NoRecord` - No report is stored.
     fn nav_per_share(e: &Env) -> i128 {
         Self::latest(e).nav_per_share
     }
 
-    /// Not the valuation date the reporter had in mind: the moment the
-    /// contract took the report.
+    /// The ledger time, in seconds, the oracle took the stored report. Not
+    /// the valuation date the reporter had in mind.
+    ///
+    /// # Errors
+    ///
+    /// * `NoRecord` - No report is stored.
     fn attested_at(e: &Env) -> u64 {
         Self::latest(e).timestamp
     }
 
+    /// How long a report stays valid after it is accepted, in seconds.
     fn freshness_duration(e: &Env) -> u64 {
         get_config(e).freshness_duration
     }
