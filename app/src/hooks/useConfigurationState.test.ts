@@ -99,10 +99,4 @@ describe("useConfigurationState", () => {
 			}),
 		)
 	})
-
-	it("polls only while active", () => {
-		renderWithWallet(() => useConfigurationState({ active: false }))
-
-		expect(useCycleReadsMock).toHaveBeenCalledWith(false)
-	})
 })

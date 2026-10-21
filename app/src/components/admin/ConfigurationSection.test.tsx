@@ -196,22 +196,4 @@ describe("ConfigurationSection", () => {
 		)
 		expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0)
 	})
-
-	it("reads the parameters with polling only while active", () => {
-		const { rerender } = render(
-			<ConfigurationSection
-				grants={[governance]}
-				wallet={WALLET}
-				active={false}
-			/>,
-		)
-		expect(useConfigurationStateMock).toHaveBeenLastCalledWith({
-			active: false,
-		})
-
-		rerender(
-			<ConfigurationSection grants={[governance]} wallet={WALLET} active />,
-		)
-		expect(useConfigurationStateMock).toHaveBeenLastCalledWith({ active: true })
-	})
 })

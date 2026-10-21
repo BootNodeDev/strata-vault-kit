@@ -43,16 +43,16 @@ async function fetchConfigurationReads() {
 	}
 }
 
-export function useConfigurationState({
-	active = true,
-}: { active?: boolean } = {}): { configuration: ConfigurationState } {
-	const cycle = useCycleReads(active)
+export function useConfigurationState(): {
+	configuration: ConfigurationState
+} {
+	const cycle = useCycleReads()
 	const { authorities, isPending } = useVaultAuthorities()
 	const { data: reads } = useQuery({
 		queryKey: configurationReadsKey,
 		queryFn: fetchConfigurationReads,
 		staleTime: STALE_MS,
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
 
 	if (cycle === undefined || reads === undefined || isPending)

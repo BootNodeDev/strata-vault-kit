@@ -221,15 +221,10 @@ describe("EmergencySection", () => {
 		expect(pauseVaultMock.reset).not.toHaveBeenCalled()
 	})
 
-	it("polls the state only while the surface is active", () => {
-		const { rerender } = render(
+	it("polls the vault pause state", () => {
+		render(
 			<EmergencySection grants={[guardian]} wallet={WALLET} active={false} />,
 		)
-		expect(useVaultPausedMock).toHaveBeenLastCalledWith({ poll: false })
-		expect(useTokenPausedMock).toHaveBeenLastCalledWith({ poll: false })
-		expect(useOracleStateMock).toHaveBeenLastCalledWith({ poll: false })
-
-		rerender(<EmergencySection grants={[guardian]} wallet={WALLET} active />)
 		expect(useVaultPausedMock).toHaveBeenLastCalledWith({ poll: true })
 	})
 })
