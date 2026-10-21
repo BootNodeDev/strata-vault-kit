@@ -47,7 +47,7 @@ describe("useConfigurationState", () => {
 		vi.clearAllMocks()
 		useCycleReadsMock.mockReturnValue(cycleReads)
 		useVaultAuthoritiesMock.mockReturnValue({
-			authorities: { custodian: CUSTODIAN },
+			authorities: { custodian: { kind: "set", address: CUSTODIAN } },
 			isPending: false,
 		})
 		vaultMock.upgrade_delay.mockResolvedValue({ result: 604_800n })
@@ -62,7 +62,7 @@ describe("useConfigurationState", () => {
 			expect(result.current.configuration).toEqual({
 				status: "ready",
 				depositCap: { kind: "uncapped" },
-				custodian: CUSTODIAN,
+				custodian: { kind: "set", address: CUSTODIAN },
 				notice: 3_600n,
 				windDownDelay: 172_800n,
 				upgradeDelay: 604_800n,

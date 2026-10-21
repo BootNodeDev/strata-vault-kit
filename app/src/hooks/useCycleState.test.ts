@@ -340,7 +340,7 @@ describe("useCycleState", () => {
 				liquid: 800n,
 				netDeployed: 200n,
 				depositCap: { kind: "uncapped" },
-				custodian: "GCUSTODIAN",
+				custodian: { kind: "set", address: "GCUSTODIAN" },
 				custodianBalance: 150n,
 			},
 			windDown: { phase: "none", delay: 60n },
@@ -392,7 +392,19 @@ describe("useCycleState", () => {
 		await waitFor(() => expect(result.current.cycle.status).toBe("ready"))
 
 		expect(result.current.cycle).toMatchObject({
-			reserve: { custodian: null, custodianBalance: null },
+			reserve: { custodian: { kind: "unset" }, custodianBalance: null },
+		})
+		expect(assetMock.balance).not.toHaveBeenCalled()
+	})
+
+	it("reports a custodian it could not read without blocking the cycle", async () => {
+		vaultMock.custodian.mockRejectedValue(new Error("network down"))
+
+		const { result } = renderWithWallet(useCycleState)
+		await waitFor(() => expect(result.current.cycle.status).toBe("ready"))
+
+		expect(result.current.cycle).toMatchObject({
+			reserve: { custodian: { kind: "unreadable" }, custodianBalance: null },
 		})
 		expect(assetMock.balance).not.toHaveBeenCalled()
 	})

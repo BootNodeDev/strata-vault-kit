@@ -64,7 +64,7 @@ const oracleAdmin = grantOf("oracle admin")
 const READY: ConfigurationState = {
 	status: "ready",
 	depositCap: { kind: "uncapped" },
-	custodian: CUSTODIAN,
+	custodian: { kind: "set", address: CUSTODIAN },
 	notice: DAY,
 	windDownDelay: 7n * DAY,
 	upgradeDelay: 3n * DAY,

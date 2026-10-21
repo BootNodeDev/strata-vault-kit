@@ -158,7 +158,7 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 		liquid: null,
 		netDeployed: null,
 		depositCap: null,
-		custodian: "CCUSTODIAN1234567890",
+		custodian: { kind: "set", address: "CCUSTODIAN1234567890" },
 		custodianBalance: null,
 	},
 	windDown: {
