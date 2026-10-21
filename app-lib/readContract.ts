@@ -1,12 +1,12 @@
 import { Address, scValToNative, xdr } from "@stellar/stellar-sdk"
-import { Api, Server } from "@stellar/stellar-sdk/rpc"
+import { Api } from "@stellar/stellar-sdk/rpc"
 import type {
 	DepositRequest,
 	EpochInfo,
 	EpochStatus,
 	RedeemRequest,
 } from "./contracts"
-import { rpcUrl, stellarNetwork } from "./env"
+import { server } from "./rpc"
 
 export type ContractRead<T> =
 	| { kind: "value"; value: T }
@@ -44,8 +44,6 @@ export async function readContract<T>(
 		return { kind: "unreadable" }
 	}
 }
-
-const server = new Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
 
 const LEDGER_ENTRIES_PER_REQUEST = 200
 const REQUEST_KEYS_PER_EPOCH = 3
@@ -109,14 +107,18 @@ const chunk = <T>(items: T[], size: number): T[][] => {
 	return chunks
 }
 
-const latestLedgerSequence = (): Promise<number | null> =>
-	server
-		.getLatestLedger()
-		.then((response) => response.sequence)
-		.catch(() => null)
+// The RPC reports the close time, but the SDK's response type omits it.
+type Health = Api.GetHealthResponse & { latestLedgerCloseTime?: string }
+
+const readHealth = (): Promise<Health> => server.getHealth()
 
 type ChunkFetch =
-	{ ok: true; byKey: Map<string, Api.LedgerEntryResult> } | { ok: false }
+	| {
+			ok: true
+			byKey: Map<string, Api.LedgerEntryResult>
+			latestLedger: number
+	  }
+	| { ok: false }
 
 async function fetchChunk(keys: xdr.LedgerKey[]): Promise<ChunkFetch> {
 	try {
@@ -124,7 +126,7 @@ async function fetchChunk(keys: xdr.LedgerKey[]): Promise<ChunkFetch> {
 		const byKey = new Map<string, Api.LedgerEntryResult>()
 		for (const entry of response.entries)
 			byKey.set(entry.key.toXDR("base64"), entry)
-		return { ok: true, byKey }
+		return { ok: true, byKey, latestLedger: response.latestLedger }
 	} catch {
 		return { ok: false }
 	}
@@ -134,15 +136,16 @@ function decodeLedgerEntry<T>(
 	chunkResult: ChunkFetch,
 	key: xdr.LedgerKey,
 	decode: (val: xdr.ScVal) => T,
-	latestLedger: number | null,
 	untrackedTtlIsLive = false,
 ): ContractRead<T | null> {
 	if (!chunkResult.ok) return { kind: "unreadable" }
 	const entry = chunkResult.byKey.get(key.toXDR("base64"))
 	if (entry === undefined) return { kind: "value", value: null }
-	if (latestLedger === null) return { kind: "unreadable" }
 	const liveUntil = entry.liveUntilLedgerSeq ?? 0
-	if (liveUntil < latestLedger && !(untrackedTtlIsLive && liveUntil === 0))
+	if (
+		liveUntil < chunkResult.latestLedger &&
+		!(untrackedTtlIsLive && liveUntil === 0)
+	)
 		return { kind: "archived" }
 	try {
 		return { kind: "value", value: decode(entry.val.contractData().val()) }
@@ -184,17 +187,14 @@ export async function readEpochRequests(
 		EPOCHS_PER_LEDGER_ENTRIES_REQUEST,
 	)
 
-	const [latestLedger, resolvedChunks] = await Promise.all([
-		latestLedgerSequence(),
-		Promise.all(
-			chunks.map(async (keySetChunk) => ({
-				keySetChunk,
-				chunkResult: await fetchChunk(
-					keySetChunk.flatMap((set) => [set.epoch, set.deposit, set.redeem]),
-				),
-			})),
-		),
-	])
+	const resolvedChunks = await Promise.all(
+		chunks.map(async (keySetChunk) => ({
+			keySetChunk,
+			chunkResult: await fetchChunk(
+				keySetChunk.flatMap((set) => [set.epoch, set.deposit, set.redeem]),
+			),
+		})),
+	)
 
 	for (const { keySetChunk, chunkResult } of resolvedChunks) {
 		for (const set of keySetChunk) {
@@ -203,19 +203,16 @@ export async function readEpochRequests(
 					chunkResult,
 					set.epoch,
 					decodeEpochInfo,
-					latestLedger,
 				),
 				deposit: decodeLedgerEntry<DepositRequest>(
 					chunkResult,
 					set.deposit,
 					scValToNative,
-					latestLedger,
 				),
 				redeem: decodeLedgerEntry<RedeemRequest>(
 					chunkResult,
 					set.redeem,
 					scValToNative,
-					latestLedger,
 				),
 			})
 		}
@@ -237,26 +234,18 @@ export async function readEpochs(
 		key: contractDataLedgerKey(contract, epochDataKey(epochId)),
 	}))
 
-	const [latestLedger, resolvedChunks] = await Promise.all([
-		latestLedgerSequence(),
-		Promise.all(
-			chunk(keyed, LEDGER_ENTRIES_PER_REQUEST).map(async (keyedChunk) => ({
-				keyedChunk,
-				chunkResult: await fetchChunk(keyedChunk.map(({ key }) => key)),
-			})),
-		),
-	])
+	const resolvedChunks = await Promise.all(
+		chunk(keyed, LEDGER_ENTRIES_PER_REQUEST).map(async (keyedChunk) => ({
+			keyedChunk,
+			chunkResult: await fetchChunk(keyedChunk.map(({ key }) => key)),
+		})),
+	)
 
 	for (const { keyedChunk, chunkResult } of resolvedChunks) {
 		for (const { epochId, key } of keyedChunk) {
 			results.set(
 				epochId,
-				decodeLedgerEntry<EpochInfo>(
-					chunkResult,
-					key,
-					decodeEpochInfo,
-					latestLedger,
-				),
+				decodeLedgerEntry<EpochInfo>(chunkResult, key, decodeEpochInfo),
 			)
 		}
 	}
@@ -266,8 +255,10 @@ export async function readEpochs(
 
 export async function readLedgerTime(): Promise<bigint | null> {
 	try {
-		const { closeTime } = await server.getLatestLedger()
-		return BigInt(closeTime)
+		const { latestLedgerCloseTime } = await readHealth()
+		return latestLedgerCloseTime === undefined
+			? null
+			: BigInt(latestLedgerCloseTime)
 	} catch {
 		return null
 	}
@@ -345,19 +336,19 @@ export async function readPendingAdmins(
 	}))
 	const archival = archivalSettingsKey()
 	try {
-		const [latest, fetched] = await Promise.all([
-			server.getLatestLedger(),
+		const [health, fetched] = await Promise.all([
+			readHealth(),
 			fetchChunk([...keyed.map(({ key }) => key), archival]),
 		])
-		if (!fetched.ok) return { kind: "unreadable" }
-		const { sequence } = latest
+		const { latestLedger: sequence, latestLedgerCloseTime } = health
+		if (!fetched.ok || latestLedgerCloseTime === undefined)
+			return { kind: "unreadable" }
 		const pending = new Map<string, PendingTransfer | null>()
 		for (const { contractId, key } of keyed) {
 			const read = decodeLedgerEntry(
 				fetched,
 				key,
 				decodePendingTransfer(sequence),
-				sequence,
 			)
 			if (read.kind !== "value" && read.kind !== "archived")
 				return { kind: "unreadable" }
@@ -368,7 +359,7 @@ export async function readPendingAdmins(
 			value: {
 				ledger: {
 					sequence,
-					closeTime: BigInt(latest.closeTime),
+					closeTime: BigInt(latestLedgerCloseTime),
 					maxLiveUntil: maxLiveUntil(
 						fetched.byKey.get(archival.toXDR("base64")),
 						sequence,
@@ -408,15 +399,10 @@ export async function readContractAdmin(
 ): Promise<ContractRead<string | null>> {
 	try {
 		const key = contractInstanceKey(contractId)
-		const [latestLedger, fetched] = await Promise.all([
-			latestLedgerSequence(),
-			fetchChunk([key]),
-		])
 		return decodeLedgerEntry(
-			fetched,
+			await fetchChunk([key]),
 			key,
 			decodeInstanceAdmin,
-			latestLedger,
 			true,
 		)
 	} catch {
@@ -470,7 +456,7 @@ export async function readEvents(
 	windowLedgers: number,
 ): Promise<EventsRead> {
 	try {
-		const { latestLedger, oldestLedger } = await server.getHealth()
+		const { latestLedger, oldestLedger } = await readHealth()
 		const filters = selections.map(toEventFilter)
 		let request: Api.GetEventsRequest = {
 			filters,

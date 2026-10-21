@@ -13,6 +13,7 @@ import {
 } from "@stellar/stellar-sdk"
 import { Api } from "@stellar/stellar-sdk/rpc"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { Client as GeneratedClient } from "../vitest.clients"
 import { connectAsyncVault } from "./contracts"
 import { networkPassphrase } from "./env"
 import {
@@ -25,29 +26,19 @@ import {
 	transactionStatus,
 } from "./multisig"
 
-const { sendMock, pollMock, getMock, fromMock } = vi.hoisted(() => ({
+const { sendMock, pollMock, getMock } = vi.hoisted(() => ({
 	sendMock: vi.fn(),
 	pollMock: vi.fn(),
 	getMock: vi.fn(),
-	fromMock: vi.fn(),
 }))
 
-vi.mock("@stellar/stellar-sdk/rpc", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("@stellar/stellar-sdk/rpc")>()
-	class MockServer {
-		sendTransaction = sendMock
-		pollTransaction = pollMock
-		getTransaction = getMock
-	}
-	return { ...actual, Server: MockServer }
-})
-
-vi.mock("@stellar/stellar-sdk/contract", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("@stellar/stellar-sdk/contract")>()
-	return { ...actual, Client: { from: fromMock } }
-})
+vi.mock("./rpc", () => ({
+	server: {
+		sendTransaction: sendMock,
+		pollTransaction: pollMock,
+		getTransaction: getMock,
+	},
+}))
 
 const authority = Keypair.random()
 const signerOne = Keypair.random()
@@ -541,26 +532,24 @@ describe("transactionStatus", () => {
 	})
 })
 
+const timeoutOf = (client: unknown): number | undefined => {
+	if (!(client instanceof GeneratedClient))
+		throw new Error("not the generated vault client")
+	return client.options.timeoutInSeconds
+}
+
 describe("operator timeout", () => {
-	beforeEach(() => fromMock.mockClear())
-
 	it("reaches the contract client when a connect call asks for it", async () => {
-		fromMock.mockResolvedValue({})
-
-		await connectAsyncVault(
+		const client = await connectAsyncVault(
 			contractId,
 			{ publicKey: signerOne.publicKey(), signTransaction: vi.fn() },
 			{ timeoutInSeconds: OPERATOR_TIMEOUT_SECONDS },
 		)
 
-		expect(fromMock.mock.calls[0]?.[0].timeoutInSeconds).toBe(604_800)
+		expect(timeoutOf(client)).toBe(604_800)
 	})
 
 	it("leaves the client default alone when no timeout is given", async () => {
-		fromMock.mockResolvedValue({})
-
-		await connectAsyncVault(contractId)
-
-		expect(fromMock.mock.calls[0]?.[0].timeoutInSeconds).toBeUndefined()
+		expect(timeoutOf(await connectAsyncVault(contractId))).toBeUndefined()
 	})
 })

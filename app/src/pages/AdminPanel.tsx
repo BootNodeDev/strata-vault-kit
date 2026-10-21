@@ -202,6 +202,7 @@ const AdminPanel: React.FC = () => {
 		grantedBy,
 		grants,
 		signersUnknown,
+		signersLoading,
 		verifierAdminUnknown,
 		addresses,
 		holders,
@@ -222,6 +223,10 @@ const AdminPanel: React.FC = () => {
 
 			{status === "ready" && signersUnknown && (
 				<p className={typeStyles.footnote}>Signer lookup unavailable.</p>
+			)}
+
+			{status === "ready" && signersLoading && (
+				<p className={typeStyles.footnote}>Checking signers…</p>
 			)}
 
 			{status === "disconnected" && (
