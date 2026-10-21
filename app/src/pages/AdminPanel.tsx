@@ -1,5 +1,5 @@
 import { shortAddress } from "@stellar-scaffold/app-lib"
-import React, { useEffect, useRef } from "react"
+import React, { Activity, useEffect, useRef } from "react"
 import { Navigate, useParams } from "react-router-dom"
 import ComplianceSection from "../components/admin/ComplianceSection"
 import ConfigurationSection from "../components/admin/ConfigurationSection"
@@ -180,15 +180,17 @@ const HeldSurfaces: React.FC<{
 					>
 						{SURFACE_LABELS[surface]}
 					</h2>
-					<SurfaceBody
-						surface={surface}
-						active={surface === active}
-						grantedBy={grantedBy}
-						wallet={wallet}
-						addresses={addresses}
-						holders={holders}
-						verifierAdminUnknown={verifierAdminUnknown}
-					/>
+					<Activity mode={surface === active ? "visible" : "hidden"}>
+						<SurfaceBody
+							surface={surface}
+							active={surface === active}
+							grantedBy={grantedBy}
+							wallet={wallet}
+							addresses={addresses}
+							holders={holders}
+							verifierAdminUnknown={verifierAdminUnknown}
+						/>
+					</Activity>
 				</section>
 			))}
 		</div>
