@@ -172,6 +172,7 @@ const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	grantedBy: emptyGrantedBy,
 	grants: [],
 	signersUnknown: false,
+	signersLoading: false,
 	verifierAdminUnknown: false,
 	addresses: noAddresses,
 	holders: noHolders,
@@ -705,6 +706,16 @@ describe("AdminPanel", () => {
 		renderAt("/admin")
 
 		expect(screen.getAllByText("Signer lookup unavailable.")).toHaveLength(1)
+	})
+
+	it("adds one line while the signers are still being checked", () => {
+		useAdminAuthorityMock.mockReturnValue(
+			authority({ status: "ready", signersLoading: true }),
+		)
+		renderAt("/admin")
+
+		expect(screen.getAllByText("Checking signers…")).toHaveLength(1)
+		expect(screen.queryByText("Signer lookup unavailable.")).toBeNull()
 	})
 
 	it("shows the cycle surface only on the Cycle tab", () => {
