@@ -21,6 +21,7 @@
 
 #![no_std]
 
+mod extend;
 mod governance;
 mod guards;
 
@@ -365,6 +366,7 @@ impl token_binder::TokenBinder for Compliance {
         guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         token_binder::bind_token(e, &token);
+        extend::bound_tokens(e);
     }
 
     /// Unlinks `token`, after which its moves fail the hooks. Instant during
@@ -426,7 +428,8 @@ impl compliance::Compliance for Compliance {
     fn add_module_to(e: &Env, hook: ComplianceHook, module: Address, _operator: Address) {
         guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
-        compliance::storage::add_module_to(e, hook, module);
+        compliance::storage::add_module_to(e, hook.clone(), module);
+        extend::modules(e, &hook);
     }
 
     /// Removes `module` from `hook`. Instant during setup; after it, propose a

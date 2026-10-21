@@ -6,6 +6,7 @@ use stellar_access::{
 use stellar_tokens::rwa::{compliance, compliance::ComplianceHook, utils::token_binder};
 use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
+use crate::extend;
 use crate::guards;
 use crate::{
     ChangeApplied, ChangeCancelled, ChangeProposed, Compliance, ComplianceContractError,
@@ -103,12 +104,16 @@ pub(crate) fn apply(e: &Env, id: u32) {
         queue::take_ready::<Compliance, _>(e, id).unwrap_or_else(|r| refuse(e, r));
     match &change {
         ComplianceChange::AddModule(hook, module) => {
-            compliance::storage::add_module_to(e, hook.clone(), module.clone())
+            compliance::storage::add_module_to(e, hook.clone(), module.clone());
+            extend::modules(e, hook);
         }
         ComplianceChange::RemoveModule(hook, module) => {
             compliance::storage::remove_module_from(e, hook.clone(), module.clone())
         }
-        ComplianceChange::BindToken(token) => token_binder::bind_token(e, token),
+        ComplianceChange::BindToken(token) => {
+            token_binder::bind_token(e, token);
+            extend::bound_tokens(e);
+        }
         ComplianceChange::UnbindToken(token) => token_binder::unbind_token(e, token),
         ComplianceChange::Admin(next) => offer_admin(e, next),
     }
