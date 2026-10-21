@@ -380,8 +380,12 @@ The vault also reports `total_economic_supply`: shares held outside the vault
 plus shares priced for deposits and not yet minted. It leaves out the shares
 escrowed by a redemption that is not priced yet, although the next price still
 applies to them. The deposit cap limits deposited capital: what the vault holds
-plus `net_deployed` (sent to the custodian less funded back), less `committed`,
-in asset units at cost, so a gain or a loss at the custodian never moves it.
+plus `net_deployed` (sent to the custodian less funded back), less `committed`.
+It counts money in and out, not the vault's value. A deposit request adds what
+it brings, and a priced redemption takes off what it pays. A gain or a loss at
+the custodian does not move it. Once leavers are paid a gain, the figure can go
+negative, and the cap then admits more than its own amount. After a loss it
+stays above the vault's value, and the cap refuses deposits sooner.
 
 **Attestation guardrails:** the reporter is a multisig, never a single key.
 Attestations are ordered by their acceptance time on the ledger. The price must

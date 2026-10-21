@@ -215,3 +215,44 @@ fn a_plain_transfer_back_counts_twice_toward_the_cap() {
         VaultError::DepositCapExceeded,
     );
 }
+
+#[test]
+fn a_gain_paid_out_to_leavers_leaves_room_above_the_cap() {
+    let f = setup();
+    let investor = capital_deployed_under_a_cap(&f);
+    f.vault.claim_deposit(&investor, &1);
+    StellarAssetClient::new(&f.e, &f.asset).mint(&f.custodian, &1_000);
+    f.vault.fund(&f.custodian, &2_000);
+    let exit = f.vault.request_redeem(&investor, &1_000);
+    f.fulfill_epoch(wad(2));
+    f.vault.claim_redeem(&investor, &exit);
+
+    assert_eq!(f.vault.net_deployed(), -1_000);
+    assert_eq!(f.balance(&f.vault.address), 0);
+    let newcomer = f.investor(3_000);
+    f.vault.request_deposit(&newcomer, &2_500);
+    refused(
+        f.vault.try_request_deposit(&newcomer, &1),
+        VaultError::DepositCapExceeded,
+    );
+}
+
+#[test]
+fn a_loss_at_the_custodian_still_counts_toward_the_cap() {
+    let f = setup();
+    let investor = capital_deployed_under_a_cap(&f);
+    f.vault.claim_deposit(&investor, &1);
+    f.vault.fund(&f.custodian, &500);
+    let exit = f.vault.request_redeem(&investor, &1_000);
+    f.fulfill_epoch(wad(1) / 2);
+    f.vault.claim_redeem(&investor, &exit);
+
+    assert_eq!(f.vault.net_deployed(), 500);
+    assert_eq!(f.balance(&f.vault.address), 0);
+    let newcomer = f.investor(1_500);
+    f.vault.request_deposit(&newcomer, &1_000);
+    refused(
+        f.vault.try_request_deposit(&newcomer, &1),
+        VaultError::DepositCapExceeded,
+    );
+}
