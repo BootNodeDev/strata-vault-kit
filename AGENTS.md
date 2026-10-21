@@ -81,7 +81,11 @@ apply as the corresponding code lands here.
   `ADDRESSES_ENV` (default `staging`) from `environments.toml` and writes
   `app-lib/clients/<contract>/` from each contract's on-chain spec, with Node
   alone. Those generated types are the only contract types; `app-lib/contracts.ts`
-  re-exports them and builds the runtime clients with `contract.Client.from`.
+  re-exports them and builds each runtime client with `new Client(...)` from its
+  generated `src/index`, whose embedded spec means no page fetches a contract's
+  instance or Wasm. Vite dedupes `@stellar/stellar-sdk` so a client's nested copy
+  never reaches the bundle, and vitest aliases the generated modules to
+  `vitest.clients.ts`, since tests run without them.
   A fresh clone builds `app` with no cargo, no stellar CLI and no local network,
   but needs RPC access to the selected network at build time. A local scaffold
   build writes the same directory from the WASM.

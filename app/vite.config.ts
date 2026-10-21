@@ -15,6 +15,9 @@ export default defineConfig({
 		}),
 		wasm(),
 	],
+	resolve: {
+		dedupe: ["@stellar/stellar-sdk"],
+	},
 	build: {
 		target: "esnext",
 	},
