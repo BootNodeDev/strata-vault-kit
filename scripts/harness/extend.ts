@@ -31,7 +31,11 @@ interface DeploymentRecord {
 
 // Contracts whose storage holds a timelock change queue, by the name they
 // deploy under.
-const CONTRACTS_WITH_QUEUES = new Set(["async_vault", "share_token"])
+const CONTRACTS_WITH_QUEUES = new Set([
+	"async_vault",
+	"share_token",
+	"nav_oracle",
+])
 
 /**
  * The timelock's own storage key for a change still waiting:

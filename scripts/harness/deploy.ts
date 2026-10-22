@@ -7,6 +7,7 @@ import { basicNodeSigner } from "@stellar/stellar-sdk/contract"
 
 import type * as ComplianceModule from "../../app-lib/clients/compliance/dist/index.js"
 import type * as IdentityVerifierModule from "../../app-lib/clients/identity_verifier/dist/index.js"
+import type * as NavOracleModule from "../../app-lib/clients/nav_oracle/dist/index.js"
 import type * as ShareTokenModule from "../../app-lib/clients/share_token/dist/index.js"
 
 import { freshAccounts, fund, type Accounts } from "./lib/accounts.js"
@@ -197,6 +198,18 @@ async function grantAndVerify(
 	if (!linked.includes(contracts.share_token))
 		throw new Error("the share token was not bound to the compliance contract")
 	console.log("share_token bound to compliance")
+
+	const { Client: NavOracle } = (await import(
+		clientEntry("nav_oracle")
+	)) as typeof NavOracleModule
+	const feed = new NavOracle(
+		clientOptions(net, contracts.nav_oracle, governance),
+	)
+	await (await feed.bind_vault({ vault, caller })).signAndSend()
+	await (await feed.finish_setup({ caller })).signAndSend()
+	if ((await feed.setup_open()).result)
+		throw new Error("the oracle's setup did not finish")
+	console.log("nav_oracle bound to the vault, setup finished")
 }
 
 async function main(): Promise<void> {
