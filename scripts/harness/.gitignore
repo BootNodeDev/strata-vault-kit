@@ -1,2 +1,3 @@
 deployed.*.json
+.env.keys.*
 runs/
