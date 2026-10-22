@@ -16,35 +16,26 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 1: Escrow Stays, Only Free Reserve Moves
 - **Definition**: Cancellable subscription escrow never leaves the vault, and only the free reserve can move to the custodian. Priced redemption liabilities (`committed`) may exceed the liquid reserve; the shortfall is reported as `uncovered`, not refused. Here $`\text{held}`$ is the vault's balance of the settlement asset.
 - **Mathematical Statement**:
-  ```math
-  \text{liquid\_reserve} = \text{held} - \text{cancellable\_escrow}
-  ```
-  ```math
-  \text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)
-  ```
-  ```math
-  \text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)
-  ```
+  $`\text{liquid\_reserve} = \text{held} - \text{cancellable\_escrow}`$
+
+  $`\text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)`$
+
+  $`\text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)`$
 - **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $`\text{assets} > \text{free\_reserve}`$, so after every operation $`\text{held} \ge \text{cancellable\_escrow}`$. While $`\text{uncovered} > 0`$, the free reserve is zero and nothing leaves for the custodian.
 - **Enforcement**: `deploy_to_custodian` is the only outbound path to the custodian, and it moves at most the free reserve.
 
 ### Invariant 2: Notice Period Respected
 - **Definition**: An epoch cannot be fulfilled or priced until its standing notice period has fully elapsed.
 - **Mathematical Statement**:
-  ```math
-  \text{priceable\_at} = \text{closed\_at} + \text{notice}
-  ```
-  ```math
-  \text{fulfill\_epoch}(\text{epoch}) \implies \text{ledger.timestamp} \ge \text{priceable\_at}
-  ```
+  $`\text{priceable\_at} = \text{closed\_at} + \text{notice}`$
+
+  $`\text{fulfill\_epoch}(\text{epoch}) \implies \text{ledger.timestamp} \ge \text{priceable\_at}`$
 - **Testable Property**: Invocations of `fulfill_epoch` before `priceable_at` are rejected with `NoticeNotElapsed`. Changing the notice period via `set_notice` applies only to future epochs and never shortens the notice of an already closed epoch.
 
 ### Invariant 3: Post-Close Valuation Timing
 - **Definition**: An epoch is never priced against a valuation accepted before that epoch closed.
 - **Mathematical Statement**:
-  ```math
-  \text{attested\_at} \ge \text{closed\_at}
-  ```
+  $`\text{attested\_at} \ge \text{closed\_at}`$
 - **Testable Property**: If the latest oracle attestation timestamp precedes `closed_at`, `fulfill_epoch` is rejected with `AttestationBeforeClose`. A valuation accepted in the exact closing ledger timestamp or later is accepted.
 
 ### Invariant 4: Covered Claims Always Pay (Exit Guarantee)
@@ -74,19 +65,13 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 7: Directional Rounding & Non-Creation of Value
 - **Definition**: Arithmetic conversions round in the vault's favor, preventing arbitrage and value creation from rounding residue.
 - **Mathematical Statement**:
-  ```math
-  \text{assets\_to\_shares}(a) = \lfloor (a \cdot \text{SCALE}) / \text{NAV} \rfloor
-  ```
-  ```math
-  \text{shares\_to\_assets}(s) = \lfloor (s \cdot \text{NAV}) / \text{SCALE} \rfloor
-  ```
-  ```math
-  \text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s
-  ```
+  $`\text{assets\_to\_shares}(a) = \lfloor (a \cdot \text{SCALE}) / \text{NAV} \rfloor`$
+
+  $`\text{shares\_to\_assets}(s) = \lfloor (s \cdot \text{NAV}) / \text{SCALE} \rfloor`$
+
+  $`\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s`$
 - **Testable Property**: For all values of $`a, s \in [1, 10^{30}]`$ and $`\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]`$, a round-trip conversion never creates value. Remainder satisfies:
-  ```math
-  (a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}
-  ```
+  $`(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}`$
 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
@@ -100,9 +85,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
 - **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital credited to that round.
 - **Mathematical Statement**:
-  ```math
-  \sum_{i} \text{payout}_i \le \text{round\_assets}
-  ```
+  $`\sum_{i} \text{payout}_i \le \text{round\_assets}`$
 - **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. Active wind-down is strictly irreversible.
 
 ---
