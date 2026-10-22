@@ -262,24 +262,24 @@ async function fetchCustodianBalance(
 	return toAmount(balance)
 }
 
-export function useCycleReads(active: boolean): CycleReads | undefined {
+export function useCycleReads(): CycleReads | undefined {
 	const { data } = useQuery({
 		queryKey: cycleReadsKey,
 		queryFn: fetchCycleReads,
 		staleTime: STALE_MS,
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
 	return data
 }
 
-export function useCycleState({ active = true }: { active?: boolean } = {}): {
+export function useCycleState(): {
 	cycle: CycleState
 } {
 	const { history } = useEpochHistory()
 	const { figures, isPending: figuresPending } = useVaultFigures()
 	const { pause } = useVaultPaused()
 	const { authorities, isPending: authoritiesPending } = useVaultAuthorities()
-	const reads = useCycleReads(active)
+	const reads = useCycleReads()
 	const custodian = authorities?.custodian ?? { kind: "unreadable" }
 	const custodianAddress = custodian.kind === "set" ? custodian.address : null
 	const { data: custodianBalance, isPending: balancePending } = useQuery({

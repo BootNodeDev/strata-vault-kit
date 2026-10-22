@@ -58,15 +58,15 @@ async function fetchUpgradeProposal(): Promise<ProposalRead> {
 	}
 }
 
-function useUpgrades(active: boolean): Upgrades {
-	const cycle = useCycleReads(active)
-	const { configuration } = useConfigurationState({ active })
-	const { pause } = useVaultPaused({ poll: active })
+function useUpgrades(): Upgrades {
+	const cycle = useCycleReads()
+	const { configuration } = useConfigurationState()
+	const { pause } = useVaultPaused({ poll: true })
 	const { data } = useQuery({
 		queryKey: upgradeProposalKey,
 		queryFn: fetchUpgradeProposal,
 		staleTime: STALE_MS,
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
 	if (
 		cycle === undefined ||
@@ -104,16 +104,14 @@ function toHandovers(
 
 export function useGovernanceState({
 	contracts,
-	active = true,
 }: {
 	contracts: Record<GovernedContract, string> | undefined
-	active?: boolean
 }): { handovers: Handovers; upgrades: Upgrades } {
 	const { data, isError } = useQuery({
 		...pendingAdminsQuery(contracts),
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
-	const upgrades = useUpgrades(active)
+	const upgrades = useUpgrades()
 	let handovers: Handovers = { status: "checking" }
 	if (data !== undefined && contracts !== undefined)
 		handovers = toHandovers(data, contracts)

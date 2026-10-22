@@ -363,16 +363,6 @@ describe("CycleSection", () => {
 		expect(screen.getAllByRole("dialog", { hidden: true })).toHaveLength(1)
 	})
 
-	it("pauses the cycle polling while the surface is inactive", () => {
-		const { rerender } = render(
-			<CycleSection grants={[treasury]} wallet={WALLET} active={false} />,
-		)
-		expect(useCycleStateMock).toHaveBeenLastCalledWith({ active: false })
-
-		rerender(<CycleSection grants={[treasury]} wallet={WALLET} active />)
-		expect(useCycleStateMock).toHaveBeenLastCalledWith({ active: true })
-	})
-
 	it("labels the deployment modal with the exact amount that is signed", () => {
 		const { rerender } = render(
 			<CycleSection grants={[treasury]} wallet={WALLET} />,
