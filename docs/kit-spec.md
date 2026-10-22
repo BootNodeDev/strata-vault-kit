@@ -159,7 +159,7 @@ The `async_vault` constructor refuses these four pairs of equal addresses and co
 |---|---|---|---|
 | **Standing Notice** | `set_notice(secs: u64)`; after setup, lowering goes through `propose_change(Notice(secs))` → `apply_change(id)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $\text{secs} \le \text{upgrade\_delay}$ and $\text{secs} \le 30 \text{ days}$ (`MAX_NOTICE_SECS`), checked again when a `Notice` change applies. Raising is instant. |
 | **Custodian Address** | `set_custodian(custodian: Address)` during setup; afterwards `propose_change(Custodian(address))` → `apply_change(id)` | Governance | Recipient address for off-chain capital deployment. Required before `finish_setup` and `deploy_to_custodian`. Never the vault itself (`InvalidCustodian`), checked when it is set, proposed and applied. The deploy sets it before setup closes. |
-| **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital (see **Supply and Capital Figures**). `None` = unbounded. Refuses negative cap. Instant both ways, also after setup. |
+| **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital (see **Supply and Capital Figures**). `None` = unbounded. Refuses negative cap. Instant both ways, also after setup. The cap is vault-wide; there is no cap per investor. |
 | **Wind-Down Delay** | `set_wind_down_delay(secs: u64)`; after setup, lowering goes through `propose_change(WindDownDelay(secs))` → `apply_change(id)` | Governance | Minimum notice before wind-down activation. Default and minimum 7 days (`MIN_WIND_DOWN_DELAY`), maximum 90 days (`MAX_WIND_DOWN_DELAY`). Raising is instant. |
 | **Upgrade Delay** | `propose_change(UpgradeDelay(secs))` → `apply_change(id)` | Governance | Timelock delay for wasm upgrades. Must be $\ge 7 \text{ days}$, $\le 90 \text{ days}$, and $\ge \text{notice}$. |
 | **Oracle Configuration** | `set_config(config: OracleConfig)`; after setup, `propose_change(Config(config))` → `apply_change(id)` | Governance | Updates oracle parameters within the constructor's bounds. `set_config` is instant during the oracle's setup. After it, `set_config` is instant only for a shorter `freshness_duration`: later reports go stale sooner, and no value moves. Every other change, tighter limits included, goes through `propose_change(Config(config))` → `apply_change(id)`, and the bounds are checked again when it applies. A tighter fall cap or a longer cooldown can hold the price above a real loss, and a narrower band can stop pricing. Applying a `Config` change sets every field, freshness included; to keep a cut made after the proposal, cancel the queued change and propose again. |
@@ -222,6 +222,16 @@ Pause first, so no report lands while the roles change, and lift the pause last:
 4. Clear the stored report: `clear_latest` (admin; only while the NAV is paused). Left in place, it is valid again once the pause lifts, and anyone can price with it any epoch sealed before it was accepted, until it expires. Skip this only if you know the report predates the compromise. The next report then has no earlier price to cap its move: only `min_answer` and `max_answer` bound it.
 5. Lift the NAV pause: `set_nav_paused(false)` (admin).
 6. The new attester posts a report. Pricing resumes: an epoch can be priced once a report accepted after its seal is valid.
+
+### When the Manager or the Attester Stops
+
+Pricing needs both roles, and nothing on chain replaces them on its own. The kit assumes they keep working; until then, holders keep these ways out:
+
+- **The manager stops sealing.** Requests in the open epoch stay pending, and each holder can still cancel: a deposit comes back as cash, a redemption as shares. Governance grants a new manager; after setup that waits for the vault's timelock, at least seven days, plus any time the vault spends paused.
+- **The attester stops reporting.** An epoch sealed after the last report has no readable price, so its requests stay cancellable, and claims already priced still pay. Governance revokes the attester on the oracle at once and grants a replacement, which waits for the timelock after setup, as in steps 2 and 3 above.
+- **Neither comes back.** No holder can exit at a price. Governance can propose a wind-down; once its delay has run, anyone activates it, and its rounds pay every holder pro rata from the cash the vault holds and whatever the custodian returns through `fund`, with no price needed.
+
+Sealing is meant to become permissionless once a minimum epoch duration bounds it (design doc §8.4).
 
 ---
 
@@ -495,6 +505,10 @@ implementation against what the vault calls.
 A feed that implements `OracleFeed` can replace `nav-oracle`; it must report
 `Stale` once its report outlives `freshness_duration`, and `attested_at` must
 be the ledger time the report was accepted, not a time the reporter supplies.
+
+The testnet identity verifier sets one address per call (`allow`), emits no
+event and offers no paged listing. These are limits of the stub: a production
+identity registry replaces it.
 
 Two more traits connect the share token, the oracle and the kit's compliance
 contract to the vault's timelock. The vault implements `ClockSource`
