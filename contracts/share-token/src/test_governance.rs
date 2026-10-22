@@ -6,7 +6,7 @@ use soroban_sdk::{
         storage::Instance as _, Address as _, AuthorizedFunction, AuthorizedInvocation,
         Events as _, Ledger as _, MockAuth, MockAuthInvoke,
     },
-    Address, BytesN, Env, Event as _, IntoVal, String, Symbol,
+    vec, Address, BytesN, Env, Event as _, IntoVal, String, Symbol, Vec,
 };
 use stellar_access::role_transfer::RoleTransferError;
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
@@ -16,6 +16,8 @@ use crate::{
     ChangeApplied, ChangeProposed, ShareToken, ShareTokenClient, ShareTokenError, TokenChange,
     ADMIN_ACCEPT_LEDGERS,
 };
+use compliance::{Compliance, ComplianceClient};
+use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
 
 const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
 
@@ -43,6 +45,74 @@ impl strata_timelock::ClockSource for ClockStub {
         let reads = Self::reads(e.clone()) + 1;
         e.storage().instance().set(&symbol_short!("reads"), &reads);
         e.storage().instance().get(&symbol_short!("clock")).unwrap()
+    }
+}
+
+fn clock_stub<'a>(e: &Env) -> ClockStubClient<'a> {
+    let vault = ClockStubClient::new(e, &e.register(ClockStub, ()));
+    vault.set(&Clock {
+        delay: MIN_DELAY,
+        exit_window: 0,
+        paused_secs: 0,
+        paused: false,
+        winding_down: false,
+    });
+    vault
+}
+
+/// Compliance rules whose answers a test sets, and may change after a swap to
+/// them is proposed.
+#[contract]
+struct RulesStub;
+
+#[contractimpl]
+impl RulesStub {
+    pub fn report(e: Env, vault: Option<Address>, setup_open: bool, linked: Vec<Address>) {
+        let store = e.storage().instance();
+        store.set(&symbol_short!("vault"), &vault);
+        store.set(&symbol_short!("open"), &setup_open);
+        store.set(&symbol_short!("linked"), &linked);
+    }
+
+    /// Every view fails from now on.
+    pub fn silence(e: Env) {
+        let store = e.storage().instance();
+        store.remove(&symbol_short!("vault"));
+        store.remove(&symbol_short!("open"));
+        store.remove(&symbol_short!("linked"));
+    }
+
+    pub fn linked_tokens(e: Env) -> Vec<Address> {
+        e.storage()
+            .instance()
+            .get(&symbol_short!("linked"))
+            .unwrap()
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl strata_bindings::VaultBinding for RulesStub {
+    fn vault(e: &Env) -> Option<Address> {
+        e.storage().instance().get(&symbol_short!("vault")).unwrap()
+    }
+
+    fn setup_open(e: &Env) -> bool {
+        e.storage().instance().get(&symbol_short!("open")).unwrap()
+    }
+}
+
+/// A verifier that accepts every account until a test silences it.
+#[contract]
+struct VerifierStub;
+
+#[contractimpl]
+impl VerifierStub {
+    pub fn silence(e: Env) {
+        e.storage().instance().set(&symbol_short!("silent"), &true);
+    }
+
+    pub fn verify_identity(e: Env, _account: Address) {
+        assert!(!e.storage().instance().has(&symbol_short!("silent")));
     }
 }
 
@@ -75,6 +145,33 @@ impl Fixture<'_> {
 
     fn propose(&self, change: TokenChange) -> u32 {
         self.token.propose_change(&change)
+    }
+
+    fn rules(&self) -> ComplianceClient<'_> {
+        ComplianceClient::new(&self.e, &self.e.register(Compliance, (self.admin.clone(),)))
+    }
+
+    /// Rules the token may swap to: they list the token and run on this
+    /// vault's clock with their setup finished.
+    fn rules_bound_here(&self) -> Address {
+        let rules = self.rules();
+        rules.bind_token(&self.token.address, &self.admin);
+        rules.bind_vault(&self.vault.address);
+        rules.finish_setup();
+        rules.address
+    }
+
+    fn verifier(&self) -> IdentityVerifierClient<'_> {
+        IdentityVerifierClient::new(
+            &self.e,
+            &self.e.register(IdentityVerifier, (self.admin.clone(),)),
+        )
+    }
+
+    fn verifier_accepting_the_vault(&self) -> Address {
+        let verifier = self.verifier();
+        verifier.allow(&self.vault.address, &true);
+        verifier.address
     }
 
     /// Lands an `Admin` change for `next` and returns the ledger of the offer.
@@ -156,14 +253,7 @@ fn setup<'a>() -> Fixture<'a> {
             Address::generate(&e),
         ),
     );
-    let vault = ClockStubClient::new(&e, &e.register(ClockStub, ()));
-    vault.set(&Clock {
-        delay: MIN_DELAY,
-        exit_window: 0,
-        paused_secs: 0,
-        paused: false,
-        winding_down: false,
-    });
+    let vault = clock_stub(&e);
     Fixture {
         token: ShareTokenClient::new(&e, &token),
         vault,
@@ -435,7 +525,7 @@ fn a_revoke_lands_through_the_timelock() {
 fn a_vault_pause_moves_the_eta_and_holds_the_change() {
     let f = setup();
     f.finish();
-    let id = f.propose(TokenChange::Compliance(Address::generate(&f.e)));
+    let id = f.propose(TokenChange::GrantRole(manager(), Address::generate(&f.e)));
     let eta = f.token.pending_changes().get(0).unwrap().eta;
 
     f.advance(DAY_DURATION);
@@ -459,13 +549,13 @@ fn a_vault_pause_moves_the_eta_and_holds_the_change() {
 fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
     let f = setup();
     f.finish();
-    let id = f.propose(TokenChange::Compliance(Address::generate(&f.e)));
+    let id = f.propose(TokenChange::GrantRole(manager(), Address::generate(&f.e)));
     f.clock(|c| c.winding_down = true);
     f.advance(MIN_DELAY);
 
     refused(
         f.token
-            .try_propose_change(&TokenChange::Compliance(Address::generate(&f.e))),
+            .try_propose_change(&TokenChange::GrantRole(manager(), Address::generate(&f.e))),
         ShareTokenError::WindDownActive,
     );
     refused(
@@ -479,7 +569,7 @@ fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
 fn a_change_shorter_than_a_raised_notice_never_lands() {
     let f = setup();
     f.finish();
-    let id = f.propose(TokenChange::Compliance(Address::generate(&f.e)));
+    let id = f.propose(TokenChange::GrantRole(manager(), Address::generate(&f.e)));
     f.clock(|c| {
         c.delay = 30 * DAY_DURATION;
         c.exit_window = 20 * DAY_DURATION;
@@ -510,7 +600,7 @@ fn only_the_admin_proposes_cancels_and_applies() {
     let f = setup();
     f.finish();
     let stranger = Address::generate(&f.e);
-    let change = TokenChange::Compliance(Address::generate(&f.e));
+    let change = TokenChange::GrantRole(manager(), Address::generate(&f.e));
     let id = f.propose(change.clone());
     f.advance(MIN_DELAY);
 
@@ -579,8 +669,8 @@ fn the_hand_over_offer_lasts_seven_days_of_ledgers() {
 fn applied_rule_and_verifier_changes_take_effect() {
     let f = setup();
     f.finish();
-    let rules = Address::generate(&f.e);
-    let verifier = Address::generate(&f.e);
+    let rules = f.rules_bound_here();
+    let verifier = f.verifier_accepting_the_vault();
     let first = f.propose(TokenChange::Compliance(rules.clone()));
     let second = f.propose(TokenChange::IdentityVerifier(verifier.clone()));
     f.advance(MIN_DELAY);
@@ -593,10 +683,116 @@ fn applied_rule_and_verifier_changes_take_effect() {
 }
 
 #[test]
+fn rules_off_this_vaults_clock_or_without_the_token_are_never_proposed() {
+    let f = setup();
+    f.finish();
+    let unlisted = f.rules();
+    unlisted.bind_vault(&f.vault.address);
+    unlisted.finish_setup();
+    let elsewhere = f.rules();
+    elsewhere.bind_token(&f.token.address, &f.admin);
+    elsewhere.bind_vault(&clock_stub(&f.e).address);
+    elsewhere.finish_setup();
+    let in_setup = f.rules();
+    in_setup.bind_token(&f.token.address, &f.admin);
+    in_setup.bind_vault(&f.vault.address);
+    let not_a_contract = Address::generate(&f.e);
+
+    for rules in [
+        unlisted.address,
+        elsewhere.address,
+        in_setup.address,
+        not_a_contract,
+    ] {
+        refused(
+            f.token.try_propose_change(&TokenChange::Compliance(rules)),
+            ShareTokenError::ComplianceNotBound,
+        );
+    }
+    assert_eq!(f.token.pending_changes().len(), 0);
+}
+
+/// Proposes a swap to rules that qualify, lets `turn` change their answers,
+/// then checks the swap no longer lands.
+fn refused_once_the_rules_turn(f: &Fixture, turn: impl FnOnce(&RulesStubClient)) {
+    let rules = RulesStubClient::new(&f.e, &f.e.register(RulesStub, ()));
+    rules.report(
+        &Some(f.vault.address.clone()),
+        &false,
+        &vec![&f.e, f.token.address.clone()],
+    );
+    let id = f.propose(TokenChange::Compliance(rules.address.clone()));
+    turn(&rules);
+    f.advance(MIN_DELAY);
+
+    refused(
+        f.token.try_apply_change(&id),
+        ShareTokenError::ComplianceNotBound,
+    );
+    assert_ne!(f.token.compliance(), rules.address);
+}
+
+#[test]
+fn rules_that_stop_qualifying_are_never_installed() {
+    let f = setup();
+    f.finish();
+    let here = Some(f.vault.address.clone());
+    let listed = vec![&f.e, f.token.address.clone()];
+
+    refused_once_the_rules_turn(&f, |rules| rules.report(&here, &false, &vec![&f.e]));
+    refused_once_the_rules_turn(&f, |rules| {
+        rules.report(&Some(clock_stub(&f.e).address), &false, &listed)
+    });
+    refused_once_the_rules_turn(&f, |rules| rules.report(&here, &true, &listed));
+    refused_once_the_rules_turn(&f, |rules| rules.silence());
+}
+
+#[test]
+fn a_verifier_that_refuses_the_vault_or_cannot_answer_is_never_proposed() {
+    let f = setup();
+    f.finish();
+    let refusing = f.verifier().address;
+    let not_a_verifier = f.vault.address.clone();
+    let not_a_contract = Address::generate(&f.e);
+
+    for verifier in [refusing, not_a_verifier, not_a_contract] {
+        refused(
+            f.token
+                .try_propose_change(&TokenChange::IdentityVerifier(verifier)),
+            ShareTokenError::VerifierRefusesVault,
+        );
+    }
+    assert_eq!(f.token.pending_changes().len(), 0);
+}
+
+#[test]
+fn a_verifier_that_stops_accepting_the_vault_is_never_installed() {
+    let f = setup();
+    f.finish();
+    let delisting = f.verifier();
+    delisting.allow(&f.vault.address, &true);
+    let silenced = VerifierStubClient::new(&f.e, &f.e.register(VerifierStub, ()));
+    let first = f.propose(TokenChange::IdentityVerifier(delisting.address.clone()));
+    let second = f.propose(TokenChange::IdentityVerifier(silenced.address.clone()));
+
+    delisting.allow(&f.vault.address, &false);
+    silenced.silence();
+    f.advance(MIN_DELAY);
+
+    for id in [first, second] {
+        refused(
+            f.token.try_apply_change(&id),
+            ShareTokenError::VerifierRefusesVault,
+        );
+    }
+    assert_eq!(f.token.pending_changes().len(), 2);
+}
+
+#[test]
 fn proposing_and_applying_publish_the_change() {
     let f = setup();
     f.finish();
-    let change = TokenChange::Compliance(Address::generate(&f.e));
+    let change = TokenChange::GrantRole(manager(), Address::generate(&f.e));
     let eta = f.e.ledger().timestamp() + MIN_DELAY;
 
     let id = f.propose(change.clone());
@@ -625,7 +821,7 @@ fn proposing_reads_the_vault_clock_once() {
     f.finish();
     let before = f.vault.reads();
 
-    f.propose(TokenChange::Compliance(Address::generate(&f.e)));
+    f.propose(TokenChange::GrantRole(manager(), Address::generate(&f.e)));
 
     assert_eq!(f.vault.reads(), before + 1);
 }
@@ -635,7 +831,7 @@ fn a_proposal_after_a_past_pause_waits_one_delay_from_now() {
     let f = setup();
     f.finish();
     f.clock(|c| c.paused_secs = 3 * DAY_DURATION);
-    let change = TokenChange::Compliance(Address::generate(&f.e));
+    let change = TokenChange::GrantRole(manager(), Address::generate(&f.e));
     let eta = f.e.ledger().timestamp() + MIN_DELAY;
 
     let id = f.propose(change.clone());
@@ -670,12 +866,12 @@ fn every_admin_call_restores_the_instance_ttl() {
     f.restores_the_instance(|| f.token.bind_vault(&f.vault.address));
     f.restores_the_instance(|| f.token.finish_setup());
 
-    let rules = TokenChange::Compliance(Address::generate(&f.e));
+    let grant = TokenChange::GrantRole(manager(), Address::generate(&f.e));
     let mut id = 0;
-    f.restores_the_instance(|| id = f.propose(rules.clone()));
+    f.restores_the_instance(|| id = f.propose(grant.clone()));
     f.restores_the_instance(|| f.token.cancel_change(&id));
 
-    let id = f.propose(rules);
+    let id = f.propose(grant);
     f.advance(MIN_DELAY);
     f.restores_the_instance(|| f.token.apply_change(&id));
 }
@@ -738,7 +934,7 @@ fn each_admin_call_asks_the_admin_for_one_signature() {
     f.token.finish_setup();
     f.signed_once_by(&f.admin, "finish_setup", soroban_sdk::Vec::new(&f.e));
 
-    let change = TokenChange::Compliance(rules);
+    let change = TokenChange::Compliance(f.rules_bound_here());
     let id = f.token.propose_change(&change);
     f.signed_once_by(&f.admin, "propose_change", (change.clone(),).into_val(&f.e));
     f.token.cancel_change(&id);

@@ -54,5 +54,15 @@ strata_bindings::error_enum! {
         /// once it is accepted, cancelled or expired, so no nominee from setup can
         /// accept after changes start to wait.
         AdminTransferPending = 7016,
+        /// The proposed compliance contract does not name this token's vault,
+        /// its setup is still open, or its `linked_tokens` leaves out this
+        /// token. Every mint, transfer and burn would fail, or its rules could
+        /// change without the vault's delay.
+        ComplianceNotBound = 7017,
+        /// The proposed identity verifier refuses the vault's address or does
+        /// not answer `verify_identity`. The vault needs that check to convert
+        /// a delisted holder's deposit, and a verifier that cannot answer makes
+        /// every holder look delisted.
+        VerifierRefusesVault = 7018,
     }
 }

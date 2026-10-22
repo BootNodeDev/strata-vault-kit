@@ -3,7 +3,10 @@ use stellar_access::{
     access_control::{self, AccessControlStorageKey},
     role_transfer,
 };
-use stellar_tokens::rwa::{identity_verification::IdentityVerifierClient, RWA};
+use stellar_tokens::rwa::{
+    identity_verification::IdentityVerifierClient, utils::token_binder::TokenBinderClient, RWA,
+};
+use strata_bindings::VaultBindingClient;
 use strata_timelock::{queue, setup};
 
 use crate::error::ShareTokenError;
@@ -59,6 +62,54 @@ fn upgrade_pending(e: &Env) -> bool {
         queue::pending::<TokenChange>(e, id)
             .is_some_and(|(change, _)| matches!(change, TokenChange::Upgrade(_)))
     })
+}
+
+/// What a change must meet when it is proposed and again when it applies:
+/// rules bound here, or a verifier that accepts the vault.
+pub(crate) fn valid_change(e: &Env, change: &TokenChange) {
+    match change {
+        TokenChange::Compliance(rules) => compliance_bound_here(e, rules),
+        TokenChange::IdentityVerifier(verifier) => verifier_accepts_vault(e, verifier),
+        TokenChange::Upgrade(_)
+        | TokenChange::GrantRole(..)
+        | TokenChange::RevokeRole(..)
+        | TokenChange::Admin(_) => {}
+    }
+}
+
+/// Rules that leave out this token stop every mint, transfer and burn; rules
+/// off the vault's clock could change with no delay.
+pub(crate) fn compliance_bound_here(e: &Env, rules: &Address) {
+    if !on_the_vaults_clock(e, rules) || !lists_this_token(e, rules) {
+        panic_with_error!(e, ShareTokenError::ComplianceNotBound);
+    }
+}
+
+pub(crate) fn verifier_accepts_vault(e: &Env, verifier: &Address) {
+    let accepted = setup::source(e).is_some_and(|vault| {
+        matches!(
+            IdentityVerifierClient::new(e, verifier).try_verify_identity(&vault),
+            Ok(Ok(()))
+        )
+    });
+    if !accepted {
+        panic_with_error!(e, ShareTokenError::VerifierRefusesVault);
+    }
+}
+
+/// `contract` names this token's vault and its own setup has finished.
+fn on_the_vaults_clock(e: &Env, contract: &Address) -> bool {
+    let binding = VaultBindingClient::new(e, contract);
+    setup::source(e)
+        .is_some_and(|vault| matches!(binding.try_vault(), Ok(Ok(Some(named))) if named == vault))
+        && matches!(binding.try_setup_open(), Ok(Ok(false)))
+}
+
+fn lists_this_token(e: &Env, rules: &Address) -> bool {
+    matches!(
+        TokenBinderClient::new(e, rules).try_linked_tokens(),
+        Ok(Ok(linked)) if linked.contains(e.current_contract_address())
+    )
 }
 
 /// Stands in for `#[only_admin]` where an OpenZeppelin trait fixes the caller.

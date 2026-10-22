@@ -80,6 +80,7 @@ pub(crate) fn finish_setup(e: &Env) {
 }
 
 pub(crate) fn propose(e: &Env, change: TokenChange) -> u32 {
+    guards::valid_change(e, &change);
     guards::not_a_second_upgrade(e, &change);
     let id = queue::propose::<ShareToken, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
@@ -102,6 +103,8 @@ pub(crate) fn cancel(e: &Env, id: u32) {
 pub(crate) fn apply(e: &Env, id: u32) {
     let change: TokenChange =
         queue::take_ready::<ShareToken, _>(e, id).unwrap_or_else(|r| refuse(e, r));
+    // The new contract may have changed since the proposal; this check decides.
+    guards::valid_change(e, &change);
     let admin = access_control::get_admin(e)
         .unwrap_or_else(|| panic_with_error!(e, ShareTokenError::AdminRequired));
     match &change {
