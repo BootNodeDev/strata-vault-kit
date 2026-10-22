@@ -99,12 +99,17 @@ fn a_valuation_taken_in_the_closing_ledger_prices_the_epoch() {
     let holder = f.holder(100);
     f.vault.request_redeem(&holder, &100);
 
+    f.advance(60);
     let epoch = f.close_epoch();
     f.attest(wad(3));
 
     f.vault.fulfill_epoch(&epoch);
 
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(3));
+    assert_eq!(
+        f.oracle.attested_at(),
+        f.vault.get_epoch(&epoch).unwrap().closed_at
+    );
 }
 
 #[test]

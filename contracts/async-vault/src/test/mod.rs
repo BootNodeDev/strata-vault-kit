@@ -93,15 +93,29 @@ impl Fixture<'_> {
         self.share.balance(who)
     }
 
+    /// Posts a report that the feed's own freshness window bounds, waiting out
+    /// the cooldown first when the last report is too recent.
     fn attest(&self, nav_per_share: i128) {
+        self.wait_out_the_cooldown();
         self.oracle.attest(
             &NavReport {
                 nav_per_share,
                 timestamp: 0,
-                expires_at: 1_000_000,
+                expires_at: u64::MAX,
             },
             &self.attester,
         );
+    }
+
+    fn wait_out_the_cooldown(&self) {
+        let Ok(Ok(latest)) = self.oracle.try_latest() else {
+            return;
+        };
+        let ready = latest.timestamp + self.oracle.config().cooldown_secs;
+        let now = self.e.ledger().timestamp();
+        if now < ready {
+            self.advance(ready - now);
+        }
     }
 
     fn holder(&self, shares: i128) -> Address {
@@ -163,13 +177,13 @@ pub(crate) fn register_with(e: &Env, roles: VaultRoles) -> Address {
     e.register(AsyncVault, (&asset, &asset, &asset, roles))
 }
 
-/// The permissive feed most tests want: no cooldown, no effective cap.
+/// The permissive feed most tests want: the shortest cooldown, no effective cap.
 fn open_feed() -> OracleConfig {
     OracleConfig {
         freshness_duration: 3_600,
-        cooldown_secs: 0,
+        cooldown_secs: 1,
         max_up_bps: 10_000,
-        max_down_bps: Some(10_000),
+        max_down_bps: 10_000,
         min_answer: 1,
         max_answer: 1_000 * WAD_SCALE,
     }

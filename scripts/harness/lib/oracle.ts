@@ -8,12 +8,14 @@ export interface NavReport {
 	timestamp: bigint
 }
 
-export function navReport(nav: bigint, freshnessSecs: number): NavReport {
-	const now = BigInt(Math.floor(Date.now() / 1000))
+/** The latest expiry a u64 holds: the oracle cuts it to its own window. */
+const NO_EXPIRY = (1n << 64n) - 1n
+
+export function navReport(nav: bigint): NavReport {
 	return {
 		nav_per_share: nav,
-		expires_at: now + BigInt(freshnessSecs),
-		timestamp: now,
+		expires_at: NO_EXPIRY,
+		timestamp: 0n,
 	}
 }
 
@@ -24,7 +26,7 @@ export async function attest(c: Connected, nav: bigint): Promise<void> {
 	const deadline = Date.now() + (c.net.oracle.cooldown_secs + 60) * 1_000
 	for (;;) {
 		const tx = await client.attest({
-			report: navReport(nav, c.net.oracle.freshness_duration),
+			report: navReport(nav),
 			caller: attester.publicKey(),
 		})
 		const result = outcome(tx, client)

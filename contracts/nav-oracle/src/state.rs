@@ -15,6 +15,10 @@ pub const ATTESTER_ROLE: Symbol = symbol_short!("attester");
 /// Pauses the NAV in an emergency. Cannot unpause it.
 pub const GUARDIAN_ROLE: Symbol = symbol_short!("guardian");
 
+/// A valuation. On input, `expires_at` is the latest moment the reporter
+/// vouches for it, and `timestamp` is ignored. As stored, `timestamp` is the
+/// ledger time the oracle accepted the report, and `expires_at` is the
+/// reporter's expiry capped at that time plus `freshness_duration`.
 #[contracttype]
 #[derive(Clone)]
 pub struct NavReport {
@@ -30,11 +34,9 @@ pub struct OracleConfig {
     pub cooldown_secs: u64,      // before new record is admitted
     /// Upward move allowed per attestation. Always set, never zero.
     pub max_up_bps: u32,
-    /// Downward move allowed per attestation. `None` leaves falls uncapped, so a
-    /// loss of any size lands in one attestation. With it unset, `min_answer` is
-    /// the only bound on a single report, which makes that floor a risk
-    /// parameter rather than a sanity check.
-    pub max_down_bps: Option<u32>,
+    /// Downward move allowed per attestation, 1 to 10,000. At 10,000 a loss of
+    /// any size lands in one attestation and `min_answer` is the only floor.
+    pub max_down_bps: u32,
     pub min_answer: i128,
     pub max_answer: i128,
 }

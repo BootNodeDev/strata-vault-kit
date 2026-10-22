@@ -15,6 +15,7 @@ storage = { path = "../../crates/storage" }
 stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
 bindings = { path = "../../crates/bindings" }
+timelock = { path = "../../crates/timelock" }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }

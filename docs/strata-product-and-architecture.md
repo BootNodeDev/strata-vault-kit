@@ -374,9 +374,12 @@ attestation carries the share price and a proof reference; attestations are
 ordered by their acceptance time on the ledger. The price must stay within
 configured bounds, a minimum cooldown bounds frequency, and the deviation cap is
 directional: the upward bound is mandatory and non-zero, the downward bound is
-optional, and leaving it unset lets a loss of any size land in one attestation.
-An epoch is never priced against a valuation accepted before it closed, and the
-oracle's cooldown therefore bounds how soon a closed epoch can be priced.
+required too, and setting it to 100% lets a loss of any size land in one
+attestation. A report's own expiry can shorten its life but never extend it past
+the freshness window, and no report is accepted while the NAV is paused:
+unpausing it is a deliberate act before reporting resumes. An epoch is never
+priced against a valuation accepted before it closed, and the oracle's cooldown
+therefore bounds how soon a closed epoch can be priced.
 
 **Freshness and pause:** each attestation opens a validity window; when it
 lapses the feed is stale and new requests stop being priced. The guardian can
@@ -581,7 +584,7 @@ public surface given the vault address.
 
 | Boundary               | Risk                                           | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the deviation cap bounds a single report upward, and `min_answer` is what bounds it downward, so that floor is a risk parameter and not a sanity check; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts |
+| Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the deviation cap bounds a single report in both directions, and a downward cap of 100% leaves `min_answer` as the only floor; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts |
 | Governance keys        | Malicious upgrade                              | Timelock on every code change and on the delay itself, bounded by a minimum no shorter than the standing notice and a maximum ceiling (90 days). A pause freezes the timelock clock and pushes the ETA by the duration paused, guaranteeing that investors have an unpaused exit window before any code change applies; applying while paused is refused; nothing is proposed or applied while the vault winds down. |
 | Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while anything is uncovered, and escrowed subscriptions never leave the vault                                                                                                                                                                                                                                                          |
 | Guardian keys          | Griefing via pause                             | Guardian can only pause the vault, which stops deposit requests, epoch pricing and upgrade application and freezes the upgrade timelock; it cannot halt redemptions, custodian deployments, or payable claims, nor move funds; governance unpauses and rotates the vault role. It holds no role on the share token: the token's transfer pause is admin-gated (governance by deploy), not a guardian lever. No contract keeps governance and guardian apart |
