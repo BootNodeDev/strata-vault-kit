@@ -11,9 +11,18 @@ SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 nix develop -c cargo test
 ```
 
 The variable is needed whenever `cargo` runs directly (see
-[AGENTS.md](../AGENTS.md)). The tests that upgrade the vault to a real WASM
-build run only with `--features upgrade_wasm`, after the fixture in
-[`fixtures/upgrade-target`](../fixtures/upgrade-target) is built.
+[AGENTS.md](../AGENTS.md)). The tests that upgrade the vault and the share
+token to a real WASM build run only with `--features upgrade_wasm`, after three
+builds: the fixture in [`fixtures/upgrade-target`](../fixtures/upgrade-target),
+the share token, and the share token's probe build, a stand-in for its next
+version. Inside `nix develop`:
+
+```sh
+stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
+stellar contract build --package share-token
+CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
+SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test -p async-vault --features upgrade_wasm with_wasm
+```
 
 ## Storage and TTL
 
@@ -29,7 +38,7 @@ contract extends, who pays, and how to restore an archived one.
 | Persistent entries round-trip and get the full TTL on write | [`crates/storage/src/test.rs`](../crates/storage/src/test.rs) | `persistent_round_trips`, `writing_sets_the_full_ttl` |
 | A read restores a decayed entry; a missing entry is not created | [`crates/storage/src/test.rs`](../crates/storage/src/test.rs) | `reading_a_decayed_entry_restores_the_full_ttl`, `reading_a_missing_entry_creates_nothing` |
 | Instance writes and reads extend the contract instance | [`crates/storage/src/test.rs`](../crates/storage/src/test.rs) | `instance_writes_bump_the_instance`, `reading_the_instance_restores_its_ttl` |
-| The share token, identity verifier and compliance contract extend their own instance on every call that does work | [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs), [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs), [`contracts/compliance/src/test.rs`](../contracts/compliance/src/test.rs) | `a_transfer_restores_the_instance_ttl`, `the_vaults_mint_burn_and_escrow_restore_the_instance_ttl`, `allowing_and_checking_restore_the_instance_ttl`, `the_hooks_a_token_calls_after_moving_shares_restore_the_instance_ttl` |
+| The share token, identity verifier and compliance contract extend their own instance on every call that does work | [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs), [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs), [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs), [`contracts/compliance/src/test.rs`](../contracts/compliance/src/test.rs) | `a_transfer_restores_the_instance_ttl`, `the_vaults_mint_burn_and_escrow_restore_the_instance_ttl`, `every_admin_call_restores_the_instance_ttl`, `allowing_and_checking_restore_the_instance_ttl`, `the_hooks_a_token_calls_after_moving_shares_restore_the_instance_ttl` |
 | Vault requests and epochs are written with the full TTL | [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs) | `a_request_and_its_epoch_are_written_with_the_full_ttl`, `a_redemption_request_is_written_with_the_full_ttl` |
 | Reading a vault request, epoch or the instance restores its TTL | [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs) | `reading_a_decayed_request_restores_its_full_ttl`, `reading_a_decayed_epoch_restores_its_full_ttl`, `any_vault_read_restores_the_instance_ttl` |
 | A request still claims, and a wind-down position still pays, after most of a month | [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs), [`contracts/async-vault/src/test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) | `a_pending_request_still_claims_after_most_of_a_month`, `a_position_survives_the_ledger_advancing` |
@@ -59,6 +68,7 @@ nothing.
 | Guardian, governance and upgrade powers stay with their role | [`contracts/async-vault/src/test/controls.rs`](../contracts/async-vault/src/test/controls.rs), [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs), [`contracts/async-vault/src/test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) | `the_guardian_pauses_but_only_governance_unpauses`, `only_governance_proposes_and_cancels`, `only_governance_applies`, `only_governance_sets_the_delay` |
 | Roles that must stay separate are refused at deployment | [`contracts/async-vault/src/test/constructor.rs`](../contracts/async-vault/src/test/constructor.rs) | `the_treasury_may_not_also_be_the_guardian`, `compliance_may_not_also_be_governance` |
 | Share token: only the right role mints, burns, pauses, freezes or moves shares | [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs) | `unauthorized_caller_cannot_mint`, `unauthorized_caller_cannot_burn`, `unauthorized_caller_cannot_forced_transfer`, `unauthorized_caller_cannot_freeze_or_recover` |
+| Share token: only the admin binds the vault, finishes setup and runs the timelock | [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs) | `only_the_admin_binds_and_finishes`, `only_the_admin_proposes_cancels_and_applies` |
 | Oracle: only the attester posts, only the guardian pauses the NAV | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `attest_is_role_gated`, `pausing_the_nav_is_limited_to_the_guardian`, `only_admin_can_set_config` |
 | Identity verifier: only the admin edits the allowlist | [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs) | `only_admin_can_allow` |
 
@@ -74,6 +84,7 @@ so time rules and TTL can be reached in one test.
 | A valuation must be newer than the epoch close | [`contracts/async-vault/src/test/oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs) | `an_epoch_is_not_priced_against_a_valuation_older_than_its_close`, `a_valuation_taken_in_the_closing_ledger_prices_the_epoch` |
 | Oracle freshness, cooldown and its own timestamp | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `heartbeat_expiry_makes_it_stale`, `attest_enforces_cooldown_and_deviation`, `attest_stamps_its_own_timestamp`, `a_reporter_expiry_past_the_window_is_cut_to_the_window`, `two_reports_in_one_ledger_are_refused_at_the_shortest_cooldown` |
 | Upgrade and wind-down timelocks follow the ledger clock | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs), [`contracts/async-vault/src/test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) | `applying_before_the_eta_is_refused`, `a_pause_freezes_the_upgrade_timelock_clock`, `governance_proposes_and_anyone_activates_after_the_delay` |
+| The share token's changes wait on the vault's clock: a vault pause moves the eta, a wind-down refuses them | [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs) | `a_grant_lands_one_vault_delay_after_it_was_proposed`, `a_vault_pause_moves_the_eta_and_holds_the_change`, `nothing_is_proposed_or_applied_while_the_vault_winds_down` |
 | Timing rules hold for any clock values (property tests) | [`contracts/async-vault/src/test/timing.rs`](../contracts/async-vault/src/test/timing.rs) | `standard_priceable_at_never_precedes_the_close`, `a_notice_that_would_overflow_saturates` |
 
 ## Events
@@ -97,3 +108,4 @@ contract and oracle, plus a Stellar Asset Contract for the deposit asset.
 | The vault checks the identity verifier at request; the share token checks it on mint and transfer | [`contracts/async-vault/src/test/compliance.rs`](../contracts/async-vault/src/test/compliance.rs), [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs) | `an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves`, `a_frozen_or_delisted_holder_cannot_transfer_shares`, `manager_mints_to_allowlisted_account` |
 | The vault reads the oracle and refuses a stale or paused feed | [`contracts/async-vault/src/test/oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs) | `the_epoch_is_priced_at_the_attestation`, `fulfill_is_rejected_once_the_feed_goes_stale`, `a_paused_feed_is_refused_by_the_vault_not_the_oracle` |
 | Upgrading replaces the vault's code and migrates once | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `applying_a_wasm_change_replaces_the_code`, `a_migration_refuses_a_second_run` |
+| The share token upgrades through the vault's timelock under live balances, an open deposit and an open redemption, and migrates once | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `the_token_upgrades_under_live_balances_and_open_requests` |

@@ -30,8 +30,8 @@ interface DeploymentRecord {
 }
 
 // Contracts whose storage holds a timelock change queue, by the name they
-// deploy under. Only the vault keeps one today.
-const CONTRACTS_WITH_QUEUES = new Set(["async_vault"])
+// deploy under.
+const CONTRACTS_WITH_QUEUES = new Set(["async_vault", "share_token"])
 
 /**
  * The timelock's own storage key for a change still waiting:

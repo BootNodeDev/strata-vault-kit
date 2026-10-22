@@ -91,6 +91,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - Nothing is proposed or applied during an active wind-down (`WindDownActive`).
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
+  - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant.
 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
 - **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital credited to that round.
@@ -220,7 +221,16 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `forced_transfer` | Manager (Vault) or Compliance | `#[only_any_role(operator, ["manager", "compliance"])]` | Bypasses token pause |
 | **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens`, `recover_balance` | Compliance | `#[only_role(operator, "compliance")]` | No |
-| **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `#[only_admin]` | No |
+| **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `#[only_admin]`; instant during setup, then `propose_change` | No |
+| **`ShareToken`** | `bind_vault` | Governance (token admin) | `#[only_admin]`; during setup, once | No |
+| **`ShareToken`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
+| **`ShareToken`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
+| **`ShareToken`** | `cancel_change` | Governance | `#[only_admin]` | No |
+| **`ShareToken`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
+| **`ShareToken`** | `pending_changes` | Permissionless | None (view) | No |
+| **`ShareToken`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
+| **`ShareToken`** | `revoke_role` | Governance | `compliance`: instant. `manager`: instant during setup, then `propose_change` | No |
+| **`ShareToken`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`IdentityVerifier`** | `allow` | Admin (Compliance) | `#[only_admin]` | No |
 | **`IdentityVerifier`** | `set_claim_topics_and_issuers`| Admin (Compliance) | `#[only_admin]` | No |
 
@@ -234,6 +244,7 @@ A clean deployment executes in three sequenced phases:
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role("manager", vault_address)` to authorize lazy share minting and burning.
+   - Call `ShareToken::bind_vault(vault_address)`, then `ShareToken::finish_setup()`. The token's admin changes are instant until then and wait for the vault's timelock afterwards.
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so the vault can return escrowed shares on cancelled redemptions.
    - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification.
 3. **Phase 3: Operational Parameterization**
@@ -253,7 +264,7 @@ instance is archived refuses every call.
 |---|---|---|---|
 | `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once less than 29 days remain |
 | `nav_oracle` | Its instance and the latest report | `attest` extends both; every other call extends whichever of the two it reads or writes | Same |
-| `share_token` | Its instance | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause` | Same |
+| `share_token` | Its instance, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change` | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
 
@@ -262,15 +273,16 @@ The lengths are the constants in `crates/storage`
 shorter). They are fixed in code: a governance setting would add an admin power
 for little gain.
 
-**Pending governance changes.** A change waiting in `async_vault`'s timelock
-lives as a persistent entry, extended to 30 days when it is proposed. The wait
-itself can run up to 90 days (`timelock::MAX_DELAY`), so a change nobody
-touches can archive before it is due. Nothing is lost: the call that applies
-it restores the archived entry itself and pays the restore fee, the same as
-any other archived entry. `npm run extend` also keeps it alive: it reads the
-vault's open ids from its `pending_changes()` view, builds each one's storage
-key the way the timelock crate does, and extends it the same 30 days as every
-instance and Wasm.
+**Pending governance changes.** A change waiting in the timelock of
+`async_vault` or `share_token` lives as a persistent entry, extended to 30 days
+when it is proposed. The wait itself can run up to 90 days
+(`timelock::MAX_DELAY`), so a change nobody touches can archive before it is
+due. Nothing is lost: the call that applies it restores the archived entry
+itself and pays the restore fee, the same as any other archived entry.
+`npm run extend` also keeps it alive: it reads each contract's open ids from
+its `pending_changes()` view, builds each one's storage key the way the
+timelock crate does, and extends it the same 30 days as every instance and
+Wasm.
 
 **What OpenZeppelin extends.** `stellar-tokens` 0.7.2 stores the share token's
 balances and frozen amounts, and the compliance contract's modules and bound
@@ -342,3 +354,9 @@ implementation against what the vault calls.
 A feed that implements `OracleFeed` can replace `nav-oracle`; it must report
 `Stale` once its report outlives `freshness_duration`, and `attested_at` must
 be the ledger time the report was accepted, not a time the reporter supplies.
+
+Two more traits connect the share token to the vault's timelock. The vault
+implements `ClockSource` (`crates/timelock`), and the share token reads its
+`timelock_clock` to time its own changes. The share token implements
+`VaultBinding` (`crates/bindings`): `vault` names the vault it is bound to, and
+`setup_open` says whether its admin changes are still instant.
