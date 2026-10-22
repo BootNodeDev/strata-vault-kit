@@ -79,6 +79,8 @@ jobs:
         uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
         with:
           enable: "core,rpc"
+          # Pinned image: "latest" tracks new protocol builds.
+          tag: v678-b1525.1-latest
       - name: Add master account as default identity
         run: |
           mkdir -p .config/stellar/identity
