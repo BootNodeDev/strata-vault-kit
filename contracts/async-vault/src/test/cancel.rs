@@ -100,7 +100,6 @@ fn the_same_investor_can_request_again_after_cancelling() {
 fn refundable_escrow_is_not_free_reserve() {
     let f = setup();
     let inv = f.investor(1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     let before = f.vault.free_reserve();
     f.vault.request_deposit(&inv, &400);
@@ -187,7 +186,6 @@ fn a_dust_refund_never_takes_committed_money() {
     f.vault.fulfill_epoch(&epoch);
 
     // Move every free unit out, leaving only what the redeemer is owed.
-    f.vault.set_custodian(&f.custodian, &f.admin);
     let free = f.vault.free_reserve();
     if free > 0 {
         f.vault.deploy_to_custodian(&f.treasury, &free);

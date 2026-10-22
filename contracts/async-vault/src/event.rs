@@ -117,6 +117,9 @@ pub struct ChangeApplied {
 }
 
 #[contractevent]
+pub struct SetupFinished {}
+
+#[contractevent]
 pub struct WindDownDelaySet {
     pub secs: u64,
 }

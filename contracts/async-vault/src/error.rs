@@ -115,9 +115,23 @@ pub enum VaultError {
     /// As many changes as the timelock holds already wait. Apply or cancel one
     /// first.
     TooManyPendingChanges = 6063,
+    /// Setup is still open, so the timelock protects nothing yet: the vault
+    /// takes no deposit and queues no change. Governance finishes setup first.
+    SetupOpen = 6064,
+    /// A direct call cannot make this change. After setup it goes through
+    /// `propose_change`; setting a role admin is never allowed.
+    UseTimelock = 6065,
+    /// Setup has finished, and it never reopens.
+    SetupClosed = 6066,
+    /// The token, the oracle, the manager role, the allowlist or the
+    /// compliance binding is not wired to this vault yet, or the token already
+    /// has shares outstanding, so setup cannot finish.
+    SetupIncomplete = 6067,
     /// The holder fails the share token's identity check, so the vault takes no
     /// deposit request from them and returns no escrowed shares to them.
     NotAllowlisted = 6068,
+    /// The wind-down delay is below the shortest the vault accepts.
+    WindDownDelayTooShort = 6069,
     /// A running total would go below zero, which means the vault's books
     /// disagree with themselves. Fails loudly instead of clamping to zero.
     AccountingMismatch = 6070,
@@ -125,4 +139,8 @@ pub enum VaultError {
     /// returned or moved, until compliance lifts the freeze. A partial freeze
     /// refuses only what would touch frozen shares.
     Frozen = 6071,
+    /// An admin hand-over offered during setup is still open. Setup finishes
+    /// once it is accepted, cancelled or expired, so no nominee from setup can
+    /// accept after changes start to wait.
+    AdminTransferPending = 6074,
 }

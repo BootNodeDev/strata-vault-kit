@@ -22,15 +22,7 @@ const holders = [
 	c.keys["holder-3"],
 ] as const
 const [first, second, canceller] = holders
-const {
-	governance,
-	compliance,
-	custodian,
-	outsider,
-	issuer,
-	manager,
-	treasury,
-} = c.keys
+const { compliance, custodian, outsider, issuer, manager, treasury } = c.keys
 
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
@@ -313,14 +305,9 @@ describe("treasury", () => {
 	const deployed = () => usdc(150)
 	let owed = 0n
 
-	it("governance sets the custodian", async () => {
-		await send(
-			vault(c, governance).set_custodian({
-				custodian: custodian.publicKey(),
-				caller: governance.publicKey(),
-			}),
-		)
+	it("the deploy set the custodian before setup closed", async () => {
 		expect((await reader.custodian()).result).toBe(custodian.publicKey())
+		expect((await reader.setup_open()).result).toBe(false)
 	})
 
 	it("the treasury deploys part of the reserve and the free reserve falls by exactly that amount", async () => {

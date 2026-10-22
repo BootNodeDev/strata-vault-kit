@@ -16,6 +16,14 @@ use crate::treasury;
 /// governance cannot set a delay the vault would never outlive.
 pub const MAX_WIND_DOWN_DELAY: u64 = 90 * timelock::DAY_DURATION;
 
+/// Seven days: holders always get a week's warning before a wind-down starts.
+/// It is also the delay when none was set.
+#[cfg(not(feature = "short_wind_down"))]
+pub const MIN_WIND_DOWN_DELAY: u64 = 7 * timelock::DAY_DURATION;
+/// The local harness build activates a wind-down at once.
+#[cfg(feature = "short_wind_down")]
+pub const MIN_WIND_DOWN_DELAY: u64 = 0;
+
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindDownStatus {
@@ -42,13 +50,21 @@ pub struct WindDownPosition {
 }
 
 pub(crate) fn delay(e: &Env) -> u64 {
-    storage::get_instance(e, &DataKey::WindDownDelay).unwrap_or(0)
+    storage::get_instance(e, &DataKey::WindDownDelay).unwrap_or(MIN_WIND_DOWN_DELAY)
 }
 
-pub(crate) fn set_delay(e: &Env, secs: u64) {
+#[cfg_attr(feature = "short_wind_down", allow(clippy::absurd_extreme_comparisons))]
+pub(crate) fn check_delay(e: &Env, secs: u64) {
+    if secs < MIN_WIND_DOWN_DELAY {
+        panic_with_error!(e, VaultError::WindDownDelayTooShort);
+    }
     if secs > MAX_WIND_DOWN_DELAY {
         panic_with_error!(e, VaultError::WindDownDelayTooLong);
     }
+}
+
+pub(crate) fn set_delay(e: &Env, secs: u64) {
+    check_delay(e, secs);
     storage::set_instance(e, &DataKey::WindDownDelay, &secs);
     WindDownDelaySet { secs }.publish(e);
 }
