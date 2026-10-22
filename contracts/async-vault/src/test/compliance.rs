@@ -97,7 +97,7 @@ fn a_holder_delisted_after_pricing_can_only_leave_by_being_relisted() {
 }
 
 #[contract]
-struct RefusesEveryMint;
+pub(super) struct RefusesEveryMint;
 
 #[contractimpl]
 impl RefusesEveryMint {

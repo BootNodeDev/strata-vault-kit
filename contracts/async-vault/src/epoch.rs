@@ -5,6 +5,7 @@ use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};
 use crate::keys::DataKey;
 use crate::pricing::{Pricing, PricingScheme};
+use crate::settlement;
 use crate::state::{self, EpochInfo, EpochStatus};
 use crate::timing::{FulfilmentTiming, StandardTiming};
 use crate::wind_down;
@@ -108,8 +109,9 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
     state::set_committed(e, committed);
 
+    let mut shares_owed = 0;
     if epoch.total_deposited > 0 {
-        let shares_owed = Pricing::deposit_shares(e, epoch.total_deposited, share_price)
+        shares_owed = Pricing::deposit_shares(e, epoch.total_deposited, share_price)
             .unwrap_or_else(|err| panic_with_error!(e, err));
         let updated_pending_mint = state::pending_mint_shares(e)
             .checked_add(shares_owed)
@@ -124,7 +126,10 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         state::set_pending_burn_shares(e, updated_pending_burn);
     }
 
-    state::set_cancellable_escrow(e, state::cancellable_escrow(e) - epoch.total_deposited);
+    state::set_cancellable_escrow(
+        e,
+        state::reduce(e, state::cancellable_escrow(e), epoch.total_deposited),
+    );
 
     epoch.status = EpochStatus::Fulfilled;
     epoch.share_price = share_price;
@@ -136,6 +141,7 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         total_deposited: epoch.total_deposited,
     }
     .publish(e);
+    settlement::on_priced(e, epoch_id, shares_owed, owed);
 
     share_price
 }

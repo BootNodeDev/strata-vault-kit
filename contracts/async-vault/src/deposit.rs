@@ -7,6 +7,7 @@ use crate::event::{DepositCancelled, DepositClaimed, DepositRequested};
 use crate::keys::DataKey;
 use crate::lock_policy::{self, Decision, Exit};
 use crate::pricing::{Pricing, PricingScheme};
+use crate::settlement;
 use crate::state::{self, DepositRequest, EpochStatus};
 use crate::treasury;
 use crate::wind_down;
@@ -66,6 +67,7 @@ pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     );
     state::set_epoch(e, epoch_id, &epoch);
     state::set_cancellable_escrow(e, state::cancellable_escrow(e) + amount);
+    settlement::on_deposit_requested(e, epoch_id);
 
     let asset = state::get_addr(e, &DataKey::Asset);
     TokenClient::new(e, &asset).transfer(from, e.current_contract_address(), &amount);
@@ -107,12 +109,14 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         if treasury::free_reserve(e) < request.amount {
             panic_with_error!(e, VaultError::ClaimNotCovered);
         }
-        return refund_deposit(e, caller, epoch_id, request.amount);
+        refund_deposit(e, caller, epoch_id, request.amount);
+        settlement::on_deposit_claimed(e, epoch_id, 0);
+        return 0;
     }
 
     request.claimed = true;
     state::set_deposit_request(e, epoch_id, caller, &request);
-    state::set_pending_mint_shares(e, state::pending_mint_shares(e).saturating_sub(shares));
+    state::set_pending_mint_shares(e, state::reduce(e, state::pending_mint_shares(e), shares));
 
     let share_token = state::get_addr(e, &DataKey::ShareToken);
     RWATokenClient::new(e, &share_token).mint(caller, &shares, &e.current_contract_address());
@@ -124,16 +128,17 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         shares,
     }
     .publish(e);
+    settlement::on_deposit_claimed(e, epoch_id, shares);
 
     shares
 }
 
 /// Returns the settlement asset and clears the request. Used by cancellation and
 /// by a claim whose conversion floors to zero.
-fn refund_deposit(e: &Env, controller: &Address, epoch_id: u64, amount: i128) -> i128 {
+fn refund_deposit(e: &Env, controller: &Address, epoch_id: u64, amount: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-    epoch.total_deposited -= amount;
+    epoch.total_deposited = state::reduce(e, epoch.total_deposited, amount);
     state::set_epoch(e, epoch_id, &epoch);
     state::remove_deposit_request(e, epoch_id, controller);
 
@@ -146,8 +151,6 @@ fn refund_deposit(e: &Env, controller: &Address, epoch_id: u64, amount: i128) ->
         amount,
     }
     .publish(e);
-
-    0
 }
 
 pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
@@ -171,7 +174,11 @@ pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
     let request = state::get_deposit_request(e, epoch_id, from)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
 
-    state::set_cancellable_escrow(e, state::cancellable_escrow(e) - request.amount);
+    state::set_cancellable_escrow(
+        e,
+        state::reduce(e, state::cancellable_escrow(e), request.amount),
+    );
+    settlement::on_deposit_cancelled(e, epoch_id);
     refund_deposit(e, from, epoch_id, request.amount);
     request.amount
 }

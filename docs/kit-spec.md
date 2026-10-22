@@ -68,6 +68,10 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   $$\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s$$
 - **Testable Property**: For all values of $a, s \in [1, 10^{30}]$ and $\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]$, a round-trip conversion never creates value. Remainder satisfies:
   $$(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}$$
+- **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. When the last request of a priced epoch settles, the remainder leaves `pending_mint_shares` and `committed` and the vault publishes `EpochReconciled { epoch, share_dust, cash_dust }`. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping.
+- **A request that can never settle** keeps its epoch open, and the two cases leave different amounts behind. A zero-asset redemption whose holder the share token refuses (`a_request_that_cannot_settle_keeps_its_epoch_open`) leaves only the epoch's ordinary rounding remainder in `committed` — fewer units than the epoch has open requests of that kind — because that request was never owed any cash. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's own remainder, until the mint is allowed. Either way it is still owed to nobody.
+
+**Settlement and upgrades.** The settlement record counts a request only from the moment it exists. A vault upgraded in place to this version while any request is open would under-count its open epochs: claims in epochs priced before the upgrade would revert, and a mixed epoch could reconcile early. This version must therefore be deployed fresh, or reached by upgrade only once no request is open anywhere in the vault.
 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
@@ -86,6 +90,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Mathematical Statement**:
   $$\sum_{i} \text{payout}_i \le \text{round\_assets}$$
 - **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. Active wind-down is strictly irreversible.
+- Each payout floors per holder. Once every holder whose shares were all surrendered has claimed, `wind_down_owed` keeps less than one unit per such holder, plus whatever value the snapshot counted in shares that never actually minted (for example `pending_mint_shares` from an epoch that promised more shares than it later minted). That remainder is not released: a later round lets each holder's floor catch up and needs it (`a_later_round_needs_the_units_an_earlier_round_left_in_owed`, `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`, `owed_stays_below_the_holder_count_once_every_share_is_surrendered`).
 
 ---
 

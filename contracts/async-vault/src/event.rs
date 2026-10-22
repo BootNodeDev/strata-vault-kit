@@ -150,6 +150,14 @@ pub struct WindDownClaimed {
 }
 
 #[contractevent]
+pub struct EpochReconciled {
+    #[topic]
+    pub epoch: u64,
+    pub share_dust: i128,
+    pub cash_dust: i128,
+}
+
+#[contractevent]
 pub struct DepositCapUpdated {
     pub old_cap: Option<i128>,
     pub new_cap: Option<i128>,

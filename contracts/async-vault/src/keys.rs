@@ -24,4 +24,5 @@ pub(crate) enum DataKey {
     WindDownOwed,
     WindDownPosition(Address),
     DepositCap,
+    Settlement(u64),
 }

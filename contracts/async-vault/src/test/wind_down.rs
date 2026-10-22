@@ -1,3 +1,5 @@
+use proptest::prelude::*;
+
 use super::*;
 
 #[test]
@@ -617,4 +619,89 @@ fn propose_wind_down_reports_active_when_active() {
         .unwrap_err()
         .unwrap();
     assert_eq!(err, VaultError::WindDownActive.into());
+}
+
+/// Each holder's payout floors, so `owed` can keep a unit per holder after
+/// everyone has claimed. That unit is not free to release: a later round lets
+/// each floor catch up and needs it.
+#[test]
+fn a_later_round_needs_the_units_an_earlier_round_left_in_owed() {
+    let f = setup();
+    let a = f.holder(1);
+    let b = f.holder(1);
+    f.empty_reserve();
+    f.vault.propose_wind_down(&f.admin);
+    f.vault.activate_wind_down();
+
+    f.vault.fund(&f.custodian, &1);
+    assert_eq!(f.vault.finalize_wind_down_round(), 1);
+    assert_eq!(f.vault.claim_wind_down(&a), 0);
+    assert_eq!(f.vault.claim_wind_down(&b), 0);
+    assert_eq!(f.vault.wind_down_owed(), 1);
+
+    f.vault.fund(&f.custodian, &1);
+    assert_eq!(f.vault.finalize_wind_down_round(), 1);
+    assert_eq!(f.vault.claim_wind_down(&a), 1);
+    assert_eq!(f.vault.claim_wind_down(&b), 1);
+
+    assert_eq!(f.vault.wind_down_owed(), 0);
+    assert_eq!(f.balance(&f.vault.address), 0);
+}
+
+#[test]
+fn after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder() {
+    let f = setup();
+    let holders = [f.holder(1), f.holder(2), f.holder(4)];
+    f.empty_reserve();
+    f.vault.propose_wind_down(&f.admin);
+    f.vault.activate_wind_down();
+    f.vault.fund(&f.custodian, &5);
+    f.vault.finalize_wind_down_round();
+
+    for holder in &holders {
+        f.vault.claim_wind_down(holder);
+    }
+
+    assert!(f.vault.wind_down_owed() <= holders.len() as i128);
+    assert!(f.balance(&f.vault.address) >= f.vault.wind_down_owed());
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(24))]
+
+    /// The bound only holds for shares the snapshot counted and that were
+    /// actually surrendered: random holders, each fully claiming, over a
+    /// random number of funding rounds. `owed` never reaches the holder
+    /// count, because each holder's own floor loses less than one unit.
+    #[test]
+    fn owed_stays_below_the_holder_count_once_every_share_is_surrendered(
+        holdings in proptest::collection::vec(1i128..1_000, 1..6),
+        extra_fundings in proptest::collection::vec(1i128..1_000, 0..3),
+    ) {
+        let f = setup();
+        let holders: std::vec::Vec<Address> =
+            holdings.iter().map(|shares| f.holder(*shares)).collect();
+        let total_shares: i128 = holdings.iter().sum();
+        let backer = f.investor(total_shares + 10_000);
+        f.empty_reserve();
+        f.vault.propose_wind_down(&f.admin);
+        f.vault.activate_wind_down();
+
+        // Funds exactly the snapshot, so the first round always credits
+        // something whatever the random holdings: every holder below then
+        // always has a round to claim against.
+        f.vault.fund(&backer, &total_shares);
+        f.vault.finalize_wind_down_round();
+
+        for amount in &extra_fundings {
+            f.vault.fund(&backer, amount);
+            let _ = f.vault.try_finalize_wind_down_round();
+        }
+
+        for holder in &holders {
+            f.vault.claim_wind_down(holder);
+        }
+
+        prop_assert!(f.vault.wind_down_owed() < holders.len() as i128);
+    }
 }
