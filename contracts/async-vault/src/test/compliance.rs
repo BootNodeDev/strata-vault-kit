@@ -147,6 +147,25 @@ fn an_unbound_compliance_swap_lands_and_stops_every_move() {
 }
 
 #[test]
+fn a_verifier_that_cannot_answer_counts_as_a_failed_check() {
+    let f = setup();
+    let investor = f.investor(1_000);
+
+    let silent = Address::generate(&f.e);
+    let id = f
+        .share
+        .propose_change(&share_token::TokenChange::IdentityVerifier(silent.clone()));
+    f.advance(MIN_UPGRADE_DELAY);
+    f.share.apply_change(&id);
+    assert_eq!(f.share.identity_verifier(), silent);
+
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::NotAllowlisted,
+    );
+}
+
+#[test]
 fn a_delisted_holder_can_still_queue_an_exit() {
     let f = setup();
     let user = f.holder(500);
