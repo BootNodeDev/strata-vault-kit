@@ -681,6 +681,60 @@ describe("CycleActionRail readiness", () => {
 		expect(release).toHaveBeenCalledTimes(1)
 	})
 
+	it("reports an equal action once when the parent rerenders inside the delay", () => {
+		vi.useFakeTimers()
+		const onReady = vi.fn()
+		const rail = () => (
+			<CycleActionRail
+				scope="cycle"
+				actions={[{ ...closeAction }]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={(action) => onReady(action)}
+			/>
+		)
+		const { rerender } = render(rail())
+		vi.advanceTimersByTime(300)
+		rerender(rail())
+		vi.advanceTimersByTime(150)
+
+		expect(onReady).toHaveBeenCalledTimes(1)
+
+		rerender(rail())
+		vi.advanceTimersByTime(1000)
+
+		expect(onReady).toHaveBeenCalledTimes(1)
+	})
+
+	it("releases and re-arms when the action's argument changes", () => {
+		vi.useFakeTimers()
+		const release = vi.fn()
+		const onReady = vi.fn(() => release)
+		const rail = (epochId: bigint) => (
+			<CycleActionRail
+				scope="cycle"
+				actions={[{ ...closeAction, epochId }]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={onReady}
+			/>
+		)
+		const { rerender } = render(rail(5n))
+		vi.advanceTimersByTime(400)
+		rerender(rail(6n))
+
+		expect(release).toHaveBeenCalledTimes(1)
+
+		vi.advanceTimersByTime(400)
+
+		expect(onReady).toHaveBeenCalledTimes(2)
+		expect(onReady).toHaveBeenLastCalledWith(
+			expect.objectContaining({ epochId: 6n }),
+		)
+	})
+
 	it("does not report an open action that is blocked", () => {
 		vi.useFakeTimers()
 		const onReady = renderWithReady([closeAction, fulfillAction])

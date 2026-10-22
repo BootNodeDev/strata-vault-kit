@@ -27,7 +27,7 @@ const transaction = (simulationError?: string) =>
 			result: 1n,
 		}),
 		sign: vi.fn().mockResolvedValue(undefined),
-		signed: { signedBy: "wallet" },
+		signed: { signedBy: "wallet", hash: () => ({ toString: () => "abcd" }) },
 		result: 1n,
 	}) as unknown as AssembledTransaction<bigint>
 
@@ -267,6 +267,77 @@ describe("useContractTransaction, prepared simulations", () => {
 			status: "failed",
 			failure: { kind: "interrupted" },
 		})
+	})
+
+	it("confirms a reused transaction with the value the network returned", async () => {
+		submitSignedMock.mockResolvedValueOnce({
+			status: "success",
+			hash: "h",
+			result: 9n,
+		})
+		const call = vi.fn().mockResolvedValue(transaction())
+		const { result } = renderPrepared(call)
+
+		act(() => {
+			result.current.prepare(5n)
+		})
+		await flush()
+		await act(() => result.current.submit(5n))
+		await flush()
+
+		expect(result.current.status).toEqual({
+			status: "confirmed",
+			result: 9n,
+			hash: "h",
+		})
+	})
+
+	it("carries the signed hash while a reused transaction is in flight", async () => {
+		let settle: (value: unknown) => void = () => {}
+		submitSignedMock.mockReturnValueOnce(
+			new Promise((resolve) => {
+				settle = resolve
+			}),
+		)
+		const call = vi.fn().mockResolvedValue(transaction())
+		const { result } = renderPrepared(call)
+
+		act(() => {
+			result.current.prepare(5n)
+		})
+		await flush()
+		await act(async () => {
+			result.current.submit(5n)
+			await flush()
+		})
+
+		expect(result.current.status).toEqual({ status: "submitted", hash: "abcd" })
+
+		await act(async () => {
+			settle({ status: "success", hash: "abcd", result: 1n })
+			await flush()
+		})
+	})
+
+	it("does not keep a background simulation the contract refused", async () => {
+		const call = vi
+			.fn()
+			.mockResolvedValueOnce(transaction("HostError: Error(Contract, #6046)"))
+			.mockResolvedValueOnce(transaction())
+		const { result } = renderPrepared(call)
+
+		act(() => {
+			result.current.prepare(5n)
+		})
+		await flush()
+
+		expect(result.current.status).toEqual({ status: "idle" })
+
+		await act(() => result.current.submit(5n))
+		await flush()
+
+		expect(call).toHaveBeenCalledTimes(2)
+		expect(result.current.status).toEqual({ status: "confirmed", result: 1n })
 	})
 
 	it("asks to try again when the prepared transaction's sequence was consumed", async () => {

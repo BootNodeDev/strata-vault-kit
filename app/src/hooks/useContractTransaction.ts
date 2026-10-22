@@ -184,6 +184,7 @@ function usePrepared<TArg, TResult>(
 				(tx) => {
 					if (!latest()) return
 					simulating.current = null
+					if (parseErrorCode(tx.simulation) !== null) return
 					simulated.current = { key, tx, at }
 					expiry.current = setTimeout(
 						() => refresh.current(),
@@ -347,7 +348,8 @@ export function useContractTransaction<
 					return
 				}
 				reachedNetwork = true
-				applyStatus({ status: "submitted" })
+				hash = signed.hash().toString("hex")
+				applyStatus({ status: "submitted", hash })
 				const sent = await submitSigned(signed)
 				hash = sent.hash
 				if (sent.status === "failed") {
@@ -363,7 +365,7 @@ export function useContractTransaction<
 					invalidateRequestData()
 					return
 				}
-				confirm(tx.result)
+				confirm(sent.result as TResult)
 			}
 			const signAndSend = async (tx: AssembledTransaction<TResult>) => {
 				const sent = await tx.signAndSend({
