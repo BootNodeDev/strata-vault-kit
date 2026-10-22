@@ -2,17 +2,17 @@ use soroban_sdk::{contracttype, symbol_short, Env, Symbol};
 
 /// The three-state feed health
 //
-// - `Valid`:  ripcord=0 AND now ≤ expires_at
+// - `Valid`:  the NAV is not paused AND now ≤ expires_at
 //             AND min_answer ≤ nav_per_share ≤ max_answer. Mint AND redeem.
-// - `Stale`:  ripcord=0 but past heartbeat/expires_at (or no record yet).
+// - `Stale`:  the NAV is not paused but past heartbeat/expires_at (or no record yet).
 //             Value untrusted; BOTH mint and redeem halt.
-// - `Paused`: ripcord=1 (issuer freeze). Value ignored entirely, both
-//             directions, until the issuer clears ripcord to 0.
+// - `Paused`: the NAV is paused (issuer freeze). Value ignored entirely, both
+//             directions, until the issuer clears the NAV pause.
 pub use bindings::OracleState;
 
 pub const ATTESTER_ROLE: Symbol = symbol_short!("attester");
 
-/// Raises the ripcord in an emergency. Cannot lower it again.
+/// Pauses the NAV in an emergency. Cannot unpause it.
 pub const GUARDIAN_ROLE: Symbol = symbol_short!("guardian");
 
 #[contracttype]
@@ -43,7 +43,7 @@ pub struct OracleConfig {
 pub(crate) enum DataKey {
     Config,
     Latest,
-    Ripcord,
+    NavPaused,
 }
 
 pub(crate) fn set_config(e: &Env, config: &OracleConfig) {
@@ -54,12 +54,12 @@ pub(crate) fn get_config(e: &Env) -> OracleConfig {
     storage::get_instance(e, &DataKey::Config).unwrap()
 }
 
-pub(crate) fn set_ripcord(e: &Env, paused: bool) {
-    storage::set_instance(e, &DataKey::Ripcord, &paused);
+pub(crate) fn set_nav_paused(e: &Env, paused: bool) {
+    storage::set_instance(e, &DataKey::NavPaused, &paused);
 }
 
-pub(crate) fn ripcord_raised(e: &Env) -> bool {
-    storage::get_instance(e, &DataKey::Ripcord).unwrap_or(false)
+pub(crate) fn nav_paused(e: &Env) -> bool {
+    storage::get_instance(e, &DataKey::NavPaused).unwrap_or(false)
 }
 
 pub(crate) fn set_latest(e: &Env, report: &NavReport) {

@@ -9,7 +9,7 @@ use soroban_sdk::{
 use stellar_access::access_control::{self, AccessControl};
 use stellar_macros::{only_admin, only_role};
 
-use state::{get_config, get_latest, ripcord_raised, ATTESTER_ROLE, GUARDIAN_ROLE};
+use state::{get_config, get_latest, nav_paused, ATTESTER_ROLE, GUARDIAN_ROLE};
 
 pub use state::{NavReport, OracleConfig, OracleState};
 
@@ -32,8 +32,8 @@ pub enum OracleError {
     NoRecord = 3006,
     /// `ensure_consumable` found the feed in a state other than `Valid`.
     NotConsumable = 3007,
-    /// `clear_latest` was called while the ripcord was down.
-    RipcordNotRaised = 3008,
+    /// `clear_latest` was called while the NAV was not paused.
+    NavNotPaused = 3008,
     /// The oracle must always have an admin.
     AdminRequired = 3009,
 }
@@ -50,7 +50,7 @@ pub struct NavAttested {
 pub struct LatestCleared {}
 
 #[contractevent]
-pub struct RipcordSet {
+pub struct NavPausedSet {
     pub paused: bool,
 }
 
@@ -86,7 +86,7 @@ fn trustworthy(e: &Env, report: &NavReport) -> bool {
 }
 
 fn compute_state(e: &Env) -> OracleState {
-    if ripcord_raised(e) {
+    if nav_paused(e) {
         return OracleState::Paused;
     }
     match get_latest(e) {
@@ -102,7 +102,7 @@ pub struct NavOracleContract;
 #[contractimpl(contracttrait)]
 impl AccessControl for NavOracleContract {
     /// Refused. An oracle with no admin can never be reconfigured, never clear a
-    /// stuck record and never lower the ripcord again.
+    /// stuck record and never unpause the NAV again.
     fn renounce_admin(e: &Env) {
         panic_with_error!(e, OracleError::AdminRequired);
     }
@@ -123,7 +123,7 @@ impl NavOracleContract {
         access_control::grant_role_no_auth(e, &guardian, &GUARDIAN_ROLE, &admin);
 
         state::set_config(e, &config);
-        state::set_ripcord(e, false);
+        state::set_nav_paused(e, false);
     }
 
     pub fn nav_per_share(e: &Env) -> i128 {
@@ -208,26 +208,26 @@ impl NavOracleContract {
     }
 
     #[only_role(caller, "guardian")]
-    pub fn raise_ripcord(e: &Env, caller: Address) {
-        state::set_ripcord(e, true);
-        RipcordSet { paused: true }.publish(e);
+    pub fn pause_nav(e: &Env, caller: Address) {
+        state::set_nav_paused(e, true);
+        NavPausedSet { paused: true }.publish(e);
     }
 
     #[only_admin]
-    pub fn set_ripcord(e: &Env, paused: bool, caller: Address) {
+    pub fn set_nav_paused(e: &Env, paused: bool, caller: Address) {
         caller.require_auth();
-        state::set_ripcord(e, paused);
-        RipcordSet { paused }.publish(e);
+        state::set_nav_paused(e, paused);
+        NavPausedSet { paused }.publish(e);
     }
 
     /// Removes the stored record, so one in-band value can land again whatever
-    /// its distance from the last. Only while the ripcord is raised, so
+    /// its distance from the last. Only while the NAV is paused, so
     /// resuming is always a deliberate second act.
     #[only_admin]
     pub fn clear_latest(e: &Env, caller: Address) {
         caller.require_auth();
-        if !ripcord_raised(e) {
-            panic_with_error!(e, OracleError::RipcordNotRaised);
+        if !nav_paused(e) {
+            panic_with_error!(e, OracleError::NavNotPaused);
         }
         state::clear_latest(e);
         LatestCleared {}.publish(e);
