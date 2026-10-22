@@ -115,4 +115,7 @@ pub enum VaultError {
     /// As many changes as the timelock holds already wait. Apply or cancel one
     /// first.
     TooManyPendingChanges = 6063,
+    /// The depositor fails the share token's identity check, so the vault
+    /// could never deliver the shares. Refused before any cash moves.
+    NotAllowlisted = 6068,
 }

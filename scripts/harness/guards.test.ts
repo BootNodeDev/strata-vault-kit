@@ -246,6 +246,20 @@ describe("invalid amounts and duplicate requests in an epoch", () => {
 	})
 })
 
+describe("who may subscribe", () => {
+	it("refuses a deposit request from an address that is not allowlisted", async () => {
+		const v = vault(c, outsider)
+		expectRefused(
+			await v.request_deposit({
+				from: outsider.publicKey(),
+				amount: usdc(10),
+			}),
+			v,
+			"NotAllowlisted",
+		)
+	})
+})
+
 const firstPrice = price(2)
 const secondPrice = (price(2) * 105n) / 100n
 let epochA = 0n
