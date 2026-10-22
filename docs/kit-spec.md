@@ -225,3 +225,86 @@ A clean deployment executes in three sequenced phases:
    - Governance calls `set_notice(secs)` and `set_custodian(custodian_address)`.
    - Governance sets `deposit_cap` if initial capital intake is bounded.
    - Oracle reporter submits the genesis NAV attestation (`attest`).
+
+---
+
+## 5. Storage Lifetime (TTL) Policy
+
+Soroban archives a ledger entry when its time to live (TTL) runs out. An
+archived entry cannot be read until it is restored, so a contract whose
+instance is archived refuses every call.
+
+| Contract | What it extends | When | To how long |
+|---|---|---|---|
+| `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once less than 29 days remain |
+| `nav_oracle` | Its instance and the latest report | `attest` extends both; every other call extends whichever of the two it reads or writes | Same |
+| `share_token` | Its instance | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause` | Same |
+| `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
+| `compliance` | Its instance | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
+
+The lengths are the constants in `crates/storage`
+(`PERSISTENT_EXTEND_AMOUNT`, `INSTANCE_EXTEND_AMOUNT`, and thresholds one day
+shorter). They are fixed in code: a governance setting would add an admin power
+for little gain.
+
+**Pending governance changes.** A change waiting in `async_vault`'s timelock
+lives as a persistent entry, extended to 30 days when it is proposed. The wait
+itself can run up to 90 days (`timelock::MAX_DELAY`), so a change nobody
+touches can archive before it is due. Nothing is lost: the call that applies
+it restores the archived entry itself and pays the restore fee, the same as
+any other archived entry. `npm run extend` also keeps it alive: it reads the
+vault's open ids from its `pending_changes()` view, builds each one's storage
+key the way the timelock crate does, and extends it the same 30 days as every
+instance and Wasm.
+
+**What OpenZeppelin extends.** `stellar-tokens` 0.7.2 stores the share token's
+balances and frozen amounts, and the compliance contract's modules and bound
+tokens. `stellar-access` 0.7.2 stores every contract's roles. OpenZeppelin
+extends an existing entry when it reads it: balances, frozen amounts, modules
+and bound tokens to 30 days, roles to 90. It does not extend an entry when it
+writes one, so a new entry starts at the network's minimum lifetime (see
+**Network settings**) and waits for a later caller to read it. Allowances are
+temporary entries that live until their `live_until_ledger`. OpenZeppelin
+never extends an instance; the kit does, as above. The token's total supply
+and metadata live in its instance.
+
+**Network settings.** Each network sets how long a new persistent entry lives,
+and a restored entry comes back with the same lifetime: 120,960 ledgers (about
+7 days) on testnet, 2,073,600 ledgers (about 120 days) on mainnet. Validators
+can change these values by vote, so the kit does not hardcode them; check
+[Stellar Lab's network limits](https://lab.stellar.org/network-limits) for
+current values.
+
+**Who pays.** The account that sends a transaction pays the rent for every
+extension that transaction triggers. A call pays only to bring an entry back
+to its target once it has fallen to its threshold: about a day of rent when
+the entry is read daily, up to a whole target (30 days, or 90 for a role) after
+a long quiet period. Creating or restoring an entry pays for at least the
+network's minimum lifetime, 120 days on mainnet. The kit does not cap each
+extension with `extend_ttl_with_limits`: a cap would let rarely used entries
+archive sooner, and each of those restores pays at least 120 days of rent on
+mainnet.
+
+**Idle deployments.** An entry nobody reads archives when its lifetime runs
+out: 30 days after it was last extended (90 for a role), or the network's
+minimum lifetime after it was created, whichever is later. Run
+`STELLAR_ACCOUNT=<funded account> npm run extend -w scripts/harness` after
+every deploy and before a long quiet period. It restores anything archived
+and extends every instance and its Wasm by 30 days. It reads the contracts
+in `environments.toml [staging.contracts]`; `--env <name>` picks another
+environment, and `--config <record>` reads a deployment record instead.
+Extending needs no authority, so any funded account can pay.
+
+**Restoring.** Since Protocol 23 an invocation can restore archived entries
+itself, so a call to an archived contract usually goes through once simulation
+adds the restore. Restoring many entries in one transaction can still hit
+per-transaction limits. Restore them first, in batches: each
+`RestoreFootprintOp` transaction takes as many entries as the limits allow.
+`stellar contract restore` sends one: `--id <contract>` restores an instance,
+`--id <contract> --key-xdr <key>` a data entry, and `--wasm-hash <hash>` a
+Wasm. After a restore, simulate the call again before sending it.
+
+**Production modules.** The compliance and identity contracts in this
+repository are testnet stubs. A production compliance module or identity
+registry must extend its own instance and entries the same way, or the share
+token stops working when they archive.
