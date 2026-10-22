@@ -226,6 +226,14 @@ pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
     let request = state::get_deposit_request(e, epoch_id, from)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
 
+    let standing = lock_policy::standing(e, from);
+    match lock_policy::decide(Exit::CancelDeposit, standing, wind_down::is_active(e)) {
+        Decision::Proceed => {}
+        Decision::Refuse | Decision::Hold | Decision::ConvertToExit | Decision::Surrender => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
+    }
+
     state::set_cancellable_escrow(
         e,
         state::reduce(e, state::cancellable_escrow(e), request.amount),

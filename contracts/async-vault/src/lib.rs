@@ -249,8 +249,9 @@ impl AsyncVault {
         wind_down::acc(e)
     }
 
-    /// Surrenders whatever the holder holds and pays their share of every round
-    /// finalised since they last claimed.
+    /// Surrenders the free shares the holder holds and pays their share of
+    /// every round finalised since they last claimed. A frozen holder is
+    /// refused; a partial freeze surrenders only the free shares.
     pub fn claim_wind_down(e: &Env, holder: Address) -> i128 {
         wind_down::claim(e, &holder)
     }

@@ -21,7 +21,9 @@ Every investor account in the vault ecosystem exists in one of three primary com
 3. **Frozen (`Frozen`)**:
    - The account is subject to sanctions, legal freezing, or security hold (`is_frozen(account) == true` via `ShareToken::set_address_frozen`).
    - The share token refuses a `transfer` from or to a frozen address. Minting does not check freezes, and `forced_transfer` ignores them.
-   - A frozen investor is outside the payable-claims guarantee (design document §8.1). The vault asks the share token whether the address is frozen on `request_deposit`, `claim_deposit` and `cancel_redeem`: it refuses a frozen address's deposit request, and holds its priced deposit and escrowed redemption until the freeze is lifted (`Frozen`, 6071). Its other exits do not check freezes yet, so they still go through; the kit does not promise them.
+   - What the vault owes a frozen investor is **held**: not paid, not returned, not moved. Priced cash stays in `committed` and a wind-down slice stays in `wind_down_owed`, where no other holder can take it. Only an unfreeze releases it. A partial freeze limits exits to the free balance.
+
+     This follows how asset-freeze and blocking rules generally treat frozen property: held, not released, not returned to the owner and not confiscated, with the entitlement kept and recorded. It is not legal advice; counsel must confirm it for each jurisdiction.
 
 ---
 
@@ -30,11 +32,12 @@ Every investor account in the vault ecosystem exists in one of three primary com
 | Operation | Allowlisted | De-listed (Non-Frozen) | Frozen (Address or Partial) | Contract Mechanics & Regulatory Rationale |
 |---|---|---|---|---|
 | **`request_deposit`** | ✅ Allowed | ❌ **Refused** | ❌ **Refused** | Before any cash moves, the vault asks the share token whether the address is frozen and then asks the token's identity verifier. It refuses a frozen address (`Frozen`) and an address the token would not let hold shares (`NotAllowlisted`). A partial freeze is not checked. |
-| **`cancel_deposit`** | ✅ Allowed | ✅ **Allowed** | ✅ **Allowed** | **Escape Hatch**: Calls `refund_deposit`. Escrowed settlement asset (USDC) is refunded directly to `controller`. Cash refunds bypass share token compliance checks. |
+| **`cancel_deposit`** | ✅ Allowed | ✅ **Allowed** | ❌ **Refused** (`Frozen`); the escrow stays | **Escape Hatch**: Calls `refund_deposit`. Escrowed settlement asset (USDC) is refunded directly to `controller`. The vault checks `is_frozen` on the share token before it refunds anything; once past that, cash refunds bypass share token compliance checks. A partial freeze is not checked. |
 | **`claim_deposit`** | ✅ Allowed | ↪ **Moved to the exit queue** | ⛔ **Held** | A receiver off the allowlist gets no shares: the vault mints them into its own escrow and adds them to the holder's redemption in the open epoch (`DepositConvertedToExit`), paid in cash at that epoch's price. In a wind-down they join the holder's wind-down entitlement. A compliance module that refuses the mint (`can_create`) still blocks the claim. A receiver whose address is frozen, listed or not, is refused with `Frozen` (6071) and keeps the priced deposit until the freeze is lifted. A partial freeze is not checked. |
-| **`request_redeem`** | ✅ Allowed | ✅ **Allowed** | ⚠️ Allowed, not guaranteed | **Exit Right**: the vault escrows the shares with `RWATokenClient::forced_transfer`, which checks neither the allowlist nor freezes, so a de-listed holder can start an exit. It also releases as much of a partial freeze as the escrow needs. |
+| **`request_redeem`** | ✅ Allowed | ✅ **Allowed** | ❌ **Refused** (`Frozen`); a partial freeze caps the request to the free balance | **Exit Right**: the vault checks `is_frozen` and `get_frozen_tokens` on the share token before it escrows anything with `RWATokenClient::forced_transfer`. A de-listed, non-frozen holder can still start an exit; a frozen one cannot, and a partial freeze caps the request to the shares `get_frozen_tokens` leaves free. |
 | **`cancel_redeem`** | ✅ Allowed | ❌ **Refused**; ↪ **surrendered** in a wind-down | ⛔ **Held** | Outside a wind-down the vault refuses a de-listed controller (`NotAllowlisted`) and holds one whose address is frozen (`Frozen`); anyone else gets the shares back through the token's checked `transfer`. That transfer is refused with `EnforcedPause` while the share-token transfer pause is active; the request stays pending until the pause is lifted or the epoch prices. In an active wind-down no shares come back: the escrow is burned into the controller's wind-down entitlement (`RedemptionSurrendered`), allowlisted or not, so no token pause can hold it. A frozen controller's escrow stays until the freeze is lifted. |
-| **`claim_redeem`** | ✅ Allowed | ✅ **Allowed** | ⚠️ Pays, not guaranteed | **Exit-Only Cash Path**: the settlement asset pays out from the liquid reserve and the escrowed shares are burned from the vault. The cash claim checks neither the allowlist nor freezes. |
+| **`claim_redeem`** | ✅ Allowed | ✅ **Allowed** | ❌ **Refused** (`Frozen`); the cash stays in `committed` | **Exit-Only Cash Path**: the settlement asset pays out from the liquid reserve and the escrowed shares are burned from the vault. The cash claim checks `is_frozen` on the share token first; it does not check the allowlist. A partial freeze is not checked. |
+| **`claim_wind_down`** | ✅ Allowed | ✅ **Allowed** | ❌ **Refused** (`Frozen`); the slice stays in `wind_down_owed` | **Wind-Down Payout**: pays the holder's pro-rata entitlement and burns the free shares it surrenders. The vault checks `is_frozen` and `get_frozen_tokens` on the share token first; a partial freeze surrenders only the free shares — the rest keeps earning every round and is paid once unfrozen. |
 | **`transfer`** (Secondary) | ✅ Allowed | ❌ **Refused** | ❌ **Refused** | Standard peer-to-peer share transfer via SEP-57. Requires both sender and receiver to be allowlisted and neither to be frozen. |
 
 ---
@@ -42,14 +45,14 @@ Every investor account in the vault ecosystem exists in one of three primary com
 ## 3. Deep Dive into Key Lifecycle Invariants
 
 ### 3.1 The Exit-Only Cash Path
-A core guarantee of the Strata Vault Kit is that **a de-listed, non-frozen investor can always leave the fund in cash**. A frozen investor is outside this guarantee, as the design document states in §8.1: the cash claim does not check freezes today, so their exit goes through, but nothing promises it.
+A core guarantee of the Strata Vault Kit is that **a de-listed, non-frozen investor can always leave the fund in cash**. A frozen investor is held instead of paid, as §1 describes.
 
 - **Mechanism**:
   1. A de-listed holder queues an exit via `request_redeem`. The vault escrows the shares with `forced_transfer`.
   2. The epoch closes and is priced via attestation.
   3. Once priced and covered, the cash liability is committed.
   4. The investor calls `claim_redeem`. The cash payout transfers the settlement asset (USDC) directly to the investor's Stellar account, while the shares are burned from the vault's own balance.
-  5. The cash transfer never queries `IdentityVerifier` or `ShareToken::is_frozen`. Once priced and covered, cash exits cannot be blocked.
+  5. The cash transfer asks the identity verifier through `standing`, but the claim does not depend on its answer: a de-listed holder is treated the same as a listed one. It does check `ShareToken::is_frozen` first: a frozen holder's claim is held, not paid, until the freeze lifts. Once priced, covered and unfrozen, cash exits cannot be blocked.
 
 ### 3.2 Deposit Cancellation for De-Listed Investors
 If an investor deposits into an open epoch but is de-listed (or KYC expires) before the epoch is priced:
@@ -111,9 +114,15 @@ The behavior specified in this matrix is verified by on-chain automated test sui
 * `a_delisted_holder_can_still_claim_their_exit`: Verifies de-listed holders always receive cash payout.
 * `a_delisted_investor_can_cancel_deposit_and_receive_asset`: Verifies de-listed depositors can cancel and receive cash back.
 * `a_delisted_holder_cannot_cancel_redemption_back_to_shares`: Verifies de-listed holders cannot abort redemption back into shares.
-* `a_frozen_holder_cannot_cancel_redemption_back_to_shares`: Verifies frozen holders cannot abort redemption back into shares.
+* `a_frozen_holder_is_paid_only_after_the_freeze_lifts`: Verifies a frozen holder's cancel and claim are both held, and paid only once the freeze lifts.
 * `a_frozen_or_delisted_holder_cannot_transfer_shares`: Verifies secondary market transfers are strictly refused for de-listed and frozen accounts.
 * `a_frozen_investor_cannot_request_a_deposit`: Verifies a frozen depositor is refused at request time.
 * `a_frozen_investor_is_not_minted_until_unfrozen`: Verifies a frozen investor's priced deposit is held until the freeze is lifted.
-* `a_frozen_holder_can_still_queue_an_exit`: Records that escrowing an exit does not check freezes.
-* `queueing_an_exit_releases_a_partial_freeze`: Records that the escrow releases as much of a partial freeze as it needs.
+* `a_frozen_holder_cannot_queue_an_exit`: Verifies a frozen holder cannot start a redemption.
+* `a_partial_freeze_limits_an_exit_to_the_free_shares`: Verifies a partial freeze caps a redemption request to the free balance.
+* `a_frozen_investors_escrow_stays_until_the_freeze_lifts`: Verifies a frozen depositor's cancel is held and the escrow is unaffected.
+* `a_frozen_holder_does_not_get_a_worthless_exit_back`: Verifies a frozen holder's zero-asset claim is held rather than returning shares.
+* `a_frozen_holder_is_not_moved_into_the_exit_queue`: Verifies a holder who is both de-listed and frozen is held, not converted to an exit.
+* `a_frozen_holders_slice_stays_owed_until_the_freeze_lifts` ([`test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs)): Verifies a frozen holder's wind-down slice stays in `wind_down_owed` until the freeze lifts.
+* `a_frozen_holders_escrowed_exit_waits_through_a_wind_down`: Verifies a frozen holder's escrowed redemption and wind-down claim are both held through a wind-down.
+* `a_partial_freeze_keeps_frozen_shares_out_of_a_wind_down_claim`: Verifies a partial freeze excludes frozen shares from a wind-down surrender.
