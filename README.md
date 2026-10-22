@@ -35,12 +35,12 @@ deploy from `environments.toml` → `[staging.contracts]`, which is the record.
 <!-- deployed-addresses:start -->
 | Contract | Address |
 | --- | --- |
-| `async_vault` | `CAXGUAAIZOCM6FIQ6PRTQEBBZG62GMN422TNT6N6UMIYY4HGFLJDUFCV` |
-| `nav_oracle` | `CBYVXBRLCKJTH56FVIZFBX7XUIBOLJOROP2DM4NYA4V6FOTTFZO7VJPL` |
-| `share_token` | `CCBANVMWNZXZ46WMV7N7EDGBPW3LIFOXZLILIOTRDTE63H4QXBM7XVYF` |
-| `identity_verifier` | `CBLCGV3YT5AM7ZQNFEIEX3FLA3ZY3XDVW3U2YQO4ZWSJVI47763LLL5T` |
-| `compliance` | `CA45ZSCHMNUMJEF2UDUT4UMCKHHMEG3LYYIB7QBK6LG2NIC7JYZ7XKRA` |
-| `asset` | `CCTSSUV5XYKFEMT44SJBS2GUNBEMMRUQXLK422RAJMPTGLF7WV6ALDKR` |
+| `async_vault` | `CD5LYYXGOJ7R23P6D7YUN6DUJQYMI23KEUEOIFKXOSWOX3KHKTXRITED` |
+| `nav_oracle` | `CBKVMUMIX7MXYHX5K34N5HYZOP6S2VGWF7MN27RIWBV3A3WD3X3L63CO` |
+| `share_token` | `CDOISQTQRCYOTH6S3DFQ6UKJ2TEXLNO7NFIGOZS4RZL63IRCVXXCGP5N` |
+| `identity_verifier` | `CCTCCY7AVFAIRGEWWJZT2UDMBHS3NGNKVUWLY43CHDNN75AQEV6P3EOY` |
+| `compliance` | `CDEH6FJBK7NDFLALO3X3GDXZUREYHUSNC7ODPM64RBG3BBXW2USMW7OO` |
+| `asset` | `CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E` |
 <!-- deployed-addresses:end -->
 
 ## Testnet flow verification
@@ -124,6 +124,12 @@ HARNESS_NETWORK=local npm run deploy -w scripts/harness
 the addresses table above. The local deploy funds its accounts from the
 quickstart root key, so it needs no `stellar keys` identity.
 
+The first deploy writes a secret key for each harness account to
+`.env.keys.<network>` at the repository root, and later deploys reuse them. Back
+that file up and never commit it. The
+[harness README](./scripts/harness/README.md#account-keys) explains how to use a
+key you already hold for an account.
+
 Output of a real run from a fresh clone. Contract IDs differ on every run.
 
 ```text
@@ -131,13 +137,14 @@ Output of a real run from a fresh clone. Contract IDs differ on every run.
 > tsx deploy.ts
 
 deploying to local (http://localhost:8000/rpc)
-funded 13 accounts
-asset contract CB7IYQNW5Z5NY4RLR3PRNDAI6DNCEXD6I7NRWQZSGBNQ6YFANFPZ7ZSE
-compliance CBNEUKZOUMYIGZYCCEKNVRMLPBOCMRSE32XRGEL64QKYAHOAQTL4R2I4
-identity_verifier CBZC4FWQD33HC4TKOIODFLX7H527XVP6RL346LPYSLE2GUKMFN7HT6TZ
-share_token CD6ISWB4DFY6XQEXS4ECBWA3TDGOUTK7SEACMVBUEQ3JFW65XMG43QFV
-nav_oracle CCAMOCE2U5LBMEYDNXAMOZZSGDTX6A5DNQRXCYMUIYFTPRKZS6QUCDKD
-async_vault CAZPVYS3JITMZYE2CYBOKJ2FBQ46RK4E4NBDHA53RSV7ICUXFZOOJJYR
+account keys in .env.keys.local (13 new)
+funded 13 accounts; 0 already existed
+asset contract CDKWXRAHPQVFOAEBOOWWR62ZXAE2IV4V47PATFN7IX4XDW5QIUUL7D2B
+compliance CDGKQCYSMTDRBO7SYV3V72H6AMCQ3UNQFKUU4AD5GSU2I32XDYFS6F3U
+identity_verifier CCZE76VWEWJ47NSFMIXCKU3L55CZZTI5JJY4CSYAWPO3WXPDFXUCA5G6
+share_token CD6IA3BOPFX7VNADJ3GFK7IZGPVPNZA6HBCF425CNPSQ2GN7QZ3UUCP2
+nav_oracle CAHD5ZKMIDD67ZEJUB5ACR62FMAYMQJ2KCRV2MBDNXWT7WEZ2VV3MRDD
+async_vault CDQNMAZP7D5IA7AXZGK3XWYPFD2LDR6V5HQD2OLXZJYNQN4BMNN6SXWJ
 clients generated
 vault holds share_token manager role
 vault is allowlisted
@@ -145,7 +152,8 @@ share_token bound to compliance
 wrote deployed.local.json
 ```
 
-The addresses land in `scripts/harness/deployed.local.json`. Then run the
+The addresses land in `scripts/harness/deployed.local.json`; a later deploy
+keeps the previous file as `deployed.local.<timestamp>.json`. Then run the
 integration suites against that deployment:
 
 ```sh
