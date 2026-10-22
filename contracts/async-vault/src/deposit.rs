@@ -3,19 +3,22 @@ use stellar_tokens::rwa::RWATokenClient;
 
 use crate::epoch;
 use crate::error::VaultError;
-use crate::event::{DepositCancelled, DepositClaimed, DepositRequested};
+use crate::event::{DepositCancelled, DepositClaimed, DepositConvertedToExit, DepositRequested};
 use crate::keys::DataKey;
-use crate::lock_policy::{self, Decision, Exit};
+use crate::lock_policy::{self, Decision, Exit, Standing};
 use crate::pricing::{Pricing, PricingScheme};
+use crate::redeem;
 use crate::settlement;
 use crate::state::{self, DepositRequest, EpochStatus};
 use crate::treasury;
 use crate::wind_down;
 
-fn refuse_unless_allowlisted(e: &Env, from: &Address) {
+fn refuse_unless_allowed_in(e: &Env, from: &Address) {
     let standing = lock_policy::standing(e, from);
-    if lock_policy::decide(Exit::RequestDeposit, standing) == Decision::Refuse {
-        panic_with_error!(e, VaultError::NotAllowlisted);
+    if lock_policy::decide(Exit::RequestDeposit, standing, wind_down::is_active(e))
+        != Decision::Proceed
+    {
+        panic_with_error!(e, lock_policy::refused_with(standing));
     }
 }
 
@@ -39,7 +42,7 @@ pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     if amount <= 0 {
         panic_with_error!(e, VaultError::InvalidAmount);
     }
-    refuse_unless_allowlisted(e, from);
+    refuse_unless_allowed_in(e, from);
     refuse_if_exceeds_cap(e, amount);
 
     let epoch_id = state::current_epoch(e);
@@ -99,6 +102,15 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
         panic_with_error!(e, VaultError::AlreadyClaimed);
     }
 
+    let standing = lock_policy::standing(e, caller);
+    let decision = lock_policy::decide(Exit::ClaimDeposit, standing, wind_down::is_active(e));
+    match decision {
+        Decision::Proceed | Decision::ConvertToExit | Decision::Surrender => {}
+        Decision::Refuse | Decision::Hold => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
+    }
+
     let shares = Pricing::deposit_shares(e, request.amount, epoch.share_price)
         .unwrap_or_else(|err| panic_with_error!(e, err));
 
@@ -118,6 +130,11 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     state::set_deposit_request(e, epoch_id, caller, &request);
     state::set_pending_mint_shares(e, state::reduce(e, state::pending_mint_shares(e), shares));
 
+    if decision != Decision::Proceed {
+        convert_to_exit(e, caller, epoch_id, shares, standing, decision);
+        return 0;
+    }
+
     let share_token = state::get_addr(e, &DataKey::ShareToken);
     RWATokenClient::new(e, &share_token).mint(caller, &shares, &e.current_contract_address());
 
@@ -131,6 +148,41 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     settlement::on_deposit_claimed(e, epoch_id, shares);
 
     shares
+}
+
+/// The holder is off the allowlist, so the shares exit in cash: next price, or the wind-down.
+fn convert_to_exit(
+    e: &Env,
+    holder: &Address,
+    epoch_id: u64,
+    shares: i128,
+    standing: Standing,
+    decision: Decision,
+) {
+    let into_epoch = match decision {
+        Decision::ConvertToExit => {
+            let vault = e.current_contract_address();
+            let share_token = state::get_addr(e, &DataKey::ShareToken);
+            RWATokenClient::new(e, &share_token).mint(&vault, &shares, &vault);
+            redeem::queue_escrowed(e, holder, shares)
+        }
+        Decision::Surrender => {
+            wind_down::credit(e, holder, shares);
+            0
+        }
+        Decision::Proceed | Decision::Refuse | Decision::Hold => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
+    };
+
+    DepositConvertedToExit {
+        controller: holder.clone(),
+        epoch: epoch_id,
+        into_epoch,
+        shares,
+    }
+    .publish(e);
+    settlement::on_deposit_claimed(e, epoch_id, shares);
 }
 
 /// Returns the settlement asset and clears the request. Used by cancellation and

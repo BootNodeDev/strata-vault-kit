@@ -50,7 +50,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - `request_deposit` is refused by `#[when_not_paused]` (`PausableError::EnforcedPause`).
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
-  - `cancel_redeem` remains open; only the share token's own transfer pause can refuse it (Invariant 6).
+  - `cancel_redeem` remains open; outside a wind-down only the share token's own transfer pause can refuse it (Invariant 6).
   - `cancel_deposit` and `cancel_redeem` stay open for a sealed epoch while the vault is paused, because a paused vault cannot price it (Invariant 6).
 
 ### Invariant 6: Single-Step Atomic Cancellation
@@ -62,7 +62,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow.
   - A readable price refuses cancellation with `PriceAvailable`, even before `priceable_at`; once that report expires, cancellation works again (`cancellation_reopens_when_the_price_that_closed_it_expires`).
   - Pausing the vault reopens cancellation; unpausing closes it again while the price is still readable (`a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price`).
-  - `cancel_redeem` is refused with `PausableError::EnforcedPause` while the share token's transfer pause is active; the request stays pending and the cash claim remains open.
+  - Outside a wind-down, `cancel_redeem` is refused with `PausableError::EnforcedPause` while the share token's transfer pause is active; the request stays pending and the cash claim remains open.
+  - In an active wind-down, `cancel_redeem` never returns shares: the escrow joins the holder's wind-down entitlement (`RedemptionSurrendered`), whether the holder is allowlisted or not. A frozen holder's escrow stays until the freeze is lifted.
   - Once fulfilled, cancellation is refused with `AlreadyPriced`.
 - **Operating note**: keep `freshness_duration` longer than the notice, so a normal epoch's price does not lapse and reopen the window on its own.
 
@@ -96,6 +97,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Mathematical Statement**:
   $$\sum_{i} \text{payout}_i \le \text{round\_assets}$$
 - **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. Active wind-down is strictly irreversible.
+- An escrowed redemption cancelled during the wind-down counts toward the holder's entitlement, and so does a priced deposit a delisted holder claims. Credited before the first round, those shares count in its supply snapshot (`a_credit_before_the_first_round_leaves_every_holder_their_share`).
+- During an active wind-down, a priced redemption whose claim pays nothing burns its escrowed shares instead of returning them, because the snapshot left them out (`a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down`).
 - Each payout floors per holder. Once every holder whose shares were all surrendered has claimed, `wind_down_owed` keeps less than one unit per such holder, plus whatever value the snapshot counted in shares that never actually minted (for example `pending_mint_shares` from an epoch that promised more shares than it later minted). That remainder is not released: a later round lets each holder's floor catch up and needs it (`a_later_round_needs_the_units_an_earlier_round_left_in_owed`, `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`, `owed_stays_below_the_holder_count_once_every_share_is_surrendered`).
 
 ---
