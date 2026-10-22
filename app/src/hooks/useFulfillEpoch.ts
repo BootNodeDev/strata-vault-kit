@@ -2,8 +2,9 @@ import { type Price, type Signer } from "@stellar-scaffold/app-lib"
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 import { cycleWriteKeys } from "./useCycleState"
 
@@ -12,6 +13,7 @@ export type FulfillEpochStatus = TransactionStatus<{ sharePrice: Price }>
 export interface UseFulfillEpoch {
 	status: FulfillEpochStatus
 	submit: (epochId: bigint) => boolean
+	prepare: (epochId: bigint) => Release
 	reset: () => void
 }
 

@@ -9,7 +9,7 @@ import {
 } from "@stellar-scaffold/app-lib"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type AddressRow } from "../components/vault/AboutVault"
@@ -406,6 +406,9 @@ const renderVaultPreview = (
 	return render(<VaultPreview />, { wrapper })
 }
 
+const settlePreparation = () =>
+	act(() => new Promise<void>((resolve) => setTimeout(resolve, 700)))
+
 describe("VaultPreview", () => {
 	it("renders the action panel in the side column", () => {
 		renderVaultPreview()
@@ -680,6 +683,68 @@ describe("VaultPreview", () => {
 		})
 	})
 
+	it("prepares the subscription only once the amount fits the balance", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+
+		fireEvent.change(input, { target: { value: "5000" } })
+		await settlePreparation()
+
+		expect(requestDepositMock).not.toHaveBeenCalled()
+
+		fireEvent.change(input, { target: { value: "100" } })
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1), {
+			timeout: 2000,
+		})
+		expect(requestDepositMock).toHaveBeenCalledWith({
+			from: investorAddress,
+			amount: 100_0000000n,
+		})
+	})
+
+	it("does not prepare while the wallet is on the wrong network", async () => {
+		renderVaultPreview(wrongNetworkWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+
+		fireEvent.change(input, { target: { value: "100" } })
+		await settlePreparation()
+
+		expect(requestDepositMock).not.toHaveBeenCalled()
+	})
+
+	it("prepares the hook of whichever side the investor switches to", async () => {
+		renderVaultPreview(connectedWallet)
+		const subscribe = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(subscribe, { target: { value: "100" } })
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1), {
+			timeout: 2000,
+		})
+		expect(requestRedeemMock).not.toHaveBeenCalled()
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+		const redeem = await screen.findByRole("textbox", {
+			name: "Amount to redeem",
+		})
+		fireEvent.change(redeem, { target: { value: "100" } })
+
+		await waitFor(() => expect(requestRedeemMock).toHaveBeenCalledTimes(1), {
+			timeout: 2000,
+		})
+		expect(requestRedeemMock).toHaveBeenCalledWith({
+			from: investorAddress,
+			shares: 100_0000000n,
+		})
+		expect(requestDepositMock).toHaveBeenCalledTimes(1)
+	})
+
 	it("reflects a confirmed redemption request in the request list without a manual refresh", async () => {
 		renderVaultPreview(connectedWallet)
 		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
@@ -806,6 +871,34 @@ describe("VaultPreview", () => {
 			from: investorAddress,
 			amount: 150_0000000n,
 		})
+	})
+
+	it("simulates the subscription in the background once a valid amount settles", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "1" } })
+		fireEvent.change(input, { target: { value: "15" } })
+		fireEvent.change(input, { target: { value: "150" } })
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1))
+		expect(requestDepositMock).toHaveBeenCalledWith({
+			from: investorAddress,
+			amount: 150_0000000n,
+		})
+	})
+
+	it("does not simulate an amount that cannot be submitted", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "0" } })
+
+		await new Promise((resolve) => setTimeout(resolve, 600))
+
+		expect(requestDepositMock).not.toHaveBeenCalled()
 	})
 
 	it("reflects a confirmed subscription in the request list without a manual refresh", async () => {

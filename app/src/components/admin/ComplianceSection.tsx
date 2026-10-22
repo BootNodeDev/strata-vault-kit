@@ -12,6 +12,10 @@ import {
 	useUnfreezeShares,
 } from "../../hooks/useComplianceTransactions"
 import {
+	prepareFor,
+	type Send,
+	type Sendable,
+	submitTo,
 	usePendingTransaction,
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
@@ -65,24 +69,25 @@ function useComplianceFlows() {
 
 type Flows = ReturnType<typeof useComplianceFlows>
 
-const submitArg = <Arg,>(
-	{ submit }: { submit: (arg: Arg, label: string, grant?: Grant) => boolean },
+const sendArg = <Arg,>(
+	send: Send,
+	flow: Sendable<Arg>,
 	{ arg, next, grant }: { arg: Arg | undefined; next: string; grant?: Grant },
-) => arg !== undefined && submit(arg, next, grant)
+) => (arg === undefined ? undefined : send(flow, arg, next, grant))
 
-function submit(flows: Flows, action: ComplianceAction) {
+function dispatch(flows: Flows, action: ComplianceAction, send: Send) {
 	switch (action.id) {
 		case "allow-address":
 		case "disallow-address":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "freeze-address":
 		case "unfreeze-address":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "freeze-shares":
 		case "unfreeze-shares":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "force-transfer":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 	}
 }
 
@@ -151,7 +156,12 @@ const ComplianceSection: React.FC<{
 						actions={actions}
 						pending={false}
 						unreadable={false}
-						onRun={(action) => submit(flows, action)}
+						onRun={(action) => dispatch(flows, action, submitTo)}
+						onReady={
+							active
+								? (action) => dispatch(flows, action, prepareFor)
+								: undefined
+						}
 						onInput={onInput}
 					/>
 				}

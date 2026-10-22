@@ -452,6 +452,11 @@ const describeFailure = (
 				heading: "We couldn't reach the vault",
 				body: "Nothing was requested from your wallet. Try again when you're ready.",
 			}
+		case "stale":
+			return {
+				heading: "The transaction went stale",
+				body: "The account moved on since it was prepared, so nothing was sent. Try again.",
+			}
 		case "unknown":
 			return unknownOutcome(followUp)
 	}
@@ -1557,7 +1562,8 @@ const computeSteps = (
 			}
 			if (
 				status.failure.kind === "unknown" ||
-				status.failure.kind === "network"
+				status.failure.kind === "network" ||
+				status.failure.kind === "stale"
 			) {
 				return { signature: "done", network: "failed", recorded: "upcoming" }
 			}
@@ -1644,7 +1650,9 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 		content.hash === undefined ? null : explorerTransaction(content.hash)
 	const offersRetry =
 		status.status === "failed" &&
-		(status.failure.kind === "declined" || status.failure.kind === "unsigned")
+		(status.failure.kind === "declined" ||
+			status.failure.kind === "unsigned" ||
+			status.failure.kind === "stale")
 	const headingId = "transaction-modal-heading"
 
 	const headingClassName = isConfirmed
