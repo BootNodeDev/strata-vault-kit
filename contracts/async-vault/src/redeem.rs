@@ -1,5 +1,5 @@
-use bindings::ShareClient;
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
+use stellar_tokens::{fungible::FungibleTokenClient, rwa::RWATokenClient};
 
 use crate::epoch;
 use crate::error::VaultError;
@@ -45,7 +45,7 @@ pub(crate) fn request(e: &Env, from: &Address, shares: i128) -> u64 {
 
     let vault = e.current_contract_address();
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    ShareClient::new(e, &share_token).forced_transfer(from, &vault, &shares, &vault);
+    RWATokenClient::new(e, &share_token).forced_transfer(from, &vault, &shares, &vault);
 
     RedeemRequested {
         controller: from.clone(),
@@ -101,7 +101,7 @@ pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
     state::set_committed(e, state::committed(e).saturating_sub(assets));
 
     TokenClient::new(e, &asset).transfer(&vault, caller, &assets);
-    ShareClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).burn(
+    RWATokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken)).burn(
         &vault,
         &request.shares,
         &vault,
@@ -130,7 +130,7 @@ fn return_shares(e: &Env, controller: &Address, epoch_id: u64, shares: i128) {
     state::remove_redeem_request(e, epoch_id, controller);
 
     let vault = e.current_contract_address();
-    ShareClient::new(e, &state::get_addr(e, &DataKey::ShareToken))
+    FungibleTokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken))
         .transfer(&vault, controller, &shares);
 
     RedeemCancelled {

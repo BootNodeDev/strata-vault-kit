@@ -650,3 +650,20 @@ fn the_bounds_themselves_are_accepted() {
         max_answer: crate::MAX_ANSWER,
     });
 }
+
+fn implements_the_feed<T: bindings::OracleFeed>() {}
+
+#[test]
+fn the_oracle_answers_the_feed_interface_the_vault_reads() {
+    implements_the_feed::<NavOracleContract>();
+    let f = setup();
+    f.oracle
+        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+
+    let feed = bindings::OracleFeedClient::new(&f.e, &f.oracle.address);
+
+    assert_eq!(feed.state(), OracleState::Valid);
+    assert_eq!(feed.nav_per_share(), SCALE);
+    assert_eq!(feed.attested_at(), 10_000);
+    assert_eq!(feed.freshness_duration(), 3600);
+}
