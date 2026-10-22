@@ -10,7 +10,12 @@ import { useEpochHistory } from "../../hooks/useEpochHistory"
 import { useFinalizeWindDownRound } from "../../hooks/useFinalizeWindDownRound"
 import { useFulfillEpoch } from "../../hooks/useFulfillEpoch"
 import { useFund } from "../../hooks/useFund"
-import { usePendingTransaction } from "../../hooks/usePendingTransaction"
+import {
+	prepareFor,
+	type Send,
+	submitTo,
+	usePendingTransaction,
+} from "../../hooks/usePendingTransaction"
 import {
 	type CycleAction,
 	exactAmount,
@@ -62,38 +67,49 @@ const CycleSection: React.FC<{
 		fund.status.status === "confirmed",
 	)
 
-	const run = (action: CycleAction) => {
+	const dispatch = (action: CycleAction, send: Send) => {
 		switch (action.id) {
 			case "close-epoch":
 				if (action.epochId !== null)
-					closeEpoch.submit(undefined, String(action.epochId), action.grant)
-				return
+					return send(
+						closeEpoch,
+						undefined,
+						String(action.epochId),
+						action.grant,
+					)
+				return undefined
 			case "fulfill-epoch":
 				if (action.epochId !== null)
-					fulfillEpoch.submit(action.epochId, String(action.epochId))
-				return
+					return send(fulfillEpoch, action.epochId, String(action.epochId))
+				return undefined
 			case "attest":
 				if (action.price !== null && action.freshness !== null)
-					attest.submit(
+					return send(
+						attest,
 						{ price: action.price, freshness: action.freshness },
 						formatSignedPrice(action.price),
 						action.grant,
 					)
-				return
+				return undefined
 			case "deploy":
 				if (action.amount !== null)
-					deploy.submit(action.amount, exactAmount(action.amount), action.grant)
-				return
+					return send(
+						deploy,
+						action.amount,
+						exactAmount(action.amount),
+						action.grant,
+					)
+				return undefined
 			case "fund":
 				if (action.amount !== null)
-					fund.submit(action.amount, exactAmount(action.amount))
-				return
+					return send(fund, action.amount, exactAmount(action.amount))
+				return undefined
 			case "activate-wind-down":
-				activateWindDown.submit(undefined, "")
-				return
+				return send(activateWindDown, undefined, "")
 			case "finalize-round":
 				if (action.round !== null)
-					finalizeRound.submit(undefined, String(action.round))
+					return send(finalizeRound, undefined, String(action.round))
+				return undefined
 		}
 	}
 
@@ -192,7 +208,10 @@ const CycleSection: React.FC<{
 						actions={actions}
 						pending={cycle.status === "checking"}
 						unreadable={cycle.status === "unreadable"}
-						onRun={run}
+						onRun={(action) => dispatch(action, submitTo)}
+						onReady={
+							active ? (action) => dispatch(action, prepareFor) : undefined
+						}
 						onInput={onInput}
 					/>
 				}

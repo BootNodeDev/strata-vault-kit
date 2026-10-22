@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { type ConfigurationState } from "../../hooks/useConfigurationState"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
@@ -18,6 +18,7 @@ const {
 	const tx = () => ({
 		status: { status: "idle" } as { status: string },
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	})
 	return {
@@ -93,6 +94,10 @@ const submit = (name: string) =>
 		.find((candidate) => !candidate.hasAttribute("aria-expanded"))!
 
 describe("ConfigurationSection", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
 	beforeEach(() => {
 		vi.clearAllMocks()
 		for (const mock of [
@@ -123,6 +128,46 @@ describe("ConfigurationSection", () => {
 		expect(within(oracle).getByText("10%")).toBeTruthy()
 		const token = screen.getByRole("region", { name: "Share token" })
 		expect(within(token).getByText("Identity verifier")).toBeTruthy()
+	})
+
+	it("prepares a typed notice once it settles and still submits it on click", () => {
+		vi.useFakeTimers()
+		render(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
+		expand("Set the notice")
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Notice" }), {
+			target: { value: "2d" },
+		})
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(noticeMock.prepare).toHaveBeenCalledWith(2n * DAY, governance)
+
+		fireEvent.click(submit("Set the notice"))
+
+		expect(noticeMock.submit).toHaveBeenCalledWith(2n * DAY, governance)
+	})
+
+	it("prepares nothing while the configuration tab is hidden", () => {
+		vi.useFakeTimers()
+		render(
+			<ConfigurationSection
+				grants={[governance]}
+				wallet={WALLET}
+				active={false}
+			/>,
+		)
+		expand("Set the notice")
+		fireEvent.change(screen.getByRole("textbox", { name: "Notice" }), {
+			target: { value: "2d" },
+		})
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(noticeMock.prepare).not.toHaveBeenCalled()
 	})
 
 	it("submits a new notice once typed, and follows it in the modal", () => {

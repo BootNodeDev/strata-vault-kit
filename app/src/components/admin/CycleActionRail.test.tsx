@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { type RailAction, type RailField } from "../../pages/actions"
 import { type CycleAction } from "../../pages/cycle"
 import CycleActionRail from "./CycleActionRail"
@@ -605,4 +605,90 @@ describe("CycleActionRail choice fields", () => {
 			expect(onInput).toHaveBeenCalledWith(action, reported, "confirm")
 		},
 	)
+})
+
+describe("CycleActionRail readiness", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
+	const renderWithReady = (actions: CycleAction[]) => {
+		const onReady = vi.fn()
+		render(
+			<CycleActionRail
+				scope="cycle"
+				actions={actions}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={onReady}
+			/>,
+		)
+		return onReady
+	}
+
+	it("reports the open action once it settles as ready", () => {
+		vi.useFakeTimers()
+		const onReady = renderWithReady([closeAction, fulfillAction])
+
+		expect(onReady).not.toHaveBeenCalled()
+		vi.advanceTimersByTime(400)
+
+		expect(onReady).toHaveBeenCalledWith(closeAction)
+	})
+
+	it("releases the reported action once it is collapsed", () => {
+		vi.useFakeTimers()
+		const release = vi.fn()
+		render(
+			<CycleActionRail
+				scope="cycle"
+				actions={[closeAction]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={() => release}
+			/>,
+		)
+		vi.advanceTimersByTime(400)
+
+		expect(release).not.toHaveBeenCalled()
+
+		fireEvent.click(rowToggle("Close epoch"))
+
+		expect(release).toHaveBeenCalledTimes(1)
+	})
+
+	it("releases the reported action once it is no longer ready", () => {
+		vi.useFakeTimers()
+		const release = vi.fn()
+		const rail = (action: CycleAction) => (
+			<CycleActionRail
+				scope="cycle"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={() => release}
+			/>
+		)
+		const { rerender } = render(rail(closeAction))
+		vi.advanceTimersByTime(400)
+
+		rerender(rail({ ...closeAction, enabled: false }))
+		vi.advanceTimersByTime(400)
+
+		expect(release).toHaveBeenCalledTimes(1)
+	})
+
+	it("does not report an open action that is blocked", () => {
+		vi.useFakeTimers()
+		const onReady = renderWithReady([closeAction, fulfillAction])
+
+		fireEvent.click(rowToggle("Close epoch"))
+		fireEvent.click(rowToggle("Fulfill epoch"))
+		vi.advanceTimersByTime(400)
+
+		expect(onReady).not.toHaveBeenCalled()
+	})
 })

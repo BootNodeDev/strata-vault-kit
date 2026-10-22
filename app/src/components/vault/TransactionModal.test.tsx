@@ -2088,6 +2088,24 @@ describe("TransactionModal, emergency actions", () => {
 		)
 	})
 
+	it("asks to try again when a prepared transaction went stale", () => {
+		const { onRetry } = renderModal({
+			status: "failed",
+			failure: { kind: "stale" },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The transaction went stale" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"The account moved on since it was prepared, so nothing was sent. Try again.",
+			),
+		).toBeTruthy()
+		fireEvent.click(screen.getByRole("button", { name: "Try again" }))
+		expect(onRetry).toHaveBeenCalledTimes(1)
+	})
+
 	it("treats an unexplained network rejection as an unknown outcome", () => {
 		renderEmergencyModal("pause-vault", {
 			status: "failed",

@@ -8,8 +8,19 @@ import {
 	type SubmitFailure,
 	submitSigned,
 } from "@stellar-scaffold/app-lib"
-import { type QueryKey, useQueryClient } from "@tanstack/react-query"
-import { useCallback, useRef, useState } from "react"
+import {
+	partialMatchKey,
+	type QueryKey,
+	useQueryClient,
+} from "@tanstack/react-query"
+import {
+	type RefObject,
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react"
 import { type WriterSigner } from "../config/clients"
 import { type Grant, type Standing } from "./useAdminAuthority"
 import { depositBalanceKey } from "./useDepositBalance"
@@ -23,6 +34,7 @@ export type TransactionFailure =
 	| { kind: "contract-error"; code: number }
 	| { kind: "interrupted" }
 	| { kind: "network"; reason: SubmitFailure }
+	| { kind: "stale" }
 	| { kind: "unknown" }
 
 export type SharedTransaction = {
@@ -45,11 +57,31 @@ export type TransactionStatus<
 
 const NO_EXTRA_KEYS: readonly QueryKey[] = []
 
+const FRESH_MS = 30_000
+
+type Simulated<TResult> = {
+	key: string
+	tx: AssembledTransaction<TResult>
+	at: number
+}
+
 export interface UseContractTransaction<TArg, TConfirmed extends object> {
 	status: TransactionStatus<TConfirmed>
 	submit: (arg: TArg, grant?: Grant) => boolean
+	prepare: (arg: TArg, grant?: Grant) => Release
 	reset: () => void
 }
+
+const requestKey = (
+	owner: string,
+	arg: unknown,
+	grant: Grant | undefined,
+): string =>
+	JSON.stringify(
+		[owner, arg ?? null, grant?.authority ?? null, grant?.standing ?? null],
+		(_name, value: unknown) =>
+			typeof value === "bigint" ? `${value}n` : value,
+	)
 
 const signerFor = (
 	owner: string,
@@ -92,6 +124,143 @@ const signedOf = <TResult>(tx: AssembledTransaction<TResult>): Transaction => {
 	return tx.signed
 }
 
+export type Release = () => void
+
+type Request<TArg> = { arg: TArg; grant: Grant | undefined }
+
+const isPageHidden = (): boolean => document.visibilityState === "hidden"
+
+const isFresh = (at: number): boolean => Date.now() - at < FRESH_MS
+
+function usePrepared<TArg, TResult>(
+	call: (
+		signer: WriterSigner,
+		arg: TArg,
+	) => Promise<AssembledTransaction<TResult>>,
+	owner: string | undefined,
+	signTransaction: WriterSigner["signTransaction"],
+	readKeys: readonly QueryKey[],
+	submitting: RefObject<boolean>,
+) {
+	const queryClient = useQueryClient()
+	const simulated = useRef<Simulated<TResult> | null>(null)
+	const simulating = useRef<string | null>(null)
+	const generation = useRef(0)
+	const last = useRef<Request<TArg> | null>(null)
+	const reads = useRef(new Map<string, unknown>())
+	const expiry = useRef<ReturnType<typeof setTimeout>>(undefined)
+	const refresh = useRef(() => {})
+
+	const drop = useCallback(() => {
+		simulated.current = null
+		simulating.current = null
+		generation.current += 1
+		clearTimeout(expiry.current)
+	}, [])
+
+	const matches = useCallback(
+		(queryKey: QueryKey) =>
+			readKeys.some((key) => partialMatchKey(queryKey, key)),
+		[readKeys],
+	)
+
+	const simulate = useCallback(
+		(request: Request<TArg>) => {
+			if (owner === undefined || submitting.current) return
+			const key = requestKey(owner, request.arg, request.grant)
+			simulating.current = key
+			reads.current = new Map(
+				queryClient
+					.getQueryCache()
+					.findAll()
+					.filter((query) => matches(query.queryKey))
+					.map((query) => [query.queryHash, query.state.data]),
+			)
+			const started = generation.current
+			const at = Date.now()
+			const latest = () =>
+				started === generation.current && simulating.current === key
+			call(signerFor(owner, request.grant, signTransaction), request.arg).then(
+				(tx) => {
+					if (!latest()) return
+					simulating.current = null
+					simulated.current = { key, tx, at }
+					expiry.current = setTimeout(
+						() => refresh.current(),
+						Math.max(0, at + FRESH_MS - Date.now()),
+					)
+				},
+				() => {
+					if (latest()) simulating.current = null
+				},
+			)
+		},
+		[owner, submitting, queryClient, matches, call, signTransaction],
+	)
+
+	useEffect(() => {
+		refresh.current = () => {
+			const request = last.current
+			drop()
+			if (request !== null && !isPageHidden()) simulate(request)
+		}
+	}, [drop, simulate])
+
+	useEffect(
+		() => () => {
+			last.current = null
+			drop()
+		},
+		[drop],
+	)
+
+	useEffect(
+		() =>
+			queryClient.getQueryCache().subscribe((event) => {
+				if (event.type !== "updated" || event.action.type !== "success") return
+				if (simulated.current === null && simulating.current === null) return
+				const { query } = event
+				if (!matches(query.queryKey)) return
+				if (reads.current.get(query.queryHash) === query.state.data) return
+				refresh.current()
+			}),
+		[queryClient, matches],
+	)
+
+	const prepare = useCallback(
+		(arg: TArg, grant?: Grant): Release => {
+			const request = { arg, grant }
+			const release = () => {
+				if (last.current === request) last.current = null
+			}
+			if (owner === undefined) return release
+			last.current = request
+			const key = requestKey(owner, arg, grant)
+			const cached = simulated.current
+			if (cached?.key === key && isFresh(cached.at)) return release
+			if (simulating.current === key) return release
+			drop()
+			simulate(request)
+			return release
+		},
+		[owner, drop, simulate],
+	)
+
+	const take = useCallback(
+		(key: string): AssembledTransaction<TResult> | undefined => {
+			const cached = simulated.current
+			last.current = null
+			drop()
+			if (cached === null || cached.key !== key || !isFresh(cached.at))
+				return undefined
+			return cached.tx
+		},
+		[drop],
+	)
+
+	return { prepare, take }
+}
+
 export function useContractTransaction<
 	TArg,
 	TResult,
@@ -112,9 +281,34 @@ export function useContractTransaction<
 	const submitting = useRef(false)
 	const dismissed = useRef(false)
 	const lastStatus = useRef<TransactionStatus<TConfirmed>>({ status: "idle" })
+	const readKeys = useMemo(
+		() =>
+			address === undefined
+				? extraKeys
+				: [
+						investorRequestsKey(address),
+						depositBalanceKey(address),
+						sharePositionKey(address),
+						...extraKeys,
+					],
+		[address, extraKeys],
+	)
+
+	const { prepare, take } = usePrepared(
+		call,
+		address,
+		signTransaction,
+		readKeys,
+		submitting,
+	)
 
 	const runSubmission = useCallback(
-		async (arg: TArg, owner: string, grant: Grant | undefined) => {
+		async (
+			arg: TArg,
+			owner: string,
+			grant: Grant | undefined,
+			reused: AssembledTransaction<TResult> | undefined,
+		) => {
 			let hash: string | undefined
 			let signatureRequested = false
 			let reachedNetwork = false
@@ -142,7 +336,7 @@ export function useContractTransaction<
 				} as TransactionStatus<TConfirmed>)
 				invalidateRequestData()
 			}
-			const submitAsOperator = async (
+			const signAndSubmit = async (
 				tx: AssembledTransaction<TResult>,
 				standing: Standing,
 			) => {
@@ -157,9 +351,13 @@ export function useContractTransaction<
 				const sent = await submitSigned(signed)
 				hash = sent.hash
 				if (sent.status === "failed") {
+					const stale =
+						reused !== undefined && sent.reason === "sequence-consumed"
 					applyStatus({
 						status: "failed",
-						failure: { kind: "network", reason: sent.reason },
+						failure: stale
+							? { kind: "stale" }
+							: { kind: "network", reason: sent.reason },
 						hash,
 					})
 					invalidateRequestData()
@@ -187,7 +385,8 @@ export function useContractTransaction<
 			}
 			applyStatus({ status: "preparing" })
 			try {
-				const tx = await call(signerFor(owner, grant, signTransaction), arg)
+				const tx =
+					reused ?? (await call(signerFor(owner, grant, signTransaction), arg))
 				const code = parseErrorCode(tx.simulation)
 				if (code !== null) {
 					applyStatus({
@@ -199,8 +398,8 @@ export function useContractTransaction<
 				}
 				signatureRequested = true
 				applyStatus({ status: "awaiting-signature" })
-				if (grant === undefined) await signAndSend(tx)
-				else await submitAsOperator(tx, grant.standing)
+				if (grant === undefined && reused === undefined) await signAndSend(tx)
+				else await signAndSubmit(tx, grant?.standing ?? "signs-alone")
 			} catch (error) {
 				applyStatus({
 					status: "failed",
@@ -225,10 +424,11 @@ export function useContractTransaction<
 			}
 			submitting.current = true
 			dismissed.current = false
-			void runSubmission(arg, address, grant)
+			const reused = take(requestKey(address, arg, grant))
+			void runSubmission(arg, address, grant, reused)
 			return true
 		},
-		[address, runSubmission],
+		[address, runSubmission, take],
 	)
 
 	const reset = useCallback(() => {
@@ -236,5 +436,5 @@ export function useContractTransaction<
 		setStatus({ status: "idle" })
 	}, [])
 
-	return { status, submit, reset }
+	return { status, submit, prepare, reset }
 }

@@ -30,6 +30,10 @@ import {
 	useRevokeVaultRole,
 } from "../../hooks/useGovernanceTransactions"
 import {
+	prepareFor,
+	type Send,
+	type Sendable,
+	submitTo,
 	usePendingTransaction,
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
@@ -94,12 +98,13 @@ function useGovernanceFlows() {
 
 type Flows = ReturnType<typeof useGovernanceFlows>
 
-const submitArg = <Arg,>(
-	{ submit }: { submit: (arg: Arg, label: string, grant?: Grant) => boolean },
+const sendArg = <Arg,>(
+	send: Send,
+	flow: Sendable<Arg>,
 	{ arg, next, grant }: { arg: Arg | undefined; next: string; grant?: Grant },
-) => arg !== undefined && submit(arg, next, grant)
+) => (arg === undefined ? undefined : send(flow, arg, next, grant))
 
-function submit(flows: Flows, action: GovernanceAction) {
+function dispatch(flows: Flows, action: GovernanceAction, send: Send) {
 	switch (action.id) {
 		case "grant-vault-role":
 		case "revoke-vault-role":
@@ -107,18 +112,18 @@ function submit(flows: Flows, action: GovernanceAction) {
 		case "revoke-oracle-role":
 		case "grant-token-role":
 		case "revoke-token-role":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "hand-over-vault-admin":
 		case "cancel-vault-handover":
 		case "hand-over-oracle-admin":
 		case "cancel-oracle-handover":
 		case "hand-over-token-admin":
 		case "cancel-token-handover":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "propose-code-upgrade":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "propose-upgrade-delay":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "accept-vault-admin":
 		case "accept-oracle-admin":
 		case "accept-token-admin":
@@ -126,7 +131,7 @@ function submit(flows: Flows, action: GovernanceAction) {
 		case "cancel-upgrade":
 		case "propose-wind-down":
 		case "cancel-wind-down":
-			return flows[action.id].submit(undefined, action.next, action.grant)
+			return send(flows[action.id], undefined, action.next, action.grant)
 	}
 }
 
@@ -174,7 +179,12 @@ const GovernanceSection: React.FC<{
 						actions={actions}
 						pending={handovers.status === "checking"}
 						unreadable={handovers.status === "unreadable"}
-						onRun={(action) => submit(flows, action)}
+						onRun={(action) => dispatch(flows, action, submitTo)}
+						onReady={
+							active
+								? (action) => dispatch(flows, action, prepareFor)
+								: undefined
+						}
 						onInput={onInput}
 					/>
 				}

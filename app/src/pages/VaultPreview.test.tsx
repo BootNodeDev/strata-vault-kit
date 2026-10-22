@@ -808,6 +808,34 @@ describe("VaultPreview", () => {
 		})
 	})
 
+	it("simulates the subscription in the background once a valid amount settles", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "1" } })
+		fireEvent.change(input, { target: { value: "15" } })
+		fireEvent.change(input, { target: { value: "150" } })
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1))
+		expect(requestDepositMock).toHaveBeenCalledWith({
+			from: investorAddress,
+			amount: 150_0000000n,
+		})
+	})
+
+	it("does not simulate an amount that cannot be submitted", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "0" } })
+
+		await new Promise((resolve) => setTimeout(resolve, 600))
+
+		expect(requestDepositMock).not.toHaveBeenCalled()
+	})
+
 	it("reflects a confirmed subscription in the request list without a manual refresh", async () => {
 		renderVaultPreview(connectedWallet)
 		const input = await screen.findByRole("textbox", {

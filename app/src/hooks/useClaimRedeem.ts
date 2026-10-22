@@ -2,8 +2,9 @@ import { type Amount, type Signer } from "@stellar-scaffold/app-lib"
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 
 export type ClaimRedeemStatus = TransactionStatus<{ assetsClaimed: Amount }>
@@ -11,6 +12,7 @@ export type ClaimRedeemStatus = TransactionStatus<{ assetsClaimed: Amount }>
 export interface UseClaimRedeem {
 	status: ClaimRedeemStatus
 	submit: (epochId: bigint) => boolean
+	prepare: (epochId: bigint) => Release
 	reset: () => void
 }
 
