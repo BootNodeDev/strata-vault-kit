@@ -17,7 +17,6 @@ import {
 } from "./lib/cli.js"
 import {
 	CONTRACT_NAMES,
-	PACKAGE_ROOT,
 	REPO_ROOT,
 	saveDeployment,
 	type ContractName,
@@ -200,7 +199,7 @@ async function main(): Promise<void> {
 	const server = new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" })
 	console.log(`deploying to ${net.name} (${net.rpcUrl})`)
 
-	const { file, accounts, created } = ensureKeys(net.name, PACKAGE_ROOT)
+	const { file, accounts, created } = ensureKeys(net.name, REPO_ROOT)
 	console.log(
 		`account keys in ${relative(REPO_ROOT, file)} (${created.length} new)`,
 	)

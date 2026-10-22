@@ -105,8 +105,8 @@ the addresses table above. The local deploy funds its accounts from the
 quickstart root key, so it needs no `stellar keys` identity.
 
 The first deploy writes a secret key for each harness account to
-`scripts/harness/.env.keys.<network>`, and later deploys reuse them. Back that
-file up and never commit it. The
+`.env.keys.<network>` at the repository root, and later deploys reuse them. Back
+that file up and never commit it. The
 [harness README](./scripts/harness/README.md#account-keys) explains how to use a
 key you already hold for an account.
 
@@ -117,7 +117,7 @@ Output of a real run from a fresh clone. Contract IDs differ on every run.
 > tsx deploy.ts
 
 deploying to local (http://localhost:8000/rpc)
-account keys in scripts/harness/.env.keys.local (13 new)
+account keys in .env.keys.local (13 new)
 funded 13 accounts; 0 already existed
 asset contract CDKWXRAHPQVFOAEBOOWWR62ZXAE2IV4V47PATFN7IX4XDW5QIUUL7D2B
 compliance CDGKQCYSMTDRBO7SYV3V72H6AMCQ3UNQFKUU4AD5GSU2I32XDYFS6F3U

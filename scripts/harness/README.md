@@ -26,7 +26,7 @@ npm run test:guards
 The harness signs with thirteen accounts: `deployer`, `governance`, `manager`,
 `treasury`, `guardian`, `compliance`, `attester`, `custodian`, `issuer`,
 `holder-1`, `holder-2`, `holder-3` and `outsider`. Their secret keys live in
-`.env.keys.<network>` in this directory, one line per account.
+`.env.keys.<network>` at the repository root, one line per account.
 
 - The first deploy creates the file, with a new key for every account.
 - Later deploys reuse the keys in the file. A deploy adds a key only for an
@@ -40,11 +40,11 @@ Back the file up, and never commit it. Git ignores it, so `git clean -x`
 deletes it.
 
 To use a key you already hold for one account, write its line before the first
-deploy, then let `npm run keys` add the others:
+deploy, then let `npm run keys` add the others. From the repository root:
 
 ```sh
 echo 'HOLDER_1_SECRET=S...' >> .env.keys.testnet
-HARNESS_NETWORK=testnet npm run keys
+HARNESS_NETWORK=testnet npm run keys -w scripts/harness
 ```
 
 Each line is the account name in capitals, with `_` for `-`, then `_SECRET`:

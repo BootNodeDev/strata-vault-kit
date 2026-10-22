@@ -1,12 +1,12 @@
 import { relative } from "node:path"
 
 import { ACCOUNT_NAMES } from "./lib/accounts.js"
-import { PACKAGE_ROOT, REPO_ROOT } from "./lib/deployment.js"
+import { REPO_ROOT } from "./lib/deployment.js"
 import { ensureKeys } from "./lib/keys.js"
 import { network } from "./lib/network.js"
 
 function main(): void {
-	const { file, accounts, created } = ensureKeys(network().name, PACKAGE_ROOT)
+	const { file, accounts, created } = ensureKeys(network().name, REPO_ROOT)
 	console.log(
 		`account keys in ${relative(REPO_ROOT, file)} (${created.length} new)`,
 	)
