@@ -74,11 +74,23 @@ jobs:
           if ! command -v stellar &> /dev/null; then
             cargo binstall --locked stellar-cli@27.0.0
           fi
+      # The upgrade tests run built Wasm, so they need the fixture, both
+      # contracts and their probe builds first (docs/TESTING.md).
+      - name: Run the Wasm upgrade tests
+        run: |
+          stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
+          stellar contract build --package share-token
+          stellar contract build --package nav-oracle
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
+          SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
       - name: Start Stellar local network
         # No tagged releases upstream, so this pins main as read on 2026-08-14
         uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
         with:
           enable: "core,rpc"
+          # Pinned image: "latest" tracks new protocol builds.
+          tag: v678-b1525.1-latest
       - name: Add master account as default identity
         run: |
           mkdir -p .config/stellar/identity
@@ -148,7 +160,7 @@ jobs:
           HARNESS_NETWORK: local
       - name: Keep the harness report when it fails
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: harness-runs
           path: scripts/harness/runs/
