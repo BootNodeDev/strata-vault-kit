@@ -74,6 +74,16 @@ jobs:
           if ! command -v stellar &> /dev/null; then
             cargo binstall --locked stellar-cli@27.0.0
           fi
+      # The upgrade tests run built Wasm, so they need the fixture, both
+      # contracts and their probe builds first (docs/TESTING.md).
+      - name: Run the Wasm upgrade tests
+        run: |
+          stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
+          stellar contract build --package share-token
+          stellar contract build --package nav-oracle
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
+          SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
       - name: Start Stellar local network
         # No tagged releases upstream, so this pins main as read on 2026-08-14
         uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
