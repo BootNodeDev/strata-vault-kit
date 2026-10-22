@@ -14,25 +14,37 @@ It covers:
 The contracts enforce a set of mathematical and state-machine invariants across all operations. Each invariant is stated below as a formal, testable property matching the on-chain test suite.
 
 ### Invariant 1: Escrow Stays, Only Free Reserve Moves
-- **Definition**: Cancellable subscription escrow never leaves the vault, and only the free reserve can move to the custodian. Priced redemption liabilities (`committed`) may exceed the liquid reserve; the shortfall is reported as `uncovered`, not refused. Here $\text{held}$ is the vault's balance of the settlement asset.
+- **Definition**: Cancellable subscription escrow never leaves the vault, and only the free reserve can move to the custodian. Priced redemption liabilities (`committed`) may exceed the liquid reserve; the shortfall is reported as `uncovered`, not refused. Here $`\text{held}`$ is the vault's balance of the settlement asset.
 - **Mathematical Statement**:
-  $$\text{liquid\_reserve} = \text{held} - \text{cancellable\_escrow}$$
-  $$\text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)$$
-  $$\text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)$$
-- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $\text{assets} > \text{free\_reserve}$, so after every operation $\text{held} \ge \text{cancellable\_escrow}$. While $\text{uncovered} > 0$, the free reserve is zero and nothing leaves for the custodian.
+  ```math
+  \text{liquid\_reserve} = \text{held} - \text{cancellable\_escrow}
+  ```
+  ```math
+  \text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)
+  ```
+  ```math
+  \text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)
+  ```
+- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $`\text{assets} > \text{free\_reserve}`$, so after every operation $`\text{held} \ge \text{cancellable\_escrow}`$. While $`\text{uncovered} > 0`$, the free reserve is zero and nothing leaves for the custodian.
 - **Enforcement**: `deploy_to_custodian` is the only outbound path to the custodian, and it moves at most the free reserve.
 
 ### Invariant 2: Notice Period Respected
 - **Definition**: An epoch cannot be fulfilled or priced until its standing notice period has fully elapsed.
 - **Mathematical Statement**:
-  $$\text{priceable\_at} = \text{closed\_at} + \text{notice}$$
-  $$\text{fulfill\_epoch}(\text{epoch}) \implies \text{ledger.timestamp} \ge \text{priceable\_at}$$
+  ```math
+  \text{priceable\_at} = \text{closed\_at} + \text{notice}
+  ```
+  ```math
+  \text{fulfill\_epoch}(\text{epoch}) \implies \text{ledger.timestamp} \ge \text{priceable\_at}
+  ```
 - **Testable Property**: Invocations of `fulfill_epoch` before `priceable_at` are rejected with `NoticeNotElapsed`. Changing the notice period via `set_notice` applies only to future epochs and never shortens the notice of an already closed epoch.
 
 ### Invariant 3: Post-Close Valuation Timing
 - **Definition**: An epoch is never priced against a valuation accepted before that epoch closed.
 - **Mathematical Statement**:
-  $$\text{attested\_at} \ge \text{closed\_at}$$
+  ```math
+  \text{attested\_at} \ge \text{closed\_at}
+  ```
 - **Testable Property**: If the latest oracle attestation timestamp precedes `closed_at`, `fulfill_epoch` is rejected with `AttestationBeforeClose`. A valuation accepted in the exact closing ledger timestamp or later is accepted.
 
 ### Invariant 4: Covered Claims Always Pay (Exit Guarantee)
@@ -62,25 +74,35 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 7: Directional Rounding & Non-Creation of Value
 - **Definition**: Arithmetic conversions round in the vault's favor, preventing arbitrage and value creation from rounding residue.
 - **Mathematical Statement**:
-  $$\text{assets\_to\_shares}(a) = \lfloor (a \cdot \text{SCALE}) / \text{NAV} \rfloor$$
-  $$\text{shares\_to\_assets}(s) = \lfloor (s \cdot \text{NAV}) / \text{SCALE} \rfloor$$
-  $$\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s$$
-- **Testable Property**: For all values of $a, s \in [1, 10^{30}]$ and $\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]$, a round-trip conversion never creates value. Remainder satisfies:
-  $$(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}$$
+  ```math
+  \text{assets\_to\_shares}(a) = \lfloor (a \cdot \text{SCALE}) / \text{NAV} \rfloor
+  ```
+  ```math
+  \text{shares\_to\_assets}(s) = \lfloor (s \cdot \text{NAV}) / \text{SCALE} \rfloor
+  ```
+  ```math
+  \text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s
+  ```
+- **Testable Property**: For all values of $`a, s \in [1, 10^{30}]`$ and $`\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]`$, a round-trip conversion never creates value. Remainder satisfies:
+  ```math
+  (a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}
+  ```
 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
 - **Testable Property**:
-  - Upgrade delay $\in [7 \text{ days}, 90 \text{ days}]$ and $\text{delay} \ge \text{notice}$.
-  - Wind-down delay $\le 90 \text{ days}$.
-  - Applying an upgrade before $\text{proposed\_time} + \text{delay}$ reverts with `UpgradeDelayNotElapsed`.
+  - Upgrade delay $`\in [7 \text{ days}, 90 \text{ days}]`$ and $`\text{delay} \ge \text{notice}`$.
+  - Wind-down delay $`\le 90 \text{ days}`$.
+  - Applying an upgrade before $`\text{proposed\_time} + \text{delay}`$ reverts with `UpgradeDelayNotElapsed`.
   - Pausing freezes the upgrade timelock clock and pushes the ETA by the duration paused.
   - Renouncing admin is permanently refused (`AdminRequired`).
 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
 - **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital credited to that round.
 - **Mathematical Statement**:
-  $$\sum_{i} \text{payout}_i \le \text{round\_assets}$$
+  ```math
+  \sum_{i} \text{payout}_i \le \text{round\_assets}
+  ```
 - **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. Active wind-down is strictly irreversible.
 
 ---
@@ -104,12 +126,12 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`nav_oracle`** | `admin` | `Address` | Oracle admin multisig (Governance) | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `attester` | `Address` | Authorized reporter multisig for NAV attestations | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `guardian` | `Address` | Guardian multisig authorized to raise ripcord | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.freshness_duration` | `u64` (seconds) | Validity window of an attestation before it is stale ($> 0$) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.freshness_duration` | `u64` (seconds) | Validity window of an attestation before it is stale ($`> 0`$) | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.cooldown_secs` | `u64` (seconds) | Minimum time between consecutive price attestations | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Maximum allowable upward price jump (1 bps = 0.01%, $> 0$) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Maximum allowable upward price jump (1 bps = 0.01%, $`> 0`$) | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_down_bps` | `Option<u32>` (bps) | Maximum allowable downward jump (`null` = loss of any size allowed) | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share (cannot be zero or negative) | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($\ge \text{min\_answer}$) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$) | `nav_oracle.constructor_args` |
 | **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC) | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `oracle` | `Address` | Deployed NAV oracle contract address | `async_vault.constructor_args` |
@@ -133,11 +155,11 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 | Parameter | Method | Authority | Constraints & Defaults |
 |---|---|---|---|
-| **Standing Notice** | `set_notice(secs: u64)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $\text{secs} \le \text{upgrade\_delay}$ and $\text{secs} \le 30 \text{ days}$ (`MAX_NOTICE_SECS`). |
+| **Standing Notice** | `set_notice(secs: u64)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $`\text{secs} \le \text{upgrade\_delay}`$ and $`\text{secs} \le 30 \text{ days}`$ (`MAX_NOTICE_SECS`). |
 | **Custodian Address** | `set_custodian(custodian: Address)` | Governance | Recipient address for off-chain capital deployment. Required before `deploy_to_custodian`. |
 | **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital. `None` = unbounded. Refuses negative cap. |
 | **Wind-Down Delay** | `set_wind_down_delay(secs: u64)` | Governance | Minimum notice before wind-down activation. Default: `0`. Capped at 90 days (`MAX_WIND_DOWN_DELAY`). |
-| **Upgrade Delay** | `propose_upgrade_delay(secs: u64)` | Governance | Timelock delay for wasm upgrades. Must be $\ge 7 \text{ days}$, $\le 90 \text{ days}$, and $\ge \text{notice}$. |
+| **Upgrade Delay** | `propose_upgrade_delay(secs: u64)` | Governance | Timelock delay for wasm upgrades. Must be $`\ge 7 \text{ days}`$, $`\le 90 \text{ days}`$, and $`\ge \text{notice}`$. |
 | **Oracle Configuration** | `set_config(config: OracleConfig)` | Governance | Updates oracle parameters. Follows same validation rules as constructor. |
 
 ---
