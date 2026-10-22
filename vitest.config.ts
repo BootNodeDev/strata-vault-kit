@@ -35,7 +35,7 @@ export default defineConfig({
 				test: {
 					name: "scripts",
 					environment: "node",
-					include: ["lib/**/*.test.mjs"],
+					include: ["lib/**/*.test.mjs", "harness/lib/**/*.test.ts"],
 				},
 			},
 			{
