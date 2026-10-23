@@ -143,6 +143,20 @@ pub(crate) fn bound_here(e: &Env, contract: &Address) -> bool {
         && matches!(binding.try_setup_open(), Ok(Ok(false)))
 }
 
+fn compliance_bound(e: &Env, compliance: &Address, token: &Address) -> bool {
+    let linked = matches!(
+        TokenBinderClient::new(e, compliance).try_linked_tokens(),
+        Ok(Ok(linked)) if linked.contains(token)
+    );
+    let binding = VaultBindingClient::new(e, compliance);
+    let on_this_clock = match (binding.try_vault(), binding.try_setup_open()) {
+        (Ok(Ok(vault)), Ok(Ok(open))) => vault == Some(e.current_contract_address()) && !open,
+        // An external module answers no binding view; its governance is a trust assumption.
+        _ => true,
+    };
+    linked && on_this_clock
+}
+
 pub(crate) fn wiring(e: &Env) -> Wiring {
     let me = e.current_contract_address();
     let token = state::get_addr(e, &DataKey::ShareToken);
@@ -172,10 +186,7 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
         },
         vault_unfrozen: matches!(rwa.try_is_frozen(&me), Ok(Ok(false))),
         compliance_bound: match rwa.try_compliance() {
-            Ok(Ok(compliance)) => matches!(
-                TokenBinderClient::new(e, &compliance).try_linked_tokens(),
-                Ok(Ok(linked)) if linked.contains(&token)
-            ),
+            Ok(Ok(compliance)) => compliance_bound(e, &compliance, &token),
             _ => false,
         },
     }

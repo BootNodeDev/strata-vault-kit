@@ -203,6 +203,14 @@ async function grantAndVerify(
 		throw new Error("the share token was not bound to the compliance contract")
 	console.log("share_token bound to compliance")
 
+	// Binding the token is instant only during setup, so the compliance
+	// contract's setup closes after it.
+	await (await compliance.bind_vault({ vault, operator: caller })).signAndSend()
+	await (await compliance.finish_setup({ operator: caller })).signAndSend()
+	if ((await compliance.setup_open()).result)
+		throw new Error("the compliance contract's setup did not finish")
+	console.log("compliance bound to the vault, setup finished")
+
 	const { Client: NavOracle } = (await import(
 		clientEntry("nav_oracle")
 	)) as typeof NavOracleModule

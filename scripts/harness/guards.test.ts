@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest"
 import { pay, trustline } from "./lib/accounts.js"
 import { assetsFor, price, sharesFor, units } from "./lib/amounts.js"
 import {
+	complianceContract,
 	connect,
 	identityVerifier,
 	oracle,
@@ -298,6 +299,41 @@ describe("the oracle after setup", () => {
 		)
 		await send(o.cancel_change({ id, caller: caller() }))
 		expect((await o.pending_changes()).result).toEqual([])
+	})
+})
+
+describe("the compliance contract after setup", () => {
+	const operator = () => governance.publicKey()
+	const canCreate = { tag: "CanCreate", values: undefined } as const
+
+	it("governance cannot add a module at once", async () => {
+		const rules = complianceContract(c, governance)
+		expectRefused(
+			await rules.add_module_to({
+				hook: canCreate,
+				module: outsider.publicKey(),
+				operator: operator(),
+			}),
+			rules,
+			"UseTimelock",
+		)
+	})
+
+	it("queues a module behind the vault's delay", async () => {
+		const rules = complianceContract(c, governance)
+		const id = await send(
+			rules.propose_change({
+				change: { tag: "AddModule", values: [canCreate, outsider.publicKey()] },
+				operator: operator(),
+			}),
+		)
+		expectRefused(
+			await rules.apply_change({ id, operator: operator() }),
+			rules,
+			"ChangeNotReady",
+		)
+		await send(rules.cancel_change({ id, operator: operator() }))
+		expect((await rules.pending_changes()).result).toEqual([])
 	})
 })
 

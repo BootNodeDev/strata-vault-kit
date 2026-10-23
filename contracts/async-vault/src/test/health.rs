@@ -89,6 +89,20 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
                 ..all_healthy()
             },
         ),
+        (
+            Miswire::ComplianceBoundElsewhere,
+            Health {
+                compliance_bound: false,
+                ..all_healthy()
+            },
+        ),
+        (
+            Miswire::ComplianceSetupOpen,
+            Health {
+                compliance_bound: false,
+                ..all_healthy()
+            },
+        ),
     ];
     for (miswire, expected) in cases {
         let f = miswired(miswire);
