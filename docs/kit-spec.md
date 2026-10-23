@@ -82,8 +82,9 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   $`(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}`$
 - **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. When the last request of a priced epoch settles, the remainder leaves `pending_mint_shares` and `committed` and the vault publishes `EpochReconciled { epoch, share_dust, cash_dust }`. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping.
 - **A request that can never settle** keeps its epoch open, and the two cases leave different amounts behind. A zero-asset redemption whose holder may not take the shares back (`HolderNotEligible`, `a_request_that_cannot_settle_keeps_its_epoch_open`) leaves only the epoch's ordinary rounding remainder in `committed` — fewer units than the epoch had redemption requests — because that request was never owed any cash. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's own remainder, until the mint is allowed. Either way it is still owed to nobody.
+- **A deposit worth less than one share base unit** mints nothing and is refunded at claim, from the free reserve (`a_deposit_below_one_share_is_refunded_at_claim`). Pricing moves the epoch's whole deposit into the reserve and records no refund, so `deploy_to_custodian` or a wind-down round can spend that cash first; the claim then fails with `ClaimNotCovered` until the free reserve covers it again (`a_dust_refund_never_takes_committed_money`, `a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve`). This is accepted: pricing sees only the epoch's totals, so reserving these refunds would mean visiting every request, and each is worth less than one share base unit.
 
-**Settlement and upgrades.** The settlement record counts a request only from the moment it exists. A vault upgraded in place to this version while any request is open would under-count its open epochs: claims in epochs priced before the upgrade would revert, and a mixed epoch could reconcile early. This version must therefore be deployed fresh, or reached by upgrade only once no request is open anywhere in the vault.
+**Settlement and upgrades.** The settlement record counts a request only from the moment it exists. A vault upgraded in place to this version while any request is open would under-count its open epochs: claims in epochs priced before the upgrade would revert, and a mixed epoch could reconcile early. This version is therefore deployed fresh: an earlier vault is not upgraded to it in place.
 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
@@ -144,12 +145,12 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`async_vault`** | `roles.governance` | `Address` | Governance multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.treasury` | `Address` | Treasury multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.guardian` | `Address` | Guardian multisig authority | `async_vault.constructor_args` |
-| **`async_vault`** | `roles.manager` | `Address` | Manager authority (closes epochs) | `async_vault.constructor_args` |
+| **`async_vault`** | `roles.manager` | `Address` | Account that gets the vault's `manager` role (closes epochs); a role, not one of the five authorities | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.compliance` | `Address` | Compliance multisig authority | `async_vault.constructor_args` |
-| **`async_vault`** | `roles.attester` | `Address` | Attestation authority (mirrors oracle reporter) | `async_vault.constructor_args` |
+| **`async_vault`** | `roles.attester` | `Address` | Attestation authority. Not read: nothing checks that it matches the oracle's attester | `async_vault.constructor_args` |
 
-#### Pairwise Role Separation Enforced at Construction
-The `async_vault` constructor strictly verifies pairwise separation across authorities:
+#### Role Separation Checked at Construction
+The `async_vault` constructor refuses these four pairs of equal addresses and compares no other:
 - `treasury != guardian`
 - `treasury != governance`
 - `compliance != governance`
@@ -163,7 +164,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 |---|---|---|---|
 | **Standing Notice** | `set_notice(secs: u64)`; after setup, lowering goes through `propose_change(Notice(secs))` → `apply_change(id)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $`\text{secs} \le \text{upgrade\_delay}`$ and $`\text{secs} \le 30 \text{ days}`$ (`MAX_NOTICE_SECS`), checked again when a `Notice` change applies. Raising is instant. |
 | **Custodian Address** | `set_custodian(custodian: Address)` during setup; afterwards `propose_change(Custodian(address))` → `apply_change(id)` | Governance | Recipient address for off-chain capital deployment. Required before `finish_setup` and `deploy_to_custodian`. Never the vault itself (`InvalidCustodian`), checked when it is set, proposed and applied. The deploy sets it before setup closes. |
-| **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital. `None` = unbounded. Refuses negative cap. Instant both ways, also after setup. |
+| **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital (see **Supply and Capital Figures**). `None` = unbounded. Refuses negative cap. Instant both ways, also after setup. The cap is vault-wide; there is no cap per investor. |
 | **Wind-Down Delay** | `set_wind_down_delay(secs: u64)`; after setup, lowering goes through `propose_change(WindDownDelay(secs))` → `apply_change(id)` | Governance | Minimum notice before wind-down activation. Default and minimum 7 days (`MIN_WIND_DOWN_DELAY`), maximum 90 days (`MAX_WIND_DOWN_DELAY`). Raising is instant. |
 | **Upgrade Delay** | `propose_change(UpgradeDelay(secs))` → `apply_change(id)` | Governance | Timelock delay for wasm upgrades. Must be $`\ge 7 \text{ days}`$, $`\le 90 \text{ days}`$, and $`\ge \text{notice}`$. |
 | **Oracle Configuration** | `set_config(config: OracleConfig)`; after setup, `propose_change(Config(config))` → `apply_change(id)` | Governance | Updates oracle parameters within the constructor's bounds. `set_config` is instant during the oracle's setup. After it, `set_config` is instant only for a shorter `freshness_duration`: later reports go stale sooner, and no value moves. Every other change, tighter limits included, goes through `propose_change(Config(config))` → `apply_change(id)`, and the bounds are checked again when it applies. A tighter fall cap or a longer cooldown can hold the price above a real loss, and a narrower band can stop pricing. Applying a `Config` change sets every field, freshness included; to keep a cut made after the proposal, cancel the queued change and propose again. |
@@ -186,16 +187,22 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | `addresses_distinct` | The asset, the share token, the oracle and the vault are four different addresses. |
 | `custodian_set` | A custodian is set, and it is not the vault itself. |
 | `feed_answers` | The oracle answers `state()` and `freshness_duration()`. A new feed with no report passes. `oracle_bound` cannot tell a feed from another contract bound to this vault, such as the compliance contract. |
-| `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired and the NAV is not paused. |
+| `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired, it is in band and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
 
 `freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation.
+
+### Supply and Capital Figures
+
+- `total_economic_supply()` counts share base units held outside the vault plus those priced for deposits and not yet minted: the token's `total_supply()`, less the vault's own share balance, plus `pending_mint_shares()`. It leaves out every share in the vault's escrow. That includes the shares of a redemption that is not priced yet: the next price still applies to them, and a cancellation can return them (`economic_supply_excludes_shares_locked_in_redemption_escrow`). The first wind-down round's supply snapshot counts those shares, so the two figures differ while redemptions wait to be priced.
+- Deposited capital, which the deposit cap limits, is the asset the vault holds plus `net_deployed()`, less `committed()`. It counts money in and out, not the vault's value (what the vault and the custodian hold): a deposit request adds what it brings, and a priced redemption takes off what it pays. A gain or a loss at the custodian does not move it, even once funded back. After a gain, the figure is below the vault's value. Once leavers are paid the gain, it can go negative, and the cap then admits more than its own amount (`a_gain_paid_out_to_leavers_leaves_room_above_the_cap`). After a loss, the figure stays above the vault's value, and the cap refuses deposits sooner (`a_loss_at_the_custodian_still_counts_toward_the_cap`).
+- `net_deployed()` is what `deploy_to_custodian` sent less what `fund` brought back; it goes negative once more came back than went out. The custodian repays through `fund`. A plain transfer to the vault raises the vault's balance but leaves `net_deployed` as it was, so from then on the same money counts twice in deposited capital and the cap refuses deposits sooner.
 
 ---
 
 ## 3. Role & Authority Matrix
 
-Strata distributes control across five native Stellar multisig authorities and permissionless public entrypoints. Every privileged function is mapped to exactly one authority, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An admin entrypoint the kit defines takes no caller argument: the stored admin signs it.
+Strata distributes control across five native Stellar multisig authorities, two `manager` roles and permissionless public entrypoints. Every privileged function needs exactly one of these authorities or roles, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An admin entrypoint the kit defines takes no caller argument: the stored admin signs it.
 
 ### Authority Capabilities & Anti-Capabilities
 
@@ -203,11 +210,33 @@ Strata distributes control across five native Stellar multisig authorities and p
 |---|---|---|---|
 | **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin, finish each contract's one-time setup, co-sign compliance's `legal_transfer` and `recover_balance` as the share token's admin. After setup, these wait for the timelock: role grants, revoking the manager, admin hand-over, the custodian, lowering the notice or the wind-down delay, upgrades, the token's compliance and verifier swaps, the compliance contract's module and token-binding changes, and oracle config changes other than a shorter freshness window. Revoking the treasury or the guardian stays instant, because taking a power away moves no value. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
 | **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `pause_nav` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
-| **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve); `fund` (returns assets from custodian). | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
-| **Attester** | High-security attestation multisig | `attest` (submits NAV report with proof reference). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
+| **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve). Capital comes back through `fund`, which anyone may call. | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
+| **Attester** | High-security attestation multisig | `attest` (submits a NAV report: the price and its expiry). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
 | **Compliance** | Legal / KYC operator multisig | Manage allowlist (`allow`), topic claims; token interventions (`freeze`; `legal_transfer` and `recovery` co-signed by governance). | **Cannot touch vault reserve**; cannot move a holder's shares without governance's signature in the same call; cannot move shares out of or into the vault's address, or freeze it once the token knows its vault (an earlier freeze makes the vault's `finish_setup` refuse); cannot pause vault operations; cannot bypass exit-only cash redemptions for an unfrozen holder — freezing holds a covered claim until it lifts, rather than paying or redirecting it. |
-| **Manager** | Operational keeper account / vault | `close_epoch` (vault); `mint`, `burn`, `forced_transfer` (share token). | **Cannot choose prices**; cannot prevent epoch fulfillment; cannot alter timelocks. |
-| **Permissionless** | Any caller / keeper / investor | `fulfill_epoch`, `request_deposit`, `cancel_deposit`, `claim_deposit`, `request_redeem`, `cancel_redeem`, `claim_redeem`, `activate_wind_down`, `finalize_wind_down_round`, `claim_wind_down`. | Operations are strictly constrained by contract state, timing, and solvency guards. |
+| **Manager (vault role)** | Operational keeper account; a role, not one of the five authorities | `close_epoch`: seals the open epoch, nothing else. | **Cannot choose prices**; cannot mint, burn or move shares; cannot stop a sealed epoch from being priced, though not sealing stalls every request; cannot alter timelocks. After setup, granting or revoking it waits for the timelock. |
+| **Manager (share-token role)** | The vault contract, alone: the vault's `finish_setup` refuses while another account holds it | `mint`, `burn`, `forced_transfer` on the share token: the vault mints and burns at claim and moves escrowed shares. | Cannot freeze, recover or make a legal transfer. After setup, granting or revoking it waits for the vault's timelock. See [`AUTHORIZATION_MATRIX.md`](./AUTHORIZATION_MATRIX.md) §2. |
+| **Permissionless** | Any caller / keeper / investor | `fulfill_epoch`, `request_deposit`, `cancel_deposit`, `claim_deposit`, `request_redeem`, `cancel_redeem`, `claim_redeem`, `fund`, `activate_wind_down`, `finalize_wind_down_round`, `claim_wind_down`. | Operations are strictly constrained by contract state, timing, and solvency guards. |
+
+### Replacing a Compromised Attester
+
+Pause first, so no report lands while the roles change, and lift the pause last:
+
+1. Pause the NAV: the oracle's guardian calls `pause_nav`, or its admin calls `set_nav_paused(true)`. The oracle refuses every report and the vault prices nothing; sealed epochs reopen to cancellation.
+2. Revoke the compromised attester: `revoke_role(attester, "attester", admin)` on the oracle. It is instant, during setup and after it.
+3. Grant a replacement. During the oracle's setup, `grant_role` is instant. After it, propose a `GrantRole` change and apply it once the vault's delay has run, plus any time the vault spends paused. The NAV stays paused that whole time, at least seven days.
+4. Clear the stored report: `clear_latest` (admin; only while the NAV is paused). Left in place, it is valid again once the pause lifts, and anyone can price with it any epoch sealed before it was accepted, until it expires. Skip this only if you know the report predates the compromise. The next report then has no earlier price to cap its move: only `min_answer` and `max_answer` bound it.
+5. Lift the NAV pause: `set_nav_paused(false)` (admin).
+6. The new attester posts a report. Pricing resumes: an epoch can be priced once a report accepted after its seal is valid.
+
+### When the Manager or the Attester Stops
+
+Pricing needs both roles, and nothing on chain replaces them on its own. The kit assumes they keep working; until then, holders keep these ways out:
+
+- **The manager stops sealing.** Requests in the open epoch stay pending, and each holder can still cancel: a deposit comes back as cash, a redemption as shares. Governance grants a new manager; after setup that waits for the vault's timelock, at least seven days, plus any time the vault spends paused.
+- **The attester stops reporting.** An epoch sealed after the last report has no readable price, so its requests stay cancellable, and claims already priced still pay. Governance revokes the attester on the oracle at once and grants a replacement, which waits for the timelock after setup, as in steps 2 and 3 above.
+- **Neither comes back.** No holder can exit at a price. Governance can propose a wind-down; once its delay has run, anyone activates it, and its rounds pay every holder pro rata from the cash the vault holds and whatever the custodian returns through `fund`, with no price needed.
+
+Sealing is meant to become permissionless once a minimum epoch duration bounds it (design doc §8.4).
 
 ---
 
@@ -218,7 +247,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
 | **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
-| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()` | No (always open) |
+| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause; refused in a wind-down) |
 | **`AsyncVault`** | `cancel_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_redeem` | Investor (Caller) | `holder.require_auth()` | No (always open) |
 | **`AsyncVault`** | `close_epoch` | Manager | `#[only_role(caller, "manager")]` | No |
@@ -237,7 +266,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `finalize_wind_down_round` | Permissionless | None | No |
 | **`AsyncVault`** | `claim_wind_down` | Shareholder (Caller) | `holder.require_auth()` | No |
 | **`AsyncVault`** | `deploy_to_custodian` | Treasury | `#[only_role(caller, "treasury")]` | No (open during pause) |
-| **`AsyncVault`** | `fund` | Treasury | None (caller transfers funds) | No |
+| **`AsyncVault`** | `fund` | Anyone: the custodian, treasury or a backer | `caller.require_auth()`; the caller pays | No |
 | **`AsyncVault`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
 | **`AsyncVault`** | `cancel_change` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `apply_change` | Governance | `#[only_admin]` | Refused if paused or winding down |
@@ -483,6 +512,10 @@ implementation against what the vault calls.
 A feed that implements `OracleFeed` can replace `nav-oracle`; it must report
 `Stale` once its report outlives `freshness_duration`, and `attested_at` must
 be the ledger time the report was accepted, not a time the reporter supplies.
+
+The testnet identity verifier sets one address per call (`allow`), emits no
+event and offers no paged listing. These are limits of the stub: a production
+identity registry replaces it.
 
 Two more traits connect the share token, the oracle and the kit's compliance
 contract to the vault's timelock. The vault implements `ClockSource`

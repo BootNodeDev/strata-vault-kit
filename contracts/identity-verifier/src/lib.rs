@@ -1,5 +1,24 @@
+//! # Design
+//!
 //! Testnet-only stub — in production this is an external ERC-3643 identity
 //! registry (a trusted issuer's), not part of this product. Do not deploy to mainnet.
+//!
+//! - **A yes or no per address.** No claims, topics or issuers, and an address
+//!   never set is refused. The cost: no expiry and no per-jurisdiction rule; a
+//!   deployment that needs them brings its own registry.
+//! - **Instant edits.** The admin lists and delists at once, with no timelock.
+//!   The cost: a stolen admin key can list or delist any account at once; a
+//!   delisted holder still leaves in cash.
+//! - **A fixed admin, no upgrade.** The admin account's signers can change in
+//!   place, but the account cannot. The cost: replacing it, or the code, needs
+//!   a new verifier and a token change that waits for the timelock.
+//! - **No recovery account.** `recovery_target` is always `None`, so
+//!   `recover_balance` always fails. The cost: a lost wallet's shares move by
+//!   `legal_transfer`, signed by `compliance` and the token's admin.
+//! - **OpenZeppelin's error code.** A refusal is
+//!   `RWAError::IdentityVerificationFailed` (304); the stub has no error enum.
+//!   The cost: the code says what failed, not which contract refused.
+
 #![no_std]
 
 use soroban_sdk::{
