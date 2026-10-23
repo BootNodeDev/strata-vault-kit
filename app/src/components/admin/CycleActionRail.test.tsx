@@ -422,15 +422,15 @@ describe("CycleActionRail", () => {
 
 	it("states an action's note outside the conditions", () => {
 		renderRail([
-			{ ...attestAction, note: "Ripcord raised — attesting does not lift it." },
+			{ ...attestAction, note: "NAV paused — attesting does not unpause it." },
 		])
 		expand("Attest price")
 
 		const list = screen.getByRole("list", { name: "Attest price conditions" })
 		expect(
-			screen.getByText("Ripcord raised — attesting does not lift it."),
+			screen.getByText("NAV paused — attesting does not unpause it."),
 		).toBeTruthy()
-		expect(within(list).queryByText(/Ripcord/)).toBeNull()
+		expect(within(list).queryByText(/NAV paused/)).toBeNull()
 	})
 })
 

@@ -67,7 +67,7 @@ const GROUP_LAYOUT: {
 	{
 		title: "Price",
 		tiles: ["Share price", "Attested", "Valid until"],
-		rows: ["Ripcord"],
+		rows: ["NAV paused"],
 		limits: [
 			"Freshness window",
 			"Cooldown",
@@ -250,13 +250,7 @@ export const oracleLimitRows = (limits: OracleLimits | null): FigureRow[] => [
 	row("Freshness window", limits && formatDuration(limits.freshness)),
 	row("Cooldown", limits && formatDuration(limits.cooldown)),
 	row("Largest rise", limits && formatPercent(limits.maxUpBps)),
-	row(
-		"Largest fall",
-		limits &&
-			(limits.maxDownBps === null
-				? "No limit"
-				: formatPercent(limits.maxDownBps)),
-	),
+	row("Largest fall", limits && formatPercent(limits.maxDownBps)),
 	row("Price floor", limits && formatPriceValue(limits.min)),
 	row("Price ceiling", limits && formatPriceValue(limits.max)),
 ]
@@ -281,12 +275,12 @@ function priceGroup(oracle: CycleOracle): CycleGroup {
 		],
 		rows: [
 			row(
-				"Ripcord",
-				oracle.ripcord === null
+				"NAV paused",
+				oracle.navPaused === null
 					? null
-					: oracle.ripcord
-						? "Raised"
-						: "Not raised",
+					: oracle.navPaused
+						? "Paused"
+						: "Not paused",
 			),
 		],
 		limits: oracleLimitRows(limits),
@@ -528,17 +522,14 @@ const withinAllowedMove = (
 	if (oracle.recorded === false) return { label, met: true }
 	if (limits === null || previous === null) return { label, met: false }
 	const ceiling = previous + capped(previous, limits.maxUpBps)
-	const floor =
-		limits.maxDownBps === null
-			? null
-			: previous - capped(previous, limits.maxDownBps)
-	const met = price <= ceiling && (floor === null || price >= floor)
+	const floor = previous - capped(previous, limits.maxDownBps)
+	const met = price >= floor && price <= ceiling
 	if (met) return { label, met }
 	const top = formatPriceValue(ceiling)
 	return {
 		label,
 		met,
-		detail: floor === null ? `≤ ${top}` : `${formatPriceValue(floor)} – ${top}`,
+		detail: `${formatPriceValue(floor)} – ${top}`,
 	}
 }
 
@@ -564,8 +555,8 @@ function toAttestAction(
 			price === null || freshness === null
 				? null
 				: `Records ${formatSignedPrice(price)} as the share price, valid for ${formatDuration(freshness)}.`,
-		...(oracle.ripcord === true
-			? { note: "Ripcord raised — attesting does not lift it." }
+		...(oracle.navPaused === true
+			? { note: "NAV paused — attesting does not unpause it." }
 			: {}),
 		field: {
 			label: "Share price",

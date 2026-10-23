@@ -38,8 +38,8 @@ import styles from "./TransactionModal.module.css"
 export type EmergencyModalAction =
 	| "pause-vault"
 	| "unpause-vault"
-	| "raise-ripcord"
-	| "lower-ripcord"
+	| "pause-nav"
+	| "unpause-nav"
 	| "clear-latest"
 	| "pause-token"
 	| "unpause-token"
@@ -331,6 +331,8 @@ const attestContractErrorReason = (code: number): string => {
 			return "The cooldown since the last attestation has not elapsed yet."
 		case 3004:
 			return "That price moves further from the last attested price than the oracle allows."
+		case 3010:
+			return "Unpause the NAV first."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -1026,19 +1028,19 @@ const EMERGENCY_COPY: Record<EmergencyModalAction, AdminCopy> = {
 		done: "Vault unpaused",
 		doneBody: "Deposits, pricing and upgrades are open again.",
 	},
-	"raise-ripcord": {
+	"pause-nav": {
 		refuser: "oracle",
-		verb: "raise the ripcord",
-		signing: "Signing stops pricing until the ripcord is lowered.",
-		done: "Ripcord raised",
+		verb: "pause the NAV",
+		signing: "Signing stops pricing until the NAV is unpaused.",
+		done: "NAV paused",
 		doneBody:
-			"Pricing is stopped. No epoch can be fulfilled until the ripcord is lowered.",
+			"Pricing is stopped. No epoch can be fulfilled until the NAV is unpaused.",
 	},
-	"lower-ripcord": {
+	"unpause-nav": {
 		refuser: "oracle",
-		verb: "lower the ripcord",
+		verb: "unpause the NAV",
 		signing: "Signing resumes pricing.",
-		done: "Ripcord lowered",
+		done: "NAV unpaused",
 		doneBody: "Epochs can be fulfilled again while the price is valid.",
 	},
 	"clear-latest": {
@@ -1047,7 +1049,7 @@ const EMERGENCY_COPY: Record<EmergencyModalAction, AdminCopy> = {
 		signing: "Signing removes the recorded price.",
 		done: "Latest price cleared",
 		doneBody:
-			"The next attestation is not limited by its distance from the last. Pricing stays stopped until the ripcord is lowered.",
+			"The next attestation is not limited by its distance from the last. Pricing stays stopped until the NAV is unpaused.",
 	},
 	"pause-token": {
 		refuser: "share token",
@@ -1339,7 +1341,7 @@ const adminContractErrorReason =
 			case 3001:
 				return "One of the oracle limits is out of range."
 			case 3008:
-				return "The ripcord is not raised, so the latest price cannot be cleared."
+				return "The NAV is not paused, so the latest price cannot be cleared."
 			case 6007:
 				return "The deposit cap cannot be negative."
 			case 6045:
@@ -1443,8 +1445,8 @@ const describeStatus = (
 			return describeFinalizeRoundStatus(props.status, props.round)
 		case "pause-vault":
 		case "unpause-vault":
-		case "raise-ripcord":
-		case "lower-ripcord":
+		case "pause-nav":
+		case "unpause-nav":
 		case "clear-latest":
 		case "pause-token":
 		case "unpause-token":

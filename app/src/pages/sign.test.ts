@@ -96,19 +96,55 @@ describe("describePending", () => {
 		})
 	})
 
-	it("maps the ripcord flag to raise or lower", () => {
-		const raise = describePending(
-			pending(addresses.oracle, "set_ripcord", [true, account]),
+	it("maps the paused flag to pause or unpause", () => {
+		const pause = describePending(
+			pending(addresses.oracle, "set_nav_paused", [true, account]),
 			addresses,
 		)
-		const lower = describePending(
-			pending(addresses.oracle, "set_ripcord", [false, account]),
+		const unpause = describePending(
+			pending(addresses.oracle, "set_nav_paused", [false, account]),
 			addresses,
 		)
 
-		expect(raise.action).toBe("raise-ripcord")
-		expect(lower.action).toBe("lower-ripcord")
-		expect(lower.label).toBe("Lower the ripcord")
+		expect(pause.action).toBe("pause-nav")
+		expect(pause.label).toBe("Pause the NAV")
+		expect(unpause.action).toBe("unpause-nav")
+		expect(unpause.label).toBe("Unpause the NAV")
+	})
+
+	it("describes the guardian's pause_nav as pausing the NAV", () => {
+		expect(
+			describePending(
+				pending(addresses.oracle, "pause_nav", [account]),
+				addresses,
+			),
+		).toMatchObject({ action: "pause-nav", label: "Pause the NAV", args: [] })
+	})
+
+	it("shows every oracle limit of set_config, the largest fall as a percent", () => {
+		const { args } = describePending(
+			pending(addresses.oracle, "set_config", [
+				{
+					freshness_duration: 86_400n,
+					cooldown_secs: 3_600n,
+					max_up_bps: 500,
+					max_down_bps: 250,
+					min_answer: 500_000_000_000_000_000n,
+					max_answer: 2_000_000_000_000_000_000n,
+				},
+				account,
+			]),
+			addresses,
+		)
+
+		expect(args).toEqual([
+			{ label: "Freshness window", value: "1d" },
+			{ label: "Cooldown", value: "1h" },
+			{ label: "Largest rise", value: "5%" },
+			{ label: "Largest fall", value: "2.5%" },
+			{ label: "Price floor", value: "0.50" },
+			{ label: "Price ceiling", value: "2.00" },
+		])
 	})
 
 	it("formats an attestation price and expiry", () => {

@@ -48,7 +48,7 @@ export type OracleLimits = {
 	freshness: bigint
 	cooldown: bigint
 	maxUpBps: number
-	maxDownBps: number | null
+	maxDownBps: number
 	min: bigint
 	max: bigint
 }
@@ -58,7 +58,7 @@ export type CycleOracle = {
 	price: Price | null
 	attestedAt: bigint | null
 	expiresAt: bigint | null
-	ripcord: boolean | null
+	navPaused: boolean | null
 	recorded: boolean | null
 	limits: OracleLimits | null
 }
@@ -128,7 +128,7 @@ export function toOracle(
 		freshness_duration: bigint
 		cooldown_secs: bigint
 		max_up_bps: number
-		max_down_bps: number | null
+		max_down_bps: number
 		min_answer: bigint
 		max_answer: bigint
 	}>,
@@ -141,7 +141,7 @@ export function toOracle(
 		price: report === null ? null : (report.nav_per_share as Price),
 		attestedAt: report?.timestamp ?? null,
 		expiresAt: report?.expires_at ?? null,
-		ripcord: nav.status === "unreadable" ? null : nav.status === "paused",
+		navPaused: nav.status === "unreadable" ? null : nav.status === "paused",
 		recorded: recordedOf(latest),
 		limits:
 			config.kind === "value"

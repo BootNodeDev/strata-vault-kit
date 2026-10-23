@@ -182,22 +182,16 @@ const oracleLimits = (config: Record<string, unknown>): SignArg[] => [
 	duration("Freshness window", config.freshness_duration),
 	duration("Cooldown", config.cooldown_secs),
 	{ label: "Largest rise", value: formatPercent(count(config.max_up_bps)) },
-	{
-		label: "Largest fall",
-		value:
-			config.max_down_bps === null
-				? "No limit"
-				: formatPercent(count(config.max_down_bps)),
-	},
+	{ label: "Largest fall", value: formatPercent(count(config.max_down_bps)) },
 	price("Price floor", config.min_answer),
 	price("Price ceiling", config.max_answer),
 ]
 
 const ORACLE: Record<string, Decoder> = {
 	...governed("oracle"),
-	raise_ripcord: only("raise-ripcord"),
-	set_ripcord: ([paused]) => ({
-		action: flag(paused) ? "raise-ripcord" : "lower-ripcord",
+	pause_nav: only("pause-nav"),
+	set_nav_paused: ([paused]) => ({
+		action: flag(paused) ? "pause-nav" : "unpause-nav",
 		args: [],
 	}),
 	clear_latest: only("clear-latest"),
@@ -445,8 +439,8 @@ type ModalHandlers = { onClose: () => void; onRetry: () => void }
 const EMERGENCY_ACTIONS: ReadonlySet<string> = new Set<EmergencyModalAction>([
 	"pause-vault",
 	"unpause-vault",
-	"raise-ripcord",
-	"lower-ripcord",
+	"pause-nav",
+	"unpause-nav",
 	"clear-latest",
 	"pause-token",
 	"unpause-token",

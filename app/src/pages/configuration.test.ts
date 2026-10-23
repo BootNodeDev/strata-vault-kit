@@ -42,7 +42,7 @@ const ready = (
 		freshness: DAY,
 		cooldown: 3_600n,
 		maxUpBps: 1_000,
-		maxDownBps: null,
+		maxDownBps: 500,
 		min: PRICE_ONE / 2n,
 		max: 2n * PRICE_ONE,
 	},
@@ -195,7 +195,7 @@ describe("toConfigurationActions", () => {
 		expect(uncapped.enabled).toBe(false)
 	})
 
-	it("holds a deposit cap and an oracle duration at their contract width", () => {
+	it("holds a deposit cap and the oracle limits at their contract edges", () => {
 		const cap = (text: string) =>
 			find("set-deposit-cap", [governance], { depositCap: text })
 		const oracle = (inputs: ConfigurationInputs) =>
@@ -214,16 +214,19 @@ describe("toConfigurationActions", () => {
 			),
 		).toBe(false)
 		expect(
-			condition(
-				oracle({ freshness: "18446744073709551615" }),
-				"Freshness window ≤ 2^64−1 s",
-			),
+			condition(oracle({ freshness: "35d" }), "Freshness window ≤ 35d"),
 		).toBe(true)
 		expect(
-			condition(
-				oracle({ cooldown: "18446744073709551615" }),
-				"Cooldown ≤ 2^64−1 s",
-			),
+			condition(oracle({ cooldown: "1d" }), "Cooldown ≤ freshness window"),
+		).toBe(true)
+		expect(
+			condition(oracle({ maxFall: "0.01" }), "Largest fall 0.01% to 100%"),
+		).toBe(true)
+		expect(
+			condition(oracle({ maxFall: "100" }), "Largest fall 0.01% to 100%"),
+		).toBe(true)
+		expect(
+			condition(oracle({ ceiling: "1000000" }), "Price ceiling ≤ 1,000,000"),
 		).toBe(true)
 	})
 
@@ -307,7 +310,7 @@ describe("toConfigurationActions", () => {
 			["Freshness window", "1d"],
 			["Cooldown", "1h"],
 			["Largest rise", "5"],
-			["Largest fall", ""],
+			["Largest fall", "5"],
 			["Price floor", "0.50"],
 			["Price ceiling", "2.00"],
 		])
@@ -316,25 +319,36 @@ describe("toConfigurationActions", () => {
 			freshness_duration: DAY,
 			cooldown_secs: 3_600n,
 			max_up_bps: 500,
-			max_down_bps: null,
+			max_down_bps: 500,
 			min_answer: PRICE_ONE / 2n,
 			max_answer: 2n * PRICE_ONE,
 		})
 	})
 
+	it("requires a largest fall", () => {
+		const config = find("set-oracle-config", [oracleAdmin], { maxFall: "" })
+
+		expect(config.arg).toBeUndefined()
+		expect(config.enabled).toBe(false)
+		expect(config.fields?.[3]).toMatchObject({
+			label: "Largest fall",
+			placeholder: "10",
+			next: null,
+		})
+	})
+
 	it.each<[ConfigurationInputs, string]>([
-		[{ freshness: "0" }, "Freshness window > 0"],
-		[{ freshness: "18446744073709551616" }, "Freshness window ≤ 2^64−1 s"],
-		[{ cooldown: "18446744073709551616" }, "Cooldown ≤ 2^64−1 s"],
-		[{ maxRise: "0" }, "Largest rise > 0"],
-		[{ maxRise: "100.01" }, "Largest rise ≤ 100%"],
-		[{ maxFall: "101%" }, "Largest fall ≤ 100%"],
+		[{ freshness: "0" }, "Freshness window ≥ 1s"],
+		[{ freshness: "35d 1s" }, "Freshness window ≤ 35d"],
+		[{ cooldown: "0" }, "Cooldown ≥ 1s"],
+		[{ cooldown: "1d 1s" }, "Cooldown ≤ freshness window"],
+		[{ maxRise: "0" }, "Largest rise 0.01% to 100%"],
+		[{ maxRise: "100.01" }, "Largest rise 0.01% to 100%"],
+		[{ maxFall: "0" }, "Largest fall 0.01% to 100%"],
+		[{ maxFall: "100.01%" }, "Largest fall 0.01% to 100%"],
 		[{ floor: "0" }, "Price floor > 0"],
 		[{ ceiling: "0.4" }, "Price ceiling ≥ floor"],
-		[
-			{ ceiling: "17014118346046924" },
-			"Price ceiling ≤ 17,014,118,346,046,923",
-		],
+		[{ ceiling: "1000000.01" }, "Price ceiling ≤ 1,000,000"],
 	])("names the oracle limit %o breaks", (inputs, label) => {
 		const config = find("set-oracle-config", [oracleAdmin], inputs)
 
@@ -386,7 +400,7 @@ describe("toConfigurationGroups", () => {
 		expect(
 			groups[1]?.strips.map((strip) => strip.map((tile) => tile.value)),
 		).toEqual([
-			["1d", "1h", "10%", "No limit"],
+			["1d", "1h", "10%", "5%"],
 			["0.5000", "2.0000"],
 		])
 		expect(groups[2]?.strips).toEqual([])
