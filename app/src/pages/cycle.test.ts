@@ -84,7 +84,7 @@ const oracle: CycleOracle = {
 		freshness: 86_400n,
 		cooldown: 3_600n,
 		maxUpBps: 500,
-		maxDownBps: null,
+		maxDownBps: 1_000,
 		min: price(1n) / 2n,
 		max: price(2n),
 	},
@@ -311,7 +311,7 @@ describe("toCycleRows", () => {
 		expect(valueOf(groups, "Price", "Cooldown")).toBe("1h")
 		expect(valueOf(groups, "Price", "Freshness window")).toBe("1d")
 		expect(valueOf(groups, "Price", "Largest rise")).toBe("5%")
-		expect(valueOf(groups, "Price", "Largest fall")).toBe("No limit")
+		expect(valueOf(groups, "Price", "Largest fall")).toBe("10%")
 		expect(valueOf(groups, "Price", "Price floor")).toBe("0.5000")
 	})
 
@@ -946,9 +946,6 @@ const attestOf = (
 		"attest",
 	)
 
-const withLimits = (limits: Partial<NonNullable<CycleOracle["limits"]>>) =>
-	({ ...oracle, limits: { ...oracle.limits!, ...limits } }) as CycleOracle
-
 describe("toCycleActions, attesting", () => {
 	it("offers the attestation only to the oracle attester, in the Price group", () => {
 		expect(
@@ -1070,47 +1067,27 @@ describe("toCycleActions, attesting", () => {
 		).toBe(false)
 	})
 
-	it("lets any fall through when the oracle sets no largest fall", () => {
-		expect(conditionsOf(attestOf("0.5"))["Within the allowed move"]).toBe(true)
-	})
-
-	it("caps a fall at the largest allowed when the oracle sets one", () => {
-		const limited = { oracle: withLimits({ maxDownBps: 1_000 }) }
-
+	it("caps a fall at the largest allowed, letting an equal move through", () => {
+		expect(conditionsOf(attestOf("0.9"))["Within the allowed move"]).toBe(true)
 		expect(
-			conditionsOf(attestOf("0.9", limited))["Within the allowed move"],
-		).toBe(true)
-		expect(
-			conditionsOf(attestOf("0.899999999999999999", limited))[
-				"Within the allowed move"
-			],
+			conditionsOf(attestOf("0.899999999999999999"))["Within the allowed move"],
 		).toBe(false)
 	})
 
-	it("shows the ceiling when a rise exceeds the cap and no fall cap exists", () => {
-		const move = attestOf("1.06")?.conditions.find(
-			(condition) => condition.label === "Within the allowed move",
-		)
+	it.each(["1.06", "0.8"])(
+		"shows the allowed range when %s exceeds a cap",
+		(input) => {
+			const move = attestOf(input)?.conditions.find(
+				(condition) => condition.label === "Within the allowed move",
+			)
 
-		expect(move).toEqual({
-			label: "Within the allowed move",
-			met: false,
-			detail: "≤ 1.0500",
-		})
-	})
-
-	it("shows the allowed range when both caps exist and the move exceeds one", () => {
-		const limited = { oracle: withLimits({ maxDownBps: 1_000 }) }
-		const move = attestOf("0.8", limited)?.conditions.find(
-			(condition) => condition.label === "Within the allowed move",
-		)
-
-		expect(move).toEqual({
-			label: "Within the allowed move",
-			met: false,
-			detail: "0.9000 – 1.0500",
-		})
-	})
+			expect(move).toEqual({
+				label: "Within the allowed move",
+				met: false,
+				detail: "0.9000 – 1.0500",
+			})
+		},
+	)
 
 	it("skips the cooldown and the move cap for the first attestation", () => {
 		const attest = attestOf("1.9", {

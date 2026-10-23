@@ -182,13 +182,7 @@ const oracleLimits = (config: Record<string, unknown>): SignArg[] => [
 	duration("Freshness window", config.freshness_duration),
 	duration("Cooldown", config.cooldown_secs),
 	{ label: "Largest rise", value: formatPercent(count(config.max_up_bps)) },
-	{
-		label: "Largest fall",
-		value:
-			config.max_down_bps === null
-				? "No limit"
-				: formatPercent(count(config.max_down_bps)),
-	},
+	{ label: "Largest fall", value: formatPercent(count(config.max_down_bps)) },
 	price("Price floor", config.min_answer),
 	price("Price ceiling", config.max_answer),
 ]

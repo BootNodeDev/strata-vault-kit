@@ -48,7 +48,7 @@ export type OracleLimits = {
 	freshness: bigint
 	cooldown: bigint
 	maxUpBps: number
-	maxDownBps: number | null
+	maxDownBps: number
 	min: bigint
 	max: bigint
 }
@@ -128,7 +128,7 @@ export function toOracle(
 		freshness_duration: bigint
 		cooldown_secs: bigint
 		max_up_bps: number
-		max_down_bps: number | null
+		max_down_bps: number
 		min_answer: bigint
 		max_answer: bigint
 	}>,

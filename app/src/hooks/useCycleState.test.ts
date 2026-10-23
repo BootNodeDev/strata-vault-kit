@@ -77,7 +77,7 @@ const config = {
 	freshness_duration: 86_400n,
 	cooldown_secs: 3_600n,
 	max_up_bps: 500,
-	max_down_bps: null,
+	max_down_bps: 500,
 	min_answer: 5n * 10n ** 17n,
 	max_answer: 2n * 10n ** 18n,
 }
@@ -98,7 +98,7 @@ describe("toOracle", () => {
 				freshness: 86_400n,
 				cooldown: 3_600n,
 				maxUpBps: 500,
-				maxDownBps: null,
+				maxDownBps: 500,
 				min: 5n * 10n ** 17n,
 				max: 2n * 10n ** 18n,
 			},

@@ -331,6 +331,8 @@ const attestContractErrorReason = (code: number): string => {
 			return "The cooldown since the last attestation has not elapsed yet."
 		case 3004:
 			return "That price moves further from the last attested price than the oracle allows."
+		case 3010:
+			return "Unpause the NAV first."
 		default:
 			return GENERIC_REFUSAL
 	}

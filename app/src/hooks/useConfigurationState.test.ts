@@ -30,7 +30,7 @@ const LIMITS = {
 	freshness: 86_400n,
 	cooldown: 3_600n,
 	maxUpBps: 1_000,
-	maxDownBps: null,
+	maxDownBps: 500,
 	min: 1n,
 	max: 10n,
 }

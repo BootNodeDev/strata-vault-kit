@@ -146,7 +146,7 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 			freshness: 86_400n,
 			cooldown: 3_600n,
 			maxUpBps: 500,
-			maxDownBps: null,
+			maxDownBps: 1_000,
 			min: price(1n) / 2n,
 			max: price(2n),
 		},
