@@ -60,6 +60,7 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
         Miswire::SecondManager,
         Miswire::PreMinted,
         Miswire::NotAllowlisted,
+        Miswire::VaultFrozen,
         Miswire::ComplianceUnbound,
     ] {
         let f = miswired(miswire);
@@ -131,6 +132,7 @@ fn a_token_that_cannot_answer_fails_its_checks_instead_of_trapping() {
     assert!(!health.token_bound);
     assert!(!health.sole_token_manager);
     assert!(!health.allowlisted);
+    assert!(!health.vault_unfrozen);
     assert!(!health.compliance_bound);
 
     refused(vault.try_finish_setup(&admin), VaultError::SetupIncomplete);

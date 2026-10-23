@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address};
+use soroban_sdk::{contractevent, Address, String};
 
 use crate::governance::TokenChange;
 
@@ -30,4 +30,14 @@ pub struct SetupFinished {}
 pub struct VaultBound {
     #[topic]
     pub vault: Address,
+}
+
+#[contractevent]
+pub struct LegalTransfer {
+    #[topic]
+    pub from: Address,
+    #[topic]
+    pub to: Address,
+    pub amount: i128,
+    pub reference: String,
 }

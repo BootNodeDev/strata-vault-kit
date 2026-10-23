@@ -68,6 +68,7 @@ pub(crate) struct Wiring {
     /// Shares minted before setup would redeem against depositors' money.
     pub no_shares_outstanding: bool,
     pub allowlisted: bool,
+    pub vault_unfrozen: bool,
     pub compliance_bound: bool,
 }
 
@@ -78,6 +79,7 @@ impl Wiring {
             && self.sole_token_manager
             && self.no_shares_outstanding
             && self.allowlisted
+            && self.vault_unfrozen
             && self.compliance_bound
     }
 }
@@ -168,6 +170,7 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
             ),
             _ => false,
         },
+        vault_unfrozen: matches!(rwa.try_is_frozen(&me), Ok(Ok(false))),
         compliance_bound: match rwa.try_compliance() {
             Ok(Ok(compliance)) => matches!(
                 TokenBinderClient::new(e, &compliance).try_linked_tokens(),

@@ -90,7 +90,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**:
   - Upgrade delay $`\in [7 \text{ days}, 90 \text{ days}]`$ and $`\text{delay} \ge \text{notice}`$, checked when a delay change is proposed and again when it applies.
   - Wind-down delay $`\in [7 \text{ days}, 90 \text{ days}]`$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
-  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, and the token is bound to its compliance contract. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
+  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
   - After setup, the vault's custodian, role grants, revoking `manager`, admin hand-overs and lowering the notice or the wind-down delay go through the queue; a direct call is refused with `UseTimelock`. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking any other role stay instant. A `Notice` or `WindDownDelay` change is checked against its bounds when proposed and again when it applies.
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
@@ -125,7 +125,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`share_token`** | `name` | `String` | Human-readable token name (e.g. `"Strata Vault USDC"`) | `share_token.constructor_args` |
 | **`share_token`** | `symbol` | `String` | Token ticker symbol (e.g. `"bvUSDC"`) | `share_token.constructor_args` |
 | **`share_token`** | `admin` | `Address` | Token administrative multisig (Governance) | `share_token.constructor_args` |
-| **`share_token`** | `compliance_authority` | `Address` | Compliance multisig; receives the `compliance` role for freezes, forced transfers and recovery. The vault's `manager` role is granted after deploy | `share_token.constructor_args` |
+| **`share_token`** | `compliance_authority` | `Address` | Compliance multisig; receives the `compliance` role for freezes, plus legal transfers and recovery with governance's co-signature. The vault's `manager` role is granted after deploy | `share_token.constructor_args` |
 | **`share_token`** | `compliance` | `Address` | Address of deployed `compliance` contract | `share_token.constructor_args` |
 | **`share_token`** | `identity_verifier` | `Address` | Address of deployed `identity_verifier` contract | `share_token.constructor_args` |
 | **`nav_oracle`** | `admin` | `Address` | Oracle admin multisig (Governance) | `nav_oracle.constructor_args` |
@@ -179,6 +179,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | `oracle_bound` | The oracle names this vault through `vault()` and its own setup is finished. |
 | `sole_token_manager` | This vault is the share token's only `manager`. |
 | `allowlisted` | This vault passes the share token's identity verifier, so it can hold escrowed shares. A delisted holder's deposit converts to an exit by minting the shares to the vault's own address, so that conversion needs this flag true. |
+| `vault_unfrozen` | The share token has not frozen this vault's address. A frozen vault could not hand escrowed shares back when a holder cancels a redemption. |
 | `compliance_bound` | The share token is in its compliance contract's `linked_tokens`. |
 | `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
@@ -189,17 +190,17 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 ## 3. Role & Authority Matrix
 
-Strata distributes control across five native Stellar multisig authorities and permissionless public entrypoints. Every privileged function is mapped to exactly one authority.
+Strata distributes control across five native Stellar multisig authorities and permissionless public entrypoints. Every privileged function is mapped to exactly one authority, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call.
 
 ### Authority Capabilities & Anti-Capabilities
 
 | Authority | Quorum / Profile | Authorized Capabilities | Anti-Capabilities (What It Cannot Do) |
 |---|---|---|---|
-| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin, finish each contract's one-time setup. After setup, these wait for the timelock: role grants, revoking the manager, admin hand-over, the custodian, lowering the notice or the wind-down delay, upgrades, the token's compliance and verifier swaps, and oracle config changes other than a shorter freshness window. Revoking the treasury or the guardian stays instant, because taking a power away moves no value. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
+| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin, finish each contract's one-time setup, co-sign compliance's `legal_transfer` and `recover_balance` as the share token's admin. After setup, these wait for the timelock: role grants, revoking the manager, admin hand-over, the custodian, lowering the notice or the wind-down delay, upgrades, the token's compliance and verifier swaps, and oracle config changes other than a shorter freshness window. Revoking the treasury or the guardian stays instant, because taking a power away moves no value. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
 | **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `pause_nav` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
 | **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve); `fund` (returns assets from custodian). | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
 | **Attester** | High-security attestation multisig | `attest` (submits NAV report with proof reference). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
-| **Compliance** | Legal / KYC operator multisig | Manage allowlist (`allow`), topic claims; token interventions (`freeze`, `forced_transfer`, `recovery`). | **Cannot touch vault reserve**; cannot pause vault operations; cannot bypass exit-only cash redemptions for an unfrozen holder — freezing holds a covered claim until it lifts, rather than paying or redirecting it. |
+| **Compliance** | Legal / KYC operator multisig | Manage allowlist (`allow`), topic claims; token interventions (`freeze`; `legal_transfer` and `recovery` co-signed by governance). | **Cannot touch vault reserve**; cannot move a holder's shares without governance's signature in the same call; cannot move shares out of or into the vault's address, or freeze it once the token knows its vault (an earlier freeze makes the vault's `finish_setup` refuse); cannot pause vault operations; cannot bypass exit-only cash redemptions for an unfrozen holder — freezing holds a covered claim until it lifts, rather than paying or redirecting it. |
 | **Manager** | Operational keeper account / vault | `close_epoch` (vault); `mint`, `burn`, `forced_transfer` (share token). | **Cannot choose prices**; cannot prevent epoch fulfillment; cannot alter timelocks. |
 | **Permissionless** | Any caller / keeper / investor | `fulfill_epoch`, `request_deposit`, `cancel_deposit`, `claim_deposit`, `request_redeem`, `cancel_redeem`, `claim_redeem`, `activate_wind_down`, `finalize_wind_down_round`, `claim_wind_down`. | Operations are strictly constrained by contract state, timing, and solvency guards. |
 
@@ -258,8 +259,10 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`ShareToken`** | `unpause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
 | **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `forced_transfer` | Manager (Vault) or Compliance | `#[only_any_role(operator, ["manager", "compliance"])]` | Bypasses token pause |
-| **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens`, `recover_balance` | Compliance | `#[only_role(operator, "compliance")]` | No |
+| **`ShareToken`** | `forced_transfer` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `legal_transfer` | Compliance, co-signed by Governance (token admin) | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address; the destination passes `verify_identity`; a reference of 1–128 bytes | Bypasses token pause |
+| **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens` | Compliance | `#[only_role(operator, "compliance")]`; never freezes the vault's address once the token knows its vault | No |
+| **`ShareToken`** | `recover_balance` | Compliance, co-signed by Governance (token admin) | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address | No |
 | **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `#[only_admin]`; instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `bind_vault` | Governance (token admin) | `#[only_admin]`; during setup, once | No |
 | **`ShareToken`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
@@ -288,7 +291,7 @@ A clean deployment executes in three sequenced phases:
    - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
    - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap.
-   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place and the token has no shares outstanding, and with `AdminTransferPending` while an admin hand-over offered during setup is pending. The vault takes no deposit before it.
+   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it, and with `AdminTransferPending` while an admin hand-over offered during setup is pending. The vault takes no deposit before it.
 3. **Phase 3: Operational Parameterization**
    - Oracle reporter submits the genesis NAV attestation (`attest`).
 
@@ -304,7 +307,7 @@ instance is archived refuses every call.
 |---|---|---|---|
 | `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once less than 29 days remain |
 | `nav_oracle` | Its instance, the latest report, and each pending governance change it reads or writes | `attest` extends the instance and the report; `bind_vault`, `finish_setup`, `grant_role`, `transfer_admin_role`, `propose_change`, `cancel_change` and `apply_change` extend the instance; every other call extends whichever entry it reads or writes | Same |
-| `share_token` | Its instance, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change` | Same |
+| `share_token` | Its instance, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change` | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
 
