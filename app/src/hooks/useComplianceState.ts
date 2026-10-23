@@ -54,12 +54,10 @@ export function useComplianceState({
 	verifier,
 	target,
 	destination,
-	active = true,
 }: {
 	verifier: string | null
 	target: string | undefined
 	destination: string | undefined
-	active?: boolean
 }): { target: TargetState; destination: Allowance } {
 	const { data } = useQuery({
 		queryKey: [...complianceReadsKey, verifier, target],
@@ -68,7 +66,7 @@ export function useComplianceState({
 				? skipToken
 				: () => fetchTargetReads(verifier, target),
 		staleTime: 30_000,
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
 	const { data: destinationAllowance } = useQuery(
 		allowanceQuery(verifier, destination),

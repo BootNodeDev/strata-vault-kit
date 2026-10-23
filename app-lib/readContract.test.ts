@@ -12,28 +12,31 @@ import {
 	readPendingAdmins,
 } from "./readContract"
 
-const {
-	getLedgerEntriesMock,
-	getLatestLedgerMock,
-	getHealthMock,
-	getEventsMock,
-} = vi.hoisted(() => ({
-	getLedgerEntriesMock: vi.fn(),
-	getLatestLedgerMock: vi.fn(),
-	getHealthMock: vi.fn(),
-	getEventsMock: vi.fn(),
+const { getLedgerEntriesMock, getHealthMock, getEventsMock } = vi.hoisted(
+	() => ({
+		getLedgerEntriesMock: vi.fn(),
+		getHealthMock: vi.fn(),
+		getEventsMock: vi.fn(),
+	}),
+)
+
+vi.mock("./rpc", () => ({
+	server: {
+		getLedgerEntries: getLedgerEntriesMock,
+		getHealth: getHealthMock,
+		getEvents: getEventsMock,
+	},
 }))
 
-vi.mock("@stellar/stellar-sdk/rpc", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("@stellar/stellar-sdk/rpc")>()
-	class MockServer {
-		getLedgerEntries = getLedgerEntriesMock
-		getLatestLedger = getLatestLedgerMock
-		getHealth = getHealthMock
-		getEvents = getEventsMock
-	}
-	return { ...actual, Server: MockServer }
+const health = (
+	latestLedger: number,
+	latestLedgerCloseTime = "1700000000",
+) => ({
+	status: "healthy",
+	latestLedger,
+	latestLedgerCloseTime,
+	oldestLedger: 1,
+	ledgerRetentionWindow: 120_960,
 })
 
 const errorSimulation: Api.SimulateTransactionErrorResponse = {
@@ -182,7 +185,7 @@ function entryFor(
 describe("readEpochRequests", () => {
 	beforeEach(() => {
 		getLedgerEntriesMock.mockReset()
-		getLatestLedgerMock.mockReset()
+		getHealthMock.mockReset()
 	})
 
 	it("returns an empty map and makes no RPC calls for an empty epoch list", async () => {
@@ -190,12 +193,11 @@ describe("readEpochRequests", () => {
 
 		expect(result.size).toBe(0)
 		expect(getLedgerEntriesMock).not.toHaveBeenCalled()
-		expect(getLatestLedgerMock).not.toHaveBeenCalled()
+		expect(getHealthMock).not.toHaveBeenCalled()
 	})
 
 	it("builds the Epoch, UserDeposit and UserRedeem keys from the documented DataKey encoding", async () => {
 		getLedgerEntriesMock.mockResolvedValue({ entries: [], latestLedger: 100 })
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		await readEpochRequests(CONTRACT_ID, CONTROLLER, [5n])
 
@@ -209,7 +211,6 @@ describe("readEpochRequests", () => {
 
 	it("chunks 67 epochs into two getLedgerEntries requests, 66 epochs then 1", async () => {
 		getLedgerEntriesMock.mockResolvedValue({ entries: [], latestLedger: 100 })
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const epochIds = Array.from({ length: 67 }, (_, i) => BigInt(i + 1))
 		await readEpochRequests(CONTRACT_ID, CONTROLLER, epochIds)
@@ -228,7 +229,6 @@ describe("readEpochRequests", () => {
 			],
 			latestLedger: 100,
 		})
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, [5n])
 
@@ -244,7 +244,6 @@ describe("readEpochRequests", () => {
 			entries: [entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 1000)],
 			latestLedger: 100,
 		})
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, [5n])
 
@@ -260,11 +259,11 @@ describe("readEpochRequests", () => {
 			entries: [entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 50)],
 			latestLedger: 100,
 		})
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, [5n])
 
 		expect(result.get(5n)?.epoch).toEqual({ kind: "archived" })
+		expect(getHealthMock).not.toHaveBeenCalled()
 	})
 
 	it("maps epoch and request entries reporting a TTL of 0 to archived", async () => {
@@ -276,7 +275,6 @@ describe("readEpochRequests", () => {
 			],
 			latestLedger: 100,
 		})
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, [5n])
 
@@ -292,7 +290,6 @@ describe("readEpochRequests", () => {
 			entries: [entryFor(EPOCH_5_KEY_XDR, xdr.ScVal.scvBool(true), 1000)],
 			latestLedger: 100,
 		})
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, [5n])
 
@@ -303,7 +300,6 @@ describe("readEpochRequests", () => {
 		getLedgerEntriesMock
 			.mockRejectedValueOnce(new Error("network down"))
 			.mockResolvedValueOnce({ entries: [], latestLedger: 100 })
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const epochIds = Array.from({ length: 67 }, (_, i) => BigInt(i + 1))
 		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, epochIds)
@@ -319,28 +315,12 @@ describe("readEpochRequests", () => {
 			redeem: { kind: "value", value: null },
 		})
 	})
-
-	it("treats a present entry as unreadable, not value, when the current ledger sequence is unknown", async () => {
-		getLedgerEntriesMock.mockResolvedValue({
-			entries: [entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 1000)],
-			latestLedger: 100,
-		})
-		getLatestLedgerMock.mockRejectedValue(new Error("network down"))
-
-		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, [5n])
-
-		expect(result.get(5n)).toEqual({
-			epoch: { kind: "unreadable" },
-			deposit: { kind: "value", value: null },
-			redeem: { kind: "value", value: null },
-		})
-	})
 })
 
 describe("readEpochs", () => {
 	beforeEach(() => {
 		getLedgerEntriesMock.mockReset()
-		getLatestLedgerMock.mockReset()
+		getHealthMock.mockReset()
 	})
 
 	it("returns an empty map and makes no RPC calls for an empty epoch list", async () => {
@@ -352,7 +332,6 @@ describe("readEpochs", () => {
 
 	it("sends only the Epoch key, with no request keys", async () => {
 		getLedgerEntriesMock.mockResolvedValue({ entries: [], latestLedger: 100 })
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		await readEpochs(CONTRACT_ID, [5n])
 
@@ -367,7 +346,6 @@ describe("readEpochs", () => {
 			entries: [entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 1000)],
 			latestLedger: 100,
 		})
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const result = await readEpochs(CONTRACT_ID, [5n, 6n])
 
@@ -380,11 +358,11 @@ describe("readEpochs", () => {
 			entries: [entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 50)],
 			latestLedger: 100,
 		})
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const result = await readEpochs(CONTRACT_ID, [5n])
 
 		expect(result.get(5n)).toEqual({ kind: "archived" })
+		expect(getHealthMock).not.toHaveBeenCalled()
 	})
 
 	it("reports an entry whose TTL is 0 as archived", async () => {
@@ -392,7 +370,6 @@ describe("readEpochs", () => {
 			entries: [entryFor(EPOCH_5_KEY_XDR, openEpochScVal, 0)],
 			latestLedger: 100,
 		})
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const result = await readEpochs(CONTRACT_ID, [5n])
 
@@ -401,7 +378,6 @@ describe("readEpochs", () => {
 
 	it("packs 201 epochs into two requests of 200 and 1", async () => {
 		getLedgerEntriesMock.mockResolvedValue({ entries: [], latestLedger: 100 })
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const epochIds = Array.from({ length: 201 }, (_, i) => BigInt(i + 1))
 		await readEpochs(CONTRACT_ID, epochIds)
@@ -415,7 +391,6 @@ describe("readEpochs", () => {
 		getLedgerEntriesMock
 			.mockRejectedValueOnce(new Error("network down"))
 			.mockResolvedValueOnce({ entries: [], latestLedger: 100 })
-		getLatestLedgerMock.mockResolvedValue({ sequence: 100 })
 
 		const epochIds = Array.from({ length: 201 }, (_, i) => BigInt(i + 1))
 		const result = await readEpochs(CONTRACT_ID, epochIds)
@@ -427,20 +402,24 @@ describe("readEpochs", () => {
 
 describe("readLedgerTime", () => {
 	beforeEach(() => {
-		getLatestLedgerMock.mockReset()
+		getHealthMock.mockReset()
 	})
 
 	it("returns the close time of the latest ledger in seconds", async () => {
-		getLatestLedgerMock.mockResolvedValue({
-			sequence: 100,
-			closeTime: "1700000000",
-		})
+		getHealthMock.mockResolvedValue(health(100, "1700000000"))
 
 		expect(await readLedgerTime()).toBe(1_700_000_000n)
 	})
 
 	it("is null when the RPC cannot be reached", async () => {
-		getLatestLedgerMock.mockRejectedValue(new Error("network down"))
+		getHealthMock.mockRejectedValue(new Error("network down"))
+
+		expect(await readLedgerTime()).toBeNull()
+	})
+
+	it("is null when the RPC does not report the close time", async () => {
+		const { latestLedgerCloseTime: _, ...withoutCloseTime } = health(100)
+		getHealthMock.mockResolvedValue(withoutCloseTime)
 
 		expect(await readLedgerTime()).toBeNull()
 	})
@@ -735,15 +714,12 @@ const archivalEntry = (maxEntryTtl: number): Api.LedgerEntryResult => ({
 describe("readPendingAdmins", () => {
 	beforeEach(() => {
 		getLedgerEntriesMock.mockReset()
-		getLatestLedgerMock.mockReset()
-		getLatestLedgerMock.mockResolvedValue({
-			sequence: 1_000,
-			closeTime: "1700000000",
-		})
+		getHealthMock.mockReset()
+		getHealthMock.mockResolvedValue(health(1_000, "1700000000"))
 	})
 
 	it("asks for each contract's temporary PendingAdmin entry and the archival limits", async () => {
-		getLedgerEntriesMock.mockResolvedValue({ entries: [] })
+		getLedgerEntriesMock.mockResolvedValue({ entries: [], latestLedger: 1_000 })
 
 		await readPendingAdmins([CONTRACT_ID, ORACLE_ID])
 
@@ -760,6 +736,7 @@ describe("readPendingAdmins", () => {
 	it("decodes a live transfer with the ledger it was read at and the furthest allowed expiry", async () => {
 		getLedgerEntriesMock.mockResolvedValue({
 			entries: [pendingEntry(CONTRACT_ID, 1_500), archivalEntry(100_000)],
+			latestLedger: 1_000,
 		})
 
 		const read = await readPendingAdmins([CONTRACT_ID, ORACLE_ID])
@@ -786,6 +763,7 @@ describe("readPendingAdmins", () => {
 	it("reads a transfer past its live_until_ledger as expired while the entry lingers", async () => {
 		getLedgerEntriesMock.mockResolvedValue({
 			entries: [pendingEntry(CONTRACT_ID, 900, 1_200)],
+			latestLedger: 1_000,
 		})
 
 		const read = await readPendingAdmins([CONTRACT_ID])
@@ -799,6 +777,7 @@ describe("readPendingAdmins", () => {
 	it("reads an entry whose TTL lapsed as no transfer", async () => {
 		getLedgerEntriesMock.mockResolvedValue({
 			entries: [pendingEntry(CONTRACT_ID, 900)],
+			latestLedger: 1_000,
 		})
 
 		const read = await readPendingAdmins([CONTRACT_ID])
@@ -811,6 +790,7 @@ describe("readPendingAdmins", () => {
 	it("reads an entry whose TTL is 0 as no transfer", async () => {
 		getLedgerEntriesMock.mockResolvedValue({
 			entries: [pendingEntry(CONTRACT_ID, 1_500, 0)],
+			latestLedger: 1_000,
 		})
 
 		const read = await readPendingAdmins([CONTRACT_ID])
@@ -838,6 +818,7 @@ describe("readPendingAdmins", () => {
 			entries: [
 				entryFor(pendingAdminKey(CONTRACT_ID).toXDR("base64"), val, 1_500),
 			],
+			latestLedger: 1_000,
 		})
 
 		expect(await readPendingAdmins([CONTRACT_ID])).toEqual({
@@ -847,9 +828,16 @@ describe("readPendingAdmins", () => {
 
 	it.each([
 		["the entries", () => getLedgerEntriesMock.mockRejectedValue(new Error())],
-		["the ledger", () => getLatestLedgerMock.mockRejectedValue(new Error())],
+		["the ledger", () => getHealthMock.mockRejectedValue(new Error())],
+		[
+			"the close time",
+			() => {
+				const { latestLedgerCloseTime: _, ...withoutCloseTime } = health(1_000)
+				getHealthMock.mockResolvedValue(withoutCloseTime)
+			},
+		],
 	])("is unreadable when %s cannot be read", async (_, fail) => {
-		getLedgerEntriesMock.mockResolvedValue({ entries: [] })
+		getLedgerEntriesMock.mockResolvedValue({ entries: [], latestLedger: 1_000 })
 		fail()
 
 		expect(await readPendingAdmins([CONTRACT_ID])).toEqual({
@@ -891,8 +879,7 @@ const storageEntry = (name: string, val: xdr.ScVal) =>
 describe("readContractAdmin", () => {
 	beforeEach(() => {
 		getLedgerEntriesMock.mockReset()
-		getLatestLedgerMock.mockReset()
-		getLatestLedgerMock.mockResolvedValue({ sequence: 1_000 })
+		getHealthMock.mockReset()
 	})
 
 	it("reads the admin from the contract instance's storage", async () => {
@@ -903,6 +890,7 @@ describe("readContractAdmin", () => {
 					storageEntry("Admin", Address.fromString(PENDING).toScVal()),
 				]),
 			],
+			latestLedger: 1_000,
 		})
 
 		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
@@ -923,6 +911,7 @@ describe("readContractAdmin", () => {
 					0,
 				),
 			],
+			latestLedger: 1_000,
 		})
 
 		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
@@ -939,13 +928,18 @@ describe("readContractAdmin", () => {
 					999,
 				),
 			],
+			latestLedger: 1_000,
 		})
 
 		expect(await readContractAdmin(CONTRACT_ID)).toEqual({ kind: "archived" })
+		expect(getHealthMock).not.toHaveBeenCalled()
 	})
 
 	it("reads no admin when the instance holds none", async () => {
-		getLedgerEntriesMock.mockResolvedValue({ entries: [instanceEntry([])] })
+		getLedgerEntriesMock.mockResolvedValue({
+			entries: [instanceEntry([])],
+			latestLedger: 1_000,
+		})
 
 		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
 			kind: "value",
@@ -956,6 +950,7 @@ describe("readContractAdmin", () => {
 	it("reports a malformed admin as unreadable", async () => {
 		getLedgerEntriesMock.mockResolvedValue({
 			entries: [instanceEntry([storageEntry("Admin", xdr.ScVal.scvU32(7))])],
+			latestLedger: 1_000,
 		})
 
 		expect(await readContractAdmin(CONTRACT_ID)).toEqual({

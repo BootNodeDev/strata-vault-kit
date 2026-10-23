@@ -41,7 +41,7 @@ const CycleSection: React.FC<{
 	contracts?: React.ReactNode
 	active?: boolean
 }> = ({ grants, wallet, contracts, active = true }) => {
-	const { cycle } = useCycleState({ active })
+	const { cycle } = useCycleState()
 	const { history } = useEpochHistory()
 	const { cycleEvents } = useCycleEvents()
 	const { balance } = useDepositBalance()

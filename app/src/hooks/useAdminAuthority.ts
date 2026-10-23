@@ -16,7 +16,9 @@ import {
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query"
-import { asyncVault } from "../config/clients"
+import { useMemo } from "react"
+import { addresses as configured } from "../config/addresses"
+import { asyncVault, navOracle, shareToken } from "../config/clients"
 import { vaultContractId } from "../config/contracts"
 import { pendingAdminsQuery } from "./pendingAdmins"
 import { useWallet } from "./useWallet"
@@ -64,6 +66,7 @@ export interface AdminAuthority {
 	grantedBy: Record<AdminSurface, Grant[]>
 	grants: Grant[]
 	signersUnknown: boolean
+	signersLoading: boolean
 	verifierAdminUnknown: boolean
 	addresses: AdminAddresses
 	holders: RoleHolders
@@ -132,6 +135,7 @@ const emptyAuthority = (
 	grantedBy: emptyGrantedBy(),
 	grants: [],
 	signersUnknown: false,
+	signersLoading: false,
 	verifierAdminUnknown: false,
 	addresses,
 	holders: emptyHolders(),
@@ -250,20 +254,23 @@ const pendingAdminOf = (
 		: [transfer.address]
 }
 
-async function readSigners(
-	holders: RoleHolders,
-): Promise<{ byAccount: Record<string, AccountSigners>; unknown: boolean }> {
+const signerAccounts = (holders: RoleHolders): string[] => {
 	const accounts = new Set<string>()
 	for (const role of ROLE_LABELS) {
 		for (const holder of holders[role]) {
 			if (holder.startsWith("G")) accounts.add(holder)
 		}
 	}
+	return [...accounts]
+}
 
+async function readSigners(
+	accounts: string[],
+): Promise<{ byAccount: Record<string, AccountSigners>; unknown: boolean }> {
 	const byAccount: Record<string, AccountSigners> = {}
 	let unknown = false
 	const results = await Promise.all(
-		[...accounts].map(async (account) => ({
+		accounts.map(async (account) => ({
 			account,
 			signers: await accountSigners(account),
 		})),
@@ -294,10 +301,22 @@ async function readVerifier(
 	}
 }
 
-async function fetchAdminAuthority(
-	wallet: string,
-	queryClient: QueryClient,
-): Promise<AdminAuthority> {
+type HoldersRead =
+	| { status: "unreadable"; addresses: AdminAddresses }
+	| {
+			status: "ready"
+			addresses: AdminAddresses
+			holders: RoleHolders
+			verifierAdminUnknown: boolean
+	  }
+
+const oracleReader = (address: string) =>
+	address === configured.nav_oracle ? navOracle() : connectNavOracle(address)
+
+const tokenReader = (address: string) =>
+	address === configured.share_token ? shareToken() : connectShareToken(address)
+
+async function fetchHolders(queryClient: QueryClient): Promise<HoldersRead> {
 	const [
 		governance,
 		manager,
@@ -315,15 +334,18 @@ async function fetchAdminAuthority(
 	])
 
 	if (!isValue(oracleAddress) || !isValue(shareTokenAddress)) {
-		return emptyAuthority("unreadable", {
-			oracle: toAddressOrNull(oracleAddress),
-			shareToken: toAddressOrNull(shareTokenAddress),
-			identityVerifier: null,
-		})
+		return {
+			status: "unreadable",
+			addresses: {
+				oracle: toAddressOrNull(oracleAddress),
+				shareToken: toAddressOrNull(shareTokenAddress),
+				identityVerifier: null,
+			},
+		}
 	}
 
-	const oraclePromise = connectNavOracle(oracleAddress.value)
-	const tokenPromise = connectShareToken(shareTokenAddress.value)
+	const oraclePromise = oracleReader(oracleAddress.value)
+	const tokenPromise = tokenReader(shareTokenAddress.value)
 
 	const [
 		oracleAttesters,
@@ -371,8 +393,7 @@ async function fetchAdminAuthority(
 		tokenManager,
 		tokenAdmin,
 	]
-	if (roleReads.some(isUnreadable))
-		return emptyAuthority("unreadable", addresses)
+	if (roleReads.some(isUnreadable)) return { status: "unreadable", addresses }
 
 	const holders: RoleHolders = {
 		"vault governance": asHolders(governance),
@@ -394,16 +415,13 @@ async function fetchAdminAuthority(
 			shareTokenAddress.value,
 		),
 	}
-	const { byAccount, unknown } = await readSigners(holders)
 
 	return {
 		status: "ready",
-		...toSurfaces(wallet, holders, byAccount),
-		signersUnknown: unknown,
-		verifierAdminUnknown:
-			verifier.admin === undefined || !isValue(verifier.admin),
 		addresses,
 		holders,
+		verifierAdminUnknown:
+			verifier.admin === undefined || !isValue(verifier.admin),
 	}
 }
 
@@ -413,15 +431,33 @@ export function useAdminAuthority(): AdminAuthority {
 	const { address } = useWallet()
 	const queryClient = useQueryClient()
 	const { data } = useQuery({
-		queryKey: [...adminAuthorityKey, address],
+		queryKey: [...adminAuthorityKey, "holders"],
 		queryFn:
-			address === undefined
-				? skipToken
-				: () => fetchAdminAuthority(address, queryClient),
+			address === undefined ? skipToken : () => fetchHolders(queryClient),
+		staleTime: 30_000,
+		refetchOnWindowFocus: false,
+	})
+	const accounts = data?.status === "ready" ? signerAccounts(data.holders) : []
+	const { data: signers } = useQuery({
+		queryKey: [...adminAuthorityKey, "signers", accounts],
+		queryFn: data?.status === "ready" ? () => readSigners(accounts) : skipToken,
 		staleTime: 30_000,
 		refetchOnWindowFocus: false,
 	})
 
-	if (address === undefined) return emptyAuthority("disconnected")
-	return data ?? emptyAuthority("checking")
+	return useMemo(() => {
+		if (address === undefined) return emptyAuthority("disconnected")
+		if (data === undefined) return emptyAuthority("checking")
+		if (data.status === "unreadable")
+			return emptyAuthority("unreadable", data.addresses)
+		return {
+			status: "ready",
+			...toSurfaces(address, data.holders, signers?.byAccount ?? {}),
+			signersUnknown: signers?.unknown ?? false,
+			signersLoading: signers === undefined,
+			verifierAdminUnknown: data.verifierAdminUnknown,
+			addresses: data.addresses,
+			holders: data.holders,
+		}
+	}, [address, data, signers])
 }

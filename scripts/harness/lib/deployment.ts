@@ -1,4 +1,10 @@
-import { readFileSync, writeFileSync } from "node:fs"
+import {
+	existsSync,
+	readFileSync,
+	renameSync,
+	statSync,
+	writeFileSync,
+} from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -30,8 +36,11 @@ export const PACKAGE_ROOT = resolve(
 )
 export const REPO_ROOT = resolve(PACKAGE_ROOT, "..", "..")
 
-export function deploymentFile(network: NetworkName): string {
-	return join(PACKAGE_ROOT, `deployed.${network}.json`)
+export function deploymentFile(
+	network: NetworkName,
+	dir = PACKAGE_ROOT,
+): string {
+	return join(dir, `deployed.${network}.json`)
 }
 
 const README_START = "<!-- deployed-addresses:start -->"
@@ -102,15 +111,47 @@ export function syncEnvironmentsStaging(record: Deployment): void {
 	writeFileSync(envPath, content)
 }
 
-export function saveDeployment(record: Deployment): void {
-	writeFileSync(
-		deploymentFile(record.network),
-		`${JSON.stringify(record, null, 2)}\n`,
-	)
+function recordedTime(file: string): unknown {
+	try {
+		const record = JSON.parse(readFileSync(file, "utf8")) as {
+			deployedAt?: unknown
+		} | null
+		return record?.deployedAt
+	} catch {
+		return undefined
+	}
+}
+
+function deployedAt(file: string): Date {
+	const recorded = recordedTime(file)
+	return typeof recorded === "string" && !Number.isNaN(Date.parse(recorded))
+		? new Date(recorded)
+		: statSync(file).mtime
+}
+
+function keepPrevious(file: string): string | undefined {
+	if (!existsSync(file)) return undefined
+	const stamp = deployedAt(file).toISOString().replaceAll(/[:.]/g, "-")
+	const base = file.replace(/\.json$/, `.${stamp}`)
+	let kept = `${base}.json`
+	for (let n = 1; existsSync(kept); n += 1) kept = `${base}-${n}.json`
+	renameSync(file, kept)
+	return kept
+}
+
+// Returns where the previous record was kept, if there was one.
+export function saveDeployment(
+	record: Deployment,
+	dir = PACKAGE_ROOT,
+): string | undefined {
+	const file = deploymentFile(record.network, dir)
+	const kept = keepPrevious(file)
+	writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`)
 	if (record.network === "testnet") {
 		syncEnvironmentsStaging(record)
 		syncReadmeAddresses(record)
 	}
+	return kept
 }
 
 export function loadDeployment(network: NetworkName): Deployment {
