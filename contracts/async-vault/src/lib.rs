@@ -190,9 +190,10 @@ impl AsyncVault {
     }
 
     /// Instant during setup; afterwards the custodian changes through the
-    /// timelock.
+    /// timelock. Never the vault itself (`InvalidCustodian`).
     #[only_admin]
     pub fn set_custodian(e: &Env, custodian: Address) {
+        guards::custodian_not_the_vault(e, &custodian);
         guards::direct_change_allowed(e);
         treasury::set_custodian(e, &custodian);
     }
@@ -270,7 +271,8 @@ impl AsyncVault {
 
     /// Ends the window in which admin changes are instant. Needs every wiring
     /// check `health()` reports (token, oracle and compliance bound, sole token
-    /// manager, allowlisted, not frozen), no shares outstanding and no admin
+    /// manager, allowlisted, not frozen, matching decimals, distinct addresses,
+    /// a feed that answers, a custodian), no shares outstanding and no admin
     /// hand-over pending. Deposits open from here on, and it never reopens.
     #[only_admin]
     pub fn finish_setup(e: &Env) {

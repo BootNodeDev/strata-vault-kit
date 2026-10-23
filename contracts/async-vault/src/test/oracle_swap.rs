@@ -15,6 +15,10 @@ impl FeedStub {
     pub fn state(_e: Env) -> strata_bindings::OracleState {
         strata_bindings::OracleState::Valid
     }
+
+    pub fn freshness_duration(_e: Env) -> u64 {
+        3_600
+    }
 }
 
 #[contractimpl(contracttrait)]
@@ -153,6 +157,27 @@ fn a_feed_that_stops_naming_this_vault_is_never_installed() {
         .propose_change(&VaultChange::Oracle(stub.address.clone()));
 
     stub.report(&Some(Address::generate(&f.e)));
+    f.advance(MIN_UPGRADE_DELAY);
+
+    refused(f.vault.try_apply_change(&id), VaultError::FeedNotBound);
+    assert_eq!(f.vault.oracle(), f.oracle.address);
+}
+
+#[test]
+fn a_contract_that_is_not_a_feed_is_refused_when_proposed_and_when_applied() {
+    let f = setup();
+    // Bound to this vault with its setup closed, but it answers no feed view.
+    let change = VaultChange::Oracle(f.share.compliance());
+
+    refused(
+        f.vault.try_propose_change(&change),
+        VaultError::FeedNotBound,
+    );
+
+    // Skips the proposal's check, as a change queued by an earlier version would.
+    let id = f.e.as_contract(&f.vault.address, || {
+        strata_timelock::queue::propose::<AsyncVault, _>(&f.e, &change).unwrap()
+    });
     f.advance(MIN_UPGRADE_DELAY);
 
     refused(f.vault.try_apply_change(&id), VaultError::FeedNotBound);

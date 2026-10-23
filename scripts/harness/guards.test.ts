@@ -332,6 +332,24 @@ describe("the vault after setup", () => {
 		expect((await reader.custodian()).result).toBe(custodian.publicKey())
 	})
 
+	it("governance cannot make the vault its own custodian", async () => {
+		const v = vault(c, governance)
+		const vaultId = c.deployment.contracts.async_vault
+		expectRefused(
+			await v.set_custodian({ custodian: vaultId }),
+			v,
+			"InvalidCustodian",
+		)
+		expectRefused(
+			await v.propose_change({
+				change: { tag: "Custodian", values: [vaultId] },
+			}),
+			v,
+			"InvalidCustodian",
+		)
+		expect((await reader.custodian()).result).toBe(custodian.publicKey())
+	})
+
 	it("queues a custodian change behind its delay", async () => {
 		const v = vault(c, governance)
 		const id = await send(
