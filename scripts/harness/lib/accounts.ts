@@ -31,12 +31,6 @@ export const ACCOUNT_NAMES = [
 export type AccountName = (typeof ACCOUNT_NAMES)[number]
 export type Accounts = Record<AccountName, Keypair>
 
-export function freshAccounts(): Accounts {
-	return Object.fromEntries(
-		ACCOUNT_NAMES.map((name) => [name, Keypair.random()]),
-	) as Accounts
-}
-
 export async function submit(
 	server: rpc.Server,
 	tx: Transaction,
@@ -119,17 +113,32 @@ async function awaitVisible(
 	}
 }
 
+async function exists(server: rpc.Server, publicKey: string): Promise<boolean> {
+	try {
+		await server.getAccount(publicKey)
+		return true
+	} catch {
+		return false
+	}
+}
+
 export async function fund(
 	net: Network,
 	server: rpc.Server,
 	keys: readonly Keypair[],
-): Promise<void> {
-	if (net.funding.kind === "root") {
-		await fundFromRoot(net, server, net.funding.secret, keys)
-	} else {
-		await fundFromFriendbot(net.funding.url, keys)
+): Promise<number> {
+	const missing: Keypair[] = []
+	for (const key of keys) {
+		if (!(await exists(server, key.publicKey()))) missing.push(key)
 	}
-	for (const key of keys) await awaitVisible(server, key.publicKey())
+	if (missing.length === 0) return 0
+	if (net.funding.kind === "root") {
+		await fundFromRoot(net, server, net.funding.secret, missing)
+	} else {
+		await fundFromFriendbot(net.funding.url, missing)
+	}
+	for (const key of missing) await awaitVisible(server, key.publicKey())
+	return missing.length
 }
 
 async function operate(

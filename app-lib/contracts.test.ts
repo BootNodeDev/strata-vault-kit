@@ -1,20 +1,60 @@
-import { beforeEach, describe, expect, it, vi } from "vitest"
-
-const { fromMock } = vi.hoisted(() => ({ fromMock: vi.fn() }))
-
-vi.mock("@stellar/stellar-sdk/contract", async (importOriginal) => {
-	const actual =
-		await importOriginal<typeof import("@stellar/stellar-sdk/contract")>()
-	return { ...actual, Client: { from: fromMock } }
-})
-
+import type { ClientOptions } from "@stellar/stellar-sdk/contract"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { Client as GeneratedClient } from "../vitest.clients"
 import {
+	connectAsset,
 	connectAsyncVault,
 	connectIdentityVerifier,
 	connectNavOracle,
 	connectShareToken,
 	type Signer,
 } from "./contracts"
+import { server } from "./rpc"
+
+const optionsOf = (client: unknown): ClientOptions => {
+	if (!(client instanceof GeneratedClient))
+		throw new Error("not built from the generated bindings")
+	return client.options
+}
+
+describe.each([
+	{ name: "connectAsyncVault", connect: connectAsyncVault },
+	{ name: "connectNavOracle", connect: connectNavOracle },
+	{ name: "connectShareToken", connect: connectShareToken },
+	{ name: "connectIdentityVerifier", connect: connectIdentityVerifier },
+	{ name: "connectAsset", connect: connectAsset },
+] satisfies {
+	name: string
+	connect: (contractId: string, signer?: Signer) => Promise<unknown>
+}[])("$name", ({ connect }) => {
+	const fetchMock = vi.fn()
+
+	beforeEach(() => {
+		fetchMock.mockReset()
+		vi.stubGlobal("fetch", fetchMock)
+	})
+	afterEach(() => vi.unstubAllGlobals())
+
+	it("builds the client from the generated bindings without asking the RPC for the contract", async () => {
+		const options = optionsOf(await connect("CCONTRACT"))
+
+		expect(options.contractId).toBe("CCONTRACT")
+		expect(fetchMock).not.toHaveBeenCalled()
+	})
+
+	it("sends the client's calls through the shared RPC server", async () => {
+		const options = optionsOf(await connect("CCONTRACT"))
+
+		expect(options.server).toBe(server)
+	})
+
+	it("builds a read client with no publicKey or signTransaction when no signer is given", async () => {
+		const options = optionsOf(await connect("CCONTRACT"))
+
+		expect(options.publicKey).toBeUndefined()
+		expect(options.signTransaction).toBeUndefined()
+	})
+})
 
 describe.each([
 	{ name: "connectAsyncVault", connect: connectAsyncVault },
@@ -25,26 +65,13 @@ describe.each([
 	name: string
 	connect: (contractId: string, signer?: Signer) => Promise<unknown>
 }[])("$name", ({ connect }) => {
-	beforeEach(() => fromMock.mockClear())
-
-	it("builds a read client with no publicKey or signTransaction when no signer is given", async () => {
-		fromMock.mockResolvedValue({})
-
-		await connect("CCONTRACT")
-
-		const options = fromMock.mock.calls[0]?.[0]
-		expect(options.contractId).toBe("CCONTRACT")
-		expect(options.publicKey).toBeUndefined()
-		expect(options.signTransaction).toBeUndefined()
-	})
-
 	it("carries the connected address and signer when one is given", async () => {
-		fromMock.mockResolvedValue({})
 		const signTransaction = vi.fn()
 
-		await connect("CCONTRACT", { publicKey: "GSIGNER", signTransaction })
+		const options = optionsOf(
+			await connect("CCONTRACT", { publicKey: "GSIGNER", signTransaction }),
+		)
 
-		const options = fromMock.mock.calls[0]?.[0]
 		expect(options.publicKey).toBe("GSIGNER")
 		expect(options.signTransaction).toBe(signTransaction)
 	})

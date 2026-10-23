@@ -14,14 +14,14 @@ async function fetchTokenPause(): Promise<PauseState> {
 	return classifyPause(read)
 }
 
-export function useTokenPaused({ poll = false }: { poll?: boolean } = {}): {
+export function useTokenPaused(): {
 	pause: PauseState
 } {
 	const { data } = useQuery({
 		queryKey: tokenPausedKey,
 		queryFn: fetchTokenPause,
 		staleTime: 30_000,
-		refetchInterval: poll ? PAUSE_REFRESH_MS : false,
+		refetchInterval: PAUSE_REFRESH_MS,
 	})
 
 	return { pause: data ?? "checking" }

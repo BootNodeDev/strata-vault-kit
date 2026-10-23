@@ -37,6 +37,7 @@ import {
 	oracleLimitRows,
 	parseDuration,
 } from "./cycle"
+import { toCustodianRow } from "./vaultMetrics"
 
 export type FieldKey =
 	| "depositCap"
@@ -181,6 +182,10 @@ function parsed<T>(
 
 const known = <T>(value: T | null): T | undefined => value ?? undefined
 
+const UNSET = Symbol("unset")
+
+type Current<T> = T | typeof UNSET | undefined
+
 const bound = <T>(
 	label: string,
 	value: T | undefined,
@@ -193,14 +198,14 @@ const differs = (changed: boolean | undefined): Condition => ({
 	unchanged: true,
 })
 
-const changedFrom = <T>(arg: T | undefined, current: T | undefined) =>
+const changedFrom = <T>(arg: T | undefined, current: Current<T>) =>
 	arg === undefined || current === undefined ? undefined : arg !== current
 
 function single<Id extends ConfigurationAction["id"], T>(
 	id: Id,
 	label: string,
 	field: Parsed<T>,
-	current: T | undefined,
+	current: Current<T>,
 	bounds: Condition[],
 	outcome: string | null = null,
 ): Spec<Id> & { arg: T | undefined; next: string } {
@@ -239,7 +244,8 @@ const upgradeBound = (
 function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 	const cap = capOf(state)
 	const capField = parsed("depositCap", "Deposit cap", CAP, cap, inputs)
-	const custodian = known(state.custodian)
+	const custodian =
+		state.custodian.kind === "set" ? state.custodian.address : undefined
 	const notice = known(state.notice)
 	const noticeField = parsed("notice", "Notice", DURATION, notice, inputs)
 	const delay = known(state.windDownDelay)
@@ -263,7 +269,7 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 			"set-custodian",
 			"Set the custodian",
 			parsed("custodian", "Custodian", ANY_ADDRESS, custodian, inputs),
-			custodian,
+			state.custodian.kind === "unset" ? UNSET : custodian,
 			[],
 			EFFECTS.custodian,
 		),
@@ -538,7 +544,11 @@ export function toConfigurationGroups(
 					),
 				],
 			],
-			addresses: [addressRow("Custodian", values?.custodian ?? null, pending)],
+			addresses: [
+				values === null
+					? { label: "Custodian", address: null, pending }
+					: toCustodianRow(values.custodian),
+			],
 		},
 		{
 			title: "Oracle",
