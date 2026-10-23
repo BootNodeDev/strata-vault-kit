@@ -26,20 +26,20 @@ pub struct IdentityVerifier;
 impl IdentityVerifier {
     pub fn __constructor(e: &Env, admin: Address) {
         access_control::set_admin(e, &admin);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
     }
 
     /// Adds or removes an account from the allowlist.
     #[only_admin]
     pub fn allow(e: &Env, account: Address, allowed: bool, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
-        storage::set_persistent(e, &DataKey::Allowed(account), &allowed);
+        strata_storage::bump_instance(e);
+        strata_storage::set_persistent(e, &DataKey::Allowed(account), &allowed);
     }
 
     pub fn is_allowed(e: &Env, account: Address) -> bool {
-        storage::bump_instance(e);
-        storage::get_persistent(e, &DataKey::Allowed(account)).unwrap_or(false)
+        strata_storage::bump_instance(e);
+        strata_storage::get_persistent(e, &DataKey::Allowed(account)).unwrap_or(false)
     }
 }
 
@@ -48,9 +48,9 @@ impl identity_verification::IdentityVerifier for IdentityVerifier {
     /// The share token calls this on every mint and transfer, so it is what
     /// keeps the instance alive.
     fn verify_identity(e: &Env, account: &Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         let allowed: bool =
-            storage::get_persistent(e, &DataKey::Allowed(account.clone())).unwrap_or(false);
+            strata_storage::get_persistent(e, &DataKey::Allowed(account.clone())).unwrap_or(false);
         if !allowed {
             panic_with_error!(e, RWAError::IdentityVerificationFailed);
         }

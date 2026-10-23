@@ -13,7 +13,7 @@ pub const MAX_PENDING: u32 = 16;
 
 /// The ids of the changes waiting, oldest first.
 pub fn open_ids(e: &Env) -> Vec<u32> {
-    storage::get_instance(e, &Key::TimelockOpen).unwrap_or_else(|| Vec::new(e))
+    strata_storage::get_instance(e, &Key::TimelockOpen).unwrap_or_else(|| Vec::new(e))
 }
 
 pub fn pending<C>(e: &Env, id: u32) -> Option<(C, Schedule)>
@@ -21,7 +21,7 @@ where
     C: TryFromVal<Env, Val>,
     <C as TryFromVal<Env, Val>>::Error: Debug,
 {
-    storage::get_persistent(e, &Key::TimelockPending(id))
+    strata_storage::get_persistent(e, &Key::TimelockPending(id))
 }
 
 /// Queues a change behind the host's current delay and returns its id.
@@ -41,16 +41,16 @@ where
     if open.len() >= MAX_PENDING {
         return Err(Refusal::TooMany);
     }
-    let id: u32 = storage::get_instance(e, &Key::TimelockNextId).unwrap_or(1);
+    let id: u32 = strata_storage::get_instance(e, &Key::TimelockNextId).unwrap_or(1);
     let schedule = Schedule {
         proposed_at: e.ledger().timestamp(),
         delay: clock.delay,
         paused_secs: clock.paused_secs,
     };
-    storage::set_persistent(e, &Key::TimelockPending(id), &(change.clone(), schedule));
+    strata_storage::set_persistent(e, &Key::TimelockPending(id), &(change.clone(), schedule));
     open.push_back(id);
-    storage::set_instance(e, &Key::TimelockOpen, &open);
-    storage::set_instance(e, &Key::TimelockNextId, &(id + 1));
+    strata_storage::set_instance(e, &Key::TimelockOpen, &open);
+    strata_storage::set_instance(e, &Key::TimelockNextId, &(id + 1));
     Ok(id)
 }
 
@@ -74,7 +74,7 @@ fn remove(e: &Env, id: u32) -> Result<(), Refusal> {
     let mut open = open_ids(e);
     let index = open.first_index_of(id).ok_or(Refusal::NotFound)?;
     open.remove(index);
-    storage::set_instance(e, &Key::TimelockOpen, &open);
+    strata_storage::set_instance(e, &Key::TimelockOpen, &open);
     e.storage().persistent().remove(&Key::TimelockPending(id));
     Ok(())
 }

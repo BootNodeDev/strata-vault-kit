@@ -5,8 +5,8 @@ use soroban_sdk::{
 };
 use stellar_access::role_transfer::RoleTransferError;
 use stellar_tokens::rwa::compliance::ComplianceHook;
-use storage::INSTANCE_EXTEND_AMOUNT;
-use timelock::{Clock, DAY_DURATION, MIN_DELAY};
+use strata_storage::INSTANCE_EXTEND_AMOUNT;
+use strata_timelock::{Clock, DAY_DURATION, MIN_DELAY};
 
 use super::{age, instance_ttl};
 use crate::{
@@ -33,7 +33,7 @@ impl ClockStub {
 }
 
 #[contractimpl(contracttrait)]
-impl timelock::ClockSource for ClockStub {
+impl strata_timelock::ClockSource for ClockStub {
     fn timelock_clock(e: &Env) -> Clock {
         let reads = Self::reads(e.clone()) + 1;
         e.storage().instance().set(&symbol_short!("reads"), &reads);
@@ -186,13 +186,13 @@ fn an_address_that_reports_no_clock_cannot_be_bound() {
     assert_eq!(f.rules.vault(), None);
 }
 
-fn implements_the_vault_view<T: bindings::VaultBinding>() {}
+fn implements_the_vault_view<T: strata_bindings::VaultBinding>() {}
 
 #[test]
 fn the_contract_answers_the_view_the_vault_reads() {
     implements_the_vault_view::<Compliance>();
     let f = unbound();
-    let view = bindings::VaultBindingClient::new(&f.e, &f.rules.address);
+    let view = strata_bindings::VaultBindingClient::new(&f.e, &f.rules.address);
     assert_eq!(view.vault(), None);
     assert!(view.setup_open());
 

@@ -25,7 +25,7 @@ fn a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch() 
         f.e.events().all().filter_by_contract(&f.vault.address),
         [
             DepositConvertedToExit {
-                controller: investor.clone(),
+                holder: investor.clone(),
                 epoch,
                 into_epoch: open,
                 shares: 200,
@@ -116,7 +116,7 @@ fn in_a_wind_down_the_shares_are_credited_before_the_first_round() {
         f.e.events().all().filter_by_contract(&f.vault.address),
         [
             DepositConvertedToExit {
-                controller: investor.clone(),
+                holder: investor.clone(),
                 epoch,
                 into_epoch: 0,
                 shares: 200,
@@ -204,7 +204,7 @@ fn a_conversion_caught_by_a_wind_down_is_paid_from_the_rounds() {
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
         [RedemptionSurrendered {
-            controller: investor.clone(),
+            holder: investor.clone(),
             epoch: open,
             shares: 200,
         }

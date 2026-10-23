@@ -73,8 +73,8 @@ pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {
     net_deployed
 }
 
-pub(crate) fn fund(e: &Env, from: &Address, assets: i128) -> i128 {
-    from.require_auth();
+pub(crate) fn fund(e: &Env, caller: &Address, assets: i128) -> i128 {
+    caller.require_auth();
 
     if assets <= 0 {
         panic_with_error!(e, VaultError::InvalidAmount);
@@ -86,10 +86,10 @@ pub(crate) fn fund(e: &Env, from: &Address, assets: i128) -> i128 {
     state::set_net_deployed(e, net_deployed);
 
     let asset = state::get_addr(e, &DataKey::Asset);
-    TokenClient::new(e, &asset).transfer(from, e.current_contract_address(), &assets);
+    TokenClient::new(e, &asset).transfer(caller, e.current_contract_address(), &assets);
 
     Funded {
-        from: from.clone(),
+        caller: caller.clone(),
         assets,
         net_deployed,
     }

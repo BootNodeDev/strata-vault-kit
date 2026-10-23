@@ -413,11 +413,11 @@ fn the_vault_reports_its_clock_to_the_token_and_the_oracle() {
     f.vault.pause(&f.guardian);
     f.advance(DAY_DURATION);
 
-    let clock = timelock::ClockSourceClient::new(&f.e, &f.vault.address).timelock_clock();
+    let clock = strata_timelock::ClockSourceClient::new(&f.e, &f.vault.address).timelock_clock();
 
     assert_eq!(
         clock,
-        timelock::Clock {
+        strata_timelock::Clock {
             delay: MIN_UPGRADE_DELAY,
             exit_window: 0,
             paused_secs: DAY_DURATION,

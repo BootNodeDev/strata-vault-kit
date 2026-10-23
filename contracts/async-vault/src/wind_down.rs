@@ -14,12 +14,12 @@ use crate::treasury;
 
 /// Ninety days. Long enough for a real announcement period, short enough that
 /// governance cannot set a delay the vault would never outlive.
-pub const MAX_WIND_DOWN_DELAY: u64 = 90 * timelock::DAY_DURATION;
+pub const MAX_WIND_DOWN_DELAY: u64 = 90 * strata_timelock::DAY_DURATION;
 
 /// Seven days: holders always get a week's warning before a wind-down starts.
 /// It is also the delay when none was set.
 #[cfg(not(feature = "short_wind_down"))]
-pub const MIN_WIND_DOWN_DELAY: u64 = 7 * timelock::DAY_DURATION;
+pub const MIN_WIND_DOWN_DELAY: u64 = 7 * strata_timelock::DAY_DURATION;
 /// The local harness build activates a wind-down at once.
 #[cfg(feature = "short_wind_down")]
 pub const MIN_WIND_DOWN_DELAY: u64 = 0;
@@ -50,7 +50,7 @@ pub struct WindDownPosition {
 }
 
 pub(crate) fn delay(e: &Env) -> u64 {
-    storage::get_instance(e, &DataKey::WindDownDelay).unwrap_or(MIN_WIND_DOWN_DELAY)
+    strata_storage::get_instance(e, &DataKey::WindDownDelay).unwrap_or(MIN_WIND_DOWN_DELAY)
 }
 
 #[cfg_attr(feature = "short_wind_down", allow(clippy::absurd_extreme_comparisons))]
@@ -65,12 +65,12 @@ pub(crate) fn check_delay(e: &Env, secs: u64) {
 
 pub(crate) fn set_delay(e: &Env, secs: u64) {
     check_delay(e, secs);
-    storage::set_instance(e, &DataKey::WindDownDelay, &secs);
+    strata_storage::set_instance(e, &DataKey::WindDownDelay, &secs);
     WindDownDelaySet { secs }.publish(e);
 }
 
 pub(crate) fn info(e: &Env) -> Option<WindDownInfo> {
-    storage::get_instance(e, &DataKey::WindDown)
+    strata_storage::get_instance(e, &DataKey::WindDown)
 }
 
 pub(crate) fn is_active(e: &Env) -> bool {
@@ -108,7 +108,7 @@ pub(crate) fn propose(e: &Env) {
     }
 
     let active_at = e.ledger().timestamp().saturating_add(delay(e));
-    storage::set_instance(
+    strata_storage::set_instance(
         e,
         &DataKey::WindDown,
         &WindDownInfo {
@@ -149,25 +149,25 @@ pub(crate) fn activate(e: &Env) {
     }
 
     wd.status = WindDownStatus::Active;
-    storage::set_instance(e, &DataKey::WindDown, &wd);
+    strata_storage::set_instance(e, &DataKey::WindDown, &wd);
 
     WindDownActivated {}.publish(e);
 }
 
 pub(crate) fn owed(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::WindDownOwed).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::WindDownOwed).unwrap_or(0)
 }
 
 pub(crate) fn acc(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::WindDownAcc).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::WindDownAcc).unwrap_or(0)
 }
 
 pub(crate) fn supply_snapshot(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::WindDownSupply).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::WindDownSupply).unwrap_or(0)
 }
 
 fn credited_before_snapshot(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::WindDownCredited).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::WindDownCredited).unwrap_or(0)
 }
 
 /// Shares that exist or are owed: circulating, escrowed against an unpriced
@@ -190,13 +190,13 @@ pub(crate) fn credit(e: &Env, holder: &Address, shares: i128) {
         .entitlement
         .checked_add(shares)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
+    strata_storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
 
     if info(e).map(|wd| wd.round).unwrap_or(0) == 0 {
         let credited = credited_before_snapshot(e)
             .checked_add(shares)
             .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-        storage::set_instance(e, &DataKey::WindDownCredited, &credited);
+        strata_storage::set_instance(e, &DataKey::WindDownCredited, &credited);
     }
 }
 
@@ -208,7 +208,7 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
 
     let snapshot = if wd.round == 0 {
         let s = snapshot_supply(e);
-        storage::set_instance(e, &DataKey::WindDownSupply, &s);
+        strata_storage::set_instance(e, &DataKey::WindDownSupply, &s);
         s
     } else {
         supply_snapshot(e)
@@ -242,11 +242,11 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
     let owed_total = owed(e)
         .checked_add(credited)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    storage::set_instance(e, &DataKey::WindDownAcc, &acc_per_share);
-    storage::set_instance(e, &DataKey::WindDownOwed, &owed_total);
+    strata_storage::set_instance(e, &DataKey::WindDownAcc, &acc_per_share);
+    strata_storage::set_instance(e, &DataKey::WindDownOwed, &owed_total);
 
     wd.round += 1;
-    storage::set_instance(e, &DataKey::WindDown, &wd);
+    strata_storage::set_instance(e, &DataKey::WindDown, &wd);
 
     WindDownRoundFinalized {
         round: wd.round,
@@ -260,7 +260,7 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
 }
 
 pub(crate) fn position(e: &Env, holder: &Address) -> WindDownPosition {
-    storage::get_persistent(e, &DataKey::WindDownPosition(holder.clone())).unwrap_or(
+    strata_storage::get_persistent(e, &DataKey::WindDownPosition(holder.clone())).unwrap_or(
         WindDownPosition {
             entitlement: 0,
             paid: 0,
@@ -324,14 +324,14 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
     }
 
     p.paid = earned;
-    storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
+    strata_storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
 
     if surrendered > 0 {
         RWATokenClient::new(e, &share_token).burn(holder, &surrendered, &vault);
     }
 
     if assets > 0 {
-        storage::set_instance(
+        strata_storage::set_instance(
             e,
             &DataKey::WindDownOwed,
             &state::reduce(e, owed(e), assets),

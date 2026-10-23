@@ -5,7 +5,7 @@ use crate::governance::VaultChange;
 #[contractevent]
 pub struct DepositRequested {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub amount: i128,
 }
@@ -21,7 +21,7 @@ pub struct EpochFulfilled {
 #[contractevent]
 pub struct DepositClaimed {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub amount: i128,
     pub shares: i128,
@@ -30,7 +30,7 @@ pub struct DepositClaimed {
 #[contractevent]
 pub struct RedeemRequested {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub shares: i128,
 }
@@ -38,7 +38,7 @@ pub struct RedeemRequested {
 #[contractevent]
 pub struct RedeemClaimed {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub shares: i128,
     pub assets: i128,
@@ -74,7 +74,7 @@ pub struct Deployed {
 #[contractevent]
 pub struct Funded {
     #[topic]
-    pub from: Address,
+    pub caller: Address,
     pub assets: i128,
     pub net_deployed: i128,
 }
@@ -82,7 +82,7 @@ pub struct Funded {
 #[contractevent]
 pub struct DepositCancelled {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub amount: i128,
 }
@@ -90,7 +90,7 @@ pub struct DepositCancelled {
 #[contractevent]
 pub struct RedeemCancelled {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub shares: i128,
 }
@@ -152,11 +152,11 @@ pub struct WindDownClaimed {
     pub assets: i128,
 }
 
-/// An escrowed redemption burned into the controller's wind-down entitlement.
+/// An escrowed redemption burned into the holder's wind-down entitlement.
 #[contractevent]
 pub struct RedemptionSurrendered {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub shares: i128,
 }
@@ -165,7 +165,7 @@ pub struct RedemptionSurrendered {
 #[contractevent]
 pub struct DepositConvertedToExit {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub into_epoch: u64,
     pub shares: i128,

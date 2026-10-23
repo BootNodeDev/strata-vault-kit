@@ -49,7 +49,7 @@ fn the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once() {
         f.e.events().all().filter_by_contract(&f.vault.address),
         [
             RedeemClaimed {
-                controller: b,
+                holder: b,
                 epoch,
                 shares: 103,
                 assets: 154,

@@ -78,7 +78,7 @@ fn the_rounding_residue_stays_in_the_reserve_once_the_epoch_settles() {
     assert_eq!(f.vault.free_reserve(), held - 462);
 }
 
-/// One controller may hold a live redemption in two epochs at once, because the
+/// One holder may hold a live redemption in two epochs at once, because the
 /// outstanding-request check is keyed per epoch. Claims are taken newest first
 /// here, which today is allowed.
 #[test]

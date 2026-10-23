@@ -3,7 +3,7 @@ use soroban_sdk::{
     testutils::{storage::Instance as _, storage::Persistent as _, Address as _, Ledger as _},
     Address, Env,
 };
-use storage::{INSTANCE_EXTEND_AMOUNT, PERSISTENT_EXTEND_AMOUNT};
+use strata_storage::{INSTANCE_EXTEND_AMOUNT, PERSISTENT_EXTEND_AMOUNT};
 
 const DAY_IN_LEDGERS: u32 = 17_280;
 use stellar_tokens::rwa::identity_verification::IdentityVerifierClient as IdClient;

@@ -4,7 +4,7 @@ use stellar_access::{
     role_transfer,
 };
 use stellar_contract_utils::upgradeable;
-use timelock::{queue, setup, Clock, Refusal, TimelockHost};
+use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
 use crate::state::OracleConfig;
 use crate::{
@@ -51,7 +51,7 @@ pub fn shortens_freshness_only(current: &OracleConfig, next: &OracleConfig) -> b
 /// The oracle keeps no clock of its own: it reads the vault's.
 impl TimelockHost for NavOracleContract {
     fn clock(e: &Env) -> Result<Clock, Refusal> {
-        timelock::clock::from_source(e)
+        strata_timelock::clock::from_source(e)
     }
 }
 

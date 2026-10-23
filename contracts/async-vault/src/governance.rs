@@ -1,4 +1,3 @@
-use bindings::{OracleFeedClient, VaultBindingClient};
 use soroban_sdk::{
     contracttype, panic_with_error, symbol_short, Address, BytesN, Env, Symbol, Vec,
 };
@@ -17,7 +16,8 @@ use stellar_tokens::{
         RWATokenClient,
     },
 };
-use timelock::{queue, setup, Clock, Refusal};
+use strata_bindings::{OracleFeedClient, VaultBindingClient};
+use strata_timelock::{queue, setup, Clock, Refusal};
 
 use crate::error::VaultError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, NoticeSet, SetupFinished};
@@ -91,7 +91,7 @@ pub(crate) fn clock(e: &Env) -> Clock {
     Clock {
         delay: upgrade::delay(e),
         exit_window: state::notice(e),
-        paused_secs: timelock::pause::paused_secs(e),
+        paused_secs: strata_timelock::pause::paused_secs(e),
         paused: pausable::paused(e),
         winding_down: wind_down::is_active(e),
     }
