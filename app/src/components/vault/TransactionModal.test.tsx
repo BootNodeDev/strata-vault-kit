@@ -1601,6 +1601,7 @@ describe("TransactionModal, attesting a price", () => {
 		[3005, /already have expired/],
 		[3003, /cooldown .* has not elapsed/],
 		[3004, /moves further from the last attested price/],
+		[3010, /^Unpause the NAV first\.$/],
 	])("names the oracle's reason for code %i", (code, sentence) => {
 		renderAttestModal({
 			status: "failed",

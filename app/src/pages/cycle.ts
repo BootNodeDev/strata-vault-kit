@@ -250,13 +250,7 @@ export const oracleLimitRows = (limits: OracleLimits | null): FigureRow[] => [
 	row("Freshness window", limits && formatDuration(limits.freshness)),
 	row("Cooldown", limits && formatDuration(limits.cooldown)),
 	row("Largest rise", limits && formatPercent(limits.maxUpBps)),
-	row(
-		"Largest fall",
-		limits &&
-			(limits.maxDownBps === null
-				? "No limit"
-				: formatPercent(limits.maxDownBps)),
-	),
+	row("Largest fall", limits && formatPercent(limits.maxDownBps)),
 	row("Price floor", limits && formatPriceValue(limits.min)),
 	row("Price ceiling", limits && formatPriceValue(limits.max)),
 ]
@@ -528,17 +522,14 @@ const withinAllowedMove = (
 	if (oracle.recorded === false) return { label, met: true }
 	if (limits === null || previous === null) return { label, met: false }
 	const ceiling = previous + capped(previous, limits.maxUpBps)
-	const floor =
-		limits.maxDownBps === null
-			? null
-			: previous - capped(previous, limits.maxDownBps)
-	const met = price <= ceiling && (floor === null || price >= floor)
+	const floor = previous - capped(previous, limits.maxDownBps)
+	const met = price >= floor && price <= ceiling
 	if (met) return { label, met }
 	const top = formatPriceValue(ceiling)
 	return {
 		label,
 		met,
-		detail: floor === null ? `≤ ${top}` : `${formatPriceValue(floor)} – ${top}`,
+		detail: `${formatPriceValue(floor)} – ${top}`,
 	}
 }
 

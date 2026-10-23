@@ -144,7 +144,7 @@ const ORACLE_CONFIG = {
 	freshness_duration: 86_400n,
 	cooldown_secs: 3_600n,
 	max_up_bps: 1_000,
-	max_down_bps: null,
+	max_down_bps: 500,
 	min_answer: 1n,
 	max_answer: 10n,
 }
