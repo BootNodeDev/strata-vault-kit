@@ -1,5 +1,5 @@
 import { shortAddress } from "@stellar-scaffold/app-lib"
-import React, { useEffect, useRef } from "react"
+import React, { Activity, useEffect, useRef } from "react"
 import { Navigate, useParams } from "react-router-dom"
 import ComplianceSection from "../components/admin/ComplianceSection"
 import ConfigurationSection from "../components/admin/ConfigurationSection"
@@ -180,15 +180,17 @@ const HeldSurfaces: React.FC<{
 					>
 						{SURFACE_LABELS[surface]}
 					</h2>
-					<SurfaceBody
-						surface={surface}
-						active={surface === active}
-						grantedBy={grantedBy}
-						wallet={wallet}
-						addresses={addresses}
-						holders={holders}
-						verifierAdminUnknown={verifierAdminUnknown}
-					/>
+					<Activity mode={surface === active ? "visible" : "hidden"}>
+						<SurfaceBody
+							surface={surface}
+							active={surface === active}
+							grantedBy={grantedBy}
+							wallet={wallet}
+							addresses={addresses}
+							holders={holders}
+							verifierAdminUnknown={verifierAdminUnknown}
+						/>
+					</Activity>
 				</section>
 			))}
 		</div>
@@ -202,6 +204,7 @@ const AdminPanel: React.FC = () => {
 		grantedBy,
 		grants,
 		signersUnknown,
+		signersLoading,
 		verifierAdminUnknown,
 		addresses,
 		holders,
@@ -222,6 +225,10 @@ const AdminPanel: React.FC = () => {
 
 			{status === "ready" && signersUnknown && (
 				<p className={typeStyles.footnote}>Signer lookup unavailable.</p>
+			)}
+
+			{status === "ready" && signersLoading && (
+				<p className={typeStyles.footnote}>Checking signers…</p>
 			)}
 
 			{status === "disconnected" && (

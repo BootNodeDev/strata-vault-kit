@@ -340,7 +340,7 @@ describe("useCycleState", () => {
 				liquid: 800n,
 				netDeployed: 200n,
 				depositCap: { kind: "uncapped" },
-				custodian: "GCUSTODIAN",
+				custodian: { kind: "set", address: "GCUSTODIAN" },
 				custodianBalance: 150n,
 			},
 			windDown: { phase: "none", delay: 60n },
@@ -363,28 +363,6 @@ describe("useCycleState", () => {
 		}
 	})
 
-	it("stops refetching the cycle reads while inactive and resumes when active again", async () => {
-		vi.useFakeTimers({ shouldAdvanceTime: true })
-		try {
-			let active = false
-			const { result, rerender } = renderWithWallet(() =>
-				useCycleState({ active }),
-			)
-			await waitFor(() => expect(result.current.cycle.status).toBe("ready"))
-			const before = oracleMock.state.mock.calls.length
-
-			await vi.advanceTimersByTimeAsync(31_000)
-			expect(oracleMock.state.mock.calls).toHaveLength(before)
-
-			active = true
-			rerender()
-			await vi.advanceTimersByTimeAsync(16_000)
-			expect(oracleMock.state.mock.calls.length).toBeGreaterThan(before)
-		} finally {
-			vi.useRealTimers()
-		}
-	})
-
 	it("reads no balance when no custodian is set", async () => {
 		vaultMock.custodian.mockResolvedValue({ result: null })
 
@@ -392,7 +370,19 @@ describe("useCycleState", () => {
 		await waitFor(() => expect(result.current.cycle.status).toBe("ready"))
 
 		expect(result.current.cycle).toMatchObject({
-			reserve: { custodian: null, custodianBalance: null },
+			reserve: { custodian: { kind: "unset" }, custodianBalance: null },
+		})
+		expect(assetMock.balance).not.toHaveBeenCalled()
+	})
+
+	it("reports a custodian it could not read without blocking the cycle", async () => {
+		vaultMock.custodian.mockRejectedValue(new Error("network down"))
+
+		const { result } = renderWithWallet(useCycleState)
+		await waitFor(() => expect(result.current.cycle.status).toBe("ready"))
+
+		expect(result.current.cycle).toMatchObject({
+			reserve: { custodian: { kind: "unreadable" }, custodianBalance: null },
 		})
 		expect(assetMock.balance).not.toHaveBeenCalled()
 	})
