@@ -157,9 +157,11 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
    off-chain from the deployed value and the vault's public figures under a
    documented methodology. The contract validates, stores and exposes it. Every
    on-chain operation preserves that price by construction: pricing a deposit
-   releases escrow into the reserve and mints shares in proportion, pricing a
-   redemption burns shares and fixes the matching liability, and a custodian
-   transfer moves value between pockets without changing the total.
+   releases escrow into the reserve and owes shares in proportion, pricing a
+   redemption fixes the cash owed for its escrowed shares, and a custodian
+   transfer moves value between pockets without changing the total. Shares are
+   minted and burned only when each claim runs; the economic supply counts owed
+   shares from pricing and leaves escrowed shares out from the request.
 
 5. **Payable claims always pay.** Neither the guardian pause, a delisting, nor a
    stale valuation can block the payment of an already-priced, funded cash
@@ -338,7 +340,7 @@ sequenceDiagram
     I->>V: request_deposit(amount), asset to escrow
     Note over V: pending, cancellable
     O->>V: attestation
-    Note over V: priced: shares minted and held,<br/>cancellation closed
+    Note over V: priced: shares owed, minted at claim,<br/>cancellation closed
     I->>V: claim, re-checks allowlist
     V-->>I: shares delivered
 ```
@@ -351,7 +353,7 @@ sequenceDiagram
     participant T as Treasury authority
     I->>V: request_redeem(shares), shares to escrow
     O->>V: attestation
-    Note over V: priced: shares burned,<br/>cash liability fixed
+    Note over V: priced: cash liability fixed,<br/>escrowed shares burned at claim
     alt liquid reserve covers the claim
         I->>V: claim
         V-->>I: deposit asset paid
