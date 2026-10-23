@@ -19,15 +19,14 @@ const tokenCall = (method: "pause" | "unpause") => (signer: Signer) =>
 		token[method]({ caller: signer.publicKey }),
 	)
 
-const oracleCall =
-	(method: "raise_ripcord" | "clear_latest") => (signer: Signer) =>
-		navOracleWriter(signer).then((oracle) =>
-			oracle[method]({ caller: signer.publicKey }),
-		)
-
-const setRipcordCall = (signer: Signer, paused: boolean) =>
+const oracleCall = (method: "pause_nav" | "clear_latest") => (signer: Signer) =>
 	navOracleWriter(signer).then((oracle) =>
-		oracle.set_ripcord({ paused, caller: signer.publicKey }),
+		oracle[method]({ caller: signer.publicKey }),
+	)
+
+const setNavPausedCall = (signer: Signer, paused: boolean) =>
+	navOracleWriter(signer).then((oracle) =>
+		oracle.set_nav_paused({ paused, caller: signer.publicKey }),
 	)
 
 export const usePauseVault = adminTransaction(vaultCall("pause"), [
@@ -42,12 +41,15 @@ export const usePauseToken = adminTransaction(tokenCall("pause"), [
 export const useUnpauseToken = adminTransaction(tokenCall("unpause"), [
 	tokenPausedKey,
 ])
-export const useRaiseRipcord = adminTransaction(
-	oracleCall("raise_ripcord"),
+export const usePauseNav = adminTransaction(
+	oracleCall("pause_nav"),
 	oracleWriteKeys,
 )
 export const useClearLatest = adminTransaction(
 	oracleCall("clear_latest"),
 	oracleWriteKeys,
 )
-export const useSetRipcord = adminTransaction(setRipcordCall, oracleWriteKeys)
+export const useSetNavPaused = adminTransaction(
+	setNavPausedCall,
+	oracleWriteKeys,
+)

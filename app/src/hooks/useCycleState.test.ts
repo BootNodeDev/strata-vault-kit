@@ -86,13 +86,13 @@ const state = (tag: OracleState["tag"]): ContractRead<OracleState> =>
 	value({ tag, values: undefined } as OracleState)
 
 describe("toOracle", () => {
-	it("carries the report, the limits and no ripcord while the price is valid", () => {
+	it("carries the report, the limits and no NAV pause while the price is valid", () => {
 		expect(toOracle(state("Valid"), value(report), value(config))).toEqual({
 			state: "valid",
 			price: (10n ** 18n) as Price,
 			attestedAt: 1_700_050_000n,
 			expiresAt: 1_700_136_000n,
-			ripcord: false,
+			navPaused: false,
 			recorded: true,
 			limits: {
 				freshness: 86_400n,
@@ -112,9 +112,9 @@ describe("toOracle", () => {
 		expect(oracle.expiresAt).toBe(1_700_136_000n)
 	})
 
-	it("reads a paused oracle as a raised ripcord", () => {
+	it("reads a paused oracle as a paused NAV", () => {
 		expect(
-			toOracle(state("Paused"), value(report), value(config)).ripcord,
+			toOracle(state("Paused"), value(report), value(config)).navPaused,
 		).toBe(true)
 	})
 
@@ -133,7 +133,7 @@ describe("toOracle", () => {
 		})
 	})
 
-	it("knows there is no record even while the ripcord is raised", () => {
+	it("knows there is no record even while the NAV is paused", () => {
 		const oracle = toOracle(
 			state("Paused"),
 			{ kind: "contract-error", code: 3006 },
@@ -142,7 +142,7 @@ describe("toOracle", () => {
 
 		expect(oracle).toMatchObject({
 			state: "paused",
-			ripcord: true,
+			navPaused: true,
 			recorded: false,
 			price: null,
 			attestedAt: null,
@@ -155,7 +155,7 @@ describe("toOracle", () => {
 			price: null,
 			attestedAt: null,
 			expiresAt: null,
-			ripcord: null,
+			navPaused: null,
 			recorded: null,
 			limits: null,
 		})

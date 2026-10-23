@@ -78,7 +78,7 @@ const oracle: CycleOracle = {
 	price: price(1n),
 	attestedAt: 1_700_050_000n,
 	expiresAt: 1_700_136_000n,
-	ripcord: false,
+	navPaused: false,
 	recorded: true,
 	limits: {
 		freshness: 86_400n,
@@ -167,7 +167,7 @@ describe("toCycleRows", () => {
 		])
 		expect(groups.map((group) => group.rows.map((row) => row.label))).toEqual([
 			["Vault", "Notice period", "Sealed at", "Notice"],
-			["Ripcord"],
+			["NAV paused"],
 			["Committed", "Liquid reserve"],
 			["Activates at", "Delay", "Supply"],
 		])
@@ -258,11 +258,11 @@ describe("toCycleRows", () => {
 	it.each<[string, CycleOracle["state"], string]>([
 		["a valid price", "valid", "Valid"],
 		["a stale price", "stale", "Stale"],
-		["a raised ripcord", "paused", "Paused"],
+		["a paused NAV", "paused", "Paused"],
 	])("notes %s under the share price", (_name, state, expected) => {
 		const groups = toCycleRows(
 			ready({
-				oracle: { ...oracle, state, ripcord: state === "paused" },
+				oracle: { ...oracle, state, navPaused: state === "paused" },
 			}),
 		)
 
@@ -303,11 +303,11 @@ describe("toCycleRows", () => {
 		)
 	})
 
-	it("shows the ripcord, the share price and the oracle limits in app units", () => {
+	it("shows the NAV pause, the share price and the oracle limits in app units", () => {
 		const groups = toCycleRows(ready({}))
 
 		expect(tileOf(groups, "Price", "Share price")?.value).toBe("1.0000")
-		expect(valueOf(groups, "Price", "Ripcord")).toBe("Not raised")
+		expect(valueOf(groups, "Price", "NAV paused")).toBe("Not paused")
 		expect(valueOf(groups, "Price", "Cooldown")).toBe("1h")
 		expect(valueOf(groups, "Price", "Freshness window")).toBe("1d")
 		expect(valueOf(groups, "Price", "Largest rise")).toBe("5%")
@@ -1131,13 +1131,13 @@ describe("toCycleActions, attesting", () => {
 		expect(attest?.enabled).toBe(true)
 	})
 
-	it("skips the cooldown and the move cap with the ripcord raised and no stored record", () => {
+	it("skips the cooldown and the move cap with the NAV paused and no stored record", () => {
 		const attest = attestOf("1.9", {
 			ledgerTime: oracle.attestedAt! - 1n,
 			oracle: {
 				...oracle,
 				state: "paused",
-				ripcord: true,
+				navPaused: true,
 				recorded: false,
 				price: null,
 				attestedAt: null,
@@ -1185,12 +1185,12 @@ describe("toCycleActions, attesting", () => {
 		expect(attest?.enabled).toBe(false)
 	})
 
-	it("notes a raised ripcord without making it a condition", () => {
+	it("notes a paused NAV without making it a condition", () => {
 		const attest = attestOf("1.04", {
-			oracle: { ...oracle, state: "paused", ripcord: true },
+			oracle: { ...oracle, state: "paused", navPaused: true },
 		})
 
-		expect(attest?.note).toBe("Ripcord raised — attesting does not lift it.")
+		expect(attest?.note).toBe("NAV paused — attesting does not unpause it.")
 		expect(Object.keys(conditionsOf(attest))).toHaveLength(3)
 		expect(attest?.enabled).toBe(true)
 	})

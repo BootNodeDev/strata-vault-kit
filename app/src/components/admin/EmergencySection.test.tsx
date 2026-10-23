@@ -16,8 +16,8 @@ const {
 	useOracleStateMock,
 	pauseVaultMock,
 	unpauseVaultMock,
-	raiseRipcordMock,
-	setRipcordMock,
+	pauseNavMock,
+	setNavPausedMock,
 	clearLatestMock,
 	pauseTokenMock,
 	unpauseTokenMock,
@@ -33,8 +33,8 @@ const {
 		useOracleStateMock: vi.fn(),
 		pauseVaultMock: tx(),
 		unpauseVaultMock: tx(),
-		raiseRipcordMock: tx(),
-		setRipcordMock: tx(),
+		pauseNavMock: tx(),
+		setNavPausedMock: tx(),
 		clearLatestMock: tx(),
 		pauseTokenMock: tx(),
 		unpauseTokenMock: tx(),
@@ -58,8 +58,8 @@ vi.mock("../../hooks/useOracleState", () => ({
 vi.mock("../../hooks/useEmergencyTransactions", () => ({
 	usePauseVault: () => pauseVaultMock,
 	useUnpauseVault: () => unpauseVaultMock,
-	useRaiseRipcord: () => raiseRipcordMock,
-	useSetRipcord: () => setRipcordMock,
+	usePauseNav: () => pauseNavMock,
+	useSetNavPaused: () => setNavPausedMock,
 	useClearLatest: () => clearLatestMock,
 	usePauseToken: () => pauseTokenMock,
 	useUnpauseToken: () => unpauseTokenMock,
@@ -103,8 +103,8 @@ describe("EmergencySection", () => {
 		for (const mock of [
 			pauseVaultMock,
 			unpauseVaultMock,
-			raiseRipcordMock,
-			setRipcordMock,
+			pauseNavMock,
+			setNavPausedMock,
 			clearLatestMock,
 			pauseTokenMock,
 			unpauseTokenMock,
@@ -122,7 +122,7 @@ describe("EmergencySection", () => {
 		expect(within(overview).getByText("Vault")).toBeTruthy()
 		expect(within(overview).getAllByText("Paused")).toHaveLength(2)
 		expect(within(overview).getByText("Open")).toBeTruthy()
-		expect(within(overview).getByText("Ripcord raised")).toBeTruthy()
+		expect(within(overview).getByText("NAV paused")).toBeTruthy()
 	})
 
 	it("offers the vault guardian only the pause, saying what it stops and what stays open", () => {
@@ -155,36 +155,36 @@ describe("EmergencySection", () => {
 		).toBeTruthy()
 	})
 
-	it("raises the ripcord for an oracle admin through set_ripcord, shown as raising", () => {
+	it("pauses the NAV for an oracle admin through set_nav_paused, shown as pausing", () => {
 		const { rerender } = render(
 			<EmergencySection grants={[oracleAdmin]} wallet={WALLET} />,
 		)
 
-		fireEvent.click(button("Raise the ripcord"))
-		expect(setRipcordMock.submit).toHaveBeenCalledWith(true, oracleAdmin)
-		expect(raiseRipcordMock.submit).not.toHaveBeenCalled()
+		fireEvent.click(button("Pause the NAV"))
+		expect(setNavPausedMock.submit).toHaveBeenCalledWith(true, oracleAdmin)
+		expect(pauseNavMock.submit).not.toHaveBeenCalled()
 
-		setRipcordMock.status = { status: "preparing" }
+		setNavPausedMock.status = { status: "preparing" }
 		rerender(<EmergencySection grants={[oracleAdmin]} wallet={WALLET} />)
 
 		expect(
-			screen.getByRole("heading", { name: "Preparing to raise the ripcord" }),
+			screen.getByRole("heading", { name: "Preparing to pause the NAV" }),
 		).toBeTruthy()
 	})
 
-	it("lowers the ripcord, and clears the latest price once raised", () => {
+	it("unpauses the NAV, and clears the latest price once paused", () => {
 		setState("open", "open", "paused")
 		const { rerender } = render(
 			<EmergencySection grants={[oracleAdmin]} wallet={WALLET} />,
 		)
 
-		fireEvent.click(button("Lower the ripcord"))
-		expect(setRipcordMock.submit).toHaveBeenCalledWith(false, oracleAdmin)
+		fireEvent.click(button("Unpause the NAV"))
+		expect(setNavPausedMock.submit).toHaveBeenCalledWith(false, oracleAdmin)
 
-		setRipcordMock.status = { status: "preparing" }
+		setNavPausedMock.status = { status: "preparing" }
 		rerender(<EmergencySection grants={[oracleAdmin]} wallet={WALLET} />)
 		expect(
-			screen.getByRole("heading", { name: "Preparing to lower the ripcord" }),
+			screen.getByRole("heading", { name: "Preparing to unpause the NAV" }),
 		).toBeTruthy()
 
 		fireEvent.click(button("Clear the latest price"))

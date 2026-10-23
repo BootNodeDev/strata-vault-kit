@@ -67,7 +67,7 @@ const GROUP_LAYOUT: {
 	{
 		title: "Price",
 		tiles: ["Share price", "Attested", "Valid until"],
-		rows: ["Ripcord"],
+		rows: ["NAV paused"],
 		limits: [
 			"Freshness window",
 			"Cooldown",
@@ -281,12 +281,12 @@ function priceGroup(oracle: CycleOracle): CycleGroup {
 		],
 		rows: [
 			row(
-				"Ripcord",
-				oracle.ripcord === null
+				"NAV paused",
+				oracle.navPaused === null
 					? null
-					: oracle.ripcord
-						? "Raised"
-						: "Not raised",
+					: oracle.navPaused
+						? "Paused"
+						: "Not paused",
 			),
 		],
 		limits: oracleLimitRows(limits),
@@ -564,8 +564,8 @@ function toAttestAction(
 			price === null || freshness === null
 				? null
 				: `Records ${formatSignedPrice(price)} as the share price, valid for ${formatDuration(freshness)}.`,
-		...(oracle.ripcord === true
-			? { note: "Ripcord raised — attesting does not lift it." }
+		...(oracle.navPaused === true
+			? { note: "NAV paused — attesting does not unpause it." }
 			: {}),
 		field: {
 			label: "Share price",

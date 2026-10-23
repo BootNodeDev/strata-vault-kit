@@ -195,9 +195,9 @@ const oracleLimits = (config: Record<string, unknown>): SignArg[] => [
 
 const ORACLE: Record<string, Decoder> = {
 	...governed("oracle"),
-	raise_ripcord: only("raise-ripcord"),
-	set_ripcord: ([paused]) => ({
-		action: flag(paused) ? "raise-ripcord" : "lower-ripcord",
+	pause_nav: only("pause-nav"),
+	set_nav_paused: ([paused]) => ({
+		action: flag(paused) ? "pause-nav" : "unpause-nav",
 		args: [],
 	}),
 	clear_latest: only("clear-latest"),
@@ -445,8 +445,8 @@ type ModalHandlers = { onClose: () => void; onRetry: () => void }
 const EMERGENCY_ACTIONS: ReadonlySet<string> = new Set<EmergencyModalAction>([
 	"pause-vault",
 	"unpause-vault",
-	"raise-ripcord",
-	"lower-ripcord",
+	"pause-nav",
+	"unpause-nav",
 	"clear-latest",
 	"pause-token",
 	"unpause-token",
