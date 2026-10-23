@@ -109,6 +109,20 @@ impl Fixture<'_> {
         call();
         assert_eq!(self.instance_ttl(), INSTANCE_EXTEND_AMOUNT);
     }
+
+    /// Signs one call to the oracle as `who` and nothing else, so the call
+    /// carries the caller's signature but not the admin's.
+    fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
+        self.e.mock_auths(&[MockAuth {
+            address: who,
+            invoke: &MockAuthInvoke {
+                contract: &self.oracle.address,
+                fn_name,
+                args,
+                sub_invokes: &[],
+            },
+        }]);
+    }
 }
 
 fn config() -> OracleConfig {
@@ -465,12 +479,25 @@ fn an_address_that_reports_no_clock_cannot_be_bound() {
 fn only_the_admin_binds_and_finishes() {
     let f = setup();
     let stranger = Address::generate(&f.e);
-    f.e.set_auths(&[]);
 
+    f.sign_only_as(
+        &stranger,
+        "bind_vault",
+        (f.vault.address.clone(), stranger.clone()).into_val(&f.e),
+    );
     assert!(f
         .oracle
         .try_bind_vault(&f.vault.address, &stranger)
         .is_err());
+    assert_eq!(f.oracle.vault(), None);
+
+    f.e.mock_all_auths();
+    f.oracle.bind_vault(&f.vault.address, &f.admin);
+    f.sign_only_as(
+        &stranger,
+        "finish_setup",
+        (stranger.clone(),).into_val(&f.e),
+    );
     assert!(f.oracle.try_finish_setup(&stranger).is_err());
     assert!(f.oracle.setup_open());
 }
@@ -820,9 +847,23 @@ fn only_the_admin_proposes_cancels_and_applies() {
     let id = f.propose(change.clone());
     f.advance(MIN_DELAY);
 
-    f.e.set_auths(&[]);
+    f.sign_only_as(
+        &stranger,
+        "propose_change",
+        (change.clone(), stranger.clone()).into_val(&f.e),
+    );
     assert!(f.oracle.try_propose_change(&change, &stranger).is_err());
+    f.sign_only_as(
+        &stranger,
+        "cancel_change",
+        (id, stranger.clone()).into_val(&f.e),
+    );
     assert!(f.oracle.try_cancel_change(&id, &stranger).is_err());
+    f.sign_only_as(
+        &stranger,
+        "apply_change",
+        (id, stranger.clone()).into_val(&f.e),
+    );
     assert!(f.oracle.try_apply_change(&id, &stranger).is_err());
     assert_eq!(f.oracle.pending_changes().len(), 1);
 }

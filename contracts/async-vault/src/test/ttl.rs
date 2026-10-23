@@ -4,7 +4,7 @@ use storage::{INSTANCE_EXTEND_AMOUNT, PERSISTENT_EXTEND_AMOUNT};
 use super::*;
 use crate::keys::DataKey;
 
-const TWO_DAYS: u64 = 2 * 24 * 60 * 60;
+const TWO_DAYS: u64 = 2 * DAY_DURATION;
 
 fn persistent_ttl(f: &Fixture, key: &DataKey) -> u32 {
     f.e.as_contract(&f.vault.address, || f.e.storage().persistent().get_ttl(key))
@@ -93,7 +93,7 @@ fn a_pending_request_still_claims_after_most_of_a_month() {
     f.vault.request_deposit(&user, &400);
     let epoch = f.close_epoch();
 
-    f.advance(29 * 24 * 60 * 60);
+    f.advance(29 * DAY_DURATION);
     f.oracle.attest(
         &NavReport {
             nav_per_share: wad(2),

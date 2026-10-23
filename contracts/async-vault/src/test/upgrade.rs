@@ -293,16 +293,32 @@ fn only_governance_applies() {
     assert_eq!(f.vault.pending_changes().len(), 1);
 }
 
+/// Whether the host refused a call to `function` because the vault has no
+/// function of that name. The reason is only in the diagnostic events.
+fn has_no_function(e: &Env, function: &str) -> bool {
+    use soroban_sdk::xdr::{ContractEventBody, ScError, ScErrorCode, ScSymbol, ScVal};
+    let missing = ScVal::Error(ScError::Context(ScErrorCode::MissingValue));
+    let name = ScVal::Symbol(ScSymbol(function.try_into().unwrap()));
+    e.host()
+        .get_diagnostic_events()
+        .unwrap()
+        .0
+        .iter()
+        .any(|event| {
+            let ContractEventBody::V0(body) = &event.event.body;
+            body.topics.contains(&missing)
+                && matches!(&body.data, ScVal::Vec(Some(args)) if args.contains(&name))
+        })
+}
+
 #[test]
 fn the_vault_exposes_no_immediate_upgrade() {
     let f = setup();
-    let hash = wasm(&f, 7);
-
-    // If the Upgradeable trait were implemented, this client would work
-    // against the vault and replace the code with no delay at all.
-    let client =
+    let upgrader =
         stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.vault.address);
-    assert!(client.try_upgrade(&hash, &f.admin).is_err());
+
+    assert!(upgrader.try_upgrade(&wasm(&f, 7), &f.admin).is_err());
+    assert!(has_no_function(&f.e, "upgrade"));
 }
 
 #[test]
