@@ -34,14 +34,14 @@ async function fetchOracleState(): Promise<OracleStatus> {
 	return classifyOracle(read)
 }
 
-export function useOracleState({ poll = false }: { poll?: boolean } = {}): {
+export function useOracleState(): {
 	oracle: OracleStatus
 } {
 	const { data } = useQuery({
 		queryKey: oracleStateKey,
 		queryFn: fetchOracleState,
 		staleTime: 30_000,
-		refetchInterval: poll ? PAUSE_REFRESH_MS : false,
+		refetchInterval: PAUSE_REFRESH_MS,
 	})
 
 	return { oracle: data ?? "checking" }

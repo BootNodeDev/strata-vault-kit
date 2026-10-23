@@ -38,9 +38,9 @@ const EmergencySection: React.FC<{
 	contracts?: React.ReactNode
 	active?: boolean
 }> = ({ grants, wallet, contracts, active = true }) => {
-	const { pause: vault } = useVaultPaused({ poll: active })
-	const { pause: token } = useTokenPaused({ poll: active })
-	const { oracle } = useOracleState({ poll: active })
+	const { pause: vault } = useVaultPaused({ poll: true })
+	const { pause: token } = useTokenPaused()
+	const { oracle } = useOracleState()
 	const pauseVault = usePendingTransaction(usePauseVault())
 	const unpauseVault = usePendingTransaction(useUnpauseVault())
 	const raiseRipcord = usePendingTransaction(useRaiseRipcord())

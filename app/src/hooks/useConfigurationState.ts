@@ -6,7 +6,7 @@ import {
 	type OracleLimits,
 	useCycleReads,
 } from "./useCycleState"
-import { useVaultAuthorities } from "./useVaultAuthorities"
+import { type Custodian, useVaultAuthorities } from "./useVaultAuthorities"
 
 const STALE_MS = 30_000
 const REFRESH_MS = 15_000
@@ -15,7 +15,7 @@ export const configurationReadsKey = ["configuration", "reads"] as const
 
 export type ConfigurationValues = {
 	depositCap: DepositCap | null
-	custodian: string | null
+	custodian: Custodian
 	notice: bigint | null
 	windDownDelay: bigint | null
 	upgradeDelay: bigint | null
@@ -43,16 +43,16 @@ async function fetchConfigurationReads() {
 	}
 }
 
-export function useConfigurationState({
-	active = true,
-}: { active?: boolean } = {}): { configuration: ConfigurationState } {
-	const cycle = useCycleReads(active)
+export function useConfigurationState(): {
+	configuration: ConfigurationState
+} {
+	const cycle = useCycleReads()
 	const { authorities, isPending } = useVaultAuthorities()
 	const { data: reads } = useQuery({
 		queryKey: configurationReadsKey,
 		queryFn: fetchConfigurationReads,
 		staleTime: STALE_MS,
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
 
 	if (cycle === undefined || reads === undefined || isPending)
@@ -62,7 +62,7 @@ export function useConfigurationState({
 		configuration: {
 			status: "ready",
 			depositCap: cycle.depositCap,
-			custodian: authorities?.custodian ?? null,
+			custodian: authorities?.custodian ?? { kind: "unreadable" },
 			notice: valueOf(cycle.notice),
 			windDownDelay: cycle.windDown.delay,
 			oracle: cycle.oracle.limits,

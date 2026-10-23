@@ -7,9 +7,10 @@ import {
 	TransactionBuilder,
 	type xdr,
 } from "@stellar/stellar-sdk"
-import { Api, Server } from "@stellar/stellar-sdk/rpc"
+import { Api } from "@stellar/stellar-sdk/rpc"
 import type { AccountSigners } from "./accounts"
-import { networkPassphrase, rpcUrl, stellarNetwork } from "./env"
+import { networkPassphrase } from "./env"
+import { server } from "./rpc"
 
 export const OPERATOR_TIMEOUT_SECONDS = 7 * 24 * 60 * 60
 
@@ -43,8 +44,6 @@ export type SubmitFailure =
 export type SubmitResult =
 	| { status: "success"; hash: string; result: unknown }
 	| { status: "failed"; reason: SubmitFailure; hash: string }
-
-const server = new Server(rpcUrl, { allowHttp: stellarNetwork === "LOCAL" })
 
 const parseEnvelope = (encoded: string) => {
 	try {
