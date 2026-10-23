@@ -163,12 +163,16 @@ integration suites against that deployment:
 ```sh
 npm run test:happy-path -w scripts/harness
 npm run test:guards -w scripts/harness
+CARGO_TARGET_DIR=target/short-wind-down stellar contract build --package async-vault --features short_wind_down
+npm run test:wind-down -w scripts/harness
 ```
 
 Deploy afresh before each run of the suites. The guards leave the vault's
 notice at 10 seconds, and lowering it back waits for the timelock, so a second
 run against the same deployment can fail wherever it prices an epoch right
-after closing it.
+after closing it. `test:wind-down` ignores `deployed.local.json`: it deploys
+its own throwaway vault set, built from the `short_wind_down` wasm above, so
+it can reach an active wind-down without the real seven-day minimum.
 
 ### Keeping a deployment alive
 

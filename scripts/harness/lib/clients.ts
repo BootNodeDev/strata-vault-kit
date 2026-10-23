@@ -23,7 +23,10 @@ export interface Connected {
 
 export function connect(): Connected {
 	const net = network()
-	const deployment = loadDeployment(net.name)
+	return connectTo(net, loadDeployment(net.name))
+}
+
+export function connectTo(net: Network, deployment: Deployment): Connected {
 	const keys = Object.fromEntries(
 		ACCOUNT_NAMES.map((name) => [
 			name,
