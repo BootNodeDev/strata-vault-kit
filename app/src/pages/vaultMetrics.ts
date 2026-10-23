@@ -11,7 +11,8 @@ import { type ActionPanelEstimate } from "../components/vault/ActionPanel"
 import { type Metric } from "../components/vault/MetricsStrip"
 import { type NavClassification } from "../hooks/useNavPrice"
 import {
-	type AuthorityKey,
+	type Custodian,
+	type RoleKey,
 	type VaultAuthorities,
 } from "../hooks/useVaultAuthorities"
 import { type VaultFigures } from "../hooks/useVaultFigures"
@@ -55,23 +56,39 @@ export function toMetrics(
 	]
 }
 
-const AUTHORITY_LABELS: [AuthorityKey, string][] = [
+const ROLE_LABELS: [RoleKey, string][] = [
 	["governance", "Governance"],
 	["manager", "Manager"],
 	["treasury", "Treasury"],
 	["guardian", "Guardian"],
-	["custodian", "Custodian"],
 ]
+
+export const toCustodianRow = (custodian: Custodian): AddressRow => {
+	switch (custodian.kind) {
+		case "set":
+			return { label: "Custodian", address: custodian.address }
+		case "unset":
+			return { label: "Custodian", address: null, placeholder: "Not set" }
+		case "unreadable":
+			return { label: "Custodian", address: null }
+	}
+}
 
 export function toAuthorityRows(
 	authorities: VaultAuthorities | undefined,
 	isPending: boolean,
 ): AddressRow[] {
-	return AUTHORITY_LABELS.map(([key, label]) =>
-		isPending
-			? { label, address: null, pending: true }
-			: { label, address: authorities?.[key] ?? null },
-	)
+	if (isPending)
+		return [...ROLE_LABELS.map(([, label]) => label), "Custodian"].map(
+			(label) => ({ label, address: null, pending: true }),
+		)
+	return [
+		...ROLE_LABELS.map(([key, label]) => ({
+			label,
+			address: authorities?.[key] ?? null,
+		})),
+		toCustodianRow(authorities?.custodian ?? { kind: "unreadable" }),
+	]
 }
 
 const priceNote = (nav: NavClassification | undefined): string => {
