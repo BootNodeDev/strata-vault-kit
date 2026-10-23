@@ -1,5 +1,6 @@
 #![no_std]
 
+mod extend;
 mod governance;
 mod guards;
 mod state;
@@ -189,6 +190,7 @@ impl AccessControl for NavOracleContract {
         guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         access_control::grant_role(e, &account, &role, &caller);
+        extend::role_entries(e, &account, &role);
     }
 
     /// Cancelling a pending hand-over (`live_until_ledger == 0`) keeps the
@@ -236,7 +238,9 @@ impl NavOracleContract {
         guards::valid_config(e, &config);
         access_control::set_admin(e, &admin);
         access_control::grant_role_no_auth(e, &attester, &ATTESTER_ROLE, &admin);
+        extend::role_entries(e, &attester, &ATTESTER_ROLE);
         access_control::grant_role_no_auth(e, &guardian, &GUARDIAN_ROLE, &admin);
+        extend::role_entries(e, &guardian, &GUARDIAN_ROLE);
 
         state::set_config(e, &config);
         state::set_nav_paused(e, false);

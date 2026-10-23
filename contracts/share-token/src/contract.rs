@@ -1,5 +1,6 @@
 use crate::error::ShareTokenError;
 use crate::event::LegalTransfer;
+use crate::extend;
 use crate::governance::{self, TokenChange, TokenPendingChange};
 use crate::guards;
 use crate::roles::COMPLIANCE_ROLE;
@@ -36,12 +37,9 @@ impl ShareToken {
     ) {
         Base::set_metadata(e, 7, name, symbol);
         access_control::set_admin(e, &admin);
-        access_control::grant_role_no_auth(
-            e,
-            &compliance_authority,
-            &Symbol::new(e, COMPLIANCE_ROLE),
-            &admin,
-        );
+        let compliance_role = Symbol::new(e, COMPLIANCE_ROLE);
+        access_control::grant_role_no_auth(e, &compliance_authority, &compliance_role, &admin);
+        extend::role_entries(e, &compliance_authority, &compliance_role);
         RWA::set_compliance(e, &compliance);
         RWA::set_identity_verifier(e, &identity_verifier);
         upgradeable::set_schema_version(e, 1);
@@ -111,6 +109,7 @@ impl ShareToken {
         guards::identity_verified(e, &to);
         strata_storage::bump_instance(e);
         RWA::forced_transfer(e, &from, &to, amount);
+        extend::balances(e, &[&from, &to]);
         LegalTransfer {
             from,
             to,
@@ -149,7 +148,8 @@ impl Pausable for ShareToken {
 }
 
 /// OpenZeppelin leaves the instance's lifetime to the token, so every call
-/// that moves shares extends it before handing over to the library.
+/// that moves shares extends it before handing over to the library. So do
+/// `balance` and `total_supply`, which may be the only calls during a wind-down.
 #[contractimpl(contracttrait)]
 impl FungibleToken for ShareToken {
     type ContractType = RWA;
@@ -157,11 +157,13 @@ impl FungibleToken for ShareToken {
     fn transfer(e: &Env, from: Address, to: MuxedAddress, amount: i128) {
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::transfer(e, &from, &to, amount);
+        extend::balances(e, &[&from, &to.address()]);
     }
 
     fn transfer_from(e: &Env, spender: Address, from: Address, to: Address, amount: i128) {
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::transfer_from(e, &spender, &from, &to, amount);
+        extend::balances(e, &[&from, &to]);
     }
 
     fn approve(e: &Env, owner: Address, spender: Address, amount: i128, live_until_ledger: u32) {
@@ -174,6 +176,24 @@ impl FungibleToken for ShareToken {
             live_until_ledger,
         );
     }
+
+    /// All shares in circulation, in share base units. Reading it extends
+    /// the token's instance.
+    fn total_supply(e: &Env) -> i128 {
+        strata_storage::bump_instance(e);
+        <Self::ContractType as ContractOverrides>::total_supply(e)
+    }
+
+    /// The shares `account` holds, in share base units. Reading it extends
+    /// the token's instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `account` - The holder.
+    fn balance(e: &Env, account: Address) -> i128 {
+        strata_storage::bump_instance(e);
+        <Self::ContractType as ContractOverrides>::balance(e, &account)
+    }
 }
 
 #[contractimpl(contracttrait)]
@@ -183,6 +203,7 @@ impl AccessControl for ShareToken {
         guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         access_control::grant_role(e, &account, &role, &caller);
+        extend::role_entries(e, &account, &role);
     }
 
     /// Instant for `compliance`. Revoking `manager` waits like a grant,
@@ -221,11 +242,13 @@ impl RWAToken for ShareToken {
     fn mint(e: &Env, to: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
         RWA::mint(e, &to, amount);
+        extend::balances(e, &[&to]);
     }
     #[only_role(operator, "manager")]
     fn burn(e: &Env, user_address: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
         RWA::burn(e, &user_address, amount);
+        extend::balances(e, &[&user_address]);
     }
     /// The vault escrows redemptions through it. Compliance moves shares with
     /// `legal_transfer` instead.
@@ -233,6 +256,7 @@ impl RWAToken for ShareToken {
     fn forced_transfer(e: &Env, from: Address, to: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
         RWA::forced_transfer(e, &from, &to, amount);
+        extend::balances(e, &[&from, &to]);
     }
     /// Moves a whole balance to the account the identity verifier names, so
     /// it needs the admin's co-signature like a legal transfer, and never
@@ -248,24 +272,31 @@ impl RWAToken for ShareToken {
         guards::not_vault_address(e, &old_account);
         guards::not_vault_address(e, &new_account);
         strata_storage::bump_instance(e);
-        RWA::recover_balance(e, &old_account, &new_account)
+        let recovered = RWA::recover_balance(e, &old_account, &new_account);
+        extend::balances(e, &[&new_account]);
+        extend::address_frozen(e, &new_account);
+        extend::frozen_tokens(e, &new_account);
+        recovered
     }
     #[only_role(operator, "compliance")]
     fn set_address_frozen(e: &Env, user_address: Address, freeze: bool, operator: Address) {
         guards::not_freezing_vault(e, &user_address, freeze);
         strata_storage::bump_instance(e);
         RWA::set_address_frozen(e, &user_address, freeze);
+        extend::address_frozen(e, &user_address);
     }
     #[only_role(operator, "compliance")]
     fn freeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
         guards::not_vault_address(e, &user_address);
         strata_storage::bump_instance(e);
         RWA::freeze_partial_tokens(e, &user_address, amount);
+        extend::frozen_tokens(e, &user_address);
     }
     #[only_role(operator, "compliance")]
     fn unfreeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
         RWA::unfreeze_partial_tokens(e, &user_address, amount);
+        extend::frozen_tokens(e, &user_address);
     }
     fn set_compliance(e: &Env, compliance: Address, operator: Address) {
         guards::caller_is_admin(e, &operator);

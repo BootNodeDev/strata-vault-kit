@@ -2,6 +2,7 @@
 mod contract;
 mod error;
 mod event;
+mod extend;
 mod governance;
 mod guards;
 mod roles;
@@ -18,3 +19,5 @@ mod test;
 mod test_governance;
 #[cfg(test)]
 mod test_guards;
+#[cfg(test)]
+mod test_ttl;
