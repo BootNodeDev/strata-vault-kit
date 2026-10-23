@@ -21,13 +21,13 @@ use strata_timelock::{queue, setup, Clock, Refusal};
 
 use crate::error::VaultError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, NoticeSet, SetupFinished};
+use crate::guards;
 use crate::keys::DataKey;
-use crate::roles::MANAGER_ROLE;
 use crate::state;
 use crate::treasury;
 use crate::upgrade;
 use crate::wind_down;
-use crate::{AsyncVault, MAX_NOTICE_SECS};
+use crate::AsyncVault;
 
 /// Seven days of five-second ledgers: how long the next admin has to accept a
 /// hand-over.
@@ -74,7 +74,7 @@ pub(crate) struct Wiring {
 }
 
 impl Wiring {
-    fn complete(&self) -> bool {
+    pub(crate) fn complete(&self) -> bool {
         self.token_bound
             && self.oracle_bound
             && self.sole_token_manager
@@ -110,29 +110,6 @@ fn refuse(e: &Env, refusal: Refusal) -> ! {
         // The vault owns the clock and binds to nothing, so these two never arise.
         Refusal::AlreadyBound => panic_with_error!(e, VaultError::SetupClosed),
         Refusal::Unbound => panic_with_error!(e, VaultError::SetupIncomplete),
-    }
-}
-
-/// Direct admin calls are instant only before setup finishes.
-pub(crate) fn require_setup_open(e: &Env) {
-    if !setup::is_open(e) {
-        panic_with_error!(e, VaultError::UseTimelock);
-    }
-}
-
-/// Nothing is taken in or queued until every admin change on the kit waits for
-/// the timelock.
-pub(crate) fn refuse_if_setup_open(e: &Env) {
-    if setup::is_open(e) {
-        panic_with_error!(e, VaultError::SetupOpen);
-    }
-}
-
-/// After setup, revoking `manager` waits like a grant; any other revoke stays
-/// instant.
-pub(crate) fn require_revoke_allowed(e: &Env, role: &Symbol) {
-    if *role == MANAGER_ROLE {
-        require_setup_open(e);
     }
 }
 
@@ -193,78 +170,24 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
     }
 }
 
-/// No nominee from setup may accept once changes wait, so a hand-over offered
-/// during setup holds it open.
 pub(crate) fn finish_setup(e: &Env) {
-    if !setup::is_open(e) {
-        panic_with_error!(e, VaultError::SetupClosed);
-    }
-    if role_transfer::has_active_pending_transfer(e, &AccessControlStorageKey::PendingAdmin) {
-        panic_with_error!(e, VaultError::AdminTransferPending);
-    }
-    if !wiring(e).complete() {
-        panic_with_error!(e, VaultError::SetupIncomplete);
-    }
+    guards::setup_open(e);
+    guards::no_hand_over_pending(e);
+    guards::wiring_complete(e);
     setup::finish::<AsyncVault>(e).unwrap_or_else(|r| refuse(e, r));
     SetupFinished {}.publish(e);
 }
 
-fn check_notice(e: &Env, secs: u64) {
-    if secs > MAX_NOTICE_SECS {
-        panic_with_error!(e, VaultError::NoticeTooLong);
-    }
-    if secs > upgrade::delay(e) {
-        panic_with_error!(e, VaultError::NoticeAboveUpgradeDelay);
-    }
-}
-
 pub(crate) fn set_notice(e: &Env, secs: u64) {
-    check_notice(e, secs);
     state::set_notice(e, secs);
     NoticeSet { secs }.publish(e);
 }
 
-fn changes_code(change: &VaultChange) -> bool {
-    matches!(
-        change,
-        VaultChange::Upgrade(_) | VaultChange::UpgradeDelay(_)
-    )
-}
-
-/// One code change at a time, so a standing eta is never quietly replaced.
-fn code_change_pending(e: &Env) -> bool {
-    queue::open_ids(e).iter().any(|id| {
-        queue::pending::<VaultChange>(e, id).is_some_and(|(change, _)| changes_code(&change))
-    })
-}
-
-/// The bounds a change must meet when it is proposed and again when it
-/// applies.
-fn check(e: &Env, change: &VaultChange) {
-    match change {
-        VaultChange::UpgradeDelay(secs) => upgrade::check_delay(e, *secs),
-        VaultChange::Notice(secs) => check_notice(e, *secs),
-        VaultChange::WindDownDelay(secs) => wind_down::check_delay(e, *secs),
-        VaultChange::Oracle(feed) => {
-            if !bound_here(e, feed) {
-                panic_with_error!(e, VaultError::FeedNotBound);
-            }
-        }
-        VaultChange::Upgrade(_)
-        | VaultChange::Custodian(_)
-        | VaultChange::GrantRole(..)
-        | VaultChange::RevokeRole(..)
-        | VaultChange::Admin(_) => {}
-    }
-}
-
 pub(crate) fn propose(e: &Env, change: VaultChange) -> u32 {
-    wind_down::refuse_if_active(e);
-    refuse_if_setup_open(e);
-    check(e, &change);
-    if changes_code(&change) && code_change_pending(e) {
-        panic_with_error!(e, VaultError::UpgradeProposalExists);
-    }
+    guards::not_winding_down(e);
+    guards::setup_finished(e);
+    guards::change_in_bounds(e, &change);
+    guards::not_a_second_code_change(e, &change);
     let id = queue::propose::<AsyncVault, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     ChangeProposed {
         id,
@@ -284,7 +207,7 @@ pub(crate) fn apply(e: &Env, id: u32) {
     let change: VaultChange =
         queue::take_ready::<AsyncVault, _>(e, id).unwrap_or_else(|r| refuse(e, r));
     // The notice or the delay may have moved since the proposal; this check decides.
-    check(e, &change);
+    guards::change_in_bounds(e, &change);
     let admin = access_control::get_admin(e)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AdminRequired));
     match &change {

@@ -178,7 +178,7 @@ fn a_delay_below_the_minimum_is_refused() {
 }
 
 /// Proposes, waits and activates. Returns nothing; the vault is active after.
-fn wind_down_now(f: &Fixture) {
+pub(super) fn wind_down_now(f: &Fixture) {
     f.vault.propose_wind_down(&f.admin);
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
@@ -852,4 +852,42 @@ fn a_partial_freeze_keeps_frozen_shares_out_of_a_wind_down_claim() {
         .unfreeze_partial_tokens(&holder, &400, &f.compliance);
     let rest = f.vault.claim_wind_down(&holder);
     assert_eq!(rest, 4 * first);
+}
+
+#[test]
+fn a_snapshot_with_more_shares_to_burn_than_exist_fails_loudly() {
+    let f = setup();
+    wind_down_now(&f);
+    f.e.as_contract(&f.vault.address, || {
+        crate::state::set_pending_burn_shares(&f.e, 1)
+    });
+
+    refused(
+        f.vault.try_finalize_wind_down_round(),
+        VaultError::AccountingMismatch,
+    );
+}
+
+#[test]
+fn a_payout_below_what_was_already_paid_fails_loudly() {
+    let f = setup();
+    let _holder = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    let newcomer = f.investor(0);
+    f.e.as_contract(&f.vault.address, || {
+        strata_storage::set_persistent(
+            &f.e,
+            &crate::keys::DataKey::WindDownPosition(newcomer.clone()),
+            &crate::WindDownPosition {
+                entitlement: 0,
+                paid: 1,
+            },
+        )
+    });
+
+    refused(
+        f.vault.try_claim_wind_down(&newcomer),
+        VaultError::AccountingMismatch,
+    );
 }

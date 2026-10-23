@@ -33,14 +33,25 @@ fn save(e: &Env, epoch: u64, s: &EpochSettlement) {
     strata_storage::set_persistent(e, &DataKey::Settlement(epoch), s);
 }
 
+fn open_one(e: &Env, open: u32) -> u32 {
+    open.checked_add(1)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+}
+
 fn close_one(e: &Env, open: u32) -> u32 {
     open.checked_sub(1)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AccountingMismatch))
 }
 
+fn add(e: &Env, total: i128, amount: i128) -> i128 {
+    total
+        .checked_add(amount)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+}
+
 pub(crate) fn on_deposit_requested(e: &Env, epoch: u64) {
     let mut s = load(e, epoch);
-    s.deposits_open += 1;
+    s.deposits_open = open_one(e, s.deposits_open);
     save(e, epoch, &s);
 }
 
@@ -52,7 +63,7 @@ pub(crate) fn on_deposit_cancelled(e: &Env, epoch: u64) {
 
 pub(crate) fn on_redeem_requested(e: &Env, epoch: u64) {
     let mut s = load(e, epoch);
-    s.redeems_open += 1;
+    s.redeems_open = open_one(e, s.redeems_open);
     save(e, epoch, &s);
 }
 
@@ -75,7 +86,7 @@ pub(crate) fn on_priced(e: &Env, epoch: u64, shares_promised: i128, assets_promi
 pub(crate) fn on_deposit_claimed(e: &Env, epoch: u64, shares: i128) {
     let mut s = load(e, epoch);
     s.deposits_open = close_one(e, s.deposits_open);
-    s.shares_settled += shares;
+    s.shares_settled = add(e, s.shares_settled, shares);
     reconcile_if_settled(e, epoch, &mut s);
     save(e, epoch, &s);
 }
@@ -84,7 +95,7 @@ pub(crate) fn on_deposit_claimed(e: &Env, epoch: u64, shares: i128) {
 pub(crate) fn on_redeem_claimed(e: &Env, epoch: u64, assets: i128) {
     let mut s = load(e, epoch);
     s.redeems_open = close_one(e, s.redeems_open);
-    s.assets_settled += assets;
+    s.assets_settled = add(e, s.assets_settled, assets);
     reconcile_if_settled(e, epoch, &mut s);
     save(e, epoch, &s);
 }

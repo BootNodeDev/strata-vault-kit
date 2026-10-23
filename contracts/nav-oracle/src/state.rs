@@ -1,4 +1,6 @@
-use soroban_sdk::{contracttype, symbol_short, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol};
+
+use crate::OracleError;
 
 /// The three-state feed health
 //
@@ -53,7 +55,8 @@ pub(crate) fn set_config(e: &Env, config: &OracleConfig) {
 }
 
 pub(crate) fn get_config(e: &Env) -> OracleConfig {
-    strata_storage::get_instance(e, &DataKey::Config).unwrap()
+    strata_storage::get_instance(e, &DataKey::Config)
+        .unwrap_or_else(|| panic_with_error!(e, OracleError::NotInitialized))
 }
 
 pub(crate) fn set_nav_paused(e: &Env, paused: bool) {

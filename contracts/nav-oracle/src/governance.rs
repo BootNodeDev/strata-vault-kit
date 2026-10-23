@@ -6,10 +6,11 @@ use stellar_access::{
 use stellar_contract_utils::upgradeable;
 use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
+use crate::guards;
 use crate::state::OracleConfig;
 use crate::{
-    store_config, validate_config, ChangeApplied, ChangeCancelled, ChangeProposed,
-    NavOracleContract, OracleError, SetupFinished, VaultBound,
+    store_config, ChangeApplied, ChangeCancelled, ChangeProposed, NavOracleContract, OracleError,
+    SetupFinished, VaultBound,
 };
 
 /// Seven days of five-second ledgers: how long the next admin has to accept a
@@ -75,20 +76,6 @@ fn vault_clock(e: &Env) -> Clock {
     <NavOracleContract as TimelockHost>::clock(e).unwrap_or_else(|r| refuse(e, r))
 }
 
-/// Direct admin calls are instant only before setup finishes.
-pub(crate) fn require_setup_open(e: &Env) {
-    if !setup::is_open(e) {
-        panic_with_error!(e, OracleError::UseTimelock);
-    }
-}
-
-fn upgrade_pending(e: &Env) -> bool {
-    queue::open_ids(e).iter().any(|id| {
-        queue::pending::<OracleChange>(e, id)
-            .is_some_and(|(change, _)| matches!(change, OracleChange::Upgrade(_)))
-    })
-}
-
 pub(crate) fn bind_vault(e: &Env, vault: &Address) {
     setup::bind_source(e, vault).unwrap_or_else(|r| refuse(e, r));
     VaultBound {
@@ -97,25 +84,16 @@ pub(crate) fn bind_vault(e: &Env, vault: &Address) {
     .publish(e);
 }
 
-/// No nominee from setup may accept once changes wait, so a hand-over offered
-/// during setup holds it open.
 pub(crate) fn finish_setup(e: &Env) {
-    if setup::is_open(e)
-        && role_transfer::has_active_pending_transfer(e, &AccessControlStorageKey::PendingAdmin)
-    {
-        panic_with_error!(e, OracleError::AdminTransferPending);
-    }
+    guards::setup_open(e);
+    guards::no_hand_over_pending(e);
     setup::finish::<NavOracleContract>(e).unwrap_or_else(|r| refuse(e, r));
     SetupFinished {}.publish(e);
 }
 
 pub(crate) fn propose(e: &Env, change: OracleChange) -> u32 {
-    if let OracleChange::Config(config) = &change {
-        validate_config(e, config);
-    }
-    if matches!(change, OracleChange::Upgrade(_)) && upgrade_pending(e) {
-        panic_with_error!(e, OracleError::UpgradeAlreadyPending);
-    }
+    guards::change_in_bounds(e, &change);
+    guards::not_a_second_upgrade(e, &change);
     let id = queue::propose::<NavOracleContract, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
         queue::pending::<OracleChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));
@@ -139,6 +117,7 @@ pub(crate) fn apply(e: &Env, id: u32) {
         queue::take_ready::<NavOracleContract, _>(e, id).unwrap_or_else(|r| refuse(e, r));
     let admin = access_control::get_admin(e)
         .unwrap_or_else(|| panic_with_error!(e, OracleError::AdminRequired));
+    guards::change_in_bounds(e, &change);
     match &change {
         OracleChange::Upgrade(hash) => upgradeable::upgrade(e, hash),
         OracleChange::GrantRole(role, account) => {
@@ -148,10 +127,7 @@ pub(crate) fn apply(e: &Env, id: u32) {
             access_control::revoke_role_no_auth(e, account, role, &admin)
         }
         OracleChange::Admin(next) => offer_admin(e, &admin, next),
-        OracleChange::Config(config) => {
-            validate_config(e, config);
-            store_config(e, config);
-        }
+        OracleChange::Config(config) => store_config(e, config),
     }
     ChangeApplied { id, change }.publish(e);
 }

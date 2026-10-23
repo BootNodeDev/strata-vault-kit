@@ -9,6 +9,7 @@ mod deposit_cap;
 mod epochs;
 mod events;
 mod governance;
+mod guards;
 mod health;
 mod lock_policy;
 mod multi_epoch;
