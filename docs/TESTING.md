@@ -66,9 +66,21 @@ extend their own on every call that does work.
 
 ## Authorization
 
-Most tests sign every call with `mock_all_auths`. A refusal test then clears
-all signatures with `set_auths(&[])` and checks the call fails and changes
-nothing.
+Authorization is tested in two separate layers.
+
+**Who may call (roles).** Each privileged entrypoint is called by an account
+that holds the role and by accounts that do not: an unrelated address, or
+another authority such as governance calling a manager-only entrypoint. Role
+membership is the contract's real state, not a mock. Most of these tests run
+with `mock_all_auths`, so every signature is granted and a refusal can only
+come from the role check.
+
+**Whether a signature is required.** A refusal test clears all signatures with
+`set_auths(&[])` and checks the call fails and changes nothing, which proves the
+entrypoint requires the right address to sign.
+
+The per-entrypoint role matrix, with the refusal test for each, is in
+[AUTHORIZATION_MATRIX.md](./AUTHORIZATION_MATRIX.md).
 
 | Behaviour | Tests | Key test names |
 | --- | --- | --- |

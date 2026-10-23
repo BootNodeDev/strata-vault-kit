@@ -4,13 +4,24 @@ import { asyncVault } from "../config/clients"
 
 export const vaultAuthoritiesKey = ["vault", "authorities"] as const
 
-export type AuthorityKey =
-	"governance" | "manager" | "treasury" | "guardian" | "custodian"
+export type RoleKey = "governance" | "manager" | "treasury" | "guardian"
 
-export type VaultAuthorities = Record<AuthorityKey, string | null>
+export type Custodian =
+	{ kind: "set"; address: string } | { kind: "unset" } | { kind: "unreadable" }
+
+export type VaultAuthorities = Record<RoleKey, string | null> & {
+	custodian: Custodian
+}
 
 const toAddress = (read: ContractRead<string | null>): string | null =>
 	read.kind === "value" ? read.value : null
+
+const toCustodian = (read: ContractRead<string | null>): Custodian => {
+	if (read.kind !== "value") return { kind: "unreadable" }
+	return read.value === null
+		? { kind: "unset" }
+		: { kind: "set", address: read.value }
+}
 
 async function fetchVaultAuthorities(): Promise<VaultAuthorities> {
 	const [governance, manager, treasury, guardian, custodian] =
@@ -27,7 +38,7 @@ async function fetchVaultAuthorities(): Promise<VaultAuthorities> {
 		manager: toAddress(manager),
 		treasury: toAddress(treasury),
 		guardian: toAddress(guardian),
-		custodian: toAddress(custodian),
+		custodian: toCustodian(custodian),
 	}
 }
 
