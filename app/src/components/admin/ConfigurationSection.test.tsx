@@ -64,7 +64,7 @@ const oracleAdmin = grantOf("oracle admin")
 const READY: ConfigurationState = {
 	status: "ready",
 	depositCap: { kind: "uncapped" },
-	custodian: CUSTODIAN,
+	custodian: { kind: "set", address: CUSTODIAN },
 	notice: DAY,
 	windDownDelay: 7n * DAY,
 	upgradeDelay: 3n * DAY,
@@ -195,23 +195,5 @@ describe("ConfigurationSection", () => {
 			/>,
 		)
 		expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0)
-	})
-
-	it("reads the parameters with polling only while active", () => {
-		const { rerender } = render(
-			<ConfigurationSection
-				grants={[governance]}
-				wallet={WALLET}
-				active={false}
-			/>,
-		)
-		expect(useConfigurationStateMock).toHaveBeenLastCalledWith({
-			active: false,
-		})
-
-		rerender(
-			<ConfigurationSection grants={[governance]} wallet={WALLET} active />,
-		)
-		expect(useConfigurationStateMock).toHaveBeenLastCalledWith({ active: true })
 	})
 })

@@ -132,7 +132,6 @@ describe("ComplianceSection", () => {
 			verifier: "CVERIFIERADDRESS",
 			target: TARGET,
 			destination: undefined,
-			active: true,
 		})
 		const overview = screen.getByRole("region", { name: "Target" })
 		expect(within(overview).getByText("Allowlisted")).toBeTruthy()
@@ -300,8 +299,5 @@ describe("ComplianceSection", () => {
 			/>,
 		)
 		expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0)
-		expect(useComplianceStateMock).toHaveBeenLastCalledWith(
-			expect.objectContaining({ active: false }),
-		)
 	})
 })

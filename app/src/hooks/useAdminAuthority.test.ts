@@ -1,6 +1,7 @@
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { addresses } from "../config/addresses"
 import { vaultContractId } from "../config/contracts"
 import { pendingAdminsQuery } from "./pendingAdmins"
 import { deferred, renderWithWallet, investorAddress } from "./testSupport"
@@ -303,6 +304,8 @@ const {
 	tokenMock,
 	connectNavOracleMock,
 	connectShareTokenMock,
+	navOracleMock,
+	shareTokenMock,
 	accountSignersMock,
 	readPendingAdminsMock,
 	readContractAdminMock,
@@ -327,6 +330,8 @@ const {
 	},
 	connectNavOracleMock: vi.fn(),
 	connectShareTokenMock: vi.fn(),
+	navOracleMock: vi.fn(),
+	shareTokenMock: vi.fn(),
 	accountSignersMock: vi.fn(),
 	readPendingAdminsMock: vi.fn(),
 	readContractAdminMock: vi.fn(),
@@ -334,6 +339,8 @@ const {
 
 vi.mock("../config/clients", () => ({
 	asyncVault: async () => vaultMock,
+	navOracle: navOracleMock,
+	shareToken: shareTokenMock,
 }))
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
@@ -399,6 +406,8 @@ describe("useAdminAuthority", () => {
 		})
 		connectNavOracleMock.mockResolvedValue(oracleMock)
 		connectShareTokenMock.mockResolvedValue(tokenMock)
+		navOracleMock.mockResolvedValue(oracleMock)
+		shareTokenMock.mockResolvedValue(tokenMock)
 		oracleMock.get_role_member_count.mockResolvedValue({ result: 0 })
 		oracleMock.get_admin.mockResolvedValue({ result: null })
 		tokenMock.get_role_member_count.mockResolvedValue({ result: 0 })
@@ -519,6 +528,43 @@ describe("useAdminAuthority", () => {
 
 		expect(connectNavOracleMock).toHaveBeenCalledWith(derivedOracleAddress)
 		expect(connectShareTokenMock).toHaveBeenCalledWith(derivedShareTokenAddress)
+	})
+
+	it("reuses the configured oracle and token readers when the vault points at them", async () => {
+		vaultMock.oracle.mockResolvedValue({ result: addresses.nav_oracle })
+		vaultMock.share_token.mockResolvedValue({ result: addresses.share_token })
+		oracleMock.get_admin.mockResolvedValue({ result: investorAddress })
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+
+		expect(navOracleMock).toHaveBeenCalled()
+		expect(shareTokenMock).toHaveBeenCalled()
+		expect(connectNavOracleMock).not.toHaveBeenCalled()
+		expect(connectShareTokenMock).not.toHaveBeenCalled()
+		expect(result.current.grantedBy.configuration[0]?.role).toBe("oracle admin")
+	})
+
+	it("shows the panels before Horizon answers, then fills in what the signers grant", async () => {
+		vaultRoles({ manager: [investorAddress], guardian: [multisig] })
+		const lookup = deferred<ReturnType<typeof oneSignatureOf>>()
+		accountSignersMock.mockReturnValue(lookup.promise)
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
+		expect(result.current.signersLoading).toBe(true)
+		expect(result.current.signersUnknown).toBe(false)
+
+		lookup.resolve(oneSignatureOf(1))
+
+		await waitFor(() =>
+			expect(result.current.surfaces).toEqual(new Set(["cycle", "emergency"])),
+		)
+		expect(result.current.grantedBy.emergency).toEqual([
+			{ role: "vault guardian", authority: multisig, standing: "signs-alone" },
+		])
+		expect(result.current.signersLoading).toBe(false)
 	})
 
 	it("enumerates every member of a role on the oracle and the share token", async () => {
@@ -691,12 +737,12 @@ describe("useAdminAuthority", () => {
 		accountSignersMock.mockResolvedValue(oneSignatureOf(1))
 		const { result } = renderWithWallet(useAdminAuthority)
 
-		await waitFor(() => expect(result.current.status).toBe("ready"))
-
-		expect(accountSignersMock).toHaveBeenCalledWith(multisig)
-		expect(result.current.surfaces).toEqual(
-			new Set(["emergency", "configuration", "governance"]),
+		await waitFor(() =>
+			expect(result.current.surfaces).toEqual(
+				new Set(["emergency", "configuration", "governance"]),
+			),
 		)
+		expect(accountSignersMock).toHaveBeenCalledWith(multisig)
 	})
 
 	it("reports unreadable when the oracle admin read fails", async () => {
@@ -714,10 +760,10 @@ describe("useAdminAuthority", () => {
 		accountSignersMock.mockResolvedValue(oneSignatureOf(2))
 		const { result } = renderWithWallet(useAdminAuthority)
 
-		await waitFor(() => expect(result.current.status).toBe("ready"))
-
-		expect(result.current.surfaces).toEqual(
-			new Set(["configuration", "governance", "emergency"]),
+		await waitFor(() =>
+			expect(result.current.surfaces).toEqual(
+				new Set(["configuration", "governance", "emergency"]),
+			),
 		)
 		expect(result.current.grants).toEqual([
 			{ role: "vault guardian", authority: multisig, standing: { needs: 2 } },
@@ -738,25 +784,23 @@ describe("useAdminAuthority", () => {
 		accountSignersMock.mockResolvedValue(oneSignatureOf(2))
 		const { result } = renderWithWallet(useAdminAuthority)
 
-		await waitFor(() => expect(result.current.status).toBe("ready"))
-
+		await waitFor(() =>
+			expect(result.current.grants).toEqual([
+				{
+					role: "vault governance",
+					authority: investorAddress,
+					standing: { needs: 2 },
+				},
+			]),
+		)
 		expect(accountSignersMock).toHaveBeenCalledWith(investorAddress)
-		expect(result.current.grants).toEqual([
-			{
-				role: "vault governance",
-				authority: investorAddress,
-				standing: { needs: 2 },
-			},
-		])
 	})
 
 	it("grants the wallet's own holder match when Horizon has no answer", async () => {
 		accountSignersMock.mockResolvedValue(null)
 		const { result } = renderWithWallet(useAdminAuthority)
 
-		await waitFor(() => expect(result.current.status).toBe("ready"))
-
-		expect(result.current.signersUnknown).toBe(true)
+		await waitFor(() => expect(result.current.signersUnknown).toBe(true))
 		expect(result.current.grants).toEqual([
 			{
 				role: "vault manager",
@@ -782,9 +826,7 @@ describe("useAdminAuthority", () => {
 		accountSignersMock.mockResolvedValue(null)
 		const { result } = renderWithWallet(useAdminAuthority)
 
-		await waitFor(() => expect(result.current.status).toBe("ready"))
-
-		expect(result.current.signersUnknown).toBe(true)
+		await waitFor(() => expect(result.current.signersUnknown).toBe(true))
 		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
 	})
 

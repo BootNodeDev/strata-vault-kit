@@ -53,7 +53,7 @@ const ConfigurationSection: React.FC<{
 	contracts?: React.ReactNode
 	active?: boolean
 }> = ({ grants, wallet, contracts, active = true }) => {
-	const { configuration } = useConfigurationState({ active })
+	const { configuration } = useConfigurationState()
 	const depositCap = usePendingTransaction(useSetDepositCap())
 	const custodian = usePendingTransaction(useSetCustodian())
 	const notice = usePendingTransaction(useSetNotice())
