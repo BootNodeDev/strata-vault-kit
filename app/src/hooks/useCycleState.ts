@@ -19,7 +19,7 @@ import {
 	useEpochHistory,
 } from "./useEpochHistory"
 import { classifyNav, type NavClassification } from "./useNavPrice"
-import { useVaultAuthorities } from "./useVaultAuthorities"
+import { type Custodian, useVaultAuthorities } from "./useVaultAuthorities"
 import { useVaultFigures } from "./useVaultFigures"
 import { type PauseState, useVaultPaused } from "./useVaultPaused"
 
@@ -84,7 +84,7 @@ export type CycleReserve = {
 	liquid: Amount | null
 	netDeployed: Amount | null
 	depositCap: DepositCap | null
-	custodian: string | null
+	custodian: Custodian
 	custodianBalance: Amount | null
 }
 
@@ -262,29 +262,32 @@ async function fetchCustodianBalance(
 	return toAmount(balance)
 }
 
-export function useCycleReads(active: boolean): CycleReads | undefined {
+export function useCycleReads(): CycleReads | undefined {
 	const { data } = useQuery({
 		queryKey: cycleReadsKey,
 		queryFn: fetchCycleReads,
 		staleTime: STALE_MS,
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
 	return data
 }
 
-export function useCycleState({ active = true }: { active?: boolean } = {}): {
+export function useCycleState(): {
 	cycle: CycleState
 } {
 	const { history } = useEpochHistory()
 	const { figures, isPending: figuresPending } = useVaultFigures()
 	const { pause } = useVaultPaused()
 	const { authorities, isPending: authoritiesPending } = useVaultAuthorities()
-	const reads = useCycleReads(active)
-	const custodian = authorities?.custodian ?? null
+	const reads = useCycleReads()
+	const custodian = authorities?.custodian ?? { kind: "unreadable" }
+	const custodianAddress = custodian.kind === "set" ? custodian.address : null
 	const { data: custodianBalance, isPending: balancePending } = useQuery({
-		queryKey: [...custodianBalanceKey, custodian],
+		queryKey: [...custodianBalanceKey, custodianAddress],
 		queryFn:
-			custodian === null ? skipToken : () => fetchCustodianBalance(custodian),
+			custodianAddress === null
+				? skipToken
+				: () => fetchCustodianBalance(custodianAddress),
 		staleTime: STALE_MS,
 	})
 
@@ -296,7 +299,7 @@ export function useCycleState({ active = true }: { active?: boolean } = {}): {
 		figuresPending ||
 		authoritiesPending ||
 		pause === "checking" ||
-		(custodian !== null && balancePending)
+		(custodianAddress !== null && balancePending)
 	if (checking) return { cycle: { status: "checking" } }
 
 	return {

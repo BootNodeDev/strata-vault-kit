@@ -7,9 +7,11 @@
   "scripts": {
     "deploy": "tsx deploy.ts",
     "extend": "tsx extend.ts",
+    "keys": "tsx keys.ts",
     "build:clients": "tsx build-clients.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run lib/ --reporter=default",
     "test:happy-path": "vitest run happy-path.test.ts",
     "test:guards": "vitest run guards.test.ts",
     "seed": "tsx seed.ts"

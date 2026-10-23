@@ -4,7 +4,13 @@ import { createRequire } from "node:module"
 import { basename, join } from "node:path"
 import { promisify } from "node:util"
 
-import { StrKey, type Asset, type Keypair } from "@stellar/stellar-sdk"
+import {
+	Contract,
+	StrKey,
+	type Asset,
+	type Keypair,
+	type rpc,
+} from "@stellar/stellar-sdk"
 
 import { type Network } from "./network.js"
 
@@ -93,7 +99,7 @@ export async function deployContract(
 	return lastContractId(out)
 }
 
-export async function deployAssetContract(
+async function deployAssetContract(
 	net: Network,
 	asset: Asset,
 	source: Keypair,
@@ -110,6 +116,21 @@ export async function deployAssetContract(
 		withSource(source),
 	)
 	return lastContractId(out)
+}
+
+// The asset contract's id follows from the asset, so a kept issuer may have one.
+export async function ensureAssetContract(
+	net: Network,
+	server: rpc.Server,
+	asset: Asset,
+	source: Keypair,
+): Promise<string> {
+	const id = asset.contractId(net.passphrase)
+	const { entries } = await server.getLedgerEntries(
+		new Contract(id).getFootprint(),
+	)
+	if (entries.length > 0) return id
+	return deployAssetContract(net, asset, source)
 }
 
 export async function generateClient(
