@@ -1,4 +1,4 @@
-use bindings::VaultBindingClient;
+use bindings::{OracleFeedClient, VaultBindingClient};
 use soroban_sdk::{
     contracttype, panic_with_error, symbol_short, Address, BytesN, Env, Symbol, Vec,
 };
@@ -45,6 +45,7 @@ pub enum VaultChange {
     GrantRole(Symbol, Address),
     RevokeRole(Symbol, Address),
     Admin(Address),
+    Oracle(Address),
 }
 
 #[contracttype]
@@ -214,6 +215,11 @@ fn check(e: &Env, change: &VaultChange) {
         VaultChange::UpgradeDelay(secs) => upgrade::check_delay(e, *secs),
         VaultChange::Notice(secs) => check_notice(e, *secs),
         VaultChange::WindDownDelay(secs) => wind_down::check_delay(e, *secs),
+        VaultChange::Oracle(feed) => {
+            if !bound_here(e, feed) {
+                panic_with_error!(e, VaultError::FeedNotBound);
+            }
+        }
         VaultChange::Upgrade(_)
         | VaultChange::Custodian(_)
         | VaultChange::GrantRole(..)
@@ -264,6 +270,11 @@ pub(crate) fn apply(e: &Env, id: u32) {
             access_control::revoke_role_no_auth(e, account, role, &admin)
         }
         VaultChange::Admin(next) => offer_admin(e, &admin, next),
+        VaultChange::Oracle(feed) => {
+            // A feed that cannot answer would stall every epoch after the swap.
+            OracleFeedClient::new(e, feed).state();
+            state::set_addr(e, &DataKey::Oracle, feed);
+        }
     }
     ChangeApplied { id, change }.publish(e);
 }
