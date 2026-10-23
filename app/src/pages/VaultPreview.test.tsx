@@ -310,7 +310,9 @@ vi.mock("../config/contracts", () => {
 
 vi.mock("../config/clients", () => {
 	const figure = (result: bigint) => async () => ({ result })
-	const address = (result: string | undefined) => async () => ({ result })
+	const address = (result: string | null | undefined) => async () => ({
+		result,
+	})
 	const vault = {
 		liquid_reserve: figure(184000000000n),
 		committed: figure(62000000000n),
@@ -324,7 +326,7 @@ vi.mock("../config/clients", () => {
 		manager: address(undefined),
 		treasury: address(undefined),
 		guardian: address(undefined),
-		custodian: address(undefined),
+		custodian: address(null),
 		current_epoch: async () => {
 			if (!mockRequests.readable) throw new Error("boom")
 			return { result: mockRequests.currentEpoch }
@@ -771,13 +773,14 @@ describe("VaultPreview", () => {
 		expect(screen.getByText("5,000.00")).toBeTruthy()
 	})
 
-	it("renders the authority addresses the vault reports, or unavailable when unset", async () => {
+	it("renders the authority addresses the vault reports, unavailable when unreadable and the custodian as not set", async () => {
 		renderVaultPreview()
 
 		expect(
 			await screen.findByText(shortAddress(mockGovernanceAddress)),
 		).toBeTruthy()
-		expect(screen.getAllByText("Unavailable")).toHaveLength(4)
+		expect(screen.getAllByText("Unavailable")).toHaveLength(3)
+		expect(screen.getByText("Not set")).toBeTruthy()
 	})
 
 	it("renders the share price the oracle attests once the NAV classifies as valid", async () => {
