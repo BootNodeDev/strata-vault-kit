@@ -1,7 +1,12 @@
+extern crate std;
+
 use soroban_sdk::{
     symbol_short,
-    testutils::{storage::Instance as _, Address as _, Ledger as _, MockAuth, MockAuthInvoke},
-    Address, Env, IntoVal, String, Symbol,
+    testutils::{
+        storage::Instance as _, Address as _, AuthorizedFunction, AuthorizedInvocation,
+        Ledger as _, MockAuth, MockAuthInvoke,
+    },
+    Address, Env, IntoVal, String, Symbol, Val, Vec,
 };
 use stellar_access::access_control::{self as access_control, AccessControlError};
 use stellar_tokens::rwa::RWAError;
@@ -41,7 +46,7 @@ fn manager_mints_to_allowlisted_account() {
     token.grant_role(&manager, &symbol_short!("manager"), &admin);
 
     compliance.bind_token(&token.address, &admin); // compliance rejects ops from unbound tokens
-    identity.allow(&receiver, &true, &admin);
+    identity.allow(&receiver, &true);
 
     token.mint(&receiver, &100, &manager);
 
@@ -49,7 +54,6 @@ fn manager_mints_to_allowlisted_account() {
 }
 
 struct Fixture<'a> {
-    #[allow(dead_code)]
     e: Env,
     token: ShareTokenClient<'a>,
     admin: Address,
@@ -59,6 +63,25 @@ struct Fixture<'a> {
     compliance: Address,
     #[allow(dead_code)]
     identity_verifier: Address,
+}
+
+impl Fixture<'_> {
+    /// The last call asked each of `signers`, in order, to sign it once, and nobody else.
+    fn signed_once_by(&self, signers: &[&Address], fn_name: &str, args: Vec<Val>) {
+        let call = AuthorizedInvocation {
+            function: AuthorizedFunction::Contract((
+                self.token.address.clone(),
+                Symbol::new(&self.e, fn_name),
+                args,
+            )),
+            sub_invocations: std::vec![],
+        };
+        let expected: std::vec::Vec<_> = signers
+            .iter()
+            .map(|who| ((*who).clone(), call.clone()))
+            .collect();
+        assert_eq!(self.e.auths(), expected);
+    }
 }
 
 fn setup_fixture(e: &Env) -> Fixture<'_> {
@@ -281,7 +304,7 @@ fn the_compliance_authority_freezes_and_moves_balances() {
     let (f, identity) = setup_live(&e);
     let holder = Address::generate(&e);
     let target = Address::generate(&e);
-    identity.allow(&holder, &true, &f.admin);
+    identity.allow(&holder, &true);
     f.token.mint(&holder, &1_000, &f.manager);
 
     f.token
@@ -298,7 +321,7 @@ fn the_compliance_authority_freezes_and_moves_balances() {
         .unfreeze_partial_tokens(&holder, &400, &f.compliance_authority);
     assert_eq!(f.token.get_frozen_tokens(&holder), 0);
 
-    identity.allow(&target, &true, &f.admin);
+    identity.allow(&target, &true);
     f.token.legal_transfer(
         &holder,
         &target,
@@ -315,7 +338,7 @@ fn the_compliance_authority_reaches_recovery() {
     let (f, identity) = setup_live(&e);
     let lost = Address::generate(&e);
     let replacement = Address::generate(&e);
-    identity.allow(&replacement, &true, &f.admin);
+    identity.allow(&replacement, &true);
 
     // The role check passes; the testnet verifier names no recovery target.
     assert_eq!(
@@ -368,7 +391,7 @@ fn the_manager_escrows_but_does_not_intervene() {
     let (f, identity) = setup_live(&e);
     let holder = Address::generate(&e);
     let new_holder = Address::generate(&e);
-    identity.allow(&holder, &true, &f.admin);
+    identity.allow(&holder, &true);
     f.token.mint(&holder, &1_000, &f.manager);
 
     assert_unauthorized(f.token.try_set_address_frozen(&holder, &true, &f.manager));
@@ -437,8 +460,8 @@ fn decayed_live_token(e: &Env) -> (Fixture<'_>, Address, Address) {
     let (f, identity) = setup_live(e);
     let holder = Address::generate(e);
     let other = Address::generate(e);
-    identity.allow(&holder, &true, &f.admin);
-    identity.allow(&other, &true, &f.admin);
+    identity.allow(&holder, &true);
+    identity.allow(&other, &true);
     f.token.mint(&holder, &100, &f.manager);
 
     age(e, TWO_DAYS_IN_LEDGERS);
@@ -533,6 +556,63 @@ fn a_legal_transfer_restores_the_instance_ttl() {
     assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
 }
 
+#[test]
+fn each_role_call_asks_its_holder_for_one_signature() {
+    let e = Env::default();
+    let (f, identity) = setup_live(&e);
+    let holder = Address::generate(&e);
+    let other = Address::generate(&e);
+    identity.allow(&holder, &true);
+    identity.allow(&other, &true);
+
+    f.token.mint(&holder, &1_000, &f.manager);
+    f.signed_once_by(
+        &[&f.manager],
+        "mint",
+        (holder.clone(), 1_000_i128, f.manager.clone()).into_val(&e),
+    );
+    f.token.burn(&holder, &100, &f.manager);
+    f.signed_once_by(
+        &[&f.manager],
+        "burn",
+        (holder.clone(), 100_i128, f.manager.clone()).into_val(&e),
+    );
+    f.token.forced_transfer(&holder, &other, &100, &f.manager);
+    f.signed_once_by(
+        &[&f.manager],
+        "forced_transfer",
+        (holder.clone(), other, 100_i128, f.manager.clone()).into_val(&e),
+    );
+
+    let compliance = &f.compliance_authority;
+    f.token.freeze_partial_tokens(&holder, &50, compliance);
+    f.signed_once_by(
+        &[compliance],
+        "freeze_partial_tokens",
+        (holder.clone(), 50_i128, compliance.clone()).into_val(&e),
+    );
+    f.token.unfreeze_partial_tokens(&holder, &50, compliance);
+    f.signed_once_by(
+        &[compliance],
+        "unfreeze_partial_tokens",
+        (holder.clone(), 50_i128, compliance.clone()).into_val(&e),
+    );
+    f.token.set_address_frozen(&holder, &true, compliance);
+    f.signed_once_by(
+        &[compliance],
+        "set_address_frozen",
+        (holder, true, compliance.clone()).into_val(&e),
+    );
+
+    let role = Symbol::new(&e, "compliance");
+    f.token.renounce_role(&role, compliance);
+    f.signed_once_by(
+        &[compliance],
+        "renounce_role",
+        (role, compliance.clone()).into_val(&e),
+    );
+}
+
 mod legal_transfer {
     use soroban_sdk::{
         contract, contractimpl, contracttype,
@@ -576,11 +656,11 @@ mod legal_transfer {
         let destination = Address::generate(e);
         let vault = e.register(VaultStub, ());
         for who in [&holder, &destination, &vault] {
-            identity.allow(who, &true, &f.admin);
+            identity.allow(who, &true);
         }
         f.token.mint(&holder, &1_000, &f.manager);
         f.token.mint(&vault, &500, &f.manager);
-        f.token.bind_vault(&vault, &f.admin);
+        f.token.bind_vault(&vault);
         (f, holder, destination, vault)
     }
 
@@ -876,6 +956,41 @@ mod legal_transfer {
             .recover_balance(&holder, &destination, &f.compliance_authority));
         assert_eq!(f.token.balance(&holder), 0);
         assert_eq!(f.token.balance(&destination), 1_000);
+    }
+
+    #[test]
+    fn a_legal_transfer_or_a_recovery_asks_each_signer_once() {
+        let e = Env::default();
+        let (f, holder, destination, _) = live(&e);
+
+        f.token.legal_transfer(
+            &holder,
+            &destination,
+            &250,
+            &order(&e),
+            &f.compliance_authority,
+        );
+        f.signed_once_by(
+            &[&f.compliance_authority, &f.admin],
+            "legal_transfer",
+            (
+                holder.clone(),
+                destination.clone(),
+                250_i128,
+                order(&e),
+                f.compliance_authority.clone(),
+            )
+                .into_val(&e),
+        );
+
+        recovering_to(&e, &f, &destination);
+        f.token
+            .recover_balance(&holder, &destination, &f.compliance_authority);
+        f.signed_once_by(
+            &[&f.compliance_authority, &f.admin],
+            "recover_balance",
+            (holder, destination, f.compliance_authority.clone()).into_val(&e),
+        );
     }
 
     #[test]

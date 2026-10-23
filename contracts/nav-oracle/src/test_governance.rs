@@ -1,9 +1,12 @@
+extern crate std;
+
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
     testutils::{
-        storage::Instance as _, Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke,
+        storage::Instance as _, Address as _, AuthorizedFunction, AuthorizedInvocation,
+        Events as _, Ledger as _, MockAuth, MockAuthInvoke,
     },
-    Address, BytesN, Env, Event as _, IntoVal,
+    Address, BytesN, Env, Event as _, IntoVal, Symbol,
 };
 use stellar_access::role_transfer::RoleTransferError;
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
@@ -73,12 +76,12 @@ impl Fixture<'_> {
     }
 
     fn finish(&self) {
-        self.oracle.bind_vault(&self.vault.address, &self.admin);
-        self.oracle.finish_setup(&self.admin);
+        self.oracle.bind_vault(&self.vault.address);
+        self.oracle.finish_setup();
     }
 
     fn propose(&self, change: OracleChange) -> u32 {
-        self.oracle.propose_change(&change, &self.admin)
+        self.oracle.propose_change(&change)
     }
 
     fn attest(&self, nav_per_share: i128) {
@@ -89,7 +92,7 @@ impl Fixture<'_> {
     fn offer_admin(&self, next: &Address) -> u32 {
         let id = self.propose(OracleChange::Admin(next.clone()));
         self.advance(MIN_DELAY);
-        self.oracle.apply_change(&id, &self.admin);
+        self.oracle.apply_change(&id);
         self.e.ledger().sequence()
     }
 
@@ -111,7 +114,7 @@ impl Fixture<'_> {
     }
 
     /// Signs one call to the oracle as `who` and nothing else, so the call
-    /// carries the caller's signature but not the admin's.
+    /// carries that account's signature but not the admin's.
     fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
         self.e.mock_auths(&[MockAuth {
             address: who,
@@ -122,6 +125,29 @@ impl Fixture<'_> {
                 sub_invokes: &[],
             },
         }]);
+    }
+
+    /// The last call asked `who` alone to sign, once, on exactly this call.
+    fn signed_once_by(
+        &self,
+        who: &Address,
+        fn_name: &str,
+        args: soroban_sdk::Vec<soroban_sdk::Val>,
+    ) {
+        assert_eq!(
+            self.e.auths(),
+            std::vec![(
+                who.clone(),
+                AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        self.oracle.address.clone(),
+                        Symbol::new(&self.e, fn_name),
+                        args,
+                    )),
+                    sub_invocations: std::vec![],
+                },
+            )]
+        );
     }
 }
 
@@ -378,12 +404,9 @@ fn a_loosened_config_lands_through_the_timelock() {
     let id = f.propose(OracleChange::Config(loose.clone()));
 
     f.advance(MIN_DELAY - 1);
-    refused(
-        f.oracle.try_apply_change(&id, &f.admin),
-        OracleError::ChangeNotReady,
-    );
+    refused(f.oracle.try_apply_change(&id), OracleError::ChangeNotReady);
     f.advance(1);
-    f.oracle.apply_change(&id, &f.admin);
+    f.oracle.apply_change(&id);
 
     assert_eq!(f.oracle.config(), loose);
     assert_eq!(f.oracle.pending_changes().len(), 0);
@@ -399,8 +422,7 @@ fn an_invalid_config_cannot_be_proposed() {
     };
 
     refused(
-        f.oracle
-            .try_propose_change(&OracleChange::Config(invalid), &f.admin),
+        f.oracle.try_propose_change(&OracleChange::Config(invalid)),
         OracleError::InvalidConfig,
     );
 }
@@ -424,10 +446,7 @@ fn a_config_outside_the_bounds_is_refused_when_it_applies() {
     });
     f.advance(MIN_DELAY);
 
-    refused(
-        f.oracle.try_apply_change(&id, &f.admin),
-        OracleError::InvalidConfig,
-    );
+    refused(f.oracle.try_apply_change(&id), OracleError::InvalidConfig);
     assert_eq!(f.oracle.config(), config());
     assert_eq!(f.oracle.pending_changes().len(), 1);
 }
@@ -436,21 +455,15 @@ fn a_config_outside_the_bounds_is_refused_when_it_applies() {
 fn setup_is_open_until_finished_and_never_reopens() {
     let f = setup();
     assert!(f.oracle.setup_open());
-    refused(
-        f.oracle.try_finish_setup(&f.admin),
-        OracleError::VaultNotBound,
-    );
+    refused(f.oracle.try_finish_setup(), OracleError::VaultNotBound);
 
     f.finish();
 
     assert!(!f.oracle.setup_open());
     assert_eq!(f.oracle.vault(), Some(f.vault.address.clone()));
+    refused(f.oracle.try_finish_setup(), OracleError::SetupClosed);
     refused(
-        f.oracle.try_finish_setup(&f.admin),
-        OracleError::SetupClosed,
-    );
-    refused(
-        f.oracle.try_bind_vault(&Address::generate(&f.e), &f.admin),
+        f.oracle.try_bind_vault(&Address::generate(&f.e)),
         OracleError::SetupClosed,
     );
 }
@@ -458,10 +471,10 @@ fn setup_is_open_until_finished_and_never_reopens() {
 #[test]
 fn a_second_vault_cannot_be_bound() {
     let f = setup();
-    f.oracle.bind_vault(&f.vault.address, &f.admin);
+    f.oracle.bind_vault(&f.vault.address);
 
     refused(
-        f.oracle.try_bind_vault(&Address::generate(&f.e), &f.admin),
+        f.oracle.try_bind_vault(&Address::generate(&f.e)),
         OracleError::SetupClosed,
     );
     assert_eq!(f.oracle.vault(), Some(f.vault.address.clone()));
@@ -471,10 +484,7 @@ fn a_second_vault_cannot_be_bound() {
 fn an_address_that_reports_no_clock_cannot_be_bound() {
     let f = setup();
 
-    assert!(f
-        .oracle
-        .try_bind_vault(&Address::generate(&f.e), &f.admin)
-        .is_err());
+    assert!(f.oracle.try_bind_vault(&Address::generate(&f.e)).is_err());
     assert_eq!(f.oracle.vault(), None);
 }
 
@@ -486,22 +496,15 @@ fn only_the_admin_binds_and_finishes() {
     f.sign_only_as(
         &stranger,
         "bind_vault",
-        (f.vault.address.clone(), stranger.clone()).into_val(&f.e),
+        (f.vault.address.clone(),).into_val(&f.e),
     );
-    assert!(f
-        .oracle
-        .try_bind_vault(&f.vault.address, &stranger)
-        .is_err());
+    assert!(f.oracle.try_bind_vault(&f.vault.address).is_err());
     assert_eq!(f.oracle.vault(), None);
 
     f.e.mock_all_auths();
-    f.oracle.bind_vault(&f.vault.address, &f.admin);
-    f.sign_only_as(
-        &stranger,
-        "finish_setup",
-        (stranger.clone(),).into_val(&f.e),
-    );
-    assert!(f.oracle.try_finish_setup(&stranger).is_err());
+    f.oracle.bind_vault(&f.vault.address);
+    f.sign_only_as(&stranger, "finish_setup", soroban_sdk::Vec::new(&f.e));
+    assert!(f.oracle.try_finish_setup().is_err());
     assert!(f.oracle.setup_open());
 }
 
@@ -525,17 +528,17 @@ fn the_oracle_answers_the_view_the_vault_reads() {
 fn setup_cannot_finish_while_a_hand_over_is_pending() {
     let f = setup();
     let next = Address::generate(&f.e);
-    f.oracle.bind_vault(&f.vault.address, &f.admin);
+    f.oracle.bind_vault(&f.vault.address);
     f.oracle
         .transfer_admin_role(&next, &(f.e.ledger().sequence() + 100));
 
     refused(
-        f.oracle.try_finish_setup(&f.admin),
+        f.oracle.try_finish_setup(),
         OracleError::AdminTransferPending,
     );
 
     f.oracle.transfer_admin_role(&next, &0);
-    f.oracle.finish_setup(&f.admin);
+    f.oracle.finish_setup();
     assert!(f.oracle.try_accept_admin_transfer().is_err());
     assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
 }
@@ -543,12 +546,12 @@ fn setup_cannot_finish_while_a_hand_over_is_pending() {
 #[test]
 fn an_expired_hand_over_does_not_hold_setup_open() {
     let f = setup();
-    f.oracle.bind_vault(&f.vault.address, &f.admin);
+    f.oracle.bind_vault(&f.vault.address);
     f.oracle
         .transfer_admin_role(&Address::generate(&f.e), &(f.e.ledger().sequence() + 10));
     f.e.ledger().with_mut(|l| l.sequence_number += 11);
 
-    f.oracle.finish_setup(&f.admin);
+    f.oracle.finish_setup();
 
     assert!(!f.oracle.setup_open());
     assert_eq!(
@@ -563,8 +566,7 @@ fn nothing_is_proposed_during_setup() {
     let f = setup();
 
     refused(
-        f.oracle
-            .try_propose_change(&OracleChange::Config(config()), &f.admin),
+        f.oracle.try_propose_change(&OracleChange::Config(config())),
         OracleError::SetupOpen,
     );
     assert_eq!(f.oracle.pending_changes().len(), 0);
@@ -583,7 +585,7 @@ fn grants_wait_after_setup_and_land_through_the_timelock() {
 
     let grant = f.propose(OracleChange::GrantRole(GUARDIAN_ROLE, next.clone()));
     f.advance(MIN_DELAY);
-    f.oracle.apply_change(&grant, &f.admin);
+    f.oracle.apply_change(&grant);
 
     f.oracle.pause_nav(&next);
     assert_eq!(f.oracle.state(), OracleState::Paused);
@@ -628,7 +630,7 @@ fn a_revoke_lands_through_the_timelock() {
 
     let id = f.propose(OracleChange::RevokeRole(GUARDIAN_ROLE, f.guardian.clone()));
     f.advance(MIN_DELAY);
-    f.oracle.apply_change(&id, &f.admin);
+    f.oracle.apply_change(&id);
 
     assert!(f.oracle.has_role(&f.guardian, &GUARDIAN_ROLE).is_none());
 }
@@ -657,7 +659,7 @@ fn an_admin_hand_over_waits_but_cancelling_one_does_not() {
 
     let id = f.propose(OracleChange::Admin(next.clone()));
     f.advance(MIN_DELAY);
-    f.oracle.apply_change(&id, &f.admin);
+    f.oracle.apply_change(&id);
     f.oracle.transfer_admin_role(&next, &0);
 
     assert!(f.oracle.try_accept_admin_transfer().is_err());
@@ -672,26 +674,9 @@ fn an_applied_admin_change_starts_a_hand_over_the_next_admin_accepts() {
     let id = f.propose(OracleChange::Admin(next.clone()));
     f.advance(MIN_DELAY);
 
-    // The admin authorises this call and nothing else: the hand-over inside it
-    // asks for no further signature. The entrypoint checks the admin and the
-    // caller, so the same authorisation appears twice, as simulation records it.
-    let apply = MockAuthInvoke {
-        contract: &f.oracle.address,
-        fn_name: "apply_change",
-        args: (id, f.admin.clone()).into_val(&f.e),
-        sub_invokes: &[],
-    };
-    f.e.mock_auths(&[
-        MockAuth {
-            address: &f.admin,
-            invoke: &apply,
-        },
-        MockAuth {
-            address: &f.admin,
-            invoke: &apply,
-        },
-    ]);
-    f.oracle.apply_change(&id, &f.admin);
+    // One admin signature covers the call; the hand-over inside asks for none.
+    f.sign_only_as(&f.admin, "apply_change", (id,).into_val(&f.e));
+    f.oracle.apply_change(&id);
 
     f.e.mock_all_auths();
     assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
@@ -736,9 +721,9 @@ fn the_nav_pause_and_clearing_stay_instant_after_setup() {
     f.finish();
 
     f.oracle.pause_nav(&f.guardian);
-    f.oracle.set_nav_paused(&false, &f.admin);
-    f.oracle.set_nav_paused(&true, &f.admin);
-    f.oracle.clear_latest(&f.admin);
+    f.oracle.set_nav_paused(&false);
+    f.oracle.set_nav_paused(&true);
+    f.oracle.clear_latest();
 
     assert_eq!(f.oracle.state(), OracleState::Paused);
     assert_eq!(
@@ -763,23 +748,17 @@ fn a_vault_pause_moves_the_eta_and_holds_the_change() {
     f.clock(|c| c.paused_secs = 3 * DAY_DURATION);
     f.advance(MIN_DELAY - 4 * DAY_DURATION);
 
-    refused(
-        f.oracle.try_apply_change(&id, &f.admin),
-        OracleError::VaultPaused,
-    );
+    refused(f.oracle.try_apply_change(&id), OracleError::VaultPaused);
 
     f.clock(|c| c.paused = false);
     assert_eq!(
         f.oracle.pending_changes().get(0).unwrap().eta,
         eta + 3 * DAY_DURATION
     );
-    refused(
-        f.oracle.try_apply_change(&id, &f.admin),
-        OracleError::ChangeNotReady,
-    );
+    refused(f.oracle.try_apply_change(&id), OracleError::ChangeNotReady);
 
     f.advance(3 * DAY_DURATION);
-    f.oracle.apply_change(&id, &f.admin);
+    f.oracle.apply_change(&id);
     assert_eq!(f.oracle.config().freshness_duration, 7_200);
 }
 
@@ -795,15 +774,11 @@ fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
     f.advance(MIN_DELAY);
 
     refused(
-        f.oracle
-            .try_propose_change(&OracleChange::Config(config()), &f.admin),
+        f.oracle.try_propose_change(&OracleChange::Config(config())),
         OracleError::WindDownActive,
     );
-    refused(
-        f.oracle.try_apply_change(&id, &f.admin),
-        OracleError::WindDownActive,
-    );
-    f.oracle.cancel_change(&id, &f.admin);
+    refused(f.oracle.try_apply_change(&id), OracleError::WindDownActive);
+    f.oracle.cancel_change(&id);
 }
 
 #[test]
@@ -821,7 +796,7 @@ fn a_change_shorter_than_a_raised_notice_never_lands() {
     f.advance(30 * DAY_DURATION);
 
     refused(
-        f.oracle.try_apply_change(&id, &f.admin),
+        f.oracle.try_apply_change(&id),
         OracleError::DelayBelowNotice,
     );
 }
@@ -833,10 +808,8 @@ fn one_upgrade_waits_at_a_time() {
     f.propose(OracleChange::Upgrade(BytesN::from_array(&f.e, &[7; 32])));
 
     refused(
-        f.oracle.try_propose_change(
-            &OracleChange::Upgrade(BytesN::from_array(&f.e, &[9; 32])),
-            &f.admin,
-        ),
+        f.oracle
+            .try_propose_change(&OracleChange::Upgrade(BytesN::from_array(&f.e, &[9; 32]))),
         OracleError::UpgradeAlreadyPending,
     );
 }
@@ -853,21 +826,13 @@ fn only_the_admin_proposes_cancels_and_applies() {
     f.sign_only_as(
         &stranger,
         "propose_change",
-        (change.clone(), stranger.clone()).into_val(&f.e),
+        (change.clone(),).into_val(&f.e),
     );
-    assert!(f.oracle.try_propose_change(&change, &stranger).is_err());
-    f.sign_only_as(
-        &stranger,
-        "cancel_change",
-        (id, stranger.clone()).into_val(&f.e),
-    );
-    assert!(f.oracle.try_cancel_change(&id, &stranger).is_err());
-    f.sign_only_as(
-        &stranger,
-        "apply_change",
-        (id, stranger.clone()).into_val(&f.e),
-    );
-    assert!(f.oracle.try_apply_change(&id, &stranger).is_err());
+    assert!(f.oracle.try_propose_change(&change).is_err());
+    f.sign_only_as(&stranger, "cancel_change", (id,).into_val(&f.e));
+    assert!(f.oracle.try_cancel_change(&id).is_err());
+    f.sign_only_as(&stranger, "apply_change", (id,).into_val(&f.e));
+    assert!(f.oracle.try_apply_change(&id).is_err());
     assert_eq!(f.oracle.pending_changes().len(), 1);
 }
 
@@ -894,7 +859,7 @@ fn proposing_and_applying_publish_the_change() {
     );
 
     f.advance(MIN_DELAY);
-    f.oracle.apply_change(&id, &f.admin);
+    f.oracle.apply_change(&id);
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.oracle.address),
         [
@@ -959,17 +924,106 @@ fn setup_grants_hand_overs_and_changes_restore_the_instance_ttl() {
             .transfer_admin_role(&next, &(f.e.ledger().sequence() + ADMIN_ACCEPT_LEDGERS))
     });
     f.restores_the_instance(|| f.oracle.transfer_admin_role(&next, &0));
-    f.restores_the_instance(|| f.oracle.bind_vault(&f.vault.address, &f.admin));
-    f.restores_the_instance(|| f.oracle.finish_setup(&f.admin));
+    f.restores_the_instance(|| f.oracle.bind_vault(&f.vault.address));
+    f.restores_the_instance(|| f.oracle.finish_setup());
 
     let change = OracleChange::Config(config());
     let mut id = 0;
     f.restores_the_instance(|| id = f.propose(change.clone()));
-    f.restores_the_instance(|| f.oracle.cancel_change(&id, &f.admin));
+    f.restores_the_instance(|| f.oracle.cancel_change(&id));
 
     let id = f.propose(change);
     f.advance(MIN_DELAY);
-    f.restores_the_instance(|| f.oracle.apply_change(&id, &f.admin));
+    f.restores_the_instance(|| f.oracle.apply_change(&id));
+}
+
+#[test]
+fn each_admin_call_asks_the_admin_for_one_signature() {
+    let f = setup();
+    let holder = Address::generate(&f.e);
+    let live_until = f.e.ledger().sequence() + ADMIN_ACCEPT_LEDGERS;
+
+    f.oracle.set_config(&config());
+    f.signed_once_by(&f.admin, "set_config", (config(),).into_val(&f.e));
+    f.oracle.grant_role(&holder, &ATTESTER_ROLE, &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "grant_role",
+        (holder.clone(), ATTESTER_ROLE, f.admin.clone()).into_val(&f.e),
+    );
+    f.oracle.revoke_role(&holder, &ATTESTER_ROLE, &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "revoke_role",
+        (holder.clone(), ATTESTER_ROLE, f.admin.clone()).into_val(&f.e),
+    );
+    f.oracle.transfer_admin_role(&holder, &live_until);
+    f.signed_once_by(
+        &f.admin,
+        "transfer_admin_role",
+        (holder.clone(), live_until).into_val(&f.e),
+    );
+    f.oracle.transfer_admin_role(&holder, &0);
+    f.signed_once_by(
+        &f.admin,
+        "transfer_admin_role",
+        (holder.clone(), 0_u32).into_val(&f.e),
+    );
+
+    f.oracle.bind_vault(&f.vault.address);
+    f.signed_once_by(
+        &f.admin,
+        "bind_vault",
+        (f.vault.address.clone(),).into_val(&f.e),
+    );
+    f.oracle.finish_setup();
+    f.signed_once_by(&f.admin, "finish_setup", soroban_sdk::Vec::new(&f.e));
+
+    let change = OracleChange::Config(config());
+    let id = f.oracle.propose_change(&change);
+    f.signed_once_by(&f.admin, "propose_change", (change.clone(),).into_val(&f.e));
+    f.oracle.cancel_change(&id);
+    f.signed_once_by(&f.admin, "cancel_change", (id,).into_val(&f.e));
+    let id = f.oracle.propose_change(&change);
+    f.advance(MIN_DELAY);
+    f.oracle.apply_change(&id);
+    f.signed_once_by(&f.admin, "apply_change", (id,).into_val(&f.e));
+
+    f.oracle.pause_nav(&f.guardian);
+    f.oracle.clear_latest();
+    f.signed_once_by(&f.admin, "clear_latest", soroban_sdk::Vec::new(&f.e));
+    f.oracle.set_nav_paused(&false);
+    f.signed_once_by(&f.admin, "set_nav_paused", (false,).into_val(&f.e));
+}
+
+#[test]
+fn each_role_call_asks_its_holder_for_one_signature() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+
+    f.oracle.attest(&report(SCALE), &f.attester);
+    f.signed_once_by(
+        &f.attester,
+        "attest",
+        (report(SCALE), f.attester.clone()).into_val(&f.e),
+    );
+    f.oracle.pause_nav(&f.guardian);
+    f.signed_once_by(
+        &f.guardian,
+        "pause_nav",
+        (f.guardian.clone(),).into_val(&f.e),
+    );
+    f.oracle.renounce_role(&ATTESTER_ROLE, &f.attester);
+    f.signed_once_by(
+        &f.attester,
+        "renounce_role",
+        (ATTESTER_ROLE, f.attester.clone()).into_val(&f.e),
+    );
+
+    f.oracle
+        .transfer_admin_role(&next, &(f.e.ledger().sequence() + ADMIN_ACCEPT_LEDGERS));
+    f.oracle.accept_admin_transfer();
+    f.signed_once_by(&next, "accept_admin_transfer", soroban_sdk::Vec::new(&f.e));
 }
 
 #[cfg(feature = "upgrade_wasm")]
@@ -1041,15 +1095,15 @@ mod with_wasm {
         let id = f.propose(OracleChange::Upgrade(probe_hash));
         f.advance(MIN_DELAY);
 
-        f.oracle.apply_change(&id, &f.admin);
+        f.oracle.apply_change(&id);
 
         let probe = oracle_probe::Client::new(&f.e, &f.oracle.address);
         assert!(probe.probe());
         assert_eq!(probe.schema_version(), 1);
-        probe.migrate(&f.admin);
+        probe.migrate();
         assert_eq!(probe.schema_version(), 2);
         assert_eq!(
-            probe.try_migrate(&f.admin),
+            probe.try_migrate(),
             Err(Ok(oracle_probe::ProbeError::AlreadyMigrated.into()))
         );
 

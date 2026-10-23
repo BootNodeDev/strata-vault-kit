@@ -55,31 +55,27 @@ impl ShareToken {
     /// Names the vault whose clock this token's timelock reads. Once, and only
     /// during setup.
     #[only_admin]
-    pub fn bind_vault(e: &Env, vault: Address, caller: Address) {
-        caller.require_auth();
+    pub fn bind_vault(e: &Env, vault: Address) {
         strata_storage::bump_instance(e);
         governance::bind_vault(e, &vault);
     }
 
     /// Ends the window in which admin changes are instant. It never reopens.
     #[only_admin]
-    pub fn finish_setup(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn finish_setup(e: &Env) {
         strata_storage::bump_instance(e);
         governance::finish_setup(e);
     }
 
     /// Queues a change behind the vault's timelock and returns its id.
     #[only_admin]
-    pub fn propose_change(e: &Env, change: TokenChange, caller: Address) -> u32 {
-        caller.require_auth();
+    pub fn propose_change(e: &Env, change: TokenChange) -> u32 {
         strata_storage::bump_instance(e);
         governance::propose(e, change)
     }
 
     #[only_admin]
-    pub fn cancel_change(e: &Env, id: u32, caller: Address) {
-        caller.require_auth();
+    pub fn cancel_change(e: &Env, id: u32) {
         strata_storage::bump_instance(e);
         governance::cancel(e, id);
     }
@@ -87,8 +83,7 @@ impl ShareToken {
     /// Lands a change whose delay has run. Refused while the vault is paused
     /// or winding down.
     #[only_admin]
-    pub fn apply_change(e: &Env, id: u32, caller: Address) {
-        caller.require_auth();
+    pub fn apply_change(e: &Env, id: u32) {
         strata_storage::bump_instance(e);
         governance::apply(e, id);
     }
@@ -139,14 +134,14 @@ impl VaultBinding for ShareToken {
 
 #[contractimpl(contracttrait)]
 impl Pausable for ShareToken {
-    #[only_admin]
     fn pause(e: &Env, caller: Address) {
+        guards::caller_is_admin(e, &caller);
         caller.require_auth();
         strata_storage::bump_instance(e);
         pausable::pause(e);
     }
-    #[only_admin]
     fn unpause(e: &Env, caller: Address) {
+        guards::caller_is_admin(e, &caller);
         caller.require_auth();
         strata_storage::bump_instance(e);
         pausable::unpause(e);
@@ -272,15 +267,15 @@ impl RWAToken for ShareToken {
         strata_storage::bump_instance(e);
         RWA::unfreeze_partial_tokens(e, &user_address, amount);
     }
-    #[only_admin]
     fn set_compliance(e: &Env, compliance: Address, operator: Address) {
+        guards::caller_is_admin(e, &operator);
         operator.require_auth();
         guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         RWA::set_compliance(e, &compliance);
     }
-    #[only_admin]
     fn set_identity_verifier(e: &Env, identity_verifier: Address, operator: Address) {
+        guards::caller_is_admin(e, &operator);
         operator.require_auth();
         guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
@@ -301,8 +296,7 @@ pub enum ProbeError {
 #[contractimpl]
 impl ShareToken {
     #[only_admin]
-    pub fn migrate(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn migrate(e: &Env) {
         strata_storage::bump_instance(e);
         if upgradeable::get_schema_version(e) >= 2 {
             panic_with_error!(e, ProbeError::AlreadyMigrated);

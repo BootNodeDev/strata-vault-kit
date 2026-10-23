@@ -191,7 +191,7 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 
 ## 3. Role & Authority Matrix
 
-Strata distributes control across five native Stellar multisig authorities and permissionless public entrypoints. Every privileged function is mapped to exactly one authority, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call.
+Strata distributes control across five native Stellar multisig authorities and permissionless public entrypoints. Every privileged function is mapped to exactly one authority, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An admin entrypoint the kit defines takes no caller argument: the stored admin signs it.
 
 ### Authority Capabilities & Anti-Capabilities
 
@@ -220,7 +220,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `close_epoch` | Manager | `#[only_role(caller, "manager")]` | No |
 | **`AsyncVault`** | `fulfill_epoch` | Permissionless | None | Yes (halted by pause) |
 | **`AsyncVault`** | `pause` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
-| **`AsyncVault`** | `unpause` | Governance | `#[only_admin]` | N/A |
+| **`AsyncVault`** | `unpause` | Governance | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
 | **`AsyncVault`** | `set_notice` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change` | No |
 | **`AsyncVault`** | `set_custodian` | Governance | `#[only_admin]`; instant during setup, then `propose_change` | No |
 | **`AsyncVault`** | `set_deposit_cap` | Governance | `#[only_admin]`; instant both ways | No |
@@ -241,7 +241,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`AsyncVault`** | `revoke_role` | Governance | `treasury`, `guardian`: instant. `manager`: instant during setup, then `propose_change` | No |
 | **`AsyncVault`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
-| **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | `caller.require_auth()` | No |
+| **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()` | No |
 | **`NavOracle`** | `attest` | Attester | `#[only_role(caller, "attester")]` | Refused if the NAV is paused |
 | **`NavOracle`** | `pause_nav` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
 | **`NavOracle`** | `set_nav_paused` | Governance | `#[only_admin]` | N/A |
@@ -256,15 +256,15 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`NavOracle`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`NavOracle`** | `revoke_role` | Governance | Instant (`attester`, `guardian`) | No |
 | **`NavOracle`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
-| **`ShareToken`** | `pause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
-| **`ShareToken`** | `unpause` | Admin (Governance) | `#[only_admin]`, `caller.require_auth()` | N/A |
+| **`ShareToken`** | `pause` | Admin (Governance) | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
+| **`ShareToken`** | `unpause` | Admin (Governance) | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
 | **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `forced_transfer` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `legal_transfer` | Compliance, co-signed by Governance (token admin) | `#[only_role(caller, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address; the destination passes `verify_identity`; a reference of 1–128 bytes | Bypasses token pause |
 | **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens` | Compliance | `#[only_role(operator, "compliance")]`; never freezes the vault's address once the token knows its vault | No |
 | **`ShareToken`** | `recover_balance` | Compliance, co-signed by Governance (token admin) | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address | No |
-| **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `#[only_admin]`; instant during setup, then `propose_change` | No |
+| **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `operator` must be the admin (`AdminRequired`), then `operator.require_auth()`; instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `bind_vault` | Governance (token admin) | `#[only_admin]`; during setup, once | No |
 | **`ShareToken`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
 | **`ShareToken`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
@@ -275,8 +275,8 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`ShareToken`** | `revoke_role` | Governance | `compliance`: instant. `manager`: instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`IdentityVerifier`** | `allow` | Admin (Compliance) | `#[only_admin]` | No |
-| **`IdentityVerifier`** | `set_claim_topics_and_issuers`| Admin (Compliance) | `#[only_admin]` | No |
-| **`Compliance`** | `bind_token`, `unbind_token`, `add_module_to`, `remove_module_from` | Governance | `#[only_admin]`; instant during setup, then `propose_change` | No |
+| **`IdentityVerifier`** | `set_claim_topics_and_issuers`| Admin (Compliance) | `#[only_admin]`; `operator` is not read | No |
+| **`Compliance`** | `bind_token`, `unbind_token`, `add_module_to`, `remove_module_from` | Governance | `#[only_admin]`, `operator` is not read; instant during setup, then `propose_change` | No |
 | **`Compliance`** | `bind_vault` | Governance (compliance admin) | `#[only_admin]`; during setup, once | No |
 | **`Compliance`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
 | **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
@@ -295,10 +295,10 @@ A clean deployment executes in three sequenced phases:
 1. **Phase 1: Contract Deployment**
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
 2. **Phase 2: Post-Deployment Role Wiring**
-   - Call `ShareToken::grant_role("manager", vault_address)` to authorize lazy share minting and burning.
+   - Call `ShareToken::grant_role(vault_address, "manager", governance)` to authorize lazy share minting and burning.
    - Call `ShareToken::bind_vault(vault_address)`, then `ShareToken::finish_setup()`. The token's admin changes are instant until then and wait for the vault's timelock afterwards.
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so a delisted holder's priced deposit can be minted into the vault's escrow; `finish_setup` requires it.
-   - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
+   - Call `Compliance::bind_token(share_token_address, governance)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
    - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap.
    - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it, and with `AdminTransferPending` while an admin hand-over offered during setup is pending. The vault takes no deposit before it.

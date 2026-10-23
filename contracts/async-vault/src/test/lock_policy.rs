@@ -266,7 +266,7 @@ fn standing_is_delisted_for_an_address_that_was_never_allowlisted() {
 fn standing_is_delisted_for_a_holder_listed_then_removed() {
     let f = setup();
     let holder = f.investor(0);
-    f.identity.allow(&holder, &false, &f.compliance);
+    f.identity.allow(&holder, &false);
 
     assert_eq!(
         f.e.as_contract(&f.vault.address, || lock_policy::standing(&f.e, &holder)),
@@ -290,7 +290,7 @@ fn standing_is_frozen_for_a_frozen_holder_on_the_allowlist() {
 fn standing_is_frozen_for_a_holder_both_frozen_and_delisted() {
     let f = setup();
     let holder = f.investor(0);
-    f.identity.allow(&holder, &false, &f.compliance);
+    f.identity.allow(&holder, &false);
     f.share.set_address_frozen(&holder, &true, &f.compliance);
 
     assert_eq!(

@@ -193,7 +193,7 @@ fn a_request_that_cannot_settle_keeps_its_epoch_open() {
     let epoch = f.vault.request_redeem(&a, &1);
     f.vault.request_redeem(&b, &3);
     f.fulfill_epoch(wad(1) / 2);
-    f.identity.allow(&a, &false, &f.compliance);
+    f.identity.allow(&a, &false);
 
     refused(
         f.vault.try_claim_redeem(&a, &epoch),

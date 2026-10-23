@@ -75,15 +75,20 @@ membership is the contract's real state, not a mock. Most of these tests run
 with `mock_all_auths`, so every signature is granted and a refusal can only
 come from the role check.
 
-**Whether a signature is required.** A refusal test clears all signatures with
-`set_auths(&[])` and checks the call fails and changes nothing, which proves the
-entrypoint requires the right address to sign.
+**Which signatures a call needs.** A refusal test signs the call as another
+account only (`mock_auths`), or clears all signatures with `set_auths(&[])`,
+and checks the call fails and changes nothing, which proves the entrypoint
+requires the right address to sign. A signature test reads `e.auths()` right
+after a call and expects one entry per account the call needs, on that call
+only.
 
 The per-entrypoint role matrix, with the refusal test for each, is in
 [AUTHORIZATION_MATRIX.md](./AUTHORIZATION_MATRIX.md).
 
 | Behaviour | Tests | Key test names |
 | --- | --- | --- |
+| Every privileged call asks each account it needs for one signature: an admin call asks the admin once, a role call asks the role holder once, and `legal_transfer` and `recover_balance` ask compliance and the admin once each | [`contracts/async-vault/src/test/signatures.rs`](../contracts/async-vault/src/test/signatures.rs), [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs), [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs), [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs), [`contracts/compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs), [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs) | `each_setup_call_asks_the_admin_for_one_signature`, `each_admin_call_after_setup_asks_the_admin_for_one_signature`, `each_admin_call_asks_the_admin_for_one_signature`, `each_role_call_asks_its_holder_for_one_signature`, `a_legal_transfer_or_a_recovery_asks_each_signer_once`, `a_hand_over_asks_each_side_for_one_signature`, `each_hook_asks_the_bound_token_for_one_signature` |
+| An account other than the admin cannot pause, unpause or swap the token's rules or verifier, or unpause the vault, even when it signs | [`contracts/async-vault/src/test/controls.rs`](../contracts/async-vault/src/test/controls.rs), [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs) | `a_caller_other_than_the_admin_cannot_unpause_even_when_it_signs`, `a_caller_other_than_the_admin_is_refused_even_when_it_signs` |
 | A deposit is one investor signature that covers the vault call and the asset transfer inside it | [`contracts/async-vault/src/test/deposit.rs`](../contracts/async-vault/src/test/deposit.rs) | `one_investor_signature_covers_the_request_and_the_transfer` |
 | Investor calls refuse without the investor's signature | [`contracts/async-vault/src/test/deposit.rs`](../contracts/async-vault/src/test/deposit.rs), [`contracts/async-vault/src/test/redeem.rs`](../contracts/async-vault/src/test/redeem.rs) | `request_deposit_needs_the_investor_authorisation`, `claiming_needs_the_investor_authorisation`, `request_redeem_needs_the_holder_authorisation` |
 | Role calls refuse without the role holder's signature | [`contracts/async-vault/src/test/epochs.rs`](../contracts/async-vault/src/test/epochs.rs), [`contracts/async-vault/src/test/notice.rs`](../contracts/async-vault/src/test/notice.rs), [`contracts/async-vault/src/test/treasury.rs`](../contracts/async-vault/src/test/treasury.rs), [`contracts/async-vault/src/test/deposit_cap.rs`](../contracts/async-vault/src/test/deposit_cap.rs) | `closing_needs_the_manager_authorisation`, `setting_the_notice_needs_governance_authorisation`, `setting_the_custodian_needs_the_admin_signature`, `unauthorized_caller_rejected` |

@@ -28,13 +28,12 @@ struct Fixture<'a> {
     e: Env,
     rules: ComplianceClient<'a>,
     vault: Address,
-    admin: Address,
 }
 
 impl Fixture<'_> {
     fn finish_setup(&self) {
-        self.rules.bind_vault(&self.vault, &self.admin);
-        self.rules.finish_setup(&self.admin);
+        self.rules.bind_vault(&self.vault);
+        self.rules.finish_setup();
     }
 }
 
@@ -42,14 +41,9 @@ fn setup<'a>() -> Fixture<'a> {
     let e = Env::default();
     e.mock_all_auths();
     let admin = Address::generate(&e);
-    let rules = ComplianceClient::new(&e, &e.register(Compliance, (admin.clone(),)));
+    let rules = ComplianceClient::new(&e, &e.register(Compliance, (admin,)));
     let vault = e.register(VaultStub, ());
-    Fixture {
-        e,
-        rules,
-        vault,
-        admin,
-    }
+    Fixture { e, rules, vault }
 }
 
 /// Runs `guard` inside the compliance contract, as an entrypoint would.

@@ -62,7 +62,6 @@ beforeAll(async () => {
 			verifier.allow({
 				account: holder.publicKey(),
 				allowed: true,
-				caller: compliance.publicKey(),
 			}),
 		)
 	}
@@ -90,7 +89,6 @@ describe("an account with no role", () => {
 			send(
 				vault(c, outsider).propose_change({
 					change: { tag: "Custodian", values: [who] },
-					caller: who,
 				}),
 			),
 		).rejects.toThrow(/signatures/)
@@ -125,27 +123,30 @@ describe("an account with no role", () => {
 
 	it("cannot unpause the vault", async () => {
 		await send(vault(c, guardian).pause({ caller: guardian.publicKey() }))
-		await expect(
-			send(vault(c, outsider).unpause({ caller: who })),
-		).rejects.toThrow(/signatures/)
+		const v = vault(c, outsider)
+		expectRefused(await v.unpause({ caller: who }), v, "AdminRequired")
 		await send(vault(c, governance).unpause({ caller: governance.publicKey() }))
+	})
+
+	it("cannot pause the share token", async () => {
+		const token = shareToken(c, outsider)
+		expectRefused(await token.pause({ caller: who }), token, "AdminRequired")
 	})
 
 	it("cannot set the NAV pause", async () => {
 		await expect(
-			send(oracle(c, outsider).set_nav_paused({ paused: true, caller: who })),
+			send(oracle(c, outsider).set_nav_paused({ paused: true })),
 		).rejects.toThrow(/signatures/)
 	})
 
 	it("cannot clear the latest report", async () => {
 		await send(oracle(c, guardian).pause_nav({ caller: guardian.publicKey() }))
-		await expect(
-			send(oracle(c, outsider).clear_latest({ caller: who })),
-		).rejects.toThrow(/signatures/)
+		await expect(send(oracle(c, outsider).clear_latest())).rejects.toThrow(
+			/signatures/,
+		)
 		await send(
 			oracle(c, governance).set_nav_paused({
 				paused: false,
-				caller: governance.publicKey(),
 			}),
 		)
 	})
@@ -167,7 +168,6 @@ describe("the compliance authority's reach", () => {
 				identityVerifier(c, governance).allow({
 					account: outsider.publicKey(),
 					allowed: true,
-					caller: governance.publicKey(),
 				}),
 			),
 		).rejects.toThrow(/signatures/)
@@ -209,7 +209,6 @@ describe("the compliance authority's reach", () => {
 						tag: "IdentityVerifier",
 						values: [c.deployment.contracts.compliance],
 					},
-					caller: compliance.publicKey(),
 				}),
 			),
 		).rejects.toThrow(/signatures/)
@@ -237,22 +236,15 @@ describe("the share token after setup", () => {
 		const id = await send(
 			token.propose_change({
 				change: { tag: "IdentityVerifier", values: [verifier()] },
-				caller: caller(),
 			}),
 		)
-		expectRefused(
-			await token.apply_change({ id, caller: caller() }),
-			token,
-			"ChangeNotReady",
-		)
-		await send(token.cancel_change({ id, caller: caller() }))
+		expectRefused(await token.apply_change({ id }), token, "ChangeNotReady")
+		await send(token.cancel_change({ id }))
 		expect((await token.pending_changes()).result).toEqual([])
 	})
 })
 
 describe("the oracle after setup", () => {
-	const caller = () => governance.publicKey()
-
 	it("governance cannot loosen the feed config at once", async () => {
 		const config = (await feed.config()).result
 		const o = oracle(c, governance)
@@ -289,15 +281,10 @@ describe("the oracle after setup", () => {
 					tag: "Config",
 					values: [{ ...config, max_down_bps: config.max_down_bps - 1 }],
 				},
-				caller: caller(),
 			}),
 		)
-		expectRefused(
-			await o.apply_change({ id, caller: caller() }),
-			o,
-			"ChangeNotReady",
-		)
-		await send(o.cancel_change({ id, caller: caller() }))
+		expectRefused(await o.apply_change({ id }), o, "ChangeNotReady")
+		await send(o.cancel_change({ id }))
 		expect((await o.pending_changes()).result).toEqual([])
 	})
 })
@@ -324,28 +311,20 @@ describe("the compliance contract after setup", () => {
 		const id = await send(
 			rules.propose_change({
 				change: { tag: "AddModule", values: [canCreate, outsider.publicKey()] },
-				caller: caller(),
 			}),
 		)
-		expectRefused(
-			await rules.apply_change({ id, caller: caller() }),
-			rules,
-			"ChangeNotReady",
-		)
-		await send(rules.cancel_change({ id, caller: caller() }))
+		expectRefused(await rules.apply_change({ id }), rules, "ChangeNotReady")
+		await send(rules.cancel_change({ id }))
 		expect((await rules.pending_changes()).result).toEqual([])
 	})
 })
 
 describe("the vault after setup", () => {
-	const caller = () => governance.publicKey()
-
 	it("governance cannot change the custodian at once", async () => {
 		const v = vault(c, governance)
 		expectRefused(
 			await v.set_custodian({
 				custodian: outsider.publicKey(),
-				caller: caller(),
 			}),
 			v,
 			"UseTimelock",
@@ -358,15 +337,10 @@ describe("the vault after setup", () => {
 		const id = await send(
 			v.propose_change({
 				change: { tag: "Custodian", values: [outsider.publicKey()] },
-				caller: caller(),
 			}),
 		)
-		expectRefused(
-			await v.apply_change({ id, caller: caller() }),
-			v,
-			"ChangeNotReady",
-		)
-		await send(v.cancel_change({ id, caller: caller() }))
+		expectRefused(await v.apply_change({ id }), v, "ChangeNotReady")
+		await send(v.cancel_change({ id }))
 		expect((await v.pending_changes()).result).toEqual([])
 	})
 })
@@ -619,7 +593,6 @@ describe("a de-listed holder", () => {
 			identityVerifier(c, compliance).allow({
 				account: first.publicKey(),
 				allowed: false,
-				caller: compliance.publicKey(),
 			}),
 		)
 		expectRefused(
@@ -649,7 +622,6 @@ describe("a de-listed holder", () => {
 			identityVerifier(c, compliance).allow({
 				account: first.publicKey(),
 				allowed: true,
-				caller: compliance.publicKey(),
 			}),
 		)
 		expect(
@@ -751,13 +723,11 @@ describe("the notice period and valuation age rules", () => {
 		await send(
 			oracle(c, governance).set_nav_paused({
 				paused: false,
-				caller: governance.publicKey(),
 			}),
 		)
 		await send(
 			vault(c, governance).set_notice({
 				secs: noticeSecs,
-				caller: governance.publicKey(),
 			}),
 		)
 	})
@@ -832,11 +802,7 @@ describe("the notice period and valuation age rules", () => {
 
 	it("governance cannot lower the notice at once", async () => {
 		const v = vault(c, governance)
-		expectRefused(
-			await v.set_notice({ secs: 0n, caller: governance.publicKey() }),
-			v,
-			"UseTimelock",
-		)
+		expectRefused(await v.set_notice({ secs: 0n }), v, "UseTimelock")
 		expect((await reader.notice()).result).toBe(noticeSecs)
 	})
 })

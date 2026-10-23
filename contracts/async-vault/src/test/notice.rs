@@ -11,7 +11,7 @@ fn a_fresh_vault_has_no_notice() {
 fn governance_sets_the_notice() {
     let f = setup();
 
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
 
     assert_eq!(f.vault.notice(), 3_600);
 }
@@ -21,11 +21,11 @@ fn setting_the_notice_needs_governance_authorisation() {
     let f = setup();
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_set_notice(&3_600, &f.admin).is_err());
+    assert!(f.vault.try_set_notice(&3_600).is_err());
     assert_eq!(f.vault.notice(), 0);
 
     f.e.mock_all_auths();
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
     assert_eq!(f.vault.notice(), 3_600);
 }
 
@@ -41,7 +41,7 @@ fn an_open_epoch_has_no_timestamps() {
 #[test]
 fn closing_records_the_moment_and_the_wait() {
     let f = setup();
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
     let closed_at = f.e.ledger().timestamp();
 
     let id = f.close_epoch();
@@ -54,11 +54,11 @@ fn closing_records_the_moment_and_the_wait() {
 #[test]
 fn a_later_notice_does_not_move_an_epoch_that_closed() {
     let f = setup();
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
     let id = f.close_epoch();
     let before = f.vault.get_epoch(&id).unwrap().priceable_at;
 
-    f.vault.set_notice(&DAY_DURATION, &f.admin);
+    f.vault.set_notice(&DAY_DURATION);
 
     assert_eq!(f.vault.get_epoch(&id).unwrap().priceable_at, before);
 }
@@ -67,7 +67,7 @@ fn a_later_notice_does_not_move_an_epoch_that_closed() {
 fn an_epoch_cannot_be_priced_inside_its_notice() {
     let f = setup();
     let holder = f.holder(100);
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
     f.vault.request_redeem(&holder, &100);
     let epoch = f.close_epoch();
     f.attest(wad(2));
@@ -82,7 +82,7 @@ fn an_epoch_cannot_be_priced_inside_its_notice() {
 fn it_is_priced_once_the_notice_elapses() {
     let f = setup();
     let holder = f.holder(100);
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
     f.vault.request_redeem(&holder, &100);
     let epoch = f.close_epoch();
 
@@ -110,7 +110,7 @@ fn a_notice_of_zero_prices_as_soon_as_the_valuation_lands() {
 fn the_notice_is_reported_before_the_valuation() {
     let f = setup();
     let holder = f.holder(100);
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
     f.vault.request_redeem(&holder, &100);
     f.advance(60);
     let epoch = f.close_epoch();
@@ -127,7 +127,7 @@ fn the_notice_is_reported_before_the_valuation() {
 fn the_notice_does_not_reopen_the_cancellation_window() {
     let f = setup();
     let investor = f.investor(1_000);
-    f.vault.set_notice(&3_600, &f.admin);
+    f.vault.set_notice(&3_600);
     f.vault.request_deposit(&investor, &1_000);
     let epoch = f.close_epoch();
     f.attest(wad(2));
@@ -149,7 +149,7 @@ fn a_notice_beyond_the_maximum_is_refused() {
     let f = setup();
 
     refused(
-        f.vault.try_set_notice(&(MAX_NOTICE_SECS + 1), &f.admin),
+        f.vault.try_set_notice(&(MAX_NOTICE_SECS + 1)),
         VaultError::NoticeTooLong,
     );
     assert_eq!(f.vault.notice(), 0);
@@ -160,7 +160,7 @@ fn a_notice_above_the_upgrade_delay_is_refused() {
     let f = setup();
 
     refused(
-        f.vault.try_set_notice(&(MIN_UPGRADE_DELAY + 1), &f.admin),
+        f.vault.try_set_notice(&(MIN_UPGRADE_DELAY + 1)),
         VaultError::NoticeAboveUpgradeDelay,
     );
     assert_eq!(f.vault.notice(), 0);
@@ -173,11 +173,11 @@ fn a_notice_at_the_maximum_is_accepted() {
     // The delay must be raised first, since notice cannot outgrow the upgrade delay.
     let id = f
         .vault
-        .propose_change(&VaultChange::UpgradeDelay(MAX_NOTICE_SECS), &f.admin);
+        .propose_change(&VaultChange::UpgradeDelay(MAX_NOTICE_SECS));
     f.advance(MIN_UPGRADE_DELAY);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
 
-    f.vault.set_notice(&MAX_NOTICE_SECS, &f.admin);
+    f.vault.set_notice(&MAX_NOTICE_SECS);
 
     assert_eq!(f.vault.notice(), MAX_NOTICE_SECS);
 }
