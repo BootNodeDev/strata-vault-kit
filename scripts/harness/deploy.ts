@@ -132,9 +132,9 @@ async function deployContracts(
 	}
 }
 
-// The vault mints and burns, so it needs the token's manager role; it returns
-// escrowed shares through the checked transfer, so it must itself be
-// allowed; and compliance only runs its hooks for a bound token, so the
+// The vault mints and burns, so it needs the token's manager role; it mints a
+// delisted holder's converted deposit into its own escrow, so it must itself
+// be allowed; and compliance only runs its hooks for a bound token, so the
 // share token must be bound to it.
 async function grantAndVerify(
 	net: Network,

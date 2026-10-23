@@ -391,8 +391,9 @@ impl AsyncVault {
     }
 
     /// Cancels an unpriced redemption. Outside a wind-down the shares come
-    /// back, so a delisted or frozen controller is refused; in one the escrow
-    /// joins the controller's entitlement, and a frozen controller is held.
+    /// back, even while the token is paused, unless the controller is delisted,
+    /// frozen or refused by the compliance rules; in one the escrow joins the
+    /// controller's entitlement, and a frozen controller is held.
     pub fn cancel_redeem(e: &Env, from: Address, epoch_id: u64) -> i128 {
         redeem::cancel(e, &from, epoch_id)
     }

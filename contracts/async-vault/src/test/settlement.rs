@@ -166,9 +166,9 @@ fn a_request_that_cannot_settle_keeps_its_epoch_open() {
     f.fulfill_epoch(wad(1) / 2);
     f.identity.allow(&a, &false, &f.compliance);
 
-    assert_eq!(
-        f.vault.try_claim_redeem(&a, &epoch).err(),
-        Some(Ok(soroban_sdk::Error::from_contract_error(304)))
+    refused(
+        f.vault.try_claim_redeem(&a, &epoch),
+        VaultError::HolderNotEligible,
     );
     assert_eq!(f.vault.claim_redeem(&b, &epoch), 1);
 
