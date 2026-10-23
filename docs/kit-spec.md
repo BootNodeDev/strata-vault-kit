@@ -168,6 +168,23 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | **Oracle Configuration** | `set_config(config: OracleConfig)`; after setup, `propose_change(Config(config))` → `apply_change(id)` | Governance | Updates oracle parameters within the constructor's bounds. `set_config` is instant during the oracle's setup. After it, `set_config` is instant only for a shorter `freshness_duration`: later reports go stale sooner, and no value moves. Every other change, tighter limits included, goes through `propose_change(Config(config))` → `apply_change(id)`, and the bounds are checked again when it applies. A tighter fall cap or a longer cooldown can hold the price above a real loss, and a narrower band can stop pricing. Applying a `Config` change sets every field, freshness included; to keep a cut made after the proposal, cancel the queued change and propose again. |
 | **Oracle Feed** | `propose_change(Oracle(address))` → `apply_change(id)` | Governance | Waits for the timelock. The new feed must name this vault through `vault()` with its own setup finished, at proposal and again at apply, and must answer `state()`. The next fulfilment prices from it, including an epoch sealed before the swap. |
 
+### Health View
+
+`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true.
+
+| Field | True when |
+|---|---|
+| `setup_open` | `finish_setup` has not run yet. While true, admin changes are instant and deposits are refused. |
+| `token_bound` | The share token names this vault through `vault()` and its own setup is finished. |
+| `oracle_bound` | The oracle names this vault through `vault()` and its own setup is finished. |
+| `sole_token_manager` | This vault is the share token's only `manager`. |
+| `allowlisted` | This vault passes the share token's identity verifier, so it can hold escrowed shares. A delisted holder's deposit converts to an exit by minting the shares to the vault's own address, so that conversion needs this flag true. |
+| `compliance_bound` | The share token is in its compliance contract's `linked_tokens`. |
+| `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired and the NAV is not paused. |
+| `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
+
+`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation.
+
 ---
 
 ## 3. Role & Authority Matrix

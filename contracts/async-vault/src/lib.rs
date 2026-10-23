@@ -5,6 +5,7 @@ mod epoch;
 mod error;
 mod event;
 mod governance;
+mod health;
 mod keys;
 mod lock_policy;
 mod pricing;
@@ -38,6 +39,7 @@ pub use event::{
     WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
+pub use health::Health;
 pub use pricing::{DirectUnitPricing, PricingScheme};
 pub use roles::VaultRoles;
 pub use settlement::EpochSettlement;
@@ -296,6 +298,12 @@ impl AsyncVault {
 
     pub fn setup_open(e: &Env) -> bool {
         timelock::setup::is_open(e)
+    }
+
+    /// The wiring `finish_setup` checks, plus the feed: whether it can price
+    /// now, and whether its reports outlive the notice.
+    pub fn health(e: &Env) -> Health {
+        health::health(e)
     }
 
     /// Queues a change behind the timelock and returns its id.
