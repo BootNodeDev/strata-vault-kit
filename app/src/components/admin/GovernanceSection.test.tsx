@@ -376,7 +376,6 @@ describe("GovernanceSection", () => {
 		)
 		expect(useGovernanceStateMock).toHaveBeenCalledWith({
 			contracts: { vault: VAULT, oracle: "CORACLE", token: "CTOKEN" },
-			active: true,
 		})
 	})
 

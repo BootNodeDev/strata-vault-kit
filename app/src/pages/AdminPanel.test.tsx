@@ -1,4 +1,10 @@
 import {
+	QueryClient,
+	QueryClientProvider,
+	useQuery,
+} from "@tanstack/react-query"
+import {
+	act,
 	cleanup,
 	fireEvent,
 	render,
@@ -7,7 +13,7 @@ import {
 } from "@testing-library/react"
 import type React from "react"
 import { MemoryRouter, Route, Routes } from "react-router-dom"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type * as UseAdminAuthority from "../hooks/useAdminAuthority"
 import {
 	type AdminAuthority,
@@ -16,10 +22,22 @@ import {
 } from "../hooks/useAdminAuthority"
 import AdminPanel from "./AdminPanel"
 
-const { useAdminAuthorityMock, useWalletMock } = vi.hoisted(() => ({
-	useAdminAuthorityMock: vi.fn(),
-	useWalletMock: vi.fn(),
-}))
+const { useAdminAuthorityMock, useWalletMock, readSurfaceMock } = vi.hoisted(
+	() => ({
+		useAdminAuthorityMock: vi.fn(),
+		useWalletMock: vi.fn(),
+		readSurfaceMock: vi.fn<(surface: string) => Promise<string>>(),
+	}),
+)
+
+const SurfaceRead: React.FC<{ surface: string }> = ({ surface }) => {
+	const { data } = useQuery({
+		queryKey: ["surface", surface],
+		queryFn: () => readSurfaceMock(surface),
+		refetchInterval: 15_000,
+	})
+	return <p>{data ?? "Reading…"}</p>
+}
 
 vi.mock("../hooks/useAdminAuthority", async (importOriginal) => {
 	const actual = await importOriginal<typeof UseAdminAuthority>()
@@ -40,6 +58,7 @@ vi.mock("../components/admin/CycleSection", () => ({
 	}) => (
 		<div data-testid="cycle-surface" data-active={String(active)}>
 			<p>Cycle surface for {grants.map((grant) => grant.role).join(", ")}</p>
+			<SurfaceRead surface="cycle" />
 			<input aria-label="Amount" />
 			{contracts}
 		</div>
@@ -66,6 +85,7 @@ vi.mock("../components/admin/ComplianceSection", () => ({
 			<p>
 				Compliance surface for {grants.map((grant) => grant.role).join(", ")}
 			</p>
+			<SurfaceRead surface="compliance" />
 			{contracts}
 		</div>
 	),
@@ -172,22 +192,47 @@ const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	grantedBy: emptyGrantedBy,
 	grants: [],
 	signersUnknown: false,
+	signersLoading: false,
 	verifierAdminUnknown: false,
 	addresses: noAddresses,
 	holders: noHolders,
 	...overrides,
 })
 
+let queryClient = new QueryClient()
+
 const routedPanel = (path: string) => (
-	<MemoryRouter initialEntries={[path]}>
-		<Routes>
-			<Route path="/admin" element={<AdminPanel />} />
-			<Route path="/admin/:surface" element={<AdminPanel />} />
-		</Routes>
-	</MemoryRouter>
+	<QueryClientProvider client={queryClient}>
+		<MemoryRouter initialEntries={[path]}>
+			<Routes>
+				<Route path="/admin" element={<AdminPanel />} />
+				<Route path="/admin/:surface" element={<AdminPanel />} />
+			</Routes>
+		</MemoryRouter>
+	</QueryClientProvider>
 )
 
 const renderAt = (path: string) => render(routedPanel(path))
+
+const holdCycleAndCompliance = () => {
+	const manager = holderOf("vault manager")
+	const compliance = holderOf("share-token compliance")
+	useAdminAuthorityMock.mockReturnValue(
+		authority({
+			status: "ready",
+			surfaces: new Set(["cycle", "compliance"]),
+			grantedBy: {
+				...emptyGrantedBy,
+				cycle: [manager],
+				compliance: [compliance],
+			},
+			grants: [manager, compliance],
+		}),
+	)
+}
+
+const readSurfaces = () =>
+	readSurfaceMock.mock.calls.map(([surface]) => surface)
 
 const currentTab = () =>
 	screen
@@ -197,6 +242,15 @@ const currentTab = () =>
 describe("AdminPanel", () => {
 	beforeEach(() => {
 		useWalletMock.mockReturnValue({ address: connectedAddress })
+		queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false } },
+		})
+		readSurfaceMock.mockReset()
+		readSurfaceMock.mockImplementation(async (surface) => `${surface} read`)
+	})
+
+	afterEach(() => {
+		vi.useRealTimers()
 	})
 
 	it("tells a disconnected wallet to connect, with no tabs and no identity line", () => {
@@ -707,6 +761,16 @@ describe("AdminPanel", () => {
 		expect(screen.getAllByText("Signer lookup unavailable.")).toHaveLength(1)
 	})
 
+	it("adds one line while the signers are still being checked", () => {
+		useAdminAuthorityMock.mockReturnValue(
+			authority({ status: "ready", signersLoading: true }),
+		)
+		renderAt("/admin")
+
+		expect(screen.getAllByText("Checking signers…")).toHaveLength(1)
+		expect(screen.queryByText("Signer lookup unavailable.")).toBeNull()
+	})
+
 	it("shows the cycle surface only on the Cycle tab", () => {
 		const manager = holderOf("vault manager")
 		const compliance = holderOf("share-token compliance")
@@ -758,5 +822,54 @@ describe("AdminPanel", () => {
 		expect((screen.getByLabelText("Amount") as HTMLInputElement).value).toBe(
 			"250",
 		)
+	})
+
+	it("reads only the open tab's data on a cold load", async () => {
+		holdCycleAndCompliance()
+		renderAt("/admin/cycle")
+
+		expect(await screen.findByText("cycle read")).toBeTruthy()
+		expect(readSurfaces()).toEqual(["cycle"])
+	})
+
+	it("loads a tab's data when it is opened, showing it as reading until it arrives", async () => {
+		holdCycleAndCompliance()
+		let arrive: (value: string) => void = () => undefined
+		readSurfaceMock.mockImplementation(async (surface) =>
+			surface === "compliance"
+				? new Promise<string>((resolve) => {
+						arrive = resolve
+					})
+				: `${surface} read`,
+		)
+		renderAt("/admin/cycle")
+		await screen.findByText("cycle read")
+		expect(readSurfaces()).not.toContain("compliance")
+
+		fireEvent.click(screen.getByRole("link", { name: "Compliance" }))
+
+		const compliance = screen.getByRole("region", { name: "Compliance" })
+		expect(within(compliance).getByText("Reading…")).toBeTruthy()
+		expect(readSurfaces()).toEqual(["cycle", "compliance"])
+
+		act(() => arrive("compliance read"))
+
+		expect(await within(compliance).findByText("compliance read")).toBeTruthy()
+	})
+
+	it("stops reading a tab while another tab is shown", async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true })
+		holdCycleAndCompliance()
+		renderAt("/admin/cycle")
+		await screen.findByText("cycle read")
+
+		fireEvent.click(screen.getByRole("link", { name: "Compliance" }))
+		await screen.findByText("compliance read")
+		readSurfaceMock.mockClear()
+
+		await act(() => vi.advanceTimersByTimeAsync(31_000))
+
+		expect(readSurfaces()).not.toContain("cycle")
+		expect(readSurfaces()).toContain("compliance")
 	})
 })
