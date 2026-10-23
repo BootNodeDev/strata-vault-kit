@@ -97,7 +97,7 @@ const reserve: CycleReserve = {
 	liquid: amount(800n),
 	netDeployed: amount(200n),
 	depositCap: { kind: "capped", amount: amount(5_000n) },
-	custodian: "CCUSTODIAN1234567890",
+	custodian: { kind: "set", address: "CCUSTODIAN1234567890" },
 	custodianBalance: amount(150n),
 }
 
@@ -354,6 +354,20 @@ describe("toCycleRows", () => {
 		expect(
 			groups.find((group) => group.title === "Reserve")?.addresses,
 		).toEqual([{ label: "Custodian", address: "CCUSTODIAN1234567890" }])
+	})
+
+	it("tells an unset custodian apart from one it could not read", () => {
+		const addressesOf = (custodian: CycleReserve["custodian"]) =>
+			toCycleRows(ready({ reserve: { ...reserve, custodian } })).find(
+				(group) => group.title === "Reserve",
+			)?.addresses
+
+		expect(addressesOf({ kind: "unset" })).toEqual([
+			{ label: "Custodian", address: null, placeholder: "Not set" },
+		])
+		expect(addressesOf({ kind: "unreadable" })).toEqual([
+			{ label: "Custodian", address: null },
+		])
 	})
 
 	it("reads an unset deposit cap as no cap", () => {
@@ -1359,10 +1373,11 @@ describe("toCycleActions, deploying to the custodian", () => {
 		expect(deploy?.enabled).toBe(false)
 	})
 
-	it("disables the deployment when no custodian is set", () => {
-		const deploy = deployOf("250", {
-			reserve: { ...reserve, custodian: null },
-		})
+	it.each<CycleReserve["custodian"]>([
+		{ kind: "unset" },
+		{ kind: "unreadable" },
+	])("disables the deployment without a known custodian: %o", (custodian) => {
+		const deploy = deployOf("250", { reserve: { ...reserve, custodian } })
 
 		expect(conditionOf(deploy, "Custodian set")).toEqual({
 			label: "Custodian set",
