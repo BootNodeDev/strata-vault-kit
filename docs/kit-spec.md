@@ -100,6 +100,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
   - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant.
+  - A compliance swap needs a contract that names the token's vault through `vault()` with its own setup finished, and lists the token in `linked_tokens` (`ComplianceNotBound`). A verifier swap needs a verifier whose `verify_identity` accepts the vault's address (`VerifierRefusesVault`). Both are checked when the change is proposed and again when it applies, and a contract that does not answer fails the check.
   - Once its one-time setup closes, the oracle's upgrades, grants, admin hand-overs and every config change except a shorter `freshness_duration` wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `attester` or `guardian`, the NAV pause and `clear_latest` stay instant.
   - Once its one-time setup closes, the compliance contract's module changes, token bindings and admin hand-overs wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`.
 
@@ -300,9 +301,9 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `operator` must be the admin (`AdminRequired`), then `operator.require_auth()`; instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `bind_vault` | Governance (token admin) | `#[only_admin]`; during setup, once | No |
 | **`ShareToken`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
-| **`ShareToken`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
+| **`ShareToken`** | `propose_change` | Governance | `#[only_admin]`; after setup; a compliance or verifier swap passes its check (`ComplianceNotBound`, `VerifierRefusesVault`) | No |
 | **`ShareToken`** | `cancel_change` | Governance | `#[only_admin]` | No |
-| **`ShareToken`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
+| **`ShareToken`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay; a compliance or verifier swap passes its check again | Refused while the vault is paused or winding down |
 | **`ShareToken`** | `pending_changes` | Permissionless | None (view) | No |
 | **`ShareToken`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`ShareToken`** | `revoke_role` | Governance | `compliance`: instant. `manager`: instant during setup, then `propose_change` | No |
@@ -534,6 +535,13 @@ compliance contract (OpenZeppelin `TokenBinder`), and calls the oracle's
 `state` and `freshness_duration` (`OracleFeed`). A replacement for any of these
 must answer those calls, or the vault's setup cannot finish.
 
+After setup, the share token makes the same kind of check before it swaps a
+contract, when the swap is proposed and again when it applies. New compliance
+rules must answer `VaultBinding` with the token's vault and their setup closed,
+and list the token in `linked_tokens`; unlike `finish_setup`, the token accepts
+no external module that does not answer. A new identity verifier must accept
+the vault's address in `verify_identity`.
+
 ---
 
 ## 7. Error Codes and Entrypoint Docs
@@ -549,7 +557,7 @@ for the same failure, so `304` says what failed, not where.
 |---|---|---|---|
 | `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3025–3026 |
 | `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6075 |
-| `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7016 |
+| `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7018 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
 
 The blocks are defined once, in `crates/strata-bindings` (`ORACLE_ERRORS`,

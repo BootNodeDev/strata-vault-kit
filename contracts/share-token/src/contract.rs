@@ -126,6 +126,9 @@ impl ShareToken {
     ///
     /// # Errors
     ///
+    /// * `ComplianceNotBound` - The new compliance contract does not list
+    ///   this token, or is not on the vault's clock with its setup closed.
+    /// * `VerifierRefusesVault` - The new verifier does not accept the vault.
     /// * `UpgradeAlreadyPending` - An upgrade already waits.
     /// * `SetupOpen` - Setup has not finished; change it directly.
     /// * `WindDownActive` - The vault is winding down.
@@ -182,6 +185,8 @@ impl ShareToken {
     ///   notice now.
     /// * `ChangeNotReady` - The delay, plus any time the vault spent paused
     ///   since, has not run.
+    /// * `ComplianceNotBound`, `VerifierRefusesVault` - The new contract no
+    ///   longer passes the check `propose_change` made.
     /// * `AccessControlError::RoleNotHeld` - A `RevokeRole` names an account
     ///   without the role.
     /// * An `Upgrade` whose Wasm is not on the network fails the call.
