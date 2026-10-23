@@ -1,6 +1,10 @@
 #![no_std]
 
+mod errors;
+
 use soroban_sdk::{contracttrait, contracttype, Address, Env};
+
+pub use errors::{ErrorRange, COMPLIANCE_ERRORS, ORACLE_ERRORS, TOKEN_ERRORS, VAULT_ERRORS};
 
 #[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

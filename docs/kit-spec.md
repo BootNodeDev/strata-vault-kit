@@ -502,3 +502,51 @@ governance, which is a trust assumption. It also reads the token's
 compliance contract (OpenZeppelin `TokenBinder`), and calls the oracle's
 `state` and `freshness_duration` (`OracleFeed`). A replacement for any of these
 must answer those calls, or the vault's setup cannot finish.
+
+---
+
+## 7. Error Codes and Entrypoint Docs
+
+Each kit contract owns a block of error codes. A call that fails inside
+another contract returns that contract's code: a deposit claim the identity
+verifier refuses returns `304`, not a vault code. The blocks never overlap, so
+a code inside them always names the kit contract that raised it. OpenZeppelin's
+codes are shared: every contract built on its libraries returns the same code
+for the same failure, so `304` says what failed, not where.
+
+| Contract | Error enum | Block | Codes in use |
+|---|---|---|---|
+| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3025–3026 |
+| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6075 |
+| `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7016 |
+| `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
+
+The blocks are defined once, in `crates/strata-bindings` (`ORACLE_ERRORS`,
+`VAULT_ERRORS`, `TOKEN_ERRORS`, `COMPLIANCE_ERRORS`). Each contract declares
+its enum through `strata_bindings::error_enum!`, and the build fails if a code
+leaves its contract's block or two blocks overlap. A code is never reused: a
+removed variant leaves its number retired. The testnet identity verifier has
+no enum of its own; it refuses with OpenZeppelin's
+`RWAError::IdentityVerificationFailed` (304). OpenZeppelin's libraries keep
+their codes outside the kit's blocks: below 3000 in the modules the kit uses,
+and from 4000 to 5999 in its governance crate.
+
+Every entrypoint the kit defines or overrides carries a doc in its contract's
+spec, so generated clients and block explorers show it. The doc is a one-line
+summary, then `# Arguments`, `# Errors`, `# Events` and `# Authorization`; a
+section that would be empty is left out, so a view has no `# Events` and no
+`# Authorization`. Functions that OpenZeppelin's traits add without an
+override keep OpenZeppelin's docs.
+
+- Amounts are in the asset's base units and shares in the share token's base
+  units. Prices are in WAD: asset base units per share base unit, times 10^18.
+  Times and durations are in seconds; `live_until_ledger` is a ledger number.
+- An error named without its enum is the contract's own. Any other error
+  carries its enum, as in `AccessControlError::Unauthorized`.
+- `NotInitialized` and `AccountingMismatch` are not listed per entrypoint. They
+  mean the contract's own state is broken, and any call that reads the broken
+  entry can return them.
+- A call into another contract can fail with that contract's error. The docs
+  name the ones a caller should plan for, such as the asset's own error when
+  the payer cannot pay. A replacement identity verifier or compliance module
+  may refuse with codes of its own.
