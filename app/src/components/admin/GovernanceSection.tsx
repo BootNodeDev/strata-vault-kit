@@ -147,7 +147,6 @@ const GovernanceSection: React.FC<{
 						oracle: addresses.oracle,
 						token: addresses.shareToken,
 					},
-		active,
 	})
 	const flows = useGovernanceFlows()
 	const { inputs, setInputs, onInput } = useRailInputs()

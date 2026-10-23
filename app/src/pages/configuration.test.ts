@@ -34,7 +34,7 @@ const ready = (
 ): ConfigurationState => ({
 	status: "ready",
 	depositCap: { kind: "capped", amount: 1_000_0000000n as Amount },
-	custodian: CUSTODIAN,
+	custodian: { kind: "set", address: CUSTODIAN },
 	notice: DAY,
 	windDownDelay: 7n * DAY,
 	upgradeDelay: 3n * DAY,
@@ -243,6 +243,36 @@ describe("toConfigurationActions", () => {
 		)
 	})
 
+	it("lets the first custodian be set when none is set yet", () => {
+		const unset = ready({ custodian: { kind: "unset" } })
+
+		const blank = find("set-custodian", [governance], {}, unset)
+		expect(blank.enabled).toBe(false)
+		expect(blank.fields?.[0]?.current).toBe("—")
+
+		const custodian = find(
+			"set-custodian",
+			[governance],
+			{ custodian: ACCOUNT },
+			unset,
+		)
+		expect(condition(custodian, "Differs from current")).toBe(true)
+		expect(custodian.enabled).toBe(true)
+		expect(custodian.arg).toBe(ACCOUNT)
+	})
+
+	it("holds the custodian back while the current one cannot be read", () => {
+		const custodian = find(
+			"set-custodian",
+			[governance],
+			{ custodian: ACCOUNT },
+			ready({ custodian: { kind: "unreadable" } }),
+		)
+
+		expect(condition(custodian, "Differs from current")).toBeNull()
+		expect(custodian.enabled).toBe(false)
+	})
+
 	it("flags an address that is not a valid key", () => {
 		const custodian = find("set-custodian", [governance], {
 			custodian: "GNOPE",
@@ -363,6 +393,22 @@ describe("toConfigurationGroups", () => {
 		expect(groups[2]?.addresses).toEqual([
 			{ label: "Compliance contract", address: COMPLIANCE },
 			{ label: "Identity verifier", address: VERIFIER },
+		])
+	})
+
+	it("tells an unset custodian apart from one it could not read", () => {
+		const [unset] = toConfigurationGroups(
+			ready({ custodian: { kind: "unset" } }),
+		)
+		expect(unset?.addresses).toEqual([
+			{ label: "Custodian", address: null, placeholder: "Not set" },
+		])
+
+		const [unreadable] = toConfigurationGroups(
+			ready({ custodian: { kind: "unreadable" } }),
+		)
+		expect(unreadable?.addresses).toEqual([
+			{ label: "Custodian", address: null },
 		])
 	})
 

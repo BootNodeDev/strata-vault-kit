@@ -1,25 +1,25 @@
 import {
 	AssembledTransaction,
-	Client,
 	type MethodOptions,
 	type SignTransaction,
 } from "@stellar/stellar-sdk/contract"
 import { network, networkPassphrase, rpcUrl } from "./env"
-import type { Client as AssetApi } from "./clients/asset/src/index"
-import type {
+import { server } from "./rpc"
+import { Client as AssetApi } from "./clients/asset/src/index"
+import {
 	Client as AsyncVaultApi,
-	DepositRequest,
-	EpochInfo,
-	EpochStatus,
-	RedeemRequest,
+	type DepositRequest,
+	type EpochInfo,
+	type EpochStatus,
+	type RedeemRequest,
 } from "./clients/async_vault/src/index"
-import type { Client as IdentityVerifierApi } from "./clients/identity_verifier/src/index"
-import type {
+import { Client as IdentityVerifierApi } from "./clients/identity_verifier/src/index"
+import {
 	Client as NavOracleApi,
-	NavReport,
-	OracleState,
+	type NavReport,
+	type OracleState,
 } from "./clients/nav_oracle/src/index"
-import type { Client as ShareTokenApi } from "./clients/share_token/src/index"
+import { Client as ShareTokenApi } from "./clients/share_token/src/index"
 
 export type {
 	AssetApi,
@@ -54,38 +54,39 @@ const clientOptions = (
 	publicKey: signer?.publicKey,
 	signTransaction: signer?.signTransaction,
 	timeoutInSeconds: options?.timeoutInSeconds,
+	server,
 })
 
-export const connectAsyncVault = (
+export const connectAsyncVault = async (
 	contractId: string,
 	signer?: Signer,
 	options?: ConnectOptions,
 ): Promise<AsyncVaultApi> =>
-	Client.from<AsyncVaultApi>(clientOptions(contractId, signer, options))
+	new AsyncVaultApi(clientOptions(contractId, signer, options))
 
 export const isUserRejection = (error: unknown): boolean =>
 	error instanceof AssembledTransaction.Errors.UserRejected
 
-export const connectNavOracle = (
+export const connectNavOracle = async (
 	contractId: string,
 	signer?: Signer,
 	options?: ConnectOptions,
 ): Promise<NavOracleApi> =>
-	Client.from<NavOracleApi>(clientOptions(contractId, signer, options))
+	new NavOracleApi(clientOptions(contractId, signer, options))
 
-export const connectIdentityVerifier = (
+export const connectIdentityVerifier = async (
 	contractId: string,
 	signer?: Signer,
 	options?: ConnectOptions,
 ): Promise<IdentityVerifierApi> =>
-	Client.from<IdentityVerifierApi>(clientOptions(contractId, signer, options))
+	new IdentityVerifierApi(clientOptions(contractId, signer, options))
 
-export const connectShareToken = (
+export const connectShareToken = async (
 	contractId: string,
 	signer?: Signer,
 	options?: ConnectOptions,
 ): Promise<ShareTokenApi> =>
-	Client.from<ShareTokenApi>(clientOptions(contractId, signer, options))
+	new ShareTokenApi(clientOptions(contractId, signer, options))
 
-export const connectAsset = (contractId: string): Promise<AssetApi> =>
-	Client.from<AssetApi>(clientOptions(contractId))
+export const connectAsset = async (contractId: string): Promise<AssetApi> =>
+	new AssetApi(clientOptions(contractId))
