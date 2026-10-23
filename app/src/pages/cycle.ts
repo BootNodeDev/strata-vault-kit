@@ -33,6 +33,7 @@ import {
 	type EpochHistoryRead,
 	type EpochRecord,
 } from "../hooks/useEpochHistory"
+import { type Custodian } from "../hooks/useVaultAuthorities"
 import {
 	type ActionField,
 	allMet,
@@ -40,6 +41,7 @@ import {
 	grantFor,
 	type RailAction,
 } from "./actions"
+import { toCustodianRow } from "./vaultMetrics"
 
 type ReadyState = Extract<CycleState, { status: "ready" }>
 
@@ -324,7 +326,7 @@ function reserveGroup(state: ReadyState): CycleGroup {
 			row("Liquid reserve", formatAmountValue(reserve.liquid)),
 		],
 		limits: [row("Deposit cap", depositCapValue(reserve.depositCap))],
-		addresses: [{ label: "Custodian", address: reserve.custodian }],
+		addresses: [toCustodianRow(reserve.custodian)],
 	}
 }
 
@@ -617,10 +619,14 @@ const coveredBy = (
 		: { label, met, detail: describe(exactAmount(available)) }
 }
 
-const custodianSet = (custodian: string | null): Condition =>
-	custodian === null
-		? { label: "Custodian set", met: false }
-		: { label: "Custodian set", met: true, detail: shortAddress(custodian) }
+const custodianSet = (custodian: Custodian): Condition =>
+	custodian.kind === "set"
+		? {
+				label: "Custodian set",
+				met: true,
+				detail: shortAddress(custodian.address),
+			}
+		: { label: "Custodian set", met: false }
 
 const reserveAfter = (
 	amount: Amount | null,

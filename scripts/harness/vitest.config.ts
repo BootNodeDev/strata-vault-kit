@@ -4,7 +4,7 @@ const network = process.env["HARNESS_NETWORK"] ?? "local"
 
 export default defineConfig({
 	test: {
-		include: ["*.test.ts"],
+		include: ["*.test.ts", "lib/**/*.test.ts"],
 		environment: "node",
 		fileParallelism: false,
 		sequence: { concurrent: false },
