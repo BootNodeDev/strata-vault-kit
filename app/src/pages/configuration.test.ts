@@ -195,7 +195,7 @@ describe("toConfigurationActions", () => {
 		expect(uncapped.enabled).toBe(false)
 	})
 
-	it("holds a deposit cap and an oracle duration at their contract width", () => {
+	it("holds a deposit cap and the oracle limits at their contract edges", () => {
 		const cap = (text: string) =>
 			find("set-deposit-cap", [governance], { depositCap: text })
 		const oracle = (inputs: ConfigurationInputs) =>

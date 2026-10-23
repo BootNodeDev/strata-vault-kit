@@ -140,7 +140,7 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 		price: price(1n),
 		attestedAt: 1_700_050_000n,
 		expiresAt: 1_700_136_000n,
-		ripcord: false,
+		navPaused: false,
 		recorded: true,
 		limits: {
 			freshness: 86_400n,

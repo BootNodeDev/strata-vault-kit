@@ -58,7 +58,7 @@ export type CycleOracle = {
 	price: Price | null
 	attestedAt: bigint | null
 	expiresAt: bigint | null
-	ripcord: boolean | null
+	navPaused: boolean | null
 	recorded: boolean | null
 	limits: OracleLimits | null
 }
@@ -141,7 +141,7 @@ export function toOracle(
 		price: report === null ? null : (report.nav_per_share as Price),
 		attestedAt: report?.timestamp ?? null,
 		expiresAt: report?.expires_at ?? null,
-		ripcord: nav.status === "unreadable" ? null : nav.status === "paused",
+		navPaused: nav.status === "unreadable" ? null : nav.status === "paused",
 		recorded: recordedOf(latest),
 		limits:
 			config.kind === "value"

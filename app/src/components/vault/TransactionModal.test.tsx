@@ -2105,8 +2105,8 @@ describe("TransactionModal, emergency actions", () => {
 	it.each<[EmergencyModalAction, string, string]>([
 		["pause-vault", "Preparing to pause the vault", "Vault paused"],
 		["unpause-vault", "Preparing to unpause the vault", "Vault unpaused"],
-		["raise-ripcord", "Preparing to raise the ripcord", "Ripcord raised"],
-		["lower-ripcord", "Preparing to lower the ripcord", "Ripcord lowered"],
+		["pause-nav", "Preparing to pause the NAV", "NAV paused"],
+		["unpause-nav", "Preparing to unpause the NAV", "NAV unpaused"],
 		[
 			"clear-latest",
 			"Preparing to clear the latest price",
@@ -2177,8 +2177,8 @@ describe("TransactionModal, emergency actions", () => {
 		["unpause-vault", 1001, "vault", /The vault is not paused/],
 		["pause-token", 1000, "share token", /The share token is already paused/],
 		["unpause-token", 1001, "share token", /The share token is not paused/],
-		["raise-ripcord", 2000, "oracle", /does not hold the role/],
-		["clear-latest", 3008, "oracle", /The ripcord is not raised/],
+		["pause-nav", 2000, "oracle", /does not hold the role/],
+		["clear-latest", 3008, "oracle", /The NAV is not paused/],
 	])(
 		"names the reason %s was refused with code %i",
 		(action, code, refuser, sentence) => {
@@ -2209,7 +2209,7 @@ describe("TransactionModal, emergency actions", () => {
 	})
 
 	it("sends an unknown outcome to the Emergency tab", () => {
-		renderEmergencyModal("raise-ripcord", {
+		renderEmergencyModal("pause-nav", {
 			status: "failed",
 			failure: { kind: "unknown" },
 		})
