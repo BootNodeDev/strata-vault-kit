@@ -14,25 +14,28 @@ It covers:
 The contracts enforce a set of mathematical and state-machine invariants across all operations. Each invariant is stated below as a formal, testable property matching the on-chain test suite.
 
 ### Invariant 1: Escrow Stays, Only Free Reserve Moves
-- **Definition**: Cancellable subscription escrow never leaves the vault, and only the free reserve can move to the custodian. Priced redemption liabilities (`committed`) may exceed the liquid reserve; the shortfall is reported as `uncovered`, not refused. Here $\text{held}$ is the vault's balance of the settlement asset.
+- **Definition**: Cancellable subscription escrow never leaves the vault, and only the free reserve can move to the custodian. Priced redemption liabilities (`committed`) may exceed the liquid reserve; the shortfall is reported as `uncovered`, not refused. Here $`\text{held}`$ is the vault's balance of the settlement asset.
 - **Mathematical Statement**:
-  $$\text{liquid\_reserve} = \text{held} - \text{cancellable\_escrow}$$
-  $$\text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)$$
-  $$\text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)$$
-- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $\text{assets} > \text{free\_reserve}$, so after every operation $\text{held} \ge \text{cancellable\_escrow}$. While $\text{uncovered} > 0$, the free reserve is zero and nothing leaves for the custodian.
+  $`\text{liquid\_reserve} = \text{held} - \text{cancellable\_escrow}`$
+
+  $`\text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)`$
+
+  $`\text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)`$
+- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $`\text{assets} > \text{free\_reserve}`$, so after every operation $`\text{held} \ge \text{cancellable\_escrow}`$. While $`\text{uncovered} > 0`$, the free reserve is zero and nothing leaves for the custodian.
 - **Enforcement**: `deploy_to_custodian` is the only outbound path to the custodian, and it moves at most the free reserve.
 
 ### Invariant 2: Notice Period Respected
 - **Definition**: An epoch cannot be fulfilled or priced until its standing notice period has fully elapsed.
 - **Mathematical Statement**:
-  $$\text{priceable\_at} = \text{closed\_at} + \text{notice}$$
-  $$\text{fulfill\_epoch}(\text{epoch}) \implies \text{ledger.timestamp} \ge \text{priceable\_at}$$
+  $`\text{priceable\_at} = \text{closed\_at} + \text{notice}`$
+
+  $`\text{fulfill\_epoch}(\text{epoch}) \implies \text{ledger.timestamp} \ge \text{priceable\_at}`$
 - **Testable Property**: Invocations of `fulfill_epoch` before `priceable_at` are rejected with `NoticeNotElapsed`. Changing the notice period via `set_notice` applies only to future epochs and never shortens the notice of an already closed epoch.
 
 ### Invariant 3: Post-Close Valuation Timing
 - **Definition**: An epoch is never priced against a valuation accepted before that epoch closed.
 - **Mathematical Statement**:
-  $$\text{attested\_at} \ge \text{closed\_at}$$
+  $`\text{attested\_at} \ge \text{closed\_at}`$
 - **Testable Property**: If the latest oracle attestation timestamp precedes `closed_at`, `fulfill_epoch` is rejected with `AttestationBeforeClose`. A valuation accepted in the exact closing ledger timestamp or later is accepted.
   `attested_at` is the ledger time the oracle accepted the report, not a valuation date: the reporter's own `timestamp` is ignored. So "accepted before the close" compares acceptance time. The reporter's `expires_at` can only shorten a report's life: the oracle stores `min(expires_at, attested_at + freshness_duration)`.
 
@@ -70,11 +73,13 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 7: Directional Rounding & Non-Creation of Value
 - **Definition**: Arithmetic conversions round in the vault's favor, preventing arbitrage and value creation from rounding residue.
 - **Mathematical Statement**:
-  $$\text{assets\_to\_shares}(a) = \lfloor (a \cdot \text{SCALE}) / \text{NAV} \rfloor$$
-  $$\text{shares\_to\_assets}(s) = \lfloor (s \cdot \text{NAV}) / \text{SCALE} \rfloor$$
-  $$\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s$$
-- **Testable Property**: For all values of $a, s \in [1, 10^{30}]$ and $\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]$, a round-trip conversion never creates value. Remainder satisfies:
-  $$(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}$$
+  $`\text{assets\_to\_shares}(a) = \lfloor (a \cdot \text{SCALE}) / \text{NAV} \rfloor`$
+
+  $`\text{shares\_to\_assets}(s) = \lfloor (s \cdot \text{NAV}) / \text{SCALE} \rfloor`$
+
+  $`\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s`$
+- **Testable Property**: For all values of $`a, s \in [1, 10^{30}]`$ and $`\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]`$, a round-trip conversion never creates value. Remainder satisfies:
+  $`(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}`$
 - **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. When the last request of a priced epoch settles, the remainder leaves `pending_mint_shares` and `committed` and the vault publishes `EpochReconciled { epoch, share_dust, cash_dust }`. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping.
 - **A request that can never settle** keeps its epoch open, and the two cases leave different amounts behind. A zero-asset redemption whose holder may not take the shares back (`HolderNotEligible`, `a_request_that_cannot_settle_keeps_its_epoch_open`) leaves only the epoch's ordinary rounding remainder in `committed` — fewer units than the epoch had redemption requests — because that request was never owed any cash. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's own remainder, until the mint is allowed. Either way it is still owed to nobody.
 - **A deposit worth less than one share base unit** mints nothing and is refunded at claim, from the free reserve (`a_deposit_below_one_share_is_refunded_at_claim`). Pricing moves the epoch's whole deposit into the reserve and records no refund, so `deploy_to_custodian` or a wind-down round can spend that cash first; the claim then fails with `ClaimNotCovered` until the free reserve covers it again (`a_dust_refund_never_takes_committed_money`, `a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve`). This is accepted: pricing sees only the epoch's totals, so reserving these refunds would mean visiting every request, and each is worth less than one share base unit.
@@ -84,8 +89,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
 - **Testable Property**:
-  - Upgrade delay $\in [7 \text{ days}, 90 \text{ days}]$ and $\text{delay} \ge \text{notice}$, checked when a delay change is proposed and again when it applies.
-  - Wind-down delay $\in [7 \text{ days}, 90 \text{ days}]$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
+  - Upgrade delay $`\in [7 \text{ days}, 90 \text{ days}]`$ and $`\text{delay} \ge \text{notice}`$, checked when a delay change is proposed and again when it applies.
+  - Wind-down delay $`\in [7 \text{ days}, 90 \text{ days}]`$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
   - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and a custodian other than the vault. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
   - After setup, the vault's custodian, role grants, revoking `manager`, admin hand-overs and lowering the notice or the wind-down delay go through the queue; a direct call is refused with `UseTimelock`. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking any other role stay instant. A `Notice` or `WindDownDelay` change is checked against its bounds when proposed and again when it applies.
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
@@ -102,7 +107,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
 - **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital credited to that round.
 - **Mathematical Statement**:
-  $$\sum_{i} \text{payout}_i \le \text{round\_assets}$$
+  $`\sum_{i} \text{payout}_i \le \text{round\_assets}`$
 - **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. Active wind-down is strictly irreversible.
 - An escrowed redemption cancelled during the wind-down counts toward the holder's entitlement, and so does a priced deposit a delisted holder claims. Credited before the first round, those shares count in its supply snapshot (`a_credit_before_the_first_round_leaves_every_holder_their_share`).
 - During an active wind-down, a priced redemption whose claim pays nothing burns its escrowed shares instead of returning them, because the snapshot left them out (`a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down`).
@@ -134,7 +139,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Largest upward move per attestation, 1 to 10,000 | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_down_bps` | `u32` (basis points) | Largest downward move per attestation, 1 to 10,000; 10,000 lets a loss of any size land at once | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share (cannot be zero or negative) | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($\ge \text{min\_answer}$, $\le 10^{6} \times 10^{18}$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{18}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
 | **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC) | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `oracle` | `Address` | Deployed NAV oracle contract address | `async_vault.constructor_args` |
@@ -158,11 +163,11 @@ The `async_vault` constructor refuses these four pairs of equal addresses and co
 
 | Parameter | Method | Authority | Constraints & Defaults |
 |---|---|---|---|
-| **Standing Notice** | `set_notice(secs: u64)`; after setup, lowering goes through `propose_change(Notice(secs))` → `apply_change(id)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $\text{secs} \le \text{upgrade\_delay}$ and $\text{secs} \le 30 \text{ days}$ (`MAX_NOTICE_SECS`), checked again when a `Notice` change applies. Raising is instant. |
+| **Standing Notice** | `set_notice(secs: u64)`; after setup, lowering goes through `propose_change(Notice(secs))` → `apply_change(id)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $`\text{secs} \le \text{upgrade\_delay}`$ and $`\text{secs} \le 30 \text{ days}`$ (`MAX_NOTICE_SECS`), checked again when a `Notice` change applies. Raising is instant. |
 | **Custodian Address** | `set_custodian(custodian: Address)` during setup; afterwards `propose_change(Custodian(address))` → `apply_change(id)` | Governance | Recipient address for off-chain capital deployment. Required before `finish_setup` and `deploy_to_custodian`. Never the vault itself (`InvalidCustodian`), checked when it is set, proposed and applied. The deploy sets it before setup closes. |
 | **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital (see **Supply and Capital Figures**). `None` = unbounded. Refuses negative cap. Instant both ways, also after setup. The cap is vault-wide; there is no cap per investor. |
 | **Wind-Down Delay** | `set_wind_down_delay(secs: u64)`; after setup, lowering goes through `propose_change(WindDownDelay(secs))` → `apply_change(id)` | Governance | Minimum notice before wind-down activation. Default and minimum 7 days (`MIN_WIND_DOWN_DELAY`), maximum 90 days (`MAX_WIND_DOWN_DELAY`). Raising is instant. |
-| **Upgrade Delay** | `propose_change(UpgradeDelay(secs))` → `apply_change(id)` | Governance | Timelock delay for wasm upgrades. Must be $\ge 7 \text{ days}$, $\le 90 \text{ days}$, and $\ge \text{notice}$. |
+| **Upgrade Delay** | `propose_change(UpgradeDelay(secs))` → `apply_change(id)` | Governance | Timelock delay for wasm upgrades. Must be $`\ge 7 \text{ days}`$, $`\le 90 \text{ days}`$, and $`\ge \text{notice}`$. |
 | **Oracle Configuration** | `set_config(config: OracleConfig)`; after setup, `propose_change(Config(config))` → `apply_change(id)` | Governance | Updates oracle parameters within the constructor's bounds. `set_config` is instant during the oracle's setup. After it, `set_config` is instant only for a shorter `freshness_duration`: later reports go stale sooner, and no value moves. Every other change, tighter limits included, goes through `propose_change(Config(config))` → `apply_change(id)`, and the bounds are checked again when it applies. A tighter fall cap or a longer cooldown can hold the price above a real loss, and a narrower band can stop pricing. Applying a `Config` change sets every field, freshness included; to keep a cut made after the proposal, cancel the queued change and propose again. |
 | **Oracle Feed** | `propose_change(Oracle(address))` → `apply_change(id)` | Governance | Waits for the timelock. The new feed must name this vault through `vault()` with its own setup finished, and must answer `state()` and `freshness_duration()`, at proposal and again at apply (`FeedNotBound`). The next fulfilment prices from it, including an epoch sealed before the swap. |
 

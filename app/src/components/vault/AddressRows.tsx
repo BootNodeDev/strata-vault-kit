@@ -9,6 +9,7 @@ export type AddressRow = {
 	label: string
 	address: string | null
 	pending?: boolean
+	placeholder?: string
 }
 
 const AddressRows: React.FC<{ rows: AddressRow[] }> = ({ rows }) => (
@@ -27,7 +28,7 @@ const AddressRows: React.FC<{ rows: AddressRow[] }> = ({ rows }) => (
 						/>
 					) : row.address === null ? (
 						<span className={`${typeStyles.railValue} ${styles.placeholder}`}>
-							Unavailable
+							{row.placeholder ?? "Unavailable"}
 						</span>
 					) : explorer === null ? (
 						<span className={`${typeStyles.railValue} ${styles.rowValue}`}>
