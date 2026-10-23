@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { join } from "node:path"
+import { basename, join, relative } from "node:path"
 import { pathToFileURL } from "node:url"
 
 import { Asset, rpc, type Keypair } from "@stellar/stellar-sdk"
@@ -11,10 +11,10 @@ import type * as IdentityVerifierModule from "../../app-lib/clients/identity_ver
 import type * as NavOracleModule from "../../app-lib/clients/nav_oracle/dist/index.js"
 import type * as ShareTokenModule from "../../app-lib/clients/share_token/dist/index.js"
 
-import { freshAccounts, fund, type Accounts } from "./lib/accounts.js"
+import { fund, type Accounts } from "./lib/accounts.js"
 import {
-	deployAssetContract,
 	deployContract,
+	ensureAssetContract,
 	generateClient,
 } from "./lib/cli.js"
 import {
@@ -24,6 +24,7 @@ import {
 	type ContractName,
 	type Deployment,
 } from "./lib/deployment.js"
+import { ensureKeys } from "./lib/keys.js"
 import { network, type Network } from "./lib/network.js"
 
 const wasmOf = (name: ContractName): string =>
@@ -246,12 +247,23 @@ async function main(): Promise<void> {
 	const server = new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" })
 	console.log(`deploying to ${net.name} (${net.rpcUrl})`)
 
-	const accounts = freshAccounts()
-	await fund(net, server, Object.values(accounts))
-	console.log(`funded ${Object.keys(accounts).length} accounts`)
+	const { file, accounts, created } = ensureKeys(net.name, REPO_ROOT)
+	console.log(
+		`account keys in ${relative(REPO_ROOT, file)} (${created.length} new)`,
+	)
+	const keys = Object.values(accounts)
+	const funded = await fund(net, server, keys)
+	console.log(
+		`funded ${funded} accounts; ${keys.length - funded} already existed`,
+	)
 
 	const asset = new Asset("USDC", accounts.issuer.publicKey())
-	const assetContract = await deployAssetContract(net, asset, accounts.issuer)
+	const assetContract = await ensureAssetContract(
+		net,
+		server,
+		asset,
+		accounts.issuer,
+	)
 	console.log("asset contract", assetContract)
 
 	const contracts = await deployContracts(net, accounts, assetContract)
@@ -281,7 +293,9 @@ async function main(): Promise<void> {
 			]),
 		) as Deployment["accounts"],
 	}
-	saveDeployment(record)
+	const kept = saveDeployment(record)
+	if (kept !== undefined)
+		console.log(`kept the previous record as ${basename(kept)}`)
 	console.log(`wrote deployed.${net.name}.json`)
 	if (net.name === "testnet") {
 		console.log("updated environments.toml [staging.contracts]")
