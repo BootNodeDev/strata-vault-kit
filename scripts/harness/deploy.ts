@@ -162,8 +162,8 @@ async function grantAndVerify(
 	console.log("vault holds share_token manager role")
 
 	// Grants are instant only during setup, so the token's setup closes after them.
-	await (await token.bind_vault({ vault, caller })).signAndSend()
-	await (await token.finish_setup({ caller })).signAndSend()
+	await (await token.bind_vault({ vault })).signAndSend()
+	await (await token.finish_setup()).signAndSend()
 	if ((await token.setup_open()).result)
 		throw new Error("the share token's setup did not finish")
 	console.log("share_token bound to the vault, setup finished")
@@ -178,7 +178,6 @@ async function grantAndVerify(
 		await verifier.allow({
 			account: vault,
 			allowed: true,
-			caller: accounts.compliance.publicKey(),
 		})
 	).signAndSend()
 	const allowed = (await verifier.is_allowed({ account: vault })).result
@@ -205,8 +204,8 @@ async function grantAndVerify(
 
 	// Binding the token is instant only during setup, so the compliance
 	// contract's setup closes after it.
-	await (await compliance.bind_vault({ vault, caller })).signAndSend()
-	await (await compliance.finish_setup({ caller })).signAndSend()
+	await (await compliance.bind_vault({ vault })).signAndSend()
+	await (await compliance.finish_setup()).signAndSend()
 	if ((await compliance.setup_open()).result)
 		throw new Error("the compliance contract's setup did not finish")
 	console.log("compliance bound to the vault, setup finished")
@@ -217,8 +216,8 @@ async function grantAndVerify(
 	const feed = new NavOracle(
 		clientOptions(net, contracts.nav_oracle, governance),
 	)
-	await (await feed.bind_vault({ vault, caller })).signAndSend()
-	await (await feed.finish_setup({ caller })).signAndSend()
+	await (await feed.bind_vault({ vault })).signAndSend()
+	await (await feed.finish_setup()).signAndSend()
 	if ((await feed.setup_open()).result)
 		throw new Error("the oracle's setup did not finish")
 	console.log("nav_oracle bound to the vault, setup finished")
@@ -232,7 +231,6 @@ async function finishVaultSetup(
 	contracts: Record<ContractName, string>,
 ): Promise<void> {
 	const governance = accounts.governance
-	const caller = governance.publicKey()
 	const { Client: AsyncVault } = (await import(
 		clientEntry("async_vault")
 	)) as typeof AsyncVaultModule
@@ -242,10 +240,9 @@ async function finishVaultSetup(
 	await (
 		await vault.set_custodian({
 			custodian: accounts.custodian.publicKey(),
-			caller,
 		})
 	).signAndSend()
-	await (await vault.finish_setup({ caller })).signAndSend()
+	await (await vault.finish_setup()).signAndSend()
 	if ((await vault.setup_open()).result)
 		throw new Error("the vault's setup did not finish")
 	console.log("vault setup finished")

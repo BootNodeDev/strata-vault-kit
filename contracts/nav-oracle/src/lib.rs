@@ -250,31 +250,27 @@ impl NavOracleContract {
     /// Names the vault whose clock this oracle's timelock reads. Once, and only
     /// during setup.
     #[only_admin]
-    pub fn bind_vault(e: &Env, vault: Address, caller: Address) {
-        caller.require_auth();
+    pub fn bind_vault(e: &Env, vault: Address) {
         strata_storage::bump_instance(e);
         governance::bind_vault(e, &vault);
     }
 
     /// Ends the window in which admin changes are instant. It never reopens.
     #[only_admin]
-    pub fn finish_setup(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn finish_setup(e: &Env) {
         strata_storage::bump_instance(e);
         governance::finish_setup(e);
     }
 
     /// Queues a change behind the vault's timelock and returns its id.
     #[only_admin]
-    pub fn propose_change(e: &Env, change: OracleChange, caller: Address) -> u32 {
-        caller.require_auth();
+    pub fn propose_change(e: &Env, change: OracleChange) -> u32 {
         strata_storage::bump_instance(e);
         governance::propose(e, change)
     }
 
     #[only_admin]
-    pub fn cancel_change(e: &Env, id: u32, caller: Address) {
-        caller.require_auth();
+    pub fn cancel_change(e: &Env, id: u32) {
         strata_storage::bump_instance(e);
         governance::cancel(e, id);
     }
@@ -282,8 +278,7 @@ impl NavOracleContract {
     /// Lands a change whose delay has run. Refused while the vault is paused
     /// or winding down.
     #[only_admin]
-    pub fn apply_change(e: &Env, id: u32, caller: Address) {
-        caller.require_auth();
+    pub fn apply_change(e: &Env, id: u32) {
         strata_storage::bump_instance(e);
         governance::apply(e, id);
     }
@@ -344,8 +339,7 @@ impl NavOracleContract {
     }
 
     #[only_admin]
-    pub fn set_nav_paused(e: &Env, paused: bool, caller: Address) {
-        caller.require_auth();
+    pub fn set_nav_paused(e: &Env, paused: bool) {
         state::set_nav_paused(e, paused);
         NavPausedSet { paused }.publish(e);
     }
@@ -354,8 +348,7 @@ impl NavOracleContract {
     /// its distance from the last. Only while the NAV is paused, so
     /// resuming is always a deliberate second act.
     #[only_admin]
-    pub fn clear_latest(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn clear_latest(e: &Env) {
         guards::nav_paused(e);
         state::clear_latest(e);
         LatestCleared {}.publish(e);
@@ -410,8 +403,7 @@ pub enum ProbeError {
 #[contractimpl]
 impl NavOracleContract {
     #[only_admin]
-    pub fn migrate(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn migrate(e: &Env) {
         strata_storage::bump_instance(e);
         if upgradeable::get_schema_version(e) >= 2 {
             panic_with_error!(e, ProbeError::AlreadyMigrated);

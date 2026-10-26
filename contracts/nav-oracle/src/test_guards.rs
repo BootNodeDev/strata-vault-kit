@@ -37,15 +37,14 @@ struct Fixture<'a> {
     e: Env,
     oracle: NavOracleContractClient<'a>,
     vault: Address,
-    admin: Address,
     attester: Address,
     guardian: Address,
 }
 
 impl Fixture<'_> {
     fn finish_setup(&self) {
-        self.oracle.bind_vault(&self.vault, &self.admin);
-        self.oracle.finish_setup(&self.admin);
+        self.oracle.bind_vault(&self.vault);
+        self.oracle.finish_setup();
     }
 
     fn attest(&self, nav_per_share: i128) {
@@ -82,7 +81,7 @@ fn setup<'a>() -> Fixture<'a> {
         &e,
         &e.register(
             NavOracleContract,
-            (admin.clone(), attester.clone(), guardian.clone(), config()),
+            (admin, attester.clone(), guardian.clone(), config()),
         ),
     );
     let vault = e.register(VaultStub, ());
@@ -90,7 +89,6 @@ fn setup<'a>() -> Fixture<'a> {
         e,
         oracle,
         vault,
-        admin,
         attester,
         guardian,
     }
@@ -270,7 +268,7 @@ fn not_a_second_upgrade_refuses_an_upgrade_while_one_waits() {
     let grant = OracleChange::GrantRole(symbol_short!("attester"), Address::generate(&f.e));
     holds(&f, || guards::not_a_second_upgrade(&f.e, &upgrade));
 
-    f.oracle.propose_change(&upgrade, &f.admin);
+    f.oracle.propose_change(&upgrade);
     refuses(&f, OracleError::UpgradeAlreadyPending, || {
         guards::not_a_second_upgrade(&f.e, &upgrade)
     });

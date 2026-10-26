@@ -1,7 +1,4 @@
-use soroban_sdk::{
-    testutils::{Events as _, MockAuth, MockAuthInvoke},
-    Event as _, IntoVal,
-};
+use soroban_sdk::{testutils::Events as _, Event as _, IntoVal};
 use stellar_access::role_transfer::RoleTransferError;
 
 use super::*;
@@ -9,9 +6,9 @@ use crate::{ChangeApplied, CustodianSet, ADMIN_ACCEPT_LEDGERS};
 
 /// Proposes a change, waits one delay and applies it.
 fn land(f: &Fixture, change: VaultChange) {
-    let id = f.vault.propose_change(&change, &f.admin);
+    let id = f.vault.propose_change(&change);
     f.advance(f.vault.upgrade_delay());
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
 }
 
 #[test]
@@ -19,21 +16,15 @@ fn the_custodian_changes_through_the_timelock() {
     let f = setup();
     let next = Address::generate(&f.e);
 
-    refused(
-        f.vault.try_set_custodian(&next, &f.admin),
-        VaultError::UseTimelock,
-    );
+    refused(f.vault.try_set_custodian(&next), VaultError::UseTimelock);
 
     let id = f
         .vault
-        .propose_change(&VaultChange::Custodian(next.clone()), &f.admin);
+        .propose_change(&VaultChange::Custodian(next.clone()));
     f.advance(MIN_UPGRADE_DELAY - 1);
-    refused(
-        f.vault.try_apply_change(&id, &f.admin),
-        VaultError::ChangeNotReady,
-    );
+    refused(f.vault.try_apply_change(&id), VaultError::ChangeNotReady);
     f.advance(1);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
 
     assert_eq!(f.vault.custodian(), Some(next));
 }
@@ -43,10 +34,10 @@ fn applying_a_custodian_change_publishes_both_events() {
     let f = setup();
     let next = Address::generate(&f.e);
     let change = VaultChange::Custodian(next.clone());
-    let id = f.vault.propose_change(&change, &f.admin);
+    let id = f.vault.propose_change(&change);
     f.advance(MIN_UPGRADE_DELAY);
 
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
 
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
@@ -61,13 +52,10 @@ fn applying_a_custodian_change_publishes_both_events() {
 fn raising_the_notice_is_instant_and_lowering_waits() {
     let f = setup();
 
-    f.vault.set_notice(&DAY_DURATION, &f.admin);
+    f.vault.set_notice(&DAY_DURATION);
     assert_eq!(f.vault.notice(), DAY_DURATION);
 
-    refused(
-        f.vault.try_set_notice(&3_600, &f.admin),
-        VaultError::UseTimelock,
-    );
+    refused(f.vault.try_set_notice(&3_600), VaultError::UseTimelock);
     land(&f, VaultChange::Notice(3_600));
 
     assert_eq!(f.vault.notice(), 3_600);
@@ -79,7 +67,7 @@ fn a_notice_change_still_respects_its_bounds() {
 
     refused(
         f.vault
-            .try_propose_change(&VaultChange::Notice(MIN_UPGRADE_DELAY + 1), &f.admin),
+            .try_propose_change(&VaultChange::Notice(MIN_UPGRADE_DELAY + 1)),
         VaultError::NoticeAboveUpgradeDelay,
     );
 }
@@ -90,17 +78,17 @@ fn a_notice_change_checks_the_upgrade_delay_again_when_it_applies() {
     land(&f, VaultChange::UpgradeDelay(30 * DAY_DURATION));
     let notice = f
         .vault
-        .propose_change(&VaultChange::Notice(20 * DAY_DURATION), &f.admin);
+        .propose_change(&VaultChange::Notice(20 * DAY_DURATION));
     let delay = f
         .vault
-        .propose_change(&VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY), &f.admin);
+        .propose_change(&VaultChange::UpgradeDelay(MIN_UPGRADE_DELAY));
     f.advance(30 * DAY_DURATION);
 
     // The delay falls below the notice the first change would set.
-    f.vault.apply_change(&delay, &f.admin);
+    f.vault.apply_change(&delay);
 
     refused(
-        f.vault.try_apply_change(&notice, &f.admin),
+        f.vault.try_apply_change(&notice),
         VaultError::NoticeAboveUpgradeDelay,
     );
     assert_eq!(f.vault.notice(), 0);
@@ -110,11 +98,9 @@ fn a_notice_change_checks_the_upgrade_delay_again_when_it_applies() {
 fn raising_the_wind_down_delay_is_instant_and_lowering_waits() {
     let f = setup();
 
-    f.vault
-        .set_wind_down_delay(&(2 * MIN_WIND_DOWN_DELAY), &f.admin);
+    f.vault.set_wind_down_delay(&(2 * MIN_WIND_DOWN_DELAY));
     refused(
-        f.vault
-            .try_set_wind_down_delay(&MIN_WIND_DOWN_DELAY, &f.admin),
+        f.vault.try_set_wind_down_delay(&MIN_WIND_DOWN_DELAY),
         VaultError::UseTimelock,
     );
     land(&f, VaultChange::WindDownDelay(MIN_WIND_DOWN_DELAY));
@@ -127,10 +113,8 @@ fn a_wind_down_delay_below_the_minimum_cannot_be_proposed() {
     let f = setup();
 
     refused(
-        f.vault.try_propose_change(
-            &VaultChange::WindDownDelay(MIN_WIND_DOWN_DELAY - 1),
-            &f.admin,
-        ),
+        f.vault
+            .try_propose_change(&VaultChange::WindDownDelay(MIN_WIND_DOWN_DELAY - 1)),
         VaultError::WindDownDelayTooShort,
     );
 }
@@ -236,31 +220,12 @@ fn an_admin_hand_over_waits_but_cancelling_one_does_not() {
 fn an_applied_admin_change_starts_a_hand_over_the_next_admin_accepts() {
     let f = setup();
     let next = Address::generate(&f.e);
-    let id = f
-        .vault
-        .propose_change(&VaultChange::Admin(next.clone()), &f.admin);
+    let id = f.vault.propose_change(&VaultChange::Admin(next.clone()));
     f.advance(MIN_UPGRADE_DELAY);
 
-    // The admin authorises this call and nothing else: the hand-over inside it
-    // asks for no further signature. The entrypoint checks the admin and the
-    // caller, so the same authorisation appears twice, as simulation records it.
-    let apply = MockAuthInvoke {
-        contract: &f.vault.address,
-        fn_name: "apply_change",
-        args: (id, f.admin.clone()).into_val(&f.e),
-        sub_invokes: &[],
-    };
-    f.e.mock_auths(&[
-        MockAuth {
-            address: &f.admin,
-            invoke: &apply,
-        },
-        MockAuth {
-            address: &f.admin,
-            invoke: &apply,
-        },
-    ]);
-    f.vault.apply_change(&id, &f.admin);
+    // One admin signature covers the call; the hand-over inside asks for none.
+    f.sign_only_as(&f.admin, "apply_change", (id,).into_val(&f.e));
+    f.vault.apply_change(&id);
 
     f.e.mock_all_auths();
     assert_eq!(f.vault.governance(), Some(f.admin.clone()));
@@ -302,21 +267,19 @@ fn the_hand_over_offer_lasts_seven_days_of_ledgers() {
 fn a_change_shorter_than_a_raised_notice_never_lands() {
     let f = setup();
     let next = Address::generate(&f.e);
-    let custodian = f
-        .vault
-        .propose_change(&VaultChange::Custodian(next), &f.admin);
+    let custodian = f.vault.propose_change(&VaultChange::Custodian(next));
     let delay = f
         .vault
-        .propose_change(&VaultChange::UpgradeDelay(30 * DAY_DURATION), &f.admin);
+        .propose_change(&VaultChange::UpgradeDelay(30 * DAY_DURATION));
     f.advance(MIN_UPGRADE_DELAY);
-    f.vault.apply_change(&delay, &f.admin);
+    f.vault.apply_change(&delay);
 
     // The notice rises past the seven days the custodian change was given.
-    f.vault.set_notice(&(20 * DAY_DURATION), &f.admin);
+    f.vault.set_notice(&(20 * DAY_DURATION));
     f.advance(30 * DAY_DURATION);
 
     refused(
-        f.vault.try_apply_change(&custodian, &f.admin),
+        f.vault.try_apply_change(&custodian),
         VaultError::UpgradeDelayBelowNotice,
     );
     assert_eq!(f.vault.custodian(), Some(f.custodian.clone()));
@@ -326,11 +289,11 @@ fn a_change_shorter_than_a_raised_notice_never_lands() {
 fn the_deposit_cap_stays_instant_both_ways() {
     let f = setup();
 
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
     assert_eq!(f.vault.deposit_cap(), Some(1_000));
-    f.vault.set_deposit_cap(&Some(500), &f.admin);
+    f.vault.set_deposit_cap(&Some(500));
     assert_eq!(f.vault.deposit_cap(), Some(500));
-    f.vault.set_deposit_cap(&None, &f.admin);
+    f.vault.set_deposit_cap(&None);
     assert_eq!(f.vault.deposit_cap(), None);
 }
 
@@ -338,18 +301,18 @@ fn the_deposit_cap_stays_instant_both_ways() {
 fn a_pending_role_change_lands_after_a_pause() {
     let f = setup();
     let next = Address::generate(&f.e);
-    let id = f.vault.propose_change(
-        &VaultChange::GrantRole(symbol_short!("guardian"), next.clone()),
-        &f.admin,
-    );
+    let id = f.vault.propose_change(&VaultChange::GrantRole(
+        symbol_short!("guardian"),
+        next.clone(),
+    ));
     f.vault.pause(&f.guardian);
     f.advance(MIN_UPGRADE_DELAY);
 
-    assert!(f.vault.try_apply_change(&id, &f.admin).is_err());
+    assert!(f.vault.try_apply_change(&id).is_err());
 
     f.vault.unpause(&f.admin);
     f.advance(MIN_UPGRADE_DELAY);
-    f.vault.apply_change(&id, &f.admin);
+    f.vault.apply_change(&id);
     assert!(f
         .vault
         .has_role(&next, &symbol_short!("guardian"))
@@ -359,23 +322,23 @@ fn a_pending_role_change_lands_after_a_pause() {
 #[test]
 fn nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included() {
     let f = setup();
-    let revoke = f.vault.propose_change(
-        &VaultChange::RevokeRole(symbol_short!("manager"), f.manager.clone()),
-        &f.admin,
-    );
-    f.vault.propose_wind_down(&f.admin);
+    let revoke = f.vault.propose_change(&VaultChange::RevokeRole(
+        symbol_short!("manager"),
+        f.manager.clone(),
+    ));
+    f.vault.propose_wind_down();
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
 
     refused(
-        f.vault.try_apply_change(&revoke, &f.admin),
+        f.vault.try_apply_change(&revoke),
         VaultError::WindDownActive,
     );
     refused(
-        f.vault.try_propose_change(
-            &VaultChange::RevokeRole(symbol_short!("manager"), f.manager.clone()),
-            &f.admin,
-        ),
+        f.vault.try_propose_change(&VaultChange::RevokeRole(
+            symbol_short!("manager"),
+            f.manager.clone(),
+        )),
         VaultError::WindDownActive,
     );
     refused(

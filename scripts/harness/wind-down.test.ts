@@ -71,7 +71,6 @@ beforeAll(async () => {
 		identityVerifier(c, c.keys.compliance).allow({
 			account: holder.publicKey(),
 			allowed: true,
-			caller: c.keys.compliance.publicKey(),
 		}),
 	)
 })
@@ -122,10 +121,9 @@ describe("a wind-down on a throwaway vault", () => {
 	})
 
 	it("governance proposes the wind-down and anyone activates it", async () => {
-		const gov = c.keys.governance.publicKey()
-		expect(
-			await call("propose_wind_down", "governance", { caller: gov }, true),
-		).toBe("accepted")
+		expect(await call("propose_wind_down", "governance", {}, true)).toBe(
+			"accepted",
+		)
 		expect(await call("activate_wind_down", "outsider", {}, true)).toBe(
 			"accepted",
 		)
@@ -219,45 +217,30 @@ describe("a wind-down on a throwaway vault", () => {
 		// Simulated, never sent: each write still has to encode, reach the
 		// contract and get the answer an active wind-down gives it.
 		const writes: Array<[string, Signer, Record<string, unknown>, string]> = [
-			["set_deposit_cap", "governance", { cap: 1n, caller: gov }, "accepted"],
+			["set_deposit_cap", "governance", { cap: 1n }, "accepted"],
 			[
 				"set_custodian",
 				"governance",
-				{ custodian: someone, caller: gov },
+				{ custodian: someone },
 				"refused: UseTimelock",
 			],
-			[
-				"set_wind_down_delay",
-				"governance",
-				{ secs: 1n, caller: gov },
-				"accepted",
-			],
+			["set_wind_down_delay", "governance", { secs: 1n }, "accepted"],
 			[
 				"cancel_wind_down_proposal",
 				"governance",
-				{ caller: gov },
+				{},
 				"refused: WindDownActive",
 			],
-			["set_notice", "governance", { secs: 1n, caller: gov }, "accepted"],
-			["finish_setup", "governance", { caller: gov }, "refused: SetupClosed"],
+			["set_notice", "governance", { secs: 1n }, "accepted"],
+			["finish_setup", "governance", {}, "refused: SetupClosed"],
 			[
 				"propose_change",
 				"governance",
-				{ change: { tag: "Custodian", values: [someone] }, caller: gov },
+				{ change: { tag: "Custodian", values: [someone] } },
 				"refused: WindDownActive",
 			],
-			[
-				"cancel_change",
-				"governance",
-				{ id: 1, caller: gov },
-				"refused: ChangeNotFound",
-			],
-			[
-				"apply_change",
-				"governance",
-				{ id: 1, caller: gov },
-				"refused: ChangeNotFound",
-			],
+			["cancel_change", "governance", { id: 1 }, "refused: ChangeNotFound"],
+			["apply_change", "governance", { id: 1 }, "refused: ChangeNotFound"],
 			[
 				"deploy_to_custodian",
 				"treasury",

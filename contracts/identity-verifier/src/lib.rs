@@ -31,8 +31,7 @@ impl IdentityVerifier {
 
     /// Adds or removes an account from the allowlist.
     #[only_admin]
-    pub fn allow(e: &Env, account: Address, allowed: bool, caller: Address) {
-        caller.require_auth();
+    pub fn allow(e: &Env, account: Address, allowed: bool) {
         strata_storage::bump_instance(e);
         strata_storage::set_persistent(e, &DataKey::Allowed(account), &allowed);
     }

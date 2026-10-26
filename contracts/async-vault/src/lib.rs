@@ -178,8 +178,7 @@ impl AsyncVault {
     }
 
     #[only_admin]
-    pub fn set_deposit_cap(e: &Env, cap: Option<i128>, caller: Address) {
-        caller.require_auth();
+    pub fn set_deposit_cap(e: &Env, cap: Option<i128>) {
         guards::non_negative_cap(e, cap);
         let old_cap = state::deposit_cap(e);
         state::set_deposit_cap(e, cap);
@@ -193,8 +192,7 @@ impl AsyncVault {
     /// Instant during setup; afterwards the custodian changes through the
     /// timelock.
     #[only_admin]
-    pub fn set_custodian(e: &Env, custodian: Address, caller: Address) {
-        caller.require_auth();
+    pub fn set_custodian(e: &Env, custodian: Address) {
         guards::direct_change_allowed(e);
         treasury::set_custodian(e, &custodian);
     }
@@ -202,8 +200,7 @@ impl AsyncVault {
     /// Raising is instant. Lowering shortens the warning holders get before a
     /// wind-down starts, so after setup it waits for the timelock.
     #[only_admin]
-    pub fn set_wind_down_delay(e: &Env, secs: u64, caller: Address) {
-        caller.require_auth();
+    pub fn set_wind_down_delay(e: &Env, secs: u64) {
         guards::wind_down_delay_in_bounds(e, secs);
         guards::not_lowered_after_setup(e, secs, wind_down::delay(e));
         wind_down::set_delay(e, secs);
@@ -218,14 +215,12 @@ impl AsyncVault {
     }
 
     #[only_admin]
-    pub fn propose_wind_down(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn propose_wind_down(e: &Env) {
         wind_down::propose(e);
     }
 
     #[only_admin]
-    pub fn cancel_wind_down_proposal(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn cancel_wind_down_proposal(e: &Env) {
         wind_down::cancel_proposal(e);
     }
 
@@ -267,8 +262,7 @@ impl AsyncVault {
     /// Raising is instant. Lowering shortens the wait every closed epoch gives
     /// before it prices, so after setup it waits for the timelock.
     #[only_admin]
-    pub fn set_notice(e: &Env, secs: u64, caller: Address) {
-        caller.require_auth();
+    pub fn set_notice(e: &Env, secs: u64) {
         guards::not_lowered_after_setup(e, secs, state::notice(e));
         guards::notice_in_bounds(e, secs);
         governance::set_notice(e, secs);
@@ -279,8 +273,7 @@ impl AsyncVault {
     /// manager, allowlisted, not frozen), no shares outstanding and no admin
     /// hand-over pending. Deposits open from here on, and it never reopens.
     #[only_admin]
-    pub fn finish_setup(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn finish_setup(e: &Env) {
         governance::finish_setup(e);
     }
 
@@ -297,22 +290,19 @@ impl AsyncVault {
 
     /// Queues a change behind the timelock and returns its id.
     #[only_admin]
-    pub fn propose_change(e: &Env, change: VaultChange, caller: Address) -> u32 {
-        caller.require_auth();
+    pub fn propose_change(e: &Env, change: VaultChange) -> u32 {
         governance::propose(e, change)
     }
 
     #[only_admin]
-    pub fn cancel_change(e: &Env, id: u32, caller: Address) {
-        caller.require_auth();
+    pub fn cancel_change(e: &Env, id: u32) {
         governance::cancel(e, id);
     }
 
     /// Lands a change whose delay has run. Refused while paused or winding
     /// down.
     #[only_admin]
-    pub fn apply_change(e: &Env, id: u32, caller: Address) {
-        caller.require_auth();
+    pub fn apply_change(e: &Env, id: u32) {
         governance::apply(e, id);
     }
 
@@ -452,8 +442,8 @@ impl Pausable for AsyncVault {
         strata_timelock::pause::start(e);
     }
 
-    #[only_admin]
     fn unpause(e: &Env, caller: Address) {
+        guards::caller_is_admin(e, &caller);
         caller.require_auth();
         pausable::unpause(e);
         strata_timelock::pause::end(e);

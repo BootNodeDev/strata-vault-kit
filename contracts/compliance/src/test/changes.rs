@@ -1,7 +1,12 @@
+extern crate std;
+
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
-    testutils::{Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke},
-    vec, Address, Env, Event as _, IntoVal, Val, Vec,
+    testutils::{
+        Address as _, AuthorizedFunction, AuthorizedInvocation, Events as _, Ledger as _, MockAuth,
+        MockAuthInvoke,
+    },
+    vec, Address, Env, Event as _, IntoVal, Symbol, Val, Vec,
 };
 use stellar_access::role_transfer::RoleTransferError;
 use stellar_tokens::rwa::compliance::ComplianceHook;
@@ -60,13 +65,13 @@ struct Fixture<'a> {
 
 impl Fixture<'_> {
     fn propose(&self, change: &ComplianceChange) -> u32 {
-        self.rules.propose_change(change, &self.admin)
+        self.rules.propose_change(change)
     }
 
     fn land(&self, change: &ComplianceChange) {
         let id = self.propose(change);
         self.e.ledger().with_mut(|l| l.timestamp += MIN_DELAY);
-        self.rules.apply_change(&id, &self.admin);
+        self.rules.apply_change(&id);
     }
 
     /// Signs the next call to the compliance contract as `who` and nothing
@@ -81,6 +86,24 @@ impl Fixture<'_> {
                 sub_invokes: &[],
             },
         }]);
+    }
+
+    /// The last call asked `who` alone to sign, once, on exactly this call.
+    fn signed_once_by(&self, who: &Address, fn_name: &str, args: Vec<Val>) {
+        assert_eq!(
+            self.e.auths(),
+            std::vec![(
+                who.clone(),
+                AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        self.rules.address.clone(),
+                        Symbol::new(&self.e, fn_name),
+                        args,
+                    )),
+                    sub_invocations: std::vec![],
+                },
+            )]
+        );
     }
 
     /// Lets the instance decay past its extend threshold, then checks the call
@@ -116,13 +139,13 @@ fn unbound<'a>() -> Fixture<'a> {
 /// A compliance contract bound to a vault clock, with setup still open.
 fn bound<'a>() -> Fixture<'a> {
     let f = unbound();
-    f.rules.bind_vault(&f.clock.address, &f.admin);
+    f.rules.bind_vault(&f.clock.address);
     f
 }
 
 fn finished<'a>() -> Fixture<'a> {
     let f = bound();
-    f.rules.finish_setup(&f.admin);
+    f.rules.finish_setup();
     f
 }
 
@@ -148,7 +171,7 @@ fn setup_cannot_finish_without_a_vault() {
     let f = unbound();
 
     refused(
-        f.rules.try_finish_setup(&f.admin),
+        f.rules.try_finish_setup(),
         ComplianceContractError::VaultNotBound,
     );
     assert!(f.rules.setup_open());
@@ -158,18 +181,18 @@ fn setup_cannot_finish_without_a_vault() {
 fn a_second_vault_or_a_late_vault_is_refused() {
     let f = bound();
     refused(
-        f.rules.try_bind_vault(&Address::generate(&f.e), &f.admin),
+        f.rules.try_bind_vault(&Address::generate(&f.e)),
         ComplianceContractError::SetupClosed,
     );
 
-    f.rules.finish_setup(&f.admin);
+    f.rules.finish_setup();
 
     refused(
-        f.rules.try_bind_vault(&Address::generate(&f.e), &f.admin),
+        f.rules.try_bind_vault(&Address::generate(&f.e)),
         ComplianceContractError::SetupClosed,
     );
     refused(
-        f.rules.try_finish_setup(&f.admin),
+        f.rules.try_finish_setup(),
         ComplianceContractError::SetupClosed,
     );
     assert_eq!(f.rules.vault(), Some(f.clock.address.clone()));
@@ -179,10 +202,7 @@ fn a_second_vault_or_a_late_vault_is_refused() {
 fn an_address_that_reports_no_clock_cannot_be_bound() {
     let f = unbound();
 
-    assert!(f
-        .rules
-        .try_bind_vault(&Address::generate(&f.e), &f.admin)
-        .is_err());
+    assert!(f.rules.try_bind_vault(&Address::generate(&f.e)).is_err());
     assert_eq!(f.rules.vault(), None);
 }
 
@@ -196,8 +216,8 @@ fn the_contract_answers_the_view_the_vault_reads() {
     assert_eq!(view.vault(), None);
     assert!(view.setup_open());
 
-    f.rules.bind_vault(&f.clock.address, &f.admin);
-    f.rules.finish_setup(&f.admin);
+    f.rules.bind_vault(&f.clock.address);
+    f.rules.finish_setup();
 
     assert_eq!(view.vault(), Some(f.clock.address.clone()));
     assert!(!view.setup_open());
@@ -206,16 +226,19 @@ fn the_contract_answers_the_view_the_vault_reads() {
 #[test]
 fn only_the_admin_binds_and_finishes() {
     let f = unbound();
-    f.e.set_auths(&[]);
-    assert!(f
-        .rules
-        .try_bind_vault(&f.clock.address, &Address::generate(&f.e))
-        .is_err());
+    let stranger = Address::generate(&f.e);
+    f.sign_only_as(
+        &stranger,
+        "bind_vault",
+        (f.clock.address.clone(),).into_val(&f.e),
+    );
+    assert!(f.rules.try_bind_vault(&f.clock.address).is_err());
     assert_eq!(f.rules.vault(), None);
 
     let f = bound();
-    f.e.set_auths(&[]);
-    assert!(f.rules.try_finish_setup(&Address::generate(&f.e)).is_err());
+    let stranger = Address::generate(&f.e);
+    f.sign_only_as(&stranger, "finish_setup", Vec::new(&f.e));
+    assert!(f.rules.try_finish_setup().is_err());
     assert!(f.rules.setup_open());
 }
 
@@ -249,10 +272,8 @@ fn after_setup_rule_changes_wait_for_the_timelock() {
 fn proposals_wait_until_setup_is_finished() {
     let f = bound();
     refused(
-        f.rules.try_propose_change(
-            &ComplianceChange::BindToken(Address::generate(&f.e)),
-            &f.admin,
-        ),
+        f.rules
+            .try_propose_change(&ComplianceChange::BindToken(Address::generate(&f.e))),
         ComplianceContractError::SetupOpen,
     );
     assert_eq!(f.rules.pending_changes().len(), 0);
@@ -264,7 +285,7 @@ fn a_proposed_binding_lands_after_the_delay() {
     let token = Address::generate(&f.e);
     let change = ComplianceChange::BindToken(token.clone());
 
-    let id = f.rules.propose_change(&change, &f.admin);
+    let id = f.rules.propose_change(&change);
 
     assert_eq!(
         f.rules.pending_changes(),
@@ -278,12 +299,12 @@ fn a_proposed_binding_lands_after_the_delay() {
         ]
     );
     refused(
-        f.rules.try_apply_change(&id, &f.admin),
+        f.rules.try_apply_change(&id),
         ComplianceContractError::ChangeNotReady,
     );
 
     f.e.ledger().set_timestamp(10_000 + MIN_DELAY);
-    f.rules.apply_change(&id, &f.admin);
+    f.rules.apply_change(&id);
 
     assert_eq!(f.rules.linked_tokens(), vec![&f.e, token]);
     assert_eq!(f.rules.pending_changes().len(), 0);
@@ -298,7 +319,7 @@ fn every_rule_change_lands_through_the_timelock() {
     f.rules.bind_token(&token, &f.admin);
     f.rules
         .add_module_to(&ComplianceHook::CanTransfer, &early, &f.admin);
-    f.rules.finish_setup(&f.admin);
+    f.rules.finish_setup();
 
     f.land(&ComplianceChange::RemoveModule(
         ComplianceHook::CanTransfer,
@@ -323,17 +344,17 @@ fn every_rule_change_lands_through_the_timelock() {
 fn nothing_lands_while_the_vault_is_paused_or_winding_down() {
     let f = finished();
     let module = Address::generate(&f.e);
-    let id = f.rules.propose_change(
-        &ComplianceChange::AddModule(ComplianceHook::CanCreate, module),
-        &f.admin,
-    );
+    let id = f.rules.propose_change(&ComplianceChange::AddModule(
+        ComplianceHook::CanCreate,
+        module,
+    ));
     f.e.ledger().set_timestamp(10_000 + MIN_DELAY);
 
     let mut paused = running();
     paused.paused = true;
     f.clock.set(&paused);
     refused(
-        f.rules.try_apply_change(&id, &f.admin),
+        f.rules.try_apply_change(&id),
         ComplianceContractError::VaultPaused,
     );
 
@@ -341,14 +362,12 @@ fn nothing_lands_while_the_vault_is_paused_or_winding_down() {
     winding.winding_down = true;
     f.clock.set(&winding);
     refused(
-        f.rules.try_apply_change(&id, &f.admin),
+        f.rules.try_apply_change(&id),
         ComplianceContractError::WindDownActive,
     );
     refused(
-        f.rules.try_propose_change(
-            &ComplianceChange::BindToken(Address::generate(&f.e)),
-            &f.admin,
-        ),
+        f.rules
+            .try_propose_change(&ComplianceChange::BindToken(Address::generate(&f.e))),
         ComplianceContractError::WindDownActive,
     );
 }
@@ -365,12 +384,12 @@ fn a_vault_pause_pushes_the_change_back() {
     assert_eq!(f.rules.pending_changes().get(0).unwrap().eta, eta);
     f.e.ledger().set_timestamp(eta - 1);
     refused(
-        f.rules.try_apply_change(&id, &f.admin),
+        f.rules.try_apply_change(&id),
         ComplianceContractError::ChangeNotReady,
     );
 
     f.e.ledger().set_timestamp(eta);
-    f.rules.apply_change(&id, &f.admin);
+    f.rules.apply_change(&id);
 }
 
 #[test]
@@ -384,7 +403,7 @@ fn a_change_shorter_than_a_raised_notice_never_lands() {
     f.e.ledger().set_timestamp(10_000 + 30 * DAY_DURATION);
 
     refused(
-        f.rules.try_apply_change(&id, &f.admin),
+        f.rules.try_apply_change(&id),
         ComplianceContractError::DelayBelowNotice,
     );
 }
@@ -392,15 +411,14 @@ fn a_change_shorter_than_a_raised_notice_never_lands() {
 #[test]
 fn a_cancelled_change_never_lands() {
     let f = finished();
-    let id = f.rules.propose_change(
-        &ComplianceChange::BindToken(Address::generate(&f.e)),
-        &f.admin,
-    );
+    let id = f
+        .rules
+        .propose_change(&ComplianceChange::BindToken(Address::generate(&f.e)));
 
-    f.rules.cancel_change(&id, &f.admin);
+    f.rules.cancel_change(&id);
 
     refused(
-        f.rules.try_apply_change(&id, &f.admin),
+        f.rules.try_apply_change(&id),
         ComplianceContractError::ChangeNotFound,
     );
     assert_eq!(f.rules.linked_tokens().len(), 0);
@@ -414,10 +432,16 @@ fn only_the_admin_proposes_cancels_and_applies() {
     let id = f.propose(&change);
     f.e.ledger().set_timestamp(10_000 + MIN_DELAY);
 
-    f.e.set_auths(&[]);
-    assert!(f.rules.try_propose_change(&change, &stranger).is_err());
-    assert!(f.rules.try_cancel_change(&id, &stranger).is_err());
-    assert!(f.rules.try_apply_change(&id, &stranger).is_err());
+    f.sign_only_as(
+        &stranger,
+        "propose_change",
+        (change.clone(),).into_val(&f.e),
+    );
+    assert!(f.rules.try_propose_change(&change).is_err());
+    f.sign_only_as(&stranger, "cancel_change", (id,).into_val(&f.e));
+    assert!(f.rules.try_cancel_change(&id).is_err());
+    f.sign_only_as(&stranger, "apply_change", (id,).into_val(&f.e));
+    assert!(f.rules.try_apply_change(&id).is_err());
     assert_eq!(f.rules.pending_changes().len(), 1);
 }
 
@@ -430,7 +454,7 @@ fn proposing_and_applying_read_the_vault_clock_once() {
     assert_eq!(f.clock.reads(), before + 1);
 
     f.e.ledger().set_timestamp(10_000 + MIN_DELAY);
-    f.rules.apply_change(&id, &f.admin);
+    f.rules.apply_change(&id);
     assert_eq!(f.clock.reads(), before + 2);
 }
 
@@ -451,7 +475,7 @@ fn proposing_and_applying_publish_the_change() {
     );
 
     f.e.ledger().set_timestamp(10_000 + MIN_DELAY);
-    f.rules.apply_change(&id, &f.admin);
+    f.rules.apply_change(&id);
     let events = f.e.events().all().filter_by_contract(&f.rules.address);
     assert_eq!(
         events.events().last(),
@@ -467,13 +491,14 @@ fn setup_cannot_finish_while_a_hand_over_is_pending() {
         .transfer_admin_role(&next, &(f.e.ledger().sequence() + 100));
 
     refused(
-        f.rules.try_finish_setup(&f.admin),
+        f.rules.try_finish_setup(),
         ComplianceContractError::AdminTransferPending,
     );
 
     f.rules.accept_admin_transfer();
     assert_eq!(f.rules.get_admin(), Some(next.clone()));
-    f.rules.finish_setup(&next);
+    f.rules.finish_setup();
+    f.signed_once_by(&next, "finish_setup", Vec::new(&f.e));
     assert!(!f.rules.setup_open());
 }
 
@@ -532,7 +557,7 @@ fn a_cancelled_hand_over_no_longer_holds_setup_open() {
         .transfer_admin_role(&next, &(f.e.ledger().sequence() + 100));
     f.rules.transfer_admin_role(&next, &0);
 
-    f.rules.finish_setup(&f.admin);
+    f.rules.finish_setup();
 
     assert_eq!(f.rules.get_admin(), Some(f.admin.clone()));
 }
@@ -549,9 +574,9 @@ fn after_setup_the_admin_hands_over_through_the_timelock() {
 
     let id = f
         .rules
-        .propose_change(&ComplianceChange::Admin(next.clone()), &f.admin);
+        .propose_change(&ComplianceChange::Admin(next.clone()));
     f.e.ledger().set_timestamp(10_000 + MIN_DELAY);
-    f.rules.apply_change(&id, &f.admin);
+    f.rules.apply_change(&id);
     assert_eq!(f.rules.get_admin(), Some(f.admin.clone()));
 
     f.rules.accept_admin_transfer();
@@ -611,16 +636,129 @@ fn every_admin_call_restores_the_instance_ttl() {
             .transfer_admin_role(&next, &(f.e.ledger().sequence() + ADMIN_ACCEPT_LEDGERS))
     });
     f.restores_the_instance(|| f.rules.transfer_admin_role(&next, &0));
-    f.restores_the_instance(|| f.rules.bind_vault(&f.clock.address, &f.admin));
-    f.restores_the_instance(|| f.rules.finish_setup(&f.admin));
+    f.restores_the_instance(|| f.rules.bind_vault(&f.clock.address));
+    f.restores_the_instance(|| f.rules.finish_setup());
 
     let change = ComplianceChange::BindToken(Address::generate(&f.e));
     let mut id = 0;
     f.restores_the_instance(|| id = f.propose(&change));
-    f.restores_the_instance(|| f.rules.cancel_change(&id, &f.admin));
+    f.restores_the_instance(|| f.rules.cancel_change(&id));
 
     let id = f.propose(&ComplianceChange::Admin(next));
     f.e.ledger().with_mut(|l| l.timestamp += MIN_DELAY);
-    f.restores_the_instance(|| f.rules.apply_change(&id, &f.admin));
+    f.restores_the_instance(|| f.rules.apply_change(&id));
     f.restores_the_instance(|| f.rules.accept_admin_transfer());
+}
+
+#[test]
+fn each_admin_call_asks_the_admin_for_one_signature() {
+    let f = unbound();
+    let token = Address::generate(&f.e);
+    let module = Address::generate(&f.e);
+
+    f.rules.bind_token(&token, &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "bind_token",
+        (token.clone(), f.admin.clone()).into_val(&f.e),
+    );
+    f.rules.unbind_token(&token, &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "unbind_token",
+        (token.clone(), f.admin.clone()).into_val(&f.e),
+    );
+    f.rules
+        .add_module_to(&ComplianceHook::CanTransfer, &module, &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "add_module_to",
+        (ComplianceHook::CanTransfer, module.clone(), f.admin.clone()).into_val(&f.e),
+    );
+    f.rules
+        .remove_module_from(&ComplianceHook::CanTransfer, &module, &f.admin);
+    f.signed_once_by(
+        &f.admin,
+        "remove_module_from",
+        (ComplianceHook::CanTransfer, module, f.admin.clone()).into_val(&f.e),
+    );
+
+    f.rules.bind_vault(&f.clock.address);
+    f.signed_once_by(
+        &f.admin,
+        "bind_vault",
+        (f.clock.address.clone(),).into_val(&f.e),
+    );
+    f.rules.finish_setup();
+    f.signed_once_by(&f.admin, "finish_setup", Vec::new(&f.e));
+
+    let change = ComplianceChange::BindToken(token);
+    let id = f.rules.propose_change(&change);
+    f.signed_once_by(&f.admin, "propose_change", (change.clone(),).into_val(&f.e));
+    f.rules.cancel_change(&id);
+    f.signed_once_by(&f.admin, "cancel_change", (id,).into_val(&f.e));
+
+    let id = f.rules.propose_change(&change);
+    f.e.ledger().with_mut(|l| l.timestamp += MIN_DELAY);
+    f.rules.apply_change(&id);
+    f.signed_once_by(&f.admin, "apply_change", (id,).into_val(&f.e));
+
+    let id = f
+        .rules
+        .propose_change(&ComplianceChange::Admin(Address::generate(&f.e)));
+    f.e.ledger().with_mut(|l| l.timestamp += MIN_DELAY);
+    f.rules.apply_change(&id);
+    f.signed_once_by(&f.admin, "apply_change", (id,).into_val(&f.e));
+}
+
+#[test]
+fn a_hand_over_asks_each_side_for_one_signature() {
+    let f = bound();
+    let next = Address::generate(&f.e);
+    let live_until = f.e.ledger().sequence() + 100;
+
+    f.rules.transfer_admin_role(&next, &live_until);
+    f.signed_once_by(
+        &f.admin,
+        "transfer_admin_role",
+        (next.clone(), live_until).into_val(&f.e),
+    );
+    f.rules.transfer_admin_role(&next, &0);
+    f.signed_once_by(
+        &f.admin,
+        "transfer_admin_role",
+        (next.clone(), 0_u32).into_val(&f.e),
+    );
+
+    f.rules.transfer_admin_role(&next, &live_until);
+    f.rules.accept_admin_transfer();
+    f.signed_once_by(&next, "accept_admin_transfer", Vec::new(&f.e));
+}
+
+#[test]
+fn each_hook_asks_the_bound_token_for_one_signature() {
+    let f = bound();
+    let token = Address::generate(&f.e);
+    let from = Address::generate(&f.e);
+    let to = Address::generate(&f.e);
+    f.rules.bind_token(&token, &f.admin);
+
+    f.rules.created(&to, &10, &token);
+    f.signed_once_by(
+        &token,
+        "created",
+        (to.clone(), 10_i128, token.clone()).into_val(&f.e),
+    );
+    f.rules.transferred(&to, &from, &4, &token);
+    f.signed_once_by(
+        &token,
+        "transferred",
+        (to.clone(), from.clone(), 4_i128, token.clone()).into_val(&f.e),
+    );
+    f.rules.destroyed(&from, &4, &token);
+    f.signed_once_by(
+        &token,
+        "destroyed",
+        (from, 4_i128, token.clone()).into_val(&f.e),
+    );
 }

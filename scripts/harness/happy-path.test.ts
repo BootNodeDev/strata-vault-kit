@@ -71,7 +71,6 @@ describe("setup", () => {
 				verifier.allow({
 					account: holder.publicKey(),
 					allowed: true,
-					caller: compliance.publicKey(),
 				}),
 			)
 			expect(

@@ -42,8 +42,8 @@ struct Fixture<'a> {
 
 impl Fixture<'_> {
     fn finish_setup(&self) {
-        self.token.bind_vault(&self.vault, &self.admin);
-        self.token.finish_setup(&self.admin);
+        self.token.bind_vault(&self.vault);
+        self.token.finish_setup();
     }
 }
 
@@ -126,11 +126,24 @@ fn not_a_second_upgrade_refuses_an_upgrade_while_one_waits() {
     let grant = TokenChange::GrantRole(symbol_short!("manager"), Address::generate(&f.e));
     holds(&f, || guards::not_a_second_upgrade(&f.e, &upgrade));
 
-    f.token.propose_change(&upgrade, &f.admin);
+    f.token.propose_change(&upgrade);
     refuses(&f, ShareTokenError::UpgradeAlreadyPending, || {
         guards::not_a_second_upgrade(&f.e, &upgrade)
     });
     holds(&f, || guards::not_a_second_upgrade(&f.e, &grant));
+}
+
+#[test]
+fn caller_is_admin_refuses_anyone_but_the_admin() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    holds(&f, || guards::caller_is_admin(&f.e, &f.admin));
+
+    for who in [&f.compliance_authority, &stranger] {
+        refuses(&f, ShareTokenError::AdminRequired, || {
+            guards::caller_is_admin(&f.e, who)
+        });
+    }
 }
 
 #[test]
@@ -179,7 +192,7 @@ fn not_vault_address_refuses_the_bound_vault() {
     let holder = Address::generate(&f.e);
     holds(&f, || guards::not_vault_address(&f.e, &f.vault));
 
-    f.token.bind_vault(&f.vault, &f.admin);
+    f.token.bind_vault(&f.vault);
     refuses(&f, ShareTokenError::VaultAddress, || {
         guards::not_vault_address(&f.e, &f.vault)
     });
@@ -190,7 +203,7 @@ fn not_vault_address_refuses_the_bound_vault() {
 fn not_freezing_vault_refuses_only_a_freeze_of_the_vault() {
     let f = setup();
     let holder = Address::generate(&f.e);
-    f.token.bind_vault(&f.vault, &f.admin);
+    f.token.bind_vault(&f.vault);
 
     refuses(&f, ShareTokenError::VaultAddress, || {
         guards::not_freezing_vault(&f.e, &f.vault, true)
@@ -204,7 +217,7 @@ fn identity_verified_refuses_an_account_the_verifier_rejects() {
     let f = setup();
     let listed = Address::generate(&f.e);
     let stranger = Address::generate(&f.e);
-    f.identity.allow(&listed, &true, &f.admin);
+    f.identity.allow(&listed, &true);
 
     holds(&f, || guards::identity_verified(&f.e, &listed));
     refuses(&f, RWAError::IdentityVerificationFailed, || {

@@ -21,6 +21,7 @@ mod redeem;
 mod settlement;
 mod setup;
 mod share_returns;
+mod signatures;
 mod supply;
 mod timing;
 mod treasury;
@@ -98,9 +99,33 @@ impl Fixture<'_> {
         }]);
     }
 
+    /// The last call asked `who` alone to sign, once, on exactly this call.
+    fn signed_once_by(
+        &self,
+        who: &Address,
+        fn_name: &str,
+        args: soroban_sdk::Vec<soroban_sdk::Val>,
+    ) {
+        use soroban_sdk::testutils::{AuthorizedFunction, AuthorizedInvocation};
+        assert_eq!(
+            self.e.auths(),
+            std::vec![(
+                who.clone(),
+                AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        self.vault.address.clone(),
+                        soroban_sdk::Symbol::new(&self.e, fn_name),
+                        args,
+                    )),
+                    sub_invocations: std::vec![],
+                },
+            )]
+        );
+    }
+
     fn investor(&self, funded: i128) -> Address {
         let who = self.unverified_investor(funded);
-        self.identity.allow(&who, &true, &self.compliance);
+        self.identity.allow(&who, &true);
         who
     }
 
@@ -176,12 +201,9 @@ impl Fixture<'_> {
     /// After setup, a module lands only through the compliance contract's timelock.
     fn add_compliance_module(&self, hook: ComplianceHook, module: &Address) {
         let rules = ComplianceClient::new(&self.e, &self.share.compliance());
-        let id = rules.propose_change(
-            &ComplianceChange::AddModule(hook, module.clone()),
-            &self.admin,
-        );
+        let id = rules.propose_change(&ComplianceChange::AddModule(hook, module.clone()));
         self.advance(MIN_UPGRADE_DELAY);
-        rules.apply_change(&id, &self.admin);
+        rules.apply_change(&id);
     }
 }
 
@@ -367,14 +389,14 @@ fn build<'a>(
     if miswire == Miswire::PreMinted {
         // The token's admin mints during the token's own setup, then steps back.
         let holder = Address::generate(&e);
-        identity.allow(&holder, &true, &compliance_authority);
+        identity.allow(&holder, &true);
         share.grant_role(&admin, &symbol_short!("manager"), &admin);
         share.mint(&holder, &100, &admin);
         share.revoke_role(&admin, &symbol_short!("manager"), &admin);
     }
     // Converting a delisted holder's deposit mints into the vault's own escrow.
     if miswire != Miswire::NotAllowlisted {
-        identity.allow(&contract_id, &true, &compliance_authority);
+        identity.allow(&contract_id, &true);
     }
     if miswire == Miswire::VaultFrozen {
         // Until `bind_vault`, the token does not know this address is its vault.
@@ -383,43 +405,43 @@ fn build<'a>(
     match miswire {
         Miswire::TokenUnbound => {}
         Miswire::TokenBoundElsewhere => {
-            share.bind_vault(&register_with(&e, distinct_roles(&e)), &admin);
-            share.finish_setup(&admin);
+            share.bind_vault(&register_with(&e, distinct_roles(&e)));
+            share.finish_setup();
         }
-        Miswire::TokenSetupOpen => share.bind_vault(&contract_id, &admin),
+        Miswire::TokenSetupOpen => share.bind_vault(&contract_id),
         _ => {
-            share.bind_vault(&contract_id, &admin);
-            share.finish_setup(&admin);
+            share.bind_vault(&contract_id);
+            share.finish_setup();
         }
     }
     match miswire {
         Miswire::OracleUnbound => {}
         Miswire::OracleBoundElsewhere => {
-            oracle.bind_vault(&register_with(&e, distinct_roles(&e)), &admin);
-            oracle.finish_setup(&admin);
+            oracle.bind_vault(&register_with(&e, distinct_roles(&e)));
+            oracle.finish_setup();
         }
-        Miswire::OracleSetupOpen => oracle.bind_vault(&contract_id, &admin),
+        Miswire::OracleSetupOpen => oracle.bind_vault(&contract_id),
         _ => {
-            oracle.bind_vault(&contract_id, &admin);
-            oracle.finish_setup(&admin);
+            oracle.bind_vault(&contract_id);
+            oracle.finish_setup();
         }
     }
     match miswire {
         Miswire::ComplianceUnbound => {}
         Miswire::ComplianceBoundElsewhere => {
-            compliance.bind_vault(&register_with(&e, distinct_roles(&e)), &admin);
-            compliance.finish_setup(&admin);
+            compliance.bind_vault(&register_with(&e, distinct_roles(&e)));
+            compliance.finish_setup();
         }
-        Miswire::ComplianceSetupOpen => compliance.bind_vault(&contract_id, &admin),
+        Miswire::ComplianceSetupOpen => compliance.bind_vault(&contract_id),
         _ => {
-            compliance.bind_vault(&contract_id, &admin);
-            compliance.finish_setup(&admin);
+            compliance.bind_vault(&contract_id);
+            compliance.finish_setup();
         }
     }
     let vault = AsyncVaultClient::new(&e, &contract_id);
     if finish {
-        vault.set_custodian(&custodian, &admin);
-        vault.finish_setup(&admin);
+        vault.set_custodian(&custodian);
+        vault.finish_setup();
     }
 
     Fixture {

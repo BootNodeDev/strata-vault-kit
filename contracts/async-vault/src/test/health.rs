@@ -134,7 +134,7 @@ fn a_notice_longer_than_a_report_lives_is_reported() {
     f.attest(wad(1));
     let freshness = f.oracle.config().freshness_duration;
 
-    f.vault.set_notice(&(freshness + 1), &f.admin);
+    f.vault.set_notice(&(freshness + 1));
 
     assert!(!f.vault.health().freshness_covers_notice);
 }

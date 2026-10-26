@@ -26,7 +26,7 @@ fn a_delisted_vault_still_returns_escrowed_shares() {
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &200);
 
-    f.identity.allow(&f.vault.address, &false, &f.compliance);
+    f.identity.allow(&f.vault.address, &false);
     assert!(!f.vault.health().allowlisted);
 
     assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
@@ -38,7 +38,7 @@ fn a_delisted_holder_cannot_take_shares_back() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &200);
-    f.identity.allow(&holder, &false, &f.compliance);
+    f.identity.allow(&holder, &false);
 
     refused(
         f.vault.try_cancel_redeem(&holder, &epoch),
@@ -127,7 +127,7 @@ fn a_delisted_holder_with_a_worthless_exit_keeps_the_request() {
     let epoch = f.vault.request_redeem(&holder, &1);
     // Priced at half a unit per share, one share pays nothing.
     f.fulfill_epoch(WAD_SCALE / 2);
-    f.identity.allow(&holder, &false, &f.compliance);
+    f.identity.allow(&holder, &false);
 
     refused(
         f.vault.try_claim_redeem(&holder, &epoch),
