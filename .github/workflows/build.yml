@@ -85,19 +85,6 @@ jobs:
         run: |
           mkdir -p .config/stellar/identity
           echo 'secret_key = "SC5O7VZUXDJ6JBDSZ74DSERXL7W3Y5LTOAMRF7RQRL3TAGAPS7LUVG3L"' > .config/stellar/identity/me.toml
-      - name:
-          Deploy the native asset contract and register it as the alias asset
-        # The console is written against a Stellar Asset Contract, so the
-        # development build needs one. Its id is deterministic, so a rerun only
-        # re-registers the alias.
-        run: |
-          RPC=http://localhost:8000/rpc
-          PASSPHRASE="Standalone Network ; February 2017"
-          ID=$(stellar contract id asset --asset native --rpc-url "$RPC" --network-passphrase "$PASSPHRASE")
-          if ! stellar contract invoke --id "$ID" --source me --rpc-url "$RPC" --network-passphrase "$PASSPHRASE" -- name > /dev/null 2>&1; then
-            stellar contract asset deploy --asset native --source me --rpc-url "$RPC" --network-passphrase "$PASSPHRASE"
-          fi
-          stellar contract alias add asset --id "$ID" --rpc-url "$RPC" --network-passphrase "$PASSPHRASE"
       - name: Build with Scaffold and build client packages
         run: |
           # Setting pipefail so a failed build's exit status isn't overwritten
@@ -140,6 +127,19 @@ jobs:
             exit 1
           fi
           echo "Generated $ACTUAL client(s)."
+      - name:
+          Deploy the native asset contract and register it as the alias asset
+        # The console is written against a Stellar Asset Contract, so the
+        # development build needs one. Its id is deterministic, so a rerun only
+        # re-registers the alias.
+        run: |
+          RPC=http://localhost:8000/rpc
+          PASSPHRASE="Standalone Network ; February 2017"
+          ID=$(stellar contract id asset --asset native --rpc-url "$RPC" --network-passphrase "$PASSPHRASE")
+          if ! stellar contract invoke --id "$ID" --source me --rpc-url "$RPC" --network-passphrase "$PASSPHRASE" -- name > /dev/null 2>&1; then
+            stellar contract asset deploy --asset native --source me --rpc-url "$RPC" --network-passphrase "$PASSPHRASE"
+          fi
+          stellar contract alias add asset --id "$ID" --rpc-url "$RPC" --network-passphrase "$PASSPHRASE"
       - name: Build the workspaces against the contracts deployed above
         run: npm run build --workspaces --if-present
         env:
