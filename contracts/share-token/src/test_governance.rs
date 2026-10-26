@@ -106,8 +106,7 @@ impl strata_bindings::VaultBinding for RulesStub {
     }
 }
 
-/// Compliance rules from outside the kit, such as OpenZeppelin's: they list
-/// the tokens a test sets and answer no binding view.
+/// Rules from outside the kit, such as OpenZeppelin's, with no binding view.
 #[contract]
 struct ExternalRules;
 
@@ -783,6 +782,7 @@ fn rules_that_stop_qualifying_are_never_installed() {
     refused_once_the_rules_turn(&f, |rules| {
         rules.report(&Some(clock_stub(&f.e).address), &false, &listed)
     });
+    refused_once_the_rules_turn(&f, |rules| rules.report(&None, &false, &listed));
     refused_once_the_rules_turn(&f, |rules| rules.report(&here, &true, &listed));
     refused_once_the_rules_turn(&f, |rules| rules.silence());
 }
@@ -808,22 +808,33 @@ fn rules_from_outside_the_kit_are_installed_while_they_list_the_token() {
     assert_eq!(f.token.compliance(), kept.address);
 }
 
-/// As at the vault's setup, a contract that fails either binding view counts
-/// as external, so only its `linked_tokens` decides.
+/// Like `refused_once_the_rules_turn`, but the swap still lands.
+fn installed_once_the_rules_turn(f: &Fixture, turn: impl FnOnce(&RulesStubClient)) {
+    let rules = f.rules_stub_bound_here();
+    let id = f.propose(TokenChange::Compliance(rules.address.clone()));
+    turn(&rules);
+    f.advance(MIN_DELAY);
+
+    f.token.apply_change(&id);
+    assert_eq!(f.token.compliance(), rules.address);
+}
+
+/// As at the vault's setup, once one view fails, the other is ignored.
 #[test]
 fn rules_that_stop_answering_a_binding_view_are_installed_as_external() {
     let f = setup();
     f.finish();
+    let here = Some(f.vault.address.clone());
+    let listed = vec![&f.e, f.token.address.clone()];
 
-    for view in [symbol_short!("vault"), symbol_short!("open")] {
-        let rules = f.rules_stub_bound_here();
-        let id = f.propose(TokenChange::Compliance(rules.address.clone()));
-        rules.forget(&view);
-        f.advance(MIN_DELAY);
-
-        f.token.apply_change(&id);
-        assert_eq!(f.token.compliance(), rules.address);
-    }
+    installed_once_the_rules_turn(&f, |rules| {
+        rules.report(&Some(clock_stub(&f.e).address), &false, &listed);
+        rules.forget(&symbol_short!("open"));
+    });
+    installed_once_the_rules_turn(&f, |rules| {
+        rules.report(&here, &true, &listed);
+        rules.forget(&symbol_short!("vault"));
+    });
 }
 
 #[test]
