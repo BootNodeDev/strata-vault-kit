@@ -100,7 +100,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
   - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant.
-  - A compliance swap needs a contract that names the token's vault through `vault()` with its own setup finished, and lists the token in `linked_tokens` (`ComplianceNotBound`). A verifier swap needs a verifier whose `verify_identity` accepts the vault's address (`VerifierRefusesVault`). Both are checked when the change is proposed and again when it applies, and a contract that does not answer fails the check.
+  - A compliance swap needs a contract that lists the token in `linked_tokens`; one that answers `vault()` and `setup_open()` must also name the token's vault with its own setup finished (`ComplianceNotBound`). As at `finish_setup`, one that does not answer them is an external module and is accepted. A verifier swap needs a verifier whose `verify_identity` accepts the vault's address (`VerifierRefusesVault`). Both are checked when the change is proposed and again when it applies, and a contract that does not answer `linked_tokens` or `verify_identity` fails the check.
   - Once its one-time setup closes, the oracle's upgrades, grants, admin hand-overs and every config change except a shorter `freshness_duration` wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `attester` or `guardian`, the NAV pause and `clear_latest` stay instant.
   - Once its one-time setup closes, the compliance contract's module changes, token bindings and admin hand-overs wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`.
 
@@ -547,12 +547,12 @@ compliance contract (OpenZeppelin `TokenBinder`), and calls the oracle's
 `state` and `freshness_duration` (`OracleFeed`). A replacement for any of these
 must answer those calls, or the vault's setup cannot finish.
 
-After setup, the share token makes the same kind of check before it swaps a
-contract, when the swap is proposed and again when it applies. New compliance
-rules must answer `VaultBinding` with the token's vault and their setup closed,
-and list the token in `linked_tokens`; unlike `finish_setup`, the token accepts
-no external module that does not answer. A new identity verifier must accept
-the vault's address in `verify_identity`.
+After setup, the share token makes the same check before it swaps a contract,
+when the swap is proposed and again when it applies. New compliance rules must
+list the token in `linked_tokens`, and rules that answer `VaultBinding` must
+name the token's vault with their setup closed. Like `finish_setup`, the token
+accepts an external module that does not answer `VaultBinding`, on trust. A new
+identity verifier must accept the vault's address in `verify_identity`.
 
 ---
 
