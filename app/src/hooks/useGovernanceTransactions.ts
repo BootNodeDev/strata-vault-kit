@@ -151,16 +151,12 @@ export const useCancelUpgrade = adminTransaction(
 
 export const useProposeWindDown = adminTransaction(
 	(signer: Signer) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.propose_wind_down({ caller: signer.publicKey }),
-		),
+		asyncVaultWriter(signer).then((vault) => vault.propose_wind_down()),
 	[cycleReadsKey],
 )
 
 export const useCancelWindDown = adminTransaction(
 	(signer: Signer) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.cancel_wind_down_proposal({ caller: signer.publicKey }),
-		),
+		asyncVaultWriter(signer).then((vault) => vault.cancel_wind_down_proposal()),
 	[cycleReadsKey],
 )

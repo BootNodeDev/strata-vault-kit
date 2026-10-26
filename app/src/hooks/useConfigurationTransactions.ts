@@ -16,32 +16,28 @@ export type OracleConfig = Parameters<NavOracleApi["set_config"]>[0]["config"]
 
 export const useSetDepositCap = adminTransaction(
 	(signer: Signer, cap: bigint | null) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.set_deposit_cap({ cap, caller: signer.publicKey }),
-		),
+		asyncVaultWriter(signer).then((vault) => vault.set_deposit_cap({ cap })),
 	[cycleReadsKey],
 )
 
 export const useSetCustodian = adminTransaction(
 	(signer: Signer, custodian: string) =>
 		asyncVaultWriter(signer).then((vault) =>
-			vault.set_custodian({ custodian, caller: signer.publicKey }),
+			vault.set_custodian({ custodian }),
 		),
 	[vaultAuthoritiesKey],
 )
 
 export const useSetNotice = adminTransaction(
 	(signer: Signer, secs: bigint) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.set_notice({ secs, caller: signer.publicKey }),
-		),
+		asyncVaultWriter(signer).then((vault) => vault.set_notice({ secs })),
 	[cycleReadsKey],
 )
 
 export const useSetWindDownDelay = adminTransaction(
 	(signer: Signer, secs: bigint) =>
 		asyncVaultWriter(signer).then((vault) =>
-			vault.set_wind_down_delay({ secs, caller: signer.publicKey }),
+			vault.set_wind_down_delay({ secs }),
 		),
 	[cycleReadsKey],
 )

@@ -67,7 +67,7 @@ describe("useCancelRedeem", () => {
 		)
 
 		expect(vaultMock.cancel_redeem).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 	})
@@ -286,7 +286,7 @@ describe("useCancelRedeem", () => {
 		)
 		expect(vaultMock.cancel_redeem).toHaveBeenCalledTimes(1)
 		expect(vaultMock.cancel_redeem).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 

@@ -14,7 +14,7 @@ const allowCall =
 	(allowed: boolean) =>
 	(signer: Signer, { verifier, account }: AllowanceChange) =>
 		identityVerifierWriter(verifier)(signer).then((client) =>
-			client.allow({ account, allowed, caller: signer.publicKey }),
+			client.allow({ account, allowed }),
 		)
 
 const freezeAddressCall =

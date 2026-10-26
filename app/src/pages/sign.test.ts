@@ -45,7 +45,7 @@ describe("describePending", () => {
 	it("maps a vault setter with an amount argument", () => {
 		expect(
 			describePending(
-				pending(addresses.vault, "set_deposit_cap", [1_500_000_000n, account]),
+				pending(addresses.vault, "set_deposit_cap", [1_500_000_000n]),
 				addresses,
 			),
 		).toEqual({
@@ -58,7 +58,7 @@ describe("describePending", () => {
 
 	it("shows an absent deposit cap as no cap", () => {
 		const { args } = describePending(
-			pending(addresses.vault, "set_deposit_cap", [null, account]),
+			pending(addresses.vault, "set_deposit_cap", [null]),
 			addresses,
 		)
 
@@ -218,7 +218,7 @@ describe("describePending", () => {
 	it("maps the configured identity verifier", () => {
 		expect(
 			describePending(
-				pending(addresses.identityVerifier, "allow", [other, false, account]),
+				pending(addresses.identityVerifier, "allow", [other, false]),
 				addresses,
 			),
 		).toEqual({
@@ -287,7 +287,7 @@ describe("describePending", () => {
 	it("refuses arguments of the wrong shape", () => {
 		expect(() =>
 			describePending(
-				pending(addresses.vault, "set_custodian", [12n, account]),
+				pending(addresses.vault, "set_custodian", [12n]),
 				addresses,
 			),
 		).toThrow(InvalidPendingTransaction)
