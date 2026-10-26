@@ -396,12 +396,12 @@ and stale are independent: freshness lapses on its own, the pause is an
 administrative decision.
 
 **The share token's pause is separate.** The token has its own transfer pause,
-gated on the token's admin (governance by deploy); the token has no guardian
-role. While active it refuses SEP-41 transfers and the vault's escrowed-share
-return (`cancel_redeem`); pricing, share and cash claims, mint, burn and forced
-transfer are unaffected. It is a transfer-restriction control, not an emergency
-stop for the vault, and only the token admin lifts it: pending cancellations
-resume when it does.
+controlled by the token's admin (governance) and never by the guardian. While
+active it refuses SEP-41 transfers between holders. The vault's own escrow
+moves (escrowing a redemption, returning escrowed shares on `cancel_redeem`),
+pricing, share and cash claims, mint, burn and forced transfer are unaffected.
+It is a trading restriction, not an emergency stop for the vault, and only
+governance lifts it.
 
 **Integrator surface:** the oracle exposes the attested share price directly, as
 the latest report with its proof reference and acceptance time (`nav_per_share`).
@@ -607,8 +607,9 @@ public surface given the vault address.
 | Mis-wired deployment   | A vault goes live without every binding wired  | `health()` reports each wiring step; `finish_setup` refuses until all hold, and the vault takes no deposit before that                                                                                                                                                                                                                                                                                                                                             |
 | Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while anything is uncovered, and escrowed subscriptions never leave the vault                                                                                                                                                                                                                                                          |
 | Guardian keys          | Griefing via pause                             | Guardian can only pause the vault, which stops deposit requests, epoch pricing and upgrade application and freezes the upgrade timelock; it cannot halt redemptions, custodian deployments, or payable claims, nor move funds; governance unpauses and rotates the vault role. It holds no role on the share token: the token's transfer pause is admin-gated (governance by deploy), not a guardian lever. No contract keeps governance and guardian apart |
-| Share-token pause      | Cancellations and secondary transfers halted   | Admin-gated (governance by deploy; the token has no guardian role); it refuses SEP-41 transfers and escrowed-share returns only, never pricing, claims, mint, burn or forced transfer; only the token admin lifts it (§8.5) |
+| Share-token pause      | Secondary transfers halted                     | Controlled by governance (the token admin), never the guardian; it refuses SEP-41 transfers between holders only, never the vault's escrow moves, pricing, claims, mint, burn or forced transfer; only governance lifts it (§8.5) |
 | Compliance keys        | Wrongful delisting, freeze or transfer         | Delisted investors keep the exit-only cash path; freezes require the share token's compliance role and are auditable per operation; moving a holder's shares also needs governance's signature in the same call, lands only on an allowlisted account and never moves shares out of or into the vault's address, which cannot be frozen once the token knows its vault |
+| Vault's own listing    | Compliance delists the vault's address         | Share returns do not depend on it: the vault checks the holder itself and moves the shares as the token's manager. A delisted holder's conversion, which mints into the vault's escrow, waits until the vault is allowlisted again; nothing is lost, and `health().allowlisted` turns false |
 | Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics. Governance, the compliance contract's admin, adds and removes modules: instantly during its one-time setup, and after it only through the vault's timelock, so a change cannot land while the vault is paused and never lands during a wind-down. Removing a faulty module waits the same way, and during a wind-down it cannot be removed at all (§8.7) |
 | Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; declared risk of the chosen asset, verified and reported at genesis (auth flags)                                                                                                                                                                                                                                                                                                                                                       |
 | Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                                                          |

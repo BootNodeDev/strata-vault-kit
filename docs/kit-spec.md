@@ -53,7 +53,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - `request_deposit` is refused by `#[when_not_paused]` (`PausableError::EnforcedPause`).
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
-  - `cancel_redeem` remains open; outside a wind-down only the share token's own transfer pause can refuse it (Invariant 6).
+  - `cancel_redeem` remains open; a delisted controller exits through the cash claim instead, and a frozen one is held (Invariant 6).
   - `cancel_deposit` and `cancel_redeem` stay open for a sealed epoch while the vault is paused, because a paused vault cannot price it (Invariant 6).
 
 ### Invariant 6: Single-Step Atomic Cancellation
@@ -65,7 +65,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow.
   - A readable price refuses cancellation with `PriceAvailable`, even before `priceable_at`; once that report expires, cancellation works again (`cancellation_reopens_when_the_price_that_closed_it_expires`).
   - Pausing the vault reopens cancellation; unpausing closes it again while the price is still readable (`a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price`).
-  - Outside a wind-down, `cancel_redeem` is refused with `PausableError::EnforcedPause` while the share token's transfer pause is active; the request stays pending and the cash claim remains open.
+  - Outside a wind-down, `cancel_redeem` refuses a delisted controller (`NotAllowlisted`), holds a frozen one (`Frozen`) and refuses a move the compliance rules refuse (`HolderNotEligible`); the request stays pending and the cash claim remains open. Neither the share token's transfer pause nor the vault's own allowlist place stops a cancellation (`a_token_pause_stops_trading_but_not_a_share_return`, `a_delisted_vault_still_returns_escrowed_shares`).
   - In an active wind-down, `cancel_redeem` never returns shares: the escrow joins the holder's wind-down entitlement (`RedemptionSurrendered`), whether the holder is allowlisted or not. A frozen holder's escrow stays until the freeze is lifted.
   - Once fulfilled, cancellation is refused with `AlreadyPriced`.
 - **Operating note**: keep `freshness_duration` longer than the notice, so a normal epoch's price does not lapse and reopen the window on its own.
@@ -81,7 +81,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**: For all values of $`a, s \in [1, 10^{30}]`$ and $`\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]`$, a round-trip conversion never creates value. Remainder satisfies:
   $`(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}`$
 - **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. When the last request of a priced epoch settles, the remainder leaves `pending_mint_shares` and `committed` and the vault publishes `EpochReconciled { epoch, share_dust, cash_dust }`. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping.
-- **A request that can never settle** keeps its epoch open, and the two cases leave different amounts behind. A zero-asset redemption whose holder the share token refuses (`a_request_that_cannot_settle_keeps_its_epoch_open`) leaves only the epoch's ordinary rounding remainder in `committed` — fewer units than the epoch has open requests of that kind — because that request was never owed any cash. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's own remainder, until the mint is allowed. Either way it is still owed to nobody.
+- **A request that can never settle** keeps its epoch open, and the two cases leave different amounts behind. A zero-asset redemption whose holder may not take the shares back (`HolderNotEligible`, `a_request_that_cannot_settle_keeps_its_epoch_open`) leaves only the epoch's ordinary rounding remainder in `committed` — fewer units than the epoch has open requests of that kind — because that request was never owed any cash. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's own remainder, until the mint is allowed. Either way it is still owed to nobody.
 
 **Settlement and upgrades.** The settlement record counts a request only from the moment it exists. A vault upgraded in place to this version while any request is open would under-count its open epochs: claims in epochs priced before the upgrade would revert, and a mixed epoch could reconcile early. This version must therefore be deployed fresh, or reached by upgrade only once no request is open anywhere in the vault.
 
@@ -179,8 +179,8 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | `token_bound` | The share token names this vault through `vault()` and its own setup is finished. |
 | `oracle_bound` | The oracle names this vault through `vault()` and its own setup is finished. |
 | `sole_token_manager` | This vault is the share token's only `manager`. |
-| `allowlisted` | This vault passes the share token's identity verifier, so it can hold escrowed shares. A delisted holder's deposit converts to an exit by minting the shares to the vault's own address, so that conversion needs this flag true. |
-| `vault_unfrozen` | The share token has not frozen this vault's address. A frozen vault could not hand escrowed shares back when a holder cancels a redemption. |
+| `allowlisted` | This vault passes the share token's identity verifier. Escrowing and returning shares do not need it. Only a delisted holder's conversion does: it mints the shares into the vault's own escrow. While this flag is false, those conversions wait until the vault is allowlisted again, and nothing is lost. |
+| `vault_unfrozen` | The share token has not frozen this vault's address. The vault's own share moves ignore a freeze, so a frozen vault would look stopped while stopping nothing; `finish_setup` refuses it all the same. |
 | `compliance_bound` | The share token is in its compliance contract's `linked_tokens`, and a compliance contract that answers `vault()` and `setup_open()` names this vault with its own setup finished. One that does not answer them is an external module and passes; its own governance is a trust assumption. |
 | `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
@@ -297,7 +297,7 @@ A clean deployment executes in three sequenced phases:
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role("manager", vault_address)` to authorize lazy share minting and burning.
    - Call `ShareToken::bind_vault(vault_address)`, then `ShareToken::finish_setup()`. The token's admin changes are instant until then and wait for the vault's timelock afterwards.
-   - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so the vault can return escrowed shares on cancelled redemptions.
+   - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so a delisted holder's priced deposit can be minted into the vault's escrow; `finish_setup` requires it.
    - Call `Compliance::bind_token(share_token_address)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
    - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap.
