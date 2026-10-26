@@ -74,6 +74,7 @@
               pkgs.twiggy # wasm size profiler
               pkgs.cargo-nextest
               pkgs.cargo-llvm-cov # line/region coverage (needs llvm-tools-preview)
+              pkgs.cargo-deny # licence, advisory and source checks (deny.toml)
               pkgs.nodejs_22
               # Formal methods
               pkgs.tlaplus # tlc + pcal (TLA+ / PlusCal)

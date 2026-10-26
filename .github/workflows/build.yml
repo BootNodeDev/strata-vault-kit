@@ -165,3 +165,30 @@ jobs:
           name: harness-runs
           path: scripts/harness/runs/
           if-no-files-found: ignore
+
+  rust-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-checks-${{ hashFiles('**/Cargo.lock') }}
+      # rustup reads rust-toolchain.toml, which includes clippy and rustfmt.
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint with warnings as errors
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Check licences, advisories, bans and sources
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          # Replaces the action's default --all-features, so CI runs the
+          # same command as docs/TESTING.md.
+          arguments: --locked
+          command: check
