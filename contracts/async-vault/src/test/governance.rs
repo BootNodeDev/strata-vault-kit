@@ -49,6 +49,26 @@ fn applying_a_custodian_change_publishes_both_events() {
 }
 
 #[test]
+fn a_custodian_change_to_the_vault_is_refused_when_proposed_and_when_applied() {
+    let f = setup();
+    let change = VaultChange::Custodian(f.vault.address.clone());
+
+    refused(
+        f.vault.try_propose_change(&change),
+        VaultError::InvalidCustodian,
+    );
+
+    // Skips the proposal's check, as a change queued by an earlier version would.
+    let id = f.e.as_contract(&f.vault.address, || {
+        strata_timelock::queue::propose::<AsyncVault, _>(&f.e, &change).unwrap()
+    });
+    f.advance(MIN_UPGRADE_DELAY);
+
+    refused(f.vault.try_apply_change(&id), VaultError::InvalidCustodian);
+    assert_eq!(f.vault.custodian(), Some(f.custodian.clone()));
+}
+
+#[test]
 fn raising_the_notice_is_instant_and_lowering_waits() {
     let f = setup();
 

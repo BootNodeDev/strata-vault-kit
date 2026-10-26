@@ -224,7 +224,8 @@ async function grantAndVerify(
 }
 
 // The custodian is set while setup is open; afterwards it changes only through
-// the timelock. finish_setup refuses unless every wiring step above landed.
+// the timelock. finish_setup refuses until the custodian and every wiring step
+// above are in place.
 async function finishVaultSetup(
 	net: Network,
 	accounts: Accounts,
@@ -256,6 +257,10 @@ async function finishVaultSetup(
 		"allowlisted",
 		"vault_unfrozen",
 		"compliance_bound",
+		"decimals_match",
+		"addresses_distinct",
+		"custodian_set",
+		"feed_answers",
 	] as const
 	const broken = wiring.filter((flag) => !health[flag])
 	if (health.setup_open || broken.length > 0)

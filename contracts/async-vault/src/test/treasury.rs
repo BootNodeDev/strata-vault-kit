@@ -101,7 +101,7 @@ fn deploying_needs_the_treasury_role() {
 
 #[test]
 fn deploying_without_a_custodian_is_rejected() {
-    let f = setup_unfinished();
+    let f = miswired(Miswire::NoCustodian);
     let backer = f.investor(1_000);
     f.vault.fund(&backer, &1_000);
 
@@ -114,7 +114,7 @@ fn deploying_without_a_custodian_is_rejected() {
 
 #[test]
 fn setting_the_custodian_needs_the_admin_signature() {
-    let f = setup_unfinished();
+    let f = miswired(Miswire::NoCustodian);
 
     f.e.set_auths(&[]);
     assert!(f.vault.try_set_custodian(&f.custodian).is_err());
@@ -125,6 +125,18 @@ fn setting_the_custodian_needs_the_admin_signature() {
     );
     assert!(f.vault.try_set_custodian(&f.custodian).is_err());
     assert_eq!(f.vault.custodian(), None);
+}
+
+#[test]
+fn setting_the_vault_as_its_own_custodian_is_refused() {
+    for f in [setup_unfinished(), setup()] {
+        let before = f.vault.custodian();
+        refused(
+            f.vault.try_set_custodian(&f.vault.address),
+            VaultError::InvalidCustodian,
+        );
+        assert_eq!(f.vault.custodian(), before);
+    }
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use soroban_sdk::{
-    contracttype, panic_with_error, symbol_short, Address, BytesN, Env, Symbol, Vec,
+    contracttype, panic_with_error, symbol_short, token::TokenClient, Address, BytesN, Env, Symbol,
+    Vec,
 };
 use stellar_access::{
     access_control::{self, AccessControlClient, AccessControlStorageKey},
@@ -71,6 +72,10 @@ pub(crate) struct Wiring {
     pub allowlisted: bool,
     pub vault_unfrozen: bool,
     pub compliance_bound: bool,
+    pub decimals_match: bool,
+    pub addresses_distinct: bool,
+    pub custodian_set: bool,
+    pub feed_answers: bool,
 }
 
 impl Wiring {
@@ -82,6 +87,10 @@ impl Wiring {
             && self.allowlisted
             && self.vault_unfrozen
             && self.compliance_bound
+            && self.decimals_match
+            && self.addresses_distinct
+            && self.custodian_set
+            && self.feed_answers
     }
 }
 
@@ -121,6 +130,13 @@ pub(crate) fn bound_here(e: &Env, contract: &Address) -> bool {
         && matches!(binding.try_setup_open(), Ok(Ok(false)))
 }
 
+/// True when `feed` answers the views the vault prices from. A new feed has no
+/// report yet, so this asks only for answers, not for a valid price.
+pub(crate) fn answers_as_feed(e: &Env, feed: &Address) -> bool {
+    let feed = OracleFeedClient::new(e, feed);
+    matches!(feed.try_state(), Ok(Ok(_))) && matches!(feed.try_freshness_duration(), Ok(Ok(_)))
+}
+
 fn compliance_bound(e: &Env, compliance: &Address, token: &Address) -> bool {
     let linked = matches!(
         TokenBinderClient::new(e, compliance).try_linked_tokens(),
@@ -135,12 +151,21 @@ fn compliance_bound(e: &Env, compliance: &Address, token: &Address) -> bool {
     linked && on_this_clock
 }
 
+fn all_different(addresses: &[&Address]) -> bool {
+    addresses
+        .iter()
+        .enumerate()
+        .all(|(i, a)| addresses[i + 1..].iter().all(|b| a != b))
+}
+
 pub(crate) fn wiring(e: &Env) -> Wiring {
     let me = e.current_contract_address();
+    let asset = state::get_addr(e, &DataKey::Asset);
     let token = state::get_addr(e, &DataKey::ShareToken);
     let oracle = state::get_addr(e, &DataKey::Oracle);
     let roles = AccessControlClient::new(e, &token);
     let rwa = RWATokenClient::new(e, &token);
+    let shares = FungibleTokenClient::new(e, &token);
     Wiring {
         token_bound: bound_here(e, &token),
         oracle_bound: bound_here(e, &oracle),
@@ -151,10 +176,7 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
             roles.try_get_role_member(&TOKEN_MANAGER_ROLE, &0),
             Ok(Ok(holder)) if holder == me
         ),
-        no_shares_outstanding: matches!(
-            FungibleTokenClient::new(e, &token).try_total_supply(),
-            Ok(Ok(0))
-        ),
+        no_shares_outstanding: matches!(shares.try_total_supply(), Ok(Ok(0))),
         allowlisted: match rwa.try_identity_verifier() {
             Ok(Ok(verifier)) => matches!(
                 IdentityVerifierClient::new(e, &verifier).try_verify_identity(&me),
@@ -167,6 +189,14 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
             Ok(Ok(compliance)) => compliance_bound(e, &compliance, &token),
             _ => false,
         },
+        decimals_match: matches!(
+            (TokenClient::new(e, &asset).try_decimals(), shares.try_decimals()),
+            (Ok(Ok(of_asset)), Ok(Ok(of_shares))) if of_asset == of_shares
+        ),
+        addresses_distinct: all_different(&[&asset, &token, &oracle, &me]),
+        custodian_set: state::get_addr_opt(e, &DataKey::Custodian)
+            .is_some_and(|custodian| custodian != me),
+        feed_answers: answers_as_feed(e, &oracle),
     }
 }
 
@@ -223,11 +253,7 @@ pub(crate) fn apply(e: &Env, id: u32) {
             access_control::revoke_role_no_auth(e, account, role, &admin)
         }
         VaultChange::Admin(next) => offer_admin(e, &admin, next),
-        VaultChange::Oracle(feed) => {
-            // A feed that cannot answer would stall every epoch after the swap.
-            OracleFeedClient::new(e, feed).state();
-            state::set_addr(e, &DataKey::Oracle, feed);
-        }
+        VaultChange::Oracle(feed) => state::set_addr(e, &DataKey::Oracle, feed),
     }
     ChangeApplied { id, change }.publish(e);
 }

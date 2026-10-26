@@ -126,7 +126,8 @@ pub enum VaultError {
     /// Setup has finished, and it never reopens.
     SetupClosed = 6066,
     /// A wiring check `health()` reports is false (token, oracle and compliance
-    /// bound, sole token manager, allowlisted, not frozen) or the token has
+    /// bound, sole token manager, allowlisted, not frozen, matching decimals,
+    /// distinct addresses, a feed that answers, a custodian) or the token has
     /// shares outstanding, so setup cannot finish.
     SetupIncomplete = 6067,
     /// The holder fails the share token's identity check, so the vault takes no
@@ -141,8 +142,10 @@ pub enum VaultError {
     /// returned or moved, until compliance lifts the freeze. A partial freeze
     /// refuses only what would touch frozen shares.
     Frozen = 6071,
-    /// The proposed feed does not name this vault as its own, or its setup is
-    /// still open. Its admin could then change its limits with no delay.
+    /// The proposed feed does not name this vault as its own, its setup is
+    /// still open, or it does not answer `state()` and `freshness_duration()`.
+    /// Its admin could then change its limits with no delay, or no epoch could
+    /// be priced from it.
     FeedNotBound = 6072,
     /// The holder may not receive shares (delisted, frozen or refused by the
     /// compliance rules), so the escrowed shares stay with the vault and the
@@ -152,4 +155,7 @@ pub enum VaultError {
     /// once it is accepted, cancelled or expired, so no nominee from setup can
     /// accept after changes start to wait.
     AdminTransferPending = 6074,
+    /// The custodian would be the vault itself. Capital deployed to it would
+    /// never leave, and the books would count it as both held and deployed.
+    InvalidCustodian = 6075,
 }

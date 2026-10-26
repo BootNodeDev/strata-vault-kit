@@ -139,12 +139,12 @@ Output of a real run from a fresh clone. Contract IDs differ on every run.
 deploying to local (http://localhost:8000/rpc)
 account keys in .env.keys.local (13 new)
 funded 13 accounts; 0 already existed
-asset contract CDKWXRAHPQVFOAEBOOWWR62ZXAE2IV4V47PATFN7IX4XDW5QIUUL7D2B
-compliance CDGKQCYSMTDRBO7SYV3V72H6AMCQ3UNQFKUU4AD5GSU2I32XDYFS6F3U
-identity_verifier CCZE76VWEWJ47NSFMIXCKU3L55CZZTI5JJY4CSYAWPO3WXPDFXUCA5G6
-share_token CD6IA3BOPFX7VNADJ3GFK7IZGPVPNZA6HBCF425CNPSQ2GN7QZ3UUCP2
-nav_oracle CAHD5ZKMIDD67ZEJUB5ACR62FMAYMQJ2KCRV2MBDNXWT7WEZ2VV3MRDD
-async_vault CDQNMAZP7D5IA7AXZGK3XWYPFD2LDR6V5HQD2OLXZJYNQN4BMNN6SXWJ
+asset contract CCW7OKVOXBBBX3YK6O7F6TZPNIFG32OG4UY7R2K6NSWZUI4R75QCEPVT
+compliance CDPCD2BQQKVQBQFAFI4YBLN3TRX34J5NZUQQMUBGHPYNY64LCEM63DTL
+identity_verifier CC4SRUIMKOBZSEO2GKGVQMDWPWCBJBBIMYYE7BBCUEZE6VMD3SFQDAMW
+share_token CDC7SRTDZIMJSLC5AONUD3FIFYZGMFOHRAS7LLYV2ATJRT7RMTMQO2DG
+nav_oracle CCUUBP3RGOIZZL4DUGRL4FBOSQJZKBPNQ7VUWIN6UOOYBJYYKGNT5E52
+async_vault CB2KVM2WHLXDZRHGCYPTGE7PZM6OORXCNVBUMC3L7GY5KX4BA6NMADXE
 clients generated
 vault holds share_token manager role
 share_token bound to the vault, setup finished
@@ -153,7 +153,7 @@ share_token bound to compliance
 compliance bound to the vault, setup finished
 nav_oracle bound to the vault, setup finished
 vault setup finished
-health {"allowlisted":true,"compliance_bound":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
+health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
 wrote deployed.local.json
 ```
 

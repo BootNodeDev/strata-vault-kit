@@ -10,6 +10,10 @@ fn all_healthy() -> Health {
         allowlisted: true,
         vault_unfrozen: true,
         compliance_bound: true,
+        decimals_match: true,
+        addresses_distinct: true,
+        custodian_set: true,
+        feed_answers: true,
         feed_valid: true,
         freshness_covers_notice: true,
     }
@@ -103,6 +107,43 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
                 ..all_healthy()
             },
         ),
+        (
+            Miswire::AssetDecimalsDiffer,
+            Health {
+                decimals_match: false,
+                ..all_healthy()
+            },
+        ),
+        (
+            Miswire::AssetIsShareToken,
+            Health {
+                addresses_distinct: false,
+                ..all_healthy()
+            },
+        ),
+        (
+            Miswire::OracleNotAFeed,
+            Health {
+                feed_answers: false,
+                feed_valid: false,
+                freshness_covers_notice: false,
+                ..all_healthy()
+            },
+        ),
+        (
+            Miswire::NoCustodian,
+            Health {
+                custodian_set: false,
+                ..all_healthy()
+            },
+        ),
+        (
+            Miswire::CustodianIsVault,
+            Health {
+                custodian_set: false,
+                ..all_healthy()
+            },
+        ),
     ];
     for (miswire, expected) in cases {
         let f = miswired(miswire);
@@ -113,7 +154,8 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
             Health {
                 setup_open: true,
                 ..expected
-            }
+            },
+            "{miswire:?}"
         );
     }
 }

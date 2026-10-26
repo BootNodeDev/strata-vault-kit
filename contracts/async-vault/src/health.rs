@@ -20,6 +20,14 @@ pub struct Health {
     pub allowlisted: bool,
     pub vault_unfrozen: bool,
     pub compliance_bound: bool,
+    pub decimals_match: bool,
+    /// The asset, the share token, the oracle and the vault are four
+    /// different addresses.
+    pub addresses_distinct: bool,
+    /// A custodian is set, and it is not the vault.
+    pub custodian_set: bool,
+    /// The oracle answers `state` and `freshness_duration`, report or not.
+    pub feed_answers: bool,
     pub feed_valid: bool,
     /// A report outlives the notice, so an epoch's cancellation window does
     /// not reopen on its own while the notice runs.
@@ -38,6 +46,10 @@ pub(crate) fn health(e: &Env) -> Health {
         allowlisted: wiring.allowlisted,
         vault_unfrozen: wiring.vault_unfrozen,
         compliance_bound: wiring.compliance_bound,
+        decimals_match: wiring.decimals_match,
+        addresses_distinct: wiring.addresses_distinct,
+        custodian_set: wiring.custodian_set,
+        feed_answers: wiring.feed_answers,
         feed_valid: matches!(feed.try_state(), Ok(Ok(OracleState::Valid))),
         freshness_covers_notice: matches!(
             feed.try_freshness_duration(),

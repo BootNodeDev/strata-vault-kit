@@ -90,7 +90,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**:
   - Upgrade delay $`\in [7 \text{ days}, 90 \text{ days}]`$ and $`\text{delay} \ge \text{notice}`$, checked when a delay change is proposed and again when it applies.
   - Wind-down delay $`\in [7 \text{ days}, 90 \text{ days}]`$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
-  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
+  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and a custodian other than the vault. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
   - After setup, the vault's custodian, role grants, revoking `manager`, admin hand-overs and lowering the notice or the wind-down delay go through the queue; a direct call is refused with `UseTimelock`. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking any other role stay instant. A `Notice` or `WindDownDelay` change is checked against its bounds when proposed and again when it applies.
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
@@ -162,16 +162,16 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | Parameter | Method | Authority | Constraints & Defaults |
 |---|---|---|---|
 | **Standing Notice** | `set_notice(secs: u64)`; after setup, lowering goes through `propose_change(Notice(secs))` → `apply_change(id)` | Governance | Notice wait before pricing. Default: `0`. Must satisfy $`\text{secs} \le \text{upgrade\_delay}`$ and $`\text{secs} \le 30 \text{ days}`$ (`MAX_NOTICE_SECS`), checked again when a `Notice` change applies. Raising is instant. |
-| **Custodian Address** | `set_custodian(custodian: Address)` during setup; afterwards `propose_change(Custodian(address))` → `apply_change(id)` | Governance | Recipient address for off-chain capital deployment. Required before `deploy_to_custodian`. The deploy sets it before setup closes. |
+| **Custodian Address** | `set_custodian(custodian: Address)` during setup; afterwards `propose_change(Custodian(address))` → `apply_change(id)` | Governance | Recipient address for off-chain capital deployment. Required before `finish_setup` and `deploy_to_custodian`. Never the vault itself (`InvalidCustodian`), checked when it is set, proposed and applied. The deploy sets it before setup closes. |
 | **Deposit Cap** | `set_deposit_cap(cap: Option<i128>)` | Governance | Maximum capacity for deposited capital. `None` = unbounded. Refuses negative cap. Instant both ways, also after setup. |
 | **Wind-Down Delay** | `set_wind_down_delay(secs: u64)`; after setup, lowering goes through `propose_change(WindDownDelay(secs))` → `apply_change(id)` | Governance | Minimum notice before wind-down activation. Default and minimum 7 days (`MIN_WIND_DOWN_DELAY`), maximum 90 days (`MAX_WIND_DOWN_DELAY`). Raising is instant. |
 | **Upgrade Delay** | `propose_change(UpgradeDelay(secs))` → `apply_change(id)` | Governance | Timelock delay for wasm upgrades. Must be $`\ge 7 \text{ days}`$, $`\le 90 \text{ days}`$, and $`\ge \text{notice}`$. |
 | **Oracle Configuration** | `set_config(config: OracleConfig)`; after setup, `propose_change(Config(config))` → `apply_change(id)` | Governance | Updates oracle parameters within the constructor's bounds. `set_config` is instant during the oracle's setup. After it, `set_config` is instant only for a shorter `freshness_duration`: later reports go stale sooner, and no value moves. Every other change, tighter limits included, goes through `propose_change(Config(config))` → `apply_change(id)`, and the bounds are checked again when it applies. A tighter fall cap or a longer cooldown can hold the price above a real loss, and a narrower band can stop pricing. Applying a `Config` change sets every field, freshness included; to keep a cut made after the proposal, cancel the queued change and propose again. |
-| **Oracle Feed** | `propose_change(Oracle(address))` → `apply_change(id)` | Governance | Waits for the timelock. The new feed must name this vault through `vault()` with its own setup finished, at proposal and again at apply, and must answer `state()`. The next fulfilment prices from it, including an epoch sealed before the swap. |
+| **Oracle Feed** | `propose_change(Oracle(address))` → `apply_change(id)` | Governance | Waits for the timelock. The new feed must name this vault through `vault()` with its own setup finished, and must answer `state()` and `freshness_duration()`, at proposal and again at apply (`FeedNotBound`). The next fulfilment prices from it, including an epoch sealed before the swap. |
 
 ### Health View
 
-`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out two `finish_setup` checks: that the share token has no shares outstanding, which stops being true once the vault has holders, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while `token_bound`, `oracle_bound`, `sole_token_manager`, `allowlisted`, `vault_unfrozen` and `compliance_bound` are all true, shares were minted before setup; the token's `total_supply()` shows them.
+`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out two `finish_setup` checks: that the share token has no shares outstanding, which stops being true once the vault has holders, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while every field from `token_bound` to `feed_answers` is true, shares were minted before setup; the token's `total_supply()` shows them.
 
 | Field | True when |
 |---|---|
@@ -182,6 +182,10 @@ The `async_vault` constructor strictly verifies pairwise separation across autho
 | `allowlisted` | This vault passes the share token's identity verifier. Escrowing and returning shares do not need it. Only a delisted holder's conversion does: it mints the shares into the vault's own escrow. While this flag is false, those conversions wait until the vault is allowlisted again, and nothing is lost. |
 | `vault_unfrozen` | The share token has not frozen this vault's address. The vault's own share moves ignore an address freeze, so freezing the vault stops nothing; `finish_setup` still refuses a frozen vault. |
 | `compliance_bound` | The share token is in its compliance contract's `linked_tokens`, and a compliance contract that answers `vault()` and `setup_open()` names this vault with its own setup finished. One that does not answer them is an external module and passes; its own governance is a trust assumption. |
+| `decimals_match` | The asset's `decimals()` equals the share token's. Pricing converts base units at the attested price, so a mismatch would put every deposit and exit off by a power of ten. |
+| `addresses_distinct` | The asset, the share token, the oracle and the vault are four different addresses. |
+| `custodian_set` | A custodian is set, and it is not the vault itself. |
+| `feed_answers` | The oracle answers `state()` and `freshness_duration()`. A new feed with no report passes. `oracle_bound` cannot tell a feed from another contract bound to this vault, such as the compliance contract. |
 | `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
 
@@ -222,7 +226,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `pause` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
 | **`AsyncVault`** | `unpause` | Governance | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
 | **`AsyncVault`** | `set_notice` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change` | No |
-| **`AsyncVault`** | `set_custodian` | Governance | `#[only_admin]`; instant during setup, then `propose_change` | No |
+| **`AsyncVault`** | `set_custodian` | Governance | `#[only_admin]`; instant during setup, then `propose_change`; never the vault itself (`InvalidCustodian`) | No |
 | **`AsyncVault`** | `set_deposit_cap` | Governance | `#[only_admin]`; instant both ways | No |
 | **`AsyncVault`** | `set_wind_down_delay` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change`; never below 7 days | No |
 | **`AsyncVault`** | `finish_setup` | Governance | `#[only_admin]`; needs the wiring complete and no pending admin hand-over; once | No |
@@ -300,8 +304,8 @@ A clean deployment executes in three sequenced phases:
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so a delisted holder's priced deposit can be minted into the vault's escrow; `finish_setup` requires it.
    - Call `Compliance::bind_token(share_token_address, governance)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
-   - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap.
-   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it, and with `AdminTransferPending` while an admin hand-over offered during setup is pending. The vault takes no deposit before it.
+   - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap. The custodian is required, and the vault's own address is refused (`InvalidCustodian`).
+   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, and an oracle that answers `state()` and `freshness_duration()`. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit before it.
 3. **Phase 3: Operational Parameterization**
    - Oracle reporter submits the genesis NAV attestation (`attest`).
 
@@ -402,7 +406,7 @@ implementation against what the vault calls.
 | Interface | Defined in | Implemented here by | What the vault calls |
 |---|---|---|---|
 | `OracleFeed` | `crates/strata-bindings` | `nav-oracle` | `state`, `nav_per_share`, `attested_at`, `freshness_duration` |
-| `FungibleToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `transfer`, `balance`, `total_supply` |
+| `FungibleToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `transfer`, `balance`, `total_supply`, `decimals` |
 | `RWAToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `mint`, `burn`, `forced_transfer` |
 | `IdentityVerifier` | OpenZeppelin `stellar-tokens` 0.7.2 | `identity-verifier` (testnet stub) | `verify_identity`, called by the share token |
 
@@ -422,8 +426,9 @@ The vault's `finish_setup` reads the token and the oracle through
 closed. It reads the compliance contract the same way, but accepts one that
 does not answer `VaultBinding`: such an external module keeps its own
 governance, which is a trust assumption. It also reads the token's
-`manager` members (OpenZeppelin `AccessControl`) and its `total_supply`
-(`FungibleToken`), runs `verify_identity` on its own address, and reads
-`linked_tokens` from the token's compliance contract (OpenZeppelin
-`TokenBinder`). A replacement for any of these must answer those calls, or the
-vault's setup cannot finish.
+`manager` members (OpenZeppelin `AccessControl`), its `total_supply` and
+`decimals` (`FungibleToken`) and the asset's `decimals`, runs
+`verify_identity` on its own address, reads `linked_tokens` from the token's
+compliance contract (OpenZeppelin `TokenBinder`), and calls the oracle's
+`state` and `freshness_duration` (`OracleFeed`). A replacement for any of these
+must answer those calls, or the vault's setup cannot finish.
