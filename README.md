@@ -152,6 +152,7 @@ vault is allowlisted
 share_token bound to compliance
 nav_oracle bound to the vault, setup finished
 vault setup finished
+health {"allowlisted":true,"compliance_bound":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true}
 wrote deployed.local.json
 ```
 

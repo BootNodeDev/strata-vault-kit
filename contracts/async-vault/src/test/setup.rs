@@ -73,6 +73,69 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
     }
 }
 
+/// A token that cannot answer `wiring`'s calls must not trap the vault: every
+/// check it needs the token for reads false, and `finish_setup` refuses
+/// cleanly instead of aborting the transaction.
+#[test]
+fn a_token_that_cannot_answer_fails_its_checks_instead_of_trapping() {
+    let e = Env::default();
+    e.mock_all_auths();
+    e.ledger().set_timestamp(10_000);
+
+    let issuer = Address::generate(&e);
+    let asset = e.register_stellar_asset_contract_v2(issuer).address();
+    let admin = Address::generate(&e);
+    let manager = Address::generate(&e);
+    let treasury = Address::generate(&e);
+    let guardian = Address::generate(&e);
+    let compliance_authority = Address::generate(&e);
+    let attester = Address::generate(&e);
+    let broken_token = Address::generate(&e);
+
+    let oracle = NavOracleContractClient::new(
+        &e,
+        &e.register(
+            NavOracleContract,
+            (
+                admin.clone(),
+                attester.clone(),
+                guardian.clone(),
+                open_feed(),
+            ),
+        ),
+    );
+
+    let contract_id = e.register(
+        AsyncVault,
+        (
+            &asset,
+            &broken_token,
+            &oracle.address,
+            VaultRoles {
+                governance: admin.clone(),
+                manager,
+                treasury,
+                guardian: guardian.clone(),
+                compliance: compliance_authority,
+                attester,
+            },
+        ),
+    );
+    oracle.bind_vault(&contract_id, &admin);
+    oracle.finish_setup(&admin);
+
+    let vault = AsyncVaultClient::new(&e, &contract_id);
+
+    let health = vault.health();
+    assert!(health.oracle_bound);
+    assert!(!health.token_bound);
+    assert!(!health.sole_token_manager);
+    assert!(!health.allowlisted);
+    assert!(!health.compliance_bound);
+
+    refused(vault.try_finish_setup(&admin), VaultError::SetupIncomplete);
+}
+
 #[test]
 fn setup_cannot_finish_while_a_hand_over_is_pending() {
     let f = setup_unfinished();
