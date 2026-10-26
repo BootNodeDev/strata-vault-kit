@@ -82,6 +82,11 @@ impl RulesStub {
         store.remove(&symbol_short!("linked"));
     }
 
+    /// One view, `vault` or `open`, fails from now on.
+    pub fn forget(e: Env, view: Symbol) {
+        e.storage().instance().remove(&view);
+    }
+
     pub fn linked_tokens(e: Env) -> Vec<Address> {
         e.storage()
             .instance()
@@ -98,6 +103,27 @@ impl strata_bindings::VaultBinding for RulesStub {
 
     fn setup_open(e: &Env) -> bool {
         e.storage().instance().get(&symbol_short!("open")).unwrap()
+    }
+}
+
+/// Compliance rules from outside the kit, such as OpenZeppelin's: they list
+/// the tokens a test sets and answer no binding view.
+#[contract]
+struct ExternalRules;
+
+#[contractimpl]
+impl ExternalRules {
+    pub fn list(e: Env, linked: Vec<Address>) {
+        e.storage()
+            .instance()
+            .set(&symbol_short!("linked"), &linked);
+    }
+
+    pub fn linked_tokens(e: Env) -> Vec<Address> {
+        e.storage()
+            .instance()
+            .get(&symbol_short!("linked"))
+            .unwrap()
     }
 }
 
@@ -159,6 +185,23 @@ impl Fixture<'_> {
         rules.bind_vault(&self.vault.address);
         rules.finish_setup();
         rules.address
+    }
+
+    /// Stub rules that qualify until a test changes their answers.
+    fn rules_stub_bound_here(&self) -> RulesStubClient<'_> {
+        let rules = RulesStubClient::new(&self.e, &self.e.register(RulesStub, ()));
+        rules.report(
+            &Some(self.vault.address.clone()),
+            &false,
+            &vec![&self.e, self.token.address.clone()],
+        );
+        rules
+    }
+
+    fn rules_from_outside(&self, linked: &Vec<Address>) -> ExternalRulesClient<'_> {
+        let rules = ExternalRulesClient::new(&self.e, &self.e.register(ExternalRules, ()));
+        rules.list(linked);
+        rules
     }
 
     fn verifier(&self) -> IdentityVerifierClient<'_> {
@@ -696,12 +739,14 @@ fn rules_off_this_vaults_clock_or_without_the_token_are_never_proposed() {
     let in_setup = f.rules();
     in_setup.bind_token(&f.token.address, &f.admin);
     in_setup.bind_vault(&f.vault.address);
+    let outside_for_another_token = f.rules_from_outside(&vec![&f.e, Address::generate(&f.e)]);
     let not_a_contract = Address::generate(&f.e);
 
     for rules in [
         unlisted.address,
         elsewhere.address,
         in_setup.address,
+        outside_for_another_token.address,
         not_a_contract,
     ] {
         refused(
@@ -715,12 +760,7 @@ fn rules_off_this_vaults_clock_or_without_the_token_are_never_proposed() {
 /// Proposes a swap to rules that qualify, lets `turn` change their answers,
 /// then checks the swap no longer lands.
 fn refused_once_the_rules_turn(f: &Fixture, turn: impl FnOnce(&RulesStubClient)) {
-    let rules = RulesStubClient::new(&f.e, &f.e.register(RulesStub, ()));
-    rules.report(
-        &Some(f.vault.address.clone()),
-        &false,
-        &vec![&f.e, f.token.address.clone()],
-    );
+    let rules = f.rules_stub_bound_here();
     let id = f.propose(TokenChange::Compliance(rules.address.clone()));
     turn(&rules);
     f.advance(MIN_DELAY);
@@ -745,6 +785,45 @@ fn rules_that_stop_qualifying_are_never_installed() {
     });
     refused_once_the_rules_turn(&f, |rules| rules.report(&here, &true, &listed));
     refused_once_the_rules_turn(&f, |rules| rules.silence());
+}
+
+/// Their own governance is a trust assumption, as at the vault's setup.
+#[test]
+fn rules_from_outside_the_kit_are_installed_while_they_list_the_token() {
+    let f = setup();
+    f.finish();
+    let listed = vec![&f.e, f.token.address.clone()];
+    let kept = f.rules_from_outside(&listed);
+    let dropped = f.rules_from_outside(&listed);
+    let first = f.propose(TokenChange::Compliance(kept.address.clone()));
+    let second = f.propose(TokenChange::Compliance(dropped.address.clone()));
+    dropped.list(&vec![&f.e]);
+    f.advance(MIN_DELAY);
+
+    refused(
+        f.token.try_apply_change(&second),
+        ShareTokenError::ComplianceNotBound,
+    );
+    f.token.apply_change(&first);
+    assert_eq!(f.token.compliance(), kept.address);
+}
+
+/// As at the vault's setup, a contract that fails either binding view counts
+/// as external, so only its `linked_tokens` decides.
+#[test]
+fn rules_that_stop_answering_a_binding_view_are_installed_as_external() {
+    let f = setup();
+    f.finish();
+
+    for view in [symbol_short!("vault"), symbol_short!("open")] {
+        let rules = f.rules_stub_bound_here();
+        let id = f.propose(TokenChange::Compliance(rules.address.clone()));
+        rules.forget(&view);
+        f.advance(MIN_DELAY);
+
+        f.token.apply_change(&id);
+        assert_eq!(f.token.compliance(), rules.address);
+    }
 }
 
 #[test]
