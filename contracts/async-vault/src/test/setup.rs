@@ -81,7 +81,7 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
     }
 }
 
-/// A compliance contract from outside the kit: it lists tokens and reports no vault.
+/// A compliance contract from outside the kit, with no binding view.
 #[contract]
 struct ExternalRules;
 
