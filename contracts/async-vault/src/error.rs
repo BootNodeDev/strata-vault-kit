@@ -139,6 +139,9 @@ pub enum VaultError {
     /// returned or moved, until compliance lifts the freeze. A partial freeze
     /// refuses only what would touch frozen shares.
     Frozen = 6071,
+    /// The proposed feed does not name this vault as its own, or its setup is
+    /// still open. Its admin could then change its limits with no delay.
+    FeedNotBound = 6072,
     /// An admin hand-over offered during setup is still open. Setup finishes
     /// once it is accepted, cancelled or expired, so no nominee from setup can
     /// accept after changes start to wait.
