@@ -153,7 +153,7 @@ export async function generateClient(
 			dependencies?: Record<string, string>
 		}
 		if (pkg.dependencies?.["@stellar/stellar-sdk"]) {
-			pkg.dependencies["@stellar/stellar-sdk"] = "16.1.0"
+			pkg.dependencies["@stellar/stellar-sdk"] = "16.4.1"
 			writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n")
 		}
 	}
