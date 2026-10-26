@@ -6,9 +6,8 @@
 //!   which the kit's oracle and any adopter's feed implement. The cost: a feed
 //!   must answer its four calls as written, or use an adapter.
 //! - **Bound contracts report their binding.** The vault's `finish_setup` and
-//!   the token's compliance swaps read `VaultBinding`. The cost: setup accepts
-//!   a compliance contract that does not answer it, on trust, as external; a
-//!   later swap refuses one.
+//!   the token's compliance swaps read `VaultBinding`. The cost: both accept a
+//!   compliance contract that does not answer it, on trust, as external.
 //! - **Fixed blocks of error codes.** The vault, token, oracle and compliance
 //!   contract each own one; `error_enum!` fails the build outside it,
 //!   `errors.rs` on overlaps. The cost: removed codes stay retired.

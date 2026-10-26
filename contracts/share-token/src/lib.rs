@@ -19,10 +19,11 @@
 //! - **The pause halts trading only.** The admin's transfer pause stops
 //!   `transfer` and `transfer_from`; mints, burns, escrow moves and legal
 //!   transfers go on. The cost: it is no emergency stop for the vault.
-//! - **A swap must fit the vault.** New rules must list this token and run on
-//!   the vault's clock with their setup closed; a new verifier must accept the
-//!   vault. Both are checked when proposed and when applied. The cost: after
-//!   setup, an external module that reports no vault cannot be swapped in.
+//! - **A swap must fit the vault.** New rules must list this token, and rules
+//!   that answer `VaultBinding` must run on the vault's clock with their setup
+//!   closed; a new verifier must accept the vault. Both are checked when
+//!   proposed and when applied. The cost: as at setup, an external module that
+//!   does not answer is taken on trust, and its rules can change with no delay.
 
 #![no_std]
 mod contract;
