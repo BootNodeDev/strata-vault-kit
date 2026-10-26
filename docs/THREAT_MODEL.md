@@ -794,7 +794,10 @@ address gets in.
   escrow, so it waits while compliance has delisted the vault;
   `health().allowlisted` then reads false, and nothing is lost. A redemption
   priced at zero assets cannot give its shares back to a delisted holder, so
-  its request stays open.
+  its request stays open. Only the holder can start an exit: nothing lets
+  compliance or governance redeem a holder who is no longer eligible. If a
+  fund's terms require that, it needs a new power, and counsel must confirm the
+  process.
 - **Tests:** `an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves`,
   `a_delisted_holder_can_still_queue_an_exit` and
   `a_delisted_holder_cannot_cancel_redemption_back_to_shares` in
