@@ -162,6 +162,11 @@ fixture wires them as the deploy does and finishes the vault's setup;
 | The oracle upgrades through the vault's timelock under a live valuation, keeps its config, roles and vault, and migrates once; called directly, `upgrade` does not exist | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) (needs `upgrade_wasm`) | `the_oracle_upgrades_under_a_live_valuation`, `the_oracle_exposes_no_immediate_upgrade` |
 | An oracle upgraded in place cannot read a report an earlier release stored; pausing the NAV, clearing the report and lifting the pause let the attester post a new one | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `a_report_of_the_earlier_shape_is_cleared_and_replaced` |
 
+On the network, the harness attests with the SHA-256 and URL of
+[`docs/evidence/sample-valuation.md`](./evidence/sample-valuation.md), a sample
+marked as test data, so every testnet attestation points at a real file whose
+bytes match its hash.
+
 ## Contract spec docs and error codes
 
 The contract spec keeps the first 1,024 bytes of each doc and drops the rest
