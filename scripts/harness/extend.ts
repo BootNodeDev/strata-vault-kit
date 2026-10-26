@@ -20,9 +20,9 @@ import {
 	type Entry,
 } from "./lib/ttl.js"
 
-// Restores whatever has been archived, then extends every contract instance
-// and the Wasm it runs, so an idle deployment stays callable. Extending needs
-// no authority: any funded account pays.
+// Restores, when archived, and extends by 30 days each contract instance, the
+// Wasm it runs and each pending timelock change, so an idle deployment stays
+// callable. Extending needs no authority: any funded account pays.
 
 interface DeploymentRecord {
 	contracts: Record<string, string>

@@ -60,7 +60,8 @@ pub struct VaultPendingChange {
 const TOKEN_MANAGER_ROLE: Symbol = symbol_short!("manager");
 
 /// What `finish_setup` needs to see before deposits open. `health()` reports
-/// the same checks.
+/// every check but `no_shares_outstanding`: a healthy vault has shares
+/// outstanding from its first claim on.
 pub(crate) struct Wiring {
     pub token_bound: bool,
     pub oracle_bound: bool,

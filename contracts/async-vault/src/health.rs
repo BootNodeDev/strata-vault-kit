@@ -6,7 +6,8 @@ use crate::keys::DataKey;
 use crate::state;
 
 /// What a deployment checks before it trusts the vault, and what monitoring
-/// keeps checking after. Every field is true on a healthy vault.
+/// keeps checking after. On a healthy vault `setup_open` is false and every
+/// other field is true.
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Health {

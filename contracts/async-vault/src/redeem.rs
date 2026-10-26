@@ -208,9 +208,9 @@ fn deliver(e: &Env, controller: &Address, shares: i128) {
     let vault = e.current_contract_address();
     let token = state::get_addr(e, &DataKey::ShareToken);
     let share = RWATokenClient::new(e, &token);
-    let rules = RulesClient::new(e, &share.compliance());
     if lock_policy::standing(e, controller) != Standing::Listed
-        || !rules.can_transfer(&vault, controller, &shares, &token)
+        || !RulesClient::new(e, &share.compliance())
+            .can_transfer(&vault, controller, &shares, &token)
     {
         panic_with_error!(e, VaultError::HolderNotEligible);
     }

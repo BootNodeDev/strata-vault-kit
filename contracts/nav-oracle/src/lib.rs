@@ -39,7 +39,8 @@ pub enum OracleError {
     NavOutOfBand = 3002,
     /// Attested before `cooldown_secs` elapsed since the last record.
     CooldownActive = 3003,
-    /// Per-share move exceeds `max_deviation_bps`.
+    /// The move from the last record exceeds `max_up_bps` (a rise) or
+    /// `max_down_bps` (a fall).
     DeviationExceeded = 3004,
     /// `expires_at` not in the future — the record would be born stale.
     ExpiresInPast = 3005,

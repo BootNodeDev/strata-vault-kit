@@ -155,7 +155,7 @@ describe("a wind-down on a throwaway vault", () => {
 	})
 
 	it("reads the economic supply after the claim", async () => {
-		await call("total_economic_supply", "outsider")
+		expect(await call("total_economic_supply", "outsider")).toBe("accepted")
 	})
 
 	it("every other vault function answers through its binding", async () => {
@@ -196,75 +196,137 @@ describe("a wind-down on a throwaway vault", () => {
 			"get_existing_roles",
 			"paused",
 		]
-		for (const name of views) await call(name, "outsider")
-		await call("wind_down_claimable", "outsider", { holder: holder() })
-		await call("get_epoch", "outsider", { epoch_id: 1n })
-		await call("get_epoch_settlement", "outsider", { epoch_id: 1n })
-		await call("get_deposit_request", "outsider", {
-			epoch_id: 1n,
-			controller: holder(),
-		})
-		await call("get_redeem_request", "outsider", {
-			epoch_id: 2n,
-			controller: holder(),
-		})
-		await call("has_role", "outsider", { account: gov, role: "manager" })
-		await call("get_role_member_count", "outsider", { role: "manager" })
-		await call("get_role_member", "outsider", { role: "manager", index: 0 })
-		await call("get_role_admin", "outsider", { role: "manager" })
+		for (const name of views)
+			expect({ [name]: await call(name, "outsider") }).toEqual({
+				[name]: "accepted",
+			})
+		const reads: Array<[string, Record<string, unknown>]> = [
+			["wind_down_claimable", { holder: holder() }],
+			["get_epoch", { epoch_id: 1n }],
+			["get_epoch_settlement", { epoch_id: 1n }],
+			["get_deposit_request", { epoch_id: 1n, controller: holder() }],
+			["get_redeem_request", { epoch_id: 2n, controller: holder() }],
+			["has_role", { account: gov, role: "manager" }],
+			["get_role_member_count", { role: "manager" }],
+			["get_role_member", { role: "manager", index: 0 }],
+			["get_role_admin", { role: "manager" }],
+		]
+		for (const [name, args] of reads)
+			expect({ [name]: await call(name, "outsider", args) }).toEqual({
+				[name]: "accepted",
+			})
 
-		// Writes the wind-down or the timelock refuses: the call still has to
-		// encode and reach the contract.
-		const refusedWrites: Array<[string, Signer, Record<string, unknown>]> = [
-			["set_deposit_cap", "governance", { cap: 1n, caller: gov }],
-			["set_custodian", "governance", { custodian: someone, caller: gov }],
-			["set_wind_down_delay", "governance", { secs: 1n, caller: gov }],
-			["cancel_wind_down_proposal", "governance", { caller: gov }],
-			["set_notice", "governance", { secs: 1n, caller: gov }],
-			["finish_setup", "governance", { caller: gov }],
+		// Simulated, never sent: each write still has to encode, reach the
+		// contract and get the answer an active wind-down gives it.
+		const writes: Array<[string, Signer, Record<string, unknown>, string]> = [
+			["set_deposit_cap", "governance", { cap: 1n, caller: gov }, "accepted"],
+			[
+				"set_custodian",
+				"governance",
+				{ custodian: someone, caller: gov },
+				"refused: UseTimelock",
+			],
+			[
+				"set_wind_down_delay",
+				"governance",
+				{ secs: 1n, caller: gov },
+				"accepted",
+			],
+			[
+				"cancel_wind_down_proposal",
+				"governance",
+				{ caller: gov },
+				"refused: WindDownActive",
+			],
+			["set_notice", "governance", { secs: 1n, caller: gov }, "accepted"],
+			["finish_setup", "governance", { caller: gov }, "refused: SetupClosed"],
 			[
 				"propose_change",
 				"governance",
 				{ change: { tag: "Custodian", values: [someone] }, caller: gov },
+				"refused: WindDownActive",
 			],
-			["cancel_change", "governance", { id: 1, caller: gov }],
-			["apply_change", "governance", { id: 1, caller: gov }],
+			[
+				"cancel_change",
+				"governance",
+				{ id: 1, caller: gov },
+				"refused: ChangeNotFound",
+			],
+			[
+				"apply_change",
+				"governance",
+				{ id: 1, caller: gov },
+				"refused: ChangeNotFound",
+			],
 			[
 				"deploy_to_custodian",
 				"treasury",
 				{ caller: c.keys.treasury.publicKey(), assets: 1n },
+				"refused: WindDownActive",
 			],
-			["fund", "outsider", { from: someone, assets: 1n }],
-			["cancel_deposit", "holder-1", { from: holder(), epoch_id: 1n }],
-			["cancel_redeem", "holder-1", { from: holder(), epoch_id: 2n }],
-			["claim_redeem", "holder-1", { caller: holder(), epoch_id: 2n }],
+			["fund", "holder-1", { from: holder(), assets: 1n }, "accepted"],
+			[
+				"cancel_deposit",
+				"holder-1",
+				{ from: holder(), epoch_id: 1n },
+				"refused: AlreadyPriced",
+			],
+			[
+				"cancel_redeem",
+				"holder-1",
+				{ from: holder(), epoch_id: 2n },
+				"accepted",
+			],
+			[
+				"claim_redeem",
+				"holder-1",
+				{ caller: holder(), epoch_id: 2n },
+				"refused: EpochNotFulfilled",
+			],
 			[
 				"grant_role",
 				"governance",
 				{ account: someone, role: "manager", caller: gov },
+				"refused: UseTimelock",
 			],
 			[
 				"revoke_role",
 				"governance",
 				{ account: someone, role: "manager", caller: gov },
+				"refused: UseTimelock",
 			],
-			["renounce_role", "outsider", { role: "manager", caller: someone }],
+			[
+				"renounce_role",
+				"outsider",
+				{ role: "manager", caller: someone },
+				"refused: RoleNotHeld",
+			],
 			[
 				"transfer_admin_role",
 				"governance",
 				{ new_admin: someone, live_until_ledger: 1 },
+				"refused: UseTimelock",
 			],
-			["accept_admin_transfer", "outsider", {}],
+			["accept_admin_transfer", "outsider", {}, "refused: NoPendingTransfer"],
 			[
 				"set_role_admin",
 				"governance",
 				{ role: "manager", admin_role: "guardian" },
+				"refused: UseTimelock",
 			],
-			["renounce_admin", "governance", {}],
-			["pause", "guardian", { caller: c.keys.guardian.publicKey() }],
-			["unpause", "governance", { caller: gov }],
+			["renounce_admin", "governance", {}, "refused: AdminRequired"],
+			[
+				"pause",
+				"guardian",
+				{ caller: c.keys.guardian.publicKey() },
+				"accepted",
+			],
+			["unpause", "governance", { caller: gov }, "refused: ExpectedPause"],
 		]
-		for (const [name, as, args] of refusedWrites) await call(name, as, args)
+		for (const [name, as, args, expected] of writes)
+			expect({ [name]: await call(name, as, args) }).toEqual({
+				[name]: expected,
+			})
 
 		const spec = vault(c, c.keys.outsider).spec
 		const every = spec

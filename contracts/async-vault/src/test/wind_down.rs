@@ -48,7 +48,7 @@ fn a_fresh_vault_is_not_winding_down() {
     assert_eq!(f.vault.wind_down(), None);
 }
 
-const WEEK: u64 = 7 * 24 * 60 * 60;
+const WEEK: u64 = 7 * DAY_DURATION;
 
 #[test]
 fn governance_proposes_and_anyone_activates_after_the_delay() {
@@ -593,7 +593,7 @@ fn a_position_survives_the_ledger_advancing() {
     f.vault.finalize_wind_down_round();
     f.vault.claim_wind_down(&user);
 
-    f.advance(29 * 24 * 60 * 60);
+    f.advance(29 * DAY_DURATION);
 
     f.vault.fund(&backer, &800);
     f.vault.finalize_wind_down_round();
