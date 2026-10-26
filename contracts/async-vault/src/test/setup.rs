@@ -1,4 +1,4 @@
-use soroban_sdk::{testutils::Events as _, Event as _, IntoVal};
+use soroban_sdk::{contract, contractimpl, testutils::Events as _, vec, Event as _, IntoVal, Vec};
 use stellar_access::role_transfer::RoleTransferError;
 
 use super::*;
@@ -62,6 +62,8 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
         Miswire::NotAllowlisted,
         Miswire::VaultFrozen,
         Miswire::ComplianceUnbound,
+        Miswire::ComplianceBoundElsewhere,
+        Miswire::ComplianceSetupOpen,
     ] {
         let f = miswired(miswire);
 
@@ -72,6 +74,42 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
         );
         assert!(f.vault.setup_open(), "{miswire:?}");
     }
+}
+
+/// A compliance contract from outside the kit: it lists tokens and reports no vault.
+#[contract]
+struct ExternalRules;
+
+#[contractimpl]
+impl ExternalRules {
+    pub fn link(e: Env, token: Address) {
+        e.storage().instance().set(&symbol_short!("token"), &token);
+    }
+
+    pub fn linked_tokens(e: Env) -> Vec<Address> {
+        let token: Address = e.storage().instance().get(&symbol_short!("token")).unwrap();
+        vec![&e, token]
+    }
+}
+
+/// Its own governance is a trust assumption the vault cannot check.
+#[test]
+fn a_compliance_contract_from_outside_the_kit_is_accepted() {
+    let f = setup_with(
+        open_feed(),
+        |e, (name, symbol, admin, authority, _, verifier)| {
+            let rules = e.register(ExternalRules, ());
+            let token = e.register(
+                ShareToken,
+                (name, symbol, admin, authority, rules.clone(), verifier),
+            );
+            ExternalRulesClient::new(e, &rules).link(&token);
+            token
+        },
+    );
+
+    assert!(!f.vault.setup_open());
+    assert!(f.vault.health().compliance_bound);
 }
 
 /// A token that cannot answer `wiring`'s calls must not trap the vault: every

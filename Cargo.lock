@@ -351,11 +351,13 @@ dependencies = [
 name = "compliance"
 version = "0.1.0"
 dependencies = [
+ "bindings",
  "soroban-sdk",
  "stellar-access",
  "stellar-macros",
  "stellar-tokens",
  "storage",
+ "timelock",
 ]
 
 [[package]]
