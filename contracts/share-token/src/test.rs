@@ -5,7 +5,7 @@ use soroban_sdk::{
 };
 use stellar_access::access_control::{self as access_control, AccessControlError};
 use stellar_tokens::rwa::RWAError;
-use storage::INSTANCE_EXTEND_AMOUNT;
+use strata_storage::INSTANCE_EXTEND_AMOUNT;
 
 use crate::{ShareToken, ShareTokenClient};
 use compliance::{Compliance, ComplianceClient};
@@ -541,7 +541,7 @@ mod legal_transfer {
         Event as _,
     };
     use stellar_tokens::rwa::identity_verification;
-    use timelock::{Clock, MIN_DELAY};
+    use strata_timelock::{Clock, MIN_DELAY};
 
     use super::*;
     use crate::{LegalTransfer, ShareTokenError, MAX_REFERENCE_LEN};
@@ -552,7 +552,7 @@ mod legal_transfer {
     struct VaultStub;
 
     #[contractimpl(contracttrait)]
-    impl timelock::ClockSource for VaultStub {
+    impl strata_timelock::ClockSource for VaultStub {
         fn timelock_clock(_e: &Env) -> Clock {
             Clock {
                 delay: MIN_DELAY,

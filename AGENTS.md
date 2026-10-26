@@ -114,6 +114,39 @@ Not recorded here on purpose. The reference base kept them in this file and they
 drifted: its `AGENTS.md` and its generated client pointed at two different vault
 contracts. The addresses emitted by the deploy script are authoritative.
 
+## Code conventions
+
+- **Crate names.** Shared crates in `crates/` start with `strata-`
+  (`strata-timelock`, `strata-storage`, `strata-bindings`), so a path such as
+  `strata_timelock::DAY_DURATION` reads as the kit's own code.
+- **Addresses in entrypoints.** In an entrypoint the kit defines, `caller` is
+  the account that must sign the call, and `holder` is the account whose
+  position, request or balance the call is about. When one account is both, the
+  entrypoint takes `holder` and that account signs. The two ends of a share
+  transfer are `from` and `to`, and other addresses are named for what they
+  are (`custodian`, `vault`, the allowlisted `account`). OpenZeppelin trait
+  methods keep their own names (`operator`, `user_address`).
+- **Named errors.** Contract code fails with a named error variant, never with
+  `unwrap`, `expect` or a bare `panic!`. Tests may unwrap.
+- **No boolean switches.** A new entrypoint does one thing. Two behaviours get
+  two functions, like `freeze_partial_tokens` and `unfreeze_partial_tokens`,
+  not one function that takes a `bool`.
+- **Guards.** Each precondition is a `pub(crate) fn` in the contract's
+  `guards.rs`. Its name is the condition it checks (`positive_amount`,
+  `not_winding_down`), and it panics with a named error when the condition
+  fails. An entrypoint calls its guards first and then does its work, so its
+  preconditions are the first lines a reader sees.
+- **Doc comments.** Every public entrypoint has one, in OpenZeppelin's style: a
+  one-line summary, then `# Arguments` with units (asset base units, share base
+  units, WAD prices, seconds or ledgers), `# Errors`, `# Events` and
+  `# Authorization`. Every error variant's doc says when it happens. Keep them
+  short: they are stored in the Wasm as part of the contract spec.
+- **Design notes.** Each contract's `lib.rs` opens with a `//! # Design`
+  section: five to ten bullets, each a choice and its trade-off, in plain words
+  and with no issue numbers or decision ids.
+- **Exact pins.** Every crates.io dependency, dev-dependencies included, is
+  pinned with `=` to the version in `Cargo.lock`.
+
 ## Conventions
 
 - Conventional Commits, imperative, subject ≤ 50 chars. **No AI attribution.**
@@ -121,8 +154,8 @@ contracts. The addresses emitted by the deploy script are authoritative.
   `feat/<issue>-<desc>`, `fix/...`, `chore/...`.
 - Issue bodies follow the templates in `.github/ISSUE_TEMPLATE/`, 200 words of
   prose hard cap. Titles are natural language with no prefix.
-- Exact dependency pins. Dependencies are never upgraded mid-milestone; each
-  migration is its own issue in the following one.
+- Dependencies are never upgraded mid-milestone; each migration is its own
+  issue in the following one.
 - Estimates live in the `Estimate` field of the
   [project board](https://github.com/orgs/BootNodeDev/projects/29), not in issue
   bodies.

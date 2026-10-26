@@ -1,5 +1,5 @@
-use bindings::{OracleFeedClient, OracleState};
 use soroban_sdk::{contracttype, Env};
+use strata_bindings::{OracleFeedClient, OracleState};
 
 use crate::governance;
 use crate::keys::DataKey;
@@ -31,7 +31,7 @@ pub(crate) fn health(e: &Env) -> Health {
     let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
     let notice = state::notice(e);
     Health {
-        setup_open: timelock::setup::is_open(e),
+        setup_open: strata_timelock::setup::is_open(e),
         token_bound: wiring.token_bound,
         oracle_bound: wiring.oracle_bound,
         sole_token_manager: wiring.sole_token_manager,

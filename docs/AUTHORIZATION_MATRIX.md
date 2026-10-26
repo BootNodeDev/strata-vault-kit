@@ -7,7 +7,7 @@ This document provides the complete authorization and role model specification f
 ## 1. Architectural Principles
 
 1. **Direct Role Membership Checks**: Role membership is checked directly via `has_role(e, &caller, &role)` or `stellar_macros::only_role` / `only_admin`, never by enumerating members.
-2. **Strict Caller Authentication**: No entrypoint takes a caller argument that it does not authenticate. Every function accepting a `caller: Address` executes `caller.require_auth()`. The testnet compliance stub is the exception: its admin calls check the stored admin's signature and ignore their `operator` argument (§5.5).
+2. **Strict Caller Authentication**: No entrypoint takes a caller argument that it does not authenticate. Every function accepting a `caller: Address` executes `caller.require_auth()`. The testnet compliance stub is the exception: its admin calls check the stored admin's signature and ignore their `caller` or `operator` argument (§5.5).
 3. **Exit guarantee, with one hold**: A covered redemption claim pays out cash regardless of pause, staleness or allowlist status. A delisted investor exits through the cash path and cannot re-enter share circulation. A frozen investor is held: the vault refuses their requests, cancellations and claims, and pays them only after the freeze lifts.
 4. **Five Separate Authorities**:
    - **Governance (Admin)**: Root authority; upgrades, timelock parameters, custodian settings, unpause, oracle parameters, emergency NAV pause reset. As the share token's admin, it co-signs compliance's `legal_transfer` and `recover_balance`.
@@ -37,7 +37,7 @@ In `scripts/harness/deploy.ts` and automated deployment scripts, the separation 
 - The share token role is granted to the deployed vault contract: `token.grant_role({ account: asyncVault.address, role: "manager", caller: governance })`.
 - After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. That no other account holds it is checked by the vault's `finish_setup` below.
 - It then calls `token.bind_vault({ vault, caller: governance })` and `token.finish_setup({ caller: governance })`, and stops if `token.setup_open()` still reads true. From then on the token's admin changes wait for the vault's timelock (§5.2).
-- It calls `compliance.bind_token({ token, operator: governance })`, then `compliance.bind_vault({ vault, operator: governance })` and `compliance.finish_setup({ operator: governance })`, and stops if `compliance.setup_open()` still reads true. From then on the compliance contract's module, token-binding and admin changes wait for the vault's timelock (§5.5).
+- It calls `compliance.bind_token({ token, operator: governance })`, then `compliance.bind_vault({ vault, caller: governance })` and `compliance.finish_setup({ caller: governance })`, and stops if `compliance.setup_open()` still reads true. From then on the compliance contract's module, token-binding and admin changes wait for the vault's timelock (§5.5).
 - It calls `oracle.bind_vault({ vault, caller: governance })` and `oracle.finish_setup({ caller: governance })`, and stops if `oracle.setup_open()` still reads true. From then on the oracle's admin changes wait for the vault's timelock (§5.3).
 - Last, it calls `vault.set_custodian({ custodian, caller: governance })` and `vault.finish_setup({ caller: governance })`, and stops if `vault.setup_open()` still reads true. `finish_setup` refuses with `SetupIncomplete` unless the token and the oracle report this vault with their setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the identity check, its address is not frozen on the token and the token is bound to its compliance contract. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its setup closed; one that does not answer them is an external module and is accepted. From then on the vault takes deposits and its admin changes wait for its timelock (§5.1).
 
@@ -59,17 +59,17 @@ The following entrypoints are open to any caller on purpose:
 
 | Contract | Entrypoint | Authorization | Rationale |
 |---|---|---|---|
-| **`AsyncVault`** | `fund` | `from.require_auth()` | Anyone (treasury, LP, custodian, donor) may fund the vault with settlement assets. `from.require_auth()` ensures that the sender explicitly approves transferring their own assets into the vault. Receiving capital is non-privileged and always safe. |
+| **`AsyncVault`** | `fund` | `caller.require_auth()` | Anyone (treasury, LP, custodian, donor) may fund the vault with settlement assets. `caller.require_auth()` ensures that the sender explicitly approves transferring their own assets into the vault. Receiving capital is non-privileged and always safe. |
 | **`AsyncVault`** | `fulfill_epoch` | Open (Any caller) | Pricing is deterministic once an epoch is closed and the oracle publishes a valid attestation. Permissionless fulfillment prevents a malicious operator from stalling pricing or censoring settlements. Guarded by `#[when_not_paused]` and oracle validity. |
 | **`AsyncVault`** | `activate_wind_down` | Open (Any caller) | Once governance announces wind-down and the timelock expires, anyone (including investors) can trigger activation. This ensures an operator cannot propose wind-down to block deposits and then stall activation indefinitely. |
 | **`AsyncVault`** | `finalize_wind_down_round` | Open (Any caller) | Distributing returned capital pro-rata across the supply snapshot is deterministic. Making finalisation open ensures investors or keepers can trigger payout rounds immediately when funds arrive. |
 | **`AsyncVault`** | `claim_wind_down` | `holder.require_auth()` | The holder signs their own claim; a keeper cannot claim for them. The payout goes to `holder`. |
-| **`AsyncVault`** | `request_deposit` | `from.require_auth()` | Investor entrypoint. Deposits escrowed cash; guarded by `when_not_paused`, not winding down, and refused with `SetupOpen` until the vault's setup finishes, so every deposit is covered by the timelock. |
-| **`AsyncVault`** | `claim_deposit` | `caller.require_auth()` | Investor entrypoint. Mints the shares once the epoch is priced; the token checks the receiver on `mint`. A delisted holder's shares become an exit instead (`DepositConvertedToExit`): they join the holder's redemption in the open epoch, or the holder's wind-down entitlement during a wind-down. A frozen holder's claim is held (`Frozen`). |
-| **`AsyncVault`** | `cancel_deposit` | `from.require_auth()` | Investor exit while the epoch cannot be priced. Refunds the whole escrowed deposit in one step, delisted or not. A frozen holder is held (`Frozen`). |
-| **`AsyncVault`** | `request_redeem` | `from.require_auth()` | Investor exit. Always open, even during pause. |
-| **`AsyncVault`** | `claim_redeem` | `caller.require_auth()` | Investor exit. Pays settlement asset once covered. |
-| **`AsyncVault`** | `cancel_redeem` | `from.require_auth()` | Investor exit while the epoch cannot be priced. Outside a wind-down the vault checks the controller itself and returns the escrowed shares with the manager `forced_transfer`; it refuses a delisted controller (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`). In an active wind-down the escrow is surrendered into the controller's wind-down entitlement instead (`RedemptionSurrendered`). A frozen controller is held (`Frozen`) either way. |
+| **`AsyncVault`** | `request_deposit` | `holder.require_auth()` | Investor entrypoint. Deposits escrowed cash; guarded by `when_not_paused`, not winding down, and refused with `SetupOpen` until the vault's setup finishes, so every deposit is covered by the timelock. |
+| **`AsyncVault`** | `claim_deposit` | `holder.require_auth()` | Investor entrypoint. Mints the shares once the epoch is priced; the token checks the receiver on `mint`. A delisted holder's shares become an exit instead (`DepositConvertedToExit`): they join the holder's redemption in the open epoch, or the holder's wind-down entitlement during a wind-down. A frozen holder's claim is held (`Frozen`). |
+| **`AsyncVault`** | `cancel_deposit` | `holder.require_auth()` | Investor exit while the epoch cannot be priced. Refunds the whole escrowed deposit in one step, delisted or not. A frozen holder is held (`Frozen`). |
+| **`AsyncVault`** | `request_redeem` | `holder.require_auth()` | Investor exit. Always open, even during pause. |
+| **`AsyncVault`** | `claim_redeem` | `holder.require_auth()` | Investor exit. Pays settlement asset once covered. |
+| **`AsyncVault`** | `cancel_redeem` | `holder.require_auth()` | Investor exit while the epoch cannot be priced. Outside a wind-down the vault checks the holder itself and returns the escrowed shares with the manager `forced_transfer`; it refuses a delisted holder (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`). In an active wind-down the escrow is surrendered into the holder's wind-down entitlement instead (`RedemptionSurrendered`). A frozen holder is held (`Frozen`) either way. |
 
 ---
 
@@ -119,7 +119,7 @@ Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.r
 | `mint` | `#[only_role(operator, "manager")]` | Receiver allowlisted | `test::unauthorized_caller_cannot_mint`, `test::the_compliance_authority_cannot_mint_burn_or_swap_the_rules` |
 | `burn` | `#[only_role(operator, "manager")]` | Balance sufficient | `test::unauthorized_caller_cannot_burn` |
 | `forced_transfer` | `#[only_role(operator, "manager")]` | Balance sufficient | `test::unauthorized_caller_cannot_forced_transfer`, `test::legal_transfer::compliance_no_longer_forces_transfers` |
-| `legal_transfer` | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts (`CoSignRequired`) | Reference of 1–128 bytes (`InvalidReference`); never from or to the vault's address (`VaultAddress`); destination passes `verify_identity`; balance sufficient | `test::legal_transfer::*` |
+| `legal_transfer` | `#[only_role(caller, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts (`CoSignRequired`) | Reference of 1–128 bytes (`InvalidReference`); never from or to the vault's address (`VaultAddress`); destination passes `verify_identity`; balance sufficient | `test::legal_transfer::*` |
 | `set_address_frozen` | `#[only_role(operator, "compliance")]` | Never freezes the bound vault's address (`VaultAddress`); unfreezing it stays possible | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_manager_escrows_but_does_not_intervene`, `test::legal_transfer::the_vault_address_cannot_be_frozen` |
 | `freeze_partial_tokens` | `#[only_role(operator, "compliance")]` | Balance sufficient; never the bound vault's address (`VaultAddress`) | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_manager_escrows_but_does_not_intervene`, `test::legal_transfer::the_vault_address_cannot_be_frozen` |
 | `unfreeze_partial_tokens`| `#[only_role(operator, "compliance")]` | Frozen amount sufficient | `test::unauthorized_caller_cannot_freeze_or_recover`, `test::the_manager_escrows_but_does_not_intervene` |
@@ -180,7 +180,7 @@ Tests: [`contracts/identity-verifier/src/test.rs`](../contracts/identity-verifie
 
 ### 5.5 Compliance (`contracts/compliance`)
 
-A testnet-only stub. Its admin is governance. Module changes, token bindings and admin hand-overs are instant during setup and wait for the vault's timelock after `finish_setup`. Each admin call checks the stored admin's signature; its `operator` argument is not checked.
+A testnet-only stub. Its admin is governance. Module changes, token bindings and admin hand-overs are instant during setup and wait for the vault's timelock after `finish_setup`. Each admin call checks the stored admin's signature; its `caller` or `operator` argument is not checked.
 
 Tests: [`contracts/compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs).
 

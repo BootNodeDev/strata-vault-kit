@@ -53,7 +53,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - `request_deposit` is refused by `#[when_not_paused]` (`PausableError::EnforcedPause`).
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
-  - `cancel_redeem` remains open. Outside a wind-down, a delisted controller, or one the compliance rules refuse, exits through the cash claim instead; in a wind-down the escrow is surrendered. A frozen controller is held (Invariant 6).
+  - `cancel_redeem` remains open. Outside a wind-down, a delisted holder, or one the compliance rules refuse, exits through the cash claim instead; in a wind-down the escrow is surrendered. A frozen holder is held (Invariant 6).
   - `cancel_deposit` and `cancel_redeem` stay open for a sealed epoch while the vault is paused, because a paused vault cannot price it (Invariant 6).
 
 ### Invariant 6: Single-Step Atomic Cancellation
@@ -65,7 +65,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow.
   - A readable price refuses cancellation with `PriceAvailable`, even before `priceable_at`; once that report expires, cancellation works again (`cancellation_reopens_when_the_price_that_closed_it_expires`).
   - Pausing the vault reopens cancellation; unpausing closes it again while the price is still readable (`a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price`).
-  - Outside a wind-down, `cancel_redeem` refuses a delisted controller (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`); the request stays pending and the cash claim remains open. It holds a frozen controller (`Frozen`): the request stays pending, and its cash claim is held too until the freeze is lifted. Neither the share token's transfer pause nor the vault's own allowlist place stops a cancellation (`a_token_pause_stops_trading_but_not_a_share_return`, `a_delisted_vault_still_returns_escrowed_shares`).
+  - Outside a wind-down, `cancel_redeem` refuses a delisted holder (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`); the request stays pending and the cash claim remains open. It holds a frozen holder (`Frozen`): the request stays pending, and its cash claim is held too until the freeze is lifted. Neither the share token's transfer pause nor the vault's own allowlist place stops a cancellation (`a_token_pause_stops_trading_but_not_a_share_return`, `a_delisted_vault_still_returns_escrowed_shares`).
   - In an active wind-down, `cancel_redeem` never returns shares: the escrow joins the holder's wind-down entitlement (`RedemptionSurrendered`), whether the holder is allowlisted or not. A frozen holder's escrow stays until the freeze is lifted.
   - Once fulfilled, cancellation is refused with `AlreadyPriced`.
 - **Operating note**: keep `freshness_duration` longer than the notice, so a normal epoch's price does not lapse and reopen the window on its own.
@@ -211,12 +211,12 @@ Strata distributes control across five native Stellar multisig authorities and p
 
 | Contract | Entrypoint | Calling Authority | Access Control Guard | Pausable? |
 |---|---|---|---|---|
-| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `from.require_auth()`; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
-| **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `from.require_auth()` | No (open during pause) |
-| **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `caller.require_auth()` | No (open during pause) |
-| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `from.require_auth()` | No (always open) |
-| **`AsyncVault`** | `cancel_redeem` | Investor (Caller) | `from.require_auth()` | No (open during pause) |
-| **`AsyncVault`** | `claim_redeem` | Investor (Caller) | `caller.require_auth()` | No (always open) |
+| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
+| **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
+| **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
+| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()` | No (always open) |
+| **`AsyncVault`** | `cancel_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
+| **`AsyncVault`** | `claim_redeem` | Investor (Caller) | `holder.require_auth()` | No (always open) |
 | **`AsyncVault`** | `close_epoch` | Manager | `#[only_role(caller, "manager")]` | No |
 | **`AsyncVault`** | `fulfill_epoch` | Permissionless | None | Yes (halted by pause) |
 | **`AsyncVault`** | `pause` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
@@ -231,7 +231,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`AsyncVault`** | `cancel_wind_down_proposal` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `activate_wind_down` | Permissionless | None (requires timelock elapsed) | No |
 | **`AsyncVault`** | `finalize_wind_down_round` | Permissionless | None | No |
-| **`AsyncVault`** | `claim_wind_down` | Shareholder (Caller) | `caller.require_auth()` | No |
+| **`AsyncVault`** | `claim_wind_down` | Shareholder (Caller) | `holder.require_auth()` | No |
 | **`AsyncVault`** | `deploy_to_custodian` | Treasury | `#[only_role(caller, "treasury")]` | No (open during pause) |
 | **`AsyncVault`** | `fund` | Treasury | None (caller transfers funds) | No |
 | **`AsyncVault`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
@@ -261,7 +261,7 @@ Strata distributes control across five native Stellar multisig authorities and p
 | **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `forced_transfer` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `legal_transfer` | Compliance, co-signed by Governance (token admin) | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address; the destination passes `verify_identity`; a reference of 1–128 bytes | Bypasses token pause |
+| **`ShareToken`** | `legal_transfer` | Compliance, co-signed by Governance (token admin) | `#[only_role(caller, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address; the destination passes `verify_identity`; a reference of 1–128 bytes | Bypasses token pause |
 | **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens` | Compliance | `#[only_role(operator, "compliance")]`; never freezes the vault's address once the token knows its vault | No |
 | **`ShareToken`** | `recover_balance` | Compliance, co-signed by Governance (token admin) | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address | No |
 | **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `#[only_admin]`; instant during setup, then `propose_change` | No |
@@ -321,7 +321,7 @@ instance is archived refuses every call.
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
 
-The lengths are the constants in `crates/storage`
+The lengths are the constants in `crates/strata-storage`
 (`PERSISTENT_EXTEND_AMOUNT`, `INSTANCE_EXTEND_AMOUNT`, and thresholds one day
 shorter). They are fixed in code: a governance setting would add an admin power
 for little gain.
@@ -329,7 +329,7 @@ for little gain.
 **Pending governance changes.** A change waiting in the timelock of
 `async_vault`, `share_token`, `nav_oracle` or `compliance` lives as a persistent entry,
 extended to 30 days when it is proposed. The wait itself can run up to 90 days
-(`timelock::MAX_DELAY`), so a change nobody touches can archive before it is
+(`strata_timelock::MAX_DELAY`), so a change nobody touches can archive before it is
 due. Nothing is lost: the call that applies it restores the archived entry
 itself and pays the restore fee, the same as any other archived entry.
 `npm run extend` also keeps it alive: it reads each contract's open ids from
@@ -401,7 +401,7 @@ implementation against what the vault calls.
 
 | Interface | Defined in | Implemented here by | What the vault calls |
 |---|---|---|---|
-| `OracleFeed` | `crates/bindings` | `nav-oracle` | `state`, `nav_per_share`, `attested_at`, `freshness_duration` |
+| `OracleFeed` | `crates/strata-bindings` | `nav-oracle` | `state`, `nav_per_share`, `attested_at`, `freshness_duration` |
 | `FungibleToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `transfer`, `balance`, `total_supply` |
 | `RWAToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `mint`, `burn`, `forced_transfer` |
 | `IdentityVerifier` | OpenZeppelin `stellar-tokens` 0.7.2 | `identity-verifier` (testnet stub) | `verify_identity`, called by the share token |
@@ -412,8 +412,8 @@ be the ledger time the report was accepted, not a time the reporter supplies.
 
 Two more traits connect the share token, the oracle and the kit's compliance
 contract to the vault's timelock. The vault implements `ClockSource`
-(`crates/timelock`), and the three read its `timelock_clock` to time their own
-changes. Each implements `VaultBinding` (`crates/bindings`): `vault` names the
+(`crates/strata-timelock`), and the three read its `timelock_clock` to time their own
+changes. Each implements `VaultBinding` (`crates/strata-bindings`): `vault` names the
 vault it is bound to, and `setup_open` says whether its admin changes are still
 instant.
 

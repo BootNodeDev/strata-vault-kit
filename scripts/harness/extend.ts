@@ -41,7 +41,7 @@ const CONTRACTS_WITH_QUEUES = new Set([
 /**
  * The timelock's own storage key for a change still waiting:
  * `Key::TimelockPending(id)`, a contracttype variant whose ScVal is a vec of
- * its symbol and the id (`crates/timelock/src/keys.rs`, `queue.rs`).
+ * its symbol and the id (`crates/strata-timelock/src/keys.rs`, `queue.rs`).
  */
 function pendingChangeKey(id: number): string {
 	return xdr.ScVal.scvVec([

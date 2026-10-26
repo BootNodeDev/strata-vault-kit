@@ -6,8 +6,8 @@ use soroban_sdk::{
     Address, BytesN, Env, Event as _, IntoVal,
 };
 use stellar_access::role_transfer::RoleTransferError;
-use storage::INSTANCE_EXTEND_AMOUNT;
-use timelock::{Clock, DAY_DURATION, MIN_DELAY};
+use strata_storage::INSTANCE_EXTEND_AMOUNT;
+use strata_timelock::{Clock, DAY_DURATION, MIN_DELAY};
 
 use crate::state::{ATTESTER_ROLE, GUARDIAN_ROLE};
 use crate::{
@@ -38,7 +38,7 @@ impl ClockStub {
 }
 
 #[contractimpl(contracttrait)]
-impl timelock::ClockSource for ClockStub {
+impl strata_timelock::ClockSource for ClockStub {
     fn timelock_clock(e: &Env) -> Clock {
         let reads = Self::reads(e.clone()) + 1;
         e.storage().instance().set(&symbol_short!("reads"), &reads);
@@ -60,7 +60,7 @@ struct Fixture<'a> {
 impl Fixture<'_> {
     fn clock(&self, f: impl FnOnce(&mut Clock)) {
         let mut clock =
-            timelock::ClockSourceClient::new(&self.e, &self.vault.address).timelock_clock();
+            strata_timelock::ClockSourceClient::new(&self.e, &self.vault.address).timelock_clock();
         f(&mut clock);
         self.vault.set(&clock);
     }
@@ -416,8 +416,11 @@ fn a_config_outside_the_bounds_is_refused_when_it_applies() {
     // Skips the proposal's check, like a change proposed before a later
     // version narrowed the bounds.
     let id = f.e.as_contract(&f.oracle.address, || {
-        timelock::queue::propose::<NavOracleContract, _>(&f.e, &OracleChange::Config(invalid))
-            .unwrap()
+        strata_timelock::queue::propose::<NavOracleContract, _>(
+            &f.e,
+            &OracleChange::Config(invalid),
+        )
+        .unwrap()
     });
     f.advance(MIN_DELAY);
 
@@ -502,13 +505,13 @@ fn only_the_admin_binds_and_finishes() {
     assert!(f.oracle.setup_open());
 }
 
-fn implements_the_vault_view<T: bindings::VaultBinding>() {}
+fn implements_the_vault_view<T: strata_bindings::VaultBinding>() {}
 
 #[test]
 fn the_oracle_answers_the_view_the_vault_reads() {
     implements_the_vault_view::<NavOracleContract>();
     let f = setup();
-    let view = bindings::VaultBindingClient::new(&f.e, &f.oracle.address);
+    let view = strata_bindings::VaultBindingClient::new(&f.e, &f.oracle.address);
     assert_eq!(view.vault(), None);
     assert!(view.setup_open());
 

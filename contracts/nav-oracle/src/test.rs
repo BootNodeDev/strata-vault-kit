@@ -181,14 +181,14 @@ fn the_latest_valuation_keeps_a_full_ttl_while_it_is_read() {
     let decayed = f.e.as_contract(&f.oracle.address, || {
         f.e.storage().persistent().get_ttl(&DataKey::Latest)
     });
-    assert!(decayed < storage::PERSISTENT_EXTEND_AMOUNT);
+    assert!(decayed < strata_storage::PERSISTENT_EXTEND_AMOUNT);
 
     f.oracle.latest();
 
     let restored = f.e.as_contract(&f.oracle.address, || {
         f.e.storage().persistent().get_ttl(&DataKey::Latest)
     });
-    assert_eq!(restored, storage::PERSISTENT_EXTEND_AMOUNT);
+    assert_eq!(restored, strata_storage::PERSISTENT_EXTEND_AMOUNT);
 }
 
 #[test]
@@ -651,7 +651,7 @@ fn the_bounds_themselves_are_accepted() {
     });
 }
 
-fn implements_the_feed<T: bindings::OracleFeed>() {}
+fn implements_the_feed<T: strata_bindings::OracleFeed>() {}
 
 #[test]
 fn the_oracle_answers_the_feed_interface_the_vault_reads() {
@@ -660,7 +660,7 @@ fn the_oracle_answers_the_feed_interface_the_vault_reads() {
     f.oracle
         .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
 
-    let feed = bindings::OracleFeedClient::new(&f.e, &f.oracle.address);
+    let feed = strata_bindings::OracleFeedClient::new(&f.e, &f.oracle.address);
 
     assert_eq!(feed.state(), OracleState::Valid);
     assert_eq!(feed.nav_per_share(), SCALE);

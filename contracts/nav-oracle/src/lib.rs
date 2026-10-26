@@ -3,7 +3,6 @@
 mod governance;
 mod state;
 
-use bindings::{OracleFeed, VaultBinding};
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env, Symbol,
     Vec,
@@ -11,6 +10,7 @@ use soroban_sdk::{
 use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role};
+use strata_bindings::{OracleFeed, VaultBinding};
 
 use state::{get_config, get_latest, nav_paused, ATTESTER_ROLE, GUARDIAN_ROLE};
 
@@ -25,7 +25,7 @@ const WAD: i128 = 1_000_000_000_000_000_000;
 /// One report per ledger at most. A deployment sets a longer cooldown.
 pub const MIN_COOLDOWN_SECS: u64 = 1;
 /// Thirty-five days: a monthly valuation with slack, and no longer.
-pub const MAX_FRESHNESS_SECS: u64 = 35 * timelock::DAY_DURATION;
+pub const MAX_FRESHNESS_SECS: u64 = 35 * strata_timelock::DAY_DURATION;
 /// A million units of the asset per share. Far above any real price, and far
 /// below where the deviation arithmetic could overflow.
 pub const MAX_ANSWER: i128 = 1_000_000 * WAD;
@@ -202,7 +202,7 @@ impl AccessControl for NavOracleContract {
     /// value.
     fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
         governance::require_setup_open(e);
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         access_control::grant_role(e, &account, &role, &caller);
     }
 
@@ -212,7 +212,7 @@ impl AccessControl for NavOracleContract {
         if live_until_ledger != 0 {
             governance::require_setup_open(e);
         }
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
     }
 
@@ -233,11 +233,11 @@ impl AccessControl for NavOracleContract {
 #[contractimpl(contracttrait)]
 impl VaultBinding for NavOracleContract {
     fn vault(e: &Env) -> Option<Address> {
-        timelock::setup::source(e)
+        strata_timelock::setup::source(e)
     }
 
     fn setup_open(e: &Env) -> bool {
-        timelock::setup::is_open(e)
+        strata_timelock::setup::is_open(e)
     }
 }
 
@@ -269,7 +269,7 @@ impl NavOracleContract {
     #[only_admin]
     pub fn bind_vault(e: &Env, vault: Address, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::bind_vault(e, &vault);
     }
 
@@ -277,7 +277,7 @@ impl NavOracleContract {
     #[only_admin]
     pub fn finish_setup(e: &Env, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::finish_setup(e);
     }
 
@@ -285,14 +285,14 @@ impl NavOracleContract {
     #[only_admin]
     pub fn propose_change(e: &Env, change: OracleChange, caller: Address) -> u32 {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::propose(e, change)
     }
 
     #[only_admin]
     pub fn cancel_change(e: &Env, id: u32, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::cancel(e, id);
     }
 
@@ -301,7 +301,7 @@ impl NavOracleContract {
     #[only_admin]
     pub fn apply_change(e: &Env, id: u32, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         governance::apply(e, id);
     }
 
@@ -328,7 +328,7 @@ impl NavOracleContract {
 
     #[only_role(caller, "attester")]
     pub fn attest(e: &Env, report: NavReport, caller: Address) {
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         if nav_paused(e) {
             panic_with_error!(e, OracleError::NavPaused);
         }
@@ -412,7 +412,8 @@ impl NavOracleContract {
     #[only_admin]
     pub fn set_config(e: &Env, config: OracleConfig) {
         validate_config(e, &config);
-        if !timelock::setup::is_open(e) && !shortens_freshness_only(&get_config(e), &config) {
+        if !strata_timelock::setup::is_open(e) && !shortens_freshness_only(&get_config(e), &config)
+        {
             panic_with_error!(e, OracleError::UseTimelock);
         }
         store_config(e, &config);
@@ -455,7 +456,7 @@ impl NavOracleContract {
     #[only_admin]
     pub fn migrate(e: &Env, caller: Address) {
         caller.require_auth();
-        storage::bump_instance(e);
+        strata_storage::bump_instance(e);
         if upgradeable::get_schema_version(e) >= 2 {
             panic_with_error!(e, ProbeError::AlreadyMigrated);
         }

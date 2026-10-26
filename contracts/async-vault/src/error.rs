@@ -9,13 +9,13 @@ pub enum VaultError {
     /// The constructor was given the same address for two authorities that
     /// must be held separately.
     RolesNotDistinct = 6000,
-    /// The controller has no request in the given epoch.
+    /// The holder has no request in the given epoch.
     RequestNotFound = 6001,
     /// An amount or share quantity of zero or less was specified.
     InvalidAmount = 6007,
-    /// The controller already holds an unclaimed request in this epoch. A
+    /// The holder already has an unclaimed request in this epoch. A
     /// second request is rejected rather than added to the first, so that at
-    /// most one request per controller per epoch holds by construction.
+    /// most one request per holder per epoch holds by construction.
     RequestOutstanding = 6009,
     /// The epoch total would exceed `i128::MAX`.
     AmountTooLarge = 6014,
@@ -50,7 +50,7 @@ pub enum VaultError {
     /// No custodian has been set, so capital has nowhere to go.
     CustodianNotSet = 6012,
     /// The epoch is priced, so the request can no longer be cancelled. The
-    /// controller claims instead.
+    /// holder claims instead.
     AlreadyPriced = 6039,
     /// The vault must always have an admin. Governance hands over in two steps
     /// rather than stepping down into nobody.
@@ -142,7 +142,7 @@ pub enum VaultError {
     /// The proposed feed does not name this vault as its own, or its setup is
     /// still open. Its admin could then change its limits with no delay.
     FeedNotBound = 6072,
-    /// The controller may not hold shares (delisted, frozen or refused by the
+    /// The holder may not receive shares (delisted, frozen or refused by the
     /// compliance rules), so the escrowed shares stay with the vault and the
     /// request stays open.
     HolderNotEligible = 6073,

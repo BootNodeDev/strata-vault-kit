@@ -205,8 +205,8 @@ async function grantAndVerify(
 
 	// Binding the token is instant only during setup, so the compliance
 	// contract's setup closes after it.
-	await (await compliance.bind_vault({ vault, operator: caller })).signAndSend()
-	await (await compliance.finish_setup({ operator: caller })).signAndSend()
+	await (await compliance.bind_vault({ vault, caller })).signAndSend()
+	await (await compliance.finish_setup({ caller })).signAndSend()
 	if ((await compliance.setup_open()).result)
 		throw new Error("the compliance contract's setup did not finish")
 	console.log("compliance bound to the vault, setup finished")

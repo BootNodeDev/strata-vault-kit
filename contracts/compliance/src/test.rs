@@ -4,7 +4,7 @@ use soroban_sdk::{
     testutils::{storage::Instance as _, Address as _, Ledger as _},
     Address, Env,
 };
-use storage::INSTANCE_EXTEND_AMOUNT;
+use strata_storage::INSTANCE_EXTEND_AMOUNT;
 
 use crate::{Compliance, ComplianceClient};
 

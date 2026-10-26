@@ -185,13 +185,13 @@ async function main(): Promise<void> {
 			)
 			await send(
 				vault(c, holder1).request_deposit({
-					from: holder1.publicKey(),
+					holder: holder1.publicKey(),
 					amount: usdc(5_000),
 				}),
 			)
 			await send(
 				vault(c, holder2).request_deposit({
-					from: holder2.publicKey(),
+					holder: holder2.publicKey(),
 					amount: usdc(3_000),
 				}),
 			)
@@ -213,13 +213,13 @@ async function main(): Promise<void> {
 			console.log("  + claiming shares for holder-1 and holder-2...")
 			await send(
 				vault(c, holder1).claim_deposit({
-					caller: holder1.publicKey(),
+					holder: holder1.publicKey(),
 					epoch_id: 1n,
 				}),
 			)
 			await send(
 				vault(c, holder2).claim_deposit({
-					caller: holder2.publicKey(),
+					holder: holder2.publicKey(),
 					epoch_id: 1n,
 				}),
 			)
@@ -266,14 +266,14 @@ async function main(): Promise<void> {
 		const h1RedeemReq = (
 			await reader.get_redeem_request({
 				epoch_id: currentEpoch,
-				controller: holder1.publicKey(),
+				holder: holder1.publicKey(),
 			})
 		).result
 		if (!h1RedeemReq && h1Shares >= usdc(1_000)) {
 			console.log("  + holder-1 requesting redemption of 1,000 shares...")
 			await send(
 				vault(c, holder1).request_redeem({
-					from: holder1.publicKey(),
+					holder: holder1.publicKey(),
 					shares: usdc(1_000),
 				}),
 			)
@@ -287,14 +287,14 @@ async function main(): Promise<void> {
 		const h3DepositReq = (
 			await reader.get_deposit_request({
 				epoch_id: currentEpoch,
-				controller: holder3.publicKey(),
+				holder: holder3.publicKey(),
 			})
 		).result
 		if (!h3DepositReq) {
 			console.log("  + holder-3 requesting deposit of 2,500 USDC...")
 			await send(
 				vault(c, holder3).request_deposit({
-					from: holder3.publicKey(),
+					holder: holder3.publicKey(),
 					amount: usdc(2_500),
 				}),
 			)
@@ -371,13 +371,13 @@ async function main(): Promise<void> {
 		const depReq = (
 			await reader.get_deposit_request({
 				epoch_id: finalEpoch,
-				controller: key.publicKey(),
+				holder: key.publicKey(),
 			})
 		).result
 		const redReq = (
 			await reader.get_redeem_request({
 				epoch_id: finalEpoch,
-				controller: key.publicKey(),
+				holder: key.publicKey(),
 			})
 		).result
 		if (depReq) {
