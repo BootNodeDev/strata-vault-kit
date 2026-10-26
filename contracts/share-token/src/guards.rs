@@ -77,10 +77,9 @@ pub(crate) fn valid_change(e: &Env, change: &TokenChange) {
     }
 }
 
-/// Rules that leave out this token stop every mint, transfer and burn; rules
-/// that report another vault or an open setup could change with no delay.
+/// The same rule the vault's `finish_setup` applies to compliance contracts.
 pub(crate) fn compliance_bound_here(e: &Env, rules: &Address) {
-    if !on_the_vaults_clock(e, rules) || !lists_this_token(e, rules) {
+    if !bound_here_or_external(e, rules) || !lists_this_token(e, rules) {
         panic_with_error!(e, ShareTokenError::ComplianceNotBound);
     }
 }
@@ -97,15 +96,13 @@ pub(crate) fn verifier_accepts_vault(e: &Env, verifier: &Address) {
     }
 }
 
-/// When `contract` answers both binding views, they name this token's vault
-/// with its setup closed.
-fn on_the_vaults_clock(e: &Env, contract: &Address) -> bool {
+fn bound_here_or_external(e: &Env, contract: &Address) -> bool {
     let binding = VaultBindingClient::new(e, contract);
     match (binding.try_vault(), binding.try_setup_open()) {
         (Ok(Ok(named)), Ok(Ok(open))) => {
             setup::source(e).is_some_and(|vault| named == Some(vault)) && !open
         }
-        // An external module answers no binding view; its governance is a trust assumption.
+        // Either view failing marks an external module; its governance is a trust assumption.
         _ => true,
     }
 }
