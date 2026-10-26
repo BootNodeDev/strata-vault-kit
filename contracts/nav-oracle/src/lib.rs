@@ -1,6 +1,7 @@
 #![no_std]
 
 mod governance;
+mod guards;
 mod state;
 
 use soroban_sdk::{
@@ -83,6 +84,9 @@ pub enum OracleError {
     /// once it is accepted, cancelled or expired, so no nominee from setup can
     /// accept after changes start to wait.
     AdminTransferPending = 3025,
+    /// The configuration the constructor writes is absent from instance
+    /// storage.
+    NotInitialized = 3026,
 }
 
 #[contractevent]
@@ -141,25 +145,6 @@ pub struct ConfigSet {
     pub max_answer: i128,
 }
 
-fn bps_in_range(bps: u32) -> bool {
-    bps > 0 && bps as i128 <= BPS_DENOM
-}
-
-pub(crate) fn validate_config(e: &Env, cfg: &OracleConfig) {
-    if cfg.freshness_duration == 0
-        || cfg.freshness_duration > MAX_FRESHNESS_SECS
-        || cfg.cooldown_secs < MIN_COOLDOWN_SECS
-        || cfg.cooldown_secs > cfg.freshness_duration
-        || cfg.min_answer <= 0
-        || cfg.max_answer < cfg.min_answer
-        || cfg.max_answer > MAX_ANSWER
-        || !bps_in_range(cfg.max_up_bps)
-        || !bps_in_range(cfg.max_down_bps)
-    {
-        panic_with_error!(e, OracleError::InvalidConfig);
-    }
-}
-
 pub(crate) fn store_config(e: &Env, config: &OracleConfig) {
     state::set_config(e, config);
     ConfigSet {
@@ -201,7 +186,7 @@ impl AccessControl for NavOracleContract {
     /// Revoking stays instant: taking an attester or a guardian away moves no
     /// value.
     fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
-        governance::require_setup_open(e);
+        guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         access_control::grant_role(e, &account, &role, &caller);
     }
@@ -209,9 +194,7 @@ impl AccessControl for NavOracleContract {
     /// Cancelling a pending hand-over (`live_until_ledger == 0`) keeps the
     /// current admin, so it stays instant.
     fn transfer_admin_role(e: &Env, new_admin: Address, live_until_ledger: u32) {
-        if live_until_ledger != 0 {
-            governance::require_setup_open(e);
-        }
+        guards::direct_hand_over_allowed(e, live_until_ledger);
         strata_storage::bump_instance(e);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
     }
@@ -250,7 +233,7 @@ impl NavOracleContract {
         guardian: Address,
         config: OracleConfig,
     ) {
-        validate_config(e, &config);
+        guards::valid_config(e, &config);
         access_control::set_admin(e, &admin);
         access_control::grant_role_no_auth(e, &attester, &ATTESTER_ROLE, &admin);
         access_control::grant_role_no_auth(e, &guardian, &GUARDIAN_ROLE, &admin);
@@ -321,44 +304,22 @@ impl NavOracleContract {
     }
 
     pub fn ensure_consumable(e: &Env) {
-        if compute_state(e) != OracleState::Valid {
-            panic_with_error!(e, OracleError::NotConsumable);
-        }
+        guards::consumable(e);
     }
 
     #[only_role(caller, "attester")]
     pub fn attest(e: &Env, report: NavReport, caller: Address) {
-        strata_storage::bump_instance(e);
-        if nav_paused(e) {
-            panic_with_error!(e, OracleError::NavPaused);
-        }
+        guards::nav_not_paused(e);
         let cfg = get_config(e);
+        guards::nav_in_band(e, &cfg, report.nav_per_share);
+        guards::expires_in_future(e, report.expires_at);
+        if let Some(last) = get_latest(e) {
+            guards::cooldown_elapsed(e, &cfg, &last);
+            guards::within_deviation(e, &cfg, &last, report.nav_per_share);
+        }
+
+        strata_storage::bump_instance(e);
         let now = e.ledger().timestamp();
-
-        if !in_band(&cfg, report.nav_per_share) {
-            panic_with_error!(e, OracleError::NavOutOfBand);
-        }
-        if report.expires_at <= now {
-            // should never happen
-            panic_with_error!(e, OracleError::ExpiresInPast);
-        }
-
-        if let Some(prev) = get_latest(e) {
-            if now < prev.timestamp.saturating_add(cfg.cooldown_secs) {
-                panic_with_error!(e, OracleError::CooldownActive);
-            }
-            let bps = if report.nav_per_share >= prev.nav_per_share {
-                cfg.max_up_bps
-            } else {
-                cfg.max_down_bps
-            };
-            let diff = (report.nav_per_share - prev.nav_per_share).abs();
-            let bound = prev.nav_per_share * (bps as i128) / BPS_DENOM;
-            if diff > bound {
-                panic_with_error!(e, OracleError::DeviationExceeded);
-            }
-        }
-
         let stored = NavReport {
             nav_per_share: report.nav_per_share,
             timestamp: now,
@@ -395,9 +356,7 @@ impl NavOracleContract {
     #[only_admin]
     pub fn clear_latest(e: &Env, caller: Address) {
         caller.require_auth();
-        if !nav_paused(e) {
-            panic_with_error!(e, OracleError::NavNotPaused);
-        }
+        guards::nav_paused(e);
         state::clear_latest(e);
         LatestCleared {}.publish(e);
     }
@@ -411,11 +370,8 @@ impl NavOracleContract {
     /// waits. Propose it as `OracleChange::Config`.
     #[only_admin]
     pub fn set_config(e: &Env, config: OracleConfig) {
-        validate_config(e, &config);
-        if !strata_timelock::setup::is_open(e) && !shortens_freshness_only(&get_config(e), &config)
-        {
-            panic_with_error!(e, OracleError::UseTimelock);
-        }
+        guards::valid_config(e, &config);
+        guards::direct_config_allowed(e, &config);
         store_config(e, &config);
     }
 }
@@ -472,3 +428,5 @@ impl NavOracleContract {
 mod test;
 #[cfg(test)]
 mod test_governance;
+#[cfg(test)]
+mod test_guards;

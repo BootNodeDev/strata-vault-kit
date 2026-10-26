@@ -82,7 +82,7 @@ fn the_rounding_residue_stays_in_the_reserve_once_the_epoch_settles() {
 /// outstanding-request check is keyed per epoch. Claims are taken newest first
 /// here, which today is allowed.
 #[test]
-fn one_controller_redeems_across_two_epochs() {
+fn one_holder_redeems_across_two_epochs() {
     let f = setup();
     let a = f.holder(500);
 

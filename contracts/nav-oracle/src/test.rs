@@ -667,3 +667,16 @@ fn the_oracle_answers_the_feed_interface_the_vault_reads() {
     assert_eq!(feed.attested_at(), 10_000);
     assert_eq!(feed.freshness_duration(), 3600);
 }
+
+#[test]
+fn a_missing_config_is_refused_by_name() {
+    let f = setup();
+    f.e.as_contract(&f.oracle.address, || {
+        f.e.storage().instance().remove(&DataKey::Config)
+    });
+
+    assert_eq!(
+        f.oracle.try_config(),
+        Err(Ok(crate::OracleError::NotInitialized.into()))
+    );
+}

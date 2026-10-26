@@ -3,6 +3,7 @@
 #![no_std]
 
 mod governance;
+mod guards;
 
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, contractmeta, Address, Env, Vec,
@@ -138,9 +139,7 @@ impl Compliance {
     /// pending hand-over (`live_until_ledger == 0`) keeps the current admin,
     /// so it stays instant.
     pub fn transfer_admin_role(e: &Env, new_admin: Address, live_until_ledger: u32) {
-        if live_until_ledger != 0 {
-            governance::require_setup_open(e);
-        }
+        guards::direct_hand_over_allowed(e, live_until_ledger);
         strata_storage::bump_instance(e);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
     }
@@ -172,14 +171,14 @@ impl VaultBinding for Compliance {
 impl token_binder::TokenBinder for Compliance {
     #[only_admin]
     fn bind_token(e: &Env, token: Address, _operator: Address) {
-        governance::require_setup_open(e);
+        guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         token_binder::bind_token(e, &token);
     }
 
     #[only_admin]
     fn unbind_token(e: &Env, token: Address, _operator: Address) {
-        governance::require_setup_open(e);
+        guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         token_binder::unbind_token(e, &token);
     }
@@ -193,14 +192,14 @@ impl token_binder::TokenBinder for Compliance {
 impl compliance::Compliance for Compliance {
     #[only_admin]
     fn add_module_to(e: &Env, hook: ComplianceHook, module: Address, _operator: Address) {
-        governance::require_setup_open(e);
+        guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         compliance::storage::add_module_to(e, hook, module);
     }
 
     #[only_admin]
     fn remove_module_from(e: &Env, hook: ComplianceHook, module: Address, _operator: Address) {
-        governance::require_setup_open(e);
+        guards::direct_change_allowed(e);
         strata_storage::bump_instance(e);
         compliance::storage::remove_module_from(e, hook, module);
     }

@@ -4,12 +4,12 @@ use strata_bindings::{OracleFeedClient, OracleState};
 
 use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};
+use crate::guards;
 use crate::keys::DataKey;
 use crate::pricing::{Pricing, PricingScheme};
 use crate::settlement;
 use crate::state::{self, EpochInfo, EpochStatus};
 use crate::timing::{FulfilmentTiming, StandardTiming};
-use crate::wind_down;
 
 /// The schedule this vault fulfils on.
 type Timing = StandardTiming;
@@ -59,14 +59,11 @@ pub(crate) fn is_priceable(e: &Env, epoch: &EpochInfo) -> bool {
 }
 
 pub(crate) fn close(e: &Env) -> u64 {
-    wind_down::refuse_if_active(e);
+    guards::not_winding_down(e);
     let current = state::current_epoch(e);
     let mut epoch = state::get_epoch(e, current)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-
-    if epoch.status != EpochStatus::Open {
-        panic_with_error!(e, VaultError::EpochNotOpen);
-    }
+    guards::epoch_open(e, &epoch);
 
     let next = current
         .checked_add(1)
@@ -93,13 +90,10 @@ pub(crate) fn close(e: &Env) -> u64 {
 }
 
 pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
-    wind_down::refuse_if_active(e);
+    guards::not_winding_down(e);
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-
-    if let Err(refusal) = fulfilable(e, &epoch) {
-        panic_with_error!(e, refusal);
-    }
+    guards::fulfilable(e, &epoch);
 
     let share_price =
         Pricing::resolve_share_price(e).unwrap_or_else(|err| panic_with_error!(e, err));
