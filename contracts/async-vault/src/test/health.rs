@@ -8,6 +8,7 @@ fn all_healthy() -> Health {
         oracle_bound: true,
         sole_token_manager: true,
         allowlisted: true,
+        vault_unfrozen: true,
         compliance_bound: true,
         feed_valid: true,
         freshness_covers_notice: true,
@@ -71,6 +72,13 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
             Miswire::NotAllowlisted,
             Health {
                 allowlisted: false,
+                ..all_healthy()
+            },
+        ),
+        (
+            Miswire::VaultFrozen,
+            Health {
+                vault_unfrozen: false,
                 ..all_healthy()
             },
         ),

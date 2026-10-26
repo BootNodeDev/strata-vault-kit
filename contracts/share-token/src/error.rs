@@ -35,6 +35,16 @@ pub enum ShareTokenError {
     DelayBelowNotice = 7010,
     /// An upgrade already waits. Cancel it before proposing another.
     UpgradeAlreadyPending = 7011,
+    /// The vault's own address cannot be frozen, and a legal transfer or a
+    /// recovery never moves shares out of it or into it: its balance is other
+    /// investors' escrow.
+    VaultAddress = 7012,
+    /// A legal transfer or a recovery needs the compliance authority and the
+    /// admin as two different accounts, so no single key moves value.
+    CoSignRequired = 7013,
+    /// A legal transfer names the order behind it: a reference of 1 to 128
+    /// bytes.
+    InvalidReference = 7015,
     /// An admin hand-over offered during setup is still open. Setup finishes
     /// once it is accepted, cancelled or expired, so no nominee from setup can
     /// accept after changes start to wait.

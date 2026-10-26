@@ -1,4 +1,5 @@
 use crate::error::ShareTokenError;
+use crate::event::LegalTransfer;
 use crate::governance::{self, TokenChange, TokenPendingChange};
 use crate::roles::COMPLIANCE_ROLE;
 
@@ -9,11 +10,28 @@ use soroban_sdk::{
 use stellar_access::access_control::{self as access_control, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
-use stellar_macros::{only_admin, only_any_role, only_role};
+use stellar_macros::{only_admin, only_role};
 use stellar_tokens::{
     fungible::{Base, ContractOverrides, FungibleToken},
-    rwa::{RWAToken, RWA},
+    rwa::{identity_verification::IdentityVerifierClient, RWAToken, RWA},
 };
+
+/// Longest order reference a legal transfer accepts, in bytes.
+pub const MAX_REFERENCE_LEN: u32 = 128;
+
+/// The co-signing admin must be a different account from the operator.
+fn require_admin_co_sign(e: &Env, operator: &Address) {
+    let admin = access_control::enforce_admin_auth(e);
+    if admin == *operator {
+        panic_with_error!(e, ShareTokenError::CoSignRequired);
+    }
+}
+
+fn refuse_vault_address(e: &Env, account: &Address) {
+    if timelock::setup::source(e).as_ref() == Some(account) {
+        panic_with_error!(e, ShareTokenError::VaultAddress);
+    }
+}
 
 #[contract]
 pub struct ShareToken;
@@ -90,6 +108,36 @@ impl ShareToken {
 
     pub fn pending_changes(e: &Env) -> Vec<TokenPendingChange> {
         governance::pending(e)
+    }
+
+    /// Moves shares under a legal order, at once. The compliance authority
+    /// asks and the admin co-signs the same call. Never out of or into the
+    /// vault's address, and only to an account the identity verifier accepts.
+    #[only_role(operator, "compliance")]
+    pub fn legal_transfer(
+        e: &Env,
+        from: Address,
+        to: Address,
+        amount: i128,
+        reference: String,
+        operator: Address,
+    ) {
+        storage::bump_instance(e);
+        require_admin_co_sign(e, &operator);
+        if reference.is_empty() || reference.len() > MAX_REFERENCE_LEN {
+            panic_with_error!(e, ShareTokenError::InvalidReference);
+        }
+        refuse_vault_address(e, &from);
+        refuse_vault_address(e, &to);
+        IdentityVerifierClient::new(e, &RWA::identity_verifier(e)).verify_identity(&to);
+        RWA::forced_transfer(e, &from, &to, amount);
+        LegalTransfer {
+            from,
+            to,
+            amount,
+            reference,
+        }
+        .publish(e);
     }
 }
 
@@ -201,12 +249,16 @@ impl RWAToken for ShareToken {
         storage::bump_instance(e);
         RWA::burn(e, &user_address, amount);
     }
-    /// The vault escrows redemptions through it; compliance intervenes with it.
-    #[only_any_role(operator, ["manager", "compliance"])]
+    /// The vault escrows redemptions through it. Compliance moves shares with
+    /// `legal_transfer` instead.
+    #[only_role(operator, "manager")]
     fn forced_transfer(e: &Env, from: Address, to: Address, amount: i128, operator: Address) {
         storage::bump_instance(e);
         RWA::forced_transfer(e, &from, &to, amount);
     }
+    /// Moves a whole balance to the account the identity verifier names, so
+    /// it needs the admin's co-signature like a legal transfer, and never
+    /// moves shares out of or into the vault's address.
     #[only_role(operator, "compliance")]
     fn recover_balance(
         e: &Env,
@@ -215,16 +267,23 @@ impl RWAToken for ShareToken {
         operator: Address,
     ) -> bool {
         storage::bump_instance(e);
+        require_admin_co_sign(e, &operator);
+        refuse_vault_address(e, &old_account);
+        refuse_vault_address(e, &new_account);
         RWA::recover_balance(e, &old_account, &new_account)
     }
     #[only_role(operator, "compliance")]
     fn set_address_frozen(e: &Env, user_address: Address, freeze: bool, operator: Address) {
         storage::bump_instance(e);
+        if freeze {
+            refuse_vault_address(e, &user_address);
+        }
         RWA::set_address_frozen(e, &user_address, freeze);
     }
     #[only_role(operator, "compliance")]
     fn freeze_partial_tokens(e: &Env, user_address: Address, amount: i128, operator: Address) {
         storage::bump_instance(e);
+        refuse_vault_address(e, &user_address);
         RWA::freeze_partial_tokens(e, &user_address, amount);
     }
     #[only_role(operator, "compliance")]

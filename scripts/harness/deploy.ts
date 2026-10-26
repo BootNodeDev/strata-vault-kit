@@ -249,6 +249,7 @@ async function finishVaultSetup(
 		"oracle_bound",
 		"sole_token_manager",
 		"allowlisted",
+		"vault_unfrozen",
 		"compliance_bound",
 	] as const
 	const broken = wiring.filter((flag) => !health[flag])
