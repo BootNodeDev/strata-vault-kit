@@ -11,10 +11,18 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-storage = { path = "../../crates/storage" }
+strata-storage = { path = "../../crates/strata-storage" }
 stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
-bindings = { path = "../../crates/bindings" }
+strata-bindings = { path = "../../crates/strata-bindings" }
+strata-timelock = { path = "../../crates/strata-timelock" }
+stellar-contract-utils = { workspace = true }
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+
+[features]
+# Builds a stand-in for a later oracle version, used only by the upgrade test.
+upgrade_probe = []
+# Runs the test that upgrades the built oracle to its probe build. Build both first.
+upgrade_wasm = []

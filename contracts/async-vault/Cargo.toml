@@ -11,11 +11,13 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-storage = { path = "../../crates/storage" }
+strata-storage = { path = "../../crates/strata-storage" }
 stellar-access = { workspace = true }
 stellar-macros = { workspace = true }
 stellar-contract-utils = { workspace = true }
-bindings = { path = "../../crates/bindings" }
+stellar-tokens = { workspace = true }
+strata-bindings = { path = "../../crates/strata-bindings" }
+strata-timelock = { path = "../../crates/strata-timelock" }
 
 
 [dev-dependencies]
@@ -24,7 +26,9 @@ nav-oracle = { path = "../nav-oracle" }
 share-token = { path = "../share-token" }
 compliance = { path = "../compliance" }
 identity-verifier = { path = "../identity-verifier" }
-proptest = "1"
+proptest = "=1.11.0"
 
 [features]
 upgrade_wasm = []
+# Drops the wind-down minimum to zero for the local harness. Never deployed.
+short_wind_down = []

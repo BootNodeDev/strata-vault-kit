@@ -2,8 +2,10 @@ extern crate std;
 
 use soroban_sdk::{
     symbol_short,
-    testutils::{storage::Persistent as _, Address as _, Events as _, Ledger as _},
-    Address, Env, Event as _,
+    testutils::{
+        storage::Persistent as _, Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke,
+    },
+    Address, Env, Event as _, IntoVal,
 };
 
 use crate::state::DataKey;
@@ -21,12 +23,27 @@ struct Fixture<'a> {
     guardian: Address,
 }
 
+impl Fixture<'_> {
+    /// Signs one call to the oracle as `who` and nothing else.
+    fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
+        self.e.mock_auths(&[MockAuth {
+            address: who,
+            invoke: &MockAuthInvoke {
+                contract: &self.oracle.address,
+                fn_name,
+                args,
+                sub_invokes: &[],
+            },
+        }]);
+    }
+}
+
 fn config() -> OracleConfig {
     OracleConfig {
         freshness_duration: 3600,
         cooldown_secs: 60,
         max_up_bps: 1_000,
-        max_down_bps: Some(1_000), // 10%
+        max_down_bps: 1_000, // 10%
         min_answer: SCALE / 2,
         max_answer: SCALE * 100,
     }
@@ -92,17 +109,17 @@ fn heartbeat_expiry_makes_it_stale() {
 }
 
 #[test]
-fn ripcord_pauses_regardless_of_freshness() {
+fn the_nav_pause_holds_regardless_of_freshness() {
     let f = setup();
     let r = report(&f.e, SCALE, 1, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
-    f.oracle.set_ripcord(&true, &f.admin);
+    f.oracle.set_nav_paused(&true);
     assert_eq!(f.oracle.state(), OracleState::Paused);
     assert!(f.oracle.try_ensure_consumable().is_err());
 
-    f.oracle.set_ripcord(&false, &f.admin);
+    f.oracle.set_nav_paused(&false);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 }
 
@@ -181,14 +198,14 @@ fn the_latest_valuation_keeps_a_full_ttl_while_it_is_read() {
     let decayed = f.e.as_contract(&f.oracle.address, || {
         f.e.storage().persistent().get_ttl(&DataKey::Latest)
     });
-    assert!(decayed < storage::PERSISTENT_EXTEND_AMOUNT);
+    assert!(decayed < strata_storage::PERSISTENT_EXTEND_AMOUNT);
 
     f.oracle.latest();
 
     let restored = f.e.as_contract(&f.oracle.address, || {
         f.e.storage().persistent().get_ttl(&DataKey::Latest)
     });
-    assert_eq!(restored, storage::PERSISTENT_EXTEND_AMOUNT);
+    assert_eq!(restored, strata_storage::PERSISTENT_EXTEND_AMOUNT);
 }
 
 #[test]
@@ -201,7 +218,7 @@ fn set_config_takes_effect() {
     // that the original 10% band would admit is now rejected.
     let tight = OracleConfig {
         max_up_bps: 100,
-        max_down_bps: Some(100),
+        max_down_bps: 100,
         ..config()
     };
     f.oracle.set_config(&tight);
@@ -264,7 +281,7 @@ fn constructor_rejects_a_deviation_above_one_hundred_percent() {
     let attester = Address::generate(&e);
     let cfg = OracleConfig {
         max_up_bps: 10_001,
-        max_down_bps: Some(10_001),
+        max_down_bps: 10_001,
         ..config()
     };
     e.register(
@@ -306,33 +323,34 @@ fn only_admin_can_set_config() {
 }
 
 #[test]
-fn the_guardian_raises_the_ripcord_but_lowering_needs_governance() {
+fn the_guardian_pauses_the_nav_but_unpausing_needs_governance() {
     let f = setup();
     let r = report(&f.e, SCALE, 1, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
-    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.pause_nav(&f.guardian);
     assert_eq!(f.oracle.state(), OracleState::Paused);
 
+    f.sign_only_as(&f.guardian, "set_nav_paused", (false,).into_val(&f.e));
+    assert!(f.oracle.try_set_nav_paused(&false).is_err());
     f.e.set_auths(&[]);
-    assert!(f.oracle.try_set_ripcord(&false, &f.guardian).is_err());
-    assert!(f.oracle.try_set_ripcord(&false, &f.admin).is_err());
+    assert!(f.oracle.try_set_nav_paused(&false).is_err());
     assert_eq!(f.oracle.state(), OracleState::Paused);
 
     f.e.mock_all_auths();
-    f.oracle.set_ripcord(&false, &f.admin);
+    f.oracle.set_nav_paused(&false);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 }
 
 #[test]
-fn raising_the_ripcord_is_limited_to_the_guardian() {
+fn pausing_the_nav_is_limited_to_the_guardian() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    assert!(f.oracle.try_raise_ripcord(&stranger).is_err());
-    assert!(f.oracle.try_raise_ripcord(&f.attester).is_err());
-    assert!(f.oracle.try_raise_ripcord(&f.admin).is_err());
+    assert!(f.oracle.try_pause_nav(&stranger).is_err());
+    assert!(f.oracle.try_pause_nav(&f.attester).is_err());
+    assert!(f.oracle.try_pause_nav(&f.admin).is_err());
     assert_eq!(f.oracle.state(), OracleState::Stale);
 }
 
@@ -360,9 +378,9 @@ fn setup_with(cfg: OracleConfig) -> Fixture<'static> {
 }
 
 #[test]
-fn a_large_loss_lands_in_one_attestation() {
+fn a_full_downside_cap_lets_a_large_loss_land_at_once() {
     let mut cfg = config();
-    cfg.max_down_bps = None;
+    cfg.max_down_bps = 10_000;
     let f = setup_with(cfg);
 
     f.oracle
@@ -376,9 +394,9 @@ fn a_large_loss_lands_in_one_attestation() {
 }
 
 #[test]
-fn an_unbounded_rise_is_still_refused() {
+fn a_full_downside_cap_still_bounds_a_rise() {
     let mut cfg = config();
-    cfg.max_down_bps = None;
+    cfg.max_down_bps = 10_000;
     let f = setup_with(cfg);
 
     f.oracle
@@ -417,18 +435,18 @@ fn constructor_rejects_a_zero_upside_cap() {
 }
 
 #[test]
-fn the_record_clears_only_while_the_ripcord_is_raised() {
+fn the_record_clears_only_while_the_nav_is_paused() {
     let f = setup();
     f.oracle
         .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
 
-    assert!(f.oracle.try_clear_latest(&f.admin).is_err());
+    assert!(f.oracle.try_clear_latest().is_err());
 
-    f.oracle.raise_ripcord(&f.guardian);
-    f.oracle.clear_latest(&f.admin);
+    f.oracle.pause_nav(&f.guardian);
+    f.oracle.clear_latest();
 
     // With no stored record, one in-band value lands however far it sits.
-    f.oracle.set_ripcord(&false, &f.admin);
+    f.oracle.set_nav_paused(&false);
     f.e.ledger().set_timestamp(10_100);
     let far = report(&f.e, SCALE * 50, 2, 1_000_000);
     f.oracle.attest(&far, &f.attester);
@@ -441,12 +459,12 @@ fn only_admin_can_clear_latest() {
     let stranger = Address::generate(&f.e);
     let r = report(&f.e, SCALE, 1, 1_000_000);
     f.oracle.attest(&r, &f.attester);
-    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.pause_nav(&f.guardian);
 
-    f.e.set_auths(&[]);
-    assert!(f.oracle.try_clear_latest(&stranger).is_err());
-    assert!(f.oracle.try_clear_latest(&f.attester).is_err());
-    assert!(f.oracle.try_clear_latest(&f.guardian).is_err());
+    for who in [&stranger, &f.attester, &f.guardian] {
+        f.sign_only_as(who, "clear_latest", soroban_sdk::Vec::new(&f.e));
+        assert!(f.oracle.try_clear_latest().is_err());
+    }
 }
 
 #[test]
@@ -465,8 +483,8 @@ fn every_oracle_authority_is_readable_and_rotatable() {
     f.oracle
         .revoke_role(&f.guardian, &symbol_short!("guardian"), &f.admin);
 
-    assert!(f.oracle.try_raise_ripcord(&f.guardian).is_err());
-    f.oracle.raise_ripcord(&next);
+    assert!(f.oracle.try_pause_nav(&f.guardian).is_err());
+    f.oracle.pause_nav(&next);
 }
 
 #[test]
@@ -476,11 +494,11 @@ fn the_oracle_admin_cannot_renounce_itself_away() {
     assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
 }
 
-/// Probe: with the downward cap unset, what actually bounds one attestation?
+/// With the downward cap at 100%, `min_answer` is all that bounds one fall.
 #[test]
-fn a_fall_is_bounded_only_by_min_answer() {
+fn a_full_downside_cap_leaves_min_answer_as_the_only_floor() {
     let mut cfg = config();
-    cfg.max_down_bps = None;
+    cfg.max_down_bps = 10_000;
     let f = setup_with(cfg);
 
     f.oracle
@@ -517,4 +535,166 @@ fn attested_at_without_a_report_is_refused() {
     let f = setup();
 
     assert!(f.oracle.try_attested_at().is_err());
+}
+
+#[test]
+fn a_reporter_expiry_inside_the_window_is_kept() {
+    let f = setup();
+    f.oracle
+        .attest(&report(&f.e, SCALE, 0, 10_000 + 600), &f.attester);
+
+    assert_eq!(f.oracle.latest().expires_at, 10_000 + 600);
+    f.e.ledger().set_timestamp(10_000 + 601);
+    assert_eq!(f.oracle.state(), OracleState::Stale);
+}
+
+#[test]
+fn a_reporter_expiry_past_the_window_is_cut_to_the_window() {
+    let f = setup();
+    f.oracle
+        .attest(&report(&f.e, SCALE, 0, 10_000 + 10_000), &f.attester);
+
+    assert_eq!(f.oracle.latest().expires_at, 10_000 + 3600);
+}
+
+#[test]
+fn the_reporters_timestamp_is_ignored() {
+    let f = setup();
+    f.oracle
+        .attest(&report(&f.e, SCALE, 99_999, 1_000_000), &f.attester);
+
+    assert_eq!(f.oracle.latest().timestamp, 10_000);
+    assert_eq!(f.oracle.attested_at(), 10_000);
+}
+
+#[test]
+fn attesting_is_refused_while_the_nav_is_paused() {
+    let f = setup();
+    f.oracle.pause_nav(&f.guardian);
+
+    assert_eq!(
+        f.oracle
+            .try_attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester)
+            .err(),
+        Some(Ok(crate::OracleError::NavPaused.into()))
+    );
+
+    f.oracle.set_nav_paused(&false);
+    f.oracle
+        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+    assert_eq!(f.oracle.state(), OracleState::Valid);
+}
+
+#[test]
+fn two_reports_in_one_ledger_are_refused_at_the_shortest_cooldown() {
+    let mut cfg = config();
+    cfg.cooldown_secs = crate::MIN_COOLDOWN_SECS;
+    let f = setup_with(cfg);
+    f.oracle
+        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+
+    assert_eq!(
+        f.oracle
+            .try_attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester)
+            .err(),
+        Some(Ok(crate::OracleError::CooldownActive.into()))
+    );
+
+    f.e.ledger()
+        .set_timestamp(10_000 + crate::MIN_COOLDOWN_SECS);
+    f.oracle
+        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+}
+
+fn refuses_config(cfg: OracleConfig) {
+    let f = setup();
+    assert_eq!(
+        f.oracle.try_set_config(&cfg).err(),
+        Some(Ok(crate::OracleError::InvalidConfig.into()))
+    );
+}
+
+#[test]
+fn a_zero_cooldown_is_refused() {
+    refuses_config(OracleConfig {
+        cooldown_secs: 0,
+        ..config()
+    });
+}
+
+#[test]
+fn a_freshness_window_past_the_maximum_is_refused() {
+    refuses_config(OracleConfig {
+        freshness_duration: crate::MAX_FRESHNESS_SECS + 1,
+        ..config()
+    });
+}
+
+#[test]
+fn a_max_answer_past_the_ceiling_is_refused() {
+    refuses_config(OracleConfig {
+        max_answer: crate::MAX_ANSWER + 1,
+        ..config()
+    });
+}
+
+/// A new report must always be able to replace the last one before the
+/// freshness window ends, or the feed would sit stale through every cooldown.
+#[test]
+fn a_cooldown_longer_than_the_freshness_window_is_refused() {
+    refuses_config(OracleConfig {
+        cooldown_secs: 3_601,
+        ..config()
+    });
+}
+
+#[test]
+fn a_zero_downside_cap_is_refused() {
+    refuses_config(OracleConfig {
+        max_down_bps: 0,
+        ..config()
+    });
+}
+
+#[test]
+fn the_bounds_themselves_are_accepted() {
+    let f = setup();
+    f.oracle.set_config(&OracleConfig {
+        freshness_duration: crate::MAX_FRESHNESS_SECS,
+        cooldown_secs: crate::MIN_COOLDOWN_SECS,
+        max_up_bps: 10_000,
+        max_down_bps: 10_000,
+        min_answer: 1,
+        max_answer: crate::MAX_ANSWER,
+    });
+}
+
+fn implements_the_feed<T: strata_bindings::OracleFeed>() {}
+
+#[test]
+fn the_oracle_answers_the_feed_interface_the_vault_reads() {
+    implements_the_feed::<NavOracleContract>();
+    let f = setup();
+    f.oracle
+        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+
+    let feed = strata_bindings::OracleFeedClient::new(&f.e, &f.oracle.address);
+
+    assert_eq!(feed.state(), OracleState::Valid);
+    assert_eq!(feed.nav_per_share(), SCALE);
+    assert_eq!(feed.attested_at(), 10_000);
+    assert_eq!(feed.freshness_duration(), 3600);
+}
+
+#[test]
+fn a_missing_config_is_refused_by_name() {
+    let f = setup();
+    f.e.as_contract(&f.oracle.address, || {
+        f.e.storage().instance().remove(&DataKey::Config)
+    });
+
+    assert_eq!(
+        f.oracle.try_config(),
+        Err(Ok(crate::OracleError::NotInitialized.into()))
+    );
 }

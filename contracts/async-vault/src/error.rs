@@ -9,13 +9,13 @@ pub enum VaultError {
     /// The constructor was given the same address for two authorities that
     /// must be held separately.
     RolesNotDistinct = 6000,
-    /// The controller has no request in the given epoch.
+    /// The holder has no request in the given epoch.
     RequestNotFound = 6001,
     /// An amount or share quantity of zero or less was specified.
     InvalidAmount = 6007,
-    /// The controller already holds an unclaimed request in this epoch. A
+    /// The holder already has an unclaimed request in this epoch. A
     /// second request is rejected rather than added to the first, so that at
-    /// most one request per controller per epoch holds by construction.
+    /// most one request per holder per epoch holds by construction.
     RequestOutstanding = 6009,
     /// The epoch total would exceed `i128::MAX`.
     AmountTooLarge = 6014,
@@ -50,10 +50,12 @@ pub enum VaultError {
     /// No custodian has been set, so capital has nowhere to go.
     CustodianNotSet = 6012,
     /// The epoch is priced, so the request can no longer be cancelled. The
-    /// controller claims instead.
+    /// holder claims instead.
     AlreadyPriced = 6039,
-    /// The vault must always have an admin. Governance hands over in two steps
-    /// rather than stepping down into nobody.
+    /// The call needs the admin. `unpause` refuses any other caller.
+    /// `renounce_admin` is always refused, because the vault must always have
+    /// an admin: governance hands over in two steps rather than stepping down
+    /// into nobody.
     AdminRequired = 6040,
     /// The epoch is sealed and the feed can price it, so the price it will take
     /// is already knowable. Cancelling now would be declining a price after
@@ -92,17 +94,18 @@ pub enum VaultError {
     /// Nothing to surrender and nothing owed. Claiming is idempotent by
     /// rejection, as elsewhere in this contract.
     NoEntitlement = 6054,
-    /// A proposal already stands. Replacing one means cancelling it first, so
+    /// A code change already waits. Replacing one means cancelling it first, so
     /// the standing eta is never quietly moved.
     UpgradeProposalExists = 6055,
-    /// No proposal stands.
-    UpgradeProposalNotFound = 6056,
-    /// The delay has not elapsed.
-    UpgradeDelayNotElapsed = 6057,
+    /// No pending change has this id.
+    ChangeNotFound = 6056,
+    /// The change's delay has not elapsed.
+    ChangeNotReady = 6057,
     /// The delay is below the shortest the vault accepts.
     UpgradeDelayTooShort = 6058,
     /// The delay is shorter than the notice, so an investor could not complete
-    /// an exit before the change applies.
+    /// an exit before the change applies. Checked when a change is proposed and
+    /// again when it applies, since the notice may have risen in between.
     UpgradeDelayBelowNotice = 6059,
     /// The delay exceeds the longest the vault accepts.
     UpgradeDelayTooLong = 6060,
@@ -111,4 +114,48 @@ pub enum VaultError {
     NoticeAboveUpgradeDelay = 6061,
     /// A deposit request would breach the vault's configured deposit cap.
     DepositCapExceeded = 6062,
+    /// As many changes as the timelock holds already wait. Apply or cancel one
+    /// first.
+    TooManyPendingChanges = 6063,
+    /// Setup is still open, so the timelock protects nothing yet: the vault
+    /// takes no deposit and queues no change. Governance finishes setup first.
+    SetupOpen = 6064,
+    /// A direct call cannot make this change. After setup it goes through
+    /// `propose_change`; setting a role admin is never allowed.
+    UseTimelock = 6065,
+    /// Setup has finished, and it never reopens.
+    SetupClosed = 6066,
+    /// A wiring check `health()` reports is false (token, oracle and compliance
+    /// bound, sole token manager, allowlisted, not frozen, matching decimals,
+    /// distinct addresses, a feed that answers, a custodian) or the token has
+    /// shares outstanding, so setup cannot finish.
+    SetupIncomplete = 6067,
+    /// The holder fails the share token's identity check, so the vault takes no
+    /// deposit request from them and returns no escrowed shares to them.
+    NotAllowlisted = 6068,
+    /// The wind-down delay is below the shortest the vault accepts.
+    WindDownDelayTooShort = 6069,
+    /// A running total would go below zero, which means the vault's books
+    /// disagree with themselves. Fails loudly instead of clamping to zero.
+    AccountingMismatch = 6070,
+    /// The holder is frozen. What the vault owes them is held, not paid,
+    /// returned or moved, until compliance lifts the freeze. A partial freeze
+    /// refuses only what would touch frozen shares.
+    Frozen = 6071,
+    /// The proposed feed does not name this vault as its own, its setup is
+    /// still open, or it does not answer `state()` and `freshness_duration()`.
+    /// Its admin could then change its limits with no delay, or no epoch could
+    /// be priced from it.
+    FeedNotBound = 6072,
+    /// The holder may not receive shares (delisted, frozen or refused by the
+    /// compliance rules), so the escrowed shares stay with the vault and the
+    /// request stays open.
+    HolderNotEligible = 6073,
+    /// An admin hand-over offered during setup is still open. Setup finishes
+    /// once it is accepted, cancelled or expired, so no nominee from setup can
+    /// accept after changes start to wait.
+    AdminTransferPending = 6074,
+    /// The custodian would be the vault itself. Capital deployed to it would
+    /// never leave, and the books would count it as both held and deployed.
+    InvalidCustodian = 6075,
 }

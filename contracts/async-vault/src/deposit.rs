@@ -1,42 +1,26 @@
-use bindings::ShareClient;
 use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
+use stellar_tokens::rwa::RWATokenClient;
 
-use crate::epoch;
 use crate::error::VaultError;
-use crate::event::{DepositCancelled, DepositClaimed, DepositRequested};
+use crate::event::{DepositCancelled, DepositClaimed, DepositConvertedToExit, DepositRequested};
+use crate::guards;
 use crate::keys::DataKey;
+use crate::lock_policy::{self, Decision, Exit, Standing};
 use crate::pricing::{Pricing, PricingScheme};
-use crate::state::{self, DepositRequest, EpochStatus};
-use crate::treasury;
+use crate::redeem;
+use crate::settlement;
+use crate::state::{self, DepositRequest};
 use crate::wind_down;
 
-fn refuse_if_exceeds_cap(e: &Env, amount: i128) {
-    let Some(cap) = state::deposit_cap(e) else {
-        return;
-    };
-    let current = treasury::deposited_capital(e);
-    let new_total = current
-        .checked_add(amount)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    if new_total > cap {
-        panic_with_error!(e, VaultError::DepositCapExceeded);
-    }
-}
-
-pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
-    wind_down::refuse_if_active(e);
-    from.require_auth();
-
-    if amount <= 0 {
-        panic_with_error!(e, VaultError::InvalidAmount);
-    }
-    refuse_if_exceeds_cap(e, amount);
-
+pub(crate) fn request(e: &Env, holder: &Address, amount: i128) -> u64 {
+    guards::not_winding_down(e);
+    guards::setup_finished(e);
+    holder.require_auth();
+    guards::positive_amount(e, amount);
+    guards::allowed_to(e, Exit::RequestDeposit, holder);
+    guards::within_cap(e, amount);
     let epoch_id = state::current_epoch(e);
-
-    if state::get_deposit_request(e, epoch_id, from).is_some() {
-        panic_with_error!(e, VaultError::RequestOutstanding);
-    }
+    guards::no_open_deposit(e, epoch_id, holder);
 
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
@@ -49,20 +33,24 @@ pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     state::set_deposit_request(
         e,
         epoch_id,
-        from,
+        holder,
         &DepositRequest {
             amount,
             claimed: false,
         },
     );
     state::set_epoch(e, epoch_id, &epoch);
-    state::set_cancellable_escrow(e, state::cancellable_escrow(e) + amount);
+    let escrow = state::cancellable_escrow(e)
+        .checked_add(amount)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    state::set_cancellable_escrow(e, escrow);
+    settlement::on_deposit_requested(e, epoch_id);
 
     let asset = state::get_addr(e, &DataKey::Asset);
-    TokenClient::new(e, &asset).transfer(from, e.current_contract_address(), &amount);
+    TokenClient::new(e, &asset).transfer(holder, e.current_contract_address(), &amount);
 
     DepositRequested {
-        controller: from.clone(),
+        holder: holder.clone(),
         epoch: epoch_id,
         amount,
     }
@@ -71,98 +59,122 @@ pub(crate) fn request(e: &Env, from: &Address, amount: i128) -> u64 {
     epoch_id
 }
 
-pub(crate) fn claim(e: &Env, caller: &Address, epoch_id: u64) -> i128 {
-    caller.require_auth();
-
+pub(crate) fn claim(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
+    holder.require_auth();
     let epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-
-    if epoch.status != EpochStatus::Fulfilled {
-        panic_with_error!(e, VaultError::EpochNotFulfilled);
-    }
-
-    let mut request = state::get_deposit_request(e, epoch_id, caller)
+    guards::epoch_fulfilled(e, &epoch);
+    let mut request = state::get_deposit_request(e, epoch_id, holder)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
-
-    if request.claimed {
-        panic_with_error!(e, VaultError::AlreadyClaimed);
-    }
+    guards::not_claimed(e, request.claimed);
+    let standing = lock_policy::standing(e, holder);
+    let decision = lock_policy::decide(Exit::ClaimDeposit, standing, wind_down::is_active(e));
+    guards::not_refused(e, decision, standing);
 
     let shares = Pricing::deposit_shares(e, request.amount, epoch.share_price)
         .unwrap_or_else(|err| panic_with_error!(e, err));
 
     if shares == 0 {
-        // Pricing already released this epoch's escrow into the reserve, so a
-        // refund now is an extra payout rather than part of committed. It comes
-        // out of free reserve and must not reach money owed to a priced exit.
-        if treasury::free_reserve(e) < request.amount {
-            panic_with_error!(e, VaultError::ClaimNotCovered);
-        }
-        return refund_deposit(e, caller, epoch_id, request.amount);
+        guards::refund_covered(e, request.amount);
+        refund_deposit(e, holder, epoch_id, request.amount);
+        settlement::on_deposit_claimed(e, epoch_id, 0);
+        return 0;
     }
 
     request.claimed = true;
-    state::set_deposit_request(e, epoch_id, caller, &request);
-    state::set_pending_mint_shares(e, state::pending_mint_shares(e).saturating_sub(shares));
+    state::set_deposit_request(e, epoch_id, holder, &request);
+    state::set_pending_mint_shares(e, state::reduce(e, state::pending_mint_shares(e), shares));
+
+    if decision != Decision::Proceed {
+        convert_to_exit(e, holder, epoch_id, shares, standing, decision);
+        return 0;
+    }
 
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    ShareClient::new(e, &share_token).mint(caller, &shares, &e.current_contract_address());
+    RWATokenClient::new(e, &share_token).mint(holder, &shares, &e.current_contract_address());
 
     DepositClaimed {
-        controller: caller.clone(),
+        holder: holder.clone(),
         epoch: epoch_id,
         amount: request.amount,
         shares,
     }
     .publish(e);
+    settlement::on_deposit_claimed(e, epoch_id, shares);
 
     shares
 }
 
+/// The holder is off the allowlist, so the shares exit in cash: next price, or the wind-down.
+fn convert_to_exit(
+    e: &Env,
+    holder: &Address,
+    epoch_id: u64,
+    shares: i128,
+    standing: Standing,
+    decision: Decision,
+) {
+    let into_epoch = match decision {
+        Decision::ConvertToExit => {
+            let vault = e.current_contract_address();
+            let share_token = state::get_addr(e, &DataKey::ShareToken);
+            RWATokenClient::new(e, &share_token).mint(&vault, &shares, &vault);
+            redeem::queue_escrowed(e, holder, shares)
+        }
+        Decision::Surrender => {
+            wind_down::credit(e, holder, shares);
+            0
+        }
+        Decision::Proceed | Decision::Refuse | Decision::Hold => {
+            panic_with_error!(e, lock_policy::refused_with(standing))
+        }
+    };
+
+    DepositConvertedToExit {
+        holder: holder.clone(),
+        epoch: epoch_id,
+        into_epoch,
+        shares,
+    }
+    .publish(e);
+    settlement::on_deposit_claimed(e, epoch_id, shares);
+}
+
 /// Returns the settlement asset and clears the request. Used by cancellation and
 /// by a claim whose conversion floors to zero.
-fn refund_deposit(e: &Env, controller: &Address, epoch_id: u64, amount: i128) -> i128 {
+fn refund_deposit(e: &Env, holder: &Address, epoch_id: u64, amount: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-    epoch.total_deposited -= amount;
+    epoch.total_deposited = state::reduce(e, epoch.total_deposited, amount);
     state::set_epoch(e, epoch_id, &epoch);
-    state::remove_deposit_request(e, epoch_id, controller);
+    state::remove_deposit_request(e, epoch_id, holder);
 
     let asset = state::get_addr(e, &DataKey::Asset);
-    TokenClient::new(e, &asset).transfer(&e.current_contract_address(), controller, &amount);
+    TokenClient::new(e, &asset).transfer(&e.current_contract_address(), holder, &amount);
 
     DepositCancelled {
-        controller: controller.clone(),
+        holder: holder.clone(),
         epoch: epoch_id,
         amount,
     }
     .publish(e);
-
-    0
 }
 
-pub(crate) fn cancel(e: &Env, from: &Address, epoch_id: u64) -> i128 {
-    from.require_auth();
-
+pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
+    holder.require_auth();
     let epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-
-    if epoch.status == EpochStatus::Fulfilled {
-        panic_with_error!(e, VaultError::AlreadyPriced);
-    }
-
-    // Cancellation is an escape hatch, not a choice. Once the feed can price a
-    // sealed epoch, the price is knowable and the only way out is to take it.
-    // Fulfilment is closed during a wind-down, so this epoch will never take a
-    // price. There is nothing to decline.
-    if !wind_down::is_active(e) && epoch::is_priceable(e, &epoch) {
-        panic_with_error!(e, VaultError::PriceAvailable);
-    }
-
-    let request = state::get_deposit_request(e, epoch_id, from)
+    guards::not_priced(e, &epoch);
+    guards::no_price_available(e, &epoch);
+    let request = state::get_deposit_request(e, epoch_id, holder)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
+    guards::allowed_to(e, Exit::CancelDeposit, holder);
 
-    state::set_cancellable_escrow(e, state::cancellable_escrow(e) - request.amount);
-    refund_deposit(e, from, epoch_id, request.amount);
+    state::set_cancellable_escrow(
+        e,
+        state::reduce(e, state::cancellable_escrow(e), request.amount),
+    );
+    settlement::on_deposit_cancelled(e, epoch_id);
+    refund_deposit(e, holder, epoch_id, request.amount);
     request.amount
 }

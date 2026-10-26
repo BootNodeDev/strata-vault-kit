@@ -2,6 +2,7 @@ import { Asset, Keypair, rpc } from "@stellar/stellar-sdk"
 import { basicNodeSigner } from "@stellar/stellar-sdk/contract"
 
 import { Client as VaultClient } from "../../../app-lib/clients/async_vault/dist/index.js"
+import { Client as ComplianceClient } from "../../../app-lib/clients/compliance/dist/index.js"
 import { Client as IdentityVerifierClient } from "../../../app-lib/clients/identity_verifier/dist/index.js"
 import { Client as OracleClient } from "../../../app-lib/clients/nav_oracle/dist/index.js"
 import { Client as ShareTokenClient } from "../../../app-lib/clients/share_token/dist/index.js"
@@ -23,7 +24,10 @@ export interface Connected {
 
 export function connect(): Connected {
 	const net = network()
-	const deployment = loadDeployment(net.name)
+	return connectTo(net, loadDeployment(net.name))
+}
+
+export function connectTo(net: Network, deployment: Deployment): Connected {
 	const keys = Object.fromEntries(
 		ACCOUNT_NAMES.map((name) => [
 			name,
@@ -58,6 +62,8 @@ export const shareToken = (c: Connected, as: Keypair) =>
 	new ShareTokenClient(options(c, "share_token", as))
 export const identityVerifier = (c: Connected, as: Keypair) =>
 	new IdentityVerifierClient(options(c, "identity_verifier", as))
+export const complianceContract = (c: Connected, as: Keypair) =>
+	new ComplianceClient(options(c, "compliance", as))
 
 interface Sendable<T> {
 	simulation?: unknown

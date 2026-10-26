@@ -45,6 +45,17 @@ fn the_guardian_pauses_but_only_governance_unpauses() {
 }
 
 #[test]
+fn a_caller_other_than_the_admin_cannot_unpause_even_when_it_signs() {
+    let f = setup();
+    f.vault.pause(&f.guardian);
+
+    for who in [f.guardian.clone(), Address::generate(&f.e)] {
+        refused(f.vault.try_unpause(&who), VaultError::AdminRequired);
+    }
+    assert!(f.vault.paused());
+}
+
+#[test]
 fn a_paused_vault_still_lets_investors_claim() {
     let f = setup();
     let user = f.investor(1_000);
@@ -108,10 +119,17 @@ fn governance_can_replace_the_guardian() {
     let f = setup();
     let next = Address::generate(&f.e);
 
-    f.vault
-        .grant_role(&next, &symbol_short!("guardian"), &f.admin);
-    f.vault
-        .revoke_role(&f.guardian, &symbol_short!("guardian"), &f.admin);
+    let grant = f.vault.propose_change(&VaultChange::GrantRole(
+        symbol_short!("guardian"),
+        next.clone(),
+    ));
+    let revoke = f.vault.propose_change(&VaultChange::RevokeRole(
+        symbol_short!("guardian"),
+        f.guardian.clone(),
+    ));
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_change(&grant);
+    f.vault.apply_change(&revoke);
 
     assert_eq!(f.vault.guardian(), Some(next.clone()));
     assert!(f.vault.try_pause(&f.guardian).is_err());
@@ -235,7 +253,9 @@ fn governance_hands_over_in_two_steps_instead() {
     let f = setup();
     let next = Address::generate(&f.e);
 
-    f.vault.transfer_admin_role(&next, &1_000);
+    let id = f.vault.propose_change(&VaultChange::Admin(next.clone()));
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_change(&id);
     f.vault.accept_admin_transfer();
 
     assert_eq!(f.vault.governance(), Some(next.clone()));

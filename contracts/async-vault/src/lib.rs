@@ -4,22 +4,28 @@ mod deposit;
 mod epoch;
 mod error;
 mod event;
+mod governance;
+mod guards;
+mod health;
 mod keys;
+mod lock_policy;
 mod pricing;
 mod redeem;
 mod roles;
+mod settlement;
 mod state;
 mod timing;
 mod treasury;
 mod upgrade;
 mod wind_down;
 
-use bindings::ShareClient;
-use soroban_sdk::{contract, contractimpl, panic_with_error, Address, BytesN, Env, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, panic_with_error, Address, Env, Symbol, Vec};
 use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
+use stellar_tokens::fungible::FungibleTokenClient;
+use strata_timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
 use keys::DataKey;
 use roles::{GUARDIAN_ROLE, MANAGER_ROLE, TREASURY_ROLE};
@@ -27,21 +33,29 @@ use state::FIRST_EPOCH;
 
 pub use error::VaultError;
 pub use event::{
-    CustodianSet, Deployed, DepositCapUpdated, DepositClaimed, DepositRequested, EpochClosed,
-    EpochFulfilled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, UpgradeCancelled,
-    UpgradeDelayProposed, UpgradeDelaySet, UpgradeProposed, Upgraded, WindDownActivated,
-    WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled, WindDownProposed,
-    WindDownRoundFinalized,
+    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
+    DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
+    EpochReconciled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, RedemptionSurrendered,
+    SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
+    WindDownProposed, WindDownRoundFinalized,
 };
+pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
+pub use health::Health;
 pub use pricing::{DirectUnitPricing, PricingScheme};
 pub use roles::VaultRoles;
+pub use settlement::EpochSettlement;
 pub use state::{DepositRequest, EpochInfo, EpochStatus, RedeemRequest};
-pub use upgrade::{UpgradeAction, UpgradeProposal, MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
-pub use wind_down::{WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY};
+pub use upgrade::{MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
+pub use wind_down::{
+    WindDownInfo, WindDownPosition, WindDownStatus, MAX_WIND_DOWN_DELAY, MIN_WIND_DOWN_DELAY,
+};
 
 /// Thirty days. Longer than any notice a real structure uses, short enough that
 /// setting it by mistake is survivable.
-pub const MAX_NOTICE_SECS: u64 = 30 * 24 * 60 * 60;
+pub const MAX_NOTICE_SECS: u64 = 30 * DAY_DURATION;
+
+#[cfg(feature = "short_wind_down")]
+soroban_sdk::contractmeta!(key = "build", val = "short wind-down; local tests only");
 
 fn role_holder(e: &Env, role: &Symbol) -> Option<Address> {
     if access_control::get_role_member_count(e, role) == 0 {
@@ -68,13 +82,7 @@ impl AsyncVault {
         // on the NAV oracle, the vault checks pairwise distinctness at construction
         // time to prevent role misconfiguration across the kit ecosystem. Neither
         // compliance nor attester is granted a direct role on the vault contract itself.
-        if roles.treasury == roles.guardian
-            || roles.treasury == roles.governance
-            || roles.compliance == roles.governance
-            || roles.compliance == roles.treasury
-        {
-            panic_with_error!(e, VaultError::RolesNotDistinct);
-        }
+        guards::roles_distinct(e, &roles);
 
         access_control::set_admin(e, &roles.governance);
         access_control::grant_role_no_auth(e, &roles.manager, &MANAGER_ROLE, &roles.governance);
@@ -156,10 +164,10 @@ impl AsyncVault {
 
     pub fn total_economic_supply(e: &Env) -> i128 {
         let share_token = state::get_addr(e, &DataKey::ShareToken);
-        let client = ShareClient::new(e, &share_token);
+        let client = FungibleTokenClient::new(e, &share_token);
         let total_supply = client.total_supply();
         let vault_escrow = client.balance(&e.current_contract_address());
-        let circulating = total_supply.saturating_sub(vault_escrow);
+        let circulating = state::reduce(e, total_supply, vault_escrow);
         circulating
             .checked_add(state::pending_mint_shares(e))
             .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
@@ -170,13 +178,8 @@ impl AsyncVault {
     }
 
     #[only_admin]
-    pub fn set_deposit_cap(e: &Env, cap: Option<i128>, caller: Address) {
-        caller.require_auth();
-        if let Some(c) = cap {
-            if c < 0 {
-                panic_with_error!(e, VaultError::InvalidAmount);
-            }
-        }
+    pub fn set_deposit_cap(e: &Env, cap: Option<i128>) {
+        guards::non_negative_cap(e, cap);
         let old_cap = state::deposit_cap(e);
         state::set_deposit_cap(e, cap);
         DepositCapUpdated {
@@ -186,15 +189,21 @@ impl AsyncVault {
         .publish(e);
     }
 
+    /// Instant during setup; afterwards the custodian changes through the
+    /// timelock. Never the vault itself (`InvalidCustodian`).
     #[only_admin]
-    pub fn set_custodian(e: &Env, custodian: Address, caller: Address) {
-        caller.require_auth();
+    pub fn set_custodian(e: &Env, custodian: Address) {
+        guards::custodian_not_the_vault(e, &custodian);
+        guards::direct_change_allowed(e);
         treasury::set_custodian(e, &custodian);
     }
 
+    /// Raising is instant. Lowering shortens the warning holders get before a
+    /// wind-down starts, so after setup it waits for the timelock.
     #[only_admin]
-    pub fn set_wind_down_delay(e: &Env, secs: u64, caller: Address) {
-        caller.require_auth();
+    pub fn set_wind_down_delay(e: &Env, secs: u64) {
+        guards::wind_down_delay_in_bounds(e, secs);
+        guards::not_lowered_after_setup(e, secs, wind_down::delay(e));
         wind_down::set_delay(e, secs);
     }
 
@@ -207,14 +216,12 @@ impl AsyncVault {
     }
 
     #[only_admin]
-    pub fn propose_wind_down(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn propose_wind_down(e: &Env) {
         wind_down::propose(e);
     }
 
     #[only_admin]
-    pub fn cancel_wind_down_proposal(e: &Env, caller: Address) {
-        caller.require_auth();
+    pub fn cancel_wind_down_proposal(e: &Env) {
         wind_down::cancel_proposal(e);
     }
 
@@ -242,8 +249,9 @@ impl AsyncVault {
         wind_down::acc(e)
     }
 
-    /// Surrenders whatever the holder holds and pays their share of every round
-    /// finalised since they last claimed.
+    /// Surrenders the free shares the holder holds and pays their share of
+    /// every round finalised since they last claimed. A frozen holder is
+    /// refused; a partial freeze surrenders only the free shares.
     pub fn claim_wind_down(e: &Env, holder: Address) -> i128 {
         wind_down::claim(e, &holder)
     }
@@ -252,50 +260,60 @@ impl AsyncVault {
         wind_down::claimable(e, &holder)
     }
 
+    /// Raising is instant. Lowering shortens the wait every closed epoch gives
+    /// before it prices, so after setup it waits for the timelock.
     #[only_admin]
-    pub fn set_notice(e: &Env, secs: u64, caller: Address) {
-        caller.require_auth();
-        if secs > MAX_NOTICE_SECS {
-            panic_with_error!(e, VaultError::NoticeTooLong);
-        }
-        if secs > upgrade::delay(e) {
-            panic_with_error!(e, VaultError::NoticeAboveUpgradeDelay);
-        }
-        state::set_notice(e, secs);
-        NoticeSet { secs }.publish(e);
+    pub fn set_notice(e: &Env, secs: u64) {
+        guards::not_lowered_after_setup(e, secs, state::notice(e));
+        guards::notice_in_bounds(e, secs);
+        governance::set_notice(e, secs);
+    }
+
+    /// Ends the window in which admin changes are instant. Needs every wiring
+    /// check `health()` reports (token, oracle and compliance bound, sole token
+    /// manager, allowlisted, not frozen, matching decimals, distinct addresses,
+    /// a feed that answers, a custodian), no shares outstanding and no admin
+    /// hand-over pending. Deposits open from here on, and it never reopens.
+    #[only_admin]
+    pub fn finish_setup(e: &Env) {
+        governance::finish_setup(e);
+    }
+
+    pub fn setup_open(e: &Env) -> bool {
+        strata_timelock::setup::is_open(e)
+    }
+
+    /// Whether setup is open, the wiring `finish_setup` checks except the share
+    /// supply, and the feed: whether it can price now, and whether its reports
+    /// outlive the notice.
+    pub fn health(e: &Env) -> Health {
+        health::health(e)
+    }
+
+    /// Queues a change behind the timelock and returns its id.
+    #[only_admin]
+    pub fn propose_change(e: &Env, change: VaultChange) -> u32 {
+        governance::propose(e, change)
     }
 
     #[only_admin]
-    pub fn propose_upgrade(e: &Env, wasm_hash: BytesN<32>, caller: Address) {
-        caller.require_auth();
-        upgrade::propose_wasm(e, wasm_hash);
+    pub fn cancel_change(e: &Env, id: u32) {
+        governance::cancel(e, id);
     }
 
+    /// Lands a change whose delay has run. Refused while paused or winding
+    /// down.
     #[only_admin]
-    pub fn propose_upgrade_delay(e: &Env, secs: u64, caller: Address) {
-        caller.require_auth();
-        upgrade::propose_delay(e, secs);
+    pub fn apply_change(e: &Env, id: u32) {
+        governance::apply(e, id);
     }
 
-    #[only_admin]
-    pub fn cancel_upgrade(e: &Env, caller: Address) {
-        caller.require_auth();
-        upgrade::cancel(e);
-    }
-
-    #[only_admin]
-    #[when_not_paused]
-    pub fn apply_upgrade(e: &Env, caller: Address) {
-        caller.require_auth();
-        upgrade::apply(e);
+    pub fn pending_changes(e: &Env) -> Vec<VaultPendingChange> {
+        governance::pending(e)
     }
 
     pub fn upgrade_delay(e: &Env) -> u64 {
         upgrade::delay(e)
-    }
-
-    pub fn upgrade_proposal(e: &Env) -> Option<UpgradeProposal> {
-        upgrade::proposal(e)
     }
 
     pub fn schema_version(e: &Env) -> u32 {
@@ -307,8 +325,8 @@ impl AsyncVault {
         treasury::deploy(e, assets)
     }
 
-    pub fn fund(e: &Env, from: Address, assets: i128) -> i128 {
-        treasury::fund(e, &from, assets)
+    pub fn fund(e: &Env, caller: Address, assets: i128) -> i128 {
+        treasury::fund(e, &caller, assets)
     }
 
     pub fn notice(e: &Env) -> u64 {
@@ -323,48 +341,50 @@ impl AsyncVault {
         state::get_epoch(e, epoch_id)
     }
 
-    pub fn get_deposit_request(
-        e: &Env,
-        epoch_id: u64,
-        controller: Address,
-    ) -> Option<DepositRequest> {
-        state::get_deposit_request(e, epoch_id, &controller)
+    /// What pricing promised the epoch and what has been paid against it.
+    pub fn get_epoch_settlement(e: &Env, epoch_id: u64) -> Option<EpochSettlement> {
+        settlement::get(e, epoch_id)
+    }
+
+    pub fn get_deposit_request(e: &Env, epoch_id: u64, holder: Address) -> Option<DepositRequest> {
+        state::get_deposit_request(e, epoch_id, &holder)
     }
 
     #[when_not_paused]
-    pub fn request_deposit(e: &Env, from: Address, amount: i128) -> u64 {
-        deposit::request(e, &from, amount)
+    pub fn request_deposit(e: &Env, holder: Address, amount: i128) -> u64 {
+        deposit::request(e, &holder, amount)
     }
 
-    pub fn claim_deposit(e: &Env, caller: Address, epoch_id: u64) -> i128 {
-        deposit::claim(e, &caller, epoch_id)
+    /// Returns the shares minted to the holder. Zero means none were: a deposit
+    /// too small for one share was refunded, or the holder is off the allowlist
+    /// and the shares joined an exit instead (`DepositConvertedToExit`).
+    pub fn claim_deposit(e: &Env, holder: Address, epoch_id: u64) -> i128 {
+        deposit::claim(e, &holder, epoch_id)
     }
 
     /// Cancels an unpriced deposit. Never blocked by the pause.
-    pub fn cancel_deposit(e: &Env, from: Address, epoch_id: u64) -> i128 {
-        deposit::cancel(e, &from, epoch_id)
+    pub fn cancel_deposit(e: &Env, holder: Address, epoch_id: u64) -> i128 {
+        deposit::cancel(e, &holder, epoch_id)
     }
 
-    /// Cancels an unpriced redemption. Refused for a controller the share token
-    /// will not let hold shares; that controller exits through the cash claim.
-    pub fn cancel_redeem(e: &Env, from: Address, epoch_id: u64) -> i128 {
-        redeem::cancel(e, &from, epoch_id)
+    /// Cancels an unpriced redemption. Outside a wind-down the shares come
+    /// back, even while the token is paused, unless the holder is delisted,
+    /// frozen or refused by the compliance rules; in one the escrow joins the
+    /// holder's entitlement, and a frozen holder is held.
+    pub fn cancel_redeem(e: &Env, holder: Address, epoch_id: u64) -> i128 {
+        redeem::cancel(e, &holder, epoch_id)
     }
 
-    pub fn request_redeem(e: &Env, from: Address, shares: i128) -> u64 {
-        redeem::request(e, &from, shares)
+    pub fn request_redeem(e: &Env, holder: Address, shares: i128) -> u64 {
+        redeem::request(e, &holder, shares)
     }
 
-    pub fn get_redeem_request(
-        e: &Env,
-        epoch_id: u64,
-        controller: Address,
-    ) -> Option<RedeemRequest> {
-        state::get_redeem_request(e, epoch_id, &controller)
+    pub fn get_redeem_request(e: &Env, epoch_id: u64, holder: Address) -> Option<RedeemRequest> {
+        state::get_redeem_request(e, epoch_id, &holder)
     }
 
-    pub fn claim_redeem(e: &Env, caller: Address, epoch_id: u64) -> i128 {
-        redeem::claim(e, &caller, epoch_id)
+    pub fn claim_redeem(e: &Env, holder: Address, epoch_id: u64) -> i128 {
+        redeem::claim(e, &holder, epoch_id)
     }
 
     #[only_role(caller, "manager")]
@@ -380,9 +400,37 @@ impl AsyncVault {
 
 #[contractimpl(contracttrait)]
 impl AccessControl for AsyncVault {
+    /// Instant during setup; after it, propose the grant through the timelock.
+    fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
+        guards::direct_change_allowed(e);
+        access_control::grant_role(e, &account, &role, &caller);
+    }
+
+    /// Instant for every role but `manager`: taking `treasury` or `guardian`
+    /// away moves no value. After setup, revoking `manager` waits like a grant,
+    /// because without it no epoch closes and no exit is priced.
+    fn revoke_role(e: &Env, account: Address, role: Symbol, caller: Address) {
+        guards::direct_revoke_allowed(e, &role);
+        access_control::revoke_role(e, &account, &role, &caller);
+    }
+
+    /// Cancelling a pending hand-over (`live_until_ledger == 0`) keeps the
+    /// current admin, so it stays instant.
+    fn transfer_admin_role(e: &Env, new_admin: Address, live_until_ledger: u32) {
+        guards::direct_hand_over_allowed(e, live_until_ledger);
+        access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
+    }
+
+    /// Refused. A role admin could grant that role with no delay.
+    fn set_role_admin(e: &Env, _role: Symbol, _admin_role: Symbol) {
+        panic_with_error!(e, VaultError::UseTimelock);
+    }
+
     /// Refused. A vault without an admin could never be unpaused, never set a
-    /// custodian, never rotate a role and never be upgraded again.
-    /// `transfer_admin_role` and `accept_admin_transfer` are the way out.
+    /// custodian, never rotate a role and never be upgraded again. The way out
+    /// is a hand-over: propose and apply an `Admin` change
+    /// (`transfer_admin_role` during setup), then the nominee calls
+    /// `accept_admin_transfer`.
     fn renounce_admin(e: &Env) {
         panic_with_error!(e, VaultError::AdminRequired);
     }
@@ -393,14 +441,27 @@ impl Pausable for AsyncVault {
     #[only_role(caller, "guardian")]
     fn pause(e: &Env, caller: Address) {
         pausable::pause(e);
-        upgrade::on_pause(e);
+        strata_timelock::pause::start(e);
     }
 
-    #[only_admin]
     fn unpause(e: &Env, caller: Address) {
+        guards::caller_is_admin(e, &caller);
         caller.require_auth();
         pausable::unpause(e);
-        upgrade::on_unpause(e);
+        strata_timelock::pause::end(e);
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl ClockSource for AsyncVault {
+    fn timelock_clock(e: &Env) -> Clock {
+        governance::clock(e)
+    }
+}
+
+impl TimelockHost for AsyncVault {
+    fn clock(e: &Env) -> Result<Clock, Refusal> {
+        Ok(governance::clock(e))
     }
 }
 

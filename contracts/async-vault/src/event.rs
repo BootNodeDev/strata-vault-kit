@@ -1,9 +1,11 @@
 use soroban_sdk::{contractevent, Address};
 
+use crate::governance::VaultChange;
+
 #[contractevent]
 pub struct DepositRequested {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub amount: i128,
 }
@@ -19,7 +21,7 @@ pub struct EpochFulfilled {
 #[contractevent]
 pub struct DepositClaimed {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub amount: i128,
     pub shares: i128,
@@ -28,7 +30,7 @@ pub struct DepositClaimed {
 #[contractevent]
 pub struct RedeemRequested {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub shares: i128,
 }
@@ -36,7 +38,7 @@ pub struct RedeemRequested {
 #[contractevent]
 pub struct RedeemClaimed {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub shares: i128,
     pub assets: i128,
@@ -72,7 +74,7 @@ pub struct Deployed {
 #[contractevent]
 pub struct Funded {
     #[topic]
-    pub from: Address,
+    pub caller: Address,
     pub assets: i128,
     pub net_deployed: i128,
 }
@@ -80,7 +82,7 @@ pub struct Funded {
 #[contractevent]
 pub struct DepositCancelled {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub amount: i128,
 }
@@ -88,34 +90,34 @@ pub struct DepositCancelled {
 #[contractevent]
 pub struct RedeemCancelled {
     #[topic]
-    pub controller: Address,
+    pub holder: Address,
     pub epoch: u64,
     pub shares: i128,
 }
 
 #[contractevent]
-pub struct UpgradeProposed {
+pub struct ChangeProposed {
+    #[topic]
+    pub id: u32,
+    pub change: VaultChange,
     pub eta: u64,
 }
 
 #[contractevent]
-pub struct UpgradeDelayProposed {
-    pub secs: u64,
-    pub eta: u64,
+pub struct ChangeCancelled {
+    #[topic]
+    pub id: u32,
 }
 
 #[contractevent]
-pub struct UpgradeCancelled {}
-
-#[contractevent]
-pub struct UpgradeDelaySet {
-    pub secs: u64,
+pub struct ChangeApplied {
+    #[topic]
+    pub id: u32,
+    pub change: VaultChange,
 }
 
 #[contractevent]
-pub struct Upgraded {
-    pub schema_version: u32,
-}
+pub struct SetupFinished {}
 
 #[contractevent]
 pub struct WindDownDelaySet {
@@ -148,6 +150,33 @@ pub struct WindDownClaimed {
     pub holder: Address,
     pub surrendered: i128,
     pub assets: i128,
+}
+
+/// An escrowed redemption burned into the holder's wind-down entitlement.
+#[contractevent]
+pub struct RedemptionSurrendered {
+    #[topic]
+    pub holder: Address,
+    pub epoch: u64,
+    pub shares: i128,
+}
+
+/// A priced deposit queued to exit in `into_epoch`; zero means the wind-down entitlement.
+#[contractevent]
+pub struct DepositConvertedToExit {
+    #[topic]
+    pub holder: Address,
+    pub epoch: u64,
+    pub into_epoch: u64,
+    pub shares: i128,
+}
+
+#[contractevent]
+pub struct EpochReconciled {
+    #[topic]
+    pub epoch: u64,
+    pub share_dust: i128,
+    pub cash_dust: i128,
 }
 
 #[contractevent]
