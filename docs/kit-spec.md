@@ -37,7 +37,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Mathematical Statement**:
   $`\text{attested\_at} \ge \text{closed\_at}`$
 - **Testable Property**: If the latest oracle attestation timestamp precedes `closed_at`, `fulfill_epoch` is rejected with `AttestationBeforeClose`. A valuation accepted in the exact closing ledger timestamp or later is accepted.
-  `attested_at` is the ledger time the oracle accepted the report, not a valuation date: the reporter's own `timestamp` is ignored. So "accepted before the close" compares acceptance time. The reporter's `expires_at` can only shorten a report's life: the oracle stores `min(expires_at, attested_at + freshness_duration)`.
+  `attested_at` is the ledger time the oracle accepted the report, stored as `accepted_at`, not a valuation date: the attester submits no time of its own. So "accepted before the close" compares acceptance time. The reporter's `expires_at` can only shorten a report's life: the oracle stores `min(expires_at, attested_at + freshness_duration)`.
 
 ### Invariant 4: Covered Claims Always Pay (Exit Guarantee)
 - **Definition**: Once an exit is priced and covered by the liquid reserve, its cash payout cannot be blocked by an administrative pause, oracle staleness, or an investor's compliance delisting.
@@ -212,7 +212,7 @@ Strata distributes control across five native Stellar multisig authorities, two 
 | **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin, finish each contract's one-time setup, co-sign compliance's `legal_transfer` and `recover_balance` as the share token's admin. After setup, these wait for the timelock: role grants, revoking the manager, admin hand-over, the custodian, lowering the notice or the wind-down delay, upgrades, the token's compliance and verifier swaps, the compliance contract's module and token-binding changes, and oracle config changes other than a shorter freshness window. Revoking the treasury or the guardian stays instant, because taking a power away moves no value. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
 | **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `pause_nav` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
 | **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve). Capital comes back through `fund`, which anyone may call. | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
-| **Attester** | High-security attestation multisig | `attest` (submits a NAV report: the price and its expiry). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
+| **Attester** | High-security attestation multisig | `attest` (submits a NAV report: the price, its expiry and a proof reference). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
 | **Compliance** | Legal / KYC operator multisig | Manage allowlist (`allow`), topic claims; token interventions (`freeze`; `legal_transfer` and `recovery` co-signed by governance). | **Cannot touch vault reserve**; cannot move a holder's shares without governance's signature in the same call; cannot move shares out of or into the vault's address, or freeze it once the token knows its vault (an earlier freeze makes the vault's `finish_setup` refuse); cannot pause vault operations; cannot bypass exit-only cash redemptions for an unfrozen holder — freezing holds a covered claim until it lifts, rather than paying or redirecting it. |
 | **Manager (vault role)** | Operational keeper account; a role, not one of the five authorities | `close_epoch`: seals the open epoch, nothing else. | **Cannot choose prices**; cannot mint, burn or move shares; cannot stop a sealed epoch from being priced, though not sealing stalls every request; cannot alter timelocks. After setup, granting or revoking it waits for the timelock. |
 | **Manager (share-token role)** | The vault contract, alone: the vault's `finish_setup` refuses while another account holds it | `mint`, `burn`, `forced_transfer` on the share token: the vault mints and burns at claim and moves escrowed shares. | Cannot freeze, recover or make a legal transfer. After setup, granting or revoking it waits for the vault's timelock. See [`AUTHORIZATION_MATRIX.md`](./AUTHORIZATION_MATRIX.md) §2. |
@@ -228,6 +228,18 @@ Pause first, so no report lands while the roles change, and lift the pause last:
 4. Clear the stored report: `clear_latest` (admin; only while the NAV is paused). Left in place, it is valid again once the pause lifts, and anyone can price with it any epoch sealed before it was accepted, until it expires. Skip this only if you know the report predates the compromise. The next report then has no earlier price to cap its move: only `min_answer` and `max_answer` bound it.
 5. Lift the NAV pause: `set_nav_paused(false)` (admin).
 6. The new attester posts a report. Pricing resumes: an epoch can be priced once a report accepted after its seal is valid.
+
+### Upgrading the Oracle from an Earlier Release
+
+Releases before the proof reference stored the report as `nav_per_share`, `expires_at` and `timestamp`. This version stores `nav_per_share`, `expires_at`, `accepted_at`, `proof_hash` and `proof_uri`, and cannot read a report of the earlier shape. After an in-place upgrade, every call that reads the old report fails: `latest`, `nav_per_share`, `attested_at`, `is_stale` and `attest`, and also `state` and `ensure_consumable` while the NAV is not paused. The vault then cannot price, and cancelling a request in a sealed epoch fails. No migration rewrites the old report. Clear it instead:
+
+1. Pause the NAV before the upgrade applies: the guardian calls `pause_nav`, or the admin calls `set_nav_paused(true)`. While the NAV is paused, `state` answers `Paused` without reading the report, so the vault prices nothing and requests in sealed epochs stay cancellable.
+2. Apply the upgrade: `apply_change` once its delay has run.
+3. Remove the old report: `clear_latest` (admin). It deletes the entry without reading it.
+4. Lift the NAV pause: `set_nav_paused(false)` (admin).
+5. The attester posts a report with its proof. As after any clear, no earlier price caps its move: only `min_answer` and `max_answer` bound it.
+
+The test `a_report_of_the_earlier_shape_is_cleared_and_replaced` stores a report of the earlier shape and recovers it this way. A fresh deployment has no such report and skips these steps.
 
 ### When the Manager or the Attester Stops
 
@@ -555,7 +567,7 @@ for the same failure, so `304` says what failed, not where.
 
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|
-| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3025–3026 |
+| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
 | `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6075 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7018 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |

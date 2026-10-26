@@ -7,7 +7,7 @@ use soroban_sdk::{
         Address as _, AuthorizedFunction, AuthorizedInvocation, Events as _, Ledger as _, MockAuth,
         MockAuthInvoke,
     },
-    Address, BytesN, Env, Event as _, IntoVal, Symbol, Val,
+    Address, BytesN, Env, Event as _, IntoVal, String, Symbol, Val,
 };
 use stellar_access::access_control::{AccessControlStorageKey, ROLE_EXTEND_AMOUNT};
 use stellar_access::role_transfer::RoleTransferError;
@@ -16,8 +16,8 @@ use strata_timelock::{Clock, DAY_DURATION, MIN_DELAY};
 
 use crate::state::{ATTESTER_ROLE, GUARDIAN_ROLE};
 use crate::{
-    shortens_freshness_only, ChangeApplied, ChangeProposed, ConfigSet, NavOracleContract,
-    NavOracleContractClient, NavReport, OracleChange, OracleConfig, OracleError, OracleState,
+    shortens_freshness_only, ChangeApplied, ChangeProposed, ConfigSet, NavInput, NavOracleContract,
+    NavOracleContractClient, OracleChange, OracleConfig, OracleError, OracleState,
     ADMIN_ACCEPT_LEDGERS,
 };
 
@@ -89,7 +89,8 @@ impl Fixture<'_> {
     }
 
     fn attest(&self, nav_per_share: i128) {
-        self.oracle.attest(&report(nav_per_share), &self.attester);
+        self.oracle
+            .attest(&input(&self.e, nav_per_share), &self.attester);
     }
 
     /// Lands an `Admin` change for `next` and returns the ledger of the offer.
@@ -166,11 +167,16 @@ fn config() -> OracleConfig {
     }
 }
 
-fn report(nav_per_share: i128) -> NavReport {
-    NavReport {
+fn proof(e: &Env) -> BytesN<32> {
+    BytesN::from_array(e, &[7; 32])
+}
+
+fn input(e: &Env, nav_per_share: i128) -> NavInput {
+    NavInput {
         nav_per_share,
         expires_at: u64::MAX,
-        timestamp: 0,
+        proof_hash: proof(e),
+        proof_uri: String::from_str(e, "ipfs://strata-proof"),
     }
 }
 
@@ -605,7 +611,10 @@ fn revoking_an_attester_or_a_guardian_stays_instant_after_setup() {
 
     assert!(f.oracle.has_role(&f.attester, &ATTESTER_ROLE).is_none());
     assert!(f.oracle.has_role(&f.guardian, &GUARDIAN_ROLE).is_none());
-    assert!(f.oracle.try_attest(&report(SCALE), &f.attester).is_err());
+    assert!(f
+        .oracle
+        .try_attest(&input(&f.e, SCALE), &f.attester)
+        .is_err());
     assert!(f.oracle.try_pause_nav(&f.guardian).is_err());
 }
 
@@ -1095,11 +1104,11 @@ fn each_role_call_asks_its_holder_for_one_signature() {
     let f = setup();
     let next = Address::generate(&f.e);
 
-    f.oracle.attest(&report(SCALE), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE), &f.attester);
     f.signed_once_by(
         &f.attester,
         "attest",
-        (report(SCALE), f.attester.clone()).into_val(&f.e),
+        (input(&f.e, SCALE), f.attester.clone()).into_val(&f.e),
     );
     f.oracle.pause_nav(&f.guardian);
     f.signed_once_by(
@@ -1203,9 +1212,10 @@ mod with_wasm {
 
         let kept = f.oracle.latest();
         assert_eq!(
-            (kept.nav_per_share, kept.timestamp, kept.expires_at),
+            (kept.nav_per_share, kept.accepted_at, kept.expires_at),
             (SCALE, 10_000, 10_000 + config().freshness_duration)
         );
+        assert_eq!(kept.proof_hash, proof(&f.e));
         assert_eq!(f.oracle.config(), config());
         assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
         assert_eq!(f.oracle.vault(), Some(f.vault.address.clone()));

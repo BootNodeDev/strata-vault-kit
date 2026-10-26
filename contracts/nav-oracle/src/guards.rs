@@ -1,11 +1,11 @@
-use soroban_sdk::{panic_with_error, Env};
+use soroban_sdk::{panic_with_error, BytesN, Env, String};
 use stellar_access::{access_control::AccessControlStorageKey, role_transfer};
 use strata_timelock::{queue, setup};
 
 use crate::state::{self, get_config, NavReport, OracleConfig, OracleState};
 use crate::{
     compute_state, in_band, shortens_freshness_only, OracleChange, OracleError, BPS_DENOM,
-    MAX_ANSWER, MAX_FRESHNESS_SECS, MIN_COOLDOWN_SECS,
+    MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN, MIN_COOLDOWN_SECS,
 };
 
 pub(crate) fn valid_config(e: &Env, cfg: &OracleConfig) {
@@ -113,8 +113,20 @@ pub(crate) fn expires_in_future(e: &Env, expires_at: u64) {
     }
 }
 
+pub(crate) fn proof_hash_not_empty(e: &Env, proof_hash: &BytesN<32>) {
+    if proof_hash.to_array() == [0; 32] {
+        panic_with_error!(e, OracleError::EmptyProofHash);
+    }
+}
+
+pub(crate) fn proof_uri_fits(e: &Env, proof_uri: &String) {
+    if proof_uri.len() > MAX_PROOF_URI_LEN {
+        panic_with_error!(e, OracleError::ProofUriTooLong);
+    }
+}
+
 pub(crate) fn cooldown_elapsed(e: &Env, cfg: &OracleConfig, last: &NavReport) {
-    if e.ledger().timestamp() < last.timestamp.saturating_add(cfg.cooldown_secs) {
+    if e.ledger().timestamp() < last.accepted_at.saturating_add(cfg.cooldown_secs) {
         panic_with_error!(e, OracleError::CooldownActive);
     }
 }

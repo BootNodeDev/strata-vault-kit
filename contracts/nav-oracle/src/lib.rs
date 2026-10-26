@@ -7,6 +7,9 @@
 //! - **The ledger dates a report.** It expires at the earlier of `expires_at`
 //!   and its acceptance plus `freshness_duration`. The cost: the vault compares
 //!   acceptance times, not valuation dates.
+//! - **The proof is anchored, never verified.** A report carries a hash of its
+//!   evidence and may say where to read it. The cost: any hash that is not all
+//!   zeros passes, so a reader fetches the evidence and compares the hash.
 //! - **No report while the NAV is paused.** The guardian or the admin pauses
 //!   it; only the admin lifts it. The cost: the vault prices nothing meanwhile,
 //!   and sealed epochs reopen to cancellation.
@@ -37,8 +40,8 @@ mod guards;
 mod state;
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, panic_with_error, Address, Env, Symbol,
-    Vec,
+    contract, contracterror, contractevent, contractimpl, panic_with_error, Address, BytesN, Env,
+    String, Symbol, Vec,
 };
 use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::upgradeable;
@@ -50,7 +53,7 @@ use state::{get_config, get_latest, nav_paused, ATTESTER_ROLE, GUARDIAN_ROLE};
 pub use governance::{
     shortens_freshness_only, OracleChange, OraclePendingChange, ADMIN_ACCEPT_LEDGERS,
 };
-pub use state::{NavReport, OracleConfig, OracleState};
+pub use state::{NavInput, NavReport, OracleConfig, OracleState};
 
 const BPS_DENOM: i128 = 10_000;
 const WAD: i128 = 1_000_000_000_000_000_000;
@@ -62,6 +65,8 @@ pub const MAX_FRESHNESS_SECS: u64 = 35 * strata_timelock::DAY_DURATION;
 /// A million units of the asset per share. Far above any real price, and far
 /// below where the deviation arithmetic could overflow.
 pub const MAX_ANSWER: i128 = 1_000_000 * WAD;
+/// Longest proof URI an attestation may carry, in bytes.
+pub const MAX_PROOF_URI_LEN: u32 = 256;
 
 strata_bindings::error_enum! {
     strata_bindings::ORACLE_ERRORS,
@@ -124,6 +129,10 @@ strata_bindings::error_enum! {
         DelayBelowNotice = 3020,
         /// An upgrade already waits. Cancel it before proposing another.
         UpgradeAlreadyPending = 3021,
+        /// The proof hash is all zeros, so it commits to nothing.
+        EmptyProofHash = 3023,
+        /// The proof URI is longer than `MAX_PROOF_URI_LEN` bytes.
+        ProofUriTooLong = 3024,
         /// An admin hand-over offered during setup is still open. Setup finishes
         /// once it is accepted, cancelled or expired, so no nominee from setup can
         /// accept after changes start to wait.
@@ -140,6 +149,8 @@ pub struct NavAttested {
     pub attester: Address,
     pub nav_per_share: i128,
     pub expires_at: u64,
+    pub proof_hash: BytesN<32>,
+    pub proof_uri: String,
 }
 
 #[contractevent]
@@ -512,8 +523,9 @@ impl NavOracleContract {
         governance::pending(e)
     }
 
-    /// The stored report: `nav_per_share` in WAD, `timestamp` and
-    /// `expires_at` in seconds.
+    /// The stored report: `nav_per_share` in WAD, `accepted_at` and
+    /// `expires_at` in seconds, and the proof the attester gave with it,
+    /// `proof_hash` and `proof_uri`.
     ///
     /// # Errors
     ///
@@ -541,15 +553,16 @@ impl NavOracleContract {
         guards::consumable(e);
     }
 
-    /// Stores a valuation for the vault to price epochs from. The stored
-    /// `expires_at` is the earlier of the report's and the time of acceptance
-    /// plus `freshness_duration`.
+    /// Stores a valuation and its proof for the vault to price epochs from.
+    /// The stored `expires_at` is the earlier of the input's and the time of
+    /// acceptance plus `freshness_duration`. It never verifies the proof.
     ///
     /// # Arguments
     ///
-    /// * `report` - `nav_per_share` in WAD: asset base units per share base
+    /// * `input` - `nav_per_share` in WAD: asset base units per share base
     ///   unit. `expires_at` in seconds: the last moment the attester vouches
-    ///   for it. `timestamp` is ignored; the ledger time is stored.
+    ///   for it. `proof_hash` hashes the evidence; `proof_uri` says where to
+    ///   read it, or is empty.
     /// * `caller` - An `attester`.
     ///
     /// # Errors
@@ -558,6 +571,8 @@ impl NavOracleContract {
     /// * `NavPaused` - The NAV is paused.
     /// * `NavOutOfBand` - `nav_per_share` is outside the band.
     /// * `ExpiresInPast` - `expires_at` is not in the future.
+    /// * `EmptyProofHash` - `proof_hash` is all zeros.
+    /// * `ProofUriTooLong` - `proof_uri` is over 256 bytes.
     /// * `CooldownActive` - The last report is younger than `cooldown_secs`.
     /// * `DeviationExceeded` - The move from the last report exceeds its cap.
     ///
@@ -569,24 +584,28 @@ impl NavOracleContract {
     ///
     /// `caller` signs.
     #[only_role(caller, "attester")]
-    pub fn attest(e: &Env, report: NavReport, caller: Address) {
+    pub fn attest(e: &Env, input: NavInput, caller: Address) {
         guards::nav_not_paused(e);
         let cfg = get_config(e);
-        guards::nav_in_band(e, &cfg, report.nav_per_share);
-        guards::expires_in_future(e, report.expires_at);
+        guards::nav_in_band(e, &cfg, input.nav_per_share);
+        guards::expires_in_future(e, input.expires_at);
+        guards::proof_hash_not_empty(e, &input.proof_hash);
+        guards::proof_uri_fits(e, &input.proof_uri);
         if let Some(last) = get_latest(e) {
             guards::cooldown_elapsed(e, &cfg, &last);
-            guards::within_deviation(e, &cfg, &last, report.nav_per_share);
+            guards::within_deviation(e, &cfg, &last, input.nav_per_share);
         }
 
         strata_storage::bump_instance(e);
         let now = e.ledger().timestamp();
         let stored = NavReport {
-            nav_per_share: report.nav_per_share,
-            timestamp: now,
-            expires_at: report
+            nav_per_share: input.nav_per_share,
+            expires_at: input
                 .expires_at
                 .min(now.saturating_add(cfg.freshness_duration)),
+            accepted_at: now,
+            proof_hash: input.proof_hash,
+            proof_uri: input.proof_uri,
         };
         state::set_latest(e, &stored);
 
@@ -594,6 +613,8 @@ impl NavOracleContract {
             attester: caller,
             nav_per_share: stored.nav_per_share,
             expires_at: stored.expires_at,
+            proof_hash: stored.proof_hash,
+            proof_uri: stored.proof_uri,
         }
         .publish(e);
     }
@@ -725,7 +746,7 @@ impl OracleFeed for NavOracleContract {
     ///
     /// * `NoRecord` - No report is stored.
     fn attested_at(e: &Env) -> u64 {
-        Self::latest(e).timestamp
+        Self::latest(e).accepted_at
     }
 
     /// How long a report stays valid after it is accepted, in seconds.

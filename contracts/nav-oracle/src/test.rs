@@ -5,11 +5,11 @@ use soroban_sdk::{
     testutils::{
         storage::Persistent as _, Address as _, Events as _, Ledger as _, MockAuth, MockAuthInvoke,
     },
-    Address, Env, Event as _, IntoVal,
+    Address, BytesN, Env, Event as _, IntoVal, String,
 };
 
 use crate::state::DataKey;
-use crate::{NavOracleContract, NavOracleContractClient, NavReport, OracleConfig, OracleState};
+use crate::{NavInput, NavOracleContract, NavOracleContractClient, OracleConfig, OracleState};
 
 const SCALE: i128 = 1_000_000_000_000_000_000;
 const DAY_IN_LEDGERS: u32 = 17_280;
@@ -72,11 +72,16 @@ fn setup<'a>() -> Fixture<'a> {
     }
 }
 
-fn report(_e: &Env, nav: i128, timestamp: u64, expires_at: u64) -> NavReport {
-    NavReport {
+fn proof(e: &Env) -> BytesN<32> {
+    BytesN::from_array(e, &[7; 32])
+}
+
+fn input(e: &Env, nav: i128, expires_at: u64) -> NavInput {
+    NavInput {
         nav_per_share: nav,
-        timestamp,
         expires_at,
+        proof_hash: proof(e),
+        proof_uri: String::from_str(e, "ipfs://strata-proof"),
     }
 }
 
@@ -87,7 +92,7 @@ fn attest_then_valid_and_consumable() {
     assert_eq!(f.oracle.state(), OracleState::Stale);
     assert!(f.oracle.is_stale());
 
-    let r = report(&f.e, SCALE, 1, 1_000_000);
+    let r = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r, &f.attester);
 
     assert_eq!(f.oracle.state(), OracleState::Valid);
@@ -98,7 +103,7 @@ fn attest_then_valid_and_consumable() {
 #[test]
 fn heartbeat_expiry_makes_it_stale() {
     let f = setup();
-    let r = report(&f.e, SCALE, 1, 1_000_000);
+    let r = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
@@ -111,7 +116,7 @@ fn heartbeat_expiry_makes_it_stale() {
 #[test]
 fn the_nav_pause_holds_regardless_of_freshness() {
     let f = setup();
-    let r = report(&f.e, SCALE, 1, 1_000_000);
+    let r = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
@@ -127,54 +132,53 @@ fn the_nav_pause_holds_regardless_of_freshness() {
 fn attest_rejects_out_of_band() {
     let f = setup();
     // Below min_answer.
-    let r = report(&f.e, SCALE / 4, 1, 1_000_000);
+    let r = input(&f.e, SCALE / 4, 1_000_000);
     assert!(f.oracle.try_attest(&r, &f.attester).is_err());
     // Zero is out of band (min_answer > 0).
-    let r0 = report(&f.e, 0, 1, 1_000_000);
+    let r0 = input(&f.e, 0, 1_000_000);
     assert!(f.oracle.try_attest(&r0, &f.attester).is_err());
 }
 
 #[test]
 fn attest_enforces_cooldown_and_deviation() {
     let f = setup();
-    let r1 = report(&f.e, SCALE, 1, 1_000_000);
+    let r1 = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r1, &f.attester);
 
     // Cooldown: only 30s later (< 60), reject.
     f.e.ledger().set_timestamp(10_030);
-    let r2 = report(&f.e, SCALE, 2, 1_000_000);
+    let r2 = input(&f.e, SCALE, 1_000_000);
     assert!(f.oracle.try_attest(&r2, &f.attester).is_err());
 
     // Past cooldown now.
     f.e.ledger().set_timestamp(10_100);
     // Deviation: +20% exceeds the 10% cap.
-    let big = report(&f.e, SCALE + SCALE / 5, 2, 1_000_000);
+    let big = input(&f.e, SCALE + SCALE / 5, 1_000_000);
     assert!(f.oracle.try_attest(&big, &f.attester).is_err());
 
     // Valid update: +5% within cap.
-    let ok = report(&f.e, SCALE + SCALE / 20, 2, 1_000_000);
+    let ok = input(&f.e, SCALE + SCALE / 20, 1_000_000);
     f.oracle.attest(&ok, &f.attester);
     assert_eq!(f.oracle.nav_per_share(), SCALE + SCALE / 20);
 }
 
-/// The caller's `timestamp` is advisory: the contract stamps ledger time and
-/// derives `expires_at` from its own freshness window.
+/// The contract stamps ledger time and derives `expires_at` from its own
+/// freshness window.
 #[test]
 fn attest_stamps_its_own_timestamp() {
     let f = setup();
-    let r = report(&f.e, SCALE, 1, 1_000_000);
+    let r = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r, &f.attester);
 
     let stored = f.oracle.latest();
-    assert_eq!(stored.timestamp, 10_000);
+    assert_eq!(stored.accepted_at, 10_000);
     assert_eq!(stored.expires_at, 10_000 + 3600);
 }
 
 #[test]
 fn attesting_publishes_the_stored_valuation() {
     let f = setup();
-    f.oracle
-        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
 
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.oracle.address),
@@ -182,6 +186,8 @@ fn attesting_publishes_the_stored_valuation() {
             attester: f.attester.clone(),
             nav_per_share: SCALE,
             expires_at: 10_000 + 3600,
+            proof_hash: proof(&f.e),
+            proof_uri: String::from_str(&f.e, "ipfs://strata-proof"),
         }
         .to_xdr(&f.e, &f.oracle.address)]
     );
@@ -190,8 +196,7 @@ fn attesting_publishes_the_stored_valuation() {
 #[test]
 fn the_latest_valuation_keeps_a_full_ttl_while_it_is_read() {
     let f = setup();
-    f.oracle
-        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
 
     f.e.ledger()
         .with_mut(|l| l.sequence_number += 2 * DAY_IN_LEDGERS);
@@ -211,7 +216,7 @@ fn the_latest_valuation_keeps_a_full_ttl_while_it_is_read() {
 #[test]
 fn set_config_takes_effect() {
     let f = setup();
-    let r1 = report(&f.e, SCALE, 1, 1_000_000);
+    let r1 = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r1, &f.attester);
 
     // Tighten the per-attestation deviation band to 1%; a subsequent +5% move
@@ -224,7 +229,7 @@ fn set_config_takes_effect() {
     f.oracle.set_config(&tight);
 
     f.e.ledger().set_timestamp(10_100);
-    let five_pct = report(&f.e, SCALE + SCALE / 20, 2, 1_000_000);
+    let five_pct = input(&f.e, SCALE + SCALE / 20, 1_000_000);
     assert!(
         f.oracle.try_attest(&five_pct, &f.attester).is_err(),
         "the tightened band rejects a +5% move"
@@ -235,14 +240,14 @@ fn set_config_takes_effect() {
 fn attest_is_role_gated() {
     let f = setup();
     let stranger = Address::generate(&f.e);
-    let r = report(&f.e, SCALE, 1, 1_000_000);
+    let r = input(&f.e, SCALE, 1_000_000);
     assert!(f.oracle.try_attest(&r, &stranger).is_err());
 }
 
 #[test]
 fn narrowing_the_band_demotes_a_stored_record() {
     let f = setup();
-    let r = report(&f.e, SCALE, 1, 1_000_000);
+    let r = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
@@ -325,7 +330,7 @@ fn only_admin_can_set_config() {
 #[test]
 fn the_guardian_pauses_the_nav_but_unpausing_needs_governance() {
     let f = setup();
-    let r = report(&f.e, SCALE, 1, 1_000_000);
+    let r = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 
@@ -383,12 +388,11 @@ fn a_full_downside_cap_lets_a_large_loss_land_at_once() {
     cfg.max_down_bps = 10_000;
     let f = setup_with(cfg);
 
-    f.oracle
-        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
     f.e.ledger().set_timestamp(10_100);
 
     // A 40% fall, far past the 10% upward cap, is admitted at once.
-    let crash = report(&f.e, SCALE * 60 / 100, 2, 1_000_000);
+    let crash = input(&f.e, SCALE * 60 / 100, 1_000_000);
     f.oracle.attest(&crash, &f.attester);
     assert_eq!(f.oracle.nav_per_share(), SCALE * 60 / 100);
 }
@@ -399,11 +403,10 @@ fn a_full_downside_cap_still_bounds_a_rise() {
     cfg.max_down_bps = 10_000;
     let f = setup_with(cfg);
 
-    f.oracle
-        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
     f.e.ledger().set_timestamp(10_100);
 
-    let spike = report(&f.e, SCALE * 140 / 100, 2, 1_000_000);
+    let spike = input(&f.e, SCALE * 140 / 100, 1_000_000);
     assert!(f.oracle.try_attest(&spike, &f.attester).is_err());
 }
 
@@ -411,11 +414,10 @@ fn a_full_downside_cap_still_bounds_a_rise() {
 fn a_configured_downside_still_bounds_a_fall() {
     let f = setup();
 
-    f.oracle
-        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
     f.e.ledger().set_timestamp(10_100);
 
-    let crash = report(&f.e, SCALE * 60 / 100, 2, 1_000_000);
+    let crash = input(&f.e, SCALE * 60 / 100, 1_000_000);
     assert!(f.oracle.try_attest(&crash, &f.attester).is_err());
 }
 
@@ -437,8 +439,7 @@ fn constructor_rejects_a_zero_upside_cap() {
 #[test]
 fn the_record_clears_only_while_the_nav_is_paused() {
     let f = setup();
-    f.oracle
-        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
 
     assert!(f.oracle.try_clear_latest().is_err());
 
@@ -448,7 +449,7 @@ fn the_record_clears_only_while_the_nav_is_paused() {
     // With no stored record, one in-band value lands however far it sits.
     f.oracle.set_nav_paused(&false);
     f.e.ledger().set_timestamp(10_100);
-    let far = report(&f.e, SCALE * 50, 2, 1_000_000);
+    let far = input(&f.e, SCALE * 50, 1_000_000);
     f.oracle.attest(&far, &f.attester);
     assert_eq!(f.oracle.nav_per_share(), SCALE * 50);
 }
@@ -457,7 +458,7 @@ fn the_record_clears_only_while_the_nav_is_paused() {
 fn only_admin_can_clear_latest() {
     let f = setup();
     let stranger = Address::generate(&f.e);
-    let r = report(&f.e, SCALE, 1, 1_000_000);
+    let r = input(&f.e, SCALE, 1_000_000);
     f.oracle.attest(&r, &f.attester);
     f.oracle.pause_nav(&f.guardian);
 
@@ -501,21 +502,19 @@ fn a_full_downside_cap_leaves_min_answer_as_the_only_floor() {
     cfg.max_down_bps = 10_000;
     let f = setup_with(cfg);
 
-    f.oracle
-        .attest(&report(&f.e, SCALE, 1, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
     f.e.ledger().set_timestamp(10_100);
 
     // Straight to the floor in one step, whatever the distance.
     let floor = config().min_answer;
-    f.oracle
-        .attest(&report(&f.e, floor, 2, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, floor, 1_000_000), &f.attester);
     assert_eq!(f.oracle.nav_per_share(), floor);
 
     // Below the floor is refused, so min_answer is the only bound.
     f.e.ledger().set_timestamp(10_200);
     assert!(f
         .oracle
-        .try_attest(&report(&f.e, floor - 1, 3, 1_000_000), &f.attester)
+        .try_attest(&input(&f.e, floor - 1, 1_000_000), &f.attester)
         .is_err());
 }
 
@@ -524,8 +523,7 @@ fn attested_at_is_when_the_contract_took_the_report_not_when_the_caller_says() {
     let f = setup();
     f.e.ledger().set_timestamp(50_000);
 
-    f.oracle
-        .attest(&report(&f.e, SCALE, 7, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
 
     assert_eq!(f.oracle.attested_at(), 50_000);
 }
@@ -541,7 +539,7 @@ fn attested_at_without_a_report_is_refused() {
 fn a_reporter_expiry_inside_the_window_is_kept() {
     let f = setup();
     f.oracle
-        .attest(&report(&f.e, SCALE, 0, 10_000 + 600), &f.attester);
+        .attest(&input(&f.e, SCALE, 10_000 + 600), &f.attester);
 
     assert_eq!(f.oracle.latest().expires_at, 10_000 + 600);
     f.e.ledger().set_timestamp(10_000 + 601);
@@ -552,19 +550,9 @@ fn a_reporter_expiry_inside_the_window_is_kept() {
 fn a_reporter_expiry_past_the_window_is_cut_to_the_window() {
     let f = setup();
     f.oracle
-        .attest(&report(&f.e, SCALE, 0, 10_000 + 10_000), &f.attester);
+        .attest(&input(&f.e, SCALE, 10_000 + 10_000), &f.attester);
 
     assert_eq!(f.oracle.latest().expires_at, 10_000 + 3600);
-}
-
-#[test]
-fn the_reporters_timestamp_is_ignored() {
-    let f = setup();
-    f.oracle
-        .attest(&report(&f.e, SCALE, 99_999, 1_000_000), &f.attester);
-
-    assert_eq!(f.oracle.latest().timestamp, 10_000);
-    assert_eq!(f.oracle.attested_at(), 10_000);
 }
 
 #[test]
@@ -574,14 +562,13 @@ fn attesting_is_refused_while_the_nav_is_paused() {
 
     assert_eq!(
         f.oracle
-            .try_attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester)
+            .try_attest(&input(&f.e, SCALE, 1_000_000), &f.attester)
             .err(),
         Some(Ok(crate::OracleError::NavPaused.into()))
     );
 
     f.oracle.set_nav_paused(&false);
-    f.oracle
-        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
     assert_eq!(f.oracle.state(), OracleState::Valid);
 }
 
@@ -590,20 +577,18 @@ fn two_reports_in_one_ledger_are_refused_at_the_shortest_cooldown() {
     let mut cfg = config();
     cfg.cooldown_secs = crate::MIN_COOLDOWN_SECS;
     let f = setup_with(cfg);
-    f.oracle
-        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
 
     assert_eq!(
         f.oracle
-            .try_attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester)
+            .try_attest(&input(&f.e, SCALE, 1_000_000), &f.attester)
             .err(),
         Some(Ok(crate::OracleError::CooldownActive.into()))
     );
 
     f.e.ledger()
         .set_timestamp(10_000 + crate::MIN_COOLDOWN_SECS);
-    f.oracle
-        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
 }
 
 fn refuses_config(cfg: OracleConfig) {
@@ -675,8 +660,7 @@ fn implements_the_feed<T: strata_bindings::OracleFeed>() {}
 fn the_oracle_answers_the_feed_interface_the_vault_reads() {
     implements_the_feed::<NavOracleContract>();
     let f = setup();
-    f.oracle
-        .attest(&report(&f.e, SCALE, 0, 1_000_000), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
 
     let feed = strata_bindings::OracleFeedClient::new(&f.e, &f.oracle.address);
 
@@ -697,4 +681,104 @@ fn a_missing_config_is_refused_by_name() {
         f.oracle.try_config(),
         Err(Ok(crate::OracleError::NotInitialized.into()))
     );
+}
+
+mod proof_reference {
+    use soroban_sdk::contracttype;
+
+    use super::*;
+    use crate::{OracleError, MAX_PROOF_URI_LEN};
+
+    #[test]
+    fn the_latest_report_carries_its_proof() {
+        let f = setup();
+
+        f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
+
+        let latest = f.oracle.latest();
+        assert_eq!(latest.proof_hash, proof(&f.e));
+        assert_eq!(
+            latest.proof_uri,
+            String::from_str(&f.e, "ipfs://strata-proof")
+        );
+    }
+
+    #[test]
+    fn a_report_without_a_proof_hash_is_refused() {
+        let f = setup();
+        let mut unproven = input(&f.e, SCALE, 1_000_000);
+        unproven.proof_hash = BytesN::from_array(&f.e, &[0; 32]);
+
+        assert_eq!(
+            f.oracle.try_attest(&unproven, &f.attester).err(),
+            Some(Ok(OracleError::EmptyProofHash.into())),
+        );
+    }
+
+    #[test]
+    fn a_proof_uri_past_the_limit_is_refused() {
+        let f = setup();
+        let mut long = input(&f.e, SCALE, 1_000_000);
+        long.proof_uri = String::from_bytes(&f.e, &[b'x'; (MAX_PROOF_URI_LEN + 1) as usize]);
+
+        assert_eq!(
+            f.oracle.try_attest(&long, &f.attester).err(),
+            Some(Ok(OracleError::ProofUriTooLong.into())),
+        );
+    }
+
+    #[test]
+    fn a_hash_without_a_uri_is_enough() {
+        let f = setup();
+        let mut bare = input(&f.e, SCALE, 1_000_000);
+        bare.proof_uri = String::from_str(&f.e, "");
+
+        f.oracle.attest(&bare, &f.attester);
+
+        assert_eq!(f.oracle.latest().proof_uri.len(), 0);
+    }
+
+    /// The report as earlier releases stored it: same fields, same encoding.
+    #[contracttype]
+    struct EarlierNavReport {
+        nav_per_share: i128,
+        expires_at: u64,
+        timestamp: u64,
+    }
+
+    #[test]
+    fn a_report_of_the_earlier_shape_is_cleared_and_replaced() {
+        let f = setup();
+        f.e.as_contract(&f.oracle.address, || {
+            f.e.storage().persistent().set(
+                &DataKey::Latest,
+                &EarlierNavReport {
+                    nav_per_share: SCALE,
+                    expires_at: 10_000 + 3600,
+                    timestamp: 10_000,
+                },
+            )
+        });
+        f.e.ledger().set_timestamp(10_100);
+        let next = input(&f.e, SCALE * 2, 1_000_000);
+
+        assert!(f.oracle.try_latest().is_err());
+        assert!(f.oracle.try_state().is_err());
+        assert!(f.oracle.try_attest(&next, &f.attester).is_err());
+
+        f.oracle.pause_nav(&f.guardian);
+        assert_eq!(f.oracle.state(), OracleState::Paused);
+        f.oracle.clear_latest();
+        f.oracle.set_nav_paused(&false);
+        f.oracle.attest(&next, &f.attester);
+
+        let latest = f.oracle.latest();
+        assert_eq!(latest.nav_per_share, SCALE * 2);
+        assert_eq!(latest.accepted_at, 10_100);
+        assert_eq!(latest.proof_hash, proof(&f.e));
+        assert_eq!(
+            latest.proof_uri,
+            String::from_str(&f.e, "ipfs://strata-proof")
+        );
+    }
 }

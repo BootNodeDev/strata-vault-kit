@@ -155,14 +155,8 @@ fn a_pending_request_still_claims_after_most_of_a_month() {
     let epoch = f.close_epoch();
 
     f.advance(29 * DAY_DURATION);
-    f.oracle.attest(
-        &NavReport {
-            nav_per_share: wad(2),
-            timestamp: 0,
-            expires_at: u64::MAX,
-        },
-        &f.attester,
-    );
+    f.oracle
+        .attest(&nav_input(&f.e, wad(2), u64::MAX), &f.attester);
     f.vault.fulfill_epoch(&epoch);
 
     assert_eq!(f.vault.claim_deposit(&user, &epoch), 200);
