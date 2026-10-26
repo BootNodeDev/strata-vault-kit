@@ -519,7 +519,7 @@ fn a_full_downside_cap_leaves_min_answer_as_the_only_floor() {
 }
 
 #[test]
-fn attested_at_is_when_the_contract_took_the_report_not_when_the_caller_says() {
+fn attested_at_is_when_the_contract_took_the_report() {
     let f = setup();
     f.e.ledger().set_timestamp(50_000);
 
@@ -685,6 +685,7 @@ fn a_missing_config_is_refused_by_name() {
 
 mod proof_reference {
     use soroban_sdk::contracttype;
+    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
 
     use super::*;
     use crate::{OracleError, MAX_PROOF_URI_LEN};
@@ -728,6 +729,28 @@ mod proof_reference {
     }
 
     #[test]
+    fn a_proof_uri_at_the_limit_is_stored_and_published() {
+        let f = setup();
+        let mut longest = input(&f.e, SCALE, 1_000_000);
+        longest.proof_uri = String::from_bytes(&f.e, &[b'x'; MAX_PROOF_URI_LEN as usize]);
+
+        f.oracle.attest(&longest, &f.attester);
+
+        assert_eq!(
+            f.e.events().all().filter_by_contract(&f.oracle.address),
+            [crate::NavAttested {
+                attester: f.attester.clone(),
+                nav_per_share: SCALE,
+                expires_at: 10_000 + 3600,
+                proof_hash: proof(&f.e),
+                proof_uri: longest.proof_uri.clone(),
+            }
+            .to_xdr(&f.e, &f.oracle.address)]
+        );
+        assert_eq!(f.oracle.latest().proof_uri, longest.proof_uri);
+    }
+
+    #[test]
     fn a_hash_without_a_uri_is_enough() {
         let f = setup();
         let mut bare = input(&f.e, SCALE, 1_000_000);
@@ -746,6 +769,12 @@ mod proof_reference {
         timestamp: u64,
     }
 
+    /// What a caller sees when the host cannot run a call, such as one that
+    /// reads an entry it cannot decode. A contract error carries its own code.
+    fn host_refusal() -> soroban_sdk::Error {
+        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
+    }
+
     #[test]
     fn a_report_of_the_earlier_shape_is_cleared_and_replaced() {
         let f = setup();
@@ -759,12 +788,16 @@ mod proof_reference {
                 },
             )
         });
+        // Past the cooldown and inside the cap: only the old entry can refuse it.
         f.e.ledger().set_timestamp(10_100);
-        let next = input(&f.e, SCALE * 2, 1_000_000);
+        let next = input(&f.e, SCALE + SCALE / 20, 1_000_000);
 
-        assert!(f.oracle.try_latest().is_err());
-        assert!(f.oracle.try_state().is_err());
-        assert!(f.oracle.try_attest(&next, &f.attester).is_err());
+        assert_eq!(f.oracle.try_latest().err(), Some(Ok(host_refusal())));
+        assert_eq!(f.oracle.try_state().err(), Some(Ok(host_refusal())));
+        assert_eq!(
+            f.oracle.try_attest(&next, &f.attester).err(),
+            Some(Ok(host_refusal()))
+        );
 
         f.oracle.pause_nav(&f.guardian);
         assert_eq!(f.oracle.state(), OracleState::Paused);
@@ -773,7 +806,7 @@ mod proof_reference {
         f.oracle.attest(&next, &f.attester);
 
         let latest = f.oracle.latest();
-        assert_eq!(latest.nav_per_share, SCALE * 2);
+        assert_eq!(latest.nav_per_share, SCALE + SCALE / 20);
         assert_eq!(latest.accepted_at, 10_100);
         assert_eq!(latest.proof_hash, proof(&f.e));
         assert_eq!(
