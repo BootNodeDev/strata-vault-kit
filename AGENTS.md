@@ -80,7 +80,13 @@ apply as the corresponding code lands here.
   `scripts/generate-clients.mjs`, which reads the contract ids and RPC URL of
   `ADDRESSES_ENV` (default `staging`) from `environments.toml` and writes
   `app-lib/clients/<contract>/` from each contract's on-chain spec, with Node
-  alone. Those generated types are the only contract types; `app-lib/contracts.ts`
+  alone. `development` declares no ids: there the script resolves each
+  `[development.contracts.<name>]` block plus an alias named `asset` through
+  `stellar contract alias show`, so CI builds the app against the contracts
+  the branch just deployed. The scaffold registers the block aliases when it
+  deploys; the asset is a Stellar Asset Contract a developer registers once with
+  `stellar contract asset deploy --asset native --alias asset --source me`
+  against the local network. Those generated types are the only contract types; `app-lib/contracts.ts`
   re-exports them and builds each runtime client with `new Client(...)` from its
   generated `src/index`, whose embedded spec means no page fetches a contract's
   instance or Wasm. Vite dedupes `@stellar/stellar-sdk` so a client's nested copy
