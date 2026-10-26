@@ -9,13 +9,7 @@ paths. Tranche 3's threat-to-test matrix builds on it.
 - **Contracts.** `async-vault`, `share-token` and `nav-oracle`, the testnet
   stubs `identity-verifier` and `compliance`, and the shared crates
   `strata-timelock`, `strata-bindings` and `strata-storage`, at commit
-  `de7a524`.
-- **One rule ahead of that commit.** After setup, a compliance swap on the
-  share token accepts a standard compliance contract that does not answer the
-  kit's `VaultBinding` views, as `finish_setup` already does, provided it lists
-  the token. This was decided on 2026-10-26 and is being built in
-  [#334](https://github.com/BootNodeDev/strata-vault-kit/pull/334). At
-  `de7a524` the token still refuses such a contract.
+  `f3c03f8`.
 - **The console**, as far as signing goes: the `/sign` page that collects an
   authority's signatures (R12).
 - **Not the testnet deployment.** The deployment listed in the
@@ -322,9 +316,11 @@ A report's evidence is missing, wrong, or has nothing to do with the price.
 ### O11. An oracle upgraded in place cannot read its old report
 
 Releases before the proof reference stored the report in another shape. An
-oracle upgraded in place from one of them cannot read it, so every read fails.
-Pricing stops, and so does cancelling a request in a sealed epoch, because the
-vault asks the feed's state first.
+oracle upgraded in place from one of them cannot read it, so every read of the
+report fails, and pricing stops. Cancelling a request in a sealed epoch fails
+too while the vault is unpaused and not winding down, because the vault then
+asks the feed's state first. A cancellation in the open epoch, in a paused
+vault or during a wind-down still works: the vault does not ask the feed then.
 
 - **Control:** The recovery in the
   [kit spec](./kit-spec.md#upgrading-the-oracle-from-an-earlier-release): pause
@@ -332,9 +328,9 @@ vault asks the feed's state first.
   pause, and attest. While the NAV is paused, `state()` answers `Paused` without
   reading the report, and neither `pause_nav` nor `clear_latest` reads it. After
   setup the upgrade itself waits for the timelock.
-- **Residual:** If the upgrade lands before the NAV pause, those calls fail
-  until the NAV is paused. The first report after the clear has no earlier price
-  to cap it (O8). A fresh deployment has no old report.
+- **Residual:** If the upgrade lands before the NAV pause, pricing and those
+  cancellations fail until the NAV is paused. The first report after the clear
+  has no earlier price to cap it (O8). A fresh deployment has no old report.
 - **Tests:** `a_report_of_the_earlier_shape_is_cleared_and_replaced` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
 
@@ -463,8 +459,9 @@ binding missing.
   - the vault is the token's only `manager`, and no shares exist yet;
   - the vault passes the identity check and is not frozen on the token;
   - the token is in its compliance contract's `linked_tokens`, and a compliance
-    contract that answers `VaultBinding` names this vault with its setup
-    finished (one that does not answer is accepted as external);
+    contract that answers both `VaultBinding` views names this vault with its
+    setup finished (one that leaves either view unanswered is accepted as
+    external);
   - the asset and the token have the same decimals, and the asset, the token,
     the oracle and the vault are four different addresses;
   - the oracle answers `state()` and `freshness_duration()`, and a custodian
@@ -542,22 +539,30 @@ compromise reaches several powers.
 
 - **Control:** The vault's constructor refuses four pairs of equal addresses:
   treasury and guardian, treasury and governance, compliance and governance,
-  compliance and treasury. It compares nothing else, and it is the only check.
+  compliance and treasury. It compares nothing else, and it is the only check
+  on who holds which role. Separately, the share token refuses a legal
+  transfer or a recovery signed by one account in both seats, compliance and
+  admin (R10); that check does not stop the grant itself.
 - **Residual:** Nothing checks later grants or hand-overs: governance can grant
   itself the vault's treasury role, at once during setup or through the
   timelock after it. Separation is not enforced across contracts either: the
   oracle's, the token's and the verifier's roles are constructor parameters,
   equal to the vault's authorities by deploy only. Governance may also be the
-  guardian, and the manager may be anyone. The checks are being redesigned so
-  that a deployment may choose to run every role from one key, which the four
-  refusals forbid today at construction. Until then, holders read each
-  contract's role holders; the verifier stub has no view of its admin.
+  guardian, and the manager may be anyone. Every check compares addresses, and
+  two Stellar accounts can share a signer, so distinct addresses do not prove
+  distinct keys. The checks are being redesigned so that a deployment may
+  choose to run every role from one key, which the four refusals forbid today
+  at construction. Until then, holders read each contract's role holders; the
+  verifier stub has no view of its admin.
 - **Tests:** `the_treasury_may_not_also_be_the_guardian`,
   `the_treasury_may_not_also_be_governance`,
   `compliance_may_not_also_be_governance`,
   `compliance_may_not_also_be_the_treasury` and
   `the_guardian_may_be_governance` in
-  [`constructor.rs`](../contracts/async-vault/src/test/constructor.rs). Later
+  [`constructor.rs`](../contracts/async-vault/src/test/constructor.rs);
+  `one_account_cannot_co_sign_with_itself` (the grant of `compliance` to the
+  admin goes through; the call it then signs alone is refused) in
+  [`share-token/src/test.rs`](../contracts/share-token/src/test.rs). Later
   grants and other contracts: none, because nothing checks them.
 
 ### R6. Guardian compromised
@@ -696,27 +701,29 @@ change without notice.
 
 - **Control:** After setup a swap waits for the vault's timelock. It is checked
   when proposed and again when applied. New rules must list the token in
-  `linked_tokens`. If they answer the kit's `VaultBinding` views, they must name
-  this vault and have finished their setup; a standard compliance contract that
-  does not answer those views is accepted as external, as `finish_setup`
-  accepts one. A new verifier must accept the vault's address.
+  `linked_tokens`. If they answer both of the kit's `VaultBinding` views,
+  `vault()` and `setup_open()`, they must name this vault with their setup
+  finished. A compliance contract that leaves either view unanswered is
+  accepted as external, as `finish_setup` accepts one. A new verifier must
+  accept the vault's address.
 - **Residual:** The checks catch wiring mistakes, not intent. An external
   compliance contract keeps its own governance: its module changes do not wait
-  for the vault's timelock. A new verifier can refuse every holder, which stops
-  deposits but leaves exits in cash, or accept anyone. At `de7a524` the token
-  still refuses an external compliance contract;
-  [#334](https://github.com/BootNodeDev/strata-vault-kit/pull/334) makes the
-  change, with its test.
+  for the vault's timelock. The binding views prove nothing either: rules that
+  name another vault, or whose setup is open, pass as soon as they stop
+  answering one view, even between proposal and apply. A new verifier can
+  refuse every holder, which stops deposits but leaves exits in cash, or accept
+  anyone.
 - **Tests:** `rules_off_this_vaults_clock_or_without_the_token_are_never_proposed`,
   `rules_that_stop_qualifying_are_never_installed`,
+  `rules_from_outside_the_kit_are_installed_while_they_list_the_token`,
+  `rules_that_stop_answering_a_binding_view_are_installed_as_external`,
   `a_verifier_that_refuses_the_vault_or_cannot_answer_is_never_proposed` and
   `a_verifier_that_stops_accepting_the_vault_is_never_installed` in
   [`share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs);
   `an_unbound_compliance_swap_is_refused_and_every_move_goes_on` in
   [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs); "refuses
   an instant verifier swap, even from governance" in
-  [`scripts/harness/guards.test.ts`](../scripts/harness/guards.test.ts). A swap
-  to an external compliance contract: none at `de7a524`.
+  [`scripts/harness/guards.test.ts`](../scripts/harness/guards.test.ts).
 
 ### R12. A crafted transaction on the console's signing page
 
@@ -962,7 +969,10 @@ others' cost.
   `a_round_leaves_priced_liabilities_alone`,
   `the_payouts_never_exceed_what_the_rounds_credited` and
   `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder` in
-  [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs). For
+  [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
+  `wind_down_delay_elapsed_refuses_before_the_activation_time` (the guard
+  `activate_wind_down` runs) in
+  [`guards.rs`](../contracts/async-vault/src/test/guards.rs). For
   `uncovered()` with round credits: none, because the fix is not built.
 
 ### X9. Rounding and amounts below one share
@@ -1085,15 +1095,15 @@ or queued changes.
   existed
   ([kit spec, Invariant 7](./kit-spec.md#invariant-7-directional-rounding--non-creation-of-value)).
   The oracle's own case has a written recovery (O11).
-- **Residual:** No release ships a `migrate`; only test builds have one. No test
-  upgrades the vault to code that reads requests or positions written in an
-  earlier shape. If an upgrade changes a stored struct's fields or a variant's
-  payload, every entry of the old shape fails to decode. Claims and
-  cancellations on old requests then revert, and so do `pending_changes()`,
-  applying a queued change of the old shape, and proposing an upgrade while any
-  change of the old shape is queued. Cancelling such a change still works,
-  since cancelling does not read it. Recovery needs a migration written for
-  that release.
+- **Residual:** No release ships a `migrate`; only test builds have one. If an
+  upgrade changes a stored struct's fields or a variant's payload, every entry
+  of the old shape fails to decode. Read from the code, not from a test, that
+  would mean: claims and cancellations on old requests revert, and so do
+  `pending_changes()`, applying a queued change of the old shape, and proposing
+  a code change while any change of the old shape is queued (an upgrade, or on
+  the vault also an upgrade-delay change). Cancelling such a change still
+  works, since cancelling does not read it. Recovery needs a migration written
+  for that release.
 - **Tests:** `applying_a_wasm_change_replaces_the_code` and
   `a_migration_refuses_a_second_run` (a stand-in contract with a test-only
   `migrate`), and `the_token_upgrades_under_live_balances_and_open_requests`
@@ -1102,7 +1112,9 @@ or queued changes.
   [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
   `the_oracle_upgrades_under_a_live_valuation`, also with `upgrade_wasm`, in
   [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs).
-  A vault upgrade over stored entries of another shape: none.
+  A vault upgrade over stored entries of another shape: none, because no
+  release changes a stored type yet. The failures above are read from the
+  code, and a test belongs with the first release that changes one.
 
 ## Known limits
 
@@ -1116,10 +1128,12 @@ These are decided, and stated as they stand:
    plans sealing by anyone after a minimum epoch length.
 3. The identity verifier and compliance contracts in this repository are
    testnet stubs, not for mainnet (R9, R11).
-4. Role separation is checked only by the vault's constructor, for four pairs;
-   later grants and the other contracts' roles are not checked (R5). The checks
-   are being redesigned so that a deployment may choose to run every role from
-   one key, which the constructor's four refusals forbid today.
+4. The vault's constructor is the only check on who holds which role, for four
+   pairs; later grants and the other contracts' roles are not checked (R5). The
+   share token does refuse a legal transfer or recovery signed by one account
+   as both compliance and admin (R10). The checks are being redesigned so that
+   a deployment may choose to run every role from one key, which the
+   constructor's four refusals forbid today at construction.
 5. `uncovered()` leaves out what a wind-down owes, although `free_reserve()`
    subtracts it (X8).
 6. No test signs through a relayer: the kit runs none, and whoever sends a
@@ -1137,13 +1151,12 @@ For Tranche 3's matrix:
   relayer (R4).
 - Role separation after construction and across contracts, which nothing
   checks yet (R5).
-- A compliance swap to an external contract, which comes with
-  [#334](https://github.com/BootNodeDev/strata-vault-kit/pull/334) (R11).
 - `uncovered()` with wind-down credits (X8).
 - The deposit asset's issuer freezing or clawing back the vault's balance, and
   a deploy check of the asset's authorization flags (X10).
 - The cost of a call, and contention between calls in one ledger (X12).
-- A vault upgrade over requests or positions stored in an earlier shape (X13).
+- A vault upgrade over requests, positions or queued changes stored in an
+  earlier shape (X13).
 - Alerts on large price moves, on `LatestCleared` and on the report after it
   (O2, O8), which belong to the monitoring plan.
 
