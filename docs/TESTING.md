@@ -137,7 +137,7 @@ so time rules and TTL can be reached in one test.
 | The vault publishes each step of a deposit with its amounts | [`contracts/async-vault/src/test/events.rs`](../contracts/async-vault/src/test/events.rs) | `requesting_a_deposit_publishes_the_request`, `closing_an_epoch_publishes_its_totals`, `pricing_an_epoch_publishes_the_share_price`, `claiming_the_last_deposit_publishes_the_shares_paid_and_the_settlement` |
 | A refused call publishes nothing | [`contracts/async-vault/src/test/events.rs`](../contracts/async-vault/src/test/events.rs) | `a_refused_call_publishes_nothing` |
 | An epoch's rounding remainder is cleared once its last request settles, a settled epoch leaves nothing in the totals whatever the claim order (property test), and a request that can never settle (a refused redemption or a refused mint) keeps its epoch open | [`contracts/async-vault/src/test/settlement.rs`](../contracts/async-vault/src/test/settlement.rs) | `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once`, `an_epoch_with_no_requests_settles_when_it_is_priced`, `a_settled_epoch_leaves_no_remainder_in_the_totals`, `a_request_that_cannot_settle_keeps_its_epoch_open`, `a_refused_mint_keeps_a_priced_deposit_epoch_open` |
-| The oracle publishes the valuation it stored, with its proof reference | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `attesting_publishes_the_stored_valuation` |
+| The oracle publishes the valuation it stored, with its proof reference | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `attesting_publishes_the_stored_valuation`, `a_proof_uri_at_the_limit_is_stored_and_published` |
 | The vault publishes the end of its setup, and an applied change publishes its own event before `ChangeApplied` | [`contracts/async-vault/src/test/setup.rs`](../contracts/async-vault/src/test/setup.rs), [`contracts/async-vault/src/test/governance.rs`](../contracts/async-vault/src/test/governance.rs) | `finishing_setup_publishes_it`, `applying_a_custodian_change_publishes_both_events` |
 
 ## Calls between contracts
@@ -162,10 +162,12 @@ fixture wires them as the deploy does and finishes the vault's setup;
 | The oracle upgrades through the vault's timelock under a live valuation, keeps its config, roles and vault, and migrates once; called directly, `upgrade` does not exist | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) (needs `upgrade_wasm`) | `the_oracle_upgrades_under_a_live_valuation`, `the_oracle_exposes_no_immediate_upgrade` |
 | An oracle upgraded in place cannot read a report an earlier release stored; pausing the NAV, clearing the report and lifting the pause let the attester post a new one | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `a_report_of_the_earlier_shape_is_cleared_and_replaced` |
 
-On the network, the harness attests with the SHA-256 and URL of
-[`docs/evidence/sample-valuation.md`](./evidence/sample-valuation.md), a sample
-marked as test data, so every testnet attestation points at a real file whose
-bytes match its hash.
+The harness's own attestations, from its tests and `npm run seed`, carry the
+SHA-256 of [`docs/evidence/sample-valuation.md`](./evidence/sample-valuation.md),
+a sample marked as test data, and a URL to it. By default the URL is the file's
+raw copy on `main`, which resolves once the file is on `main`; the hash then
+matches only while that copy is unchanged. With `PROOF_URI` pointing at a
+release tag's copy, the URL and the hash name the same bytes for good.
 
 ## Contract spec docs and error codes
 

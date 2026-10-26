@@ -233,7 +233,7 @@ Pause first, so no report lands while the roles change, and lift the pause last:
 
 Releases before the proof reference stored the report as `nav_per_share`, `expires_at` and `timestamp`. This version stores `nav_per_share`, `expires_at`, `accepted_at`, `proof_hash` and `proof_uri`, and cannot read a report of the earlier shape. After an in-place upgrade, every call that reads the old report fails: `latest`, `nav_per_share`, `attested_at`, `is_stale` and `attest`, and also `state` and `ensure_consumable` while the NAV is not paused. The vault then cannot price, and cancelling a request in a sealed epoch fails. No migration rewrites the old report. Clear it instead:
 
-1. Pause the NAV before the upgrade applies: the guardian calls `pause_nav`, or the admin calls `set_nav_paused(true)`. While the NAV is paused, `state` answers `Paused` without reading the report, so the vault prices nothing and requests in sealed epochs stay cancellable.
+1. Pause the NAV before the upgrade applies: the guardian calls `pause_nav`, or the admin calls `set_nav_paused(true)`. While the NAV is paused, `state` answers `Paused` without reading the report, so the vault prices nothing and requests in sealed epochs stay cancellable. If the upgrade applied first, pause the NAV at once: neither `pause_nav` nor `clear_latest` reads the report.
 2. Apply the upgrade: `apply_change` once its delay has run.
 3. Remove the old report: `clear_latest` (admin). It deletes the entry without reading it.
 4. Lift the NAV pause: `set_nav_paused(false)` (admin).

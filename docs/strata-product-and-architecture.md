@@ -281,8 +281,8 @@ under the [Admin panel](#admin-panel) table in §8.8.
 
 Both interfaces are backend-free: they read contract state and build
 transactions that the authority multisigs sign. The chain never sees KYC data or
-valuation methodology, only their outputs: an allowlisted address, an attested
-number.
+valuation methodology, only their outputs: an allowlisted address, and an
+attested number with a hash of its evidence and, optionally, where to read it.
 
 ### 8.3 Components and authorities
 
