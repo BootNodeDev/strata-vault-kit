@@ -66,7 +66,7 @@ Console tests, also cited by title, run with `npm run test`.
 | --- | --- |
 | Governance | Admin of the vault. By deploy, also admin of the share token, the oracle and the compliance contract. |
 | Guardian | Pauses the vault (vault `guardian`). By deploy, also pauses the NAV (oracle `guardian`). |
-| Manager | Seals the open epoch (vault `manager`). A role, not one of the five authorities. |
+| Manager | Seals the open epoch with `close_epoch` (vault `manager`); "sealed" below means closed this way. A role, not one of the five authorities. |
 | Treasury | Sends free reserve to the custodian (vault `treasury`). |
 | Attester | Posts the share price (oracle `attester`). |
 | Compliance | Freezes holders, and with governance makes legal transfers and recoveries (share token `compliance`). By deploy, also lists and delists addresses (identity verifier admin). |
@@ -110,9 +110,12 @@ The attester, compromised or careless, posts a price that passes every check.
   price with its evidence (O10).
 - **Tests:** "cannot attest a price" in
   [`scripts/harness/guards.test.ts`](../scripts/harness/guards.test.ts);
-  `attest_rejects_out_of_band`, `attest_enforces_cooldown_and_deviation` and
+  `attest_rejects_out_of_band` (only the floor and zero, through `attest`),
+  `attest_enforces_cooldown_and_deviation` and
   `a_configured_downside_still_bounds_a_fall` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  `nav_in_band_refuses_a_value_outside_the_band` (both ends of the band) in
+  [`nav-oracle/src/test_guards.rs`](../contracts/nav-oracle/src/test_guards.rs);
   `an_epoch_is_not_priced_against_a_valuation_older_than_its_close` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
   `an_epoch_cannot_be_priced_inside_its_notice` in
@@ -204,11 +207,14 @@ valuation made before the seal.
 A holder learns the price of a sealed epoch and cancels if it does not suit
 them.
 
-- **Control:** Once a sealed epoch's price is readable (a valid report accepted
-  at or after the seal, and the vault not paused), cancellation closes, even
-  while the notice runs. It opens again only if the report expires, the NAV is
-  paused or the vault is paused, and no holder can cause any of those. Anyone
-  can price the epoch once its notice ends.
+- **Control:** Once a sealed epoch's price is readable, cancellation closes,
+  even while the notice runs. A price is readable when the feed holds a valid
+  report accepted at or after the seal and the vault is not paused.
+  Cancellation opens again only when that stops being true: the report expires
+  or falls out of the band, the NAV or the vault is paused, the report is
+  cleared, or an oracle swap leaves no such report. A wind-down opens it too.
+  Apart from activating a wind-down that is already due, no holder can cause
+  any of these. Anyone can price the epoch once its notice ends.
 - **Residual:** Whoever knows the price before the report lands, such as the
   attester or anyone the valuation reaches early, can cancel first. If the
   report that closed the window expires before anyone prices the epoch,
@@ -220,6 +226,8 @@ them.
   `cancellation_reopens_when_the_price_that_closed_it_expires` and
   `a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
+  `the_notice_does_not_reopen_the_cancellation_window` in
+  [`notice.rs`](../contracts/async-vault/src/test/notice.rs);
   `anyone_may_fulfill_a_closed_epoch` in
   [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs).
 
@@ -231,8 +239,9 @@ A compromised guardian pauses the NAV, again and again.
   claims and cancellations go on, and sealed epochs can be cancelled again.
   Only the oracle admin lifts it (`set_nav_paused(false)`), and revoking the
   oracle's guardian is instant.
-- **Residual:** Pricing waits until governance lifts the pause or revokes the
-  guardian. The oracle's guardian is the vault's guardian by deploy only.
+- **Residual:** Pricing waits until governance lifts the pause. Revoking the
+  guardian stops further pauses but does not lift this one. The oracle's
+  guardian is the vault's guardian by deploy only.
 - **Tests:** `pausing_the_nav_is_limited_to_the_guardian` and
   `the_guardian_pauses_the_nav_but_unpausing_needs_governance` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
@@ -253,10 +262,10 @@ cap it.
   oracle publishes `LatestCleared`. The band still bounds the next report.
 - **Residual:** The first report after a clear can land anywhere in the band,
   and so can the first report after deployment. Pausing the NAV, clearing and
-  lifting the pause are all instant, also after
-  setup, so the oracle admin and an attester acting together can set any price
-  in the band at once. Alerts on `LatestCleared` and on the report after it
-  belong to the monitoring plan, not written yet.
+  lifting the pause are all instant, also after setup, so the oracle admin and
+  an attester acting together can set any price in the band at once. Alerts on
+  `LatestCleared` and on the report after it belong to the monitoring plan, not
+  written yet.
 - **Tests:** `the_record_clears_only_while_the_nav_is_paused` and
   `only_admin_can_clear_latest` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
@@ -284,8 +293,10 @@ controls.
   `a_config_outside_the_bounds_is_refused_when_it_applies` in
   [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
   `the_oracle_changes_only_through_the_timelock`,
-  `a_feed_outside_this_vault_is_never_proposed` and
-  `a_sealed_epoch_is_priced_by_the_feed_standing_at_fulfilment` in
+  `a_feed_outside_this_vault_is_never_proposed`,
+  `a_feed_that_stops_naming_this_vault_is_never_installed`,
+  `a_contract_that_is_not_a_feed_is_refused_when_proposed_and_when_applied`
+  and `a_sealed_epoch_is_priced_by_the_feed_standing_at_fulfilment` in
   [`oracle_swap.rs`](../contracts/async-vault/src/test/oracle_swap.rs);
   "governance cannot loosen the feed config at once" in
   [`scripts/harness/guards.test.ts`](../scripts/harness/guards.test.ts).
@@ -301,8 +312,11 @@ A report's evidence is missing, wrong, or has nothing to do with the price.
   non-zero hash passes, and the URI may stop working. A reader fetches the
   evidence and compares the hash off chain.
 - **Tests:** `a_report_without_a_proof_hash_is_refused`,
-  `a_proof_uri_past_the_limit_is_refused` and
-  `the_latest_report_carries_its_proof` in
+  `a_proof_uri_past_the_limit_is_refused`,
+  `the_latest_report_carries_its_proof`,
+  `attesting_publishes_the_stored_valuation` and
+  `a_proof_uri_at_the_limit_is_stored_and_published` (both check that
+  `NavAttested` carries the proof) in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
 
 ### O11. An oracle upgraded in place cannot read its old report
@@ -369,11 +383,12 @@ Someone takes governance's keys and changes code, roles or wiring.
 - **Residual:** The delay is notice, not a guaranteed exit: leaving needs a
   sealed epoch, a valid price accepted after the seal, and cash. Once the delay
   runs, an upgrade can do anything, and a vault upgrade can also change the
-  clock the other three contracts read. A second `manager` on the token could mint
-  shares and redeem them against the reserve; `health().sole_token_manager`
-  turns false only when the grant lands. Revoking the vault's `manager` role on
-  the token, or unbinding the token from the compliance contract, stops every
-  request, claim and cancellation that mints, burns or moves shares.
+  clock the other three contracts read. A second `manager` on the token could
+  mint shares and redeem them against the reserve;
+  `health().sole_token_manager` turns false only when the grant lands. Revoking
+  the vault's `manager` role on the token, or unbinding the token from the
+  compliance contract, stops every request, claim and cancellation that mints,
+  burns or moves shares.
 - **Tests:** `grants_and_manager_revokes_wait_for_the_timelock`,
   `a_change_shorter_than_a_raised_notice_never_lands` and
   `nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included` in
@@ -415,7 +430,8 @@ Someone takes governance's keys and uses the powers that need no delay.
     or the token's compliance role;
   - propose or cancel a queued change; propose a wind-down, which waits its own
     delay of 7 to 90 days and which governance may cancel until then;
-  - co-sign a legal transfer with compliance (R10).
+  - co-sign a legal transfer or a recovery (`recover_balance`) with compliance
+    (R10).
 - **Residual:** With an attester, governance can set any price in the band at
   once (O8). With compliance, it can move any holder's wallet shares at once
   (R10). A raised notice delays pricing for every epoch sealed afterwards, and
@@ -455,7 +471,8 @@ binding missing.
     other than the vault is set.
 
   It also refuses while an admin hand-over offered during setup is still open.
-  `health()` reports each check.
+  `health()` reports each of these checks except two: that no shares exist yet,
+  and that no hand-over is pending.
 - **Residual:** Before `finish_setup`, the admin changes anything at once. The
   checks read only the token's `manager` list: a second attester, treasury or
   guardian is not checked, though each contract shows its role holders. An
@@ -491,13 +508,32 @@ than it shows.
   planned. No test submits a privileged call through a relayer that pays the fee
   while the authority signs only its authorization. None is planned: the kit
   runs no relayer or backend, and whoever sends a transaction pays its fee.
-- **Tests:** `each_setup_call_asks_the_admin_for_one_signature`,
-  `each_admin_call_after_setup_asks_the_admin_for_one_signature` and
-  `each_role_call_asks_its_holder_for_one_signature` in
+- **Tests:** `each_setup_call_asks_the_admin_for_one_signature` (the setters,
+  a grant, a revoke, a hand-over offer and its cancellation, `finish_setup`),
+  `each_admin_call_after_setup_asks_the_admin_for_one_signature` (the change
+  queue, `unpause`, a wind-down proposal and its cancellation, accepting a
+  hand-over) and `each_role_call_asks_its_holder_for_one_signature`
+  (`close_epoch`, `deploy_to_custodian`, `pause`, `renounce_role`) in
   [`signatures.rs`](../contracts/async-vault/src/test/signatures.rs);
+  `each_role_call_asks_its_holder_for_one_signature` (mint, burn, forced
+  transfer, the freezes, `renounce_role`) and
   `a_legal_transfer_or_a_recovery_asks_each_signer_once` in
-  [`share-token/src/test.rs`](../contracts/share-token/src/test.rs). Signers
-  and thresholds on the network: none yet.
+  [`share-token/src/test.rs`](../contracts/share-token/src/test.rs);
+  `each_admin_call_asks_the_admin_for_one_signature` (setup, the change queue,
+  roles, the transfer pause, both swaps) in
+  [`share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs);
+  `each_admin_call_asks_the_admin_for_one_signature` (setup, the change queue,
+  roles, `set_config`, the NAV pause, `clear_latest`) and
+  `each_role_call_asks_its_holder_for_one_signature` (`attest`, `pause_nav`,
+  `renounce_role`, accepting a hand-over) in
+  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
+  `each_admin_call_asks_the_admin_for_one_signature` (setup, bindings, modules,
+  the change queue) in
+  [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs);
+  `each_admin_call_asks_the_admin_for_one_signature` (`allow` and
+  `set_claim_topics_and_issuers`) in
+  [`identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs).
+  Signers and thresholds on the network: none yet.
 
 ### R5. One account in several seats
 
@@ -506,20 +542,23 @@ compromise reaches several powers.
 
 - **Control:** The vault's constructor refuses four pairs of equal addresses:
   treasury and guardian, treasury and governance, compliance and governance,
-  compliance and treasury. It compares nothing else.
-- **Residual:** Separation is not enforced across contracts. The oracle's, the
-  token's and the verifier's roles are constructor parameters, equal to the
-  vault's authorities by deploy only. Governance may also be the guardian, and
-  the manager may be anyone. Enforcing separation is being redesigned so that a
-  deployment may still run every role from one key. Until then, holders read
-  each contract's role holders.
+  compliance and treasury. It compares nothing else, and it is the only check.
+- **Residual:** Nothing checks later grants or hand-overs: governance can grant
+  itself the vault's treasury role, at once during setup or through the
+  timelock after it. Separation is not enforced across contracts either: the
+  oracle's, the token's and the verifier's roles are constructor parameters,
+  equal to the vault's authorities by deploy only. Governance may also be the
+  guardian, and the manager may be anyone. The checks are being redesigned so
+  that a deployment may choose to run every role from one key, which the four
+  refusals forbid today at construction. Until then, holders read each
+  contract's role holders; the verifier stub has no view of its admin.
 - **Tests:** `the_treasury_may_not_also_be_the_guardian`,
   `the_treasury_may_not_also_be_governance`,
   `compliance_may_not_also_be_governance`,
   `compliance_may_not_also_be_the_treasury` and
   `the_guardian_may_be_governance` in
-  [`constructor.rs`](../contracts/async-vault/src/test/constructor.rs). Across
-  contracts: none, because nothing checks it.
+  [`constructor.rs`](../contracts/async-vault/src/test/constructor.rs). Later
+  grants and other contracts: none, because nothing checks them.
 
 ### R6. Guardian compromised
 
@@ -638,10 +677,10 @@ The two authorities, colluding or both compromised, take a holder's shares.
   reference of 1 to 128 bytes.
 - **Residual:** Together the two can move any amount of any holder's wallet
   shares at once, with no delay, frozen shares included. With the testnet
-  verifier stub, compliance itself lists the destination. Nothing on chain checks that a legal order
-  exists. `recover_balance` needs the same two signatures and a recovery account
-  named by the verifier; the testnet stub names none, so recovery always fails
-  there.
+  verifier stub, compliance itself lists the destination. Nothing on chain
+  checks that a legal order exists. `recover_balance` needs the same two
+  signatures and a recovery account named by the verifier; the testnet stub
+  names none, so recovery always fails there.
 - **Tests:** `compliance_and_the_admin_move_shares_together`,
   `one_account_cannot_co_sign_with_itself`, `nothing_leaves_the_vault_address`,
   `nothing_lands_on_the_vault_address`,
@@ -698,8 +737,10 @@ An authority opens a shared `/sign` link, sees one operation and signs another.
   testnet, an older release; some of its operations, such as a compliance
   `forced_transfer`, no longer exist in these contracts.
 - **Tests:** "refuses a fee bump envelope", "refuses a transaction with more
-  than one operation", "refuses an operation with a source other than the
-  transaction's" and "refuses an auth entry with address credentials" in
+  than one operation", "refuses a host function that is not a contract
+  invocation", "refuses an operation with a source other than the
+  transaction's", "refuses an auth entry with address credentials" and
+  "refuses a transaction that is not valid yet" in
   [`app-lib/multisig.test.ts`](../app-lib/multisig.test.ts); "refuses a contract
   that is not one of the configured four", "refuses an operation the console
   does not propose" and "refuses arguments of the wrong shape" in
@@ -735,11 +776,14 @@ An administrative act stops a holder from collecting a priced, covered exit.
 
 - **Control:** `claim_redeem` has no pause check and does not read the oracle.
   It asks the verifier about the holder but pays a delisted holder like a listed
-  one, and a verifier that fails to answer counts as delisted. Only a freeze
-  holds the claim (X3).
-- **Residual:** The claim still calls the share token, to check the freeze and
-  burn the escrow, and the token calls the compliance contract. A module that
-  fails there blocks it (X6).
+  one, and a verifier that fails to answer counts as delisted. Of the holder's
+  own standing, only a freeze holds the claim (X3).
+- **Residual:** The claim still needs the liquid reserve to cover it, or it
+  fails with `ClaimNotCovered` (X1). It also calls the share token, to check
+  the freeze and burn the escrow, and the token calls the compliance contract.
+  A module that fails there blocks it (X6), and so would a timelocked revoke of
+  the vault's `manager` role on the token or an unbinding of the token from its
+  compliance contract (R1).
 - **Tests:** `a_paused_vault_still_pays_redemptions` in
   [`controls.rs`](../contracts/async-vault/src/test/controls.rs);
   `a_delisted_holder_can_still_claim_their_exit` in
@@ -756,17 +800,20 @@ An administrative act stops a holder from collecting a priced, covered exit.
 A freeze is used to take or redirect a holder's value.
 
 - **Control:** The vault refuses a frozen holder's requests, claims and
-  cancellations with `Frozen`. What it owes them stays recorded, where no other
-  holder can take it: escrowed cash, priced but unminted shares, escrowed
-  shares, priced cash in `committed`, and a wind-down credit in
+  cancellations with `Frozen`. What it owes them stays recorded, and no other
+  holder can claim that record: escrowed cash, priced but unminted shares,
+  escrowed shares, priced cash in `committed`, and a wind-down credit in
   `wind_down_owed`. A partial freeze limits a redemption or a wind-down claim to
   the free shares. Lifting the freeze releases everything. A legal transfer
   reaches only wallet shares (R10).
 - **Residual:** A freeze holds even a covered claim, for as long as it lasts.
-  The vault cannot pay an authority directly. A refund for a deposit worth less
-  than one share at its price is not tracked as owed: it waits in the free reserve,
-  where the treasury can deploy it or a wind-down round can credit it to others.
-  Counsel must confirm the hold for each jurisdiction.
+  The record is safe, but the cash behind it is pooled: while the reserve is
+  short, other covered claims pay first (X1), and after a loss of reserve in a
+  wind-down, claims can spend each other's cash (X8). The vault cannot pay an
+  authority directly. A refund for a deposit worth less than one share at its
+  price is not tracked as owed: it waits in the free reserve, where the
+  treasury can deploy it or a wind-down round can credit it to others. Counsel
+  must confirm the hold for each jurisdiction.
 - **Tests:** `a_frozen_holder_is_paid_only_after_the_freeze_lifts`,
   `a_frozen_investors_escrow_stays_until_the_freeze_lifts`,
   `a_frozen_investor_is_not_minted_until_unfrozen`,
@@ -860,16 +907,24 @@ A stale feed, a stopped manager or a pause keeps escrowed cash or shares from
 coming back.
 
 - **Control:** Cancelling is one atomic step that returns the whole escrow. It
-  is open while the epoch is open, and for a sealed epoch whenever the vault
-  cannot price it now: the report has expired, the NAV is paused or the vault is
-  paused. It stays open during a wind-down.
-- **Residual:** A frozen holder cannot cancel (X3). A delisted holder's
-  redemption does not come back as shares; it is paid in cash (X4). Nobody exits
-  at a price until pricing resumes.
-- **Tests:** `a_sealed_epoch_cancels_once_the_feed_goes_stale`,
+  is open while the epoch is open. For a sealed epoch it stays open until a
+  valid report accepted at or after the seal can be read with the vault
+  unpaused, even during the notice (O6). It opens again if that report expires
+  or falls out of the band, if the NAV or the vault is paused, or if the report
+  is cleared or an oracle swap leaves none. It stays open throughout a
+  wind-down.
+- **Residual:** Between a readable report and the end of the notice, a request
+  can be neither cancelled nor priced; the notice is at most 30 days. A frozen
+  holder cannot cancel (X3). A delisted holder's redemption does not come back
+  as shares; it is paid in cash (X4). Nobody exits at a price until pricing
+  resumes.
+- **Tests:** `a_sealed_epoch_is_still_cancellable`,
+  `a_sealed_epoch_cancels_once_the_feed_goes_stale`,
   `a_sealed_epoch_cancels_while_the_nav_is_paused` and
   `the_pause_never_blocks_a_cancellation` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
+  `the_notice_does_not_reopen_the_cancellation_window` in
+  [`notice.rs`](../contracts/async-vault/src/test/notice.rs);
   `an_epoch_sealed_before_the_announcement_is_still_cancellable` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs); "the deposit
   can now be cancelled and the asset returns" in
@@ -882,11 +937,11 @@ others' cost.
 
 - **Control:** Governance proposes it. Once its delay of 7 to 90 days has run,
   anyone can activate it; until then governance may cancel it. Once active, it
-  cannot be undone. It takes no new requests, prices
-  nothing and sends nothing to the custodian, while priced claims, cancellations
-  and funding go on. Anyone finalizes a round. Each round credits only the free
-  reserve, pro rata to a supply snapshot taken at the first round, and every
-  payment rounds in the vault's favour.
+  cannot be undone. It takes no new requests, prices nothing and sends nothing
+  to the custodian, while priced claims, cancellations and funding go on.
+  Anyone finalizes a round. Each round credits only the free reserve, pro rata
+  to a supply snapshot taken at the first round, and every payment rounds in
+  the vault's favour.
 - **Residual:**
   - It pays out only what is on chain. The vault cannot make the custodian
     return capital.
@@ -901,7 +956,7 @@ others' cost.
     and its round credits. A claim of either kind can then take cash owed to the
     other, and a wind-down claim, which checks no coverage at all, can also take
     deposit escrow. A fix is planned.
-- **Tests:** `governance_proposes_and_anyone_activates_after_the_delay`,
+- **Tests:** `only_governance_proposes`, `activation_is_open_to_a_stranger`,
   `governance_cancels_a_proposal_before_activation`,
   `an_active_wind_down_cannot_be_cancelled`, `anyone_may_finalise_a_round`,
   `a_round_leaves_priced_liabilities_alone`,
@@ -962,12 +1017,21 @@ The issuer of the deposit asset freezes the vault's balance or takes it back.
 
 An idle contract's instance, code or entries archive, so calls fail.
 
-- **Control:** Each call extends the contract instance and the entries it reads
-  or writes, and a new entry gets its full lifetime in the transaction that
-  creates it. `npm run extend` restores and extends each instance, its Wasm and
-  each pending change. A call can restore archived entries itself once
-  simulation adds the restore ([kit spec §5](./kit-spec.md#5-storage-lifetime-ttl-policy)).
-- **Residual:** The caller pays for any restore, and restoring many entries can
+- **Control:** Each contract extends its instance and the kit's own entries on
+  the calls kit spec §5 lists: on the vault, every call that reads or writes
+  them; on the token, every call that moves shares or changes a setting.
+  OpenZeppelin extends an entry when it reads it, and the kit reads back each
+  entry it creates through OpenZeppelin, so a new entry gets its full lifetime
+  in the transaction that creates it. Role entries are the exception: after a
+  grant, a role check extends only that account's role entry, and a revoke
+  rewrites the member list without extending it.
+  `npm run extend -w scripts/harness` restores and extends each instance, its
+  Wasm and each pending change. A call can restore archived entries itself once
+  simulation adds the restore
+  ([kit spec §5](./kit-spec.md#5-storage-lifetime-ttl-policy)).
+- **Residual:** An entry nobody touches archives 30 days after its last renewal
+  (90 for a role), and on mainnet no sooner than 120 days after it was created.
+  The next call that needs it pays the restore, and restoring many entries can
   take separate transactions. A production compliance module or identity
   registry must extend its own entries the same way, or the share token stops
   working when they archive.
@@ -976,6 +1040,69 @@ An idle contract's instance, code or entries archive, so calls fail.
   [`ttl.rs`](../contracts/async-vault/src/test/ttl.rs);
   `reading_a_decayed_entry_restores_the_full_ttl` in
   [`strata-storage/src/test.rs`](../crates/strata-storage/src/test.rs).
+
+### X12. Resource limits, contention and griefing
+
+Many requests in one epoch, or someone who wants to get in the way, push calls
+past a transaction's limits, make them compete for the same entries, or keep
+others out.
+
+- **Control:** Pricing and wind-down rounds read only running totals, so their
+  cost does not grow with the number of requests, and each holder mints, burns
+  or is paid in their own call
+  ([design doc §8.4](./strata-product-and-architecture.md#84-request-lifecycle)).
+  No call walks over holders or requests. A holder has at most one deposit and
+  one redemption request per epoch. Whoever sends a request pays its fee and
+  the storage for its entry. Deposits need an allowlisted address, and
+  redemptions need shares.
+- **Residual:** Requests, cancellations and claims write entries that all
+  holders share: the running totals in the vault's instance, each epoch's
+  record and settlement record, and the vault's own asset and share balances.
+  Calls in the same ledger compete for those entries, and nothing has measured
+  how many fit in one ledger. Anyone holding the asset can call `fund` with one
+  unit, and an allowlisted investor can request and cancel a deposit again and
+  again, paying only fees. An allowlisted investor can also fill the deposit
+  cap with a deposit and cancel it before pricing, keeping others out of that
+  epoch. Governance can raise the cap at once, and compliance can delist the
+  investor.
+- **Tests:** none yet for cost or contention; a measurement is planned.
+  `cancellation_frees_capacity` in
+  [`deposit_cap.rs`](../contracts/async-vault/src/test/deposit_cap.rs) shows a
+  deposit holding the whole cap and its cancellation freeing it;
+  `the_same_investor_can_request_again_after_cancelling` in
+  [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs).
+
+### X13. An upgrade cannot read what the vault stored
+
+An upgrade changes the shape of a stored type, so the new code cannot read
+entries the old code wrote: requests, settlement records, wind-down positions,
+or queued changes.
+
+- **Control:** After setup, upgrades wait for the timelock (R1). The vault, the
+  share token and the oracle each keep a `schema_version`. The kit spec says
+  this release is deployed fresh rather than upgraded in place over an earlier
+  vault, because its settlement record cannot count requests made before it
+  existed
+  ([kit spec, Invariant 7](./kit-spec.md#invariant-7-directional-rounding--non-creation-of-value)).
+  The oracle's own case has a written recovery (O11).
+- **Residual:** No release ships a `migrate`; only test builds have one. No test
+  upgrades the vault to code that reads requests or positions written in an
+  earlier shape. If an upgrade changes a stored struct's fields or a variant's
+  payload, every entry of the old shape fails to decode. Claims and
+  cancellations on old requests then revert, and so do `pending_changes()`,
+  applying a queued change of the old shape, and proposing an upgrade while any
+  change of the old shape is queued. Cancelling such a change still works,
+  since cancelling does not read it. Recovery needs a migration written for
+  that release.
+- **Tests:** `applying_a_wasm_change_replaces_the_code` and
+  `a_migration_refuses_a_second_run` (a stand-in contract with a test-only
+  `migrate`), and `the_token_upgrades_under_live_balances_and_open_requests`
+  (a token upgrade that keeps the storage shape, under live balances and open
+  requests), all with `--features upgrade_wasm`, in
+  [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
+  `the_oracle_upgrades_under_a_live_valuation`, also with `upgrade_wasm`, in
+  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs).
+  A vault upgrade over stored entries of another shape: none.
 
 ## Known limits
 
@@ -989,8 +1116,10 @@ These are decided, and stated as they stand:
    plans sealing by anyone after a minimum epoch length.
 3. The identity verifier and compliance contracts in this repository are
    testnet stubs, not for mainnet (R9, R11).
-4. Role separation is not enforced across contracts (R5). It is being
-   redesigned so that one key may still run every role.
+4. Role separation is checked only by the vault's constructor, for four pairs;
+   later grants and the other contracts' roles are not checked (R5). The checks
+   are being redesigned so that a deployment may choose to run every role from
+   one key, which the constructor's four refusals forbid today.
 5. `uncovered()` leaves out what a wind-down owes, although `free_reserve()`
    subtracts it (X8).
 6. No test signs through a relayer: the kit runs none, and whoever sends a
@@ -1004,12 +1133,17 @@ For Tranche 3's matrix:
 
 - A covered claim while the NAV is paused (X2).
 - Each authority's signers and thresholds, read on the network (R4).
-- Role separation across contracts, which nothing checks yet (R5).
+- A privileged call sent through a relayer: dropped, since the kit runs no
+  relayer (R4).
+- Role separation after construction and across contracts, which nothing
+  checks yet (R5).
 - A compliance swap to an external contract, which comes with
   [#334](https://github.com/BootNodeDev/strata-vault-kit/pull/334) (R11).
 - `uncovered()` with wind-down credits (X8).
 - The deposit asset's issuer freezing or clawing back the vault's balance, and
   a deploy check of the asset's authorization flags (X10).
+- The cost of a call, and contention between calls in one ledger (X12).
+- A vault upgrade over requests or positions stored in an earlier shape (X13).
 - Alerts on large price moves, on `LatestCleared` and on the report after it
   (O2, O8), which belong to the monitoring plan.
 
