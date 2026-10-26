@@ -102,6 +102,8 @@ jobs:
           set -o pipefail
           STELLAR_SCAFFOLD_ENV=development stellar-scaffold build \
             --build-clients 2>&1 | tee build_clients.log
+          # Build the clients against the workspace @stellar/stellar-sdk, not the scaffold's copy.
+          rm -rf app-lib/clients/*/node_modules
       - name: Check client generation summary
         run: |
           # Extract the number after "Failed: "
