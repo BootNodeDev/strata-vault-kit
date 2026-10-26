@@ -159,7 +159,9 @@ jobs:
         env:
           HARNESS_NETWORK: local
       - name: Build the vault without the wind-down minimum
-        run: CARGO_TARGET_DIR=target/short-wind-down stellar contract build --package async-vault --features short_wind_down
+        run:
+          CARGO_TARGET_DIR=target/short-wind-down stellar contract build
+          --package async-vault --features short_wind_down
       - name: Run a wind-down on a throwaway vault on the local network
         run: npm run test:wind-down -w scripts/harness
         env:
