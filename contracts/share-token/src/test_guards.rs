@@ -147,7 +147,7 @@ fn not_a_second_upgrade_refuses_an_upgrade_while_one_waits() {
 }
 
 #[test]
-fn compliance_bound_here_refuses_rules_without_the_token_or_before_the_vault_is_known() {
+fn compliance_bound_here_refuses_rules_without_the_token_or_naming_a_vault_before_one_is_bound() {
     let f = setup();
     let listing = f.rules_listing(&[&f.token.address]);
     refuses(&f, ShareTokenError::ComplianceNotBound, || {

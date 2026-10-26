@@ -127,7 +127,8 @@ impl ShareToken {
     /// # Errors
     ///
     /// * `ComplianceNotBound` - The new compliance contract does not list
-    ///   this token, or is not on the vault's clock with its setup closed.
+    ///   this token, or answers `VaultBinding` but does not name this token's
+    ///   vault with its setup closed.
     /// * `VerifierRefusesVault` - The new verifier does not accept the vault.
     /// * `UpgradeAlreadyPending` - An upgrade already waits.
     /// * `SetupOpen` - Setup has not finished; change it directly.
