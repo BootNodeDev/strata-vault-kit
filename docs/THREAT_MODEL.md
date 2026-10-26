@@ -70,7 +70,7 @@ Console tests, also cited by title, run with `npm run test`.
 | Treasury | Sends free reserve to the custodian (vault `treasury`). |
 | Attester | Posts the share price (oracle `attester`). |
 | Compliance | Freezes holders, and with governance makes legal transfers and recoveries (share token `compliance`). By deploy, also lists and delists addresses (identity verifier admin). |
-| The vault contract | Mints, burns and moves escrowed shares (share token `manager`, which it must hold alone). |
+| The vault contract | Mints, burns and moves escrowed shares (share token `manager`, which `finish_setup` requires it to hold alone). |
 | Anyone | Prices a sealed epoch, funds the vault, activates a wind-down once it is due, finalizes a round. Each holder signs their own requests, cancellations and claims. |
 | Outside the kit | The custodian, the deposit asset's issuer, external compliance or identity contracts, wallets, and whoever hosts a frontend. |
 
