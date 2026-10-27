@@ -19,6 +19,13 @@ export const parseAccount = (text: string): string | undefined => {
 		: undefined
 }
 
+const HASH = /^[0-9a-f]{64}$/i
+
+export const parseHash = (text: string): string | undefined => {
+	const trimmed = text.trim()
+	return HASH.test(trimmed) ? trimmed.toLowerCase() : undefined
+}
+
 export type Condition = {
 	label: string
 	met: boolean | null

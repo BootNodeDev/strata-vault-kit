@@ -147,14 +147,15 @@ describe("describePending", () => {
 		])
 	})
 
-	it("formats an attestation price and expiry", () => {
+	it("formats an attestation price, expiry and proof", () => {
 		expect(
 			describePending(
 				pending(addresses.oracle, "attest", [
 					{
 						nav_per_share: 1_050_000_000_000_000_000n,
 						expires_at: 1_800_000_000n,
-						timestamp: 0n,
+						proof_hash: Buffer.alloc(32, 0xab),
+						proof_uri: "https://example.com/nav.pdf",
 					},
 					account,
 				]),
@@ -167,8 +168,27 @@ describe("describePending", () => {
 			args: [
 				{ label: "Price", value: "1.0500" },
 				{ label: "Expires", value: "15 Jan 2027" },
+				{ label: "Proof hash", value: "ab".repeat(32) },
+				{ label: "Proof URI", value: "https://example.com/nav.pdf" },
 			],
 		})
+	})
+
+	it("shows an attestation without a proof URI as none", () => {
+		const { args } = describePending(
+			pending(addresses.oracle, "attest", [
+				{
+					nav_per_share: 1_050_000_000_000_000_000n,
+					expires_at: 1_800_000_000n,
+					proof_hash: Buffer.alloc(32, 0xab),
+					proof_uri: "",
+				},
+				account,
+			]),
+			addresses,
+		)
+
+		expect(args.at(-1)).toEqual({ label: "Proof URI", value: "None" })
 	})
 
 	it("maps a forced transfer with shortened addresses and an amount", () => {
@@ -677,7 +697,8 @@ describe("toModalProps", () => {
 				{
 					nav_per_share: 1_050_000_000_000_000_000n,
 					expires_at: 1_800_000_000n,
-					timestamp: 0n,
+					proof_hash: Buffer.alloc(32, 0xab),
+					proof_uri: "",
 				},
 				account,
 			]),

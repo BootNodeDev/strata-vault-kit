@@ -52,6 +52,8 @@ const attestAction: CycleAction = {
 	},
 	price: null,
 	freshness: null,
+	proofHash: null,
+	proofUri: "",
 	enabled: false,
 }
 

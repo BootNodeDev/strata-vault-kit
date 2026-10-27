@@ -340,6 +340,10 @@ const attestContractErrorReason = (code: number): string => {
 			return "That price moves further from the last attested price than the oracle allows."
 		case 3010:
 			return "Unpause the NAV first."
+		case 3023:
+			return "The proof hash cannot be all zeros."
+		case 3024:
+			return "The proof URI is longer than 256 bytes."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -818,7 +822,7 @@ const describeAttestStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `Signing records ${price} as the share price. Sealed epochs settle at it once their notice elapses.`,
+				body: `Signing records ${price} as the share price, with its proof. Sealed epochs settle at it once their notice elapses.`,
 			}
 		case "submitted":
 			return {

@@ -22,6 +22,7 @@ import {
 	grantFor,
 	type Inputs,
 	parseAccount,
+	parseHash,
 	type RailField,
 	ROLES,
 	type Spec,
@@ -607,8 +608,6 @@ const acceptSpec = (
 
 const MIN_UPGRADE_DELAY = 7n * DAY
 const MAX_UPGRADE_DELAY = 90n * DAY
-const WASM_HASH = /^[0-9a-f]{64}$/i
-
 const CODE_CHANGES = new Set(["Upgrade", "UpgradeDelay"])
 
 const proposalChecks = (upgrades?: ReadyUpgrades): Condition[] => [
@@ -650,9 +649,7 @@ function codeUpgradeSpec(
 ): BuiltSpec<"propose-code-upgrade", string | undefined> {
 	const key = "propose-code-upgrade-hash"
 	const text = inputs[key] ?? ""
-	const hash = WASM_HASH.test(text.trim())
-		? text.trim().toLowerCase()
-		: undefined
+	const hash = parseHash(text)
 	const conditions = [
 		{
 			label: "Hash of 64 hex characters",

@@ -39,6 +39,7 @@ import {
 	allMet,
 	type Condition,
 	grantFor,
+	parseHash,
 	type RailAction,
 } from "./actions"
 import { toCustodianRow } from "./vaultMetrics"
@@ -67,7 +68,7 @@ const GROUP_LAYOUT: {
 	{
 		title: "Price",
 		tiles: ["Share price", "Attested", "Valid until"],
-		rows: ["NAV paused"],
+		rows: ["NAV paused", "Proof hash", "Proof URI"],
 		limits: [
 			"Freshness window",
 			"Cooldown",
@@ -255,6 +256,18 @@ export const oracleLimitRows = (limits: OracleLimits | null): FigureRow[] => [
 	row("Price ceiling", limits && formatPriceValue(limits.max)),
 ]
 
+const WEB_ADDRESS = /^https?:\/\//i
+
+function proofUriRow(oracle: CycleOracle): FigureRow {
+	const label = "Proof URI"
+	if (oracle.state === "unreadable") return row(label, null)
+	const uri = oracle.proof?.uri ?? ""
+	if (uri === "") return row(label, NOT_APPLICABLE)
+	return WEB_ADDRESS.test(uri)
+		? { label, value: uri, href: uri }
+		: row(label, uri)
+}
+
 function priceGroup(oracle: CycleOracle): CycleGroup {
 	const { limits } = oracle
 	const timestamp = (value: bigint | null): string | null =>
@@ -282,6 +295,13 @@ function priceGroup(oracle: CycleOracle): CycleGroup {
 						? "Paused"
 						: "Not paused",
 			),
+			row(
+				"Proof hash",
+				oracle.state === "unreadable"
+					? null
+					: orNotApplicable(oracle.proof, (proof) => shortAddress(proof.hash)),
+			),
+			proofUriRow(oracle),
 		],
 		limits: oracleLimitRows(limits),
 	}
@@ -384,6 +404,8 @@ export type AttestAction = ActionBase & {
 	id: "attest"
 	price: Price | null
 	freshness: bigint | null
+	proofHash: string | null
+	proofUri: string
 }
 
 export type TreasuryAction = ActionBase & {
@@ -401,6 +423,8 @@ export type CycleAction =
 
 export type ActionInputs = {
 	price?: string
+	proofHash?: string
+	proofUri?: string
 	deploy?: string
 	fund?: string
 	walletBalance?: Amount | null
@@ -533,18 +557,44 @@ const withinAllowedMove = (
 	}
 }
 
+const MAX_PROOF_URI_BYTES = 256
+const ALL_ZEROS = /^0+$/
+
+const proofUriFits = (bytes: number): Condition => {
+	const label = `Proof URI within ${MAX_PROOF_URI_BYTES} bytes`
+	return bytes <= MAX_PROOF_URI_BYTES
+		? { label, met: true }
+		: { label, met: false, detail: `${bytes} bytes` }
+}
+
 function toAttestAction(
 	state: ReadyState,
 	grant: Grant,
-	input: string,
+	inputs: ActionInputs,
 ): AttestAction {
 	const { oracle, ledgerTime } = state
+	const input = inputs.price ?? ""
+	const hashInput = inputs.proofHash ?? ""
+	const uriInput = inputs.proofUri ?? ""
 	const price = parseUnits(input, PRICE_DECIMALS)
 	const freshness = oracle.limits?.freshness ?? null
+	const hash = parseHash(hashInput)
+	const proofHash = hash === undefined || ALL_ZEROS.test(hash) ? null : hash
+	const proofUri = uriInput.trim()
+	const uriBytes = new TextEncoder().encode(proofUri).length
 	const conditions = [
 		withinBand(oracle, price),
 		cooldownElapsed(oracle, ledgerTime),
 		withinAllowedMove(oracle, price),
+		{
+			label: "Proof hash of 64 hex characters",
+			met: hashInput.trim() === "" ? null : hash !== undefined,
+		},
+		{
+			label: "Proof hash not all zeros",
+			met: hash === undefined ? null : proofHash !== null,
+		},
+		proofUriFits(uriBytes),
 	]
 	return {
 		id: "attest",
@@ -558,14 +608,34 @@ function toAttestAction(
 		...(oracle.navPaused === true
 			? { note: "NAV paused — attesting does not unpause it." }
 			: {}),
-		field: {
-			label: "Share price",
-			placeholder: "0.0000",
-			value: input,
-			invalid: input.trim() !== "" && price === null,
-		},
+		fields: [
+			{
+				label: "Share price",
+				placeholder: "0.0000",
+				value: input,
+				invalid: input.trim() !== "" && price === null,
+			},
+			{
+				key: "proof-hash",
+				label: "Proof hash",
+				placeholder: "Proof hash, 64 hex characters",
+				value: hashInput,
+				invalid: hashInput.trim() !== "" && proofHash === null,
+				text: true,
+			},
+			{
+				key: "proof-uri",
+				label: "Proof URI",
+				placeholder: "Proof URI (optional)",
+				value: uriInput,
+				invalid: uriBytes > MAX_PROOF_URI_BYTES,
+				text: true,
+			},
+		],
 		price,
 		freshness,
+		proofHash,
+		proofUri,
 		enabled: price !== null && freshness !== null && allMet(conditions),
 		grant,
 	}
@@ -802,7 +872,7 @@ export function toCycleActions(
 	if (manager !== undefined) actions.push(toCloseAction(state, manager))
 	actions.push(toFulfillAction(state))
 	if (attester !== undefined)
-		actions.push(toAttestAction(state, attester, inputs.price ?? ""))
+		actions.push(toAttestAction(state, attester, inputs))
 	if (treasury !== undefined)
 		actions.push(toDeployAction(state, treasury, inputs.deploy ?? ""))
 	actions.push(
