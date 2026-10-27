@@ -281,9 +281,11 @@ fn custodian_not_the_vault_refuses_the_vault_itself() {
 }
 
 #[test]
-fn feed_bound_here_refuses_an_unbound_feed_or_a_contract_that_is_not_a_feed() {
+fn feed_bound_here_and_answering_refuses_an_unbound_feed_or_a_contract_that_is_not_a_feed() {
     let f = setup();
-    holds(&f, || guards::feed_bound_here(&f.e, &f.oracle.address));
+    holds(&f, || {
+        guards::feed_bound_here_and_answering(&f.e, &f.oracle.address)
+    });
 
     let unbound = f.e.register(
         NavOracleContract,
@@ -297,13 +299,13 @@ fn feed_bound_here_refuses_an_unbound_feed_or_a_contract_that_is_not_a_feed() {
     // The compliance contract is bound to this vault but answers no feed view.
     for not_a_feed_here in [unbound, f.share.compliance()] {
         refuses(&f, VaultError::FeedNotBound, || {
-            guards::feed_bound_here(&f.e, &not_a_feed_here)
+            guards::feed_bound_here_and_answering(&f.e, &not_a_feed_here)
         });
     }
 }
 
 #[test]
-fn change_in_bounds_checks_the_bounds_of_each_change() {
+fn valid_change_checks_each_kind_of_change() {
     let f = setup();
     let stranger = Address::generate(&f.e);
     for change in [
@@ -317,7 +319,7 @@ fn change_in_bounds_checks_the_bounds_of_each_change() {
         VaultChange::Admin(stranger.clone()),
         VaultChange::Oracle(f.oracle.address.clone()),
     ] {
-        holds(&f, || guards::change_in_bounds(&f.e, &change));
+        holds(&f, || guards::valid_change(&f.e, &change));
     }
 
     for (change, error) in [
@@ -346,7 +348,7 @@ fn change_in_bounds_checks_the_bounds_of_each_change() {
             VaultError::InvalidCustodian,
         ),
     ] {
-        refuses(&f, error, || guards::change_in_bounds(&f.e, &change));
+        refuses(&f, error, || guards::valid_change(&f.e, &change));
     }
 }
 

@@ -8,7 +8,7 @@ pub enum Refusal {
     Paused,
     /// The change's delay, plus the time paused since, has not run yet.
     NotElapsed,
-    /// The change's delay is shorter than the current exit window.
+    /// The change's delay is shorter than the source's notice now.
     BelowExitWindow,
     /// No pending change has this id.
     NotFound,

@@ -165,14 +165,7 @@ fn a_cooldown_holds_the_standing_price() {
     f.advance(60);
     assert!(f
         .oracle
-        .try_attest(
-            &NavReport {
-                nav_per_share: wad(1),
-                timestamp: 0,
-                expires_at: 1_000_000,
-            },
-            &f.attester
-        )
+        .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester)
         .is_err());
 
     f.vault.fulfill_epoch(&epoch);
@@ -196,14 +189,7 @@ fn a_cooldown_delays_pricing_until_the_attester_can_post() {
     // valuation younger than its close and waits.
     assert!(f
         .oracle
-        .try_attest(
-            &NavReport {
-                nav_per_share: wad(1),
-                timestamp: 0,
-                expires_at: 1_000_000,
-            },
-            &f.attester
-        )
+        .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester)
         .is_err());
     refused(
         f.vault.try_fulfill_epoch(&epoch),

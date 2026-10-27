@@ -557,6 +557,19 @@ fn a_legal_transfer_restores_the_instance_ttl() {
 }
 
 #[test]
+fn reading_a_balance_or_the_supply_restores_the_instance_ttl() {
+    let e = Env::default();
+    let (f, holder, _) = decayed_live_token(&e);
+
+    f.token.balance(&holder);
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+
+    age(&e, TWO_DAYS_IN_LEDGERS);
+    f.token.total_supply();
+    assert_eq!(instance_ttl(&e, &f.token.address), INSTANCE_EXTEND_AMOUNT);
+}
+
+#[test]
 fn each_role_call_asks_its_holder_for_one_signature() {
     let e = Env::default();
     let (f, identity) = setup_live(&e);
@@ -705,6 +718,36 @@ mod legal_transfer {
         );
         assert_eq!(f.token.balance(&holder), 750);
         assert_eq!(f.token.balance(&destination), 250);
+    }
+
+    #[test]
+    fn a_zero_share_legal_transfer_passes_and_is_published() {
+        let e = Env::default();
+        let (f, holder, destination, _) = live(&e);
+
+        f.token.legal_transfer(
+            &holder,
+            &destination,
+            &0,
+            &order(&e),
+            &f.compliance_authority,
+        );
+
+        let events = e.events().all().filter_by_contract(&f.token.address);
+        assert_eq!(
+            events.events().last(),
+            Some(
+                &LegalTransfer {
+                    from: holder.clone(),
+                    to: destination.clone(),
+                    amount: 0,
+                    reference: order(&e),
+                }
+                .to_xdr(&e, &f.token.address)
+            )
+        );
+        assert_eq!(f.token.balance(&holder), 1_000);
+        assert_eq!(f.token.balance(&destination), 0);
     }
 
     #[test]
