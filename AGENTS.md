@@ -127,7 +127,10 @@ contracts. The addresses emitted by the deploy script are authoritative.
   are (`custodian`, `vault`, the allowlisted `account`). OpenZeppelin trait
   methods keep their own names (`operator`, `user_address`).
 - **Named errors.** Contract code fails with a named error variant, never with
-  `unwrap`, `expect` or a bare `panic!`. Tests may unwrap.
+  `unwrap`, `expect` or a bare `panic!`. Tests may unwrap. Each contract
+  declares its error enum through `strata_bindings::error_enum!`, which fails
+  the build if a code leaves the contract's block (`docs/kit-spec.md`, section
+  7).
 - **No boolean switches.** A new entrypoint does one thing. Two behaviours get
   two functions, like `freeze_partial_tokens` and `unfreeze_partial_tokens`,
   not one function that takes a `bool`.
