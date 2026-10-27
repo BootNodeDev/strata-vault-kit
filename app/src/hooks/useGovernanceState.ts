@@ -5,16 +5,24 @@ import {
 	readContract,
 } from "@stellar-scaffold/app-lib"
 import { useQuery } from "@tanstack/react-query"
-import { asyncVault } from "../config/clients"
+import { asyncVault, shareToken } from "../config/clients"
+import { type PendingChange } from "../pages/pendingChanges"
 import { type GovernedContract, pendingAdminsQuery } from "./pendingAdmins"
 import { useConfigurationState } from "./useConfigurationState"
 import { type CycleWindDown, useCycleReads } from "./useCycleState"
+import { type TimelockedContract } from "./useSetupOpen"
 import { type PauseState, useVaultPaused } from "./useVaultPaused"
 
 const STALE_MS = 30_000
 const REFRESH_MS = 15_000
 
-export const upgradeProposalKey = ["governance", "upgradeProposal"] as const
+const PENDING_CHANGES_KEYS = {
+	vault: ["governance", "pendingChanges"],
+	token: ["governance", "tokenPendingChanges"],
+} as const
+
+export const pendingChangesKey = <C extends TimelockedContract>(contract: C) =>
+	PENDING_CHANGES_KEYS[contract]
 
 export type Handovers =
 	| { status: "checking" }
@@ -25,15 +33,12 @@ export type Handovers =
 			pending: Record<GovernedContract, PendingTransfer | null>
 	  }
 
-export type PendingUpgrade =
-	| { kind: "code"; hash: string; eta: bigint }
-	| { kind: "delay"; secs: bigint; eta: bigint }
-
 export type Upgrades =
 	| { status: "checking" }
 	| {
 			status: "ready"
-			proposal: PendingUpgrade | null | undefined
+			pending: PendingChange[] | undefined
+			setupOpen: boolean | null
 			delay: bigint | null
 			notice: bigint | null
 			windDown: CycleWindDown
@@ -41,48 +46,65 @@ export type Upgrades =
 			paused: PauseState
 	  }
 
-type ProposalRead = { proposal: PendingUpgrade | null | undefined }
+type PendingRead = { pending: PendingChange[] | undefined }
 
-async function fetchUpgradeProposal(): Promise<ProposalRead> {
-	const read = await readContract(async () =>
-		(await asyncVault()).upgrade_proposal(),
-	)
-	if (read.kind !== "value") return { proposal: undefined }
-	if (read.value === null) return { proposal: null }
-	const { action, eta } = read.value
-	return {
-		proposal:
-			action.tag === "Wasm"
-				? { kind: "code", hash: action.values[0].toString("hex"), eta }
-				: { kind: "delay", secs: action.values[0], eta },
-	}
+const PENDING_READERS = {
+	vault: async () => (await asyncVault()).pending_changes(),
+	token: async () => (await shareToken()).pending_changes(),
+} satisfies Record<TimelockedContract, unknown>
+
+async function fetchPendingChanges(
+	contract: TimelockedContract,
+): Promise<PendingRead> {
+	const read = await readContract<PendingChange[]>(PENDING_READERS[contract])
+	return { pending: read.kind === "value" ? read.value : undefined }
 }
 
-function useUpgrades(): Upgrades {
+export const pendingChangesQuery = (contract: TimelockedContract) => ({
+	queryKey: pendingChangesKey(contract),
+	queryFn: () => fetchPendingChanges(contract),
+})
+
+const SETUP_FLAGS = {
+	vault: "setupOpen",
+	token: "tokenSetupOpen",
+} as const satisfies Record<TimelockedContract, string>
+
+const usePendingChanges = (contract: TimelockedContract) =>
+	useQuery({
+		...pendingChangesQuery(contract),
+		staleTime: STALE_MS,
+		refetchInterval: REFRESH_MS,
+	}).data
+
+function useUpgrades(): Record<TimelockedContract, Upgrades> {
 	const cycle = useCycleReads()
 	const { configuration } = useConfigurationState()
 	const { pause } = useVaultPaused({ poll: true })
-	const { data } = useQuery({
-		queryKey: upgradeProposalKey,
-		queryFn: fetchUpgradeProposal,
-		staleTime: STALE_MS,
-		refetchInterval: REFRESH_MS,
-	})
-	if (
-		cycle === undefined ||
-		data === undefined ||
-		configuration.status !== "ready"
-	)
-		return { status: "checking" }
-	return {
-		status: "ready",
-		proposal: data.proposal,
-		delay: configuration.upgradeDelay,
-		notice: configuration.notice,
-		windDown: cycle.windDown,
-		now: cycle.ledgerTime,
-		paused: pause,
+	const reads = {
+		vault: usePendingChanges("vault"),
+		token: usePendingChanges("token"),
 	}
+	const upgradesOf = (contract: TimelockedContract): Upgrades => {
+		const data = reads[contract]
+		if (
+			cycle === undefined ||
+			data === undefined ||
+			configuration.status !== "ready"
+		)
+			return { status: "checking" }
+		return {
+			status: "ready",
+			pending: data.pending,
+			setupOpen: configuration[SETUP_FLAGS[contract]],
+			delay: configuration.upgradeDelay,
+			notice: configuration.notice,
+			windDown: cycle.windDown,
+			now: cycle.ledgerTime,
+			paused: pause,
+		}
+	}
+	return { vault: upgradesOf("vault"), token: upgradesOf("token") }
 }
 
 function toHandovers(
@@ -106,7 +128,10 @@ export function useGovernanceState({
 	contracts,
 }: {
 	contracts: Record<GovernedContract, string> | undefined
-}): { handovers: Handovers; upgrades: Upgrades } {
+}): {
+	handovers: Handovers
+	upgrades: Record<TimelockedContract, Upgrades>
+} {
 	const { data, isError } = useQuery({
 		...pendingAdminsQuery(contracts),
 		refetchInterval: REFRESH_MS,

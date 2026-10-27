@@ -67,7 +67,7 @@ describe("useCancelDeposit", () => {
 		)
 
 		expect(vaultMock.cancel_deposit).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 	})
@@ -304,7 +304,7 @@ describe("useCancelDeposit", () => {
 		)
 		expect(vaultMock.cancel_deposit).toHaveBeenCalledTimes(1)
 		expect(vaultMock.cancel_deposit).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 

@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import {
 	type Amount,
@@ -70,7 +71,9 @@ const unreadable = { kind: "unreadable" } as const
 const report: NavReport = {
 	expires_at: 1_700_136_000n,
 	nav_per_share: 10n ** 18n,
-	timestamp: 1_700_050_000n,
+	accepted_at: 1_700_050_000n,
+	proof_hash: Buffer.alloc(32, 0xab),
+	proof_uri: "https://example.com/nav.pdf",
 }
 
 const config = {
@@ -92,6 +95,7 @@ describe("toOracle", () => {
 			price: (10n ** 18n) as Price,
 			attestedAt: 1_700_050_000n,
 			expiresAt: 1_700_136_000n,
+			proof: { hash: "ab".repeat(32), uri: "https://example.com/nav.pdf" },
 			navPaused: false,
 			recorded: true,
 			limits: {
@@ -130,6 +134,7 @@ describe("toOracle", () => {
 			price: null,
 			attestedAt: null,
 			expiresAt: null,
+			proof: null,
 		})
 	})
 
@@ -155,6 +160,7 @@ describe("toOracle", () => {
 			price: null,
 			attestedAt: null,
 			expiresAt: null,
+			proof: null,
 			navPaused: null,
 			recorded: null,
 			limits: null,

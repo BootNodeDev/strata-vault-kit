@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import { type PendingTransfer } from "@stellar-scaffold/app-lib"
 import { fireEvent, render, screen, within } from "@testing-library/react"
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
@@ -7,11 +8,8 @@ import {
 	type RoleHolders,
 } from "../../hooks/useAdminAuthority"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
-import {
-	type Handovers,
-	type PendingUpgrade,
-	type Upgrades,
-} from "../../hooks/useGovernanceState"
+import { type Handovers, type Upgrades } from "../../hooks/useGovernanceState"
+import { type PendingChange } from "../../pages/pendingChanges"
 import GovernanceSection from "./GovernanceSection"
 
 const WALLET = "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H"
@@ -47,8 +45,16 @@ const { txs, useGovernanceStateMock } = vi.hoisted(() => {
 			useAcceptTokenAdmin: tx(),
 			useProposeCodeUpgrade: tx(),
 			useProposeUpgradeDelay: tx(),
-			useApplyUpgrade: tx(),
-			useCancelUpgrade: tx(),
+			useProposeGrantRole: tx(),
+			useProposeRevokeRole: tx(),
+			useProposeAdmin: tx(),
+			useApplyChange: tx(),
+			useCancelChange: tx(),
+			useProposeTokenGrantRole: tx(),
+			useProposeTokenRevokeRole: tx(),
+			useProposeTokenAdmin: tx(),
+			useApplyTokenChange: tx(),
+			useCancelTokenChange: tx(),
 			useProposeWindDown: tx(),
 			useCancelWindDown: tx(),
 		},
@@ -107,9 +113,13 @@ const handovers = (pending: PendingTransfer | null = null): Handovers => ({
 	pending: { vault: null, oracle: pending, token: null },
 })
 
-const upgrades = (proposal: PendingUpgrade | null = null): Upgrades => ({
+const upgrades = (
+	pending: PendingChange[] = [],
+	setupOpen = true,
+): Upgrades => ({
 	status: "ready",
-	proposal,
+	pending,
+	setupOpen,
 	delay: 7n * 86_400n,
 	notice: 86_400n,
 	windDown: {
@@ -122,6 +132,11 @@ const upgrades = (proposal: PendingUpgrade | null = null): Upgrades => ({
 	},
 	now: 1_800_000_000n,
 	paused: "open",
+})
+
+const queues = (vault: Upgrades, token: Upgrades = upgrades()) => ({
+	vault,
+	token,
 })
 
 const expand = (name: string) => {
@@ -152,7 +167,7 @@ describe("GovernanceSection", () => {
 		vi.clearAllMocks()
 		useGovernanceStateMock.mockReturnValue({
 			handovers: handovers(),
-			upgrades: upgrades(),
+			upgrades: queues(upgrades()),
 		})
 		for (const mock of Object.values(txs)) {
 			mock.status = { status: "idle" }
@@ -174,7 +189,7 @@ describe("GovernanceSection", () => {
 	it("says when the pending admins could not be read", () => {
 		useGovernanceStateMock.mockReturnValue({
 			handovers: { status: "unreadable" },
-			upgrades: upgrades(),
+			upgrades: queues(upgrades()),
 		})
 		renderSection([])
 
@@ -186,7 +201,7 @@ describe("GovernanceSection", () => {
 	it("keeps the rail checking while the pending admins load", () => {
 		useGovernanceStateMock.mockReturnValue({
 			handovers: { status: "checking" },
-			upgrades: upgrades(),
+			upgrades: queues(upgrades()),
 		})
 		renderSection([])
 
@@ -354,7 +369,7 @@ describe("GovernanceSection", () => {
 				liveUntilLedger: 5_000,
 				expired: false,
 			}),
-			upgrades: upgrades(),
+			upgrades: queues(upgrades()),
 		})
 		renderSection([grantOf("oracle admin"), grantOf("oracle pending admin")])
 
@@ -379,35 +394,149 @@ describe("GovernanceSection", () => {
 		})
 	})
 
-	it("applies a confirmed code upgrade and cancels the wind-down", () => {
-		const hash = "ab".repeat(32)
+	it("proposes a vault role grant once setup is closed", () => {
 		useGovernanceStateMock.mockReturnValue({
 			handovers: handovers(),
-			upgrades: upgrades({ kind: "code", hash, eta: 1_700_000_000n }),
+			upgrades: queues(upgrades([], false)),
 		})
 		renderSection([governance])
 
-		expand("Apply the upgrade")
+		expand("Grant a vault role")
+		fireEvent.change(screen.getByRole("textbox", { name: "Account" }), {
+			target: { value: ACCOUNT },
+		})
+		fireEvent.click(submit("Grant a vault role"))
+
+		expect(txs.useProposeGrantRole.submit).toHaveBeenCalledWith(
+			{ role: "manager", account: ACCOUNT },
+			governance,
+		)
+		expect(txs.useGrantVaultRole.submit).not.toHaveBeenCalled()
+	})
+
+	it("applies a confirmed code upgrade, cancels a change and lists both", () => {
+		const hash = "ab".repeat(32)
+		useGovernanceStateMock.mockReturnValue({
+			handovers: handovers(),
+			upgrades: queues(
+				upgrades(
+					[
+						{
+							id: 2,
+							change: { tag: "Upgrade", values: [Buffer.from(hash, "hex")] },
+							eta: 1_700_000_000n,
+						},
+						{
+							id: 5,
+							change: { tag: "Custodian", values: [ACCOUNT] },
+							eta: 1_900_000_000n,
+						},
+					],
+					false,
+				),
+			),
+		})
+		renderSection([governance])
+
+		expand("Apply the change #2")
 		fireEvent.click(
 			screen.getByRole("checkbox", {
 				name: `Replaces the vault's code with ${hash}.`,
 			}),
 		)
-		fireEvent.click(submit("Apply the upgrade"))
+		fireEvent.click(submit("Apply the change #2"))
+		expand("Cancel the change #5")
+		fireEvent.click(submit("Cancel the change #5"))
+
+		expect(txs.useApplyChange.submit).toHaveBeenCalledWith(2, governance)
+		expect(txs.useCancelChange.submit).toHaveBeenCalledWith(5, governance)
+		const pending = screen.getByRole("region", {
+			name: "Vault pending changes",
+		})
+		expect(within(pending).getByText("#2 Code upgrade")).toBeTruthy()
+		expect(within(pending).getByTitle(hash).textContent).toBe("abab...abab")
+		expect(within(pending).getByText("#5 Custodian")).toBeTruthy()
+	})
+
+	it("cancels the proposed wind-down", () => {
+		renderSection([governance])
+
 		expand("Cancel the wind-down")
 		fireEvent.click(submit("Cancel the wind-down"))
 
-		expect(txs.useApplyUpgrade.submit).toHaveBeenCalledWith(
-			undefined,
-			governance,
-		)
 		expect(txs.useCancelWindDown.submit).toHaveBeenCalledWith(
 			undefined,
 			governance,
 		)
-		expect(screen.getByText("Pending upgrade")).toBeTruthy()
-		expect(screen.getByTitle(`Code ${hash}`).textContent).toBe(
-			"Code abab...abab",
+	})
+
+	it("proposes a share-token role grant and hand-over once the token's setup is closed", () => {
+		useGovernanceStateMock.mockReturnValue({
+			handovers: handovers(),
+			upgrades: queues(upgrades(), upgrades([], false)),
+		})
+		renderSection([tokenAdmin])
+
+		expand("Grant a share-token role")
+		fireEvent.change(screen.getByRole("textbox", { name: "Account" }), {
+			target: { value: ACCOUNT },
+		})
+		fireEvent.click(submit("Grant a share-token role"))
+		expand("Hand over share-token admin")
+		fireEvent.change(screen.getByRole("textbox", { name: "New admin" }), {
+			target: { value: ACCOUNT },
+		})
+		fireEvent.click(
+			screen.getByRole("checkbox", {
+				name: "Hands control of the share token to GABA...EJXA.",
+			}),
 		)
+		fireEvent.click(submit("Hand over share-token admin"))
+
+		expect(txs.useProposeTokenGrantRole.submit).toHaveBeenCalledWith(
+			{ role: "compliance", account: ACCOUNT },
+			tokenAdmin,
+		)
+		expect(txs.useProposeTokenAdmin.submit).toHaveBeenCalledWith(
+			ACCOUNT,
+			tokenAdmin,
+		)
+		expect(txs.useGrantTokenRole.submit).not.toHaveBeenCalled()
+		expect(txs.useHandOverTokenAdmin.submit).not.toHaveBeenCalled()
+	})
+
+	it("applies and cancels share-token changes apart from the vault's and lists them in their own group", () => {
+		const change = (id: number, tag: string): PendingChange => ({
+			id,
+			change: { tag, values: [VAULT] },
+			eta: 1_700_000_000n,
+		})
+		useGovernanceStateMock.mockReturnValue({
+			handovers: handovers(),
+			upgrades: queues(
+				upgrades([change(1, "Custodian")], false),
+				upgrades(
+					[change(1, "Compliance"), change(2, "IdentityVerifier")],
+					false,
+				),
+			),
+		})
+		renderSection([tokenAdmin])
+
+		expand("Apply the change #1")
+		fireEvent.click(submit("Apply the change #1"))
+		expand("Cancel the change #2")
+		fireEvent.click(submit("Cancel the change #2"))
+
+		expect(txs.useApplyTokenChange.submit).toHaveBeenCalledWith(1, tokenAdmin)
+		expect(txs.useCancelTokenChange.submit).toHaveBeenCalledWith(2, tokenAdmin)
+		expect(txs.useApplyChange.submit).not.toHaveBeenCalled()
+		const token = screen.getByRole("region", {
+			name: "Share token pending changes",
+		})
+		expect(within(token).getByText("#1 Compliance contract")).toBeTruthy()
+		expect(within(token).getByText("#2 Identity verifier")).toBeTruthy()
+		const vault = screen.getByRole("region", { name: "Vault pending changes" })
+		expect(within(vault).getByText("#1 Custodian")).toBeTruthy()
 	})
 })

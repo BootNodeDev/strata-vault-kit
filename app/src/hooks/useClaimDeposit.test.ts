@@ -83,7 +83,7 @@ describe("useClaimDeposit", () => {
 		)
 
 		expect(vaultMock.claim_deposit).toHaveBeenCalledWith({
-			caller: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 	})
