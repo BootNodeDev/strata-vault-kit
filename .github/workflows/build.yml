@@ -89,8 +89,6 @@ jobs:
         uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
         with:
           enable: "core,rpc"
-          # Pinned by digest: "latest" moves with every protocol build.
-          tag: v687-b1580.1-latest@sha256:7711899e9942c60316ebacf8ab901be15bed7a5a31705d847b55375ff3bc8356
           # The image's own default can be a protocol its RPC cannot simulate.
           protocol_version: "30"
       - name: Add master account as default identity
