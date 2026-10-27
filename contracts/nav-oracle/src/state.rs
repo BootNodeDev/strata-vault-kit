@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, panic_with_error, symbol_short, Env, Symbol};
+use soroban_sdk::{contracttype, panic_with_error, symbol_short, BytesN, Env, String, Symbol};
 
 use crate::OracleError;
 
@@ -17,16 +17,31 @@ pub const ATTESTER_ROLE: Symbol = symbol_short!("attester");
 /// Pauses the NAV in an emergency. Cannot unpause it.
 pub const GUARDIAN_ROLE: Symbol = symbol_short!("guardian");
 
-/// A valuation. On input, `expires_at` is the latest moment the reporter
-/// vouches for it, and `timestamp` is ignored. As stored, `timestamp` is the
-/// ledger time the oracle accepted the report, and `expires_at` is the
-/// reporter's expiry capped at that time plus `freshness_duration`.
+/// What the attester submits. The proof is anchored, never verified: the hash
+/// commits to the evidence behind the price, and the URI says where to find it.
+#[contracttype]
+#[derive(Clone)]
+pub struct NavInput {
+    pub nav_per_share: i128,
+    /// The reporter's own expiry. The contract keeps the earlier of this and
+    /// its freshness window.
+    pub expires_at: u64,
+    pub proof_hash: BytesN<32>,
+    /// Where the evidence can be read. Empty when the hash alone is published.
+    pub proof_uri: String,
+}
+
+/// What the contract stores and serves.
 #[contracttype]
 #[derive(Clone)]
 pub struct NavReport {
     pub nav_per_share: i128,
+    /// The reporter's expiry, capped at `accepted_at` plus `freshness_duration`.
     pub expires_at: u64,
-    pub timestamp: u64,
+    /// Ledger time the contract accepted the report.
+    pub accepted_at: u64,
+    pub proof_hash: BytesN<32>,
+    pub proof_uri: String,
 }
 
 #[contracttype]

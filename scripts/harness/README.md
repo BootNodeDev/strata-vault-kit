@@ -21,6 +21,9 @@ npm run test:guards
 
 `HARNESS_NETWORK` picks the network: `local` (the default) or `testnet`.
 
+Each attestation carries the SHA-256 of `docs/evidence/sample-valuation.md` and
+a URL to it: the copy on `main`, or `PROOF_URI` when set.
+
 ## Account keys
 
 The harness signs with thirteen accounts: `deployer`, `governance`, `manager`,

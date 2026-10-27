@@ -22,6 +22,7 @@ use strata_timelock::{queue, setup, Clock, Refusal};
 
 use crate::error::VaultError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, NoticeSet, SetupFinished};
+use crate::extend;
 use crate::guards;
 use crate::keys::DataKey;
 use crate::state;
@@ -143,12 +144,12 @@ fn compliance_bound(e: &Env, compliance: &Address, token: &Address) -> bool {
         Ok(Ok(linked)) if linked.contains(token)
     );
     let binding = VaultBindingClient::new(e, compliance);
-    let on_this_clock = match (binding.try_vault(), binding.try_setup_open()) {
+    let bound_here_or_external = match (binding.try_vault(), binding.try_setup_open()) {
         (Ok(Ok(vault)), Ok(Ok(open))) => vault == Some(e.current_contract_address()) && !open,
-        // An external module answers no binding view; its governance is a trust assumption.
+        // Either view failing marks an external module; its governance is a trust assumption.
         _ => true,
     };
-    linked && on_this_clock
+    linked && bound_here_or_external
 }
 
 fn all_different(addresses: &[&Address]) -> bool {
@@ -216,7 +217,7 @@ pub(crate) fn set_notice(e: &Env, secs: u64) {
 pub(crate) fn propose(e: &Env, change: VaultChange) -> u32 {
     guards::not_winding_down(e);
     guards::setup_finished(e);
-    guards::change_in_bounds(e, &change);
+    guards::valid_change(e, &change);
     guards::not_a_second_code_change(e, &change);
     let id = queue::propose::<AsyncVault, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     ChangeProposed {
@@ -237,7 +238,7 @@ pub(crate) fn apply(e: &Env, id: u32) {
     let change: VaultChange =
         queue::take_ready::<AsyncVault, _>(e, id).unwrap_or_else(|r| refuse(e, r));
     // The notice or the delay may have moved since the proposal; this check decides.
-    guards::change_in_bounds(e, &change);
+    guards::valid_change(e, &change);
     let admin = access_control::get_admin(e)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AdminRequired));
     match &change {
@@ -247,7 +248,8 @@ pub(crate) fn apply(e: &Env, id: u32) {
         VaultChange::Notice(secs) => set_notice(e, *secs),
         VaultChange::WindDownDelay(secs) => wind_down::set_delay(e, *secs),
         VaultChange::GrantRole(role, account) => {
-            access_control::grant_role_no_auth(e, account, role, &admin)
+            access_control::grant_role_no_auth(e, account, role, &admin);
+            extend::role_entries(e, account, role);
         }
         VaultChange::RevokeRole(role, account) => {
             access_control::revoke_role_no_auth(e, account, role, &admin)

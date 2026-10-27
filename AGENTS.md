@@ -133,7 +133,10 @@ contracts. The addresses emitted by the deploy script are authoritative.
   are (`custodian`, `vault`, the allowlisted `account`). OpenZeppelin trait
   methods keep their own names (`operator`, `user_address`).
 - **Named errors.** Contract code fails with a named error variant, never with
-  `unwrap`, `expect` or a bare `panic!`. Tests may unwrap.
+  `unwrap`, `expect` or a bare `panic!`. Tests may unwrap. Each contract
+  declares its error enum through `strata_bindings::error_enum!`, which fails
+  the build if a code leaves the contract's block (`docs/kit-spec.md`, section
+  7).
 - **No boolean switches.** A new entrypoint does one thing. Two behaviours get
   two functions, like `freeze_partial_tokens` and `unfreeze_partial_tokens`,
   not one function that takes a `bool`.
@@ -146,7 +149,10 @@ contracts. The addresses emitted by the deploy script are authoritative.
   one-line summary, then `# Arguments` with units (asset base units, share base
   units, WAD prices, seconds or ledgers), `# Errors`, `# Events` and
   `# Authorization`. Every error variant's doc says when it happens. Keep them
-  short: they are stored in the Wasm as part of the contract spec.
+  short: they are stored in the Wasm as part of the contract spec, which keeps
+  1,024 bytes of each doc and drops the rest without a warning.
+  `every_contract_doc_fits_the_spec` (`crates/strata-bindings/tests/spec_docs.rs`)
+  fails when one is longer.
 - **Design notes.** Each contract's `lib.rs` opens with a `//! # Design`
   section: five to ten bullets, each a choice and its trade-off, in plain words
   and with no issue numbers or decision ids.

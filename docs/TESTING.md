@@ -33,6 +33,18 @@ wind-down; local tests only`. Check that it compiles with
 `cargo check -p async-vault --features short_wind_down`. Do not run the test
 suite under it: tests that subtract from the minimum assume seven days.
 
+CI also runs three checks that fail on any finding. Run them before pushing,
+inside `nix develop`:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo deny --locked check
+```
+
+`deny.toml` lists the allowed licences and every ignored advisory with its
+reason.
+
 ## Storage and TTL
 
 The contracts read and write through the shared helpers in
@@ -53,16 +65,25 @@ contract extends, who pays, and how to restore an archived one.
 | A request still claims, and a wind-down position still pays, after most of a month | [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs), [`contracts/async-vault/src/test/wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs) | `a_pending_request_still_claims_after_most_of_a_month`, `a_position_survives_the_ledger_advancing` |
 | The oracle's latest valuation keeps a full TTL while it is read | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `the_latest_valuation_keeps_a_full_ttl_while_it_is_read` |
 | The oracle's setup, grant, hand-over and change calls extend its instance | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) | `setup_grants_hand_overs_and_changes_restore_the_instance_ttl` |
+| Every call that writes a share balance or a freeze gives a new one its full TTL, under testnet's minimum lifetime; so do a deposit claim and the first redemption, through the vault | [`contracts/share-token/src/test_ttl.rs`](../contracts/share-token/src/test_ttl.rs), [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs) | `a_mint_writes_the_new_balance_with_the_full_ttl`, `an_escrow_writes_the_receiving_balance_with_the_full_ttl`, `a_recovery_writes_the_new_balance_with_the_full_ttl`, `sending_nothing_from_an_empty_account_writes_its_balance_with_the_full_ttl`, `a_partial_freeze_writes_its_entry_with_the_full_ttl`, `the_first_redemption_writes_the_vaults_share_balance_with_the_full_ttl` |
+| Every role grant in the vault, the token and the oracle gives the role's entries their full TTL: in the constructor, during setup and through the timelock | [`contracts/share-token/src/test_ttl.rs`](../contracts/share-token/src/test_ttl.rs), [`contracts/async-vault/src/test/ttl.rs`](../contracts/async-vault/src/test/ttl.rs), [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) | `the_constructor_writes_each_role_with_the_full_ttl`, `a_grant_during_setup_writes_the_role_with_the_full_ttl`, `a_grant_through_the_timelock_writes_the_role_with_the_full_ttl` |
+| Binding a token or adding a module gives each new compliance entry its full TTL, under testnet's minimum lifetime: during setup and through the timelock | [`contracts/compliance/src/test/ttl.rs`](../contracts/compliance/src/test/ttl.rs) | `a_binding_during_setup_writes_the_bound_tokens_with_the_full_ttl`, `a_binding_through_the_timelock_writes_the_bound_tokens_with_the_full_ttl`, `the_binding_that_opens_a_second_bucket_writes_it_with_the_full_ttl`, `a_module_added_during_setup_writes_the_hooks_modules_with_the_full_ttl`, `a_module_added_through_the_timelock_writes_the_hooks_modules_with_the_full_ttl` |
+| Under mainnet's longer minimum a new entry starts at that minimum; a balance is first renewed on day 91, a role on day 31 | [`contracts/share-token/src/test_ttl.rs`](../contracts/share-token/src/test_ttl.rs) | `under_mainnets_minimum_a_new_balance_is_first_renewed_on_day_91`, `under_mainnets_minimum_a_new_role_is_first_renewed_on_day_31` |
 | An epoch that was never written reads as nothing | [`contracts/async-vault/src/test/constructor.rs`](../contracts/async-vault/src/test/constructor.rs) | `unwritten_epoch_reads_as_none`, `epoch_zero_is_the_absent_id` |
 
 The test `Env` does not archive an entry whose TTL runs out; it still reads it.
 So these tests check the TTL numbers the contracts set, not what the network
 does once an entry is archived.
 
-The share token's balances and roles are stored by the OpenZeppelin Stellar
-library, which extends them when they are read or written. It never extends the
-instance, so the token, the identity verifier and the compliance contract
-extend their own on every call that does work.
+The share token's balances and freezes, the compliance stub's modules and bound
+tokens, and the roles of the vault, the token and the oracle, are stored by the
+OpenZeppelin Stellar library. It extends an entry when it reads it, not when it
+creates it, so the contracts read back each one they create. Without that, a
+new entry would start at the network's minimum lifetime. The tests for it set
+the ledger's minimum to testnet's 120,960 ledgers; the test `Env` defaults to
+4,096. OpenZeppelin never extends the instance, so the token, the identity
+verifier and the compliance contract extend their own on every call that does
+work.
 
 ## Authorization
 
@@ -128,7 +149,7 @@ so time rules and TTL can be reached in one test.
 | The vault publishes each step of a deposit with its amounts | [`contracts/async-vault/src/test/events.rs`](../contracts/async-vault/src/test/events.rs) | `requesting_a_deposit_publishes_the_request`, `closing_an_epoch_publishes_its_totals`, `pricing_an_epoch_publishes_the_share_price`, `claiming_the_last_deposit_publishes_the_shares_paid_and_the_settlement` |
 | A refused call publishes nothing | [`contracts/async-vault/src/test/events.rs`](../contracts/async-vault/src/test/events.rs) | `a_refused_call_publishes_nothing` |
 | An epoch's rounding remainder is cleared once its last request settles, a settled epoch leaves nothing in the totals whatever the claim order (property test), and a request that can never settle (a refused redemption or a refused mint) keeps its epoch open | [`contracts/async-vault/src/test/settlement.rs`](../contracts/async-vault/src/test/settlement.rs) | `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once`, `an_epoch_with_no_requests_settles_when_it_is_priced`, `a_settled_epoch_leaves_no_remainder_in_the_totals`, `a_request_that_cannot_settle_keeps_its_epoch_open`, `a_refused_mint_keeps_a_priced_deposit_epoch_open` |
-| The oracle publishes the valuation it stored | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `attesting_publishes_the_stored_valuation` |
+| The oracle publishes the valuation it stored, with its proof reference | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `attesting_publishes_the_stored_valuation`, `a_proof_uri_at_the_limit_is_stored_and_published` |
 | The vault publishes the end of its setup, and an applied change publishes its own event before `ChangeApplied` | [`contracts/async-vault/src/test/setup.rs`](../contracts/async-vault/src/test/setup.rs), [`contracts/async-vault/src/test/governance.rs`](../contracts/async-vault/src/test/governance.rs) | `finishing_setup_publishes_it`, `applying_a_custodian_change_publishes_both_events` |
 
 ## Calls between contracts
@@ -147,9 +168,29 @@ fixture wires them as the deploy does and finishes the vault's setup;
 | The vault reads the oracle and refuses a stale or paused feed | [`contracts/async-vault/src/test/oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs) | `the_epoch_is_priced_at_the_attestation`, `fulfill_is_rejected_once_the_feed_goes_stale`, `a_paused_feed_is_refused_by_the_vault_not_the_oracle` |
 | The vault finishes setup only once the token and the oracle report it with their own setup closed, it is the token's only `manager`, the token has no shares outstanding, it passes the identity check, its address is not frozen, the token is bound to compliance (which runs on this vault's clock with its setup closed unless it is an external module that does not answer `VaultBinding`), the asset has the token's decimals, the asset, token, oracle and vault have four different addresses, the oracle answers as a feed, and a custodian other than the vault is set. `health()` reports each check, and before setup finishes the vault takes no deposit | [`contracts/async-vault/src/test/setup.rs`](../contracts/async-vault/src/test/setup.rs), [`contracts/async-vault/src/test/health.rs`](../contracts/async-vault/src/test/health.rs) | `every_wiring_step_is_checked_before_setup_finishes`, `each_missing_wiring_step_shows_in_its_own_flag`, `a_token_that_cannot_answer_fails_its_checks_instead_of_trapping`, `a_compliance_contract_from_outside_the_kit_is_accepted`, `a_deposit_before_setup_finishes_is_refused`, `setup_cannot_finish_while_a_hand_over_is_pending` |
 | The vault is never its own custodian: the direct setter, during setup and after, and a `Custodian` change, when proposed and when applied, refuse it with `InvalidCustodian` | [`contracts/async-vault/src/test/treasury.rs`](../contracts/async-vault/src/test/treasury.rs), [`contracts/async-vault/src/test/governance.rs`](../contracts/async-vault/src/test/governance.rs), [`contracts/async-vault/src/test/guards.rs`](../contracts/async-vault/src/test/guards.rs) | `setting_the_vault_as_its_own_custodian_is_refused`, `a_custodian_change_to_the_vault_is_refused_when_proposed_and_when_applied`, `custodian_not_the_vault_refuses_the_vault_itself` |
+| The share token swaps to new compliance rules only if they list the token and, when they answer `vault()` and `setup_open()`, run on the vault's clock with their setup closed (`ComplianceNotBound`); as at setup, rules that do not answer them count as an external module and are accepted. It swaps to a new verifier only if the verifier accepts the vault (`VerifierRefusesVault`). Both are checked when proposed and again when applied; rules that do not answer `linked_tokens` and a verifier that does not answer are refused | [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs), [`contracts/share-token/src/test_guards.rs`](../contracts/share-token/src/test_guards.rs), [`contracts/async-vault/src/test/compliance.rs`](../contracts/async-vault/src/test/compliance.rs) | `rules_off_this_vaults_clock_or_without_the_token_are_never_proposed`, `rules_that_stop_qualifying_are_never_installed`, `rules_from_outside_the_kit_are_installed_while_they_list_the_token`, `rules_that_stop_answering_a_binding_view_are_installed_as_external`, `a_verifier_that_refuses_the_vault_or_cannot_answer_is_never_proposed`, `a_verifier_that_stops_accepting_the_vault_is_never_installed`, `applied_rule_and_verifier_changes_take_effect`, `an_unbound_compliance_swap_is_refused_and_every_move_goes_on` |
 | Upgrading replaces the vault's code and migrates once | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `applying_a_wasm_change_replaces_the_code`, `a_migration_refuses_a_second_run` |
 | The share token upgrades through the vault's timelock under live balances, an open deposit and an open redemption, and migrates once; called directly, `upgrade` does not exist | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `the_token_upgrades_under_live_balances_and_open_requests`, `the_token_exposes_no_immediate_upgrade` |
 | The oracle upgrades through the vault's timelock under a live valuation, keeps its config, roles and vault, and migrates once; called directly, `upgrade` does not exist | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) (needs `upgrade_wasm`) | `the_oracle_upgrades_under_a_live_valuation`, `the_oracle_exposes_no_immediate_upgrade` |
+| An oracle upgraded in place cannot read a report an earlier release stored; pausing the NAV, clearing the report and lifting the pause let the attester post a new one | [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs) | `a_report_of_the_earlier_shape_is_cleared_and_replaced` |
+
+The harness's own attestations, from its tests and `npm run seed`, carry the
+SHA-256 of [`docs/evidence/sample-valuation.md`](./evidence/sample-valuation.md),
+a sample marked as test data, and a URL to it. By default the URL is the file's
+raw copy on `main`, which resolves once the file is on `main`; the hash then
+matches only while that copy is unchanged. With `PROOF_URI` pointing at a
+release tag's copy, the URL and the hash name the same bytes for good.
+
+## Contract spec docs and error codes
+
+The contract spec keeps the first 1,024 bytes of each doc and drops the rest
+without a warning. Each contract's error codes stay inside the block
+`crates/strata-bindings` gives it.
+
+| Behaviour | Tests | Key test names |
+| --- | --- | --- |
+| Every entrypoint and error variant doc of the five contracts fits in 1,024 bytes | [`crates/strata-bindings/tests/spec_docs.rs`](../crates/strata-bindings/tests/spec_docs.rs) | `every_contract_doc_fits_the_spec` |
+| An error enum declared through `error_enum!` compiles only while every code stays in its contract's block | [`crates/strata-bindings/src/errors.rs`](../crates/strata-bindings/src/errors.rs) (doctests) | the in-range example compiles; the out-of-range one fails with `E0080` |
 
 ## Wind-down on the network
 
