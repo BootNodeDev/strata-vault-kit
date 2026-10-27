@@ -115,7 +115,7 @@ From a fresh clone to a vault set deployed on a local network. Run these inside
 ```sh
 # A local Stellar network, RPC at http://localhost:8000/rpc
 docker run --rm -d -p 8000:8000 --name stellar-local \
-  stellar/quickstart --local --enable core,rpc
+  stellar/quickstart --local --enable core,rpc --protocol-version 30
 
 npm ci                                         # JS dependencies, including the harness
 stellar contract build                         # contract wasms
