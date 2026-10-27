@@ -645,6 +645,9 @@ public surface given the vault address.
 | Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                                                          |
 | Wind-down distribution | Unfinalized rounds stall distribution          | Finalizing a round is permissionless: once treasury returns capital, anyone can finalize the round to credit holders; the operator cannot stall payouts after funding                                                                                                                                                                                                                                                                                           |
 
+The full threat model, with the test for each control, is in
+[`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
+
 Disclosed trust assumptions: the accuracy of the operator's KYC process, the
 quality of the data behind each attestation, and the operator's key ceremony.
 
