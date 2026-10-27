@@ -7,10 +7,18 @@ import {
 } from "../../hooks/useAdminAuthority"
 import { useGovernanceState } from "../../hooks/useGovernanceState"
 import {
-	useApplyUpgrade,
-	useCancelUpgrade,
+	useApplyChange,
+	useApplyTokenChange,
+	useCancelChange,
+	useCancelTokenChange,
 	useCancelWindDown,
+	useProposeAdmin,
 	useProposeCodeUpgrade,
+	useProposeGrantRole,
+	useProposeRevokeRole,
+	useProposeTokenAdmin,
+	useProposeTokenGrantRole,
+	useProposeTokenRevokeRole,
 	useProposeUpgradeDelay,
 	useProposeWindDown,
 	useAcceptOracleAdmin,
@@ -83,10 +91,22 @@ function useGovernanceFlows() {
 		"hand-over-token-admin": usePendingTransaction(useHandOverTokenAdmin()),
 		"cancel-token-handover": usePendingTransaction(useCancelTokenHandover()),
 		"accept-token-admin": usePendingTransaction(useAcceptTokenAdmin()),
+		"propose-grant-role": usePendingTransaction(useProposeGrantRole()),
+		"propose-revoke-role": usePendingTransaction(useProposeRevokeRole()),
+		"propose-admin": usePendingTransaction(useProposeAdmin()),
 		"propose-code-upgrade": usePendingTransaction(useProposeCodeUpgrade()),
 		"propose-upgrade-delay": usePendingTransaction(useProposeUpgradeDelay()),
-		"apply-upgrade": usePendingTransaction(useApplyUpgrade()),
-		"cancel-upgrade": usePendingTransaction(useCancelUpgrade()),
+		"apply-change": usePendingTransaction(useApplyChange()),
+		"cancel-change": usePendingTransaction(useCancelChange()),
+		"propose-token-grant-role": usePendingTransaction(
+			useProposeTokenGrantRole(),
+		),
+		"propose-token-revoke-role": usePendingTransaction(
+			useProposeTokenRevokeRole(),
+		),
+		"propose-token-admin": usePendingTransaction(useProposeTokenAdmin()),
+		"apply-token-change": usePendingTransaction(useApplyTokenChange()),
+		"cancel-token-change": usePendingTransaction(useCancelTokenChange()),
 		"propose-wind-down": usePendingTransaction(useProposeWindDown()),
 		"cancel-wind-down": usePendingTransaction(useCancelWindDown()),
 	} satisfies Record<GovernanceModalAction, Flow>
@@ -107,6 +127,10 @@ function submit(flows: Flows, action: GovernanceAction) {
 		case "revoke-oracle-role":
 		case "grant-token-role":
 		case "revoke-token-role":
+		case "propose-grant-role":
+		case "propose-revoke-role":
+		case "propose-token-grant-role":
+		case "propose-token-revoke-role":
 			return submitArg(flows[action.id], action)
 		case "hand-over-vault-admin":
 		case "cancel-vault-handover":
@@ -116,14 +140,19 @@ function submit(flows: Flows, action: GovernanceAction) {
 		case "cancel-token-handover":
 			return submitArg(flows[action.id], action)
 		case "propose-code-upgrade":
+		case "propose-admin":
+		case "propose-token-admin":
 			return submitArg(flows[action.id], action)
 		case "propose-upgrade-delay":
+			return submitArg(flows[action.id], action)
+		case "apply-change":
+		case "cancel-change":
+		case "apply-token-change":
+		case "cancel-token-change":
 			return submitArg(flows[action.id], action)
 		case "accept-vault-admin":
 		case "accept-oracle-admin":
 		case "accept-token-admin":
-		case "apply-upgrade":
-		case "cancel-upgrade":
 		case "propose-wind-down":
 		case "cancel-wind-down":
 			return flows[action.id].submit(undefined, action.next, action.grant)

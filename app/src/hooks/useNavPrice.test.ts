@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import {
 	type ContractRead,
 	type NavReport,
@@ -30,7 +31,9 @@ const unreadableState: ContractRead<OracleState> = { kind: "unreadable" }
 const report: NavReport = {
 	nav_per_share: 1500000000000000000n,
 	expires_at: 1800000000n,
-	timestamp: 1757900000n,
+	accepted_at: 1757900000n,
+	proof_hash: Buffer.alloc(32, 0xab),
+	proof_uri: "",
 }
 const value: ContractRead<NavReport> = { kind: "value", value: report }
 const notAttested: ContractRead<NavReport> = {
@@ -75,7 +78,7 @@ describe("classifyNav", () => {
 			{
 				status: "valid",
 				price: report.nav_per_share,
-				attestedAt: report.timestamp,
+				attestedAt: 1757900000n,
 			} as NavClassification,
 		],
 		[

@@ -12,6 +12,7 @@ import {
 } from "../../hooks/useEmergencyTransactions"
 import { useOracleState } from "../../hooks/useOracleState"
 import { usePendingTransaction } from "../../hooks/usePendingTransaction"
+import { useSetupOpen } from "../../hooks/useSetupOpen"
 import { useTokenPaused } from "../../hooks/useTokenPaused"
 import { useVaultPaused } from "../../hooks/useVaultPaused"
 import {
@@ -39,6 +40,7 @@ const EmergencySection: React.FC<{
 	active?: boolean
 }> = ({ grants, wallet, contracts, active = true }) => {
 	const { pause: vault } = useVaultPaused({ poll: true })
+	const { setup } = useSetupOpen("vault")
 	const { pause: token } = useTokenPaused()
 	const { oracle } = useOracleState()
 	const pauseVault = usePendingTransaction(usePauseVault())
@@ -49,7 +51,7 @@ const EmergencySection: React.FC<{
 	const pauseToken = usePendingTransaction(usePauseToken())
 	const unpauseToken = usePendingTransaction(useUnpauseToken())
 
-	const state: EmergencyState = { vault, token, oracle }
+	const state: EmergencyState = { vault, setup, token, oracle }
 	const actions = toEmergencyActions(state, grants, wallet)
 
 	const run = (action: EmergencyAction) => {

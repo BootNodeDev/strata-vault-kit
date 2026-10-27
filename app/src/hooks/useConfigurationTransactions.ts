@@ -8,6 +8,10 @@ import { adminAuthorityKey } from "./useAdminAuthority"
 import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
+import {
+	proposeTokenChange,
+	proposeVaultChange,
+} from "./useGovernanceTransactions"
 import { isAllowedKey } from "./useIsAllowed"
 import { oracleWriteKeys } from "./useOracleState"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
@@ -42,6 +46,21 @@ export const useSetWindDownDelay = adminTransaction(
 	[cycleReadsKey],
 )
 
+export const useProposeCustodian = proposeVaultChange(
+	(custodian: string) => ({ tag: "Custodian", values: [custodian] }),
+	[vaultAuthoritiesKey],
+)
+
+export const useProposeNotice = proposeVaultChange(
+	(secs: bigint) => ({ tag: "Notice", values: [secs] }),
+	[cycleReadsKey],
+)
+
+export const useProposeWindDownDelay = proposeVaultChange(
+	(secs: bigint) => ({ tag: "WindDownDelay", values: [secs] }),
+	[cycleReadsKey],
+)
+
 export const useSetOracleConfig = adminTransaction(
 	(signer: Signer, config: OracleConfig) =>
 		navOracleWriter(signer).then((oracle) => oracle.set_config({ config })),
@@ -65,4 +84,14 @@ export const useSetIdentityVerifier = adminTransaction(
 			}),
 		),
 	[configurationReadsKey, adminAuthorityKey, isAllowedKey],
+)
+
+export const useProposeCompliance = proposeTokenChange(
+	(compliance: string) => ({ tag: "Compliance", values: [compliance] }),
+	[configurationReadsKey],
+)
+
+export const useProposeIdentityVerifier = proposeTokenChange(
+	(verifier: string) => ({ tag: "IdentityVerifier", values: [verifier] }),
+	[configurationReadsKey],
 )

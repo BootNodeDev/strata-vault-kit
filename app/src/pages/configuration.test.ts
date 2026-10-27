@@ -38,6 +38,8 @@ const ready = (
 	notice: DAY,
 	windDownDelay: 7n * DAY,
 	upgradeDelay: 3n * DAY,
+	setupOpen: false,
+	tokenSetupOpen: true,
 	oracle: {
 		freshness: DAY,
 		cooldown: 3_600n,
@@ -82,7 +84,12 @@ describe("toConfigurationActions", () => {
 	it.each<[Grant, ConfigurationAction["id"][]]>([
 		[
 			governance,
-			["set-deposit-cap", "set-custodian", "set-notice", "set-wind-down-delay"],
+			[
+				"set-deposit-cap",
+				"propose-custodian",
+				"set-notice",
+				"set-wind-down-delay",
+			],
 		],
 		[oracleAdmin, ["set-oracle-config"]],
 		[tokenAdmin, ["set-compliance", "set-identity-verifier"]],
@@ -232,13 +239,13 @@ describe("toConfigurationActions", () => {
 
 	it("takes an account or a contract as custodian and says where deploys go", () => {
 		for (const address of [ACCOUNT, CONTRACT]) {
-			const custodian = find("set-custodian", [governance], {
+			const custodian = find("propose-custodian", [governance], {
 				custodian: address,
 			})
 			expect(custodian.enabled).toBe(true)
 			expect(custodian.arg).toBe(address)
 		}
-		const custodian = find("set-custodian", [governance], {
+		const custodian = find("propose-custodian", [governance], {
 			custodian: ACCOUNT,
 		})
 		expect(custodian.outcome).toBe(
@@ -246,8 +253,119 @@ describe("toConfigurationActions", () => {
 		)
 	})
 
+	it("proposes the custodian after setup and says how long it waits", () => {
+		const custodian = find("propose-custodian", [governance], {
+			custodian: ACCOUNT,
+		})
+
+		expect(custodian.label).toBe("Set the custodian")
+		expect(custodian.conditions).toContainEqual({
+			label: "Waits for the timelock",
+			met: true,
+			detail: "3d",
+		})
+	})
+
+	it("sets the custodian at once while setup is open", () => {
+		const custodian = find(
+			"set-custodian",
+			[governance],
+			{ custodian: ACCOUNT },
+			ready({ setupOpen: true }),
+		)
+
+		expect(custodian.enabled).toBe(true)
+		expect(custodian.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("holds the custodian while the setup state is unknown", () => {
+		const custodian = find(
+			"set-custodian",
+			[governance],
+			{ custodian: ACCOUNT },
+			ready({ setupOpen: null }),
+		)
+
+		expect(condition(custodian, "Setup state read")).toBeNull()
+		expect(custodian.enabled).toBe(false)
+	})
+
+	it("proposes a lower notice after setup and keeps raising it direct", () => {
+		const lower = find("propose-notice", [governance], { notice: "12h" })
+		const higher = find("set-notice", [governance], { notice: "2d" })
+		const same = find("set-notice", [governance], { notice: "1d" })
+
+		expect(lower.enabled).toBe(true)
+		expect(lower.arg).toBe(43_200n)
+		expect(lower.label).toBe("Set the notice")
+		expect(lower.conditions).toContainEqual({
+			label: "Waits for the timelock",
+			met: true,
+			detail: "3d",
+		})
+		expect(higher.enabled).toBe(true)
+		expect(higher.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Raising is instant",
+		})
+		expect(condition(same, "Differs from current")).toBe(false)
+	})
+
+	it("sets a lower notice at once while setup is open", () => {
+		const notice = find(
+			"set-notice",
+			[governance],
+			{ notice: "12h" },
+			ready({ setupOpen: true }),
+		)
+
+		expect(notice.enabled).toBe(true)
+		expect(condition(notice, "Applies at once")).toBe(true)
+	})
+
+	it("proposes a lower wind-down delay after setup and refuses one under 7 days", () => {
+		const state = ready({ windDownDelay: 14n * DAY })
+		const lower = find(
+			"propose-wind-down-delay",
+			[governance],
+			{ windDownDelay: "8d" },
+			state,
+		)
+		const short = find(
+			"propose-wind-down-delay",
+			[governance],
+			{ windDownDelay: "6d" },
+			state,
+		)
+		const raised = find(
+			"set-wind-down-delay",
+			[governance],
+			{ windDownDelay: "20d" },
+			state,
+		)
+
+		expect(lower.enabled).toBe(true)
+		expect(condition(short, "Wind-down delay ≥ 7d")).toBe(false)
+		expect(short.enabled).toBe(false)
+		expect(raised.enabled).toBe(true)
+	})
+
+	it("keeps the deposit cap direct after setup", () => {
+		const cap = find("set-deposit-cap", [governance], { depositCap: "5" })
+
+		expect(cap.enabled).toBe(true)
+		expect(cap.conditions.map(({ label }) => label)).not.toContain(
+			"Waits for the timelock",
+		)
+	})
+
 	it("lets the first custodian be set when none is set yet", () => {
-		const unset = ready({ custodian: { kind: "unset" } })
+		const unset = ready({ custodian: { kind: "unset" }, setupOpen: true })
 
 		const blank = find("set-custodian", [governance], {}, unset)
 		expect(blank.enabled).toBe(false)
@@ -269,7 +387,7 @@ describe("toConfigurationActions", () => {
 			"set-custodian",
 			[governance],
 			{ custodian: ACCOUNT },
-			ready({ custodian: { kind: "unreadable" } }),
+			ready({ custodian: { kind: "unreadable" }, setupOpen: true }),
 		)
 
 		expect(condition(custodian, "Differs from current")).toBeNull()
@@ -277,7 +395,7 @@ describe("toConfigurationActions", () => {
 	})
 
 	it("flags an address that is not a valid key", () => {
-		const custodian = find("set-custodian", [governance], {
+		const custodian = find("propose-custodian", [governance], {
 			custodian: "GNOPE",
 		})
 
@@ -301,6 +419,62 @@ describe("toConfigurationActions", () => {
 				identityVerifier: CONTRACT,
 			}).enabled,
 		).toBe(true)
+	})
+
+	it("proposes the compliance contract and identity verifier once the token's own setup closes", () => {
+		const closed = ready({ setupOpen: true, tokenSetupOpen: false })
+		const compliance = find(
+			"propose-compliance",
+			[tokenAdmin],
+			{ compliance: CONTRACT },
+			closed,
+		)
+		const verifier = find(
+			"propose-identity-verifier",
+			[tokenAdmin],
+			{ identityVerifier: CONTRACT },
+			closed,
+		)
+		const waits = { label: "Waits for the timelock", met: true, detail: "3d" }
+
+		expect(compliance).toMatchObject({
+			slot: "set-compliance",
+			label: "Set the compliance contract",
+			arg: CONTRACT,
+			enabled: true,
+		})
+		expect(compliance.conditions).toContainEqual(waits)
+		expect(verifier).toMatchObject({
+			slot: "set-identity-verifier",
+			label: "Set the identity verifier",
+			arg: CONTRACT,
+			enabled: true,
+		})
+		expect(verifier.conditions).toContainEqual(waits)
+	})
+
+	it("sets the compliance contract at once while the token's setup is open, even after the vault's closes", () => {
+		const compliance = find("set-compliance", [tokenAdmin], {
+			compliance: CONTRACT,
+		})
+
+		expect(compliance.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("holds the token setters while the token's setup state is unknown", () => {
+		const verifier = find(
+			"set-identity-verifier",
+			[tokenAdmin],
+			{ identityVerifier: CONTRACT },
+			ready({ tokenSetupOpen: null }),
+		)
+
+		expect(condition(verifier, "Setup state read")).toBeNull()
+		expect(verifier.enabled).toBe(false)
 	})
 
 	it("prefills every oracle limit and sends them all when one changes", () => {

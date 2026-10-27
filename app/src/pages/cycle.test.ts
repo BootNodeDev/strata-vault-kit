@@ -78,6 +78,7 @@ const oracle: CycleOracle = {
 	price: price(1n),
 	attestedAt: 1_700_050_000n,
 	expiresAt: 1_700_136_000n,
+	proof: { hash: "ab".repeat(32), uri: "https://example.com/nav.pdf" },
 	navPaused: false,
 	recorded: true,
 	limits: {
@@ -167,7 +168,7 @@ describe("toCycleRows", () => {
 		])
 		expect(groups.map((group) => group.rows.map((row) => row.label))).toEqual([
 			["Vault", "Notice period", "Sealed at", "Notice"],
-			["NAV paused"],
+			["NAV paused", "Proof hash", "Proof URI"],
 			["Committed", "Liquid reserve"],
 			["Activates at", "Delay", "Supply"],
 		])
@@ -301,6 +302,68 @@ describe("toCycleRows", () => {
 		expect(tileOf(groups, "Price", "Valid until")?.value).toBe(
 			"16 Nov, 12:00 UTC",
 		)
+	})
+
+	it("shows the latest proof, its hash shortened and its URI as a link", () => {
+		const rows = groupOf(toCycleRows(ready({})), "Price")?.rows
+
+		expect(rows?.find((row) => row.label === "Proof hash")).toEqual({
+			label: "Proof hash",
+			value: "abab...abab",
+		})
+		expect(rows?.find((row) => row.label === "Proof URI")).toEqual({
+			label: "Proof URI",
+			value: "https://example.com/nav.pdf",
+			href: "https://example.com/nav.pdf",
+		})
+	})
+
+	it("shows a proof URI that is not a web address as text, never as a link", () => {
+		const rows = groupOf(
+			toCycleRows(
+				ready({
+					oracle: {
+						...oracle,
+						proof: { hash: "ab".repeat(32), uri: "javascript:alert(1)" },
+					},
+				}),
+			),
+			"Price",
+		)?.rows
+
+		expect(rows?.find((row) => row.label === "Proof URI")).toEqual({
+			label: "Proof URI",
+			value: "javascript:alert(1)",
+		})
+	})
+
+	it("marks the proof URI as not applicable when the attestation gave none", () => {
+		const groups = toCycleRows(
+			ready({
+				oracle: { ...oracle, proof: { hash: "ab".repeat(32), uri: "" } },
+			}),
+		)
+
+		expect(valueOf(groups, "Price", "Proof URI")).toBe("—")
+	})
+
+	it("marks the proof as not applicable when nothing was attested", () => {
+		const groups = toCycleRows(
+			ready({
+				oracle: {
+					...oracle,
+					state: "never",
+					recorded: false,
+					price: null,
+					attestedAt: null,
+					expiresAt: null,
+					proof: null,
+				},
+			}),
+		)
+
+		expect(valueOf(groups, "Price", "Proof hash")).toBe("—")
+		expect(valueOf(groups, "Price", "Proof URI")).toBe("—")
 	})
 
 	it("shows the NAV pause, the share price and the oracle limits in app units", () => {
@@ -936,15 +999,27 @@ describe("toCycleActions", () => {
 
 const attester = grant("oracle attester")
 
+const PROOF_HASH = "AB".repeat(32)
+
 const attestOf = (
 	input: string,
 	overrides: Partial<ReadyState> = {},
 	grants: Grant[] = [attester],
+	proof: { proofHash?: string; proofUri?: string } = { proofHash: PROOF_HASH },
 ) =>
 	actionOf(
-		toCycleActions(ready(overrides), grants, WALLET, { price: input }),
+		toCycleActions(ready(overrides), grants, WALLET, {
+			price: input,
+			...proof,
+		}),
 		"attest",
 	)
+
+const proofConditions = {
+	"Proof hash of 64 hex characters": true,
+	"Proof hash not all zeros": true,
+	"Proof URI within 256 bytes": true,
+}
 
 describe("toCycleActions, attesting", () => {
 	it("offers the attestation only to the oracle attester, in the Price group", () => {
@@ -959,7 +1034,7 @@ describe("toCycleActions, attesting", () => {
 		const attest = attestOf("1.04")
 
 		expect(attest?.label).toBe("Attest price")
-		expect(attest?.field).toEqual({
+		expect(attest?.fields?.[0]).toEqual({
 			label: "Share price",
 			placeholder: "0.0000",
 			value: "1.04",
@@ -974,11 +1049,12 @@ describe("toCycleActions, attesting", () => {
 			"Within the band": null,
 			"Cooldown elapsed": true,
 			"Within the allowed move": null,
+			...proofConditions,
 		})
 		expect(attest?.outcome).toBeNull()
 		expect(attest?.price).toBeNull()
 		expect(attest?.enabled).toBe(false)
-		expect(attest?.field?.invalid).toBe(false)
+		expect(attest?.fields?.[0]?.invalid).toBe(false)
 	})
 
 	it.each(["abc", "1.2.3", "1.0000000000000000001"])(
@@ -986,7 +1062,7 @@ describe("toCycleActions, attesting", () => {
 		(input) => {
 			const attest = attestOf(input)
 
-			expect(attest?.field?.invalid).toBe(true)
+			expect(attest?.fields?.[0]?.invalid).toBe(true)
 			expect(conditionsOf(attest)["Within the band"]).toBeNull()
 			expect(attest?.enabled).toBe(false)
 		},
@@ -999,6 +1075,7 @@ describe("toCycleActions, attesting", () => {
 			"Within the band": true,
 			"Cooldown elapsed": true,
 			"Within the allowed move": true,
+			...proofConditions,
 		})
 		expect(attest?.price).toBe(1_040_000_000_000_000_000n)
 		expect(attest?.freshness).toBe(86_400n)
@@ -1104,6 +1181,7 @@ describe("toCycleActions, attesting", () => {
 			"Within the band": true,
 			"Cooldown elapsed": true,
 			"Within the allowed move": true,
+			...proofConditions,
 		})
 		expect(attest?.enabled).toBe(true)
 	})
@@ -1125,6 +1203,7 @@ describe("toCycleActions, attesting", () => {
 			"Within the band": true,
 			"Cooldown elapsed": true,
 			"Within the allowed move": true,
+			...proofConditions,
 		})
 		expect(attest?.enabled).toBe(true)
 	})
@@ -1168,7 +1247,7 @@ describe("toCycleActions, attesting", () => {
 		})
 
 		expect(attest?.note).toBe("NAV paused — attesting does not unpause it.")
-		expect(Object.keys(conditionsOf(attest))).toHaveLength(3)
+		expect(Object.keys(conditionsOf(attest))).toHaveLength(6)
 		expect(attest?.enabled).toBe(true)
 	})
 
@@ -1178,6 +1257,102 @@ describe("toCycleActions, attesting", () => {
 
 		expect(attest?.enabled).toBe(true)
 		expect(attest?.grant).toEqual(shared)
+	})
+
+	it("asks for the proof hash and an optional proof URI in text fields", () => {
+		const attest = attestOf("1.04", {}, [attester], {
+			proofHash: PROOF_HASH,
+			proofUri: "https://example.com/nav.pdf",
+		})
+
+		expect(attest?.fields?.slice(1)).toEqual([
+			{
+				key: "proof-hash",
+				label: "Proof hash",
+				placeholder: "Proof hash, 64 hex characters",
+				value: PROOF_HASH,
+				invalid: false,
+				text: true,
+			},
+			{
+				key: "proof-uri",
+				label: "Proof URI",
+				placeholder: "Proof URI (optional)",
+				value: "https://example.com/nav.pdf",
+				invalid: false,
+				text: true,
+			},
+		])
+		expect(attest?.proofHash).toBe("ab".repeat(32))
+		expect(attest?.proofUri).toBe("https://example.com/nav.pdf")
+	})
+
+	it("holds the attestation until a proof hash is typed", () => {
+		const attest = attestOf("1.04", {}, [attester], {})
+
+		expect(conditionsOf(attest)["Proof hash of 64 hex characters"]).toBeNull()
+		expect(conditionsOf(attest)["Proof hash not all zeros"]).toBeNull()
+		expect(attest?.proofHash).toBeNull()
+		expect(attest?.enabled).toBe(false)
+	})
+
+	it.each(["ab".repeat(31), "ab".repeat(33), "zz".repeat(32)])(
+		"refuses %j as a proof hash, marking the field",
+		(proofHash) => {
+			const attest = attestOf("1.04", {}, [attester], { proofHash })
+
+			expect(conditionsOf(attest)["Proof hash of 64 hex characters"]).toBe(
+				false,
+			)
+			expect(attest?.fields?.[1]?.invalid).toBe(true)
+			expect(attest?.enabled).toBe(false)
+		},
+	)
+
+	it("refuses an all-zero proof hash", () => {
+		const attest = attestOf("1.04", {}, [attester], {
+			proofHash: "0".repeat(64),
+		})
+
+		expect(conditionsOf(attest)["Proof hash of 64 hex characters"]).toBe(true)
+		expect(conditionsOf(attest)["Proof hash not all zeros"]).toBe(false)
+		expect(attest?.fields?.[1]?.invalid).toBe(true)
+		expect(attest?.enabled).toBe(false)
+	})
+
+	it("accepts a proof URI of exactly 256 bytes and refuses one byte more, counting UTF-8 bytes", () => {
+		const fits = attestOf("1.04", {}, [attester], {
+			proofHash: PROOF_HASH,
+			proofUri: "é".repeat(128),
+		})
+		const over = attestOf("1.04", {}, [attester], {
+			proofHash: PROOF_HASH,
+			proofUri: `${"é".repeat(128)}a`,
+		})
+
+		expect(conditionsOf(fits)["Proof URI within 256 bytes"]).toBe(true)
+		expect(fits?.enabled).toBe(true)
+		expect(
+			over?.conditions.find(
+				(condition) => condition.label === "Proof URI within 256 bytes",
+			),
+		).toEqual({
+			label: "Proof URI within 256 bytes",
+			met: false,
+			detail: "257 bytes",
+		})
+		expect(over?.fields?.[2]?.invalid).toBe(true)
+		expect(over?.enabled).toBe(false)
+	})
+
+	it("enables an attestation without a proof URI, sending it empty", () => {
+		const attest = attestOf("1.04", {}, [attester], {
+			proofHash: PROOF_HASH,
+			proofUri: "  ",
+		})
+
+		expect(attest?.proofUri).toBe("")
+		expect(attest?.enabled).toBe(true)
 	})
 })
 

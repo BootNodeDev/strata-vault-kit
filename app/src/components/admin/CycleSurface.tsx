@@ -73,6 +73,16 @@ const FigureRows: React.FC<{ rows: FigureRow[] }> = ({ rows }) => (
 					<Skeleton
 						className={`${typeStyles.railValue} ${styles.rowSkeleton}`}
 					/>
+				) : row.href !== undefined && row.value !== null ? (
+					<a
+						className={`${typeStyles.railValue} ${styles.rowLink}`}
+						href={row.href}
+						target="_blank"
+						rel="noreferrer"
+						title={row.value}
+					>
+						{row.value}
+					</a>
 				) : (
 					<span
 						className={`${typeStyles.railValue} ${
