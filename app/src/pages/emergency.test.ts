@@ -28,9 +28,15 @@ const everyRole = [
 	grantOf("share-token admin"),
 ]
 
-const calm: EmergencyState = { vault: "open", token: "open", oracle: "valid" }
+const calm: EmergencyState = {
+	vault: "open",
+	setup: "closed",
+	token: "open",
+	oracle: "valid",
+}
 const alarmed: EmergencyState = {
 	vault: "paused",
+	setup: "closed",
 	token: "paused",
 	oracle: "paused",
 }
@@ -50,6 +56,7 @@ describe("toEmergencyActions", () => {
 	it("holds no action back on a state still being read, showing the condition as unknown", () => {
 		const reading: EmergencyState = {
 			vault: "checking",
+			setup: "checking",
 			token: "checking",
 			oracle: "checking",
 		}
@@ -67,6 +74,7 @@ describe("toEmergencyActions", () => {
 	it("decides each action from its own state only", () => {
 		const state: EmergencyState = {
 			vault: "checking",
+			setup: "checking",
 			token: "paused",
 			oracle: "checking",
 		}
@@ -174,6 +182,7 @@ describe("toEmergencyActions", () => {
 	it("leaves a precondition undecided when its state is unreadable", () => {
 		const state: EmergencyState = {
 			vault: "unreadable",
+			setup: "unreadable",
 			token: "unreadable",
 			oracle: "unreadable",
 		}
@@ -241,12 +250,14 @@ describe("toEmergencyTiles", () => {
 	it("shows pending tiles while reading", () => {
 		const tiles = toEmergencyTiles({
 			vault: "checking",
+			setup: "checking",
 			token: "checking",
 			oracle: "checking",
 		})
 
 		expect(tiles.map(({ label, pending }) => [label, pending])).toEqual([
 			["Vault", true],
+			["Setup", true],
 			["Share token", true],
 			["Oracle", true],
 		])
@@ -255,25 +266,57 @@ describe("toEmergencyTiles", () => {
 	it("states each contract's current pause and the NAV pause", () => {
 		expect(toEmergencyTiles(calm)).toEqual([
 			{ label: "Vault", value: "Open" },
+			{
+				label: "Setup",
+				value: "Closed",
+				note: "Changes wait for the timelock",
+			},
 			{ label: "Share token", value: "Open" },
 			{ label: "Oracle", value: "Valid", note: "NAV not paused" },
 		])
 		expect(toEmergencyTiles(alarmed)).toEqual([
 			{ label: "Vault", value: "Paused" },
+			{
+				label: "Setup",
+				value: "Closed",
+				note: "Changes wait for the timelock",
+			},
 			{ label: "Share token", value: "Paused" },
 			{ label: "Oracle", value: "Paused", note: "NAV paused" },
 		])
 	})
 
+	it("says setup is open beside the vault, and what that means", () => {
+		expect(toEmergencyTiles({ ...calm, setup: "open" })[1]).toEqual({
+			label: "Setup",
+			value: "Open",
+			note: "Changes apply at once; no deposits yet",
+		})
+		expect(toEmergencyTiles({ ...calm, setup: "unreadable" })[1]).toEqual({
+			label: "Setup",
+			value: null,
+		})
+	})
+
 	it("shows a stale oracle as stale with the NAV not paused, and an unreadable state as unknown", () => {
 		expect(
-			toEmergencyTiles({ vault: "unreadable", token: "open", oracle: "stale" }),
+			toEmergencyTiles({
+				vault: "unreadable",
+				setup: "closed",
+				token: "open",
+				oracle: "stale",
+			}),
 		).toEqual([
 			{ label: "Vault", value: null },
+			{
+				label: "Setup",
+				value: "Closed",
+				note: "Changes wait for the timelock",
+			},
 			{ label: "Share token", value: "Open" },
 			{ label: "Oracle", value: "Stale", note: "NAV not paused" },
 		])
-		expect(toEmergencyTiles({ ...calm, oracle: "unreadable" })[2]).toEqual({
+		expect(toEmergencyTiles({ ...calm, oracle: "unreadable" })[3]).toEqual({
 			label: "Oracle",
 			value: null,
 		})

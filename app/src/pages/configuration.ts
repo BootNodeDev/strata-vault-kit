@@ -37,6 +37,7 @@ import {
 	oracleLimitRows,
 	parseDuration,
 } from "./cycle"
+import { type Route, routeCondition, routeOf } from "./timelock"
 import { toCustodianRow } from "./vaultMetrics"
 
 export type FieldKey =
@@ -61,8 +62,20 @@ type Setter<Id extends string, Arg> = Id extends string
 
 export type ConfigurationAction =
 	| Setter<"set-deposit-cap", bigint | null>
-	| Setter<"set-custodian" | "set-compliance" | "set-identity-verifier", string>
-	| Setter<"set-notice" | "set-wind-down-delay", bigint>
+	| Setter<
+			| "set-custodian"
+			| "propose-custodian"
+			| "set-compliance"
+			| "set-identity-verifier",
+			string
+	  >
+	| Setter<
+			| "set-notice"
+			| "propose-notice"
+			| "set-wind-down-delay"
+			| "propose-wind-down-delay",
+			bigint
+	  >
 	| Setter<"set-oracle-config", OracleConfig>
 
 export type ConfigurationGroup = {
@@ -78,6 +91,7 @@ export const EFFECTS = {
 } as const
 
 const MAX_NOTICE = 30n * DAY
+const MIN_WIND_DOWN_DELAY = 7n * DAY
 const MAX_WIND_DOWN_DELAY = 90n * DAY
 const MIN_SECS = 1n
 const MAX_FRESHNESS = 35n * DAY
@@ -236,6 +250,14 @@ const upgradeBound = (
 			: notice <= upgradeDelay,
 })
 
+const lowering = (
+	arg: bigint | undefined,
+	current: bigint | undefined,
+): boolean | undefined =>
+	arg === undefined || current === undefined ? undefined : arg < current
+
+const RAISED = "Raising is instant"
+
 function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 	const cap = capOf(state)
 	const capField = parsed("depositCap", "Deposit cap", CAP, cap, inputs)
@@ -251,6 +273,18 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 		delay,
 		inputs,
 	)
+	const custodianRoute = routeOf(state.setupOpen, true)
+	const noticeRoute = routeOf(
+		state.setupOpen,
+		lowering(noticeField.arg, notice),
+	)
+	const delayRoute = routeOf(state.setupOpen, lowering(delayField.arg, delay))
+	const waits = (route: Route) =>
+		routeCondition(
+			route,
+			state.upgradeDelay,
+			state.setupOpen === true ? undefined : RAISED,
+		)
 	return [
 		single("set-deposit-cap", "Set the deposit cap", capField, cap, [
 			bound("Deposit cap ≥ 0", capField.arg, (value) => (value ?? 0n) >= 0n),
@@ -260,39 +294,61 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 				(value) => (value ?? 0n) <= MAX_I128,
 			),
 		]),
-		single(
-			"set-custodian",
-			"Set the custodian",
-			parsed("custodian", "Custodian", ANY_ADDRESS, custodian, inputs),
-			state.custodian.kind === "unset" ? UNSET : custodian,
-			[],
-			EFFECTS.custodian,
-		),
-		single(
-			"set-notice",
-			"Set the notice",
-			noticeField,
-			notice,
-			[
-				bound("Notice ≤ 30d", noticeField.arg, (value) => value <= MAX_NOTICE),
-				upgradeBound(noticeField.arg, state.upgradeDelay),
-			],
-			EFFECTS.notice,
-		),
-		single(
-			"set-wind-down-delay",
-			"Set the wind-down delay",
-			delayField,
-			delay,
-			[
-				bound(
-					"Wind-down delay ≤ 90d",
-					delayField.arg,
-					(value) => value <= MAX_WIND_DOWN_DELAY,
-				),
-			],
-			EFFECTS.windDownDelay,
-		),
+		{
+			...single(
+				custodianRoute === "timelock" ? "propose-custodian" : "set-custodian",
+				"Set the custodian",
+				parsed("custodian", "Custodian", ANY_ADDRESS, custodian, inputs),
+				state.custodian.kind === "unset" ? UNSET : custodian,
+				[routeCondition(custodianRoute, state.upgradeDelay)],
+				EFFECTS.custodian,
+			),
+			slot: "set-custodian",
+		},
+		{
+			...single(
+				noticeRoute === "timelock" ? "propose-notice" : "set-notice",
+				"Set the notice",
+				noticeField,
+				notice,
+				[
+					bound(
+						"Notice ≤ 30d",
+						noticeField.arg,
+						(value) => value <= MAX_NOTICE,
+					),
+					upgradeBound(noticeField.arg, state.upgradeDelay),
+					waits(noticeRoute),
+				],
+				EFFECTS.notice,
+			),
+			slot: "set-notice",
+		},
+		{
+			...single(
+				delayRoute === "timelock"
+					? "propose-wind-down-delay"
+					: "set-wind-down-delay",
+				"Set the wind-down delay",
+				delayField,
+				delay,
+				[
+					bound(
+						"Wind-down delay ≥ 7d",
+						delayField.arg,
+						(value) => value >= MIN_WIND_DOWN_DELAY,
+					),
+					bound(
+						"Wind-down delay ≤ 90d",
+						delayField.arg,
+						(value) => value <= MAX_WIND_DOWN_DELAY,
+					),
+					waits(delayRoute),
+				],
+				EFFECTS.windDownDelay,
+			),
+			slot: "set-wind-down-delay",
+		},
 	] as const
 }
 

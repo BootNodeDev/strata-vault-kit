@@ -11,6 +11,9 @@ const {
 	custodianMock,
 	noticeMock,
 	windDownDelayMock,
+	proposeCustodianMock,
+	proposeNoticeMock,
+	proposeWindDownDelayMock,
 	oracleConfigMock,
 	complianceMock,
 	identityVerifierMock,
@@ -26,6 +29,9 @@ const {
 		custodianMock: tx(),
 		noticeMock: tx(),
 		windDownDelayMock: tx(),
+		proposeCustodianMock: tx(),
+		proposeNoticeMock: tx(),
+		proposeWindDownDelayMock: tx(),
 		oracleConfigMock: tx(),
 		complianceMock: tx(),
 		identityVerifierMock: tx(),
@@ -40,6 +46,9 @@ vi.mock("../../hooks/useConfigurationTransactions", () => ({
 	useSetCustodian: () => custodianMock,
 	useSetNotice: () => noticeMock,
 	useSetWindDownDelay: () => windDownDelayMock,
+	useProposeCustodian: () => proposeCustodianMock,
+	useProposeNotice: () => proposeNoticeMock,
+	useProposeWindDownDelay: () => proposeWindDownDelayMock,
 	useSetOracleConfig: () => oracleConfigMock,
 	useSetCompliance: () => complianceMock,
 	useSetIdentityVerifier: () => identityVerifierMock,
@@ -68,6 +77,7 @@ const READY: ConfigurationState = {
 	notice: DAY,
 	windDownDelay: 7n * DAY,
 	upgradeDelay: 3n * DAY,
+	setupOpen: false,
 	oracle: {
 		freshness: DAY,
 		cooldown: 3_600n,
@@ -100,6 +110,9 @@ describe("ConfigurationSection", () => {
 			custodianMock,
 			noticeMock,
 			windDownDelayMock,
+			proposeCustodianMock,
+			proposeNoticeMock,
+			proposeWindDownDelayMock,
 			oracleConfigMock,
 			complianceMock,
 			identityVerifierMock,
@@ -141,6 +154,45 @@ describe("ConfigurationSection", () => {
 		noticeMock.status = { status: "awaiting-signature" }
 		rerender(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
 		expect(screen.getByText("New notice: 2d.")).toBeTruthy()
+	})
+
+	it("proposes a lower notice after setup and follows it in the modal", () => {
+		const { rerender } = render(
+			<ConfigurationSection grants={[governance]} wallet={WALLET} />,
+		)
+		expand("Set the notice")
+		fireEvent.change(screen.getByRole("textbox", { name: "Notice" }), {
+			target: { value: "12h" },
+		})
+		fireEvent.click(submit("Set the notice"))
+		expect(proposeNoticeMock.submit).toHaveBeenCalledWith(43_200n, governance)
+		expect(noticeMock.submit).not.toHaveBeenCalled()
+
+		proposeNoticeMock.status = { status: "awaiting-signature" }
+		rerender(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
+		expect(screen.getByText("Signing queues notice 12h.")).toBeTruthy()
+	})
+
+	it("proposes the custodian after setup and sets it at once while setup is open", () => {
+		const { rerender } = render(
+			<ConfigurationSection grants={[governance]} wallet={WALLET} />,
+		)
+		expand("Set the custodian")
+		fireEvent.change(screen.getByRole("textbox", { name: "Custodian" }), {
+			target: { value: VERIFIER },
+		})
+		fireEvent.click(submit("Set the custodian"))
+		expect(proposeCustodianMock.submit).toHaveBeenCalledWith(
+			VERIFIER,
+			governance,
+		)
+
+		useConfigurationStateMock.mockReturnValue({
+			configuration: { ...READY, setupOpen: true },
+		})
+		rerender(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
+		fireEvent.click(submit("Set the custodian"))
+		expect(custodianMock.submit).toHaveBeenCalledWith(VERIFIER, governance)
 	})
 
 	it("sends every oracle limit when one changes", () => {

@@ -12,6 +12,7 @@ const transaction = () => ({
 
 const {
 	useVaultPausedMock,
+	useSetupOpenMock,
 	useTokenPausedMock,
 	useOracleStateMock,
 	pauseVaultMock,
@@ -29,6 +30,7 @@ const {
 	})
 	return {
 		useVaultPausedMock: vi.fn(),
+		useSetupOpenMock: vi.fn(),
 		useTokenPausedMock: vi.fn(),
 		useOracleStateMock: vi.fn(),
 		pauseVaultMock: tx(),
@@ -48,6 +50,9 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 }))
 vi.mock("../../hooks/useVaultPaused", () => ({
 	useVaultPaused: useVaultPausedMock,
+}))
+vi.mock("../../hooks/useSetupOpen", () => ({
+	useSetupOpen: useSetupOpenMock,
 }))
 vi.mock("../../hooks/useTokenPaused", () => ({
 	useTokenPaused: useTokenPausedMock,
@@ -93,6 +98,7 @@ const button = (name: string) => {
 
 const setState = (vault: string, token: string, oracle: string): void => {
 	useVaultPausedMock.mockReturnValue({ pause: vault })
+	useSetupOpenMock.mockReturnValue({ setup: "closed" })
 	useTokenPausedMock.mockReturnValue({ pause: token })
 	useOracleStateMock.mockReturnValue({ oracle })
 }
@@ -123,6 +129,18 @@ describe("EmergencySection", () => {
 		expect(within(overview).getAllByText("Paused")).toHaveLength(2)
 		expect(within(overview).getByText("Open")).toBeTruthy()
 		expect(within(overview).getByText("NAV paused")).toBeTruthy()
+	})
+
+	it("shows whether setup is still open beside the vault", () => {
+		useSetupOpenMock.mockReturnValue({ setup: "open" })
+		render(<EmergencySection grants={[guardian]} wallet={WALLET} />)
+
+		const overview = screen.getByRole("region", { name: "Status" })
+		const tiles = within(overview).getAllByText(/^(Vault|Setup)$/)
+		expect(tiles.map((tile) => tile.textContent)).toEqual(["Vault", "Setup"])
+		expect(
+			within(overview).getByText("Changes apply at once; no deposits yet"),
+		).toBeTruthy()
 	})
 
 	it("offers the vault guardian only the pause, saying what it stops and what stays open", () => {

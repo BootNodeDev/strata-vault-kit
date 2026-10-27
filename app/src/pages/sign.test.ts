@@ -260,16 +260,116 @@ describe("describePending", () => {
 		})
 	})
 
-	it("shows a code upgrade hash in hex", () => {
-		const { args } = describePending(
-			pending(addresses.vault, "propose_upgrade", [
-				Buffer.from("abcd", "hex"),
-				account,
-			]),
-			addresses,
-		)
+	it.each<[unknown[], string, { label: string; value: string }[]]>([
+		[
+			["Custodian", account],
+			"propose-custodian",
+			[{ label: "Custodian", value: "GBRP...OX2H" }],
+		],
+		[
+			["Notice", 43_200n],
+			"propose-notice",
+			[{ label: "Notice", value: "12h" }],
+		],
+		[
+			["WindDownDelay", 691_200n],
+			"propose-wind-down-delay",
+			[{ label: "Wind-down delay", value: "8d" }],
+		],
+		[
+			["Upgrade", Buffer.from("abcd", "hex")],
+			"propose-code-upgrade",
+			[{ label: "Wasm hash", value: "abcd" }],
+		],
+		[
+			["UpgradeDelay", 1_209_600n],
+			"propose-upgrade-delay",
+			[{ label: "Upgrade delay", value: "14d" }],
+		],
+		[
+			["GrantRole", "manager", account],
+			"propose-grant-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["RevokeRole", "manager", account],
+			"propose-revoke-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["Admin", account],
+			"propose-admin",
+			[{ label: "New admin", value: "GBRP...OX2H" }],
+		],
+	])("describes propose_change %o by its kind", (change, action, args) => {
+		expect(
+			describePending(
+				pending(addresses.vault, "propose_change", [change]),
+				addresses,
+			),
+		).toMatchObject({ contract: "Vault", action, args })
+	})
 
-		expect(args).toEqual([{ label: "Wasm hash", value: "abcd" }])
+	it("refuses a proposed change the console does not propose", () => {
+		expect(() =>
+			describePending(
+				pending(addresses.vault, "propose_change", [["Oracle", other]]),
+				addresses,
+			),
+		).toThrow(new InvalidPendingTransaction("unknown operation"))
+	})
+
+	it("names the pending change an apply or cancel acts on, or its id when gone", () => {
+		const changes = [
+			{ id: 3, change: { tag: "Custodian", values: [account] }, eta: 1n },
+		]
+
+		expect(
+			describePending(
+				pending(addresses.vault, "apply_change", [3]),
+				addresses,
+				changes,
+			),
+		).toMatchObject({
+			action: "apply-change",
+			label: "Apply the change",
+			args: [
+				{ label: "Change", value: "vault change #3: Custodian GBRP...OX2H" },
+			],
+		})
+		expect(
+			describePending(
+				pending(addresses.vault, "cancel_change", [4]),
+				addresses,
+				changes,
+			),
+		).toMatchObject({
+			action: "cancel-change",
+			label: "Cancel the change",
+			args: [{ label: "Change", value: "vault change #4" }],
+		})
+		expect(
+			describePending(pending(addresses.vault, "apply_change", [3]), addresses)
+				.args,
+		).toEqual([{ label: "Change", value: "vault change #3" }])
+	})
+
+	it("no longer decodes the removed upgrade entrypoints", () => {
+		for (const fn of [
+			"propose_upgrade",
+			"propose_upgrade_delay",
+			"apply_upgrade",
+			"cancel_upgrade",
+		])
+			expect(() =>
+				describePending(pending(addresses.vault, fn, [account]), addresses),
+			).toThrow(new InvalidPendingTransaction("unknown operation"))
 	})
 
 	it("refuses an operation the console does not propose", () => {

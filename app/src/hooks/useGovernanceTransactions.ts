@@ -1,5 +1,9 @@
 import { Buffer } from "buffer"
-import { type AsyncVaultApi, type Signer } from "@stellar-scaffold/app-lib"
+import {
+	type AsyncVaultApi,
+	type Signer,
+	type VaultChange,
+} from "@stellar-scaffold/app-lib"
 import { type QueryKey } from "@tanstack/react-query"
 import {
 	asyncVaultWriter,
@@ -11,10 +15,22 @@ import { adminAuthorityKey } from "./useAdminAuthority"
 import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
-import { upgradeProposalKey } from "./useGovernanceState"
+import { pendingChangesKey } from "./useGovernanceState"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 
 export type RoleChange = { role: string; account: string }
+
+export const proposeVaultChange = <TArg>(
+	toChange: (arg: TArg) => VaultChange,
+	keys: readonly QueryKey[] = [],
+) =>
+	adminTransaction(
+		(signer: Signer, arg: TArg) =>
+			asyncVaultWriter(signer).then((vault) =>
+				vault.propose_change({ change: toChange(arg) }),
+			),
+		[pendingChangesKey, ...keys],
+	)
 
 type RoleClient = Pick<AsyncVaultApi, "grant_role" | "revoke_role">
 
@@ -112,41 +128,50 @@ export const useCancelTokenHandover = offerAdmin(
 )
 export const useAcceptTokenAdmin = acceptAdmin(shareTokenWriter, HANDOVER_KEYS)
 
-const UPGRADE_KEYS = [upgradeProposalKey, configurationReadsKey]
-
-export const useProposeCodeUpgrade = adminTransaction(
-	(signer: Signer, hash: string) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.propose_upgrade({
-				wasm_hash: Buffer.from(hash, "hex"),
-				caller: signer.publicKey,
-			}),
-		),
-	UPGRADE_KEYS,
+export const useProposeCodeUpgrade = proposeVaultChange(
+	(hash: string) => ({ tag: "Upgrade", values: [Buffer.from(hash, "hex")] }),
+	[configurationReadsKey],
 )
 
-export const useProposeUpgradeDelay = adminTransaction(
-	(signer: Signer, secs: bigint) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.propose_upgrade_delay({ secs, caller: signer.publicKey }),
-		),
-	UPGRADE_KEYS,
+export const useProposeUpgradeDelay = proposeVaultChange(
+	(secs: bigint) => ({ tag: "UpgradeDelay", values: [secs] }),
+	[configurationReadsKey],
 )
 
-export const useApplyUpgrade = adminTransaction(
-	(signer: Signer) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.apply_upgrade({ caller: signer.publicKey }),
-		),
-	UPGRADE_KEYS,
+export const useProposeGrantRole = proposeVaultChange(
+	({ role, account }: RoleChange) => ({
+		tag: "GrantRole",
+		values: [role, account],
+	}),
 )
 
-export const useCancelUpgrade = adminTransaction(
-	(signer: Signer) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.cancel_upgrade({ caller: signer.publicKey }),
-		),
-	UPGRADE_KEYS,
+export const useProposeRevokeRole = proposeVaultChange(
+	({ role, account }: RoleChange) => ({
+		tag: "RevokeRole",
+		values: [role, account],
+	}),
+)
+
+export const useProposeAdmin = proposeVaultChange((account: string) => ({
+	tag: "Admin",
+	values: [account],
+}))
+
+export const useApplyChange = adminTransaction(
+	(signer: Signer, id: number) =>
+		asyncVaultWriter(signer).then((vault) => vault.apply_change({ id })),
+	[
+		pendingChangesKey,
+		configurationReadsKey,
+		cycleReadsKey,
+		...VAULT_HANDOVER_KEYS,
+	],
+)
+
+export const useCancelChange = adminTransaction(
+	(signer: Signer, id: number) =>
+		asyncVaultWriter(signer).then((vault) => vault.cancel_change({ id })),
+	[pendingChangesKey],
 )
 
 export const useProposeWindDown = adminTransaction(

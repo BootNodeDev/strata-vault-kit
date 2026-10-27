@@ -14,7 +14,7 @@ const {
 	useVaultPausedMock,
 } = vi.hoisted(() => ({
 	readPendingAdminsMock: vi.fn(),
-	vaultMock: { upgrade_proposal: vi.fn() },
+	vaultMock: { pending_changes: vi.fn() },
 	useCycleReadsMock: vi.fn(),
 	useConfigurationStateMock: vi.fn(),
 	useVaultPausedMock: vi.fn(),
@@ -70,7 +70,7 @@ describe("useGovernanceState", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		readPendingAdminsMock.mockResolvedValue({ kind: "unreadable" })
-		vaultMock.upgrade_proposal.mockResolvedValue({ result: null })
+		vaultMock.pending_changes.mockResolvedValue({ result: [] })
 		useCycleReadsMock.mockReturnValue({
 			ledgerTime: 1_800_000_000n,
 			windDown: WIND_DOWN,
@@ -80,6 +80,7 @@ describe("useGovernanceState", () => {
 				status: "ready",
 				upgradeDelay: 7n * DAY,
 				notice: DAY,
+				setupOpen: false,
 			},
 		})
 		useVaultPausedMock.mockReturnValue({ pause: "open" })
@@ -148,7 +149,8 @@ describe("useGovernanceState", () => {
 		await waitFor(() => expect(result.current.upgrades.status).toBe("ready"))
 		expect(result.current.upgrades).toEqual({
 			status: "ready",
-			proposal: null,
+			pending: [],
+			setupOpen: false,
 			delay: 7n * DAY,
 			notice: DAY,
 			windDown: WIND_DOWN,
@@ -157,29 +159,32 @@ describe("useGovernanceState", () => {
 		})
 	})
 
-	it.each([
-		[
-			{ action: { tag: "Wasm", values: [Buffer.alloc(32, 0xab)] }, eta: 5n },
-			{ kind: "code", hash: "ab".repeat(32), eta: 5n },
-		],
-		[
-			{ action: { tag: "Delay", values: [14n * DAY] }, eta: 5n },
-			{ kind: "delay", secs: 14n * DAY, eta: 5n },
-		],
-	])("decodes a pending upgrade proposal", async (raw, proposal) => {
-		vaultMock.upgrade_proposal.mockResolvedValue({ result: raw })
+	it("reads every pending change as the vault reports it", async () => {
+		const pending = [
+			{
+				id: 2,
+				change: { tag: "Upgrade", values: [Buffer.alloc(32, 0xab)] },
+				eta: 5n,
+			},
+			{
+				id: 3,
+				change: { tag: "GrantRole", values: ["manager", "G1"] },
+				eta: 6n,
+			},
+		]
+		vaultMock.pending_changes.mockResolvedValue({ result: pending })
 		const { result } = render()
 
 		await waitFor(() => expect(result.current.upgrades.status).toBe("ready"))
-		expect(result.current.upgrades).toMatchObject({ proposal })
+		expect(result.current.upgrades).toMatchObject({ pending })
 	})
 
-	it("keeps an unreadable proposal unknown and waits for the configuration", async () => {
-		vaultMock.upgrade_proposal.mockRejectedValue(new Error("down"))
+	it("keeps unreadable pending changes unknown and waits for the configuration", async () => {
+		vaultMock.pending_changes.mockRejectedValue(new Error("down"))
 		const { result, rerender } = render()
 
 		await waitFor(() => expect(result.current.upgrades.status).toBe("ready"))
-		expect(result.current.upgrades).toMatchObject({ proposal: undefined })
+		expect(result.current.upgrades).toMatchObject({ pending: undefined })
 
 		useConfigurationStateMock.mockReturnValue({
 			configuration: { status: "checking" },

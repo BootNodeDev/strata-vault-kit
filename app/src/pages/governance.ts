@@ -5,11 +5,7 @@ import {
 	type GovernedContract,
 } from "../hooks/pendingAdmins"
 import { type Grant, type RoleHolders } from "../hooks/useAdminAuthority"
-import {
-	type Handovers,
-	type PendingUpgrade,
-	type Upgrades,
-} from "../hooks/useGovernanceState"
+import { type Handovers, type Upgrades } from "../hooks/useGovernanceState"
 import {
 	type AdminOffer,
 	type RoleChange,
@@ -31,6 +27,13 @@ import {
 	toAction,
 } from "./actions"
 import { DAY, formatDuration, formatTimestamp, parseDuration } from "./cycle"
+import {
+	applyChangeSpec,
+	cancelChangeSpec,
+	type PendingChange,
+	pendingChangeMetrics,
+} from "./pendingChanges"
+import { type Route, routeCondition, routeOf } from "./timelock"
 
 type Operation = "grant" | "revoke"
 
@@ -40,21 +43,28 @@ type OfferActionId =
 type AcceptActionId = `accept-${GovernedContract}-admin`
 
 type ProposalActionId = "propose-code-upgrade" | "propose-upgrade-delay"
-type VaultActionId =
-	"apply-upgrade" | "cancel-upgrade" | "propose-wind-down" | "cancel-wind-down"
+type ProposedRoleActionId = "propose-grant-role" | "propose-revoke-role"
+type ChangeActionId = "apply-change" | "cancel-change"
+type VaultActionId = "propose-wind-down" | "cancel-wind-down"
 
 export type GovernanceActionId =
 	| RoleActionId
 	| OfferActionId
 	| AcceptActionId
 	| ProposalActionId
+	| ProposedRoleActionId
+	| "propose-admin"
+	| ChangeActionId
 	| VaultActionId
 
 const VAULT_ACTION_IDS: GovernanceActionId[] = [
+	"propose-grant-role",
+	"propose-revoke-role",
+	"propose-admin",
 	"propose-code-upgrade",
 	"propose-upgrade-delay",
-	"apply-upgrade",
-	"cancel-upgrade",
+	"apply-change",
+	"cancel-change",
 	"propose-wind-down",
 	"cancel-wind-down",
 ]
@@ -71,8 +81,10 @@ export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
 ]
 
 export type GovernanceAction =
-	| Built<RoleActionId, RoleChange | undefined>
+	| Built<RoleActionId | ProposedRoleActionId, RoleChange | undefined>
 	| Built<OfferActionId, AdminOffer | undefined>
+	| Built<"propose-admin", string | undefined>
+	| Built<ChangeActionId, number>
 	| Built<AcceptActionId, undefined>
 	| Built<"propose-code-upgrade", string | undefined>
 	| Built<"propose-upgrade-delay", bigint | undefined>
@@ -243,12 +255,53 @@ const accountField = (key: string, text: string, label: string): RailField => ({
 	text: true,
 })
 
+type ReadyUpgrades = Extract<Upgrades, { status: "ready" }>
+
+const readyUpgrades = (state: GovernanceState): ReadyUpgrades | undefined =>
+	state.upgrades.status === "ready" ? state.upgrades : undefined
+
+const MAX_PENDING = 16
+
+const underCapacity = (upgrades?: ReadyUpgrades): Condition => ({
+	label: `Under ${MAX_PENDING} pending changes`,
+	met:
+		upgrades?.pending === undefined
+			? null
+			: upgrades.pending.length < MAX_PENDING,
+})
+
+const windDownInactive = (upgrades?: ReadyUpgrades): Condition => {
+	const phase = upgrades?.windDown.phase ?? null
+	return {
+		label: "Wind-down not active",
+		met: phase === null ? null : phase !== "active",
+	}
+}
+
+const vaultRoute = (state: GovernanceState, waits: boolean): Route =>
+	routeOf(readyUpgrades(state)?.setupOpen ?? null, waits)
+
+const routeConditions = (
+	state: GovernanceState,
+	route: Route,
+	atOnce?: string,
+): Condition[] => {
+	const upgrades = readyUpgrades(state)
+	const line = routeCondition(route, upgrades?.delay ?? null, atOnce)
+	return route === "timelock"
+		? [line, underCapacity(upgrades), windDownInactive(upgrades)]
+		: [line]
+}
+
+const proposedRole = (operation: Operation): ProposedRoleActionId =>
+	operation === "grant" ? "propose-grant-role" : "propose-revoke-role"
+
 function roleSpec(
 	operation: Operation,
 	contract: GovernedContract,
 	state: GovernanceState,
 	inputs: Inputs,
-): BuiltSpec<RoleActionId, RoleChange | undefined> {
+): BuiltSpec<RoleActionId | ProposedRoleActionId, RoleChange | undefined> {
 	const id: RoleActionId = `${operation}-${contract}-role`
 	const { noun, roles } = CONTRACTS[contract]
 	const roleKey = `${id}-role`
@@ -291,9 +344,20 @@ function roleSpec(
 		fields.push(confirm.field)
 		conditions.push(confirm.condition)
 	}
+	const waits = operation === "grant" || entry.role === "manager"
+	const route = contract === "vault" ? vaultRoute(state, waits) : undefined
+	if (route !== undefined)
+		conditions.push(
+			...routeConditions(
+				state,
+				route,
+				waits ? undefined : "Revoking this role is instant",
+			),
+		)
 	const changes = holds === (operation === "revoke")
 	return {
-		id,
+		id: route === "timelock" ? proposedRole(operation) : id,
+		slot: id,
 		label: `${capitalize(operation)} ${noun}`,
 		conditions,
 		outcome:
@@ -378,6 +442,9 @@ function handOverSpec(
 			met: secs === undefined ? null : secs >= MIN_EXPIRY,
 		},
 		limitCondition(ledger, liveUntil),
+		...(contract === "vault"
+			? routeConditions(state, vaultRoute(state, true))
+			: []),
 	]
 	if (account !== undefined) {
 		const confirm = confirmation(
@@ -412,6 +479,50 @@ function handOverSpec(
 	}
 }
 
+function proposeAdminSpec(
+	state: GovernanceState,
+	inputs: Inputs,
+): BuiltSpec<"propose-admin", string | undefined> {
+	const slot: OfferActionId = "hand-over-vault-admin"
+	const text = inputs[`${slot}-account`] ?? ""
+	const account = parseAccount(text)
+	const fields: RailField[] = [
+		accountField(`${slot}-account`, text, "New admin"),
+	]
+	const conditions: Condition[] = [
+		{
+			label: "New admin entered",
+			met: text.trim() === "" ? null : account !== undefined,
+		},
+		...routeConditions(state, "timelock"),
+	]
+	if (account !== undefined) {
+		const confirm = confirmation(
+			confirmKey(slot),
+			`Hands control of the vault to ${shortAddress(account)}.`,
+			account,
+			inputs,
+		)
+		fields.push(confirm.field)
+		conditions.push(confirm.condition)
+	}
+	return {
+		id: "propose-admin",
+		slot,
+		label: "Hand over vault admin",
+		conditions,
+		outcome:
+			account === undefined
+				? null
+				: `${shortAddress(account)} can accept the admin once the change applies.`,
+		fields,
+		danger: true,
+		ready: allMet(conditions),
+		arg: account,
+		next: account === undefined ? "" : shortAddress(account),
+	}
+}
+
 const cancelSpec = (
 	contract: GovernedContract,
 	pending: PendingTransfer,
@@ -443,21 +554,28 @@ const acceptSpec = (
 	next: CONTRACTS[contract].subject,
 })
 
-type ReadyUpgrades = Extract<Upgrades, { status: "ready" }>
-
 const MIN_UPGRADE_DELAY = 7n * DAY
 const MAX_UPGRADE_DELAY = 90n * DAY
 const WASM_HASH = /^[0-9a-f]{64}$/i
 
-const upgradeName = (proposal: PendingUpgrade, full = false): string =>
-	proposal.kind === "code"
-		? `Code ${full ? proposal.hash : shortAddress(proposal.hash)}`
-		: `Delay ${formatDuration(proposal.secs)}`
+const CODE_CHANGES = new Set(["Upgrade", "UpgradeDelay"])
 
-const noPendingUpgrade = (upgrades?: ReadyUpgrades): Condition => ({
-	label: "No pending upgrade",
-	met: upgrades?.proposal === undefined ? null : upgrades.proposal === null,
-})
+const proposalChecks = (upgrades?: ReadyUpgrades): Condition[] => [
+	{
+		label: "Setup closed",
+		met: upgrades?.setupOpen == null ? null : !upgrades.setupOpen,
+	},
+	{
+		label: "No pending code change",
+		met:
+			upgrades?.pending === undefined
+				? null
+				: !upgrades.pending.some(({ change }) => CODE_CHANGES.has(change.tag)),
+	},
+	underCapacity(upgrades),
+	windDownInactive(upgrades),
+	routeCondition("timelock", upgrades?.delay ?? null),
+]
 
 const applyAfter = (upgrades?: ReadyUpgrades): string | null =>
 	upgrades?.now == null || upgrades.delay === null
@@ -489,7 +607,7 @@ function codeUpgradeSpec(
 			label: "Hash of 64 hex characters",
 			met: text.trim() === "" ? null : hash !== undefined,
 		},
-		noPendingUpgrade(upgrades),
+		...proposalChecks(upgrades),
 	]
 	return {
 		id: "propose-code-upgrade",
@@ -531,7 +649,7 @@ function delayUpgradeSpec(
 			met: secs === undefined ? null : secs <= MAX_UPGRADE_DELAY,
 		},
 		aboveNotice(secs, upgrades?.notice),
-		noPendingUpgrade(upgrades),
+		...proposalChecks(upgrades),
 	]
 	return {
 		id: "propose-upgrade-delay",
@@ -556,63 +674,36 @@ function delayUpgradeSpec(
 	}
 }
 
+const belowUpgradeDelay = (
+	notice: bigint | undefined,
+	delay: bigint | null,
+): Condition => ({
+	label:
+		delay === null
+			? "Notice ≤ upgrade delay"
+			: `Notice ≤ upgrade delay ${formatDuration(delay)}`,
+	met: notice === undefined || delay === null ? null : notice <= delay,
+})
+
 const notPaused = (paused: ReadyUpgrades["paused"]): Condition => ({
 	label: "Vault not paused",
 	met: paused === "open" ? true : paused === "paused" ? false : null,
 })
 
-function applySpec(
-	proposal: PendingUpgrade,
-	upgrades: ReadyUpgrades,
-	inputs: Inputs,
-): BuiltSpec<"apply-upgrade", undefined> {
-	const conditions: Condition[] = [
-		{
-			label: "ETA reached",
-			met: upgrades.now === null ? null : upgrades.now >= proposal.eta,
-			detail: formatTimestamp(proposal.eta),
-		},
-		notPaused(upgrades.paused),
-	]
-	const fields: RailField[] = []
-	if (proposal.kind === "delay")
-		conditions.push(aboveNotice(proposal.secs, upgrades.notice))
-	else {
-		const confirm = confirmation(
-			confirmKey("apply-upgrade"),
-			`Replaces the vault's code with ${proposal.hash}.`,
-			proposal.hash,
-			inputs,
-		)
-		fields.push(confirm.field)
-		conditions.push(confirm.condition)
-	}
-	return {
-		id: "apply-upgrade",
-		label: "Apply the upgrade",
-		conditions,
-		outcome:
-			proposal.kind === "delay"
-				? `Upgrade delay becomes ${formatDuration(proposal.secs)}.`
-				: null,
-		fields,
-		...(proposal.kind === "code" ? { danger: true } : {}),
-		ready: allMet(conditions),
-		arg: undefined,
-		next: upgradeName(proposal, true),
-	}
-}
+const secsOf = ({ values }: PendingChange["change"]): bigint | undefined =>
+	typeof values[0] === "bigint" ? values[0] : undefined
 
-const cancelUpgradeSpec = (
-	proposal: PendingUpgrade,
-): BuiltSpec<"cancel-upgrade", undefined> => ({
-	id: "cancel-upgrade",
-	label: "Cancel the upgrade",
-	conditions: [],
-	outcome: null,
-	arg: undefined,
-	next: upgradeName(proposal),
-})
+function applyChecks(
+	{ change }: PendingChange,
+	upgrades: ReadyUpgrades,
+): Condition[] {
+	const checks = [notPaused(upgrades.paused), windDownInactive(upgrades)]
+	if (change.tag === "UpgradeDelay")
+		checks.push(aboveNotice(secsOf(change), upgrades.notice))
+	if (change.tag === "Notice")
+		checks.push(belowUpgradeDelay(secsOf(change), upgrades.delay))
+	return checks
+}
 
 function windDownSpec(
 	inputs: Inputs,
@@ -678,10 +769,14 @@ function adminActions(
 		state.handovers.status === "ready"
 			? state.handovers.pending[contract]
 			: null
+	const proposesAdmin =
+		contract === "vault" && vaultRoute(state, true) === "timelock"
 	return [
 		build(roleSpec("grant", contract, state, inputs), grant),
 		build(roleSpec("revoke", contract, state, inputs), grant),
-		build(handOverSpec(contract, state, inputs), grant),
+		proposesAdmin
+			? build(proposeAdminSpec(state, inputs), grant)
+			: build(handOverSpec(contract, state, inputs), grant),
 		...(pending === null ? [] : [build(cancelSpec(contract, pending), grant)]),
 		...(contract === "vault" ? vaultActions(state, grant, inputs) : []),
 	]
@@ -692,18 +787,25 @@ function vaultActions(
 	grant: Grant,
 	inputs: Inputs,
 ): GovernanceAction[] {
-	const upgrades =
-		state.upgrades.status === "ready" ? state.upgrades : undefined
-	const proposal = upgrades?.proposal ?? null
+	const upgrades = readyUpgrades(state)
+	const changes = (ready: ReadyUpgrades) =>
+		(ready.pending ?? []).flatMap((pending) => [
+			build(
+				applyChangeSpec(
+					"vault",
+					pending,
+					ready.now,
+					applyChecks(pending, ready),
+					inputs,
+				),
+				grant,
+			),
+			build(cancelChangeSpec("vault", pending), grant),
+		])
 	return [
 		build(codeUpgradeSpec(inputs, upgrades), grant),
 		build(delayUpgradeSpec(inputs, upgrades), grant),
-		...(proposal === null || upgrades === undefined
-			? []
-			: [
-					build(applySpec(proposal, upgrades, inputs), grant),
-					build(cancelUpgradeSpec(proposal), grant),
-				]),
+		...(upgrades === undefined ? [] : changes(upgrades)),
 		build(windDownSpec(inputs, upgrades), grant),
 		...(upgrades?.windDown.phase === "proposed"
 			? [build(cancelWindDownSpec(), grant)]
@@ -781,16 +883,7 @@ const pendingMetric = (
 const upgradeMetrics = (upgrades: Upgrades): Metric[] => {
 	if (upgrades.status !== "ready") return []
 	const metrics: Metric[] = []
-	const { proposal, windDown } = upgrades
-	if (proposal != null)
-		metrics.push({
-			label: "Pending upgrade",
-			value: upgradeName(proposal),
-			...(proposal.kind === "code"
-				? { title: upgradeName(proposal, true) }
-				: {}),
-			note: `ETA ${formatTimestamp(proposal.eta)}`,
-		})
+	const { windDown } = upgrades
 	if (windDown.phase === "proposed" && windDown.activeAt !== null)
 		metrics.push({
 			label: "Wind-down",
@@ -800,12 +893,18 @@ const upgradeMetrics = (upgrades: Upgrades): Metric[] => {
 	return metrics
 }
 
+const pendingChangesGroup = (upgrades: Upgrades): GovernanceGroup[] => {
+	if (upgrades.status !== "ready") return []
+	const metrics = pendingChangeMetrics(upgrades.pending)
+	return metrics.length === 0 ? [] : [{ title: "Pending changes", metrics }]
+}
+
 export const toGovernanceGroups = ({
 	holders,
 	handovers,
 	upgrades,
-}: GovernanceState): GovernanceGroup[] =>
-	GOVERNED_CONTRACTS.map((contract) => {
+}: GovernanceState): GovernanceGroup[] => [
+	...GOVERNED_CONTRACTS.map((contract) => {
 		const { title, admin, roles } = CONTRACTS[contract]
 		return {
 			title,
@@ -817,4 +916,6 @@ export const toGovernanceGroups = ({
 				...(contract === "vault" ? upgradeMetrics(upgrades) : []),
 			],
 		}
-	})
+	}),
+	...pendingChangesGroup(upgrades),
+]

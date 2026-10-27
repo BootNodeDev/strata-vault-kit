@@ -49,6 +49,9 @@ export type ConfigurationModalAction =
 	| "set-custodian"
 	| "set-notice"
 	| "set-wind-down-delay"
+	| "propose-custodian"
+	| "propose-notice"
+	| "propose-wind-down-delay"
 	| "set-oracle-config"
 	| "set-compliance"
 	| "set-identity-verifier"
@@ -192,6 +195,8 @@ const subscribeContractErrorReason = (code: number): string => {
 			return "That amount is too large for the vault to accept."
 		case 6046:
 			return "The vault is winding down and is not accepting new subscriptions."
+		case 6064:
+			return "The vault's setup is still open. Subscriptions start once it closes."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -1078,6 +1083,19 @@ const setterCopy =
 		doneBody: effect ?? `${subject}: ${value}.`,
 	})
 
+const capitalize = (text: string): string =>
+	`${text.charAt(0).toUpperCase()}${text.slice(1)}`
+
+const proposeCopy =
+	(verb: string, subject: string) =>
+	(value: string): AdminCopy => ({
+		refuser: "vault",
+		verb,
+		signing: `Signing queues ${subject} ${value}.`,
+		done: "Change proposed",
+		doneBody: `${capitalize(subject)} ${value} applies once the upgrade delay passes.`,
+	})
+
 const CONFIGURATION_COPY: Record<
 	ConfigurationModalAction,
 	(value: string) => AdminCopy
@@ -1089,6 +1107,12 @@ const CONFIGURATION_COPY: Record<
 		"vault",
 		"Wind-down delay",
 		EFFECTS.windDownDelay,
+	),
+	"propose-custodian": proposeCopy("propose a custodian", "custodian"),
+	"propose-notice": proposeCopy("propose a notice", "notice"),
+	"propose-wind-down-delay": proposeCopy(
+		"propose a wind-down delay",
+		"wind-down delay",
 	),
 	"set-oracle-config": () => ({
 		refuser: "oracle",
@@ -1157,21 +1181,24 @@ const proposalCopy = (value: string): AdminCopy => ({
 	doneBody: `${value} can apply once the upgrade delay passes.`,
 })
 
-const applyUpgradeCopy = (value: string): AdminCopy => ({
+const applyChangeCopy = (value: string): AdminCopy => ({
 	refuser: "vault",
-	reasons: { 1000: "The vault is paused; unpause it first." },
-	verb: "apply the upgrade",
+	reasons: {
+		1000: "The vault is paused; unpause it first.",
+		6046: "The vault is winding down, so no change can apply.",
+	},
+	verb: "apply the change",
 	signing: `Signing applies ${value}.`,
-	done: "Upgrade applied",
-	doneBody: `${value} is in effect.`,
+	done: "Change applied",
+	doneBody: `Applied ${value}.`,
 })
 
-const cancelUpgradeCopy = (value: string): AdminCopy => ({
+const cancelChangeCopy = (value: string): AdminCopy => ({
 	refuser: "vault",
-	verb: "cancel the upgrade",
+	verb: "cancel the change",
 	signing: `Signing withdraws ${value}.`,
-	done: "Upgrade cancelled",
-	doneBody: `${value} is withdrawn.`,
+	done: "Change cancelled",
+	doneBody: `Withdrew ${value}.`,
 })
 
 const proposeWindDownCopy = (value: string): AdminCopy => ({
@@ -1209,10 +1236,13 @@ const GOVERNANCE_COPY: Record<
 	"hand-over-token-admin": handOverCopy("share token"),
 	"cancel-token-handover": cancelHandoverCopy("share token"),
 	"accept-token-admin": acceptAdminCopy("share token"),
+	"propose-grant-role": proposeCopy("propose a role grant", "the grant of"),
+	"propose-revoke-role": proposeCopy("propose a role revoke", "the revoke of"),
+	"propose-admin": proposeCopy("propose the hand-over", "the hand-over to"),
 	"propose-code-upgrade": proposalCopy,
 	"propose-upgrade-delay": proposalCopy,
-	"apply-upgrade": applyUpgradeCopy,
-	"cancel-upgrade": cancelUpgradeCopy,
+	"apply-change": applyChangeCopy,
+	"cancel-change": cancelChangeCopy,
 	"propose-wind-down": proposeWindDownCopy,
 	"cancel-wind-down": cancelWindDownCopy,
 }
@@ -1327,17 +1357,27 @@ const adminContractErrorReason =
 			case 6048:
 				return "A wind-down is already proposed."
 			case 6055:
-				return "An upgrade is already pending."
+				return "A code change is already pending; one at a time."
 			case 6056:
-				return "No upgrade is pending."
+				return "There is no pending change with that id."
 			case 6057:
-				return "The upgrade delay has not passed yet."
+				return "The change's delay has not passed yet."
 			case 6058:
 				return "The upgrade delay cannot be under 7 days."
 			case 6059:
 				return "The upgrade delay cannot be under the notice."
 			case 6060:
 				return "The upgrade delay cannot exceed 90 days."
+			case 6063:
+				return "There are already 16 pending changes; apply or cancel one first."
+			case 6064:
+				return "Setup is still open, so no change can be proposed yet."
+			case 6065:
+				return "After setup this change goes through the timelock."
+			case 6069:
+				return "The wind-down delay cannot be under 7 days."
+			case 6075:
+				return "The custodian cannot be the vault itself."
 			case 3001:
 				return "One of the oracle limits is out of range."
 			case 3008:
@@ -1459,6 +1499,9 @@ const describeStatus = (
 		case "set-custodian":
 		case "set-notice":
 		case "set-wind-down-delay":
+		case "propose-custodian":
+		case "propose-notice":
+		case "propose-wind-down-delay":
 		case "set-oracle-config":
 		case "set-compliance":
 		case "set-identity-verifier":
@@ -1482,10 +1525,13 @@ const describeStatus = (
 		case "hand-over-token-admin":
 		case "cancel-token-handover":
 		case "accept-token-admin":
+		case "propose-grant-role":
+		case "propose-revoke-role":
+		case "propose-admin":
 		case "propose-code-upgrade":
 		case "propose-upgrade-delay":
-		case "apply-upgrade":
-		case "cancel-upgrade":
+		case "apply-change":
+		case "cancel-change":
 		case "propose-wind-down":
 		case "cancel-wind-down":
 			return describeAdminStatus(

@@ -13,6 +13,7 @@ import {
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { addresses } from "../config/addresses"
+import { type PendingChange } from "../pages/pendingChanges"
 import {
 	describePending,
 	type PendingState,
@@ -21,6 +22,7 @@ import {
 	type SignStatus,
 } from "../pages/sign"
 import { type TransactionFailure } from "./useContractTransaction"
+import { pendingChangesQuery } from "./useGovernanceState"
 import { identityVerifierQuery } from "./useIsAllowed"
 import { useWallet } from "./useWallet"
 
@@ -55,12 +57,20 @@ export interface UseSignPending {
 
 type Decoded = { pending: PendingTransaction; description: SignDescription }
 
-const decode = (xdr: string, identityVerifier: string): Decoded | null => {
+const decode = (
+	xdr: string,
+	identityVerifier: string,
+	changes: PendingChange[] | undefined,
+): Decoded | null => {
 	try {
 		const pending = decodePending(xdr)
 		return {
 			pending,
-			description: describePending(pending, signAddresses(identityVerifier)),
+			description: describePending(
+				pending,
+				signAddresses(identityVerifier),
+				changes,
+			),
 		}
 	} catch (error) {
 		if (error instanceof InvalidPendingTransaction) return null
@@ -124,10 +134,12 @@ export function useSignPending(initialXdr: string): UseSignPending {
 	})
 	const verifier =
 		liveVerifier ?? (verifierFailed ? addresses.identity_verifier : undefined)
+	const { data: changes } = useQuery(pendingChangesQuery)
 	const envelope = useMemo(() => isEnvelope(xdr), [xdr])
 	const decoded = useMemo(
-		() => (verifier === undefined ? null : decode(xdr, verifier)),
-		[xdr, verifier],
+		() =>
+			verifier === undefined ? null : decode(xdr, verifier, changes?.pending),
+		[xdr, verifier, changes],
 	)
 	const source = decoded?.pending.source
 	const { data: signers } = useQuery({

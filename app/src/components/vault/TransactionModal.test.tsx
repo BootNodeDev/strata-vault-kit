@@ -488,6 +488,16 @@ describe("TransactionModal", () => {
 		expect(screen.queryByText(/Transaction/)).toBeNull()
 	})
 
+	it("names SetupOpen as deposits starting once setup closes", () => {
+		renderModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6064 },
+		})
+
+		expect(screen.getByText(/setup is still open/)).toBeTruthy()
+		expect(screen.getByText(/once it closes/)).toBeTruthy()
+	})
+
 	it("falls back to a generic refusal for a contract error it does not recognize, without the raw code", () => {
 		renderModal({
 			status: "failed",
@@ -2313,6 +2323,65 @@ describe("TransactionModal, configuration actions", () => {
 		expect(screen.getByText(effect)).toBeTruthy()
 	})
 
+	it.each<[ConfigurationModalAction, string, string, string, string]>([
+		[
+			"propose-custodian",
+			"GABC...WXYZ",
+			"Preparing to propose a custodian",
+			"Signing queues custodian GABC...WXYZ.",
+			"Custodian GABC...WXYZ applies once the upgrade delay passes.",
+		],
+		[
+			"propose-notice",
+			"12h",
+			"Preparing to propose a notice",
+			"Signing queues notice 12h.",
+			"Notice 12h applies once the upgrade delay passes.",
+		],
+		[
+			"propose-wind-down-delay",
+			"8d",
+			"Preparing to propose a wind-down delay",
+			"Signing queues wind-down delay 8d.",
+			"Wind-down delay 8d applies once the upgrade delay passes.",
+		],
+	])(
+		"walks %s from preparing to proposed",
+		(action, value, preparing, signing, doneBody) => {
+			const { rerender } = renderConfigurationModal(
+				action,
+				{ status: "preparing" },
+				value,
+			)
+			expect(screen.getByRole("heading", { name: preparing })).toBeTruthy()
+
+			rerender(
+				<TransactionModal
+					action={action}
+					status={{ status: "awaiting-signature" }}
+					value={value}
+					onClose={vi.fn()}
+					onRetry={vi.fn()}
+				/>,
+			)
+			expect(screen.getByText(signing)).toBeTruthy()
+
+			rerender(
+				<TransactionModal
+					action={action}
+					status={{ status: "confirmed" }}
+					value={value}
+					onClose={vi.fn()}
+					onRetry={vi.fn()}
+				/>,
+			)
+			expect(
+				screen.getByRole("heading", { name: "Change proposed" }),
+			).toBeTruthy()
+			expect(screen.getByText(doneBody)).toBeTruthy()
+		},
+	)
+
 	it.each<[ConfigurationModalAction, number, string, RegExp]>([
 		["set-deposit-cap", 6007, "vault", /The deposit cap cannot be negative/],
 		["set-notice", 6045, "vault", /The notice cannot exceed 30 days/],
@@ -2323,6 +2392,16 @@ describe("TransactionModal, configuration actions", () => {
 			"vault",
 			/The wind-down delay cannot exceed 90 days/,
 		],
+		[
+			"set-wind-down-delay",
+			6069,
+			"vault",
+			/The wind-down delay cannot be under 7 days/,
+		],
+		["propose-custodian", 6075, "vault", /custodian cannot be the vault/],
+		["propose-notice", 6064, "vault", /Setup is still open/],
+		["set-notice", 6065, "vault", /goes through the timelock/],
+		["propose-custodian", 6063, "vault", /16 pending changes/],
 		[
 			"set-oracle-config",
 			3001,
@@ -2421,13 +2500,17 @@ describe("TransactionModal, governance actions", () => {
 		["hand-over-oracle-admin", 2201, "oracle", /expiry is outside/],
 		["cancel-token-handover", 2202, "share token", /different address/],
 		["accept-vault-admin", 2203, "vault", /expired before it was accepted/],
-		["apply-upgrade", 1000, "vault", /The vault is paused/],
+		["apply-change", 1000, "vault", /The vault is paused/],
+		["apply-change", 6046, "vault", /winding down/],
 		["propose-wind-down", 6046, "vault", /wind-down is already active/],
 		["cancel-wind-down", 6047, "vault", /No wind-down is proposed/],
 		["propose-wind-down", 6048, "vault", /wind-down is already proposed/],
-		["propose-code-upgrade", 6055, "vault", /upgrade is already pending/],
-		["cancel-upgrade", 6056, "vault", /No upgrade is pending/],
-		["apply-upgrade", 6057, "vault", /upgrade delay has not passed/],
+		["propose-code-upgrade", 6055, "vault", /code change is already pending/],
+		["cancel-change", 6056, "vault", /no pending change with that id/],
+		["apply-change", 6057, "vault", /delay has not passed yet/],
+		["propose-grant-role", 6063, "vault", /16 pending changes/],
+		["propose-admin", 6064, "vault", /Setup is still open/],
+		["grant-vault-role", 6065, "vault", /goes through the timelock/],
 		["propose-upgrade-delay", 6058, "vault", /cannot be under 7 days/],
 		["propose-upgrade-delay", 6059, "vault", /cannot be under the notice/],
 		["propose-upgrade-delay", 6060, "vault", /cannot exceed 90 days/],
@@ -2496,18 +2579,39 @@ describe("TransactionModal, governance actions", () => {
 			"Code abab...abab can apply once the upgrade delay passes.",
 		],
 		[
-			"apply-upgrade",
-			"Delay 14d",
-			"Signing applies Delay 14d.",
-			"Upgrade applied",
-			"Delay 14d is in effect.",
+			"apply-change",
+			"vault change #3: Upgrade delay 14d",
+			"Signing applies vault change #3: Upgrade delay 14d.",
+			"Change applied",
+			"Applied vault change #3: Upgrade delay 14d.",
 		],
 		[
-			"cancel-upgrade",
-			"Code abab...abab",
-			"Signing withdraws Code abab...abab.",
-			"Upgrade cancelled",
-			"Code abab...abab is withdrawn.",
+			"cancel-change",
+			"vault change #2: Code upgrade abab...abab",
+			"Signing withdraws vault change #2: Code upgrade abab...abab.",
+			"Change cancelled",
+			"Withdrew vault change #2: Code upgrade abab...abab.",
+		],
+		[
+			"propose-grant-role",
+			"Manager to GABC...WXYZ",
+			"Signing queues the grant of Manager to GABC...WXYZ.",
+			"Change proposed",
+			"The grant of Manager to GABC...WXYZ applies once the upgrade delay passes.",
+		],
+		[
+			"propose-revoke-role",
+			"Manager from GABC...WXYZ",
+			"Signing queues the revoke of Manager from GABC...WXYZ.",
+			"Change proposed",
+			"The revoke of Manager from GABC...WXYZ applies once the upgrade delay passes.",
+		],
+		[
+			"propose-admin",
+			"GABC...WXYZ",
+			"Signing queues the hand-over to GABC...WXYZ.",
+			"Change proposed",
+			"The hand-over to GABC...WXYZ applies once the upgrade delay passes.",
 		],
 		[
 			"propose-wind-down",

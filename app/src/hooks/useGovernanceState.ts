@@ -6,6 +6,7 @@ import {
 } from "@stellar-scaffold/app-lib"
 import { useQuery } from "@tanstack/react-query"
 import { asyncVault } from "../config/clients"
+import { type PendingChange } from "../pages/pendingChanges"
 import { type GovernedContract, pendingAdminsQuery } from "./pendingAdmins"
 import { useConfigurationState } from "./useConfigurationState"
 import { type CycleWindDown, useCycleReads } from "./useCycleState"
@@ -14,7 +15,7 @@ import { type PauseState, useVaultPaused } from "./useVaultPaused"
 const STALE_MS = 30_000
 const REFRESH_MS = 15_000
 
-export const upgradeProposalKey = ["governance", "upgradeProposal"] as const
+export const pendingChangesKey = ["governance", "pendingChanges"] as const
 
 export type Handovers =
 	| { status: "checking" }
@@ -25,15 +26,12 @@ export type Handovers =
 			pending: Record<GovernedContract, PendingTransfer | null>
 	  }
 
-export type PendingUpgrade =
-	| { kind: "code"; hash: string; eta: bigint }
-	| { kind: "delay"; secs: bigint; eta: bigint }
-
 export type Upgrades =
 	| { status: "checking" }
 	| {
 			status: "ready"
-			proposal: PendingUpgrade | null | undefined
+			pending: PendingChange[] | undefined
+			setupOpen: boolean | null
 			delay: bigint | null
 			notice: bigint | null
 			windDown: CycleWindDown
@@ -41,21 +39,18 @@ export type Upgrades =
 			paused: PauseState
 	  }
 
-type ProposalRead = { proposal: PendingUpgrade | null | undefined }
+type PendingRead = { pending: PendingChange[] | undefined }
 
-async function fetchUpgradeProposal(): Promise<ProposalRead> {
+async function fetchPendingChanges(): Promise<PendingRead> {
 	const read = await readContract(async () =>
-		(await asyncVault()).upgrade_proposal(),
+		(await asyncVault()).pending_changes(),
 	)
-	if (read.kind !== "value") return { proposal: undefined }
-	if (read.value === null) return { proposal: null }
-	const { action, eta } = read.value
-	return {
-		proposal:
-			action.tag === "Wasm"
-				? { kind: "code", hash: action.values[0].toString("hex"), eta }
-				: { kind: "delay", secs: action.values[0], eta },
-	}
+	return { pending: read.kind === "value" ? read.value : undefined }
+}
+
+export const pendingChangesQuery = {
+	queryKey: pendingChangesKey,
+	queryFn: fetchPendingChanges,
 }
 
 function useUpgrades(): Upgrades {
@@ -63,8 +58,7 @@ function useUpgrades(): Upgrades {
 	const { configuration } = useConfigurationState()
 	const { pause } = useVaultPaused({ poll: true })
 	const { data } = useQuery({
-		queryKey: upgradeProposalKey,
-		queryFn: fetchUpgradeProposal,
+		...pendingChangesQuery,
 		staleTime: STALE_MS,
 		refetchInterval: REFRESH_MS,
 	})
@@ -76,7 +70,8 @@ function useUpgrades(): Upgrades {
 		return { status: "checking" }
 	return {
 		status: "ready",
-		proposal: data.proposal,
+		pending: data.pending,
+		setupOpen: configuration.setupOpen,
 		delay: configuration.upgradeDelay,
 		notice: configuration.notice,
 		windDown: cycle.windDown,

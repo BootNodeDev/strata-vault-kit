@@ -8,6 +8,7 @@ import { adminAuthorityKey } from "./useAdminAuthority"
 import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
+import { proposeVaultChange } from "./useGovernanceTransactions"
 import { isAllowedKey } from "./useIsAllowed"
 import { oracleWriteKeys } from "./useOracleState"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
@@ -39,6 +40,21 @@ export const useSetWindDownDelay = adminTransaction(
 		asyncVaultWriter(signer).then((vault) =>
 			vault.set_wind_down_delay({ secs }),
 		),
+	[cycleReadsKey],
+)
+
+export const useProposeCustodian = proposeVaultChange(
+	(custodian: string) => ({ tag: "Custodian", values: [custodian] }),
+	[vaultAuthoritiesKey],
+)
+
+export const useProposeNotice = proposeVaultChange(
+	(secs: bigint) => ({ tag: "Notice", values: [secs] }),
+	[cycleReadsKey],
+)
+
+export const useProposeWindDownDelay = proposeVaultChange(
+	(secs: bigint) => ({ tag: "WindDownDelay", values: [secs] }),
 	[cycleReadsKey],
 )
 

@@ -2,6 +2,9 @@ import React, { useEffect, useState } from "react"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { useConfigurationState } from "../../hooks/useConfigurationState"
 import {
+	useProposeCustodian,
+	useProposeNotice,
+	useProposeWindDownDelay,
 	useSetCompliance,
 	useSetCustodian,
 	useSetDepositCap,
@@ -58,6 +61,9 @@ const ConfigurationSection: React.FC<{
 	const custodian = usePendingTransaction(useSetCustodian())
 	const notice = usePendingTransaction(useSetNotice())
 	const windDownDelay = usePendingTransaction(useSetWindDownDelay())
+	const proposeCustodian = usePendingTransaction(useProposeCustodian())
+	const proposeNotice = usePendingTransaction(useProposeNotice())
+	const proposeWindDownDelay = usePendingTransaction(useProposeWindDownDelay())
 	const oracleConfig = usePendingTransaction(useSetOracleConfig())
 	const compliance = usePendingTransaction(useSetCompliance())
 	const identityVerifier = usePendingTransaction(useSetIdentityVerifier())
@@ -69,6 +75,9 @@ const ConfigurationSection: React.FC<{
 			["set-custodian", custodian],
 			["set-notice", notice],
 			["set-wind-down-delay", windDownDelay],
+			["propose-custodian", proposeCustodian],
+			["propose-notice", proposeNotice],
+			["propose-wind-down-delay", proposeWindDownDelay],
 			["set-oracle-config", oracleConfig],
 			["set-compliance", compliance],
 			["set-identity-verifier", identityVerifier],
@@ -94,6 +103,16 @@ const ConfigurationSection: React.FC<{
 				return notice.submit(action.arg, action.next, action.grant)
 			case "set-wind-down-delay":
 				return windDownDelay.submit(action.arg, action.next, action.grant)
+			case "propose-custodian":
+				return proposeCustodian.submit(action.arg, action.next, action.grant)
+			case "propose-notice":
+				return proposeNotice.submit(action.arg, action.next, action.grant)
+			case "propose-wind-down-delay":
+				return proposeWindDownDelay.submit(
+					action.arg,
+					action.next,
+					action.grant,
+				)
 			case "set-oracle-config":
 				return oracleConfig.submit(action.arg, action.next, action.grant)
 			case "set-compliance":

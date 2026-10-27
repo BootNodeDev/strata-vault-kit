@@ -1,6 +1,7 @@
 import { type Metric } from "../components/vault/MetricsStrip"
 import { type Grant } from "../hooks/useAdminAuthority"
 import { type OracleStatus } from "../hooks/useOracleState"
+import { type SetupState } from "../hooks/useSetupOpen"
 import { type PauseState } from "../hooks/useVaultPaused"
 import {
 	type Condition,
@@ -13,6 +14,7 @@ import {
 
 export type EmergencyState = {
 	vault: PauseState
+	setup: SetupState
 	token: PauseState
 	oracle: OracleStatus
 }
@@ -177,8 +179,29 @@ const oracleTile = (oracle: OracleStatus): Metric => {
 	}
 }
 
+const SETUP_TILES: Record<"open" | "closed", Metric> = {
+	open: {
+		label: "Setup",
+		value: "Open",
+		note: "Changes apply at once; no deposits yet",
+	},
+	closed: {
+		label: "Setup",
+		value: "Closed",
+		note: "Changes wait for the timelock",
+	},
+}
+
+const setupTile = (setup: SetupState): Metric => {
+	if (setup === "checking")
+		return { label: "Setup", value: null, pending: true }
+	if (setup === "unreadable") return { label: "Setup", value: null }
+	return SETUP_TILES[setup]
+}
+
 export const toEmergencyTiles = (state: EmergencyState): Metric[] => [
 	pauseTile("Vault", state.vault),
+	setupTile(state.setup),
 	pauseTile("Share token", state.token),
 	oracleTile(state.oracle),
 ]
