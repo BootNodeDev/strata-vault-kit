@@ -4,14 +4,14 @@
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
     testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, InvokeError,
+    Address, BytesN, Env, InvokeError, String,
 };
 use strata_timelock::{Clock, MIN_DELAY};
 
 use crate::guards;
 use crate::{
-    NavOracleContract, NavOracleContractClient, NavReport, OracleChange, OracleConfig, OracleError,
-    MAX_ANSWER, MAX_FRESHNESS_SECS,
+    NavInput, NavOracleContract, NavOracleContractClient, NavReport, OracleChange, OracleConfig,
+    OracleError, MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN,
 };
 
 const SCALE: i128 = 1_000_000_000_000_000_000;
@@ -49,10 +49,11 @@ impl Fixture<'_> {
 
     fn attest(&self, nav_per_share: i128) {
         self.oracle.attest(
-            &NavReport {
+            &NavInput {
                 nav_per_share,
                 expires_at: u64::MAX,
-                timestamp: 0,
+                proof_hash: proof(&self.e),
+                proof_uri: String::from_str(&self.e, "ipfs://strata-proof"),
             },
             &self.attester,
         );
@@ -107,11 +108,17 @@ fn refuses(f: &Fixture, error: OracleError, guard: impl FnOnce()) {
     assert_eq!(run(f, guard), Err(Ok(error.into())));
 }
 
-fn report_at(nav_per_share: i128, timestamp: u64) -> NavReport {
+fn proof(e: &Env) -> BytesN<32> {
+    BytesN::from_array(e, &[7; 32])
+}
+
+fn report_at(e: &Env, nav_per_share: i128, accepted_at: u64) -> NavReport {
     NavReport {
         nav_per_share,
         expires_at: u64::MAX,
-        timestamp,
+        accepted_at,
+        proof_hash: proof(e),
+        proof_uri: String::from_str(e, "ipfs://strata-proof"),
     }
 }
 
@@ -330,12 +337,38 @@ fn expires_in_future_refuses_a_report_born_stale() {
 }
 
 #[test]
+fn proof_hash_not_empty_refuses_an_all_zero_hash() {
+    let f = setup();
+    let mut last_byte_set = [0; 32];
+    last_byte_set[31] = 1;
+    let set = BytesN::from_array(&f.e, &last_byte_set);
+    let empty = BytesN::from_array(&f.e, &[0; 32]);
+
+    holds(&f, || guards::proof_hash_not_empty(&f.e, &set));
+    refuses(&f, OracleError::EmptyProofHash, || {
+        guards::proof_hash_not_empty(&f.e, &empty)
+    });
+}
+
+#[test]
+fn proof_uri_fits_refuses_a_uri_past_the_limit() {
+    let f = setup();
+    let at_limit = String::from_bytes(&f.e, &[b'x'; MAX_PROOF_URI_LEN as usize]);
+    let past_it = String::from_bytes(&f.e, &[b'x'; MAX_PROOF_URI_LEN as usize + 1]);
+
+    holds(&f, || guards::proof_uri_fits(&f.e, &at_limit));
+    refuses(&f, OracleError::ProofUriTooLong, || {
+        guards::proof_uri_fits(&f.e, &past_it)
+    });
+}
+
+#[test]
 fn cooldown_elapsed_refuses_a_report_inside_the_cooldown() {
     let f = setup();
     let cfg = config();
     let now = f.e.ledger().timestamp();
-    let elapsed = report_at(SCALE, now - cfg.cooldown_secs);
-    let running = report_at(SCALE, now - cfg.cooldown_secs + 1);
+    let elapsed = report_at(&f.e, SCALE, now - cfg.cooldown_secs);
+    let running = report_at(&f.e, SCALE, now - cfg.cooldown_secs + 1);
 
     holds(&f, || guards::cooldown_elapsed(&f.e, &cfg, &elapsed));
     refuses(&f, OracleError::CooldownActive, || {
@@ -347,7 +380,7 @@ fn cooldown_elapsed_refuses_a_report_inside_the_cooldown() {
 fn within_deviation_refuses_a_move_past_either_cap() {
     let f = setup();
     let cfg = config();
-    let last = report_at(SCALE, 0);
+    let last = report_at(&f.e, SCALE, 0);
     let ten_percent = SCALE / 10;
 
     holds(&f, || {

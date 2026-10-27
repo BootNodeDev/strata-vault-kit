@@ -58,14 +58,7 @@ fn second_feed<'a>(f: &Fixture<'a>) -> NavOracleContractClient<'a> {
 }
 
 fn attest_on(f: &Fixture, feed: &NavOracleContractClient, nav_per_share: i128) {
-    feed.attest(
-        &NavReport {
-            nav_per_share,
-            timestamp: 0,
-            expires_at: u64::MAX,
-        },
-        &f.attester,
-    );
+    feed.attest(&nav_input(&f.e, nav_per_share, u64::MAX), &f.attester);
 }
 
 #[test]

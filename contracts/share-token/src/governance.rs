@@ -9,6 +9,7 @@ use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
 use crate::error::ShareTokenError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, SetupFinished, VaultBound};
+use crate::extend;
 use crate::guards;
 use crate::ShareToken;
 
@@ -79,6 +80,7 @@ pub(crate) fn finish_setup(e: &Env) {
 }
 
 pub(crate) fn propose(e: &Env, change: TokenChange) -> u32 {
+    guards::valid_change(e, &change);
     guards::not_a_second_upgrade(e, &change);
     let id = queue::propose::<ShareToken, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
@@ -101,12 +103,15 @@ pub(crate) fn cancel(e: &Env, id: u32) {
 pub(crate) fn apply(e: &Env, id: u32) {
     let change: TokenChange =
         queue::take_ready::<ShareToken, _>(e, id).unwrap_or_else(|r| refuse(e, r));
+    // The new contract may have changed since the proposal; this check decides.
+    guards::valid_change(e, &change);
     let admin = access_control::get_admin(e)
         .unwrap_or_else(|| panic_with_error!(e, ShareTokenError::AdminRequired));
     match &change {
         TokenChange::Upgrade(hash) => upgradeable::upgrade(e, hash),
         TokenChange::GrantRole(role, account) => {
-            access_control::grant_role_no_auth(e, account, role, &admin)
+            access_control::grant_role_no_auth(e, account, role, &admin);
+            extend::role_entries(e, account, role);
         }
         TokenChange::RevokeRole(role, account) => {
             access_control::revoke_role_no_auth(e, account, role, &admin)

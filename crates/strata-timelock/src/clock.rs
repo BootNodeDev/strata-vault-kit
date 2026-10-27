@@ -10,7 +10,8 @@ use crate::setup;
 pub struct Clock {
     /// Seconds a change proposed now waits.
     pub delay: u64,
-    /// The longest an exit takes at the source. A change never waits less.
+    /// The source's notice: how long a closed epoch waits before it can be
+    /// priced. A change never waits less.
     pub exit_window: u64,
     /// Seconds the source has spent paused, a running pause included.
     pub paused_secs: u64,

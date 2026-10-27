@@ -41,7 +41,7 @@ pub(crate) use soroban_sdk::{
 
 pub(crate) use ::compliance::{Compliance, ComplianceChange, ComplianceClient};
 pub(crate) use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
-pub(crate) use nav_oracle::{NavOracleContract, NavOracleContractClient, NavReport, OracleConfig};
+pub(crate) use nav_oracle::{NavInput, NavOracleContract, NavOracleContractClient, OracleConfig};
 pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
@@ -56,6 +56,15 @@ pub(crate) use crate::{
 
 fn wad(whole: i128) -> i128 {
     whole * WAD_SCALE
+}
+
+fn nav_input(e: &Env, nav_per_share: i128, expires_at: u64) -> NavInput {
+    NavInput {
+        nav_per_share,
+        expires_at,
+        proof_hash: BytesN::from_array(e, &[7; 32]),
+        proof_uri: String::from_str(e, "ipfs://strata-proof"),
+    }
 }
 
 struct Fixture<'a> {
@@ -148,21 +157,15 @@ impl Fixture<'_> {
     /// the cooldown first when the last report is too recent.
     fn attest(&self, nav_per_share: i128) {
         self.wait_out_the_cooldown();
-        self.oracle.attest(
-            &NavReport {
-                nav_per_share,
-                timestamp: 0,
-                expires_at: u64::MAX,
-            },
-            &self.attester,
-        );
+        self.oracle
+            .attest(&nav_input(&self.e, nav_per_share, u64::MAX), &self.attester);
     }
 
     fn wait_out_the_cooldown(&self) {
         let Ok(Ok(latest)) = self.oracle.try_latest() else {
             return;
         };
-        let ready = latest.timestamp + self.oracle.config().cooldown_secs;
+        let ready = latest.accepted_at + self.oracle.config().cooldown_secs;
         let now = self.e.ledger().timestamp();
         if now < ready {
             self.advance(ready - now);
