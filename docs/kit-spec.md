@@ -354,9 +354,8 @@ threshold. The kit's storage helpers ask on every read and every write of the
 kit's own entries. OpenZeppelin asks when it reads an entry that already
 exists, never when it writes one, so the kit reads back each entry it creates
 through OpenZeppelin. The transaction that creates an entry therefore extends
-it to its target at once; the compliance stub's modules and bound tokens are
-the one exception (see **What OpenZeppelin extends**). The network decides only
-how long a new entry lives before any extension (see **Network settings**).
+it to its target at once. The network decides only how long a new entry lives
+before any extension (see **Network settings**).
 
 | Contract | What it extends | When | To how long |
 |---|---|---|---|
@@ -364,7 +363,7 @@ how long a new entry lives before any extension (see **Network settings**).
 | `nav_oracle` | Its instance, the latest report, and each pending governance change it reads or writes | `attest` extends the instance and the report; `bind_vault`, `finish_setup`, `grant_role`, `transfer_admin_role`, `propose_change`, `cancel_change` and `apply_change` extend the instance; every other call extends whichever entry it reads or writes | Same |
 | `share_token` | Its instance, each balance and freeze entry it writes, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change`; also the reads `balance` and `total_supply`, which may be the only token calls during a wind-down | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
-| `compliance` | Its instance, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
+| `compliance` | Its instance, the modules and bound tokens it writes, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
 | `async_vault`, `share_token`, `nav_oracle` | The four entries a grant writes: the account's role, its member-list slot, the member count and the role list | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change) extends all four. After that, a role check extends only that account's role entry; the slot, the count and the list are extended only by grants and by calls that list role members (such as the vault's `manager()` or the token's `get_role_member_count`) | 90 days (1,555,200 ledgers), once 89 days or less remain |
 
 The kit's own lengths are the constants in `crates/strata-storage`
@@ -401,19 +400,18 @@ own reads, in the same call:
 - the vault, the token and the oracle read back every entry a grant writes (the
   account's role, its place in the member list, the member count and the list
   of roles) after each grant in their constructors, in `grant_role`, and in an
-  applied `GrantRole` change.
+  applied `GrantRole` change;
+- the compliance stub reads back the hook's modules after `add_module_to` and
+  an applied `AddModule` change, and the bound tokens after `bind_token` and an
+  applied `BindToken` change.
 
-So a new balance, freeze or role entry reaches its target in the transaction
-that creates it, and the kit keeps OpenZeppelin's thresholds without copying
-them. A revoke creates nothing: it rewrites the member count and moves the last
-member into the freed slot with plain writes, and extends none of the entries
-it moves. The compliance stub does not read back its modules and bound tokens
-when it writes them. The vault's `finish_setup` reads the bound tokens, which
-extends them, and every hook the token calls reads its modules; the hooks after
-a mint, transfer or burn read the bound tokens too. Allowances are temporary
-entries that live until their `live_until_ledger`. OpenZeppelin never extends
-an instance; the kit does, as above. The token's total supply and metadata live
-in its instance.
+So a new balance, freeze, role, module or bound-token entry reaches its target
+in the transaction that creates it, and the kit keeps OpenZeppelin's thresholds
+without copying them. A revoke creates nothing: it rewrites the member count and
+moves the last member into the freed slot with plain writes, and extends none
+of the entries it moves. Allowances are temporary entries that live until their
+`live_until_ledger`. OpenZeppelin never extends an instance; the kit does, as
+above. The token's total supply and metadata live in its instance.
 
 **Network settings.** Each network sets how long a new persistent entry lives
 and how far one extension can reach. Validators can change these settings by
