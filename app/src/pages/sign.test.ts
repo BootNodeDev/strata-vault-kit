@@ -424,6 +424,111 @@ describe("describePending", () => {
 		},
 	)
 
+	it.each<[unknown[], string, string, { label: string; value: string }[]]>([
+		[
+			["GrantRole", "attester", account],
+			"propose-oracle-grant-role",
+			"Propose a role grant",
+			[
+				{ label: "Role", value: "attester" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["RevokeRole", "guardian", account],
+			"propose-oracle-revoke-role",
+			"Propose a role revoke",
+			[
+				{ label: "Role", value: "guardian" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["Admin", account],
+			"propose-oracle-admin",
+			"Propose the hand-over",
+			[{ label: "New admin", value: "GBRP...OX2H" }],
+		],
+		[
+			["Upgrade", Buffer.from("ab".repeat(32), "hex")],
+			"propose-oracle-upgrade",
+			"Propose an upgrade",
+			[{ label: "Wasm hash", value: "ab".repeat(32) }],
+		],
+		[
+			[
+				"Config",
+				{
+					freshness_duration: 86_400n,
+					cooldown_secs: 3_600n,
+					max_up_bps: 500,
+					max_down_bps: 250,
+					min_answer: 500_000_000_000_000_000n,
+					max_answer: 2_000_000_000_000_000_000n,
+				},
+			],
+			"propose-oracle-config",
+			"Propose oracle limits",
+			[
+				{ label: "Freshness window", value: "1d" },
+				{ label: "Cooldown", value: "1h" },
+				{ label: "Largest rise", value: "5%" },
+				{ label: "Largest fall", value: "2.5%" },
+				{ label: "Price floor", value: "0.50" },
+				{ label: "Price ceiling", value: "2.00" },
+			],
+		],
+	])(
+		"describes the oracle's propose_change %o by its kind",
+		(change, action, label, args) => {
+			expect(
+				describePending(
+					pending(addresses.oracle, "propose_change", [change]),
+					addresses,
+				),
+			).toEqual({ contract: "Oracle", action, label, args })
+		},
+	)
+
+	it("names an oracle change from the oracle's own pending list", () => {
+		const changes = {
+			vault: [
+				{ id: 1, change: { tag: "Custodian", values: [account] }, eta: 1n },
+			],
+			oracle: [{ id: 1, change: { tag: "Admin", values: [other] }, eta: 1n }],
+		}
+
+		expect(
+			describePending(
+				pending(addresses.oracle, "apply_change", [1]),
+				addresses,
+				changes,
+			),
+		).toEqual({
+			contract: "Oracle",
+			action: "apply-oracle-change",
+			label: "Apply the change",
+			args: [
+				{
+					label: "Change",
+					value: "oracle change #1: Admin hand-over GDQN...KTL3",
+				},
+			],
+		})
+		expect(
+			describePending(
+				pending(addresses.oracle, "cancel_change", [4]),
+				addresses,
+				changes,
+			),
+		).toEqual({
+			contract: "Oracle",
+			action: "cancel-oracle-change",
+			label: "Cancel the change",
+			args: [{ label: "Change", value: "oracle change #4" }],
+		})
+	})
+
 	it("refuses a proposed change the other contract owns", () => {
 		for (const change of [
 			["Custodian", account],

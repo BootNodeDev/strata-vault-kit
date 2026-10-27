@@ -214,7 +214,7 @@ describe("toEmergencyActions", () => {
 			"Resumes holder transfers and returns of escrowed shares.",
 		)
 		expect(actionOf(calm, everyRole, "pause-nav").outcome).toBe(
-			"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open.",
+			"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open. Revoking an attester is instant; granting a replacement waits for the timelock once the oracle's setup is closed.",
 		)
 	})
 

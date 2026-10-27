@@ -297,8 +297,25 @@ const oracleLimits = (config: Record<string, unknown>): SignArg[] => [
 	price("Price ceiling", config.max_answer),
 ]
 
-const ORACLE: Record<string, Decoder> = {
+const ORACLE_PROPOSALS: Record<string, Decoder> = {
+	Upgrade: ([hash]) => ({
+		action: "propose-oracle-upgrade",
+		args: [{ label: "Wasm hash", value: hex(hash) }],
+	}),
+	Config: ([config]) => ({
+		action: "propose-oracle-config",
+		args: oracleLimits(record(config)),
+	}),
+	...roleProposals(
+		"propose-oracle-grant-role",
+		"propose-oracle-revoke-role",
+		"propose-oracle-admin",
+	),
+}
+
+const oracleDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	...governed("oracle"),
+	...timelockDecoders("oracle", ORACLE_PROPOSALS, changes),
 	pause_nav: only("pause-nav"),
 	set_nav_paused: ([paused]) => ({
 		action: flag(paused) ? "pause-nav" : "unpause-nav",
@@ -325,7 +342,7 @@ const ORACLE: Record<string, Decoder> = {
 			],
 		}
 	},
-}
+})
 
 const tokenDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	...governed("token"),
@@ -381,7 +398,7 @@ const contractOf = (
 	if (contractId === addresses.vault)
 		return { contract: "Vault", table: vaultDecoders(changes) }
 	if (contractId === addresses.oracle)
-		return { contract: "Oracle", table: ORACLE }
+		return { contract: "Oracle", table: oracleDecoders(changes) }
 	if (contractId === addresses.shareToken)
 		return { contract: "Share token", table: tokenDecoders(changes) }
 	if (contractId === addresses.identityVerifier) {

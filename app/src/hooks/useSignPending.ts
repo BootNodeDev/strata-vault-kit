@@ -136,6 +136,7 @@ export function useSignPending(initialXdr: string): UseSignPending {
 		liveVerifier ?? (verifierFailed ? addresses.identity_verifier : undefined)
 	const { data: vaultChanges } = useQuery(pendingChangesQuery("vault"))
 	const { data: tokenChanges } = useQuery(pendingChangesQuery("token"))
+	const { data: oracleChanges } = useQuery(pendingChangesQuery("oracle"))
 	const envelope = useMemo(() => isEnvelope(xdr), [xdr])
 	const decoded = useMemo(
 		() =>
@@ -144,8 +145,9 @@ export function useSignPending(initialXdr: string): UseSignPending {
 				: decode(xdr, verifier, {
 						vault: vaultChanges?.pending,
 						token: tokenChanges?.pending,
+						oracle: oracleChanges?.pending,
 					}),
-		[xdr, verifier, vaultChanges, tokenChanges],
+		[xdr, verifier, vaultChanges, tokenChanges, oracleChanges],
 	)
 	const source = decoded?.pending.source
 	const { data: signers } = useQuery({

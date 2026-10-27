@@ -22,6 +22,7 @@ const {
 	transactionStatusMock,
 	tokenMock,
 	vaultMock,
+	oracleMock,
 	linkTarget,
 } = vi.hoisted(() => ({
 	accountSignersMock: vi.fn(),
@@ -29,12 +30,14 @@ const {
 	transactionStatusMock: vi.fn(),
 	tokenMock: { identity_verifier: vi.fn(), pending_changes: vi.fn() },
 	vaultMock: { pending_changes: vi.fn() },
+	oracleMock: { pending_changes: vi.fn() },
 	linkTarget: { contractId: "", expiresAt: new Date(0) },
 }))
 
 vi.mock("../config/clients", () => ({
 	shareToken: async () => tokenMock,
 	asyncVault: async () => vaultMock,
+	navOracle: async () => oracleMock,
 }))
 
 type Marker = { signedBy: string[] }
@@ -146,6 +149,7 @@ describe("useSignPending", () => {
 		tokenMock.identity_verifier.mockResolvedValue({ result: "CLIVEVERIFIER" })
 		vaultMock.pending_changes.mockResolvedValue({ result: [] })
 		tokenMock.pending_changes.mockResolvedValue({ result: [] })
+		oracleMock.pending_changes.mockResolvedValue({ result: [] })
 		linkTarget.contractId = addresses.async_vault
 		linkTarget.expiresAt = new Date("2027-01-15T08:00:00Z")
 		window.history.replaceState(null, "", "/sign")
@@ -520,6 +524,25 @@ describe("useSignPending", () => {
 						label: "Change",
 						value: "share token change #3: Revoke role manager from GHOLDER",
 					},
+				],
+			}),
+		)
+	})
+
+	it("names the oracle change an apply link acts on from the oracle's list", async () => {
+		linkTarget.contractId = addresses.nav_oracle
+		oracleMock.pending_changes.mockResolvedValue({
+			result: [{ id: 3, change: { tag: "Admin", values: ["GNEXT"] }, eta: 1n }],
+		})
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:apply_change:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description).toMatchObject({
+				contract: "Oracle",
+				action: "apply-oracle-change",
+				args: [
+					{ label: "Change", value: "oracle change #3: Admin hand-over GNEXT" },
 				],
 			}),
 		)

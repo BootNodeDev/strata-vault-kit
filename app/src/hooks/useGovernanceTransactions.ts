@@ -2,6 +2,7 @@ import { Buffer } from "buffer"
 import { type AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import {
 	type AsyncVaultApi,
+	type OracleChange,
 	type Signer,
 	type TokenChange,
 	type VaultChange,
@@ -19,6 +20,7 @@ import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
 import { pendingChangesKey } from "./useGovernanceState"
 import { isAllowedKey } from "./useIsAllowed"
+import { oracleWriteKeys } from "./useOracleState"
 import { type TimelockedContract } from "./useSetupOpen"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 
@@ -63,9 +65,11 @@ const timelock = <Change>(
 
 const vaultTimelock = timelock<VaultChange>("vault", asyncVaultWriter)
 const tokenTimelock = timelock<TokenChange>("token", shareTokenWriter)
+const oracleTimelock = timelock<OracleChange>("oracle", navOracleWriter)
 
 export const proposeVaultChange = vaultTimelock.propose
 export const proposeTokenChange = tokenTimelock.propose
+export const proposeOracleChange = oracleTimelock.propose
 
 type RoleClient = Pick<AsyncVaultApi, "grant_role" | "revoke_role">
 
@@ -163,10 +167,14 @@ export const useCancelTokenHandover = offerAdmin(
 )
 export const useAcceptTokenAdmin = acceptAdmin(shareTokenWriter, HANDOVER_KEYS)
 
-export const useProposeCodeUpgrade = proposeVaultChange(
-	(hash: string) => ({ tag: "Upgrade", values: [Buffer.from(hash, "hex")] }),
-	[configurationReadsKey],
-)
+const upgrade = (hash: string) => ({
+	tag: "Upgrade" as const,
+	values: [Buffer.from(hash, "hex")] as const,
+})
+
+export const useProposeCodeUpgrade = proposeVaultChange(upgrade, [
+	configurationReadsKey,
+])
 
 export const useProposeUpgradeDelay = proposeVaultChange(
 	(secs: bigint) => ({ tag: "UpgradeDelay", values: [secs] }),
@@ -194,6 +202,9 @@ export const useProposeAdmin = proposeVaultChange(admin)
 export const useProposeTokenGrantRole = proposeTokenChange(grantRole)
 export const useProposeTokenRevokeRole = proposeTokenChange(revokeRole)
 export const useProposeTokenAdmin = proposeTokenChange(admin)
+export const useProposeOracleGrantRole = proposeOracleChange(grantRole)
+export const useProposeOracleAdmin = proposeOracleChange(admin)
+export const useProposeOracleUpgrade = proposeOracleChange(upgrade)
 
 export const useApplyChange = vaultTimelock.apply([
 	configurationReadsKey,
@@ -208,6 +219,12 @@ export const useApplyTokenChange = tokenTimelock.apply([
 	isAllowedKey,
 ])
 export const useCancelTokenChange = tokenTimelock.cancel
+
+export const useApplyOracleChange = oracleTimelock.apply([
+	...HANDOVER_KEYS,
+	...oracleWriteKeys,
+])
+export const useCancelOracleChange = oracleTimelock.cancel
 
 export const useProposeWindDown = adminTransaction(
 	(signer: Signer) =>
