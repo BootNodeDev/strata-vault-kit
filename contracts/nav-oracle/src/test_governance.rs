@@ -1,26 +1,30 @@
 extern crate std;
 
 use soroban_sdk::{
-    contract, contractimpl, symbol_short,
+    contract, contractimpl, contracttype, symbol_short,
     testutils::{
-        storage::Instance as _, Address as _, AuthorizedFunction, AuthorizedInvocation,
-        Events as _, Ledger as _, MockAuth, MockAuthInvoke,
+        storage::{Instance as _, Persistent as _},
+        Address as _, AuthorizedFunction, AuthorizedInvocation, Events as _, Ledger as _, MockAuth,
+        MockAuthInvoke,
     },
-    Address, BytesN, Env, Event as _, IntoVal, Symbol,
+    Address, BytesN, Env, Event as _, IntoVal, String, Symbol, Val,
 };
+use stellar_access::access_control::{AccessControlStorageKey, ROLE_EXTEND_AMOUNT};
 use stellar_access::role_transfer::RoleTransferError;
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
 use strata_timelock::{Clock, DAY_DURATION, MIN_DELAY};
 
 use crate::state::{ATTESTER_ROLE, GUARDIAN_ROLE};
 use crate::{
-    shortens_freshness_only, ChangeApplied, ChangeProposed, ConfigSet, NavOracleContract,
-    NavOracleContractClient, NavReport, OracleChange, OracleConfig, OracleError, OracleState,
+    shortens_freshness_only, ChangeApplied, ChangeProposed, ConfigSet, NavInput, NavOracleContract,
+    NavOracleContractClient, OracleChange, OracleConfig, OracleError, OracleState,
     ADMIN_ACCEPT_LEDGERS,
 };
 
 const SCALE: i128 = 1_000_000_000_000_000_000;
 const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
+/// Testnet's minimum lifetime of a new persistent entry, in ledgers.
+const TESTNET_MIN_PERSISTENT_TTL: u32 = 120_960;
 
 /// Plays the vault: reports whatever clock a test sets, and counts the reads.
 #[contract]
@@ -85,7 +89,8 @@ impl Fixture<'_> {
     }
 
     fn attest(&self, nav_per_share: i128) {
-        self.oracle.attest(&report(nav_per_share), &self.attester);
+        self.oracle
+            .attest(&input(&self.e, nav_per_share), &self.attester);
     }
 
     /// Lands an `Admin` change for `next` and returns the ledger of the offer.
@@ -162,11 +167,16 @@ fn config() -> OracleConfig {
     }
 }
 
-fn report(nav_per_share: i128) -> NavReport {
-    NavReport {
+fn proof(e: &Env) -> BytesN<32> {
+    BytesN::from_array(e, &[7; 32])
+}
+
+fn input(e: &Env, nav_per_share: i128) -> NavInput {
+    NavInput {
         nav_per_share,
         expires_at: u64::MAX,
-        timestamp: 0,
+        proof_hash: proof(e),
+        proof_uri: String::from_str(e, "ipfs://strata-proof"),
     }
 }
 
@@ -601,7 +611,10 @@ fn revoking_an_attester_or_a_guardian_stays_instant_after_setup() {
 
     assert!(f.oracle.has_role(&f.attester, &ATTESTER_ROLE).is_none());
     assert!(f.oracle.has_role(&f.guardian, &GUARDIAN_ROLE).is_none());
-    assert!(f.oracle.try_attest(&report(SCALE), &f.attester).is_err());
+    assert!(f
+        .oracle
+        .try_attest(&input(&f.e, SCALE), &f.attester)
+        .is_err());
     assert!(f.oracle.try_pause_nav(&f.guardian).is_err());
 }
 
@@ -937,6 +950,96 @@ fn setup_grants_hand_overs_and_changes_restore_the_instance_ttl() {
     f.restores_the_instance(|| f.oracle.apply_change(&id));
 }
 
+/// Mirrors OpenZeppelin's private member-list key: same variant and fields, same encoding.
+#[contracttype]
+struct RoleAccountKey {
+    role: Symbol,
+    index: u32,
+}
+
+#[contracttype]
+enum RoleMemberKey {
+    RoleAccounts(RoleAccountKey),
+}
+
+impl Fixture<'_> {
+    fn persistent_ttl<K: IntoVal<Env, Val>>(&self, key: &K) -> u32 {
+        self.e.as_contract(&self.oracle.address, || {
+            self.e.storage().persistent().get_ttl(key)
+        })
+    }
+
+    /// Every entry a grant writes: the role, its member-list slot, the member count, the role list.
+    fn role_entry_ttls(&self, account: &Address, role: &Symbol) -> [u32; 4] {
+        let has_role = AccessControlStorageKey::HasRole(account.clone(), role.clone());
+        let index: u32 = self.e.as_contract(&self.oracle.address, || {
+            self.e.storage().persistent().get(&has_role).unwrap()
+        });
+        [
+            self.persistent_ttl(&has_role),
+            self.persistent_ttl(&RoleMemberKey::RoleAccounts(RoleAccountKey {
+                role: role.clone(),
+                index,
+            })),
+            self.persistent_ttl(&AccessControlStorageKey::RoleAccountsCount(role.clone())),
+            self.persistent_ttl(&AccessControlStorageKey::ExistingRoles),
+        ]
+    }
+}
+
+fn testnet_minimum(e: &Env) {
+    e.ledger()
+        .set_min_persistent_entry_ttl(TESTNET_MIN_PERSISTENT_TTL);
+}
+
+#[test]
+fn the_constructor_writes_each_role_with_the_full_ttl() {
+    let f = setup_with(|e, args| {
+        testnet_minimum(e);
+        e.register(NavOracleContract, args)
+    });
+
+    assert_eq!(
+        f.role_entry_ttls(&f.attester, &ATTESTER_ROLE),
+        [ROLE_EXTEND_AMOUNT; 4]
+    );
+    assert_eq!(
+        f.role_entry_ttls(&f.guardian, &GUARDIAN_ROLE),
+        [ROLE_EXTEND_AMOUNT; 4]
+    );
+}
+
+#[test]
+fn a_grant_during_setup_writes_the_role_with_the_full_ttl() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+    testnet_minimum(&f.e);
+
+    f.oracle.grant_role(&next, &GUARDIAN_ROLE, &f.admin);
+
+    assert_eq!(
+        f.role_entry_ttls(&next, &GUARDIAN_ROLE),
+        [ROLE_EXTEND_AMOUNT; 4]
+    );
+}
+
+#[test]
+fn a_grant_through_the_timelock_writes_the_role_with_the_full_ttl() {
+    let f = setup();
+    f.finish();
+    let next = Address::generate(&f.e);
+    let id = f.propose(OracleChange::GrantRole(GUARDIAN_ROLE, next.clone()));
+    f.advance(MIN_DELAY);
+    testnet_minimum(&f.e);
+
+    f.oracle.apply_change(&id);
+
+    assert_eq!(
+        f.role_entry_ttls(&next, &GUARDIAN_ROLE),
+        [ROLE_EXTEND_AMOUNT; 4]
+    );
+}
+
 #[test]
 fn each_admin_call_asks_the_admin_for_one_signature() {
     let f = setup();
@@ -1001,11 +1104,11 @@ fn each_role_call_asks_its_holder_for_one_signature() {
     let f = setup();
     let next = Address::generate(&f.e);
 
-    f.oracle.attest(&report(SCALE), &f.attester);
+    f.oracle.attest(&input(&f.e, SCALE), &f.attester);
     f.signed_once_by(
         &f.attester,
         "attest",
-        (report(SCALE), f.attester.clone()).into_val(&f.e),
+        (input(&f.e, SCALE), f.attester.clone()).into_val(&f.e),
     );
     f.oracle.pause_nav(&f.guardian);
     f.signed_once_by(
@@ -1109,9 +1212,10 @@ mod with_wasm {
 
         let kept = f.oracle.latest();
         assert_eq!(
-            (kept.nav_per_share, kept.timestamp, kept.expires_at),
+            (kept.nav_per_share, kept.accepted_at, kept.expires_at),
             (SCALE, 10_000, 10_000 + config().freshness_duration)
         );
+        assert_eq!(kept.proof_hash, proof(&f.e));
         assert_eq!(f.oracle.config(), config());
         assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
         assert_eq!(f.oracle.vault(), Some(f.vault.address.clone()));

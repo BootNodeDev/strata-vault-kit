@@ -12,7 +12,7 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
-import { attest } from "./lib/oracle.js"
+import { attest, navInput, SAMPLE_PROOF_URI } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -171,9 +171,11 @@ describe("pricing", () => {
 		await attest(c, nav)
 		const latest = (await oracle(c, outsider).latest()).result
 		expect(latest.nav_per_share).toBe(nav)
-		expect(latest.expires_at - latest.timestamp).toBe(
+		expect(latest.expires_at - latest.accepted_at).toBe(
 			BigInt(c.net.oracle.freshness_duration),
 		)
+		expect(latest.proof_hash).toEqual(navInput(nav).proof_hash)
+		expect(latest.proof_uri).toBe(SAMPLE_PROOF_URI)
 	})
 
 	it("an account with no role prices the epoch", async () => {

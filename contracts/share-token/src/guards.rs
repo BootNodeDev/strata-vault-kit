@@ -3,7 +3,10 @@ use stellar_access::{
     access_control::{self, AccessControlStorageKey},
     role_transfer,
 };
-use stellar_tokens::rwa::{identity_verification::IdentityVerifierClient, RWA};
+use stellar_tokens::rwa::{
+    identity_verification::IdentityVerifierClient, utils::token_binder::TokenBinderClient, RWA,
+};
+use strata_bindings::VaultBindingClient;
 use strata_timelock::{queue, setup};
 
 use crate::error::ShareTokenError;
@@ -59,6 +62,56 @@ fn upgrade_pending(e: &Env) -> bool {
         queue::pending::<TokenChange>(e, id)
             .is_some_and(|(change, _)| matches!(change, TokenChange::Upgrade(_)))
     })
+}
+
+/// What a change must meet when it is proposed and again when it applies:
+/// rules bound here, or a verifier that accepts the vault.
+pub(crate) fn valid_change(e: &Env, change: &TokenChange) {
+    match change {
+        TokenChange::Compliance(rules) => compliance_bound_here(e, rules),
+        TokenChange::IdentityVerifier(verifier) => verifier_accepts_vault(e, verifier),
+        TokenChange::Upgrade(_)
+        | TokenChange::GrantRole(..)
+        | TokenChange::RevokeRole(..)
+        | TokenChange::Admin(_) => {}
+    }
+}
+
+/// The same rule the vault's `finish_setup` applies to compliance contracts.
+pub(crate) fn compliance_bound_here(e: &Env, rules: &Address) {
+    if !bound_here_or_external(e, rules) || !lists_this_token(e, rules) {
+        panic_with_error!(e, ShareTokenError::ComplianceNotBound);
+    }
+}
+
+pub(crate) fn verifier_accepts_vault(e: &Env, verifier: &Address) {
+    let accepted = setup::source(e).is_some_and(|vault| {
+        matches!(
+            IdentityVerifierClient::new(e, verifier).try_verify_identity(&vault),
+            Ok(Ok(()))
+        )
+    });
+    if !accepted {
+        panic_with_error!(e, ShareTokenError::VerifierRefusesVault);
+    }
+}
+
+fn bound_here_or_external(e: &Env, contract: &Address) -> bool {
+    let binding = VaultBindingClient::new(e, contract);
+    match (binding.try_vault(), binding.try_setup_open()) {
+        (Ok(Ok(named)), Ok(Ok(open))) => {
+            setup::source(e).is_some_and(|vault| named == Some(vault)) && !open
+        }
+        // Either view failing marks an external module; its governance is a trust assumption.
+        _ => true,
+    }
+}
+
+fn lists_this_token(e: &Env, rules: &Address) -> bool {
+    matches!(
+        TokenBinderClient::new(e, rules).try_linked_tokens(),
+        Ok(Ok(linked)) if linked.contains(e.current_contract_address())
+    )
 }
 
 /// Stands in for `#[only_admin]` where an OpenZeppelin trait fixes the caller.
