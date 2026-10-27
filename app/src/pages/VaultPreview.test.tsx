@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import {
 	formatDate,
@@ -345,7 +346,9 @@ vi.mock("../config/clients", () => {
 			result: {
 				nav_per_share: 1500000000000000000n,
 				expires_at: 1800000000n,
-				timestamp: 1757900000n,
+				accepted_at: 1757900000n,
+				proof_hash: Buffer.alloc(32, 0xab),
+				proof_uri: "",
 			},
 		}),
 	}

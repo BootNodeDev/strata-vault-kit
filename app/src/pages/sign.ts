@@ -55,7 +55,7 @@ type Decoder = (args: unknown[]) => Decoded
 
 const malformed = () => new InvalidPendingTransaction("malformed arguments")
 
-const address = (value: unknown): string => {
+const text = (value: unknown): string => {
 	if (typeof value !== "string") throw malformed()
 	return value
 }
@@ -87,7 +87,7 @@ const record = (value: unknown): Record<string, unknown> => {
 
 const addr = (label: string, value: unknown): SignArg => ({
 	label,
-	value: shortAddress(address(value)),
+	value: shortAddress(text(value)),
 })
 
 const amount = (label: string, value: unknown): SignArg => ({
@@ -114,11 +114,11 @@ const governed = (
 ): Record<string, Decoder> => ({
 	grant_role: ([account, role]) => ({
 		action: `grant-${contract}-role`,
-		args: [{ label: "Role", value: address(role) }, addr("Account", account)],
+		args: [{ label: "Role", value: text(role) }, addr("Account", account)],
 	}),
 	revoke_role: ([account, role]) => ({
 		action: `revoke-${contract}-role`,
-		args: [{ label: "Role", value: address(role) }, addr("Account", account)],
+		args: [{ label: "Role", value: text(role) }, addr("Account", account)],
 	}),
 	transfer_admin_role: ([newAdmin, liveUntil]) =>
 		count(liveUntil) === 0
@@ -137,7 +137,7 @@ const governed = (
 })
 
 const roleArgs = (role: unknown, account: unknown): SignArg[] => [
-	{ label: "Role", value: address(role) },
+	{ label: "Role", value: text(role) },
 	addr("Account", account),
 ]
 
@@ -309,8 +309,9 @@ const ORACLE: Record<string, Decoder> = {
 		action: "set-oracle-config",
 		args: oracleLimits(record(config)),
 	}),
-	attest: ([report]) => {
-		const { nav_per_share, expires_at } = record(report)
+	attest: ([input]) => {
+		const { nav_per_share, expires_at, proof_hash, proof_uri } = record(input)
+		const uri = text(proof_uri)
 		return {
 			action: "attest",
 			args: [
@@ -319,6 +320,8 @@ const ORACLE: Record<string, Decoder> = {
 					value: formatSignedPrice(integer(nav_per_share) as Price),
 				},
 				{ label: "Expires", value: formatDate(integer(expires_at)) },
+				{ label: "Proof hash", value: hex(proof_hash) },
+				{ label: "Proof URI", value: uri === "" ? "None" : uri },
 			],
 		}
 	},

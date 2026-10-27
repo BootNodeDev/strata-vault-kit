@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import {
 	type Amount,
 	type ChainEvent,
@@ -58,6 +59,7 @@ export type CycleOracle = {
 	price: Price | null
 	attestedAt: bigint | null
 	expiresAt: bigint | null
+	proof: { hash: string; uri: string } | null
 	navPaused: boolean | null
 	recorded: boolean | null
 	limits: OracleLimits | null
@@ -139,8 +141,15 @@ export function toOracle(
 	return {
 		state: nav.status,
 		price: report === null ? null : (report.nav_per_share as Price),
-		attestedAt: report?.timestamp ?? null,
+		attestedAt: report?.accepted_at ?? null,
 		expiresAt: report?.expires_at ?? null,
+		proof:
+			report === null
+				? null
+				: {
+						hash: Buffer.from(report.proof_hash).toString("hex"),
+						uri: report.proof_uri,
+					},
 		navPaused: nav.status === "unreadable" ? null : nav.status === "paused",
 		recorded: recordedOf(latest),
 		limits:

@@ -1577,7 +1577,7 @@ describe("TransactionModal, attesting a price", () => {
 		).toBeTruthy()
 		expect(
 			screen.getByText(
-				"Signing records 1.0400 as the share price. Sealed epochs settle at it once their notice elapses.",
+				"Signing records 1.0400 as the share price, with its proof. Sealed epochs settle at it once their notice elapses.",
 			),
 		).toBeTruthy()
 	})
@@ -1612,6 +1612,8 @@ describe("TransactionModal, attesting a price", () => {
 		[3003, /cooldown .* has not elapsed/],
 		[3004, /moves further from the last attested price/],
 		[3010, /^Unpause the NAV first\.$/],
+		[3023, /^The proof hash cannot be all zeros\.$/],
+		[3024, /^The proof URI is longer than 256 bytes\.$/],
 	])("names the oracle's reason for code %i", (code, sentence) => {
 		renderAttestModal({
 			status: "failed",
