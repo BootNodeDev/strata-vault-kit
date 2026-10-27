@@ -1,5 +1,24 @@
+//! # Design
+//!
 //! Testnet-only stub — in production this is an external modular-compliance
 //! module (ERC-3643), not part of this product. Do not deploy to mainnet.
+//!
+//! - **No rule of its own.** With no module registered every check passes; the
+//!   allowlist lives in the identity verifier. The cost: any other rule needs a
+//!   module or another compliance contract.
+//! - **Changes wait for the vault's timelock.** After setup, module, binding
+//!   and admin changes wait, and a wind-down refuses them. The cost: a faulty
+//!   module takes a full delay to remove, and stays in a wind-down.
+//! - **An unbound token fails.** The hooks the token calls after each mint,
+//!   transfer and burn refuse it when it is not bound. The cost: unbinding it
+//!   stops all three, the vault's claims included.
+//! - **The operator is not read.** OpenZeppelin's module and binding calls take
+//!   an `operator`; the stub asks the admin to sign instead. The cost: the
+//!   admin cannot delegate those calls.
+//! - **No upgrade.** The stub has no upgrade path. The cost: a fix means a new
+//!   deployment and a token `Compliance` change, which waits for the vault's
+//!   timelock after setup.
+
 #![no_std]
 
 mod governance;

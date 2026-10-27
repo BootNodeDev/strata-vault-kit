@@ -139,7 +139,9 @@ strata_bindings::error_enum! {
         /// shares outstanding, so setup cannot finish.
         SetupIncomplete = 6067,
         /// The holder fails the share token's identity check, so the vault takes no
-        /// deposit request from them and returns no escrowed shares to them.
+        /// deposit request from them and returns no escrowed shares to them. A
+        /// verifier that cannot answer, such as a broken or archived one, counts
+        /// as a failed check.
         NotAllowlisted = 6068,
         /// The wind-down delay is below the shortest the vault accepts.
         WindDownDelayTooShort = 6069,

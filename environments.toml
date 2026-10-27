@@ -57,7 +57,11 @@ constructor_args = '--asset share_token --share_token share_token --oracle nav_o
 # Setup cannot finish from this file either. The vault's `finish_setup` checks
 # the token, oracle and compliance bindings, the manager role and the
 # allowlist, which only the harness deploy wires, and that the token has no
-# shares outstanding. A deploy made only from this file leaves the compliance
+# shares outstanding. It also checks that the asset has the token's decimals,
+# that the asset, the token, the oracle and the vault are four different
+# addresses (here the asset is the share token, so this one fails too), that
+# the oracle answers as a feed, and that a custodian other than the vault is
+# set. A deploy made only from this file leaves the compliance
 # contract's, the token's, the oracle's and the vault's setup open, so its
 # vault refuses deposits with `SetupOpen`. The harness deploy closes all four.
 

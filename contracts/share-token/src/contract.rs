@@ -27,7 +27,7 @@ pub struct ShareToken;
 #[contractimpl]
 impl ShareToken {
     /// Creates the token with 7 decimals, its admin, its compliance authority
-    /// and the two contracts every move is checked against.
+    /// and the two contracts that check each `transfer` and mint.
     ///
     /// # Arguments
     ///
@@ -208,7 +208,7 @@ impl ShareToken {
     }
 
     /// Moves shares under a legal order, at once. The pause, freezes and the
-    /// compliance rules do not apply.
+    /// compliance rules' check do not apply.
     ///
     /// # Arguments
     ///

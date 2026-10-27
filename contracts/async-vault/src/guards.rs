@@ -135,7 +135,8 @@ pub(crate) fn wind_down_delay_in_bounds(e: &Env, secs: u64) {
     }
 }
 
-/// An exit takes a full notice, so a delay shorter than one is not a window.
+/// A shorter delay than the notice would let a change land before an epoch
+/// sealed at its proposal could be priced.
 pub(crate) fn upgrade_delay_in_bounds(e: &Env, secs: u64) {
     if secs < MIN_UPGRADE_DELAY {
         panic_with_error!(e, VaultError::UpgradeDelayTooShort);
@@ -155,20 +156,21 @@ pub(crate) fn custodian_not_the_vault(e: &Env, custodian: &Address) {
 }
 
 /// A feed that cannot answer would stall every epoch after the swap.
-pub(crate) fn feed_bound_here(e: &Env, feed: &Address) {
+pub(crate) fn feed_bound_here_and_answering(e: &Env, feed: &Address) {
     if !governance::bound_here(e, feed) || !governance::answers_as_feed(e, feed) {
         panic_with_error!(e, VaultError::FeedNotBound);
     }
 }
 
-/// The bounds a change must meet when it is proposed and again when it
-/// applies.
-pub(crate) fn change_in_bounds(e: &Env, change: &VaultChange) {
+/// What a change must meet when it is proposed and again when it applies: a
+/// delay or notice within its bounds, a feed bound here that answers, or a
+/// custodian other than the vault.
+pub(crate) fn valid_change(e: &Env, change: &VaultChange) {
     match change {
         VaultChange::UpgradeDelay(secs) => upgrade_delay_in_bounds(e, *secs),
         VaultChange::Notice(secs) => notice_in_bounds(e, *secs),
         VaultChange::WindDownDelay(secs) => wind_down_delay_in_bounds(e, *secs),
-        VaultChange::Oracle(feed) => feed_bound_here(e, feed),
+        VaultChange::Oracle(feed) => feed_bound_here_and_answering(e, feed),
         VaultChange::Custodian(custodian) => custodian_not_the_vault(e, custodian),
         VaultChange::Upgrade(_)
         | VaultChange::GrantRole(..)

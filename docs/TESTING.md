@@ -158,6 +158,17 @@ fixture wires them as the deploy does and finishes the vault's setup;
 | The share token upgrades through the vault's timelock under live balances, an open deposit and an open redemption, and migrates once; called directly, `upgrade` does not exist | [`contracts/async-vault/src/test/upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs) (needs `upgrade_wasm`) | `the_token_upgrades_under_live_balances_and_open_requests`, `the_token_exposes_no_immediate_upgrade` |
 | The oracle upgrades through the vault's timelock under a live valuation, keeps its config, roles and vault, and migrates once; called directly, `upgrade` does not exist | [`contracts/nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs) (needs `upgrade_wasm`) | `the_oracle_upgrades_under_a_live_valuation`, `the_oracle_exposes_no_immediate_upgrade` |
 
+## Contract spec docs and error codes
+
+The contract spec keeps the first 1,024 bytes of each doc and drops the rest
+without a warning. Each contract's error codes stay inside the block
+`crates/strata-bindings` gives it.
+
+| Behaviour | Tests | Key test names |
+| --- | --- | --- |
+| Every entrypoint and error variant doc of the five contracts fits in 1,024 bytes | [`crates/strata-bindings/tests/spec_docs.rs`](../crates/strata-bindings/tests/spec_docs.rs) | `every_contract_doc_fits_the_spec` |
+| An error enum declared through `error_enum!` compiles only while every code stays in its contract's block | [`crates/strata-bindings/src/errors.rs`](../crates/strata-bindings/src/errors.rs) (doctests) | the in-range example compiles; the out-of-range one fails with `E0080` |
+
 ## Wind-down on the network
 
 `scripts/harness/wind-down.test.ts` deploys a throwaway vault set on the local

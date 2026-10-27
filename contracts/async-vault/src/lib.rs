@@ -1,3 +1,40 @@
+//! # Design
+//!
+//! Deposits and redemptions are requests. Each joins the open epoch; the epoch
+//! is sealed and priced at the oracle's report, and each holder claims the
+//! result.
+//!
+//! - **The manager seals, anyone prices.** The price is the oracle's, not the
+//!   caller's. The cost: a silent manager or attester stalls every request, and
+//!   after setup a replacement waits for the timelock.
+//! - **Pricing records totals; claims mint and burn.** Pricing costs the same
+//!   for any number of requests. The cost: an epoch's rounding remainder stays
+//!   in `committed` and `pending_mint_shares` until its last request settles.
+//! - **A readable price closes cancellation,** during the notice too, until the
+//!   feed goes stale or the NAV or the vault is paused. The cost: a report that
+//!   lapses lets requests leave a sealed epoch late.
+//! - **Priced before paid.** A redemption is priced whether or not the cash is
+//!   there; its claim waits for the liquid reserve, and nothing goes to the
+//!   custodian meanwhile. The cost: an exit can wait on treasury.
+//! - **A refund below one share is not reserved.** Pricing sees only totals, so
+//!   the refund comes from the free reserve at claim. The cost: treasury or a
+//!   wind-down round can spend it first, and the claim waits.
+//! - **Checked totals.** An asset or share total fails with `AmountTooLarge` on
+//!   overflow, and with `AccountingMismatch` below zero unless signed, as
+//!   `net_deployed` is. The cost: books that disagree fail the call.
+//! - **A freeze holds every exit.** A frozen holder's requests, claims and
+//!   cancellations fail with `Frozen` until it lifts: compliance can delay a
+//!   payout, never redirect it. The cost: even a covered claim waits.
+//! - **A delisted holder leaves in cash.** Shares priced for them join their
+//!   redemption in the open epoch, or their wind-down entitlement. The cost:
+//!   another epoch at its price, and a wait while the vault itself is delisted.
+//! - **Setup, then the timelock.** Until `finish_setup` checks the wiring,
+//!   admin changes are instant and deposits refused; after it, changes that
+//!   move value or cut a wait are timelocked. The cost: fixes take a week.
+//! - **Wind-down claims run the compliance hooks:** surrendered shares burn
+//!   through the `destroyed` modules. The cost: one failing in a wind-down
+//!   blocks those claims, and no change can remove it then.
+
 #![no_std]
 
 mod deposit;
@@ -101,12 +138,6 @@ impl AsyncVault {
         oracle: Address,
         roles: VaultRoles,
     ) {
-        // The vault kit white-label topology specifies five distinct authorities:
-        // governance, manager, treasury, guardian, compliance, and attester.
-        // Although compliance is enforced on the identity verifier and attestation
-        // on the NAV oracle, the vault checks pairwise distinctness at construction
-        // time to prevent role misconfiguration across the kit ecosystem. Neither
-        // compliance nor attester is granted a direct role on the vault contract itself.
         guards::roles_distinct(e, &roles);
 
         access_control::set_admin(e, &roles.governance);
