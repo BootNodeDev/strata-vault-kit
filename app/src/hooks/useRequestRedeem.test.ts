@@ -40,7 +40,7 @@ describe("useRequestRedeem", () => {
 		await act(() => result.current.submit(shares))
 
 		expect(vaultMock.request_redeem).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			shares,
 		})
 	})

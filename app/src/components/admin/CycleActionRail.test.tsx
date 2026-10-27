@@ -52,6 +52,8 @@ const attestAction: CycleAction = {
 	},
 	price: null,
 	freshness: null,
+	proofHash: null,
+	proofUri: "",
 	enabled: false,
 }
 
@@ -422,15 +424,15 @@ describe("CycleActionRail", () => {
 
 	it("states an action's note outside the conditions", () => {
 		renderRail([
-			{ ...attestAction, note: "Ripcord raised — attesting does not lift it." },
+			{ ...attestAction, note: "NAV paused — attesting does not unpause it." },
 		])
 		expand("Attest price")
 
 		const list = screen.getByRole("list", { name: "Attest price conditions" })
 		expect(
-			screen.getByText("Ripcord raised — attesting does not lift it."),
+			screen.getByText("NAV paused — attesting does not unpause it."),
 		).toBeTruthy()
-		expect(within(list).queryByText(/Ripcord/)).toBeNull()
+		expect(within(list).queryByText(/NAV paused/)).toBeNull()
 	})
 })
 
@@ -489,6 +491,27 @@ describe("CycleActionRail with keyed fields", () => {
 
 		expect(onInput).toHaveBeenNthCalledWith(1, setLimits, "3d", "freshness")
 		expect(onInput).toHaveBeenNthCalledWith(2, setLimits, "0.6", "floor")
+	})
+
+	it("keeps an action open and its field focused when its route changes id", () => {
+		const setNotice: RailAction = { ...setLimits, slot: "set-limits" }
+		const rail = (action: RailAction) => (
+			<CycleActionRail
+				scope="configuration"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+			/>
+		)
+		const { rerender } = render(rail(setNotice))
+		const field = screen.getByRole("textbox", { name: "Freshness window" })
+		field.focus()
+
+		rerender(rail({ ...setNotice, id: "propose-oracle-config" }))
+
+		expect(expanded("Set the oracle limits")).toBe(true)
+		expect(document.activeElement).toBe(field)
 	})
 
 	it("shows the current value next to the field and the new one once it reads", () => {

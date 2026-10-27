@@ -18,7 +18,7 @@ export function useClaimDeposit(): UseClaimDeposit {
 	const call = useCallback(
 		(signer: Signer, epochId: bigint) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.claim_deposit({ caller: signer.publicKey, epoch_id: epochId }),
+				vault.claim_deposit({ holder: signer.publicKey, epoch_id: epochId }),
 			),
 		[],
 	)

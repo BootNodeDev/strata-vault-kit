@@ -15,6 +15,7 @@ export type FigureRow = {
 	label: string
 	value: string | null
 	pending?: boolean
+	href?: string
 }
 
 export type FigureGroup = {

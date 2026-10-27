@@ -18,7 +18,7 @@ export function useClaimRedeem(): UseClaimRedeem {
 	const call = useCallback(
 		(signer: Signer, epochId: bigint) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.claim_redeem({ caller: signer.publicKey, epoch_id: epochId }),
+				vault.claim_redeem({ holder: signer.publicKey, epoch_id: epochId }),
 			),
 		[],
 	)

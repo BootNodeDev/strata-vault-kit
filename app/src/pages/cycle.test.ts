@@ -78,13 +78,14 @@ const oracle: CycleOracle = {
 	price: price(1n),
 	attestedAt: 1_700_050_000n,
 	expiresAt: 1_700_136_000n,
-	ripcord: false,
+	proof: { hash: "ab".repeat(32), uri: "https://example.com/nav.pdf" },
+	navPaused: false,
 	recorded: true,
 	limits: {
 		freshness: 86_400n,
 		cooldown: 3_600n,
 		maxUpBps: 500,
-		maxDownBps: null,
+		maxDownBps: 1_000,
 		min: price(1n) / 2n,
 		max: price(2n),
 	},
@@ -167,7 +168,7 @@ describe("toCycleRows", () => {
 		])
 		expect(groups.map((group) => group.rows.map((row) => row.label))).toEqual([
 			["Vault", "Notice period", "Sealed at", "Notice"],
-			["Ripcord"],
+			["NAV paused", "Proof hash", "Proof URI"],
 			["Committed", "Liquid reserve"],
 			["Activates at", "Delay", "Supply"],
 		])
@@ -258,11 +259,11 @@ describe("toCycleRows", () => {
 	it.each<[string, CycleOracle["state"], string]>([
 		["a valid price", "valid", "Valid"],
 		["a stale price", "stale", "Stale"],
-		["a raised ripcord", "paused", "Paused"],
+		["a paused NAV", "paused", "Paused"],
 	])("notes %s under the share price", (_name, state, expected) => {
 		const groups = toCycleRows(
 			ready({
-				oracle: { ...oracle, state, ripcord: state === "paused" },
+				oracle: { ...oracle, state, navPaused: state === "paused" },
 			}),
 		)
 
@@ -303,15 +304,77 @@ describe("toCycleRows", () => {
 		)
 	})
 
-	it("shows the ripcord, the share price and the oracle limits in app units", () => {
+	it("shows the latest proof, its hash shortened and its URI as a link", () => {
+		const rows = groupOf(toCycleRows(ready({})), "Price")?.rows
+
+		expect(rows?.find((row) => row.label === "Proof hash")).toEqual({
+			label: "Proof hash",
+			value: "abab...abab",
+		})
+		expect(rows?.find((row) => row.label === "Proof URI")).toEqual({
+			label: "Proof URI",
+			value: "https://example.com/nav.pdf",
+			href: "https://example.com/nav.pdf",
+		})
+	})
+
+	it("shows a proof URI that is not a web address as text, never as a link", () => {
+		const rows = groupOf(
+			toCycleRows(
+				ready({
+					oracle: {
+						...oracle,
+						proof: { hash: "ab".repeat(32), uri: "javascript:alert(1)" },
+					},
+				}),
+			),
+			"Price",
+		)?.rows
+
+		expect(rows?.find((row) => row.label === "Proof URI")).toEqual({
+			label: "Proof URI",
+			value: "javascript:alert(1)",
+		})
+	})
+
+	it("marks the proof URI as not applicable when the attestation gave none", () => {
+		const groups = toCycleRows(
+			ready({
+				oracle: { ...oracle, proof: { hash: "ab".repeat(32), uri: "" } },
+			}),
+		)
+
+		expect(valueOf(groups, "Price", "Proof URI")).toBe("—")
+	})
+
+	it("marks the proof as not applicable when nothing was attested", () => {
+		const groups = toCycleRows(
+			ready({
+				oracle: {
+					...oracle,
+					state: "never",
+					recorded: false,
+					price: null,
+					attestedAt: null,
+					expiresAt: null,
+					proof: null,
+				},
+			}),
+		)
+
+		expect(valueOf(groups, "Price", "Proof hash")).toBe("—")
+		expect(valueOf(groups, "Price", "Proof URI")).toBe("—")
+	})
+
+	it("shows the NAV pause, the share price and the oracle limits in app units", () => {
 		const groups = toCycleRows(ready({}))
 
 		expect(tileOf(groups, "Price", "Share price")?.value).toBe("1.0000")
-		expect(valueOf(groups, "Price", "Ripcord")).toBe("Not raised")
+		expect(valueOf(groups, "Price", "NAV paused")).toBe("Not paused")
 		expect(valueOf(groups, "Price", "Cooldown")).toBe("1h")
 		expect(valueOf(groups, "Price", "Freshness window")).toBe("1d")
 		expect(valueOf(groups, "Price", "Largest rise")).toBe("5%")
-		expect(valueOf(groups, "Price", "Largest fall")).toBe("No limit")
+		expect(valueOf(groups, "Price", "Largest fall")).toBe("10%")
 		expect(valueOf(groups, "Price", "Price floor")).toBe("0.5000")
 	})
 
@@ -936,18 +999,27 @@ describe("toCycleActions", () => {
 
 const attester = grant("oracle attester")
 
+const PROOF_HASH = "AB".repeat(32)
+
 const attestOf = (
 	input: string,
 	overrides: Partial<ReadyState> = {},
 	grants: Grant[] = [attester],
+	proof: { proofHash?: string; proofUri?: string } = { proofHash: PROOF_HASH },
 ) =>
 	actionOf(
-		toCycleActions(ready(overrides), grants, WALLET, { price: input }),
+		toCycleActions(ready(overrides), grants, WALLET, {
+			price: input,
+			...proof,
+		}),
 		"attest",
 	)
 
-const withLimits = (limits: Partial<NonNullable<CycleOracle["limits"]>>) =>
-	({ ...oracle, limits: { ...oracle.limits!, ...limits } }) as CycleOracle
+const proofConditions = {
+	"Proof hash of 64 hex characters": true,
+	"Proof hash not all zeros": true,
+	"Proof URI within 256 bytes": true,
+}
 
 describe("toCycleActions, attesting", () => {
 	it("offers the attestation only to the oracle attester, in the Price group", () => {
@@ -962,7 +1034,7 @@ describe("toCycleActions, attesting", () => {
 		const attest = attestOf("1.04")
 
 		expect(attest?.label).toBe("Attest price")
-		expect(attest?.field).toEqual({
+		expect(attest?.fields?.[0]).toEqual({
 			label: "Share price",
 			placeholder: "0.0000",
 			value: "1.04",
@@ -977,11 +1049,12 @@ describe("toCycleActions, attesting", () => {
 			"Within the band": null,
 			"Cooldown elapsed": true,
 			"Within the allowed move": null,
+			...proofConditions,
 		})
 		expect(attest?.outcome).toBeNull()
 		expect(attest?.price).toBeNull()
 		expect(attest?.enabled).toBe(false)
-		expect(attest?.field?.invalid).toBe(false)
+		expect(attest?.fields?.[0]?.invalid).toBe(false)
 	})
 
 	it.each(["abc", "1.2.3", "1.0000000000000000001"])(
@@ -989,7 +1062,7 @@ describe("toCycleActions, attesting", () => {
 		(input) => {
 			const attest = attestOf(input)
 
-			expect(attest?.field?.invalid).toBe(true)
+			expect(attest?.fields?.[0]?.invalid).toBe(true)
 			expect(conditionsOf(attest)["Within the band"]).toBeNull()
 			expect(attest?.enabled).toBe(false)
 		},
@@ -1002,6 +1075,7 @@ describe("toCycleActions, attesting", () => {
 			"Within the band": true,
 			"Cooldown elapsed": true,
 			"Within the allowed move": true,
+			...proofConditions,
 		})
 		expect(attest?.price).toBe(1_040_000_000_000_000_000n)
 		expect(attest?.freshness).toBe(86_400n)
@@ -1070,47 +1144,27 @@ describe("toCycleActions, attesting", () => {
 		).toBe(false)
 	})
 
-	it("lets any fall through when the oracle sets no largest fall", () => {
-		expect(conditionsOf(attestOf("0.5"))["Within the allowed move"]).toBe(true)
-	})
-
-	it("caps a fall at the largest allowed when the oracle sets one", () => {
-		const limited = { oracle: withLimits({ maxDownBps: 1_000 }) }
-
+	it("caps a fall at the largest allowed, letting an equal move through", () => {
+		expect(conditionsOf(attestOf("0.9"))["Within the allowed move"]).toBe(true)
 		expect(
-			conditionsOf(attestOf("0.9", limited))["Within the allowed move"],
-		).toBe(true)
-		expect(
-			conditionsOf(attestOf("0.899999999999999999", limited))[
-				"Within the allowed move"
-			],
+			conditionsOf(attestOf("0.899999999999999999"))["Within the allowed move"],
 		).toBe(false)
 	})
 
-	it("shows the ceiling when a rise exceeds the cap and no fall cap exists", () => {
-		const move = attestOf("1.06")?.conditions.find(
-			(condition) => condition.label === "Within the allowed move",
-		)
+	it.each(["1.06", "0.8"])(
+		"shows the allowed range when %s exceeds a cap",
+		(input) => {
+			const move = attestOf(input)?.conditions.find(
+				(condition) => condition.label === "Within the allowed move",
+			)
 
-		expect(move).toEqual({
-			label: "Within the allowed move",
-			met: false,
-			detail: "≤ 1.0500",
-		})
-	})
-
-	it("shows the allowed range when both caps exist and the move exceeds one", () => {
-		const limited = { oracle: withLimits({ maxDownBps: 1_000 }) }
-		const move = attestOf("0.8", limited)?.conditions.find(
-			(condition) => condition.label === "Within the allowed move",
-		)
-
-		expect(move).toEqual({
-			label: "Within the allowed move",
-			met: false,
-			detail: "0.9000 – 1.0500",
-		})
-	})
+			expect(move).toEqual({
+				label: "Within the allowed move",
+				met: false,
+				detail: "0.9000 – 1.0500",
+			})
+		},
+	)
 
 	it("skips the cooldown and the move cap for the first attestation", () => {
 		const attest = attestOf("1.9", {
@@ -1127,17 +1181,18 @@ describe("toCycleActions, attesting", () => {
 			"Within the band": true,
 			"Cooldown elapsed": true,
 			"Within the allowed move": true,
+			...proofConditions,
 		})
 		expect(attest?.enabled).toBe(true)
 	})
 
-	it("skips the cooldown and the move cap with the ripcord raised and no stored record", () => {
+	it("skips the cooldown and the move cap with the NAV paused and no stored record", () => {
 		const attest = attestOf("1.9", {
 			ledgerTime: oracle.attestedAt! - 1n,
 			oracle: {
 				...oracle,
 				state: "paused",
-				ripcord: true,
+				navPaused: true,
 				recorded: false,
 				price: null,
 				attestedAt: null,
@@ -1148,6 +1203,7 @@ describe("toCycleActions, attesting", () => {
 			"Within the band": true,
 			"Cooldown elapsed": true,
 			"Within the allowed move": true,
+			...proofConditions,
 		})
 		expect(attest?.enabled).toBe(true)
 	})
@@ -1185,13 +1241,13 @@ describe("toCycleActions, attesting", () => {
 		expect(attest?.enabled).toBe(false)
 	})
 
-	it("notes a raised ripcord without making it a condition", () => {
+	it("notes a paused NAV without making it a condition", () => {
 		const attest = attestOf("1.04", {
-			oracle: { ...oracle, state: "paused", ripcord: true },
+			oracle: { ...oracle, state: "paused", navPaused: true },
 		})
 
-		expect(attest?.note).toBe("Ripcord raised — attesting does not lift it.")
-		expect(Object.keys(conditionsOf(attest))).toHaveLength(3)
+		expect(attest?.note).toBe("NAV paused — attesting does not unpause it.")
+		expect(Object.keys(conditionsOf(attest))).toHaveLength(6)
 		expect(attest?.enabled).toBe(true)
 	})
 
@@ -1201,6 +1257,102 @@ describe("toCycleActions, attesting", () => {
 
 		expect(attest?.enabled).toBe(true)
 		expect(attest?.grant).toEqual(shared)
+	})
+
+	it("asks for the proof hash and an optional proof URI in text fields", () => {
+		const attest = attestOf("1.04", {}, [attester], {
+			proofHash: PROOF_HASH,
+			proofUri: "https://example.com/nav.pdf",
+		})
+
+		expect(attest?.fields?.slice(1)).toEqual([
+			{
+				key: "proof-hash",
+				label: "Proof hash",
+				placeholder: "Proof hash, 64 hex characters",
+				value: PROOF_HASH,
+				invalid: false,
+				text: true,
+			},
+			{
+				key: "proof-uri",
+				label: "Proof URI",
+				placeholder: "Proof URI (optional)",
+				value: "https://example.com/nav.pdf",
+				invalid: false,
+				text: true,
+			},
+		])
+		expect(attest?.proofHash).toBe("ab".repeat(32))
+		expect(attest?.proofUri).toBe("https://example.com/nav.pdf")
+	})
+
+	it("holds the attestation until a proof hash is typed", () => {
+		const attest = attestOf("1.04", {}, [attester], {})
+
+		expect(conditionsOf(attest)["Proof hash of 64 hex characters"]).toBeNull()
+		expect(conditionsOf(attest)["Proof hash not all zeros"]).toBeNull()
+		expect(attest?.proofHash).toBeNull()
+		expect(attest?.enabled).toBe(false)
+	})
+
+	it.each(["ab".repeat(31), "ab".repeat(33), "zz".repeat(32)])(
+		"refuses %j as a proof hash, marking the field",
+		(proofHash) => {
+			const attest = attestOf("1.04", {}, [attester], { proofHash })
+
+			expect(conditionsOf(attest)["Proof hash of 64 hex characters"]).toBe(
+				false,
+			)
+			expect(attest?.fields?.[1]?.invalid).toBe(true)
+			expect(attest?.enabled).toBe(false)
+		},
+	)
+
+	it("refuses an all-zero proof hash", () => {
+		const attest = attestOf("1.04", {}, [attester], {
+			proofHash: "0".repeat(64),
+		})
+
+		expect(conditionsOf(attest)["Proof hash of 64 hex characters"]).toBe(true)
+		expect(conditionsOf(attest)["Proof hash not all zeros"]).toBe(false)
+		expect(attest?.fields?.[1]?.invalid).toBe(true)
+		expect(attest?.enabled).toBe(false)
+	})
+
+	it("accepts a proof URI of exactly 256 bytes and refuses one byte more, counting UTF-8 bytes", () => {
+		const fits = attestOf("1.04", {}, [attester], {
+			proofHash: PROOF_HASH,
+			proofUri: "é".repeat(128),
+		})
+		const over = attestOf("1.04", {}, [attester], {
+			proofHash: PROOF_HASH,
+			proofUri: `${"é".repeat(128)}a`,
+		})
+
+		expect(conditionsOf(fits)["Proof URI within 256 bytes"]).toBe(true)
+		expect(fits?.enabled).toBe(true)
+		expect(
+			over?.conditions.find(
+				(condition) => condition.label === "Proof URI within 256 bytes",
+			),
+		).toEqual({
+			label: "Proof URI within 256 bytes",
+			met: false,
+			detail: "257 bytes",
+		})
+		expect(over?.fields?.[2]?.invalid).toBe(true)
+		expect(over?.enabled).toBe(false)
+	})
+
+	it("enables an attestation without a proof URI, sending it empty", () => {
+		const attest = attestOf("1.04", {}, [attester], {
+			proofHash: PROOF_HASH,
+			proofUri: "  ",
+		})
+
+		expect(attest?.proofUri).toBe("")
+		expect(attest?.enabled).toBe(true)
 	})
 })
 
