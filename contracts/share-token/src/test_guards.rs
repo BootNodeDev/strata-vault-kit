@@ -12,6 +12,7 @@ use strata_timelock::{Clock, MIN_DELAY};
 
 use crate::guards;
 use crate::{ShareToken, ShareTokenClient, ShareTokenError, TokenChange, MAX_REFERENCE_LEN};
+use compliance::{Compliance, ComplianceClient};
 use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
 
 /// Plays the vault: the token binds only to an address that reports a clock.
@@ -44,6 +45,18 @@ impl Fixture<'_> {
     fn finish_setup(&self) {
         self.token.bind_vault(&self.vault);
         self.token.finish_setup();
+    }
+
+    /// Rules on the vault's clock with their setup finished.
+    fn rules_listing(&self, tokens: &[&Address]) -> Address {
+        let rules =
+            ComplianceClient::new(&self.e, &self.e.register(Compliance, (self.admin.clone(),)));
+        for token in tokens {
+            rules.bind_token(token, &self.admin);
+        }
+        rules.bind_vault(&self.vault);
+        rules.finish_setup();
+        rules.address
     }
 }
 
@@ -131,6 +144,71 @@ fn not_a_second_upgrade_refuses_an_upgrade_while_one_waits() {
         guards::not_a_second_upgrade(&f.e, &upgrade)
     });
     holds(&f, || guards::not_a_second_upgrade(&f.e, &grant));
+}
+
+#[test]
+fn compliance_bound_here_refuses_rules_without_the_token_or_naming_a_vault_before_one_is_bound() {
+    let f = setup();
+    let listing = f.rules_listing(&[&f.token.address]);
+    refuses(&f, ShareTokenError::ComplianceNotBound, || {
+        guards::compliance_bound_here(&f.e, &listing)
+    });
+
+    f.finish_setup();
+    holds(&f, || guards::compliance_bound_here(&f.e, &listing));
+    for rules in [f.rules_listing(&[]), Address::generate(&f.e)] {
+        refuses(&f, ShareTokenError::ComplianceNotBound, || {
+            guards::compliance_bound_here(&f.e, &rules)
+        });
+    }
+}
+
+#[test]
+fn verifier_accepts_vault_refuses_a_verifier_that_refuses_or_cannot_answer() {
+    let f = setup();
+    f.identity.allow(&f.vault, &true);
+    refuses(&f, ShareTokenError::VerifierRefusesVault, || {
+        guards::verifier_accepts_vault(&f.e, &f.identity.address)
+    });
+
+    f.finish_setup();
+    holds(&f, || {
+        guards::verifier_accepts_vault(&f.e, &f.identity.address)
+    });
+    for verifier in [f.vault.clone(), Address::generate(&f.e)] {
+        refuses(&f, ShareTokenError::VerifierRefusesVault, || {
+            guards::verifier_accepts_vault(&f.e, &verifier)
+        });
+    }
+    f.identity.allow(&f.vault, &false);
+    refuses(&f, ShareTokenError::VerifierRefusesVault, || {
+        guards::verifier_accepts_vault(&f.e, &f.identity.address)
+    });
+}
+
+#[test]
+fn valid_change_checks_only_rule_and_verifier_swaps() {
+    let f = setup();
+    f.finish_setup();
+    f.identity.allow(&f.vault, &true);
+    let stranger = Address::generate(&f.e);
+    for change in [
+        TokenChange::Upgrade(BytesN::from_array(&f.e, &[1; 32])),
+        TokenChange::GrantRole(symbol_short!("manager"), stranger.clone()),
+        TokenChange::RevokeRole(symbol_short!("manager"), stranger.clone()),
+        TokenChange::Admin(stranger.clone()),
+        TokenChange::Compliance(f.rules_listing(&[&f.token.address])),
+        TokenChange::IdentityVerifier(f.identity.address.clone()),
+    ] {
+        holds(&f, || guards::valid_change(&f.e, &change));
+    }
+
+    refuses(&f, ShareTokenError::ComplianceNotBound, || {
+        guards::valid_change(&f.e, &TokenChange::Compliance(stranger.clone()))
+    });
+    refuses(&f, ShareTokenError::VerifierRefusesVault, || {
+        guards::valid_change(&f.e, &TokenChange::IdentityVerifier(stranger.clone()))
+    });
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use soroban_sdk::{contract, contractimpl};
-use stellar_tokens::rwa::compliance::{ComplianceError, ComplianceHook};
+use stellar_tokens::rwa::{compliance::ComplianceHook, RWA};
 
 use super::*;
 
@@ -114,7 +114,7 @@ fn a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim() {
 }
 
 #[test]
-fn an_unbound_compliance_swap_lands_and_stops_every_move() {
+fn an_unbound_compliance_swap_is_refused_and_every_move_goes_on() {
     let f = setup();
     let holder = f.holder(10);
     let investor = f.investor(1_000);
@@ -122,28 +122,20 @@ fn an_unbound_compliance_swap_lands_and_stops_every_move() {
     f.vault.request_redeem(&holder, &4);
     f.fulfill_epoch(wad(2));
 
-    let unbound = f.e.register(Compliance, (f.admin.clone(),));
-    let id = f
-        .share
-        .propose_change(&share_token::TokenChange::Compliance(unbound.clone()));
-    f.advance(MIN_UPGRADE_DELAY);
-    f.share.apply_change(&id);
-    assert_eq!(f.share.compliance(), unbound);
+    let unbound = ComplianceClient::new(&f.e, &f.e.register(Compliance, (f.admin.clone(),)));
+    unbound.bind_vault(&f.vault.address);
+    unbound.finish_setup();
+    assert_eq!(
+        f.share
+            .try_propose_change(&share_token::TokenChange::Compliance(unbound.address))
+            .err(),
+        Some(Ok(share_token::ShareTokenError::ComplianceNotBound.into()))
+    );
 
-    let token_not_bound = Some(Ok(ComplianceError::TokenNotBound.into()));
-    assert_eq!(
-        f.share.try_transfer(&holder, &investor, &1).err(),
-        token_not_bound
-    );
-    assert_eq!(
-        f.vault.try_claim_deposit(&investor, &epoch).err(),
-        token_not_bound
-    );
-    assert_eq!(
-        f.vault.try_claim_redeem(&holder, &epoch).err(),
-        token_not_bound
-    );
-    assert!(!f.vault.health().compliance_bound);
+    f.share.transfer(&holder, &investor, &1);
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 50);
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 8);
+    assert!(f.vault.health().compliance_bound);
 }
 
 #[test]
@@ -151,12 +143,11 @@ fn a_verifier_that_cannot_answer_counts_as_a_failed_check() {
     let f = setup();
     let investor = f.investor(1_000);
 
+    // A swap refuses it; this stands in for a verifier that stops answering later.
     let silent = Address::generate(&f.e);
-    let id = f
-        .share
-        .propose_change(&share_token::TokenChange::IdentityVerifier(silent.clone()));
-    f.advance(MIN_UPGRADE_DELAY);
-    f.share.apply_change(&id);
+    f.e.as_contract(&f.share.address, || {
+        RWA::set_identity_verifier(&f.e, &silent)
+    });
     assert_eq!(f.share.identity_verifier(), silent);
 
     refused(

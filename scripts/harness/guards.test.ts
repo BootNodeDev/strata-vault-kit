@@ -207,7 +207,7 @@ describe("the compliance authority's reach", () => {
 				shareToken(c, compliance).propose_change({
 					change: {
 						tag: "IdentityVerifier",
-						values: [c.deployment.contracts.compliance],
+						values: [c.deployment.contracts.identity_verifier],
 					},
 				}),
 			),

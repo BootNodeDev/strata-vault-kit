@@ -144,12 +144,12 @@ fn compliance_bound(e: &Env, compliance: &Address, token: &Address) -> bool {
         Ok(Ok(linked)) if linked.contains(token)
     );
     let binding = VaultBindingClient::new(e, compliance);
-    let on_this_clock = match (binding.try_vault(), binding.try_setup_open()) {
+    let bound_here_or_external = match (binding.try_vault(), binding.try_setup_open()) {
         (Ok(Ok(vault)), Ok(Ok(open))) => vault == Some(e.current_contract_address()) && !open,
-        // An external module answers no binding view; its governance is a trust assumption.
+        // Either view failing marks an external module; its governance is a trust assumption.
         _ => true,
     };
-    linked && on_this_clock
+    linked && bound_here_or_external
 }
 
 fn all_different(addresses: &[&Address]) -> bool {
