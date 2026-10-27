@@ -13,9 +13,9 @@ This document provides the complete authorization and role model specification f
    - A role entrypoint checks the role of the `caller` or `operator` it names, then asks that account to sign. `legal_transfer` and `recover_balance` also ask the admin, a different account, to sign the same call.
    - The testnet stubs are the exception. The compliance contract's `bind_token`, `unbind_token`, `add_module_to` and `remove_module_from`, and the identity verifier's `set_claim_topics_and_issuers`, keep the `operator` argument their trait fixes but do not read it. `#[only_admin]` asks the stored admin to sign, so each still asks for one signature. Production replaces both stubs with external contracts (§5.4, §5.5).
 3. **Exit guarantee, with one hold**: A covered redemption claim pays out cash regardless of pause, staleness or allowlist status. A delisted investor exits through the cash path and cannot re-enter share circulation. A frozen investor is held: the vault refuses their requests, cancellations and claims, and pays them only after the freeze lifts.
-4. **Five Separate Authorities**:
+4. **Five Separate Authorities, plus the Vault's `manager` Role**:
    - **Governance (Admin)**: Root authority; upgrades, timelock parameters, custodian settings, unpause, oracle parameters, emergency NAV pause reset. As the share token's admin, it co-signs compliance's `legal_transfer` and `recover_balance`.
-   - **Manager (Vault)**: Closes epochs.
+   - **Manager (vault role, not an authority)**: Closes epochs.
    - **Treasury**: Deploys free reserve assets to custodian.
    - **Guardian**: Emergency responder; pauses vault entries, pauses the oracle's NAV.
    - **Attester (Oracle)**: Submits off-chain valuation reports within strict deviation and rate bounds.
@@ -50,10 +50,10 @@ In `scripts/harness/deploy.ts` and automated deployment scripts, the separation 
 ## 3. Vault Constructor Authority Handling
 
 `AsyncVault::__constructor` accepts `VaultRoles`, which includes `governance`, `manager`, `treasury`, `guardian`, `compliance`, and `attester`.
-- **Why `compliance` and `attester` are kept in the constructor**:
-  The vault kit enforces an end-to-end separation of duties. At construction, the vault validates pairwise distinctness:
+- **What the constructor does with `compliance` and `attester`**:
+  It checks four pairs and refuses an address that appears in both seats (`RolesNotDistinct`):
   `treasury != guardian`, `treasury != governance`, `compliance != governance`, and `compliance != treasury`.
-  Although compliance is enforced on `IdentityVerifier` / `Compliance` and attestation on `NavOracle`, the vault records and validates the full 5-authority topology at instantiation time to prevent cross-contamination of duties. Neither `compliance` nor `attester` is granted a direct role on the vault itself.
+  No other pair is compared: governance and guardian may be one account, and the manager is unconstrained. The vault stores neither `compliance` nor `attester` and grants neither a role. `compliance` is read only by that check; `attester` is neither stored nor compared, so nothing ties it to the oracle's attester. Compliance acts on the identity verifier and the share token, and attestation on the oracle.
 
 ---
 
@@ -71,7 +71,7 @@ The following entrypoints are open to any caller on purpose:
 | **`AsyncVault`** | `request_deposit` | `holder.require_auth()` | Investor entrypoint. Deposits escrowed cash; guarded by `when_not_paused`, not winding down, and refused with `SetupOpen` until the vault's setup finishes, so every deposit is covered by the timelock. |
 | **`AsyncVault`** | `claim_deposit` | `holder.require_auth()` | Investor entrypoint. Mints the shares once the epoch is priced; the token checks the receiver on `mint`. A delisted holder's shares become an exit instead (`DepositConvertedToExit`): they join the holder's redemption in the open epoch, or the holder's wind-down entitlement during a wind-down. A frozen holder's claim is held (`Frozen`). |
 | **`AsyncVault`** | `cancel_deposit` | `holder.require_auth()` | Investor exit while the epoch cannot be priced. Refunds the whole escrowed deposit in one step, delisted or not. A frozen holder is held (`Frozen`). |
-| **`AsyncVault`** | `request_redeem` | `holder.require_auth()` | Investor exit. Always open, even during pause. |
+| **`AsyncVault`** | `request_redeem` | `holder.require_auth()` | Investor exit. Open during a pause and to a delisted holder; refused during a wind-down (`WindDownActive`). |
 | **`AsyncVault`** | `claim_redeem` | `holder.require_auth()` | Investor exit. Pays settlement asset once covered. |
 | **`AsyncVault`** | `cancel_redeem` | `holder.require_auth()` | Investor exit while the epoch cannot be priced. Outside a wind-down the vault checks the holder itself and returns the escrowed shares with the manager `forced_transfer`; it refuses a delisted holder (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`). In an active wind-down the escrow is surrendered into the holder's wind-down entitlement instead (`RedemptionSurrendered`). A frozen holder is held (`Frozen`) either way. |
 
@@ -113,7 +113,7 @@ Tests: [`controls.rs`](../contracts/async-vault/src/test/controls.rs), [`epochs.
 
 ### 5.2 ShareToken (`contracts/share-token`)
 
-The token's `admin` is governance; the guardian holds no role on the token. Until `finish_setup`, admin changes are instant, so the deploy can grant the vault the `manager` role. Setup cannot finish while an admin hand-over offered during setup is pending. After setup, the following wait for the vault's timelock through `propose_change`/`apply_change`: grants, revoking `manager`, admin hand-over, `set_compliance`, `set_identity_verifier` and upgrades. Revoking `compliance` and `pause`/`unpause` stay instant. The `manager` role is held by the vault and the `compliance` role by the compliance authority. The token's `pause` refuses SEP-41 transfers between holders only. The vault's own escrow moves (`forced_transfer`), mint and burn ignore it, so a token pause stops neither entry nor exit.
+The token's `admin` is governance; the guardian holds no role on the token. Until `finish_setup`, admin changes are instant, so the deploy can grant the vault the `manager` role. Setup cannot finish while an admin hand-over offered during setup is pending. After setup, the following wait for the vault's timelock through `propose_change`/`apply_change`: grants, revoking `manager`, admin hand-over, `set_compliance`, `set_identity_verifier` and upgrades. A compliance or verifier swap is checked when proposed and again when applied: new rules must list the token, and rules that answer `vault()` and `setup_open()` must run on the vault's clock with their setup closed. As at `finish_setup`, rules that do not answer them count as an external module and are accepted. A new verifier must accept the vault. Revoking `compliance` and `pause`/`unpause` stay instant. The `manager` role is held by the vault and the `compliance` role by the compliance authority. The token's `pause` refuses SEP-41 transfers between holders only. The vault's own escrow moves (`forced_transfer`), mint and burn ignore it, so a token pause stops neither entry nor exit.
 
 Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.rs) and [`contracts/share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs). What each privileged call asks to sign: `test_governance::each_admin_call_asks_the_admin_for_one_signature`, `test::each_role_call_asks_its_holder_for_one_signature` and `test::legal_transfer::a_legal_transfer_or_a_recovery_asks_each_signer_once`.
 
@@ -137,6 +137,8 @@ Tests: [`contracts/share-token/src/test.rs`](../contracts/share-token/src/test.r
 | `propose_change` | `#[only_admin]` | After setup; vault not winding down; one upgrade at a time | `test_governance::nothing_is_proposed_during_setup`, `test_governance::only_the_admin_proposes_cancels_and_applies` |
 | `cancel_change` | `#[only_admin]` | The change must be pending | `test_governance::only_the_admin_proposes_cancels_and_applies` |
 | `apply_change` | `#[only_admin]` | Delay run on the vault's clock, vault unpaused and not winding down, delay `>=` the vault's notice | `test_governance::a_vault_pause_moves_the_eta_and_holds_the_change`, `test_governance::a_change_shorter_than_a_raised_notice_never_lands` |
+| `propose_change` (`Compliance(address)`, `IdentityVerifier(address)`) | `#[only_admin]` | New rules list the token in `linked_tokens`, and rules that answer `vault()` and `setup_open()` name the token's vault with their setup closed (`ComplianceNotBound`); rules that do not answer them count as an external module and are accepted. A new verifier's `verify_identity` accepts the vault's address (`VerifierRefusesVault`). Rules that do not answer `linked_tokens` and a verifier that does not answer fail | `test_governance::rules_off_this_vaults_clock_or_without_the_token_are_never_proposed`, `test_governance::a_verifier_that_refuses_the_vault_or_cannot_answer_is_never_proposed`, `test::compliance::an_unbound_compliance_swap_is_refused_and_every_move_goes_on` in `contracts/async-vault` |
+| `apply_change` (`Compliance(address)`, `IdentityVerifier(address)`) | `#[only_admin]` | Delay run; the new rules or verifier still pass the same check | `test_governance::applied_rule_and_verifier_changes_take_effect`, `test_governance::rules_that_stop_qualifying_are_never_installed`, `test_governance::rules_from_outside_the_kit_are_installed_while_they_list_the_token`, `test_governance::rules_that_stop_answering_a_binding_view_are_installed_as_external`, `test_governance::a_verifier_that_stops_accepting_the_vault_is_never_installed` |
 | `pending_changes` | Open view | None | None (view) |
 | `grant_role` | Admin, `caller.require_auth()` | Instant during setup; `UseTimelock` after | `test_governance::grants_and_manager_revokes_wait_after_setup` |
 | `revoke_role` | Admin, `caller.require_auth()` | `compliance`: instant. `manager`: instant during setup, `UseTimelock` after | `test_governance::grants_and_manager_revokes_wait_after_setup` (the instant case: `test_governance::revoking_compliance_stays_instant_after_setup`) |
@@ -154,7 +156,7 @@ Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs)
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
-| `attest` | `#[only_role(caller, "attester")]` | Refused while the NAV is paused; cooldown, deviation cap, bounds `[min, max]`; expiry capped at the freshness window | `test::attest_is_role_gated`, `test::attesting_is_refused_while_the_nav_is_paused` |
+| `attest` | `#[only_role(caller, "attester")]` | Refused while the NAV is paused; cooldown, deviation cap, bounds `[min, max]`; expiry capped at the freshness window; non-empty proof hash, proof URI ≤ 256 bytes | `test::attest_is_role_gated`, `test::attesting_is_refused_while_the_nav_is_paused`, `test::proof_reference::a_report_without_a_proof_hash_is_refused`, `test::proof_reference::a_proof_uri_past_the_limit_is_refused` |
 | `pause_nav` | `#[only_role(caller, "guardian")]` | None; instant after setup too | `test::pausing_the_nav_is_limited_to_the_guardian` (the instant case: `test_governance::the_nav_pause_and_clearing_stay_instant_after_setup`) |
 | `set_nav_paused` | `#[only_admin]` | None; instant after setup too | `test::the_guardian_pauses_the_nav_but_unpausing_needs_governance` |
 | `clear_latest` | `#[only_admin]` | NAV must be paused; instant after setup too | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_nav_is_paused` |
