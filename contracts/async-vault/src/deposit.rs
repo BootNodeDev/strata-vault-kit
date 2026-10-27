@@ -63,9 +63,9 @@ pub(crate) fn claim(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
     holder.require_auth();
     let epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-    guards::epoch_fulfilled(e, &epoch);
     let mut request = state::get_deposit_request(e, epoch_id, holder)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
+    guards::epoch_fulfilled(e, &epoch);
     guards::not_claimed(e, request.claimed);
     let standing = lock_policy::standing(e, holder);
     let decision = lock_policy::decide(Exit::ClaimDeposit, standing, wind_down::is_active(e));
@@ -164,10 +164,10 @@ pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
     holder.require_auth();
     let epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-    guards::not_priced(e, &epoch);
-    guards::no_price_available(e, &epoch);
     let request = state::get_deposit_request(e, epoch_id, holder)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
+    guards::not_priced(e, &epoch);
+    guards::no_price_available(e, &epoch);
     guards::allowed_to(e, Exit::CancelDeposit, holder);
 
     state::set_cancellable_escrow(

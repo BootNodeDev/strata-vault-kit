@@ -158,7 +158,10 @@ fn claiming_an_unfulfilled_epoch_is_rejected() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &400);
-    assert!(f.vault.try_claim_deposit(&user, &1).is_err());
+    refused(
+        f.vault.try_claim_deposit(&user, &1),
+        VaultError::EpochNotFulfilled,
+    );
     assert_eq!(f.shares(&user), 0);
 }
 
@@ -169,6 +172,24 @@ fn claiming_without_a_request_is_rejected() {
 
     f.fulfill_epoch(wad(2));
     assert!(f.vault.try_claim_deposit(&stranger, &1).is_err());
+}
+
+#[test]
+fn claiming_without_a_request_finds_no_request_before_pricing() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    let epoch = f.vault.current_epoch();
+
+    refused(
+        f.vault.try_claim_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.close_epoch();
+    refused(
+        f.vault.try_claim_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
 }
 
 #[test]
