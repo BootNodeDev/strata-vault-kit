@@ -187,6 +187,11 @@ export type TransactionModalProps =
 const GENERIC_REFUSAL =
 	"The vault refused this request. Try again, and contact support if it keeps happening."
 
+const NOT_ALLOWLISTED = "Your address is not allowlisted."
+
+const SHARES_NOT_RETURNABLE =
+	"Your address cannot receive these shares right now, so they stay with the vault."
+
 const subscribeContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6007:
@@ -223,10 +228,15 @@ const cancelRedeemContractErrorReason = (
 	code: number,
 	assetTicker: string,
 ): string => {
-	if (code === 304) {
-		return `Your address is no longer allowlisted, so these shares cannot be returned to you. Once priced, claim the ${assetTicker} it owes you instead.`
+	const claimInstead = `Once priced, claim the ${assetTicker} it owes you instead.`
+	switch (code) {
+		case 6068:
+			return `${NOT_ALLOWLISTED} These shares cannot come back to you. ${claimInstead}`
+		case 6073:
+			return `${SHARES_NOT_RETURNABLE} ${claimInstead}`
+		default:
+			return cancelContractErrorReason(code)
 	}
-	return cancelContractErrorReason(code)
 }
 
 const claimContractErrorReason = (code: number): string => {
@@ -243,8 +253,6 @@ const claimContractErrorReason = (code: number): string => {
 			return "This request has already been claimed."
 		case 6037:
 			return "The vault does not yet hold enough in reserve to cover this claim. Try again shortly."
-		case 304:
-			return "Your address is no longer allowlisted, so it cannot receive shares."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -279,8 +287,8 @@ const claimRedeemContractErrorReason = (
 			return uncovered !== undefined
 				? `The vault is ${uncovered} short of covering every priced claim. Try again once the reserve catches up.`
 				: `The vault does not yet hold enough ${ticker} in reserve to cover this claim. Try again shortly.`
-		case 304:
-			return "The price left nothing to claim, so the vault tried to return your shares instead. Your address is no longer allowlisted to receive them."
+		case 6073:
+			return `The price left nothing to pay out, so the vault tried to return your shares. ${SHARES_NOT_RETURNABLE}`
 		default:
 			return claimContractErrorReason(code)
 	}
@@ -1065,17 +1073,17 @@ const EMERGENCY_COPY: Record<EmergencyModalAction, AdminCopy> = {
 	"pause-token": {
 		refuser: "share token",
 		verb: "pause the share token",
-		signing: "Signing stops holder transfers and returns of escrowed shares.",
+		signing: "Signing stops holder transfers only.",
 		done: "Share token paused",
 		doneBody:
-			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
+			"Holder transfers are stopped. Minting, burning, the vault's escrow moves and legal transfers continue.",
 	},
 	"unpause-token": {
 		refuser: "share token",
 		verb: "unpause the share token",
-		signing: "Signing resumes holder transfers and returns of escrowed shares.",
+		signing: "Signing resumes holder transfers.",
 		done: "Share token unpaused",
-		doneBody: "Holder transfers and returns of escrowed shares are open again.",
+		doneBody: "Holder transfers are open again.",
 	},
 }
 
