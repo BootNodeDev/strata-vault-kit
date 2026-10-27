@@ -4,6 +4,7 @@ mod deposit;
 mod epoch;
 mod error;
 mod event;
+mod extend;
 mod governance;
 mod guards;
 mod health;
@@ -86,8 +87,11 @@ impl AsyncVault {
 
         access_control::set_admin(e, &roles.governance);
         access_control::grant_role_no_auth(e, &roles.manager, &MANAGER_ROLE, &roles.governance);
+        extend::role_entries(e, &roles.manager, &MANAGER_ROLE);
         access_control::grant_role_no_auth(e, &roles.treasury, &TREASURY_ROLE, &roles.governance);
+        extend::role_entries(e, &roles.treasury, &TREASURY_ROLE);
         access_control::grant_role_no_auth(e, &roles.guardian, &GUARDIAN_ROLE, &roles.governance);
+        extend::role_entries(e, &roles.guardian, &GUARDIAN_ROLE);
 
         state::set_addr(e, &DataKey::Asset, &asset);
         state::set_addr(e, &DataKey::ShareToken, &share_token);
@@ -404,6 +408,7 @@ impl AccessControl for AsyncVault {
     fn grant_role(e: &Env, account: Address, role: Symbol, caller: Address) {
         guards::direct_change_allowed(e);
         access_control::grant_role(e, &account, &role, &caller);
+        extend::role_entries(e, &account, &role);
     }
 
     /// Instant for every role but `manager`: taking `treasury` or `guardian`

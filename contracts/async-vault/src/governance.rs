@@ -22,6 +22,7 @@ use strata_timelock::{queue, setup, Clock, Refusal};
 
 use crate::error::VaultError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, NoticeSet, SetupFinished};
+use crate::extend;
 use crate::guards;
 use crate::keys::DataKey;
 use crate::state;
@@ -247,7 +248,8 @@ pub(crate) fn apply(e: &Env, id: u32) {
         VaultChange::Notice(secs) => set_notice(e, *secs),
         VaultChange::WindDownDelay(secs) => wind_down::set_delay(e, *secs),
         VaultChange::GrantRole(role, account) => {
-            access_control::grant_role_no_auth(e, account, role, &admin)
+            access_control::grant_role_no_auth(e, account, role, &admin);
+            extend::role_entries(e, account, role);
         }
         VaultChange::RevokeRole(role, account) => {
             access_control::revoke_role_no_auth(e, account, role, &admin)

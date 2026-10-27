@@ -6,6 +6,7 @@ use stellar_access::{
 use stellar_contract_utils::upgradeable;
 use strata_timelock::{queue, setup, Clock, Refusal, TimelockHost};
 
+use crate::extend;
 use crate::guards;
 use crate::state::OracleConfig;
 use crate::{
@@ -121,7 +122,8 @@ pub(crate) fn apply(e: &Env, id: u32) {
     match &change {
         OracleChange::Upgrade(hash) => upgradeable::upgrade(e, hash),
         OracleChange::GrantRole(role, account) => {
-            access_control::grant_role_no_auth(e, account, role, &admin)
+            access_control::grant_role_no_auth(e, account, role, &admin);
+            extend::role_entries(e, account, role);
         }
         OracleChange::RevokeRole(role, account) => {
             access_control::revoke_role_no_auth(e, account, role, &admin)
