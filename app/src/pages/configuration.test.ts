@@ -38,11 +38,13 @@ const ready = (
 	notice: DAY,
 	windDownDelay: 7n * DAY,
 	upgradeDelay: 3n * DAY,
+	setupOpen: false,
+	tokenSetupOpen: true,
 	oracle: {
 		freshness: DAY,
 		cooldown: 3_600n,
 		maxUpBps: 1_000,
-		maxDownBps: null,
+		maxDownBps: 500,
 		min: PRICE_ONE / 2n,
 		max: 2n * PRICE_ONE,
 	},
@@ -82,7 +84,12 @@ describe("toConfigurationActions", () => {
 	it.each<[Grant, ConfigurationAction["id"][]]>([
 		[
 			governance,
-			["set-deposit-cap", "set-custodian", "set-notice", "set-wind-down-delay"],
+			[
+				"set-deposit-cap",
+				"propose-custodian",
+				"set-notice",
+				"set-wind-down-delay",
+			],
 		],
 		[oracleAdmin, ["set-oracle-config"]],
 		[tokenAdmin, ["set-compliance", "set-identity-verifier"]],
@@ -195,7 +202,7 @@ describe("toConfigurationActions", () => {
 		expect(uncapped.enabled).toBe(false)
 	})
 
-	it("holds a deposit cap and an oracle duration at their contract width", () => {
+	it("holds a deposit cap and the oracle limits at their contract edges", () => {
 		const cap = (text: string) =>
 			find("set-deposit-cap", [governance], { depositCap: text })
 		const oracle = (inputs: ConfigurationInputs) =>
@@ -214,28 +221,31 @@ describe("toConfigurationActions", () => {
 			),
 		).toBe(false)
 		expect(
-			condition(
-				oracle({ freshness: "18446744073709551615" }),
-				"Freshness window ≤ 2^64−1 s",
-			),
+			condition(oracle({ freshness: "35d" }), "Freshness window ≤ 35d"),
 		).toBe(true)
 		expect(
-			condition(
-				oracle({ cooldown: "18446744073709551615" }),
-				"Cooldown ≤ 2^64−1 s",
-			),
+			condition(oracle({ cooldown: "1d" }), "Cooldown ≤ freshness window"),
+		).toBe(true)
+		expect(
+			condition(oracle({ maxFall: "0.01" }), "Largest fall 0.01% to 100%"),
+		).toBe(true)
+		expect(
+			condition(oracle({ maxFall: "100" }), "Largest fall 0.01% to 100%"),
+		).toBe(true)
+		expect(
+			condition(oracle({ ceiling: "1000000" }), "Price ceiling ≤ 1,000,000"),
 		).toBe(true)
 	})
 
 	it("takes an account or a contract as custodian and says where deploys go", () => {
 		for (const address of [ACCOUNT, CONTRACT]) {
-			const custodian = find("set-custodian", [governance], {
+			const custodian = find("propose-custodian", [governance], {
 				custodian: address,
 			})
 			expect(custodian.enabled).toBe(true)
 			expect(custodian.arg).toBe(address)
 		}
-		const custodian = find("set-custodian", [governance], {
+		const custodian = find("propose-custodian", [governance], {
 			custodian: ACCOUNT,
 		})
 		expect(custodian.outcome).toBe(
@@ -243,8 +253,119 @@ describe("toConfigurationActions", () => {
 		)
 	})
 
+	it("proposes the custodian after setup and says how long it waits", () => {
+		const custodian = find("propose-custodian", [governance], {
+			custodian: ACCOUNT,
+		})
+
+		expect(custodian.label).toBe("Set the custodian")
+		expect(custodian.conditions).toContainEqual({
+			label: "Waits for the timelock",
+			met: true,
+			detail: "3d",
+		})
+	})
+
+	it("sets the custodian at once while setup is open", () => {
+		const custodian = find(
+			"set-custodian",
+			[governance],
+			{ custodian: ACCOUNT },
+			ready({ setupOpen: true }),
+		)
+
+		expect(custodian.enabled).toBe(true)
+		expect(custodian.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("holds the custodian while the setup state is unknown", () => {
+		const custodian = find(
+			"set-custodian",
+			[governance],
+			{ custodian: ACCOUNT },
+			ready({ setupOpen: null }),
+		)
+
+		expect(condition(custodian, "Setup state read")).toBeNull()
+		expect(custodian.enabled).toBe(false)
+	})
+
+	it("proposes a lower notice after setup and keeps raising it direct", () => {
+		const lower = find("propose-notice", [governance], { notice: "12h" })
+		const higher = find("set-notice", [governance], { notice: "2d" })
+		const same = find("set-notice", [governance], { notice: "1d" })
+
+		expect(lower.enabled).toBe(true)
+		expect(lower.arg).toBe(43_200n)
+		expect(lower.label).toBe("Set the notice")
+		expect(lower.conditions).toContainEqual({
+			label: "Waits for the timelock",
+			met: true,
+			detail: "3d",
+		})
+		expect(higher.enabled).toBe(true)
+		expect(higher.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Raising is instant",
+		})
+		expect(condition(same, "Differs from current")).toBe(false)
+	})
+
+	it("sets a lower notice at once while setup is open", () => {
+		const notice = find(
+			"set-notice",
+			[governance],
+			{ notice: "12h" },
+			ready({ setupOpen: true }),
+		)
+
+		expect(notice.enabled).toBe(true)
+		expect(condition(notice, "Applies at once")).toBe(true)
+	})
+
+	it("proposes a lower wind-down delay after setup and refuses one under 7 days", () => {
+		const state = ready({ windDownDelay: 14n * DAY })
+		const lower = find(
+			"propose-wind-down-delay",
+			[governance],
+			{ windDownDelay: "8d" },
+			state,
+		)
+		const short = find(
+			"propose-wind-down-delay",
+			[governance],
+			{ windDownDelay: "6d" },
+			state,
+		)
+		const raised = find(
+			"set-wind-down-delay",
+			[governance],
+			{ windDownDelay: "20d" },
+			state,
+		)
+
+		expect(lower.enabled).toBe(true)
+		expect(condition(short, "Wind-down delay ≥ 7d")).toBe(false)
+		expect(short.enabled).toBe(false)
+		expect(raised.enabled).toBe(true)
+	})
+
+	it("keeps the deposit cap direct after setup", () => {
+		const cap = find("set-deposit-cap", [governance], { depositCap: "5" })
+
+		expect(cap.enabled).toBe(true)
+		expect(cap.conditions.map(({ label }) => label)).not.toContain(
+			"Waits for the timelock",
+		)
+	})
+
 	it("lets the first custodian be set when none is set yet", () => {
-		const unset = ready({ custodian: { kind: "unset" } })
+		const unset = ready({ custodian: { kind: "unset" }, setupOpen: true })
 
 		const blank = find("set-custodian", [governance], {}, unset)
 		expect(blank.enabled).toBe(false)
@@ -266,7 +387,7 @@ describe("toConfigurationActions", () => {
 			"set-custodian",
 			[governance],
 			{ custodian: ACCOUNT },
-			ready({ custodian: { kind: "unreadable" } }),
+			ready({ custodian: { kind: "unreadable" }, setupOpen: true }),
 		)
 
 		expect(condition(custodian, "Differs from current")).toBeNull()
@@ -274,7 +395,7 @@ describe("toConfigurationActions", () => {
 	})
 
 	it("flags an address that is not a valid key", () => {
-		const custodian = find("set-custodian", [governance], {
+		const custodian = find("propose-custodian", [governance], {
 			custodian: "GNOPE",
 		})
 
@@ -300,6 +421,62 @@ describe("toConfigurationActions", () => {
 		).toBe(true)
 	})
 
+	it("proposes the compliance contract and identity verifier once the token's own setup closes", () => {
+		const closed = ready({ setupOpen: true, tokenSetupOpen: false })
+		const compliance = find(
+			"propose-compliance",
+			[tokenAdmin],
+			{ compliance: CONTRACT },
+			closed,
+		)
+		const verifier = find(
+			"propose-identity-verifier",
+			[tokenAdmin],
+			{ identityVerifier: CONTRACT },
+			closed,
+		)
+		const waits = { label: "Waits for the timelock", met: true, detail: "3d" }
+
+		expect(compliance).toMatchObject({
+			slot: "set-compliance",
+			label: "Set the compliance contract",
+			arg: CONTRACT,
+			enabled: true,
+		})
+		expect(compliance.conditions).toContainEqual(waits)
+		expect(verifier).toMatchObject({
+			slot: "set-identity-verifier",
+			label: "Set the identity verifier",
+			arg: CONTRACT,
+			enabled: true,
+		})
+		expect(verifier.conditions).toContainEqual(waits)
+	})
+
+	it("sets the compliance contract at once while the token's setup is open, even after the vault's closes", () => {
+		const compliance = find("set-compliance", [tokenAdmin], {
+			compliance: CONTRACT,
+		})
+
+		expect(compliance.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("holds the token setters while the token's setup state is unknown", () => {
+		const verifier = find(
+			"set-identity-verifier",
+			[tokenAdmin],
+			{ identityVerifier: CONTRACT },
+			ready({ tokenSetupOpen: null }),
+		)
+
+		expect(condition(verifier, "Setup state read")).toBeNull()
+		expect(verifier.enabled).toBe(false)
+	})
+
 	it("prefills every oracle limit and sends them all when one changes", () => {
 		const config = find("set-oracle-config", [oracleAdmin], { maxRise: "5" })
 
@@ -307,7 +484,7 @@ describe("toConfigurationActions", () => {
 			["Freshness window", "1d"],
 			["Cooldown", "1h"],
 			["Largest rise", "5"],
-			["Largest fall", ""],
+			["Largest fall", "5"],
 			["Price floor", "0.50"],
 			["Price ceiling", "2.00"],
 		])
@@ -316,25 +493,36 @@ describe("toConfigurationActions", () => {
 			freshness_duration: DAY,
 			cooldown_secs: 3_600n,
 			max_up_bps: 500,
-			max_down_bps: null,
+			max_down_bps: 500,
 			min_answer: PRICE_ONE / 2n,
 			max_answer: 2n * PRICE_ONE,
 		})
 	})
 
+	it("requires a largest fall", () => {
+		const config = find("set-oracle-config", [oracleAdmin], { maxFall: "" })
+
+		expect(config.arg).toBeUndefined()
+		expect(config.enabled).toBe(false)
+		expect(config.fields?.[3]).toMatchObject({
+			label: "Largest fall",
+			placeholder: "10",
+			next: null,
+		})
+	})
+
 	it.each<[ConfigurationInputs, string]>([
-		[{ freshness: "0" }, "Freshness window > 0"],
-		[{ freshness: "18446744073709551616" }, "Freshness window ≤ 2^64−1 s"],
-		[{ cooldown: "18446744073709551616" }, "Cooldown ≤ 2^64−1 s"],
-		[{ maxRise: "0" }, "Largest rise > 0"],
-		[{ maxRise: "100.01" }, "Largest rise ≤ 100%"],
-		[{ maxFall: "101%" }, "Largest fall ≤ 100%"],
+		[{ freshness: "0" }, "Freshness window ≥ 1s"],
+		[{ freshness: "35d 1s" }, "Freshness window ≤ 35d"],
+		[{ cooldown: "0" }, "Cooldown ≥ 1s"],
+		[{ cooldown: "1d 1s" }, "Cooldown ≤ freshness window"],
+		[{ maxRise: "0" }, "Largest rise 0.01% to 100%"],
+		[{ maxRise: "100.01" }, "Largest rise 0.01% to 100%"],
+		[{ maxFall: "0" }, "Largest fall 0.01% to 100%"],
+		[{ maxFall: "100.01%" }, "Largest fall 0.01% to 100%"],
 		[{ floor: "0" }, "Price floor > 0"],
 		[{ ceiling: "0.4" }, "Price ceiling ≥ floor"],
-		[
-			{ ceiling: "17014118346046924" },
-			"Price ceiling ≤ 17,014,118,346,046,923",
-		],
+		[{ ceiling: "1000000.01" }, "Price ceiling ≤ 1,000,000"],
 	])("names the oracle limit %o breaks", (inputs, label) => {
 		const config = find("set-oracle-config", [oracleAdmin], inputs)
 
@@ -386,7 +574,7 @@ describe("toConfigurationGroups", () => {
 		expect(
 			groups[1]?.strips.map((strip) => strip.map((tile) => tile.value)),
 		).toEqual([
-			["1d", "1h", "10%", "No limit"],
+			["1d", "1h", "10%", "5%"],
 			["0.5000", "2.0000"],
 		])
 		expect(groups[2]?.strips).toEqual([])

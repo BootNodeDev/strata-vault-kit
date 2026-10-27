@@ -9,18 +9,23 @@ import { useGovernanceState } from "./useGovernanceState"
 const {
 	readPendingAdminsMock,
 	vaultMock,
+	tokenMock,
 	useCycleReadsMock,
 	useConfigurationStateMock,
 	useVaultPausedMock,
 } = vi.hoisted(() => ({
 	readPendingAdminsMock: vi.fn(),
-	vaultMock: { upgrade_proposal: vi.fn() },
+	vaultMock: { pending_changes: vi.fn() },
+	tokenMock: { pending_changes: vi.fn() },
 	useCycleReadsMock: vi.fn(),
 	useConfigurationStateMock: vi.fn(),
 	useVaultPausedMock: vi.fn(),
 }))
 
-vi.mock("../config/clients", () => ({ asyncVault: async () => vaultMock }))
+vi.mock("../config/clients", () => ({
+	asyncVault: async () => vaultMock,
+	shareToken: async () => tokenMock,
+}))
 vi.mock("./useCycleState", async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	useCycleReads: useCycleReadsMock,
@@ -70,7 +75,8 @@ describe("useGovernanceState", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		readPendingAdminsMock.mockResolvedValue({ kind: "unreadable" })
-		vaultMock.upgrade_proposal.mockResolvedValue({ result: null })
+		vaultMock.pending_changes.mockResolvedValue({ result: [] })
+		tokenMock.pending_changes.mockResolvedValue({ result: [] })
 		useCycleReadsMock.mockReturnValue({
 			ledgerTime: 1_800_000_000n,
 			windDown: WIND_DOWN,
@@ -80,6 +86,8 @@ describe("useGovernanceState", () => {
 				status: "ready",
 				upgradeDelay: 7n * DAY,
 				notice: DAY,
+				setupOpen: false,
+				tokenSetupOpen: true,
 			},
 		})
 		useVaultPausedMock.mockReturnValue({ pause: "open" })
@@ -113,7 +121,9 @@ describe("useGovernanceState", () => {
 			useGovernanceState({ contracts: undefined }),
 		)
 
-		await waitFor(() => expect(result.current.upgrades.status).toBe("ready"))
+		await waitFor(() =>
+			expect(result.current.upgrades.vault.status).toBe("ready"),
+		)
 		expect(result.current.handovers).toEqual({ status: "checking" })
 		expect(readPendingAdminsMock).not.toHaveBeenCalled()
 	})
@@ -145,10 +155,13 @@ describe("useGovernanceState", () => {
 	it("gathers the upgrade delay, notice, wind-down, ledger time and pause", async () => {
 		const { result } = render()
 
-		await waitFor(() => expect(result.current.upgrades.status).toBe("ready"))
-		expect(result.current.upgrades).toEqual({
+		await waitFor(() =>
+			expect(result.current.upgrades.vault.status).toBe("ready"),
+		)
+		expect(result.current.upgrades.vault).toEqual({
 			status: "ready",
-			proposal: null,
+			pending: [],
+			setupOpen: false,
 			delay: 7n * DAY,
 			notice: DAY,
 			windDown: WIND_DOWN,
@@ -157,34 +170,72 @@ describe("useGovernanceState", () => {
 		})
 	})
 
-	it.each([
-		[
-			{ action: { tag: "Wasm", values: [Buffer.alloc(32, 0xab)] }, eta: 5n },
-			{ kind: "code", hash: "ab".repeat(32), eta: 5n },
-		],
-		[
-			{ action: { tag: "Delay", values: [14n * DAY] }, eta: 5n },
-			{ kind: "delay", secs: 14n * DAY, eta: 5n },
-		],
-	])("decodes a pending upgrade proposal", async (raw, proposal) => {
-		vaultMock.upgrade_proposal.mockResolvedValue({ result: raw })
+	it("reads every pending change as the vault reports it", async () => {
+		const pending = [
+			{
+				id: 2,
+				change: { tag: "Upgrade", values: [Buffer.alloc(32, 0xab)] },
+				eta: 5n,
+			},
+			{
+				id: 3,
+				change: { tag: "GrantRole", values: ["manager", "G1"] },
+				eta: 6n,
+			},
+		]
+		vaultMock.pending_changes.mockResolvedValue({ result: pending })
 		const { result } = render()
 
-		await waitFor(() => expect(result.current.upgrades.status).toBe("ready"))
-		expect(result.current.upgrades).toMatchObject({ proposal })
+		await waitFor(() =>
+			expect(result.current.upgrades.vault.status).toBe("ready"),
+		)
+		expect(result.current.upgrades.vault).toMatchObject({ pending })
 	})
 
-	it("keeps an unreadable proposal unknown and waits for the configuration", async () => {
-		vaultMock.upgrade_proposal.mockRejectedValue(new Error("down"))
+	it("keeps unreadable pending changes unknown and waits for the configuration", async () => {
+		vaultMock.pending_changes.mockRejectedValue(new Error("down"))
 		const { result, rerender } = render()
 
-		await waitFor(() => expect(result.current.upgrades.status).toBe("ready"))
-		expect(result.current.upgrades).toMatchObject({ proposal: undefined })
+		await waitFor(() =>
+			expect(result.current.upgrades.vault.status).toBe("ready"),
+		)
+		expect(result.current.upgrades.vault).toMatchObject({ pending: undefined })
 
 		useConfigurationStateMock.mockReturnValue({
 			configuration: { status: "checking" },
 		})
 		rerender()
-		expect(result.current.upgrades).toEqual({ status: "checking" })
+		expect(result.current.upgrades.vault).toEqual({ status: "checking" })
+		expect(result.current.upgrades.token).toEqual({ status: "checking" })
+	})
+
+	it("reads the share token's own queue and setup state on the vault's clock", async () => {
+		const pending = [
+			{
+				id: 1,
+				change: { tag: "Compliance", values: ["CCOMPLIANCE"] },
+				eta: 7n,
+			},
+		]
+		tokenMock.pending_changes.mockResolvedValue({ result: pending })
+		const { result } = render()
+
+		await waitFor(() =>
+			expect(result.current.upgrades.token.status).toBe("ready"),
+		)
+		expect(result.current.upgrades.token).toEqual({
+			status: "ready",
+			pending,
+			setupOpen: true,
+			delay: 7n * DAY,
+			notice: DAY,
+			windDown: WIND_DOWN,
+			now: 1_800_000_000n,
+			paused: "open",
+		})
+		expect(result.current.upgrades.vault).toMatchObject({
+			pending: [],
+			setupOpen: false,
+		})
 	})
 })

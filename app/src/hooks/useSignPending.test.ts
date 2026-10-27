@@ -21,16 +21,21 @@ const {
 	submitSignedMock,
 	transactionStatusMock,
 	tokenMock,
+	vaultMock,
 	linkTarget,
 } = vi.hoisted(() => ({
 	accountSignersMock: vi.fn(),
 	submitSignedMock: vi.fn(),
 	transactionStatusMock: vi.fn(),
-	tokenMock: { identity_verifier: vi.fn() },
+	tokenMock: { identity_verifier: vi.fn(), pending_changes: vi.fn() },
+	vaultMock: { pending_changes: vi.fn() },
 	linkTarget: { contractId: "", expiresAt: new Date(0) },
 }))
 
-vi.mock("../config/clients", () => ({ shareToken: async () => tokenMock }))
+vi.mock("../config/clients", () => ({
+	shareToken: async () => tokenMock,
+	asyncVault: async () => vaultMock,
+}))
 
 type Marker = { signedBy: string[] }
 
@@ -76,7 +81,9 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 					? ["GCUSTODIAN", "GAUTHORITY"]
 					: fn === "allow"
 						? ["GACCOUNT", true]
-						: []
+						: fn === "apply_change"
+							? [3]
+							: []
 			const keys = signed === "" ? [] : signed.split(",")
 			const hash = keys.includes("GTAMPERED") ? "tampered" : "abc123"
 			return pendingOf(fn, args, keys, hash)
@@ -137,6 +144,8 @@ describe("useSignPending", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		tokenMock.identity_verifier.mockResolvedValue({ result: "CLIVEVERIFIER" })
+		vaultMock.pending_changes.mockResolvedValue({ result: [] })
+		tokenMock.pending_changes.mockResolvedValue({ result: [] })
 		linkTarget.contractId = addresses.async_vault
 		linkTarget.expiresAt = new Date("2027-01-15T08:00:00Z")
 		window.history.replaceState(null, "", "/sign")
@@ -465,6 +474,55 @@ describe("useSignPending", () => {
 		expect(result.current.pending).toBeNull()
 		expect(result.current.description).toBeNull()
 		expect(accountSignersMock).not.toHaveBeenCalled()
+	})
+
+	it("names the pending change an apply link acts on once the vault lists it", async () => {
+		vaultMock.pending_changes.mockResolvedValue({
+			result: [
+				{ id: 3, change: { tag: "Notice", values: [43_200n] }, eta: 1n },
+			],
+		})
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:apply_change:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description?.args).toEqual([
+				{ label: "Change", value: "vault change #3: Notice 12h" },
+			]),
+		)
+	})
+
+	it("names the share-token change an apply link acts on from the token's list", async () => {
+		linkTarget.contractId = addresses.share_token
+		vaultMock.pending_changes.mockResolvedValue({
+			result: [
+				{ id: 3, change: { tag: "Notice", values: [43_200n] }, eta: 1n },
+			],
+		})
+		tokenMock.pending_changes.mockResolvedValue({
+			result: [
+				{
+					id: 3,
+					change: { tag: "RevokeRole", values: ["manager", "GHOLDER"] },
+					eta: 1n,
+				},
+			],
+		})
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:apply_change:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description).toMatchObject({
+				contract: "Share token",
+				action: "apply-token-change",
+				args: [
+					{
+						label: "Change",
+						value: "share token change #3: Revoke role manager from GHOLDER",
+					},
+				],
+			}),
+		)
 	})
 
 	it("refuses an operation the console does not propose", async () => {

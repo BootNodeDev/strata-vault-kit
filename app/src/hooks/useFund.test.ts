@@ -78,7 +78,7 @@ describe("useFund", () => {
 		)
 
 		expect(vaultMock.fund).toHaveBeenCalledWith({
-			from: investorAddress,
+			caller: investorAddress,
 			assets,
 		})
 	})

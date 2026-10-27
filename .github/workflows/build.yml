@@ -137,7 +137,23 @@ jobs:
             exit 1
           fi
           echo "Generated $ACTUAL client(s)."
-      - run: npm run build --workspaces --if-present
+      - name:
+          Deploy the native asset contract and register it as the alias asset
+        # The console is written against a Stellar Asset Contract, so the
+        # development build needs one. Its id is deterministic, so a rerun only
+        # re-registers the alias.
+        run: |
+          RPC=http://localhost:8000/rpc
+          PASSPHRASE="Standalone Network ; February 2017"
+          ID=$(stellar contract id asset --asset native --rpc-url "$RPC" --network-passphrase "$PASSPHRASE")
+          if ! stellar contract invoke --id "$ID" --source me --rpc-url "$RPC" --network-passphrase "$PASSPHRASE" -- name > /dev/null 2>&1; then
+            stellar contract asset deploy --asset native --source me --rpc-url "$RPC" --network-passphrase "$PASSPHRASE"
+          fi
+          stellar contract alias add asset --id "$ID" --rpc-url "$RPC" --network-passphrase "$PASSPHRASE"
+      - name: Build the workspaces against the contracts deployed above
+        run: npm run build --workspaces --if-present
+        env:
+          ADDRESSES_ENV: development
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
         working-directory: e2e

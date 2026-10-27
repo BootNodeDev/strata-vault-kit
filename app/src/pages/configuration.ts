@@ -37,6 +37,7 @@ import {
 	oracleLimitRows,
 	parseDuration,
 } from "./cycle"
+import { type Route, routeCondition, routeOf } from "./timelock"
 import { toCustodianRow } from "./vaultMetrics"
 
 export type FieldKey =
@@ -61,8 +62,22 @@ type Setter<Id extends string, Arg> = Id extends string
 
 export type ConfigurationAction =
 	| Setter<"set-deposit-cap", bigint | null>
-	| Setter<"set-custodian" | "set-compliance" | "set-identity-verifier", string>
-	| Setter<"set-notice" | "set-wind-down-delay", bigint>
+	| Setter<
+			| "set-custodian"
+			| "propose-custodian"
+			| "set-compliance"
+			| "propose-compliance"
+			| "set-identity-verifier"
+			| "propose-identity-verifier",
+			string
+	  >
+	| Setter<
+			| "set-notice"
+			| "propose-notice"
+			| "set-wind-down-delay"
+			| "propose-wind-down-delay",
+			bigint
+	  >
 	| Setter<"set-oracle-config", OracleConfig>
 
 export type ConfigurationGroup = {
@@ -78,11 +93,14 @@ export const EFFECTS = {
 } as const
 
 const MAX_NOTICE = 30n * DAY
+const MIN_WIND_DOWN_DELAY = 7n * DAY
 const MAX_WIND_DOWN_DELAY = 90n * DAY
+const MIN_SECS = 1n
+const MAX_FRESHNESS = 35n * DAY
+const MIN_BPS = 1
 const MAX_BPS = 10_000
-const MAX_U64 = (1n << 64n) - 1n
 const MAX_I128 = (1n << 127n) - 1n
-const MAX_CEILING = MAX_I128 / 10_000n
+const MAX_CEILING = 1_000_000n * 10n ** BigInt(PRICE_DECIMALS)
 const PERCENT = /^(\d+)(?:\.(\d{1,2}))?\s*%?$/
 
 type Kind<T> = {
@@ -139,18 +157,11 @@ const PRICE: Kind<bigint> = {
 	placeholder: "0.00",
 }
 
-const RISE: Kind<number> = {
+const MOVE: Kind<number> = {
 	parse: parseBps,
 	show: formatPercent,
 	prefill: (bps) => String(bps / 100),
 	placeholder: "10",
-}
-
-const FALL: Kind<number | null> = {
-	parse: orNone(parseBps),
-	show: (bps) => (bps === null ? "No limit" : formatPercent(bps)),
-	prefill: (bps) => (bps === null ? "" : String(bps / 100)),
-	placeholder: "No limit",
 }
 
 type Parsed<T> = { arg: T | undefined; field: ActionField }
@@ -241,6 +252,14 @@ const upgradeBound = (
 			: notice <= upgradeDelay,
 })
 
+const lowering = (
+	arg: bigint | undefined,
+	current: bigint | undefined,
+): boolean | undefined =>
+	arg === undefined || current === undefined ? undefined : arg < current
+
+const RAISED = "Raising is instant"
+
 function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 	const cap = capOf(state)
 	const capField = parsed("depositCap", "Deposit cap", CAP, cap, inputs)
@@ -256,6 +275,18 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 		delay,
 		inputs,
 	)
+	const custodianRoute = routeOf(state.setupOpen, true)
+	const noticeRoute = routeOf(
+		state.setupOpen,
+		lowering(noticeField.arg, notice),
+	)
+	const delayRoute = routeOf(state.setupOpen, lowering(delayField.arg, delay))
+	const waits = (route: Route) =>
+		routeCondition(
+			route,
+			state.upgradeDelay,
+			state.setupOpen === true ? undefined : RAISED,
+		)
 	return [
 		single("set-deposit-cap", "Set the deposit cap", capField, cap, [
 			bound("Deposit cap ≥ 0", capField.arg, (value) => (value ?? 0n) >= 0n),
@@ -265,66 +296,104 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 				(value) => (value ?? 0n) <= MAX_I128,
 			),
 		]),
-		single(
-			"set-custodian",
-			"Set the custodian",
-			parsed("custodian", "Custodian", ANY_ADDRESS, custodian, inputs),
-			state.custodian.kind === "unset" ? UNSET : custodian,
-			[],
-			EFFECTS.custodian,
-		),
-		single(
-			"set-notice",
-			"Set the notice",
-			noticeField,
-			notice,
-			[
-				bound("Notice ≤ 30d", noticeField.arg, (value) => value <= MAX_NOTICE),
-				upgradeBound(noticeField.arg, state.upgradeDelay),
-			],
-			EFFECTS.notice,
-		),
-		single(
-			"set-wind-down-delay",
-			"Set the wind-down delay",
-			delayField,
-			delay,
-			[
-				bound(
-					"Wind-down delay ≤ 90d",
-					delayField.arg,
-					(value) => value <= MAX_WIND_DOWN_DELAY,
-				),
-			],
-			EFFECTS.windDownDelay,
-		),
+		{
+			...single(
+				custodianRoute === "timelock" ? "propose-custodian" : "set-custodian",
+				"Set the custodian",
+				parsed("custodian", "Custodian", ANY_ADDRESS, custodian, inputs),
+				state.custodian.kind === "unset" ? UNSET : custodian,
+				[routeCondition(custodianRoute, state.upgradeDelay)],
+				EFFECTS.custodian,
+			),
+			slot: "set-custodian",
+		},
+		{
+			...single(
+				noticeRoute === "timelock" ? "propose-notice" : "set-notice",
+				"Set the notice",
+				noticeField,
+				notice,
+				[
+					bound(
+						"Notice ≤ 30d",
+						noticeField.arg,
+						(value) => value <= MAX_NOTICE,
+					),
+					upgradeBound(noticeField.arg, state.upgradeDelay),
+					waits(noticeRoute),
+				],
+				EFFECTS.notice,
+			),
+			slot: "set-notice",
+		},
+		{
+			...single(
+				delayRoute === "timelock"
+					? "propose-wind-down-delay"
+					: "set-wind-down-delay",
+				"Set the wind-down delay",
+				delayField,
+				delay,
+				[
+					bound(
+						"Wind-down delay ≥ 7d",
+						delayField.arg,
+						(value) => value >= MIN_WIND_DOWN_DELAY,
+					),
+					bound(
+						"Wind-down delay ≤ 90d",
+						delayField.arg,
+						(value) => value <= MAX_WIND_DOWN_DELAY,
+					),
+					waits(delayRoute),
+				],
+				EFFECTS.windDownDelay,
+			),
+			slot: "set-wind-down-delay",
+		},
 	] as const
 }
 
 function tokenSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 	const compliance = known(state.compliance)
 	const verifier = known(state.identityVerifier)
+	const route = routeOf(state.tokenSetupOpen, true)
+	const waits = [routeCondition(route, state.upgradeDelay)]
 	return [
-		single(
-			"set-compliance",
-			"Set the compliance contract",
-			parsed("compliance", "Compliance contract", CONTRACT, compliance, inputs),
-			compliance,
-			[],
-		),
-		single(
-			"set-identity-verifier",
-			"Set the identity verifier",
-			parsed(
-				"identityVerifier",
-				"Identity verifier",
-				CONTRACT,
-				verifier,
-				inputs,
+		{
+			...single(
+				route === "timelock" ? "propose-compliance" : "set-compliance",
+				"Set the compliance contract",
+				parsed(
+					"compliance",
+					"Compliance contract",
+					CONTRACT,
+					compliance,
+					inputs,
+				),
+				compliance,
+				waits,
 			),
-			verifier,
-			[],
-		),
+			slot: "set-compliance",
+		},
+		{
+			...single(
+				route === "timelock"
+					? "propose-identity-verifier"
+					: "set-identity-verifier",
+				"Set the identity verifier",
+				parsed(
+					"identityVerifier",
+					"Identity verifier",
+					CONTRACT,
+					verifier,
+					inputs,
+				),
+				verifier,
+				waits,
+			),
+			slot: "set-identity-verifier",
+		},
 	] as const
 }
 
@@ -367,8 +436,8 @@ function oracleFields(
 			DURATION,
 		),
 		cooldown_secs: field("cooldown_secs", "cooldown", "Cooldown", DURATION),
-		max_up_bps: field("max_up_bps", "maxRise", "Largest rise", RISE),
-		max_down_bps: field("max_down_bps", "maxFall", "Largest fall", FALL),
+		max_up_bps: field("max_up_bps", "maxRise", "Largest rise", MOVE),
+		max_down_bps: field("max_down_bps", "maxFall", "Largest fall", MOVE),
 		min_answer: field("min_answer", "floor", "Price floor", PRICE),
 		max_answer: field("max_answer", "ceiling", "Price ceiling", PRICE),
 	}
@@ -398,36 +467,40 @@ const configOf = ({
 				max_answer: ceiling.arg,
 			}
 
+const withinBps = (value: number): boolean =>
+	value >= MIN_BPS && value <= MAX_BPS
+
 const oracleBounds = (fields: ParsedConfig): Condition[] => {
+	const freshness = fields.freshness_duration.arg
+	const cooldown = fields.cooldown_secs.arg
 	const floor = fields.min_answer.arg
 	const ceiling = fields.max_answer.arg
+	const bpsRange = `${formatPercent(MIN_BPS)} to ${formatPercent(MAX_BPS)}`
 	return [
 		bound(
-			"Freshness window > 0",
-			fields.freshness_duration.arg,
-			(value) => value > 0n,
+			`Freshness window ≥ ${formatDuration(MIN_SECS)}`,
+			freshness,
+			(value) => value >= MIN_SECS,
 		),
 		bound(
-			"Freshness window ≤ 2^64−1 s",
-			fields.freshness_duration.arg,
-			(value) => value <= MAX_U64,
+			`Freshness window ≤ ${formatDuration(MAX_FRESHNESS)}`,
+			freshness,
+			(value) => value <= MAX_FRESHNESS,
 		),
 		bound(
-			"Cooldown ≤ 2^64−1 s",
-			fields.cooldown_secs.arg,
-			(value) => value <= MAX_U64,
+			`Cooldown ≥ ${formatDuration(MIN_SECS)}`,
+			cooldown,
+			(value) => value >= MIN_SECS,
 		),
-		bound("Largest rise > 0", fields.max_up_bps.arg, (value) => value > 0),
-		bound(
-			"Largest rise ≤ 100%",
-			fields.max_up_bps.arg,
-			(value) => value <= MAX_BPS,
-		),
-		bound(
-			"Largest fall ≤ 100%",
-			fields.max_down_bps.arg,
-			(value) => value === null || value <= MAX_BPS,
-		),
+		{
+			label: "Cooldown ≤ freshness window",
+			met:
+				freshness === undefined || cooldown === undefined
+					? null
+					: cooldown <= freshness,
+		},
+		bound(`Largest rise ${bpsRange}`, fields.max_up_bps.arg, withinBps),
+		bound(`Largest fall ${bpsRange}`, fields.max_down_bps.arg, withinBps),
 		bound("Price floor > 0", floor, (value) => value > 0n),
 		{
 			label: "Price ceiling ≥ floor",

@@ -5,13 +5,14 @@ import {
 	useClearLatest,
 	usePauseToken,
 	usePauseVault,
-	useRaiseRipcord,
-	useSetRipcord,
+	usePauseNav,
+	useSetNavPaused,
 	useUnpauseToken,
 	useUnpauseVault,
 } from "../../hooks/useEmergencyTransactions"
 import { useOracleState } from "../../hooks/useOracleState"
 import { usePendingTransaction } from "../../hooks/usePendingTransaction"
+import { useSetupOpen } from "../../hooks/useSetupOpen"
 import { useTokenPaused } from "../../hooks/useTokenPaused"
 import { useVaultPaused } from "../../hooks/useVaultPaused"
 import {
@@ -29,8 +30,8 @@ import CycleActionRail from "./CycleActionRail"
 import SurfaceLayout from "./SurfaceLayout"
 import layoutStyles from "./SurfaceLayout.module.css"
 
-const RAISE = "raise"
-const LOWER = "lower"
+const PAUSE = "pause"
+const UNPAUSE = "unpause"
 
 const EmergencySection: React.FC<{
 	grants: Grant[]
@@ -39,17 +40,18 @@ const EmergencySection: React.FC<{
 	active?: boolean
 }> = ({ grants, wallet, contracts, active = true }) => {
 	const { pause: vault } = useVaultPaused({ poll: true })
+	const { setup } = useSetupOpen("vault")
 	const { pause: token } = useTokenPaused()
 	const { oracle } = useOracleState()
 	const pauseVault = usePendingTransaction(usePauseVault())
 	const unpauseVault = usePendingTransaction(useUnpauseVault())
-	const raiseRipcord = usePendingTransaction(useRaiseRipcord())
-	const setRipcord = usePendingTransaction(useSetRipcord())
+	const pauseNav = usePendingTransaction(usePauseNav())
+	const setNavPaused = usePendingTransaction(useSetNavPaused())
 	const clearLatest = usePendingTransaction(useClearLatest())
 	const pauseToken = usePendingTransaction(usePauseToken())
 	const unpauseToken = usePendingTransaction(useUnpauseToken())
 
-	const state: EmergencyState = { vault, token, oracle }
+	const state: EmergencyState = { vault, setup, token, oracle }
 	const actions = toEmergencyActions(state, grants, wallet)
 
 	const run = (action: EmergencyAction) => {
@@ -60,12 +62,12 @@ const EmergencySection: React.FC<{
 			case "unpause-vault":
 				unpauseVault.submit(undefined, "", action.grant)
 				return
-			case "raise-ripcord":
-				if (action.viaAdmin) setRipcord.submit(true, RAISE, action.grant)
-				else raiseRipcord.submit(undefined, "", action.grant)
+			case "pause-nav":
+				if (action.viaAdmin) setNavPaused.submit(true, PAUSE, action.grant)
+				else pauseNav.submit(undefined, "", action.grant)
 				return
-			case "lower-ripcord":
-				setRipcord.submit(false, LOWER, action.grant)
+			case "unpause-nav":
+				setNavPaused.submit(false, UNPAUSE, action.grant)
 				return
 			case "clear-latest":
 				clearLatest.submit(undefined, "", action.grant)
@@ -95,10 +97,10 @@ const EmergencySection: React.FC<{
 	const modalFlows: TransactionModalProps[] = [
 		flow("pause-vault", pauseVault),
 		flow("unpause-vault", unpauseVault),
-		flow("raise-ripcord", raiseRipcord),
+		flow("pause-nav", pauseNav),
 		flow(
-			setRipcord.amountLabel === RAISE ? "raise-ripcord" : "lower-ripcord",
-			setRipcord,
+			setNavPaused.amountLabel === PAUSE ? "pause-nav" : "unpause-nav",
+			setNavPaused,
 		),
 		flow("clear-latest", clearLatest),
 		flow("pause-token", pauseToken),

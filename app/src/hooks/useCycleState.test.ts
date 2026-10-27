@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import {
 	type Amount,
@@ -70,14 +71,16 @@ const unreadable = { kind: "unreadable" } as const
 const report: NavReport = {
 	expires_at: 1_700_136_000n,
 	nav_per_share: 10n ** 18n,
-	timestamp: 1_700_050_000n,
+	accepted_at: 1_700_050_000n,
+	proof_hash: Buffer.alloc(32, 0xab),
+	proof_uri: "https://example.com/nav.pdf",
 }
 
 const config = {
 	freshness_duration: 86_400n,
 	cooldown_secs: 3_600n,
 	max_up_bps: 500,
-	max_down_bps: null,
+	max_down_bps: 500,
 	min_answer: 5n * 10n ** 17n,
 	max_answer: 2n * 10n ** 18n,
 }
@@ -86,19 +89,20 @@ const state = (tag: OracleState["tag"]): ContractRead<OracleState> =>
 	value({ tag, values: undefined } as OracleState)
 
 describe("toOracle", () => {
-	it("carries the report, the limits and no ripcord while the price is valid", () => {
+	it("carries the report, the limits and no NAV pause while the price is valid", () => {
 		expect(toOracle(state("Valid"), value(report), value(config))).toEqual({
 			state: "valid",
 			price: (10n ** 18n) as Price,
 			attestedAt: 1_700_050_000n,
 			expiresAt: 1_700_136_000n,
-			ripcord: false,
+			proof: { hash: "ab".repeat(32), uri: "https://example.com/nav.pdf" },
+			navPaused: false,
 			recorded: true,
 			limits: {
 				freshness: 86_400n,
 				cooldown: 3_600n,
 				maxUpBps: 500,
-				maxDownBps: null,
+				maxDownBps: 500,
 				min: 5n * 10n ** 17n,
 				max: 2n * 10n ** 18n,
 			},
@@ -112,9 +116,9 @@ describe("toOracle", () => {
 		expect(oracle.expiresAt).toBe(1_700_136_000n)
 	})
 
-	it("reads a paused oracle as a raised ripcord", () => {
+	it("reads a paused oracle as a paused NAV", () => {
 		expect(
-			toOracle(state("Paused"), value(report), value(config)).ripcord,
+			toOracle(state("Paused"), value(report), value(config)).navPaused,
 		).toBe(true)
 	})
 
@@ -130,10 +134,11 @@ describe("toOracle", () => {
 			price: null,
 			attestedAt: null,
 			expiresAt: null,
+			proof: null,
 		})
 	})
 
-	it("knows there is no record even while the ripcord is raised", () => {
+	it("knows there is no record even while the NAV is paused", () => {
 		const oracle = toOracle(
 			state("Paused"),
 			{ kind: "contract-error", code: 3006 },
@@ -142,7 +147,7 @@ describe("toOracle", () => {
 
 		expect(oracle).toMatchObject({
 			state: "paused",
-			ripcord: true,
+			navPaused: true,
 			recorded: false,
 			price: null,
 			attestedAt: null,
@@ -155,7 +160,8 @@ describe("toOracle", () => {
 			price: null,
 			attestedAt: null,
 			expiresAt: null,
-			ripcord: null,
+			proof: null,
+			navPaused: null,
 			recorded: null,
 			limits: null,
 		})

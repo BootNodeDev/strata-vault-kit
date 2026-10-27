@@ -10,8 +10,6 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const source = resolve(repoRoot, "environments.toml")
 const target = resolve(repoRoot, "app/src/config/addresses.ts")
 
-// Only deployed environments declare their addresses here; a local one gets
-// them when it deploys, which is after this runs.
 const environment = selectedEnvironment(process.env)
 
 const addresses = contractIds(readFileSync(source, "utf8"), environment)

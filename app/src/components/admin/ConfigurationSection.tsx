@@ -2,6 +2,11 @@ import React, { useEffect, useState } from "react"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { useConfigurationState } from "../../hooks/useConfigurationState"
 import {
+	useProposeCompliance,
+	useProposeCustodian,
+	useProposeIdentityVerifier,
+	useProposeNotice,
+	useProposeWindDownDelay,
 	useSetCompliance,
 	useSetCustodian,
 	useSetDepositCap,
@@ -58,9 +63,16 @@ const ConfigurationSection: React.FC<{
 	const custodian = usePendingTransaction(useSetCustodian())
 	const notice = usePendingTransaction(useSetNotice())
 	const windDownDelay = usePendingTransaction(useSetWindDownDelay())
+	const proposeCustodian = usePendingTransaction(useProposeCustodian())
+	const proposeNotice = usePendingTransaction(useProposeNotice())
+	const proposeWindDownDelay = usePendingTransaction(useProposeWindDownDelay())
 	const oracleConfig = usePendingTransaction(useSetOracleConfig())
 	const compliance = usePendingTransaction(useSetCompliance())
 	const identityVerifier = usePendingTransaction(useSetIdentityVerifier())
+	const proposeCompliance = usePendingTransaction(useProposeCompliance())
+	const proposeIdentityVerifier = usePendingTransaction(
+		useProposeIdentityVerifier(),
+	)
 	const [inputs, setInputs] = useState<ConfigurationInputs>({})
 
 	const modalFlows = (
@@ -69,9 +81,14 @@ const ConfigurationSection: React.FC<{
 			["set-custodian", custodian],
 			["set-notice", notice],
 			["set-wind-down-delay", windDownDelay],
+			["propose-custodian", proposeCustodian],
+			["propose-notice", proposeNotice],
+			["propose-wind-down-delay", proposeWindDownDelay],
 			["set-oracle-config", oracleConfig],
 			["set-compliance", compliance],
 			["set-identity-verifier", identityVerifier],
+			["propose-compliance", proposeCompliance],
+			["propose-identity-verifier", proposeIdentityVerifier],
 		] satisfies [ConfigurationModalAction, Flow][]
 	).map(([id, transaction]) => flow(id, transaction))
 	const recorded = modalFlows.some(
@@ -94,12 +111,30 @@ const ConfigurationSection: React.FC<{
 				return notice.submit(action.arg, action.next, action.grant)
 			case "set-wind-down-delay":
 				return windDownDelay.submit(action.arg, action.next, action.grant)
+			case "propose-custodian":
+				return proposeCustodian.submit(action.arg, action.next, action.grant)
+			case "propose-notice":
+				return proposeNotice.submit(action.arg, action.next, action.grant)
+			case "propose-wind-down-delay":
+				return proposeWindDownDelay.submit(
+					action.arg,
+					action.next,
+					action.grant,
+				)
 			case "set-oracle-config":
 				return oracleConfig.submit(action.arg, action.next, action.grant)
 			case "set-compliance":
 				return compliance.submit(action.arg, action.next, action.grant)
 			case "set-identity-verifier":
 				return identityVerifier.submit(action.arg, action.next, action.grant)
+			case "propose-compliance":
+				return proposeCompliance.submit(action.arg, action.next, action.grant)
+			case "propose-identity-verifier":
+				return proposeIdentityVerifier.submit(
+					action.arg,
+					action.next,
+					action.grant,
+				)
 		}
 	}
 
