@@ -33,6 +33,18 @@ wind-down; local tests only`. Check that it compiles with
 `cargo check -p async-vault --features short_wind_down`. Do not run the test
 suite under it: tests that subtract from the minimum assume seven days.
 
+CI also runs three checks that fail on any finding. Run them before pushing,
+inside `nix develop`:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo deny --locked check
+```
+
+`deny.toml` lists the allowed licences and every ignored advisory with its
+reason.
+
 ## Storage and TTL
 
 The contracts read and write through the shared helpers in
