@@ -39,6 +39,7 @@ const ready = (
 	windDownDelay: 7n * DAY,
 	upgradeDelay: 3n * DAY,
 	setupOpen: false,
+	tokenSetupOpen: true,
 	oracle: {
 		freshness: DAY,
 		cooldown: 3_600n,
@@ -418,6 +419,62 @@ describe("toConfigurationActions", () => {
 				identityVerifier: CONTRACT,
 			}).enabled,
 		).toBe(true)
+	})
+
+	it("proposes the compliance contract and identity verifier once the token's own setup closes", () => {
+		const closed = ready({ setupOpen: true, tokenSetupOpen: false })
+		const compliance = find(
+			"propose-compliance",
+			[tokenAdmin],
+			{ compliance: CONTRACT },
+			closed,
+		)
+		const verifier = find(
+			"propose-identity-verifier",
+			[tokenAdmin],
+			{ identityVerifier: CONTRACT },
+			closed,
+		)
+		const waits = { label: "Waits for the timelock", met: true, detail: "3d" }
+
+		expect(compliance).toMatchObject({
+			slot: "set-compliance",
+			label: "Set the compliance contract",
+			arg: CONTRACT,
+			enabled: true,
+		})
+		expect(compliance.conditions).toContainEqual(waits)
+		expect(verifier).toMatchObject({
+			slot: "set-identity-verifier",
+			label: "Set the identity verifier",
+			arg: CONTRACT,
+			enabled: true,
+		})
+		expect(verifier.conditions).toContainEqual(waits)
+	})
+
+	it("sets the compliance contract at once while the token's setup is open, even after the vault's closes", () => {
+		const compliance = find("set-compliance", [tokenAdmin], {
+			compliance: CONTRACT,
+		})
+
+		expect(compliance.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("holds the token setters while the token's setup state is unknown", () => {
+		const verifier = find(
+			"set-identity-verifier",
+			[tokenAdmin],
+			{ identityVerifier: CONTRACT },
+			ready({ tokenSetupOpen: null }),
+		)
+
+		expect(condition(verifier, "Setup state read")).toBeNull()
+		expect(verifier.enabled).toBe(false)
 	})
 
 	it("prefills every oracle limit and sends them all when one changes", () => {

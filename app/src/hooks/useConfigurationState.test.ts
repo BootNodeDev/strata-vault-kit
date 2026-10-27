@@ -6,7 +6,11 @@ import { useConfigurationState } from "./useConfigurationState"
 const { vaultMock, tokenMock, useCycleReadsMock, useVaultAuthoritiesMock } =
 	vi.hoisted(() => ({
 		vaultMock: { upgrade_delay: vi.fn(), setup_open: vi.fn() },
-		tokenMock: { compliance: vi.fn(), identity_verifier: vi.fn() },
+		tokenMock: {
+			compliance: vi.fn(),
+			identity_verifier: vi.fn(),
+			setup_open: vi.fn(),
+		},
 		useCycleReadsMock: vi.fn(),
 		useVaultAuthoritiesMock: vi.fn(),
 	}))
@@ -54,6 +58,7 @@ describe("useConfigurationState", () => {
 		vaultMock.setup_open.mockResolvedValue({ result: false })
 		tokenMock.compliance.mockResolvedValue({ result: COMPLIANCE })
 		tokenMock.identity_verifier.mockResolvedValue({ result: VERIFIER })
+		tokenMock.setup_open.mockResolvedValue({ result: true })
 	})
 
 	it("gathers every parameter the configuration surface can change", async () => {
@@ -68,6 +73,7 @@ describe("useConfigurationState", () => {
 				windDownDelay: 172_800n,
 				upgradeDelay: 604_800n,
 				setupOpen: false,
+				tokenSetupOpen: true,
 				oracle: LIMITS,
 				compliance: COMPLIANCE,
 				identityVerifier: VERIFIER,
@@ -84,6 +90,19 @@ describe("useConfigurationState", () => {
 		)
 	})
 
+	it("reads the share token's setup state from the token, not the vault", async () => {
+		vaultMock.setup_open.mockResolvedValue({ result: true })
+		tokenMock.setup_open.mockResolvedValue({ result: false })
+		const { result } = renderWithWallet(() => useConfigurationState())
+
+		await waitFor(() =>
+			expect(result.current.configuration).toMatchObject({
+				setupOpen: true,
+				tokenSetupOpen: false,
+			}),
+		)
+	})
+
 	it("is checking until the cycle reads arrive", () => {
 		useCycleReadsMock.mockReturnValue(undefined)
 		const { result } = renderWithWallet(() => useConfigurationState())
@@ -95,6 +114,7 @@ describe("useConfigurationState", () => {
 		vaultMock.upgrade_delay.mockRejectedValue(new Error("simulation failed"))
 		vaultMock.setup_open.mockRejectedValue(new Error("simulation failed"))
 		tokenMock.compliance.mockRejectedValue(new Error("simulation failed"))
+		tokenMock.setup_open.mockRejectedValue(new Error("simulation failed"))
 		useCycleReadsMock.mockReturnValue({
 			...cycleReads,
 			notice: { kind: "unreadable" },
@@ -107,6 +127,7 @@ describe("useConfigurationState", () => {
 				notice: null,
 				upgradeDelay: null,
 				setupOpen: null,
+				tokenSetupOpen: null,
 				compliance: null,
 				identityVerifier: VERIFIER,
 			}),

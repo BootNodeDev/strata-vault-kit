@@ -10,6 +10,7 @@ import {
 	type AdminOffer,
 	type RoleChange,
 } from "../hooks/useGovernanceTransactions"
+import { type TimelockedContract } from "../hooks/useSetupOpen"
 import {
 	allMet,
 	type Built,
@@ -32,6 +33,7 @@ import {
 	cancelChangeSpec,
 	type PendingChange,
 	pendingChangeMetrics,
+	QUEUES,
 } from "./pendingChanges"
 import { type Route, routeCondition, routeOf } from "./timelock"
 
@@ -43,8 +45,17 @@ type OfferActionId =
 type AcceptActionId = `accept-${GovernedContract}-admin`
 
 type ProposalActionId = "propose-code-upgrade" | "propose-upgrade-delay"
-type ProposedRoleActionId = "propose-grant-role" | "propose-revoke-role"
-type ChangeActionId = "apply-change" | "cancel-change"
+type ProposedRoleActionId =
+	| "propose-grant-role"
+	| "propose-revoke-role"
+	| "propose-token-grant-role"
+	| "propose-token-revoke-role"
+type ProposedAdminActionId = "propose-admin" | "propose-token-admin"
+type ChangeActionId =
+	| "apply-change"
+	| "cancel-change"
+	| "apply-token-change"
+	| "cancel-token-change"
 type VaultActionId = "propose-wind-down" | "cancel-wind-down"
 
 export type GovernanceActionId =
@@ -53,7 +64,7 @@ export type GovernanceActionId =
 	| AcceptActionId
 	| ProposalActionId
 	| ProposedRoleActionId
-	| "propose-admin"
+	| ProposedAdminActionId
 	| ChangeActionId
 	| VaultActionId
 
@@ -69,6 +80,14 @@ const VAULT_ACTION_IDS: GovernanceActionId[] = [
 	"cancel-wind-down",
 ]
 
+const TOKEN_ACTION_IDS: GovernanceActionId[] = [
+	"propose-token-grant-role",
+	"propose-token-revoke-role",
+	"propose-token-admin",
+	"apply-token-change",
+	"cancel-token-change",
+]
+
 export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
 	...GOVERNED_CONTRACTS.flatMap((contract) => [
 		`grant-${contract}-role` as const,
@@ -78,12 +97,13 @@ export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
 		`accept-${contract}-admin` as const,
 	]),
 	...VAULT_ACTION_IDS,
+	...TOKEN_ACTION_IDS,
 ]
 
 export type GovernanceAction =
 	| Built<RoleActionId | ProposedRoleActionId, RoleChange | undefined>
 	| Built<OfferActionId, AdminOffer | undefined>
-	| Built<"propose-admin", string | undefined>
+	| Built<ProposedAdminActionId, string | undefined>
 	| Built<ChangeActionId, number>
 	| Built<AcceptActionId, undefined>
 	| Built<"propose-code-upgrade", string | undefined>
@@ -94,7 +114,7 @@ export type GovernanceState = {
 	holders: RoleHolders
 	vault: string
 	handovers: Handovers
-	upgrades: Upgrades
+	upgrades: Record<TimelockedContract, Upgrades>
 }
 
 export type GovernanceGroup = { title: string; metrics: Metric[] }
@@ -257,8 +277,17 @@ const accountField = (key: string, text: string, label: string): RailField => ({
 
 type ReadyUpgrades = Extract<Upgrades, { status: "ready" }>
 
-const readyUpgrades = (state: GovernanceState): ReadyUpgrades | undefined =>
-	state.upgrades.status === "ready" ? state.upgrades : undefined
+const readyUpgrades = (
+	state: GovernanceState,
+	contract: TimelockedContract,
+): ReadyUpgrades | undefined => {
+	const upgrades = state.upgrades[contract]
+	return upgrades.status === "ready" ? upgrades : undefined
+}
+
+const isTimelocked = (
+	contract: GovernedContract,
+): contract is TimelockedContract => contract !== "oracle"
 
 const MAX_PENDING = 16
 
@@ -278,23 +307,40 @@ const windDownInactive = (upgrades?: ReadyUpgrades): Condition => {
 	}
 }
 
-const vaultRoute = (state: GovernanceState, waits: boolean): Route =>
-	routeOf(readyUpgrades(state)?.setupOpen ?? null, waits)
+const routeFor = (
+	state: GovernanceState,
+	contract: TimelockedContract,
+	waits: boolean,
+): Route => routeOf(readyUpgrades(state, contract)?.setupOpen ?? null, waits)
 
 const routeConditions = (
 	state: GovernanceState,
+	contract: TimelockedContract,
 	route: Route,
 	atOnce?: string,
 ): Condition[] => {
-	const upgrades = readyUpgrades(state)
+	const upgrades = readyUpgrades(state, contract)
 	const line = routeCondition(route, upgrades?.delay ?? null, atOnce)
 	return route === "timelock"
 		? [line, underCapacity(upgrades), windDownInactive(upgrades)]
 		: [line]
 }
 
-const proposedRole = (operation: Operation): ProposedRoleActionId =>
-	operation === "grant" ? "propose-grant-role" : "propose-revoke-role"
+const PROPOSED_ROLES: Record<
+	TimelockedContract,
+	Record<Operation, ProposedRoleActionId>
+> = {
+	vault: { grant: "propose-grant-role", revoke: "propose-revoke-role" },
+	token: {
+		grant: "propose-token-grant-role",
+		revoke: "propose-token-revoke-role",
+	},
+}
+
+const PROPOSED_ADMINS: Record<TimelockedContract, ProposedAdminActionId> = {
+	vault: "propose-admin",
+	token: "propose-token-admin",
+}
 
 function roleSpec(
 	operation: Operation,
@@ -345,18 +391,22 @@ function roleSpec(
 		conditions.push(confirm.condition)
 	}
 	const waits = operation === "grant" || entry.role === "manager"
-	const route = contract === "vault" ? vaultRoute(state, waits) : undefined
-	if (route !== undefined)
+	let proposed: ProposedRoleActionId | undefined
+	if (isTimelocked(contract)) {
+		const route = routeFor(state, contract, waits)
 		conditions.push(
 			...routeConditions(
 				state,
+				contract,
 				route,
 				waits ? undefined : "Revoking this role is instant",
 			),
 		)
+		if (route === "timelock") proposed = PROPOSED_ROLES[contract][operation]
+	}
 	const changes = holds === (operation === "revoke")
 	return {
-		id: route === "timelock" ? proposedRole(operation) : id,
+		id: proposed ?? id,
 		slot: id,
 		label: `${capitalize(operation)} ${noun}`,
 		conditions,
@@ -442,8 +492,8 @@ function handOverSpec(
 			met: secs === undefined ? null : secs >= MIN_EXPIRY,
 		},
 		limitCondition(ledger, liveUntil),
-		...(contract === "vault"
-			? routeConditions(state, vaultRoute(state, true))
+		...(isTimelocked(contract)
+			? routeConditions(state, contract, routeFor(state, contract, true))
 			: []),
 	]
 	if (account !== undefined) {
@@ -480,10 +530,11 @@ function handOverSpec(
 }
 
 function proposeAdminSpec(
+	contract: TimelockedContract,
 	state: GovernanceState,
 	inputs: Inputs,
-): BuiltSpec<"propose-admin", string | undefined> {
-	const slot: OfferActionId = "hand-over-vault-admin"
+): BuiltSpec<ProposedAdminActionId, string | undefined> {
+	const slot: OfferActionId = `hand-over-${contract}-admin`
 	const text = inputs[`${slot}-account`] ?? ""
 	const account = parseAccount(text)
 	const fields: RailField[] = [
@@ -494,12 +545,12 @@ function proposeAdminSpec(
 			label: "New admin entered",
 			met: text.trim() === "" ? null : account !== undefined,
 		},
-		...routeConditions(state, "timelock"),
+		...routeConditions(state, contract, "timelock"),
 	]
 	if (account !== undefined) {
 		const confirm = confirmation(
 			confirmKey(slot),
-			`Hands control of the vault to ${shortAddress(account)}.`,
+			`Hands control of the ${CONTRACTS[contract].subject} to ${shortAddress(account)}.`,
 			account,
 			inputs,
 		)
@@ -507,9 +558,9 @@ function proposeAdminSpec(
 		conditions.push(confirm.condition)
 	}
 	return {
-		id: "propose-admin",
+		id: PROPOSED_ADMINS[contract],
 		slot,
-		label: "Hand over vault admin",
+		label: `Hand over ${CONTRACTS[contract].name} admin`,
 		conditions,
 		outcome:
 			account === undefined
@@ -769,17 +820,44 @@ function adminActions(
 		state.handovers.status === "ready"
 			? state.handovers.pending[contract]
 			: null
-	const proposesAdmin =
-		contract === "vault" && vaultRoute(state, true) === "timelock"
+	const offer =
+		isTimelocked(contract) && routeFor(state, contract, true) === "timelock"
+			? build(proposeAdminSpec(contract, state, inputs), grant)
+			: build(handOverSpec(contract, state, inputs), grant)
 	return [
 		build(roleSpec("grant", contract, state, inputs), grant),
 		build(roleSpec("revoke", contract, state, inputs), grant),
-		proposesAdmin
-			? build(proposeAdminSpec(state, inputs), grant)
-			: build(handOverSpec(contract, state, inputs), grant),
+		offer,
 		...(pending === null ? [] : [build(cancelSpec(contract, pending), grant)]),
 		...(contract === "vault" ? vaultActions(state, grant, inputs) : []),
+		...(contract === "token"
+			? changeActions("token", state, grant, inputs)
+			: []),
 	]
+}
+
+function changeActions(
+	contract: TimelockedContract,
+	state: GovernanceState,
+	grant: Grant,
+	inputs: Inputs,
+): GovernanceAction[] {
+	const upgrades = readyUpgrades(state, contract)
+	if (upgrades === undefined) return []
+	const queue = QUEUES[contract]
+	return (upgrades.pending ?? []).flatMap((pending) => [
+		build(
+			applyChangeSpec(
+				queue,
+				pending,
+				upgrades.now,
+				applyChecks(pending, upgrades),
+				inputs,
+			),
+			grant,
+		),
+		build(cancelChangeSpec(queue, pending), grant),
+	])
 }
 
 function vaultActions(
@@ -787,25 +865,11 @@ function vaultActions(
 	grant: Grant,
 	inputs: Inputs,
 ): GovernanceAction[] {
-	const upgrades = readyUpgrades(state)
-	const changes = (ready: ReadyUpgrades) =>
-		(ready.pending ?? []).flatMap((pending) => [
-			build(
-				applyChangeSpec(
-					"vault",
-					pending,
-					ready.now,
-					applyChecks(pending, ready),
-					inputs,
-				),
-				grant,
-			),
-			build(cancelChangeSpec("vault", pending), grant),
-		])
+	const upgrades = readyUpgrades(state, "vault")
 	return [
 		build(codeUpgradeSpec(inputs, upgrades), grant),
 		build(delayUpgradeSpec(inputs, upgrades), grant),
-		...(upgrades === undefined ? [] : changes(upgrades)),
+		...changeActions("vault", state, grant, inputs),
 		build(windDownSpec(inputs, upgrades), grant),
 		...(upgrades?.windDown.phase === "proposed"
 			? [build(cancelWindDownSpec(), grant)]
@@ -893,10 +957,14 @@ const upgradeMetrics = (upgrades: Upgrades): Metric[] => {
 	return metrics
 }
 
-const pendingChangesGroup = (upgrades: Upgrades): GovernanceGroup[] => {
+const pendingChangesGroup = (
+	contract: TimelockedContract,
+	upgrades: Upgrades,
+): GovernanceGroup[] => {
 	if (upgrades.status !== "ready") return []
 	const metrics = pendingChangeMetrics(upgrades.pending)
-	return metrics.length === 0 ? [] : [{ title: "Pending changes", metrics }]
+	const title = `${CONTRACTS[contract].title} pending changes`
+	return metrics.length === 0 ? [] : [{ title, metrics }]
 }
 
 export const toGovernanceGroups = ({
@@ -913,9 +981,10 @@ export const toGovernanceGroups = ({
 					holdersMetric(entry.label, holders[entry.holders]),
 				),
 				...pendingMetric(handovers, contract),
-				...(contract === "vault" ? upgradeMetrics(upgrades) : []),
+				...(contract === "vault" ? upgradeMetrics(upgrades.vault) : []),
 			],
 		}
 	}),
-	...pendingChangesGroup(upgrades),
+	...pendingChangesGroup("vault", upgrades.vault),
+	...pendingChangesGroup("token", upgrades.token),
 ]

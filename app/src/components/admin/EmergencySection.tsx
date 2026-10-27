@@ -40,7 +40,7 @@ const EmergencySection: React.FC<{
 	active?: boolean
 }> = ({ grants, wallet, contracts, active = true }) => {
 	const { pause: vault } = useVaultPaused({ poll: true })
-	const { setup } = useSetupOpen()
+	const { setup } = useSetupOpen("vault")
 	const { pause: token } = useTokenPaused()
 	const { oracle } = useOracleState()
 	const pauseVault = usePendingTransaction(usePauseVault())

@@ -334,7 +334,7 @@ describe("describePending", () => {
 			describePending(
 				pending(addresses.vault, "apply_change", [3]),
 				addresses,
-				changes,
+				{ vault: changes },
 			),
 		).toMatchObject({
 			action: "apply-change",
@@ -347,7 +347,7 @@ describe("describePending", () => {
 			describePending(
 				pending(addresses.vault, "cancel_change", [4]),
 				addresses,
-				changes,
+				{ vault: changes },
 			),
 		).toMatchObject({
 			action: "cancel-change",
@@ -358,6 +358,118 @@ describe("describePending", () => {
 			describePending(pending(addresses.vault, "apply_change", [3]), addresses)
 				.args,
 		).toEqual([{ label: "Change", value: "vault change #3" }])
+	})
+
+	it.each<[unknown[], string, { label: string; value: string }[]]>([
+		[
+			["GrantRole", "manager", account],
+			"propose-token-grant-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["RevokeRole", "manager", account],
+			"propose-token-revoke-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["Admin", account],
+			"propose-token-admin",
+			[{ label: "New admin", value: "GBRP...OX2H" }],
+		],
+		[
+			["Compliance", other],
+			"propose-compliance",
+			[{ label: "Compliance contract", value: "GDQN...KTL3" }],
+		],
+		[
+			["IdentityVerifier", other],
+			"propose-identity-verifier",
+			[{ label: "Identity verifier", value: "GDQN...KTL3" }],
+		],
+	])(
+		"describes the share token's propose_change %o by its kind",
+		(change, action, args) => {
+			expect(
+				describePending(
+					pending(addresses.shareToken, "propose_change", [change]),
+					addresses,
+				),
+			).toMatchObject({ contract: "Share token", action, args })
+		},
+	)
+
+	it("refuses a proposed change the other contract owns", () => {
+		for (const change of [
+			["Custodian", account],
+			["Upgrade", Buffer.from("abcd", "hex")],
+		])
+			expect(() =>
+				describePending(
+					pending(addresses.shareToken, "propose_change", [change]),
+					addresses,
+				),
+			).toThrow(new InvalidPendingTransaction("unknown operation"))
+		expect(() =>
+			describePending(
+				pending(addresses.vault, "propose_change", [["Compliance", other]]),
+				addresses,
+			),
+		).toThrow(new InvalidPendingTransaction("unknown operation"))
+	})
+
+	it("names a share-token change from the token's own pending list", () => {
+		const changes = {
+			vault: [
+				{ id: 1, change: { tag: "Custodian", values: [account] }, eta: 1n },
+			],
+			token: [
+				{ id: 1, change: { tag: "Compliance", values: [other] }, eta: 1n },
+			],
+		}
+
+		expect(
+			describePending(
+				pending(addresses.shareToken, "apply_change", [1]),
+				addresses,
+				changes,
+			),
+		).toMatchObject({
+			contract: "Share token",
+			action: "apply-token-change",
+			label: "Apply the change",
+			args: [
+				{
+					label: "Change",
+					value: "share token change #1: Compliance contract GDQN...KTL3",
+				},
+			],
+		})
+		expect(
+			describePending(
+				pending(addresses.shareToken, "cancel_change", [4]),
+				addresses,
+				changes,
+			),
+		).toMatchObject({
+			action: "cancel-token-change",
+			label: "Cancel the change",
+			args: [{ label: "Change", value: "share token change #4" }],
+		})
+		expect(
+			describePending(
+				pending(addresses.vault, "apply_change", [1]),
+				addresses,
+				changes,
+			).args,
+		).toEqual([
+			{ label: "Change", value: "vault change #1: Custodian GBRP...OX2H" },
+		])
 	})
 
 	it("no longer decodes the removed upgrade entrypoints", () => {

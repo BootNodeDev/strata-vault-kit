@@ -8,7 +8,10 @@ import { adminAuthorityKey } from "./useAdminAuthority"
 import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
-import { proposeVaultChange } from "./useGovernanceTransactions"
+import {
+	proposeTokenChange,
+	proposeVaultChange,
+} from "./useGovernanceTransactions"
 import { isAllowedKey } from "./useIsAllowed"
 import { oracleWriteKeys } from "./useOracleState"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
@@ -81,4 +84,14 @@ export const useSetIdentityVerifier = adminTransaction(
 			}),
 		),
 	[configurationReadsKey, adminAuthorityKey, isAllowedKey],
+)
+
+export const useProposeCompliance = proposeTokenChange(
+	(compliance: string) => ({ tag: "Compliance", values: [compliance] }),
+	[configurationReadsKey],
+)
+
+export const useProposeIdentityVerifier = proposeTokenChange(
+	(verifier: string) => ({ tag: "IdentityVerifier", values: [verifier] }),
+	[configurationReadsKey],
 )

@@ -2,7 +2,9 @@ import React, { useEffect, useState } from "react"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { useConfigurationState } from "../../hooks/useConfigurationState"
 import {
+	useProposeCompliance,
 	useProposeCustodian,
+	useProposeIdentityVerifier,
 	useProposeNotice,
 	useProposeWindDownDelay,
 	useSetCompliance,
@@ -67,6 +69,10 @@ const ConfigurationSection: React.FC<{
 	const oracleConfig = usePendingTransaction(useSetOracleConfig())
 	const compliance = usePendingTransaction(useSetCompliance())
 	const identityVerifier = usePendingTransaction(useSetIdentityVerifier())
+	const proposeCompliance = usePendingTransaction(useProposeCompliance())
+	const proposeIdentityVerifier = usePendingTransaction(
+		useProposeIdentityVerifier(),
+	)
 	const [inputs, setInputs] = useState<ConfigurationInputs>({})
 
 	const modalFlows = (
@@ -81,6 +87,8 @@ const ConfigurationSection: React.FC<{
 			["set-oracle-config", oracleConfig],
 			["set-compliance", compliance],
 			["set-identity-verifier", identityVerifier],
+			["propose-compliance", proposeCompliance],
+			["propose-identity-verifier", proposeIdentityVerifier],
 		] satisfies [ConfigurationModalAction, Flow][]
 	).map(([id, transaction]) => flow(id, transaction))
 	const recorded = modalFlows.some(
@@ -119,6 +127,14 @@ const ConfigurationSection: React.FC<{
 				return compliance.submit(action.arg, action.next, action.grant)
 			case "set-identity-verifier":
 				return identityVerifier.submit(action.arg, action.next, action.grant)
+			case "propose-compliance":
+				return proposeCompliance.submit(action.arg, action.next, action.grant)
+			case "propose-identity-verifier":
+				return proposeIdentityVerifier.submit(
+					action.arg,
+					action.next,
+					action.grant,
+				)
 		}
 	}
 

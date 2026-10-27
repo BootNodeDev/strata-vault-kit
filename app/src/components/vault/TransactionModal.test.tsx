@@ -2345,6 +2345,20 @@ describe("TransactionModal, configuration actions", () => {
 			"Signing queues wind-down delay 8d.",
 			"Wind-down delay 8d applies once the upgrade delay passes.",
 		],
+		[
+			"propose-compliance",
+			"CABC...WXYZ",
+			"Preparing to propose a compliance contract",
+			"Signing queues compliance contract CABC...WXYZ.",
+			"Compliance contract CABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
+		[
+			"propose-identity-verifier",
+			"CABC...WXYZ",
+			"Preparing to propose an identity verifier",
+			"Signing queues identity verifier CABC...WXYZ.",
+			"Identity verifier CABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
 	])(
 		"walks %s from preparing to proposed",
 		(action, value, preparing, signing, doneBody) => {
@@ -2409,6 +2423,10 @@ describe("TransactionModal, configuration actions", () => {
 			/One of the oracle limits is out of range/,
 		],
 		["set-compliance", 2000, "share token", /does not hold the role/],
+		["propose-compliance", 7003, "share token", /16 pending changes/],
+		["propose-identity-verifier", 7004, "share token", /Setup is still open/],
+		["set-compliance", 7005, "share token", /goes through the timelock/],
+		["propose-compliance", 7008, "share token", /vault is winding down/],
 	])(
 		"names the reason %s was refused with code %i",
 		(action, code, refuser, sentence) => {
@@ -2514,6 +2532,25 @@ describe("TransactionModal, governance actions", () => {
 		["propose-upgrade-delay", 6058, "vault", /cannot be under 7 days/],
 		["propose-upgrade-delay", 6059, "vault", /cannot be under the notice/],
 		["propose-upgrade-delay", 6060, "vault", /cannot exceed 90 days/],
+		[
+			"cancel-token-change",
+			7001,
+			"share token",
+			/no pending change with that id/,
+		],
+		["apply-token-change", 7002, "share token", /delay has not passed yet/],
+		["propose-token-grant-role", 7003, "share token", /16 pending changes/],
+		["propose-token-admin", 7004, "share token", /Setup is still open/],
+		["grant-token-role", 7005, "share token", /goes through the timelock/],
+		["apply-token-change", 7008, "share token", /vault is winding down/],
+		["apply-token-change", 7009, "share token", /vault is paused/],
+		["apply-token-change", 7011, "share token", /upgrade is already pending/],
+		[
+			"hand-over-token-admin",
+			7016,
+			"share token",
+			/hand-over is still pending/,
+		],
 	])(
 		"names the reason %s was refused with code %i",
 		(action, code, refuser, sentence) => {
@@ -2614,6 +2651,41 @@ describe("TransactionModal, governance actions", () => {
 			"The hand-over to GABC...WXYZ applies once the upgrade delay passes.",
 		],
 		[
+			"propose-token-grant-role",
+			"Manager to GABC...WXYZ",
+			"Signing queues the grant of Manager to GABC...WXYZ.",
+			"Change proposed",
+			"The grant of Manager to GABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
+		[
+			"propose-token-revoke-role",
+			"Manager from GABC...WXYZ",
+			"Signing queues the revoke of Manager from GABC...WXYZ.",
+			"Change proposed",
+			"The revoke of Manager from GABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
+		[
+			"propose-token-admin",
+			"GABC...WXYZ",
+			"Signing queues the hand-over to GABC...WXYZ.",
+			"Change proposed",
+			"The hand-over to GABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
+		[
+			"apply-token-change",
+			"share token change #1: Compliance contract CABC...WXYZ",
+			"Signing applies share token change #1: Compliance contract CABC...WXYZ.",
+			"Change applied",
+			"Applied share token change #1: Compliance contract CABC...WXYZ.",
+		],
+		[
+			"cancel-token-change",
+			"share token change #1: Compliance contract CABC...WXYZ",
+			"Signing withdraws share token change #1: Compliance contract CABC...WXYZ.",
+			"Change cancelled",
+			"Withdrew share token change #1: Compliance contract CABC...WXYZ.",
+		],
+		[
 			"propose-wind-down",
 			"Activates 21 Nov, 22:13 UTC.",
 			"Signing starts the wind-down countdown.",
@@ -2628,7 +2700,7 @@ describe("TransactionModal, governance actions", () => {
 			"The vault stays open.",
 		],
 	])(
-		"names the vault proposal step of %s",
+		"names the timelock step of %s",
 		(action, value, signing, done, doneBody) => {
 			const { unmount } = renderGovernanceModal(
 				action,

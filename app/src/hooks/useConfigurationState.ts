@@ -6,7 +6,7 @@ import {
 	type OracleLimits,
 	useCycleReads,
 } from "./useCycleState"
-import { useSetupOpen } from "./useSetupOpen"
+import { type SetupState, useSetupOpen } from "./useSetupOpen"
 import { type Custodian, useVaultAuthorities } from "./useVaultAuthorities"
 
 const STALE_MS = 30_000
@@ -21,6 +21,7 @@ export type ConfigurationValues = {
 	windDownDelay: bigint | null
 	upgradeDelay: bigint | null
 	setupOpen: boolean | null
+	tokenSetupOpen: boolean | null
 	oracle: OracleLimits | null
 	compliance: string | null
 	identityVerifier: string | null
@@ -28,6 +29,9 @@ export type ConfigurationValues = {
 
 export type ConfigurationState =
 	{ status: "checking" } | ({ status: "ready" } & ConfigurationValues)
+
+const openOf = (setup: SetupState): boolean | null =>
+	setup === "unreadable" ? null : setup === "open"
 
 const valueOf = <T>(read: ContractRead<T>): T | null =>
 	read.kind === "value" ? read.value : null
@@ -50,7 +54,8 @@ export function useConfigurationState(): {
 } {
 	const cycle = useCycleReads()
 	const { authorities, isPending } = useVaultAuthorities()
-	const { setup } = useSetupOpen()
+	const { setup } = useSetupOpen("vault")
+	const { setup: tokenSetup } = useSetupOpen("token")
 	const { data: reads } = useQuery({
 		queryKey: configurationReadsKey,
 		queryFn: fetchConfigurationReads,
@@ -62,7 +67,8 @@ export function useConfigurationState(): {
 		cycle === undefined ||
 		reads === undefined ||
 		isPending ||
-		setup === "checking"
+		setup === "checking" ||
+		tokenSetup === "checking"
 	)
 		return { configuration: { status: "checking" } }
 
@@ -73,7 +79,8 @@ export function useConfigurationState(): {
 			custodian: authorities?.custodian ?? { kind: "unreadable" },
 			notice: valueOf(cycle.notice),
 			windDownDelay: cycle.windDown.delay,
-			setupOpen: setup === "unreadable" ? null : setup === "open",
+			setupOpen: openOf(setup),
+			tokenSetupOpen: openOf(tokenSetup),
 			oracle: cycle.oracle.limits,
 			...reads,
 		},

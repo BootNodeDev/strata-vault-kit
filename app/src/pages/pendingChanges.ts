@@ -1,6 +1,7 @@
 import { Buffer } from "buffer"
 import { shortAddress } from "@stellar-scaffold/app-lib"
 import { type Metric } from "../components/vault/MetricsStrip"
+import { type TimelockedContract } from "../hooks/useSetupOpen"
 import {
 	allMet,
 	type BuiltSpec,
@@ -56,7 +57,31 @@ const KINDS: Record<string, Kind> = {
 		effect: (value) => `Offers the admin to ${value}.`,
 	},
 	Oracle: { label: "Oracle", join: " ", effect: becomes("Oracle") },
+	Compliance: {
+		label: "Compliance contract",
+		join: " ",
+		effect: becomes("Compliance contract"),
+	},
+	IdentityVerifier: {
+		label: "Identity verifier",
+		join: " ",
+		effect: becomes("Identity verifier"),
+	},
 }
+
+export const QUEUES = {
+	vault: { name: "vault", apply: "apply-change", cancel: "cancel-change" },
+	token: {
+		name: "share token",
+		apply: "apply-token-change",
+		cancel: "cancel-token-change",
+	},
+} as const satisfies Record<
+	TimelockedContract,
+	{ name: string; apply: string; cancel: string }
+>
+
+type Queue = (typeof QUEUES)[TimelockedContract]
 
 const shown = (value: unknown, full: boolean): string => {
 	if (Buffer.isBuffer(value)) {
@@ -109,13 +134,14 @@ export const pendingChangeMetrics = (
 	})
 }
 
-export function applyChangeSpec(
-	contract: string,
+export function applyChangeSpec<Q extends Queue>(
+	queue: Q,
 	pending: PendingChange,
 	now: bigint | null,
 	checks: Condition[],
 	inputs: Inputs,
-): BuiltSpec<"apply-change", number> {
+): BuiltSpec<Q["apply"], number> {
+	const slot = `${queue.apply}-${pending.id}`
 	const { value, full } = describeChange(pending.change)
 	const conditions: Condition[] = [
 		{
@@ -129,8 +155,8 @@ export function applyChangeSpec(
 	const code = pending.change.tag === "Upgrade"
 	if (code) {
 		const confirm = confirmation(
-			confirmKey(`apply-change-${pending.id}`),
-			`Replaces the ${contract}'s code with ${full}.`,
+			confirmKey(slot),
+			`Replaces the ${queue.name}'s code with ${full}.`,
 			full,
 			inputs,
 		)
@@ -138,8 +164,8 @@ export function applyChangeSpec(
 		conditions.push(confirm.condition)
 	}
 	return {
-		id: "apply-change",
-		slot: `apply-change-${pending.id}`,
+		id: queue.apply,
+		slot,
 		label: `Apply the change #${pending.id}`,
 		conditions,
 		outcome: kindOf(pending.change.tag).effect?.(value) ?? null,
@@ -147,19 +173,19 @@ export function applyChangeSpec(
 		...(code ? { danger: true } : {}),
 		ready: allMet(conditions),
 		arg: pending.id,
-		next: changeName(contract, pending),
+		next: changeName(queue.name, pending),
 	}
 }
 
-export const cancelChangeSpec = (
-	contract: string,
+export const cancelChangeSpec = <Q extends Queue>(
+	queue: Q,
 	pending: PendingChange,
-): BuiltSpec<"cancel-change", number> => ({
-	id: "cancel-change",
-	slot: `cancel-change-${pending.id}`,
+): BuiltSpec<Q["cancel"], number> => ({
+	id: queue.cancel,
+	slot: `${queue.cancel}-${pending.id}`,
 	label: `Cancel the change #${pending.id}`,
 	conditions: [],
 	outcome: null,
 	arg: pending.id,
-	next: changeName(contract, pending),
+	next: changeName(queue.name, pending),
 })
