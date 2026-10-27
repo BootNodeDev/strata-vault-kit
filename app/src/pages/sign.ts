@@ -18,13 +18,14 @@ import {
 	type TransactionModalProps,
 } from "../components/vault/TransactionModal"
 import { type TransactionStatus } from "../hooks/useContractTransaction"
+import { type TimelockedContract } from "../hooks/useSetupOpen"
 import {
 	exactAmount,
 	formatDuration,
 	formatPercent,
 	formatSignedPrice,
 } from "./cycle"
-import { changeName, type PendingChange } from "./pendingChanges"
+import { changeName, type PendingChange, QUEUES } from "./pendingChanges"
 
 export type SignContract =
 	"Vault" | "Oracle" | "Share token" | "Identity verifier"
@@ -54,7 +55,7 @@ type Decoder = (args: unknown[]) => Decoded
 
 const malformed = () => new InvalidPendingTransaction("malformed arguments")
 
-const address = (value: unknown): string => {
+const text = (value: unknown): string => {
 	if (typeof value !== "string") throw malformed()
 	return value
 }
@@ -86,7 +87,7 @@ const record = (value: unknown): Record<string, unknown> => {
 
 const addr = (label: string, value: unknown): SignArg => ({
 	label,
-	value: shortAddress(address(value)),
+	value: shortAddress(text(value)),
 })
 
 const amount = (label: string, value: unknown): SignArg => ({
@@ -113,11 +114,11 @@ const governed = (
 ): Record<string, Decoder> => ({
 	grant_role: ([account, role]) => ({
 		action: `grant-${contract}-role`,
-		args: [{ label: "Role", value: address(role) }, addr("Account", account)],
+		args: [{ label: "Role", value: text(role) }, addr("Account", account)],
 	}),
 	revoke_role: ([account, role]) => ({
 		action: `revoke-${contract}-role`,
-		args: [{ label: "Role", value: address(role) }, addr("Account", account)],
+		args: [{ label: "Role", value: text(role) }, addr("Account", account)],
 	}),
 	transfer_admin_role: ([newAdmin, liveUntil]) =>
 		count(liveUntil) === 0
@@ -136,11 +137,30 @@ const governed = (
 })
 
 const roleArgs = (role: unknown, account: unknown): SignArg[] => [
-	{ label: "Role", value: address(role) },
+	{ label: "Role", value: text(role) },
 	addr("Account", account),
 ]
 
-const PROPOSALS: Record<string, Decoder> = {
+const roleProposals = (
+	grant: SignAction,
+	revoke: SignAction,
+	admin: SignAction,
+): Record<string, Decoder> => ({
+	GrantRole: ([role, account]) => ({
+		action: grant,
+		args: roleArgs(role, account),
+	}),
+	RevokeRole: ([role, account]) => ({
+		action: revoke,
+		args: roleArgs(role, account),
+	}),
+	Admin: ([account]) => ({
+		action: admin,
+		args: [addr("New admin", account)],
+	}),
+})
+
+const VAULT_PROPOSALS: Record<string, Decoder> = {
 	Custodian: ([custodian]) => ({
 		action: "propose-custodian",
 		args: [addr("Custodian", custodian)],
@@ -161,18 +181,27 @@ const PROPOSALS: Record<string, Decoder> = {
 		action: "propose-upgrade-delay",
 		args: [duration("Upgrade delay", secs)],
 	}),
-	GrantRole: ([role, account]) => ({
-		action: "propose-grant-role",
-		args: roleArgs(role, account),
+	...roleProposals(
+		"propose-grant-role",
+		"propose-revoke-role",
+		"propose-admin",
+	),
+}
+
+const TOKEN_PROPOSALS: Record<string, Decoder> = {
+	Compliance: ([compliance]) => ({
+		action: "propose-compliance",
+		args: [addr("Compliance contract", compliance)],
 	}),
-	RevokeRole: ([role, account]) => ({
-		action: "propose-revoke-role",
-		args: roleArgs(role, account),
+	IdentityVerifier: ([verifier]) => ({
+		action: "propose-identity-verifier",
+		args: [addr("Identity verifier", verifier)],
 	}),
-	Admin: ([account]) => ({
-		action: "propose-admin",
-		args: [addr("New admin", account)],
-	}),
+	...roleProposals(
+		"propose-token-grant-role",
+		"propose-token-revoke-role",
+		"propose-token-admin",
+	),
 }
 
 const decoderOf = (table: Record<string, Decoder>, name: unknown): Decoder => {
@@ -181,16 +210,25 @@ const decoderOf = (table: Record<string, Decoder>, name: unknown): Decoder => {
 	return table[name] as Decoder
 }
 
-const proposal: Decoder = ([change]) => {
-	if (!Array.isArray(change)) throw malformed()
-	const [tag, ...values] = change as unknown[]
-	return decoderOf(PROPOSALS, tag)(values)
-}
+const proposal =
+	(table: Record<string, Decoder>): Decoder =>
+	([change]) => {
+		if (!Array.isArray(change)) throw malformed()
+		const [tag, ...values] = change as unknown[]
+		return decoderOf(table, tag)(values)
+	}
+
+export type SignChanges = Partial<Record<TimelockedContract, PendingChange[]>>
 
 const byId =
-	(action: SignAction, changes: PendingChange[] | undefined): Decoder =>
+	(
+		action: SignAction,
+		contract: TimelockedContract,
+		changes: SignChanges,
+	): Decoder =>
 	([id]) => {
-		const known = changes?.find((change) => change.id === count(id))
+		const { name } = QUEUES[contract]
+		const known = changes[contract]?.find((change) => change.id === count(id))
 		return {
 			action,
 			args: [
@@ -198,16 +236,24 @@ const byId =
 					label: "Change",
 					value:
 						known === undefined
-							? `vault change #${count(id)}`
-							: changeName("vault", known),
+							? `${name} change #${count(id)}`
+							: changeName(name, known),
 				},
 			],
 		}
 	}
 
-const vaultDecoders = (
-	changes: PendingChange[] | undefined,
+const timelockDecoders = (
+	contract: TimelockedContract,
+	proposals: Record<string, Decoder>,
+	changes: SignChanges,
 ): Record<string, Decoder> => ({
+	propose_change: proposal(proposals),
+	apply_change: byId(QUEUES[contract].apply, contract, changes),
+	cancel_change: byId(QUEUES[contract].cancel, contract, changes),
+})
+
+const vaultDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	...governed("vault"),
 	pause: only("pause-vault"),
 	unpause: only("unpause-vault"),
@@ -232,9 +278,7 @@ const vaultDecoders = (
 		action: "set-wind-down-delay",
 		args: [duration("Wind-down delay", secs)],
 	}),
-	propose_change: proposal,
-	apply_change: byId("apply-change", changes),
-	cancel_change: byId("cancel-change", changes),
+	...timelockDecoders("vault", VAULT_PROPOSALS, changes),
 	propose_wind_down: only("propose-wind-down"),
 	cancel_wind_down_proposal: only("cancel-wind-down"),
 	close_epoch: only("close-epoch"),
@@ -265,8 +309,9 @@ const ORACLE: Record<string, Decoder> = {
 		action: "set-oracle-config",
 		args: oracleLimits(record(config)),
 	}),
-	attest: ([report]) => {
-		const { nav_per_share, expires_at } = record(report)
+	attest: ([input]) => {
+		const { nav_per_share, expires_at, proof_hash, proof_uri } = record(input)
+		const uri = text(proof_uri)
 		return {
 			action: "attest",
 			args: [
@@ -275,13 +320,16 @@ const ORACLE: Record<string, Decoder> = {
 					value: formatSignedPrice(integer(nav_per_share) as Price),
 				},
 				{ label: "Expires", value: formatDate(integer(expires_at)) },
+				{ label: "Proof hash", value: hex(proof_hash) },
+				{ label: "Proof URI", value: uri === "" ? "None" : uri },
 			],
 		}
 	},
 }
 
-const TOKEN: Record<string, Decoder> = {
+const tokenDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	...governed("token"),
+	...timelockDecoders("token", TOKEN_PROPOSALS, changes),
 	pause: only("pause-token"),
 	unpause: only("unpause-token"),
 	set_compliance: ([compliance]) => ({
@@ -308,7 +356,7 @@ const TOKEN: Record<string, Decoder> = {
 		action: "force-transfer",
 		args: [addr("From", from), addr("To", to), amount("Amount", shares)],
 	}),
-}
+})
 
 const VERIFIER: Record<string, Decoder> = {
 	allow: ([account, allowed]) => ({
@@ -328,14 +376,14 @@ const VERBS: Record<SignAction, string> = { ...ADMIN_VERBS, ...CYCLE_VERBS }
 const contractOf = (
 	contractId: string,
 	addresses: SignAddresses,
-	changes: PendingChange[] | undefined,
+	changes: SignChanges,
 ): { contract: SignContract; table: Record<string, Decoder> } => {
 	if (contractId === addresses.vault)
 		return { contract: "Vault", table: vaultDecoders(changes) }
 	if (contractId === addresses.oracle)
 		return { contract: "Oracle", table: ORACLE }
 	if (contractId === addresses.shareToken)
-		return { contract: "Share token", table: TOKEN }
+		return { contract: "Share token", table: tokenDecoders(changes) }
 	if (contractId === addresses.identityVerifier) {
 		return { contract: "Identity verifier", table: VERIFIER }
 	}
@@ -345,7 +393,7 @@ const contractOf = (
 export function describePending(
 	pending: PendingTransaction,
 	addresses: SignAddresses,
-	changes?: PendingChange[],
+	changes: SignChanges = {},
 ): SignDescription {
 	const { contract, table } = contractOf(pending.contractId, addresses, changes)
 	const { action, args } = decoderOf(table, pending.fn)(pending.args)

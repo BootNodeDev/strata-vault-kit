@@ -1,7 +1,9 @@
 import { Buffer } from "buffer"
+import { type AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import {
 	type AsyncVaultApi,
 	type Signer,
+	type TokenChange,
 	type VaultChange,
 } from "@stellar-scaffold/app-lib"
 import { type QueryKey } from "@tanstack/react-query"
@@ -16,21 +18,54 @@ import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
 import { pendingChangesKey } from "./useGovernanceState"
+import { isAllowedKey } from "./useIsAllowed"
+import { type TimelockedContract } from "./useSetupOpen"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 
 export type RoleChange = { role: string; account: string }
 
-export const proposeVaultChange = <TArg>(
-	toChange: (arg: TArg) => VaultChange,
-	keys: readonly QueryKey[] = [],
-) =>
-	adminTransaction(
-		(signer: Signer, arg: TArg) =>
-			asyncVaultWriter(signer).then((vault) =>
-				vault.propose_change({ change: toChange(arg) }),
-			),
-		[pendingChangesKey, ...keys],
-	)
+type ChangeClient<Change> = Pick<
+	AsyncVaultApi,
+	"apply_change" | "cancel_change"
+> & {
+	propose_change: (args: {
+		change: Change
+	}) => Promise<AssembledTransaction<number>>
+}
+
+const timelock = <Change>(
+	contract: TimelockedContract,
+	connect: (signer: Signer) => Promise<ChangeClient<Change>>,
+) => ({
+	propose: <TArg>(
+		toChange: (arg: TArg) => Change,
+		keys: readonly QueryKey[] = [],
+	) =>
+		adminTransaction(
+			(signer: Signer, arg: TArg) =>
+				connect(signer).then((client) =>
+					client.propose_change({ change: toChange(arg) }),
+				),
+			[pendingChangesKey(contract), ...keys],
+		),
+	apply: (keys: readonly QueryKey[]) =>
+		adminTransaction(
+			(signer: Signer, id: number) =>
+				connect(signer).then((client) => client.apply_change({ id })),
+			[pendingChangesKey(contract), ...keys],
+		),
+	cancel: adminTransaction(
+		(signer: Signer, id: number) =>
+			connect(signer).then((client) => client.cancel_change({ id })),
+		[pendingChangesKey(contract)],
+	),
+})
+
+const vaultTimelock = timelock<VaultChange>("vault", asyncVaultWriter)
+const tokenTimelock = timelock<TokenChange>("token", shareTokenWriter)
+
+export const proposeVaultChange = vaultTimelock.propose
+export const proposeTokenChange = tokenTimelock.propose
 
 type RoleClient = Pick<AsyncVaultApi, "grant_role" | "revoke_role">
 
@@ -138,41 +173,41 @@ export const useProposeUpgradeDelay = proposeVaultChange(
 	[configurationReadsKey],
 )
 
-export const useProposeGrantRole = proposeVaultChange(
-	({ role, account }: RoleChange) => ({
-		tag: "GrantRole",
-		values: [role, account],
-	}),
-)
+const grantRole = ({ role, account }: RoleChange) => ({
+	tag: "GrantRole" as const,
+	values: [role, account] as const,
+})
 
-export const useProposeRevokeRole = proposeVaultChange(
-	({ role, account }: RoleChange) => ({
-		tag: "RevokeRole",
-		values: [role, account],
-	}),
-)
+const revokeRole = ({ role, account }: RoleChange) => ({
+	tag: "RevokeRole" as const,
+	values: [role, account] as const,
+})
 
-export const useProposeAdmin = proposeVaultChange((account: string) => ({
-	tag: "Admin",
-	values: [account],
-}))
+const admin = (account: string) => ({
+	tag: "Admin" as const,
+	values: [account] as const,
+})
 
-export const useApplyChange = adminTransaction(
-	(signer: Signer, id: number) =>
-		asyncVaultWriter(signer).then((vault) => vault.apply_change({ id })),
-	[
-		pendingChangesKey,
-		configurationReadsKey,
-		cycleReadsKey,
-		...VAULT_HANDOVER_KEYS,
-	],
-)
+export const useProposeGrantRole = proposeVaultChange(grantRole)
+export const useProposeRevokeRole = proposeVaultChange(revokeRole)
+export const useProposeAdmin = proposeVaultChange(admin)
+export const useProposeTokenGrantRole = proposeTokenChange(grantRole)
+export const useProposeTokenRevokeRole = proposeTokenChange(revokeRole)
+export const useProposeTokenAdmin = proposeTokenChange(admin)
 
-export const useCancelChange = adminTransaction(
-	(signer: Signer, id: number) =>
-		asyncVaultWriter(signer).then((vault) => vault.cancel_change({ id })),
-	[pendingChangesKey],
-)
+export const useApplyChange = vaultTimelock.apply([
+	configurationReadsKey,
+	cycleReadsKey,
+	...VAULT_HANDOVER_KEYS,
+])
+export const useCancelChange = vaultTimelock.cancel
+
+export const useApplyTokenChange = tokenTimelock.apply([
+	configurationReadsKey,
+	...HANDOVER_KEYS,
+	isAllowedKey,
+])
+export const useCancelTokenChange = tokenTimelock.cancel
 
 export const useProposeWindDown = adminTransaction(
 	(signer: Signer) =>

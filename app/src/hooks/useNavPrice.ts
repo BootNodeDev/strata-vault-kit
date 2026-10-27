@@ -34,7 +34,7 @@ export function classifyNav(
 		? {
 				status: "valid",
 				price: latest.value.nav_per_share as Price,
-				attestedAt: latest.value.timestamp,
+				attestedAt: latest.value.accepted_at,
 			}
 		: { status: "unreadable" }
 }

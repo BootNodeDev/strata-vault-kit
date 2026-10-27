@@ -27,7 +27,7 @@ const {
 	accountSignersMock: vi.fn(),
 	submitSignedMock: vi.fn(),
 	transactionStatusMock: vi.fn(),
-	tokenMock: { identity_verifier: vi.fn() },
+	tokenMock: { identity_verifier: vi.fn(), pending_changes: vi.fn() },
 	vaultMock: { pending_changes: vi.fn() },
 	linkTarget: { contractId: "", expiresAt: new Date(0) },
 }))
@@ -145,6 +145,7 @@ describe("useSignPending", () => {
 		vi.clearAllMocks()
 		tokenMock.identity_verifier.mockResolvedValue({ result: "CLIVEVERIFIER" })
 		vaultMock.pending_changes.mockResolvedValue({ result: [] })
+		tokenMock.pending_changes.mockResolvedValue({ result: [] })
 		linkTarget.contractId = addresses.async_vault
 		linkTarget.expiresAt = new Date("2027-01-15T08:00:00Z")
 		window.history.replaceState(null, "", "/sign")
@@ -488,6 +489,39 @@ describe("useSignPending", () => {
 			expect(result.current.description?.args).toEqual([
 				{ label: "Change", value: "vault change #3: Notice 12h" },
 			]),
+		)
+	})
+
+	it("names the share-token change an apply link acts on from the token's list", async () => {
+		linkTarget.contractId = addresses.share_token
+		vaultMock.pending_changes.mockResolvedValue({
+			result: [
+				{ id: 3, change: { tag: "Notice", values: [43_200n] }, eta: 1n },
+			],
+		})
+		tokenMock.pending_changes.mockResolvedValue({
+			result: [
+				{
+					id: 3,
+					change: { tag: "RevokeRole", values: ["manager", "GHOLDER"] },
+					eta: 1n,
+				},
+			],
+		})
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:apply_change:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description).toMatchObject({
+				contract: "Share token",
+				action: "apply-token-change",
+				args: [
+					{
+						label: "Change",
+						value: "share token change #3: Revoke role manager from GHOLDER",
+					},
+				],
+			}),
 		)
 	})
 

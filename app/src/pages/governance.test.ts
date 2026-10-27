@@ -89,7 +89,7 @@ const state = (
 			token: pending.token ?? null,
 		},
 	},
-	upgrades: upgrades(),
+	upgrades: { vault: upgrades(), token: upgrades() },
 })
 
 const find = <Id extends GovernanceAction["id"]>(
@@ -517,7 +517,7 @@ describe("vault timelock", () => {
 	const HASH = "ab".repeat(32)
 	const withUpgrades = (overrides: Partial<ReadyUpgrades>) => ({
 		...state(),
-		upgrades: upgrades(overrides),
+		upgrades: { vault: upgrades(overrides), token: upgrades() },
 	})
 	const afterSetup = (overrides: Partial<ReadyUpgrades> = {}) =>
 		withUpgrades({ setupOpen: false, ...overrides })
@@ -638,7 +638,7 @@ describe("vault timelock", () => {
 				{},
 				{ vault: { address: ACCOUNT, liveUntilLedger: 5_000, expired: false } },
 			),
-			upgrades: upgrades({ setupOpen: false }),
+			upgrades: { vault: upgrades({ setupOpen: false }), token: upgrades() },
 		}
 
 		expect(ids(current)).toContain("cancel-vault-handover")
@@ -884,8 +884,10 @@ describe("vault timelock", () => {
 			}),
 		)
 
-		expect(groups.find(({ title }) => title === "Pending changes")).toEqual({
-			title: "Pending changes",
+		expect(
+			groups.find(({ title }) => title === "Vault pending changes"),
+		).toEqual({
+			title: "Vault pending changes",
 			metrics: [
 				{
 					label: "#1 Custodian",
@@ -901,7 +903,231 @@ describe("vault timelock", () => {
 			note: `Activates ${formatTimestamp(CLOSE_TIME + 2n * DAY)}`,
 		})
 		expect(toGovernanceGroups(state()).map(({ title }) => title)).not.toContain(
-			"Pending changes",
+			"Vault pending changes",
+		)
+	})
+})
+
+describe("share-token timelock", () => {
+	const COMPLIANCE = VAULT
+	const tokenUpgrades = (
+		token: Partial<ReadyUpgrades>,
+		vault: Partial<ReadyUpgrades> = {},
+	): GovernanceState => ({
+		...state(),
+		upgrades: { vault: upgrades(vault), token: upgrades(token) },
+	})
+	const tokenClosed = (overrides: Partial<ReadyUpgrades> = {}) =>
+		tokenUpgrades({ setupOpen: false, ...overrides })
+	const complianceChange = {
+		id: 1,
+		change: { tag: "Compliance", values: [COMPLIANCE] },
+		eta: CLOSE_TIME + DAY,
+	}
+	const waits = { label: "Waits for the timelock", met: true, detail: "7d" }
+	const actions = (current: GovernanceState, grant = tokenAdmin) =>
+		toGovernanceActions(current, [grant], WALLET, {})
+
+	it("grants a share-token role through the timelock once the token's own setup closes", () => {
+		const inputs = {
+			"grant-token-role-role": "compliance",
+			"grant-token-role-account": ACCOUNT,
+		}
+		const proposed = find(
+			"propose-token-grant-role",
+			[tokenAdmin],
+			inputs,
+			tokenUpgrades({ setupOpen: false }, { setupOpen: true }),
+		)
+		const direct = find(
+			"grant-token-role",
+			[tokenAdmin],
+			inputs,
+			tokenUpgrades({ setupOpen: true }, { setupOpen: false }),
+		)
+
+		expect(proposed.slot).toBe("grant-token-role")
+		expect(proposed.label).toBe("Grant a share-token role")
+		expect(proposed.arg).toEqual({ role: "compliance", account: ACCOUNT })
+		expect(proposed.conditions).toContainEqual(waits)
+		expect(proposed.enabled).toBe(true)
+		expect(direct.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("revokes the token manager through the timelock and compliance at once", () => {
+		const revoke = (role: string, holder: string) =>
+			toGovernanceActions(
+				{
+					...tokenClosed(),
+					holders: holders({ [`share-token ${role}`]: [holder] }),
+				},
+				[tokenAdmin],
+				WALLET,
+				{
+					"revoke-token-role-role": role,
+					"revoke-token-role-account": holder,
+				},
+			).find(({ slot }) => slot === "revoke-token-role")
+		const manager = revoke("manager", ACCOUNT)
+		const compliance = revoke("compliance", ACCOUNT)
+
+		expect(manager?.id).toBe("propose-token-revoke-role")
+		expect(manager?.conditions).toContainEqual(waits)
+		expect(compliance?.id).toBe("revoke-token-role")
+		expect(compliance?.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Revoking this role is instant",
+		})
+	})
+
+	it("hands the token admin over through the timelock, once confirmed, and cancels an offer at once", () => {
+		const inputs = { "hand-over-token-admin-account": ACCOUNT }
+		const draft = find(
+			"propose-token-admin",
+			[tokenAdmin],
+			inputs,
+			tokenClosed(),
+		)
+		const confirm = fieldOf(draft, "confirm")
+		const confirmed = find(
+			"propose-token-admin",
+			[tokenAdmin],
+			{ ...inputs, [confirm?.key ?? ""]: confirm?.value },
+			tokenClosed(),
+		)
+		const offered = {
+			...state(
+				{},
+				{ token: { address: ACCOUNT, liveUntilLedger: 5_000, expired: false } },
+			),
+			upgrades: tokenClosed().upgrades,
+		}
+
+		expect(draft.slot).toBe("hand-over-token-admin")
+		expect(draft.label).toBe("Hand over share-token admin")
+		expect(confirm?.label).toBe(
+			"Hands control of the share token to GABA...EJXA.",
+		)
+		expect(draft.enabled).toBe(false)
+		expect(confirmed.conditions).toContainEqual(waits)
+		expect(confirmed.enabled).toBe(true)
+		expect(confirmed.arg).toBe(ACCOUNT)
+		expect(actions(offered).map(({ id }) => id)).toContain(
+			"cancel-token-handover",
+		)
+	})
+
+	it("holds a timelocked token action while the token's setup state is unknown", () => {
+		const grant = find(
+			"grant-token-role",
+			[tokenAdmin],
+			{ "grant-token-role-account": ACCOUNT },
+			tokenUpgrades({ setupOpen: null }),
+		)
+
+		expect(condition(grant, "Setup state read")).toBeNull()
+		expect(grant.enabled).toBe(false)
+	})
+
+	it("counts the token's own queue against the 16-change limit", () => {
+		const full = Array.from({ length: 16 }, (_, id) => ({
+			...complianceChange,
+			id,
+		}))
+		const grant = (current: GovernanceState) =>
+			find(
+				"propose-token-grant-role",
+				[tokenAdmin],
+				{ "grant-token-role-account": ACCOUNT },
+				current,
+			)
+
+		expect(
+			condition(
+				grant(tokenClosed({ pending: full })),
+				"Under 16 pending changes",
+			),
+		).toBe(false)
+		expect(
+			condition(
+				grant(tokenUpgrades({ setupOpen: false }, { pending: full })),
+				"Under 16 pending changes",
+			),
+		).toBe(true)
+	})
+
+	it("offers Apply and Cancel for every pending token change under the token's ids", () => {
+		const current = tokenUpgrades(
+			{ setupOpen: false, pending: [complianceChange] },
+			{
+				setupOpen: false,
+				pending: [
+					{ ...complianceChange, change: { tag: "Notice", values: [DAY] } },
+				],
+			},
+		)
+
+		expect(
+			actions(current)
+				.filter(({ id }) => id.endsWith("token-change"))
+				.map(({ id, slot, arg }) => [id, slot, arg]),
+		).toEqual([
+			["apply-token-change", "apply-token-change-1", 1],
+			["cancel-token-change", "cancel-token-change-1", 1],
+		])
+		expect(actions(current, governance).map(({ id }) => id)).not.toContain(
+			"apply-token-change",
+		)
+	})
+
+	it("applies a token change after its ETA while the vault is unpaused and not winding down", () => {
+		const apply = (overrides: Partial<ReadyUpgrades>) =>
+			actions(tokenClosed({ pending: [complianceChange], ...overrides })).find(
+				({ id }) => id === "apply-token-change",
+			)!
+		const due = { now: CLOSE_TIME + DAY }
+
+		expect(condition(apply({}), "ETA reached")).toBe(false)
+		expect(apply(due).enabled).toBe(true)
+		expect(apply(due).outcome).toBe("Compliance contract becomes CABQ...GCK3.")
+		expect(apply(due).next).toBe(
+			"share token change #1: Compliance contract CABQ...GCK3",
+		)
+		expect(apply(due).conditions.map(({ label }) => label)).toEqual([
+			"ETA reached",
+			"Vault not paused",
+			"Wind-down not active",
+		])
+		expect(
+			condition(apply({ ...due, paused: "paused" }), "Vault not paused"),
+		).toBe(false)
+	})
+
+	it("lists the share token's pending changes in their own group", () => {
+		const groups = toGovernanceGroups(
+			tokenClosed({ pending: [complianceChange] }),
+		)
+
+		expect(
+			groups.find(({ title }) => title === "Share token pending changes"),
+		).toEqual({
+			title: "Share token pending changes",
+			metrics: [
+				{
+					label: "#1 Compliance contract",
+					value: "CABQ...GCK3",
+					title: COMPLIANCE,
+					note: `ETA ${formatTimestamp(CLOSE_TIME + DAY)}`,
+				},
+			],
+		})
+		expect(groups.map(({ title }) => title)).not.toContain(
+			"Vault pending changes",
 		)
 	})
 })

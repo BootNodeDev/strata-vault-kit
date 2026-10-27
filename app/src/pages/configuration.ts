@@ -66,7 +66,9 @@ export type ConfigurationAction =
 			| "set-custodian"
 			| "propose-custodian"
 			| "set-compliance"
-			| "set-identity-verifier",
+			| "propose-compliance"
+			| "set-identity-verifier"
+			| "propose-identity-verifier",
 			string
 	  >
 	| Setter<
@@ -355,27 +357,43 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 function tokenSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 	const compliance = known(state.compliance)
 	const verifier = known(state.identityVerifier)
+	const route = routeOf(state.tokenSetupOpen, true)
+	const waits = [routeCondition(route, state.upgradeDelay)]
 	return [
-		single(
-			"set-compliance",
-			"Set the compliance contract",
-			parsed("compliance", "Compliance contract", CONTRACT, compliance, inputs),
-			compliance,
-			[],
-		),
-		single(
-			"set-identity-verifier",
-			"Set the identity verifier",
-			parsed(
-				"identityVerifier",
-				"Identity verifier",
-				CONTRACT,
-				verifier,
-				inputs,
+		{
+			...single(
+				route === "timelock" ? "propose-compliance" : "set-compliance",
+				"Set the compliance contract",
+				parsed(
+					"compliance",
+					"Compliance contract",
+					CONTRACT,
+					compliance,
+					inputs,
+				),
+				compliance,
+				waits,
 			),
-			verifier,
-			[],
-		),
+			slot: "set-compliance",
+		},
+		{
+			...single(
+				route === "timelock"
+					? "propose-identity-verifier"
+					: "set-identity-verifier",
+				"Set the identity verifier",
+				parsed(
+					"identityVerifier",
+					"Identity verifier",
+					CONTRACT,
+					verifier,
+					inputs,
+				),
+				verifier,
+				waits,
+			),
+			slot: "set-identity-verifier",
+		},
 	] as const
 }
 

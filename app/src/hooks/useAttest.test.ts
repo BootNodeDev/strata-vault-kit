@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { type Price } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
@@ -19,6 +20,8 @@ vi.mock("../config/clients", () => ({
 const attestation = {
 	price: 1_040_000_000_000_000_000n as Price,
 	freshness: 86_400n,
+	proofHash: "ab".repeat(32),
+	proofUri: "https://example.com/nav.pdf",
 }
 const wallClock = 1_700_200_000
 
@@ -73,13 +76,30 @@ describe("useAttest", () => {
 		)
 
 		expect(oracleMock.attest).toHaveBeenCalledWith({
-			report: {
+			input: {
 				nav_per_share: attestation.price,
 				expires_at: BigInt(wallClock) + attestation.freshness,
-				timestamp: 0n,
+				proof_hash: Buffer.alloc(32, 0xab),
+				proof_uri: "https://example.com/nav.pdf",
 			},
 			caller: investorAddress,
 		})
+	})
+
+	it("sends an empty proof URI when the attester gives none", async () => {
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result } = renderAttest()
+
+		await act(() => result.current.submit({ ...attestation, proofUri: "" }))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				proof_hash: Buffer.alloc(32, 0xab),
+				proof_uri: "",
+			}),
+			caller: investorAddress,
+		})
+		expect(result.current.status.status).toBe("confirmed")
 	})
 
 	it("refuses before ever asking for a signature when the simulation carries the oracle's reason", async () => {

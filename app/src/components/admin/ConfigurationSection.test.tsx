@@ -17,6 +17,8 @@ const {
 	oracleConfigMock,
 	complianceMock,
 	identityVerifierMock,
+	proposeComplianceMock,
+	proposeIdentityVerifierMock,
 } = vi.hoisted(() => {
 	const tx = () => ({
 		status: { status: "idle" } as { status: string },
@@ -35,6 +37,8 @@ const {
 		oracleConfigMock: tx(),
 		complianceMock: tx(),
 		identityVerifierMock: tx(),
+		proposeComplianceMock: tx(),
+		proposeIdentityVerifierMock: tx(),
 	}
 })
 
@@ -52,6 +56,8 @@ vi.mock("../../hooks/useConfigurationTransactions", () => ({
 	useSetOracleConfig: () => oracleConfigMock,
 	useSetCompliance: () => complianceMock,
 	useSetIdentityVerifier: () => identityVerifierMock,
+	useProposeCompliance: () => proposeComplianceMock,
+	useProposeIdentityVerifier: () => proposeIdentityVerifierMock,
 }))
 
 const WALLET = "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H"
@@ -69,6 +75,7 @@ const grantOf = (role: string): Grant => ({
 
 const governance = grantOf("vault governance")
 const oracleAdmin = grantOf("oracle admin")
+const tokenAdmin = grantOf("share-token admin")
 
 const READY: ConfigurationState = {
 	status: "ready",
@@ -78,6 +85,7 @@ const READY: ConfigurationState = {
 	windDownDelay: 7n * DAY,
 	upgradeDelay: 3n * DAY,
 	setupOpen: false,
+	tokenSetupOpen: true,
 	oracle: {
 		freshness: DAY,
 		cooldown: 3_600n,
@@ -116,6 +124,8 @@ describe("ConfigurationSection", () => {
 			oracleConfigMock,
 			complianceMock,
 			identityVerifierMock,
+			proposeComplianceMock,
+			proposeIdentityVerifierMock,
 		])
 			Object.assign(mock, {
 				status: { status: "idle" } as TransactionStatus,
@@ -193,6 +203,41 @@ describe("ConfigurationSection", () => {
 		rerender(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
 		fireEvent.click(submit("Set the custodian"))
 		expect(custodianMock.submit).toHaveBeenCalledWith(VERIFIER, governance)
+	})
+
+	it("proposes the token's contracts once its setup closes and sets them at once while it is open", () => {
+		useConfigurationStateMock.mockReturnValue({
+			configuration: { ...READY, tokenSetupOpen: false },
+		})
+		const { rerender } = render(
+			<ConfigurationSection grants={[tokenAdmin]} wallet={WALLET} />,
+		)
+		expand("Set the compliance contract")
+		fireEvent.change(
+			screen.getByRole("textbox", { name: "Compliance contract" }),
+			{ target: { value: CUSTODIAN } },
+		)
+		fireEvent.click(submit("Set the compliance contract"))
+		expand("Set the identity verifier")
+		fireEvent.change(
+			screen.getByRole("textbox", { name: "Identity verifier" }),
+			{ target: { value: CUSTODIAN } },
+		)
+		fireEvent.click(submit("Set the identity verifier"))
+		expect(proposeComplianceMock.submit).toHaveBeenCalledWith(
+			CUSTODIAN,
+			tokenAdmin,
+		)
+		expect(proposeIdentityVerifierMock.submit).toHaveBeenCalledWith(
+			CUSTODIAN,
+			tokenAdmin,
+		)
+
+		useConfigurationStateMock.mockReturnValue({ configuration: READY })
+		rerender(<ConfigurationSection grants={[tokenAdmin]} wallet={WALLET} />)
+		expand("Set the compliance contract")
+		fireEvent.click(submit("Set the compliance contract"))
+		expect(complianceMock.submit).toHaveBeenCalledWith(CUSTODIAN, tokenAdmin)
 	})
 
 	it("sends every oracle limit when one changes", () => {

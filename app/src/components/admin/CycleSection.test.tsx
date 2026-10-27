@@ -140,6 +140,7 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 		price: price(1n),
 		attestedAt: 1_700_050_000n,
 		expiresAt: 1_700_136_000n,
+		proof: { hash: "cd".repeat(32), uri: "https://example.com/nav.pdf" },
 		navPaused: false,
 		recorded: true,
 		limits: {
@@ -210,6 +211,16 @@ const FIELD_ROWS: Record<string, string> = {
 	"Amount to deploy": "Deploy to custodian",
 	"Amount to fund": "Fund the reserve",
 	"Share price": "Attest price",
+	"Proof hash": "Attest price",
+	"Proof URI": "Attest price",
+}
+
+const PROOF_HASH = "ab".repeat(32)
+
+const typeAttestation = (price: string, proofUri = "") => {
+	fireEvent.change(fieldOf("Share price"), { target: { value: price } })
+	fireEvent.change(fieldOf("Proof hash"), { target: { value: PROOF_HASH } })
+	fireEvent.change(fieldOf("Proof URI"), { target: { value: proofUri } })
 }
 
 const fieldOf = (name: string) => {
@@ -495,8 +506,12 @@ describe("CycleSection", () => {
 
 		fireEvent.change(field, { target: { value: "1.04" } })
 
-		expect(button("Attest price").disabled).toBe(false)
 		expect(band.textContent).toMatch(/^Pass: Within the band/)
+		expect(button("Attest price").disabled).toBe(true)
+
+		fireEvent.change(fieldOf("Proof hash"), { target: { value: PROOF_HASH } })
+
+		expect(button("Attest price").disabled).toBe(false)
 		expect(
 			screen.getByText("Records 1.0400 as the share price, valid for 1d."),
 		).toBeTruthy()
@@ -507,15 +522,15 @@ describe("CycleSection", () => {
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(fieldOf("Share price"), {
-			target: { value: "1.04" },
-		})
+		typeAttestation("1.04", "https://example.com/nav.pdf")
 		fireEvent.click(button("Attest price"))
 
 		expect(attestMock.submit).toHaveBeenCalledWith(
 			{
 				price: 1_040_000_000_000_000_000n,
 				freshness: 86_400n,
+				proofHash: PROOF_HASH,
+				proofUri: "https://example.com/nav.pdf",
 			},
 			attester,
 		)
@@ -528,14 +543,44 @@ describe("CycleSection", () => {
 		).toBeTruthy()
 	})
 
+	it("collects the proof hash and the proof URI in the attest form, sending an attestation without a URI", () => {
+		render(<CycleSection grants={[attester]} wallet={WALLET} />)
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+
+		openRow("Attest price")
+		expect(
+			within(rail).getByRole("textbox", { name: "Proof hash" }),
+		).toBeTruthy()
+		expect(
+			within(rail).getByRole("textbox", { name: "Proof URI" }),
+		).toBeTruthy()
+
+		typeAttestation("1.04")
+		fireEvent.click(button("Attest price"))
+
+		expect(attestMock.submit).toHaveBeenCalledWith(
+			expect.objectContaining({ proofHash: PROOF_HASH, proofUri: "" }),
+			attester,
+		)
+	})
+
+	it("shows the latest proof in the Price group, its URI as a link", () => {
+		render(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(screen.getByText("cdcd...cdcd")).toBeTruthy()
+		expect(
+			screen
+				.getByRole("link", { name: "https://example.com/nav.pdf" })
+				.getAttribute("href"),
+		).toBe("https://example.com/nav.pdf")
+	})
+
 	it("labels the modal with the exact price that is signed", () => {
 		const { rerender } = render(
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(fieldOf("Share price"), {
-			target: { value: "1.04123456" },
-		})
+		typeAttestation("1.04123456")
 		fireEvent.click(button("Attest price"))
 		attestMock.status = { status: "preparing" }
 		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
@@ -551,7 +596,7 @@ describe("CycleSection", () => {
 		)
 		const field = () => fieldOf("Share price")
 
-		fireEvent.change(field(), { target: { value: "1.04" } })
+		typeAttestation("1.04", "https://example.com/nav.pdf")
 		fireEvent.click(button("Attest price"))
 		attestMock.status = { status: "awaiting-signature" }
 		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
@@ -561,6 +606,8 @@ describe("CycleSection", () => {
 		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
 
 		expect(field().value).toBe("")
+		expect(fieldOf("Proof hash").value).toBe("")
+		expect(fieldOf("Proof URI").value).toBe("")
 		expect(button("Attest price").disabled).toBe(true)
 	})
 

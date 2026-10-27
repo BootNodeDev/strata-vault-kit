@@ -147,14 +147,15 @@ describe("describePending", () => {
 		])
 	})
 
-	it("formats an attestation price and expiry", () => {
+	it("formats an attestation price, expiry and proof", () => {
 		expect(
 			describePending(
 				pending(addresses.oracle, "attest", [
 					{
 						nav_per_share: 1_050_000_000_000_000_000n,
 						expires_at: 1_800_000_000n,
-						timestamp: 0n,
+						proof_hash: Buffer.alloc(32, 0xab),
+						proof_uri: "https://example.com/nav.pdf",
 					},
 					account,
 				]),
@@ -167,8 +168,27 @@ describe("describePending", () => {
 			args: [
 				{ label: "Price", value: "1.0500" },
 				{ label: "Expires", value: "15 Jan 2027" },
+				{ label: "Proof hash", value: "ab".repeat(32) },
+				{ label: "Proof URI", value: "https://example.com/nav.pdf" },
 			],
 		})
+	})
+
+	it("shows an attestation without a proof URI as none", () => {
+		const { args } = describePending(
+			pending(addresses.oracle, "attest", [
+				{
+					nav_per_share: 1_050_000_000_000_000_000n,
+					expires_at: 1_800_000_000n,
+					proof_hash: Buffer.alloc(32, 0xab),
+					proof_uri: "",
+				},
+				account,
+			]),
+			addresses,
+		)
+
+		expect(args.at(-1)).toEqual({ label: "Proof URI", value: "None" })
 	})
 
 	it("maps a forced transfer with shortened addresses and an amount", () => {
@@ -334,7 +354,7 @@ describe("describePending", () => {
 			describePending(
 				pending(addresses.vault, "apply_change", [3]),
 				addresses,
-				changes,
+				{ vault: changes },
 			),
 		).toMatchObject({
 			action: "apply-change",
@@ -347,7 +367,7 @@ describe("describePending", () => {
 			describePending(
 				pending(addresses.vault, "cancel_change", [4]),
 				addresses,
-				changes,
+				{ vault: changes },
 			),
 		).toMatchObject({
 			action: "cancel-change",
@@ -358,6 +378,118 @@ describe("describePending", () => {
 			describePending(pending(addresses.vault, "apply_change", [3]), addresses)
 				.args,
 		).toEqual([{ label: "Change", value: "vault change #3" }])
+	})
+
+	it.each<[unknown[], string, { label: string; value: string }[]]>([
+		[
+			["GrantRole", "manager", account],
+			"propose-token-grant-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["RevokeRole", "manager", account],
+			"propose-token-revoke-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["Admin", account],
+			"propose-token-admin",
+			[{ label: "New admin", value: "GBRP...OX2H" }],
+		],
+		[
+			["Compliance", other],
+			"propose-compliance",
+			[{ label: "Compliance contract", value: "GDQN...KTL3" }],
+		],
+		[
+			["IdentityVerifier", other],
+			"propose-identity-verifier",
+			[{ label: "Identity verifier", value: "GDQN...KTL3" }],
+		],
+	])(
+		"describes the share token's propose_change %o by its kind",
+		(change, action, args) => {
+			expect(
+				describePending(
+					pending(addresses.shareToken, "propose_change", [change]),
+					addresses,
+				),
+			).toMatchObject({ contract: "Share token", action, args })
+		},
+	)
+
+	it("refuses a proposed change the other contract owns", () => {
+		for (const change of [
+			["Custodian", account],
+			["Upgrade", Buffer.from("abcd", "hex")],
+		])
+			expect(() =>
+				describePending(
+					pending(addresses.shareToken, "propose_change", [change]),
+					addresses,
+				),
+			).toThrow(new InvalidPendingTransaction("unknown operation"))
+		expect(() =>
+			describePending(
+				pending(addresses.vault, "propose_change", [["Compliance", other]]),
+				addresses,
+			),
+		).toThrow(new InvalidPendingTransaction("unknown operation"))
+	})
+
+	it("names a share-token change from the token's own pending list", () => {
+		const changes = {
+			vault: [
+				{ id: 1, change: { tag: "Custodian", values: [account] }, eta: 1n },
+			],
+			token: [
+				{ id: 1, change: { tag: "Compliance", values: [other] }, eta: 1n },
+			],
+		}
+
+		expect(
+			describePending(
+				pending(addresses.shareToken, "apply_change", [1]),
+				addresses,
+				changes,
+			),
+		).toMatchObject({
+			contract: "Share token",
+			action: "apply-token-change",
+			label: "Apply the change",
+			args: [
+				{
+					label: "Change",
+					value: "share token change #1: Compliance contract GDQN...KTL3",
+				},
+			],
+		})
+		expect(
+			describePending(
+				pending(addresses.shareToken, "cancel_change", [4]),
+				addresses,
+				changes,
+			),
+		).toMatchObject({
+			action: "cancel-token-change",
+			label: "Cancel the change",
+			args: [{ label: "Change", value: "share token change #4" }],
+		})
+		expect(
+			describePending(
+				pending(addresses.vault, "apply_change", [1]),
+				addresses,
+				changes,
+			).args,
+		).toEqual([
+			{ label: "Change", value: "vault change #1: Custodian GBRP...OX2H" },
+		])
 	})
 
 	it("no longer decodes the removed upgrade entrypoints", () => {
@@ -565,7 +697,8 @@ describe("toModalProps", () => {
 				{
 					nav_per_share: 1_050_000_000_000_000_000n,
 					expires_at: 1_800_000_000n,
-					timestamp: 0n,
+					proof_hash: Buffer.alloc(32, 0xab),
+					proof_uri: "",
 				},
 				account,
 			]),

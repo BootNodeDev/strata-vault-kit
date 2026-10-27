@@ -21,7 +21,11 @@ import {
 	type NavReport,
 	type OracleState,
 } from "./clients/nav_oracle/src/index"
-import { Client as ShareTokenApi } from "./clients/share_token/src/index"
+import {
+	Client as ShareTokenApi,
+	type TokenChange,
+	type TokenPendingChange,
+} from "./clients/share_token/src/index"
 
 export type {
 	AssetApi,
@@ -35,6 +39,8 @@ export type {
 	OracleState,
 	RedeemRequest,
 	ShareTokenApi,
+	TokenChange,
+	TokenPendingChange,
 	VaultChange,
 	VaultPendingChange,
 }

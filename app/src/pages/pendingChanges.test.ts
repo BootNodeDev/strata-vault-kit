@@ -8,6 +8,7 @@ import {
 	describeChange,
 	type PendingChange,
 	pendingChangeMetrics,
+	QUEUES,
 } from "./pendingChanges"
 
 const ACCOUNT = "GABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEJXA"
@@ -44,6 +45,16 @@ describe("describeChange", () => {
 		],
 		[{ tag: "Admin", values: [ACCOUNT] }, "Admin hand-over", "GABA...EJXA"],
 		[{ tag: "Oracle", values: [FEED] }, "Oracle", "CABQ...GCK3"],
+		[
+			{ tag: "Compliance", values: [FEED] },
+			"Compliance contract",
+			"CABQ...GCK3",
+		],
+		[
+			{ tag: "IdentityVerifier", values: [FEED] },
+			"Identity verifier",
+			"CABQ...GCK3",
+		],
 	])("names %o as %s %s", (change, kind, value) => {
 		expect(describeChange(change)).toMatchObject({ kind, value })
 	})
@@ -90,9 +101,9 @@ describe("applyChangeSpec", () => {
 	const paused: Condition = { label: "Vault not paused", met: false }
 
 	it("applies a change once its eta is reached, passing the contract's own checks", () => {
-		const early = applyChangeSpec("vault", custodian, NOW - 1n, [], {})
-		const due = applyChangeSpec("vault", custodian, NOW, [], {})
-		const blocked = applyChangeSpec("vault", custodian, NOW, [paused], {})
+		const early = applyChangeSpec(QUEUES.vault, custodian, NOW - 1n, [], {})
+		const due = applyChangeSpec(QUEUES.vault, custodian, NOW, [], {})
+		const blocked = applyChangeSpec(QUEUES.vault, custodian, NOW, [paused], {})
 
 		expect(early.conditions[0]).toEqual({
 			label: "ETA reached",
@@ -112,33 +123,61 @@ describe("applyChangeSpec", () => {
 		expect(blocked.ready).toBe(false)
 	})
 
+	it("applies a share-token change under its own id and slot", () => {
+		const compliance = pending({ tag: "Compliance", values: [FEED] })
+
+		expect(
+			applyChangeSpec(QUEUES.token, compliance, NOW, [], {}),
+		).toMatchObject({
+			id: "apply-token-change",
+			slot: "apply-token-change-3",
+			label: "Apply the change #3",
+			arg: 3,
+			next: "share token change #3: Compliance contract CABQ...GCK3",
+			outcome: "Compliance contract becomes CABQ...GCK3.",
+		})
+		expect(
+			applyChangeSpec(QUEUES.token, upgrade, NOW, [], {}).fields?.[0]?.label,
+		).toBe(`Replaces the share token's code with ${HASH}.`)
+	})
+
 	it("holds the eta unknown until the clock is read", () => {
 		expect(
-			applyChangeSpec("vault", custodian, null, [], {}).conditions[0]?.met,
+			applyChangeSpec(QUEUES.vault, custodian, null, [], {}).conditions[0]?.met,
 		).toBeNull()
 	})
 
 	it("asks to confirm a code upgrade by its full hash", () => {
-		const draft = applyChangeSpec("vault", upgrade, NOW, [], {})
+		const draft = applyChangeSpec(QUEUES.vault, upgrade, NOW, [], {})
 		const confirm = draft.fields?.find((field) => field.kind === "confirm")
 		const inputs: Inputs = { [confirm?.key ?? ""]: confirm?.value ?? "" }
 
 		expect(confirm?.label).toBe(`Replaces the vault's code with ${HASH}.`)
 		expect(draft.danger).toBe(true)
 		expect(draft.ready).toBe(false)
-		expect(applyChangeSpec("vault", upgrade, NOW, [], inputs).ready).toBe(true)
+		expect(applyChangeSpec(QUEUES.vault, upgrade, NOW, [], inputs).ready).toBe(
+			true,
+		)
 	})
 })
 
 describe("cancelChangeSpec", () => {
 	it("cancels a change by its id at any time", () => {
-		expect(cancelChangeSpec("vault", custodian)).toMatchObject({
+		expect(cancelChangeSpec(QUEUES.vault, custodian)).toMatchObject({
 			id: "cancel-change",
 			slot: "cancel-change-3",
 			label: "Cancel the change #3",
 			conditions: [],
 			arg: 3,
 			next: "vault change #3: Custodian GABA...EJXA",
+		})
+	})
+
+	it("cancels a share-token change under its own id and slot", () => {
+		expect(cancelChangeSpec(QUEUES.token, custodian)).toMatchObject({
+			id: "cancel-token-change",
+			slot: "cancel-token-change-3",
+			arg: 3,
 		})
 	})
 })
