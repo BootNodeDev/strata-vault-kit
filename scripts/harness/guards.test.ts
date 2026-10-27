@@ -14,7 +14,7 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
-import { attest } from "./lib/oracle.js"
+import { attest, navInput } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -96,16 +96,8 @@ describe("an account with no role", () => {
 
 	it("cannot attest a price", async () => {
 		const o = oracle(c, outsider)
-		const now = BigInt(Math.floor(Date.now() / 1000))
 		expectRefused(
-			await o.attest({
-				report: {
-					nav_per_share: price(2),
-					expires_at: now + 600n,
-					timestamp: now,
-				},
-				caller: who,
-			}),
+			await o.attest({ input: navInput(price(2)), caller: who }),
 			o,
 			"Unauthorized",
 		)

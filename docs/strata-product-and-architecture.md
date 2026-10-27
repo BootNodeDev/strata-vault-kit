@@ -281,8 +281,8 @@ under the [Admin panel](#admin-panel) table in §8.8.
 
 Both interfaces are backend-free: they read contract state and build
 transactions that the authority multisigs sign. The chain never sees KYC data or
-valuation methodology, only their outputs: an allowlisted address, an attested
-number.
+valuation methodology, only their outputs: an allowlisted address, and an
+attested number with a hash of its evidence and, optionally, where to read it.
 
 ### 8.3 Components and authorities
 
@@ -368,10 +368,14 @@ sequenceDiagram
 ### 8.5 Valuation and accounting
 
 The NAV is a permissioned attestation of the share price. The reporter computes
-it off-chain under a published methodology. A report carries the price and the
-time until which the reporter vouches for it; it carries no proof reference yet.
-The contract checks bounds, cooldown and the deviation cap, then stores the price
-and exposes it with the liquidity figures it owns:
+it off-chain under a published methodology. A report carries the price, the
+time until which the reporter vouches for it, and a proof reference. The proof
+reference is a 32-byte hash of the evidence behind the price, which must not be
+all zeros, and an optional URI of at most 256 bytes that says where to read the
+evidence. The contract anchors the proof and never verifies it. It checks
+bounds, cooldown and the deviation cap, then stores the report with its
+acceptance time, publishes it in `NavAttested`, and exposes the price with the
+liquidity figures it owns:
 
 ```text
 liquid_reserve = reserve - cancellable_deposit_escrow
@@ -424,8 +428,9 @@ It is a trading restriction, not an emergency stop for the vault, and only
 governance lifts it.
 
 **Integrator surface:** the oracle exposes the attested share price directly:
-the latest report with its acceptance time and expiry (`latest`), the price
-alone (`nav_per_share`) and the acceptance time alone (`attested_at`). The
+the latest report (`latest`), which returns `nav_per_share`, `expires_at`,
+`accepted_at`, `proof_hash` and `proof_uri`; the price alone (`nav_per_share`);
+and the acceptance time alone (`attested_at`). The
 SEP-40 feed named in section 4 is an adapter over that surface scheduled for
 Tranche 3 and is not implemented yet; integrators read the oracle's own
 interface today.

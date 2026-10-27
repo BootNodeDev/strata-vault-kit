@@ -156,7 +156,7 @@ Tests: [`contracts/nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs)
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
-| `attest` | `#[only_role(caller, "attester")]` | Refused while the NAV is paused; cooldown, deviation cap, bounds `[min, max]`; expiry capped at the freshness window | `test::attest_is_role_gated`, `test::attesting_is_refused_while_the_nav_is_paused` |
+| `attest` | `#[only_role(caller, "attester")]` | Refused while the NAV is paused; cooldown, deviation cap, bounds `[min, max]`; expiry capped at the freshness window; non-empty proof hash, proof URI ≤ 256 bytes | `test::attest_is_role_gated`, `test::attesting_is_refused_while_the_nav_is_paused`, `test::proof_reference::a_report_without_a_proof_hash_is_refused`, `test::proof_reference::a_proof_uri_past_the_limit_is_refused` |
 | `pause_nav` | `#[only_role(caller, "guardian")]` | None; instant after setup too | `test::pausing_the_nav_is_limited_to_the_guardian` (the instant case: `test_governance::the_nav_pause_and_clearing_stay_instant_after_setup`) |
 | `set_nav_paused` | `#[only_admin]` | None; instant after setup too | `test::the_guardian_pauses_the_nav_but_unpausing_needs_governance` |
 | `clear_latest` | `#[only_admin]` | NAV must be paused; instant after setup too | `test::only_admin_can_clear_latest`, `test::the_record_clears_only_while_the_nav_is_paused` |
