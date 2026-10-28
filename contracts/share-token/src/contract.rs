@@ -358,6 +358,7 @@ impl FungibleToken for ShareToken {
     ///
     /// # Errors
     ///
+    /// * `VaultAddress` - `to` is the vault.
     /// * `PausableError::EnforcedPause` - The token is paused.
     /// * `RWAError::AddressFrozen` - `from` or `to` is frozen.
     /// * `RWAError::InsufficientFreeTokens` - `amount` exceeds `from`'s
@@ -376,6 +377,7 @@ impl FungibleToken for ShareToken {
     ///
     /// `from` signs.
     fn transfer(e: &Env, from: Address, to: MuxedAddress, amount: i128) {
+        guards::not_vault_address(e, &to.address());
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::transfer(e, &from, &to, amount);
         extend::balances(e, &[&from, &to.address()]);
@@ -393,6 +395,7 @@ impl FungibleToken for ShareToken {
     ///
     /// # Errors
     ///
+    /// * `VaultAddress` - `to` is the vault.
     /// * The errors of `transfer`.
     /// * `FungibleTokenError::InsufficientAllowance` - `amount` exceeds the
     ///   allowance.
@@ -405,6 +408,7 @@ impl FungibleToken for ShareToken {
     ///
     /// `spender` signs.
     fn transfer_from(e: &Env, spender: Address, from: Address, to: Address, amount: i128) {
+        guards::not_vault_address(e, &to);
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::transfer_from(e, &spender, &from, &to, amount);
         extend::balances(e, &[&from, &to]);

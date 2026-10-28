@@ -13,9 +13,10 @@
 //! - **Two signers move a holder's shares.** A legal transfer or recovery needs
 //!   `compliance` and the admin, as two accounts. The cost: an order needs
 //!   both. A zero-share order passes and is published.
-//! - **The vault's address is off limits:** once bound, it is never frozen and
-//!   no order moves shares in or out, since it holds others' escrow. The cost:
-//!   orders cannot reach escrow; a frozen holder's exits wait.
+//! - **The vault's address is off limits:** once bound, it is never frozen,
+//!   no order or transfer moves shares in, and no order moves them out, since
+//!   it holds others' escrow. The cost: orders cannot reach escrow; a frozen
+//!   holder's exits wait.
 //! - **The pause halts trading only.** The admin's transfer pause stops
 //!   `transfer` and `transfer_from`; mints, burns, escrow moves and legal
 //!   transfers go on. The cost: it is no emergency stop for the vault.

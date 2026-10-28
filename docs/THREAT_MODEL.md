@@ -958,7 +958,8 @@ others' cost.
   custodian, while priced claims, cancellations and funding go on. Anyone
   finalizes a round. Each round credits only the free reserve, pro rata to a
   supply snapshot taken at the first round, and every payment rounds in the
-  vault's favour.
+  vault's favour. The snapshot counts holders' shares only: the share token
+  refuses a transfer into the vault.
 - **Residual:**
   - It pays out only what is on chain. The vault cannot make the custodian
     return capital.
@@ -975,6 +976,8 @@ others' cost.
     deposit escrow. This stays a stated limit (Known limits, item 5): the vault
     does not decide who bears a loss of reserve (X10), and funding the gap
     lifts it.
+  - Shares sent to a vault before its token was upgraded stay in the snapshot,
+    and no one can claim their slice.
 - **Tests:** `only_governance_proposes`, `activation_is_open_to_a_stranger`,
   `governance_cancels_a_proposal_before_activation`,
   `an_active_wind_down_cannot_be_cancelled`, `anyone_may_finalise_a_round`,

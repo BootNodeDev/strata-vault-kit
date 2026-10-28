@@ -41,9 +41,9 @@ strata_bindings::error_enum! {
         DelayBelowNotice = 7010,
         /// An upgrade already waits. Cancel it before proposing another.
         UpgradeAlreadyPending = 7011,
-        /// The vault's own address cannot be frozen, and a legal transfer or a
-        /// recovery never moves shares out of it or into it: its balance is other
-        /// investors' escrow.
+        /// The vault's own address cannot be frozen, and no transfer, legal
+        /// transfer or recovery moves shares into it or out of it: its balance
+        /// is other investors' escrow.
         VaultAddress = 7012,
         /// A legal transfer or a recovery needs the compliance authority and the
         /// admin as two different accounts, so no single key moves value.

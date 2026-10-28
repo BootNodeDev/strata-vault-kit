@@ -833,6 +833,27 @@ mod legal_transfer {
     }
 
     #[test]
+    fn a_transfer_into_the_vault_is_refused() {
+        let e = Env::default();
+        let (f, holder, destination, vault) = live(&e);
+
+        assert_eq!(
+            f.token.try_transfer(&holder, &vault, &100).err(),
+            Some(Ok(ShareTokenError::VaultAddress.into())),
+        );
+        f.token
+            .approve(&holder, &destination, &100, &(e.ledger().sequence() + 100));
+        assert_eq!(
+            f.token
+                .try_transfer_from(&destination, &holder, &vault, &100)
+                .err(),
+            Some(Ok(ShareTokenError::VaultAddress.into())),
+        );
+        f.token.transfer(&holder, &destination, &100);
+        assert_eq!(f.token.balance(&vault), 500);
+    }
+
+    #[test]
     fn the_destination_must_pass_the_identity_check() {
         let e = Env::default();
         let (f, holder, _, _) = live(&e);

@@ -754,6 +754,21 @@ fn redemption_priced_before_wind_down_is_excluded_from_snapshot() {
 }
 
 #[test]
+fn shares_sent_to_the_vault_are_refused_so_the_snapshot_counts_holders_only() {
+    let f = setup();
+    let a = f.holder(500);
+    let _b = f.holder(300);
+
+    assert_eq!(
+        f.share.try_transfer(&a, &f.vault.address, &100),
+        Err(Ok(share_token::ShareTokenError::VaultAddress.into())),
+    );
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    assert_eq!(f.vault.wind_down_supply(), 800);
+}
+
+#[test]
 fn propose_wind_down_reports_active_when_active() {
     let f = setup();
     let _user = f.holder(500);
