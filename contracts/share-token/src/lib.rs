@@ -6,8 +6,9 @@
 //!
 //! - **No clock of its own.** After setup, upgrades, grants, `manager` revokes,
 //!   hand-overs and swaps wait for the vault's timelock. The cost: a vault
-//!   pause holds them; a wind-down refuses all but a `compliance` grant,
-//!   which moves no value and is the only way to lift a freeze then.
+//!   pause holds them; a wind-down refuses all but a `compliance` grant, the
+//!   only way to lift a freeze then; it waits the delay, and with the admin
+//!   its holder can still move wallet shares.
 //! - **Only the vault is manager.** It mints, burns and moves anyone's shares;
 //!   a forced move skips the token's checks, so the vault checks receivers. The
 //!   cost: granting it waits; revoking too, as claims need it.

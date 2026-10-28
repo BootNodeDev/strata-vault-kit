@@ -45,8 +45,8 @@ impl TimelockHost for ShareToken {
     }
 }
 
-/// The vault's clock with its wind-down ignored: a `compliance` grant moves
-/// no value and is the only way to lift a freeze then.
+/// The vault's clock with its wind-down ignored, so a `compliance` grant still
+/// lands after the normal delay: without a holder no freeze can be lifted.
 struct ComplianceGrantHost;
 
 impl TimelockHost for ComplianceGrantHost {

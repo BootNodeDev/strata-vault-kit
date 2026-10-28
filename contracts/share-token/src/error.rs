@@ -67,9 +67,9 @@ strata_bindings::error_enum! {
         /// a delisted holder's deposit, and a verifier that cannot answer makes
         /// every holder look delisted.
         VerifierRefusesVault = 7018,
-        /// The caller is the token's only `compliance` holder. Lifting a
-        /// freeze needs the role, so it cannot be given up; grant a successor
-        /// first. The admin can still revoke it.
+        /// Renouncing `compliance` is refused while it has at most one holder.
+        /// Lifting a freeze needs the role, so it cannot be given up; grant a
+        /// successor first. The admin can still revoke it.
         LastComplianceHolder = 7019,
     }
 }

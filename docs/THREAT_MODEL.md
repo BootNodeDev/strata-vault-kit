@@ -389,7 +389,11 @@ Someone takes governance's keys and changes code, roles or wiring.
   `health().sole_token_manager` turns false only when the grant lands. Revoking
   the vault's `manager` role on the token, or unbinding the token from the
   compliance contract, stops every request, claim and cancellation that mints,
-  burns or moves shares.
+  burns or moves shares. During a wind-down, governance can still grant
+  `compliance` to an account it controls after one published delay, then sign
+  `legal_transfer` or `recover_balance` with it alone. Holders who are not
+  frozen can surrender their shares to `claim_wind_down` meanwhile, once a
+  round is finalised.
 - **Tests:** `grants_and_manager_revokes_wait_for_the_timelock`,
   `a_change_shorter_than_a_raised_notice_never_lands`,
   `nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included` and
@@ -840,10 +844,11 @@ A freeze is used to take or redirect a holder's value.
   Lifting a freeze needs a live `compliance` holder (R9). The record is safe,
   but the cash behind it is pooled: while the reserve is short, other covered
   claims pay first (X1), and after a loss of reserve in a wind-down, claims can
-  spend each other's cash (X8). The vault cannot pay an authority directly. A refund for a deposit worth less than one share at its
-  price is not tracked as owed: it waits in the free reserve, where the
-  treasury can deploy it or a wind-down round can credit it to others. Counsel
-  must confirm the hold for each jurisdiction.
+  spend each other's cash (X8). The vault cannot pay an authority directly. A
+  refund for a deposit worth less than one share at its price is not tracked as
+  owed: it waits in the free reserve, where the treasury can deploy it or a
+  wind-down round can credit it to others. Counsel must confirm the hold for
+  each jurisdiction.
 - **Tests:** `a_frozen_holder_is_paid_only_after_the_freeze_lifts`,
   `a_frozen_investors_escrow_stays_until_the_freeze_lifts`,
   `a_frozen_investor_is_not_minted_until_unfrozen`,
