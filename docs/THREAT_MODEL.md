@@ -337,8 +337,11 @@ vault or during a wind-down still works: the vault does not ask the feed then.
   reading the report, and neither `pause_nav` nor `clear_latest` reads it. After
   setup the upgrade itself waits for the timelock.
 - **Residual:** If the upgrade lands before the NAV pause, pricing and those
-  cancellations fail until the NAV is paused. The first report after the clear
-  has no earlier price to cap it (O8). A fresh deployment has no old report.
+  cancellations fail until the NAV is paused. Deposits are refused while the
+  NAV is paused (`FeedNotValid`) or the feed cannot answer, so the vault takes
+  none from the upgrade or the pause until the first report after the clear.
+  That report has no earlier price to cap it (O8). A fresh deployment has no
+  old report.
 - **Tests:** `a_report_of_the_earlier_shape_is_cleared_and_replaced` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
 
@@ -1035,7 +1038,8 @@ The issuer of the deposit asset freezes the vault's balance or takes it back.
   2. Priced redemptions. `claim_redeem` pays when the liquid reserve (the
      balance less cancellable escrow) covers its own amount; otherwise
      `ClaimNotCovered`, and the claim stays owed in `committed`.
-  3. What wind-down rounds owe, beside priced redemptions in the free reserve.
+  3. What wind-down rounds owe sits beside priced redemptions in the free
+     reserve.
   4. Last, and only from the free reserve: a refund of a deposit below one
      share (`claim_deposit`, `ClaimNotCovered`) and a transfer to the custodian
      (`deploy_to_custodian`, `ReserveCommittedToExits`).

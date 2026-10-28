@@ -61,9 +61,9 @@ pub struct VaultPendingChange {
 /// The share token's role that mints and burns. The vault must hold it alone.
 const TOKEN_MANAGER_ROLE: Symbol = symbol_short!("manager");
 
-/// What `finish_setup` needs to see before deposits open. `health()` reports
-/// every check but `no_shares_outstanding` and `books_empty`: a live vault has
-/// both from its first request on.
+/// What `finish_setup` needs to see before the vault opens. `health()` reports
+/// every check but `books_empty`, false from a live vault's first request, and
+/// `no_shares_outstanding`, false from its first claim.
 pub(crate) struct Wiring {
     pub token_bound: bool,
     pub oracle_bound: bool,

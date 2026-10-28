@@ -156,8 +156,10 @@ so time rules and TTL can be reached in one test.
 
 The vault tests deploy the real share token, identity verifier, compliance
 contract and oracle, plus a Stellar Asset Contract for the deposit asset. The
-fixture wires them as the deploy does and finishes the vault's setup;
-`setup_unfinished()` and `miswired(…)` leave the setup open.
+fixture wires them as the deploy does, finishes the vault's setup, then posts
+an opening report and moves the clock one second on, so deposits are taken and
+the next sealed epoch is not priced by that report. `setup_unfinished()` and
+`miswired(…)` leave the setup open.
 
 | Behaviour | Tests | Key test names |
 | --- | --- | --- |

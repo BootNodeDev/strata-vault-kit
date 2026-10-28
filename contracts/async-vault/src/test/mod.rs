@@ -261,7 +261,7 @@ fn setup<'a>() -> Fixture<'a> {
 }
 
 /// A vault whose wiring is complete but whose own setup is still open: admin
-/// changes are instant and deposits are refused.
+/// changes are instant and the vault takes no request.
 fn setup_unfinished<'a>() -> Fixture<'a> {
     miswired(Miswire::Nothing)
 }
@@ -493,8 +493,7 @@ fn build<'a>(
         }),
         _ => vault.set_custodian(&custodian),
     }
-    // No entrypoint can book these during setup any more, so the test writes
-    // the vault's storage directly to prove `finish_setup` still catches them.
+    // No entrypoint books these during setup, so the test writes the vault's storage.
     match miswire {
         Miswire::EpochAdvanced => {
             e.as_contract(&contract_id, || crate::state::set_current_epoch(&e, 2))

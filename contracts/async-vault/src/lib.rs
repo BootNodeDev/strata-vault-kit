@@ -548,8 +548,8 @@ impl AsyncVault {
         governance::finish_setup(e);
     }
 
-    /// Whether setup is still open: admin changes are instant and deposits
-    /// are refused.
+    /// Whether setup is still open: admin changes are instant, and the vault
+    /// takes no request and seals or prices no epoch.
     pub fn setup_open(e: &Env) -> bool {
         strata_timelock::setup::is_open(e)
     }

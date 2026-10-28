@@ -26,7 +26,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **When the vault holds less than it owes**: the asset's issuer can claw back part of the vault's balance. The kit cannot stop that. The vault then pays in this order and refuses the rest by name until it is funded:
   1. Escrow a depositor can still cancel is paid first. `cancel_deposit` pays from the vault's whole balance when that balance covers the deposit's own amount, in any order; otherwise `EscrowNotCovered`. While $`\text{held} < \text{cancellable\_escrow}`$, `request_deposit` is refused with `EscrowNotCovered`, so a new deposit never pays an earlier cancellation.
   2. Priced redemption claims come next. Each pays when the liquid reserve covers its own amount, in any order; otherwise `ClaimNotCovered`.
-  3. What wind-down rounds owe sits beside priced claims in the free reserve. A wind-down claim's own gap is covered in [THREAT_MODEL X8](./THREAT_MODEL.md#x8-wind-down).
+  3. What wind-down rounds owe sits beside priced claims in the free reserve. A wind-down claim's own gap is described in [THREAT_MODEL X8](./THREAT_MODEL.md#x8-wind-down).
   4. A refund of a deposit below one share and a transfer to the custodian come last, only from the free reserve (`ClaimNotCovered`, `ReserveCommittedToExits`).
   5. `uncovered()` shows the gap, $`\text{committed} + \text{cancellable\_escrow} - \text{held}`$ when positive. Funding that gap with `fund` lifts the refusals for cancellations, priced claims and new deposits. A refund of a deposit below one share and a transfer to the custodian also need free reserve, which `uncovered()` does not show.
   6. The vault does not decide who finally bears the loss. Until treasury funds the gap, whoever acts first within a class is paid first. Pricing does not read the balance: an epoch priced during the gap mints its deposits in full, and the loss reaches holders through the NAV.
@@ -67,10 +67,10 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 6: Single-Step Atomic Cancellation
 - **Definition**: Cancellation is all-or-nothing, and it is open exactly while the vault could not price the epoch now. Three rules decide it:
   1. A readable price closes cancellation, even while the notice still runs. A price is readable when the feed is valid and its report was accepted at or after the epoch closed.
-  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — cancellation opens again. That is the way out of a stalled feed, so escrow is never stuck. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, or a paused vault can.
+  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — cancellation opens again. That is the way out, so escrow is never stuck behind a stalled feed. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, or a paused vault can.
   3. The epoch is priced at the latest valid report at fulfil time that was accepted at or after the close — not necessarily the report that first closed the window.
 - **Testable Property**:
-  - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow.
+  - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow, unless an issuer clawback leaves the balance below the deposit (`EscrowNotCovered`, see Invariant 1).
   - A readable price refuses cancellation with `PriceAvailable`, even before `priceable_at`; once that report expires, cancellation works again (`cancellation_reopens_when_the_price_that_closed_it_expires`).
   - Pausing the vault reopens cancellation; unpausing closes it again while the price is still readable (`a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price`).
   - Outside a wind-down, `cancel_redeem` refuses a delisted holder (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`); the request stays pending and the cash claim remains open. It holds a frozen holder (`Frozen`): the request stays pending, and its cash claim is held too until the freeze is lifted. Neither the share token's transfer pause nor the vault's own allowlist place stops a cancellation (`a_token_pause_stops_trading_but_not_a_share_return`, `a_delisted_vault_still_returns_escrowed_shares`).
@@ -181,7 +181,7 @@ The `async_vault` constructor refuses these four pairs of equal addresses and co
 
 ### Health View
 
-`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out three `finish_setup` checks: that the share token has no shares outstanding and that the vault's own books are empty, both of which stop being true once the vault has its first request, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while every field from `token_bound` to `feed_answers` is true, shares were minted before setup; the token's `total_supply()` shows them.
+`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out three `finish_setup` checks: that the share token has no shares outstanding, which stops being true at the vault's first claim, that the vault's own books are empty, which stops being true at its first request, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while every field from `token_bound` to `feed_answers` is true, there are two possible causes. Shares were minted before setup: the token's `total_supply()` shows them. Or the vault's books are not empty: `current_epoch()` is past 1, `get_epoch(1)` shows a deposit or redemption booked, or `committed()`, `pending_mint_shares()` or `pending_burn_shares()` is not zero.
 
 | Field | True when |
 |---|---|
@@ -230,18 +230,18 @@ Strata distributes control across five native Stellar multisig authorities, two 
 
 Pause first, so no report lands while the roles change, and lift the pause last:
 
-1. Pause the NAV: the oracle's guardian calls `pause_nav`, or its admin calls `set_nav_paused(true)`. The oracle refuses every report and the vault prices nothing; sealed epochs reopen to cancellation.
+1. Pause the NAV: the oracle's guardian calls `pause_nav`, or its admin calls `set_nav_paused(true)`. The oracle refuses every report and the vault prices nothing; sealed epochs reopen to cancellation. The vault also refuses deposits (`FeedNotValid`) until the new attester's first report in step 6.
 2. Revoke the compromised attester: `revoke_role(attester, "attester", admin)` on the oracle. It is instant, during setup and after it.
-3. Grant a replacement. During the oracle's setup, `grant_role` is instant. After it, propose a `GrantRole` change and apply it once the vault's delay has run, plus any time the vault spends paused. The NAV stays paused that whole time, at least seven days.
+3. Grant a replacement. During the oracle's setup, `grant_role` is instant. After it, propose a `GrantRole` change and apply it once the vault's delay has run, plus any time the vault spends paused. The NAV stays paused that whole time, at least seven days, so replacing an attester stops subscriptions for at least the timelock delay.
 4. Clear the stored report: `clear_latest` (admin; only while the NAV is paused). Left in place, it is valid again once the pause lifts, and anyone can price with it any epoch sealed before it was accepted, until it expires. Skip this only if you know the report predates the compromise. The next report then has no earlier price to cap its move: only `min_answer` and `max_answer` bound it.
 5. Lift the NAV pause: `set_nav_paused(false)` (admin).
 6. The new attester posts a report. Pricing resumes: an epoch can be priced once a report accepted after its seal is valid.
 
 ### Upgrading the Oracle from an Earlier Release
 
-Releases before the proof reference stored the report as `nav_per_share`, `expires_at` and `timestamp`. This version stores `nav_per_share`, `expires_at`, `accepted_at`, `proof_hash` and `proof_uri`, and cannot read a report of the earlier shape. After an in-place upgrade, every call that reads the old report fails: `latest`, `nav_per_share`, `attested_at`, `is_stale` and `attest`, and also `state` and `ensure_consumable` while the NAV is not paused. The vault then cannot price, and cancelling a request in a sealed epoch fails. No migration rewrites the old report. Clear it instead:
+Releases before the proof reference stored the report as `nav_per_share`, `expires_at` and `timestamp`. This version stores `nav_per_share`, `expires_at`, `accepted_at`, `proof_hash` and `proof_uri`, and cannot read a report of the earlier shape. After an in-place upgrade, every call that reads the old report fails: `latest`, `nav_per_share`, `attested_at`, `is_stale` and `attest`, and also `state` and `ensure_consumable` while the NAV is not paused. The vault then cannot price or take a deposit, and cancelling a request in a sealed epoch fails. No migration rewrites the old report. Clear it instead:
 
-1. Pause the NAV before the upgrade applies: the guardian calls `pause_nav`, or the admin calls `set_nav_paused(true)`. While the NAV is paused, `state` answers `Paused` without reading the report, so the vault prices nothing and requests in sealed epochs stay cancellable. If the upgrade applied first, pause the NAV at once: neither `pause_nav` nor `clear_latest` reads the report.
+1. Pause the NAV before the upgrade applies: the guardian calls `pause_nav`, or the admin calls `set_nav_paused(true)`. While the NAV is paused, `state` answers `Paused` without reading the report, so the vault prices nothing and requests in sealed epochs stay cancellable. Deposits are refused while the NAV is paused (`FeedNotValid`) or the feed cannot answer, so the vault takes none from here until the attester's report in step 5. If the upgrade applied first, pause the NAV at once: neither `pause_nav` nor `clear_latest` reads the report.
 2. Apply the upgrade: `apply_change` once its delay has run.
 3. Remove the old report: `clear_latest` (admin). It deletes the entry without reading it.
 4. Lift the NAV pause: `set_nav_paused(false)` (admin).
