@@ -46,7 +46,7 @@ fn a_conversion_that_cannot_fit_i128_is_rejected() {
 
     f.vault.request_deposit(&whale, &(i128::MAX / 2));
     let epoch = f.close_epoch();
-    f.attest(1);
+    f.attest(MIN_ANSWER);
 
     refused(
         f.vault.try_fulfill_epoch(&epoch),

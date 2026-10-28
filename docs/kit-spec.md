@@ -139,7 +139,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`nav_oracle`** | `config.cooldown_secs` | `u64` (seconds) | Minimum time between consecutive attestations. At least 1 s (`MIN_COOLDOWN_SECS`), so at most one report per ledger. At most `freshness_duration`, so a new report can always replace the last one before the freshness window ends | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Largest upward move per attestation, 1 to 10,000 | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_down_bps` | `u32` (basis points) | Largest downward move per attestation, 1 to 10,000; 10,000 lets a loss of any size land at once | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share (cannot be zero or negative) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share, at least `MIN_ANSWER` ($`10^{12}`$, a millionth of an asset unit per share). An oracle upgraded in place keeps a lower stored floor until a `Config` change, which must meet it | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{18}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
 | **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC) | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |

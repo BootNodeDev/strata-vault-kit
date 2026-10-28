@@ -54,6 +54,7 @@ pub struct OracleConfig {
     /// Downward move allowed per attestation, 1 to 10,000. At 10,000 a loss of
     /// any size lands in one attestation and `min_answer` is the only floor.
     pub max_down_bps: u32,
+    /// The lowest valid price, in WAD; at least `MIN_ANSWER`.
     pub min_answer: i128,
     pub max_answer: i128,
 }

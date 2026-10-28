@@ -6,7 +6,7 @@ use crate::state::{self, get_config, NavReport, OracleConfig, OracleState};
 use crate::NavOracleContract;
 use crate::{
     compute_state, in_band, shortens_freshness_only, OracleChange, OracleError, BPS_DENOM,
-    MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN, MIN_COOLDOWN_SECS,
+    MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN, MIN_ANSWER, MIN_COOLDOWN_SECS,
 };
 
 pub(crate) fn valid_config(e: &Env, cfg: &OracleConfig) {
@@ -14,7 +14,7 @@ pub(crate) fn valid_config(e: &Env, cfg: &OracleConfig) {
         || cfg.freshness_duration > MAX_FRESHNESS_SECS
         || cfg.cooldown_secs < MIN_COOLDOWN_SECS
         || cfg.cooldown_secs > cfg.freshness_duration
-        || cfg.min_answer <= 0
+        || cfg.min_answer < MIN_ANSWER
         || cfg.max_answer < cfg.min_answer
         || cfg.max_answer > MAX_ANSWER
         || !bps_in_range(cfg.max_up_bps)

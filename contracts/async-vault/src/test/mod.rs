@@ -41,7 +41,9 @@ pub(crate) use soroban_sdk::{
 
 pub(crate) use ::compliance::{Compliance, ComplianceChange, ComplianceClient};
 pub(crate) use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
-pub(crate) use nav_oracle::{NavInput, NavOracleContract, NavOracleContractClient, OracleConfig};
+pub(crate) use nav_oracle::{
+    NavInput, NavOracleContract, NavOracleContractClient, OracleConfig, MIN_ANSWER,
+};
 pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
@@ -245,7 +247,7 @@ fn open_feed() -> OracleConfig {
         cooldown_secs: 1,
         max_up_bps: 10_000,
         max_down_bps: 10_000,
-        min_answer: 1,
+        min_answer: MIN_ANSWER,
         max_answer: 1_000 * WAD_SCALE,
     }
 }

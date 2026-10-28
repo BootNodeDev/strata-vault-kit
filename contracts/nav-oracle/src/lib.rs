@@ -65,6 +65,10 @@ pub const MAX_FRESHNESS_SECS: u64 = 35 * strata_timelock::DAY_DURATION;
 /// A million units of the asset per share. Far above any real price, and far
 /// below where the deviation arithmetic could overflow.
 pub const MAX_ANSWER: i128 = 1_000_000 * WAD;
+/// A millionth of an asset unit per share, mirroring `MAX_ANSWER`. At it, one
+/// asset base unit mints at most a million share base units, and a 1 bps
+/// move cap still allows a move.
+pub const MIN_ANSWER: i128 = WAD / 1_000_000;
 /// Longest proof URI an attestation may carry, in bytes.
 pub const MAX_PROOF_URI_LEN: u32 = 256;
 
@@ -78,8 +82,8 @@ strata_bindings::error_enum! {
     #[repr(u32)]
     pub enum OracleError {
         /// A config breaks a bound: `freshness_duration` from 1 s to 35 days,
-        /// `cooldown_secs` from 1 s to `freshness_duration`, `min_answer` above
-        /// zero and at most `max_answer`, `max_answer` at most `MAX_ANSWER`,
+        /// `cooldown_secs` from 1 s to `freshness_duration`, `min_answer` from
+        /// `MIN_ANSWER` to `max_answer`, `max_answer` at most `MAX_ANSWER`,
         /// and each move cap from 1 to 10,000 bps.
         InvalidConfig = 3001,
         /// `nav_per_share <= 0`, or outside `[min_answer, max_answer]`.

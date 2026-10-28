@@ -519,6 +519,45 @@ fn a_full_downside_cap_leaves_min_answer_as_the_only_floor() {
 }
 
 #[test]
+fn a_floor_below_a_millionth_of_an_asset_unit_per_share_is_refused() {
+    let f = setup();
+    assert_eq!(crate::MIN_ANSWER, 1_000_000_000_000);
+    assert_eq!(
+        f.oracle
+            .try_set_config(&OracleConfig {
+                min_answer: crate::MIN_ANSWER - 1,
+                ..config()
+            })
+            .err(),
+        Some(Ok(crate::OracleError::InvalidConfig.into())),
+    );
+    f.oracle.set_config(&OracleConfig {
+        min_answer: crate::MIN_ANSWER,
+        ..config()
+    });
+}
+
+#[test]
+fn a_stored_floor_below_the_minimum_stays_until_a_config_change_raises_it() {
+    let f = setup();
+    let old = OracleConfig {
+        min_answer: 1,
+        ..config()
+    };
+    f.e.as_contract(&f.oracle.address, || crate::state::set_config(&f.e, &old));
+
+    assert_eq!(f.oracle.config(), old);
+    assert_eq!(
+        f.oracle.try_set_config(&old).err(),
+        Some(Ok(crate::OracleError::InvalidConfig.into())),
+    );
+    f.oracle.set_config(&OracleConfig {
+        min_answer: crate::MIN_ANSWER,
+        ..old
+    });
+}
+
+#[test]
 fn attested_at_is_when_the_contract_took_the_report() {
     let f = setup();
     f.e.ledger().set_timestamp(50_000);
@@ -649,7 +688,7 @@ fn the_bounds_themselves_are_accepted() {
         cooldown_secs: crate::MIN_COOLDOWN_SECS,
         max_up_bps: 10_000,
         max_down_bps: 10_000,
-        min_answer: 1,
+        min_answer: crate::MIN_ANSWER,
         max_answer: crate::MAX_ANSWER,
     });
 }

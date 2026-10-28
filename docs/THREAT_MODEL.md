@@ -277,7 +277,8 @@ controls.
   instant: later reports expire sooner, and no value moves. Swapping the vault's
   oracle is a timelocked change too. The new feed must name this vault, have
   finished its setup and answer `state()` and `freshness_duration()`, both when
-  the swap is proposed and when it applies.
+  the swap is proposed and when it applies. No config sets a floor below
+  `MIN_ANSWER`.
 - **Residual:** The feed checks catch wiring mistakes, not intent: a contract
   governance writes can answer them and report any price. The delay is notice,
   not a guaranteed exit (R1). An epoch sealed before the swap is priced by
@@ -286,6 +287,9 @@ controls.
   `a_shorter_freshness_window_stays_instant_after_setup` and
   `a_config_outside_the_bounds_is_refused_when_it_applies` in
   [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
+  `a_floor_below_a_millionth_of_an_asset_unit_per_share_is_refused` and
+  `a_stored_floor_below_the_minimum_stays_until_a_config_change_raises_it` in
+  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
   `the_oracle_changes_only_through_the_timelock`,
   `a_feed_outside_this_vault_is_never_proposed`,
   `a_feed_that_stops_naming_this_vault_is_never_installed`,
