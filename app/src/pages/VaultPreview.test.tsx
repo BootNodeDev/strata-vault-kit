@@ -37,12 +37,17 @@ const {
 	cancelRedeemMock,
 	claimRedeemMock,
 	readEpochRequestsMock,
+	claimWindDownMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
 	mockShares: { balance: 500_0000000n },
 	mockDeposit: { balance: 3200_0000000n },
-	mockVault: { paused: false, windingDown: false },
+	mockVault: {
+		paused: false,
+		windingDown: false,
+		windDownClaimable: 0n,
+	},
 	mockFigures: { uncovered: 0n as bigint | null },
 	mockIdentity: { allowed: true, frozen: false },
 	mockSymbols: {
@@ -88,6 +93,7 @@ const {
 	cancelRedeemMock: vi.fn(),
 	claimRedeemMock: vi.fn(),
 	readEpochRequestsMock: vi.fn(),
+	claimWindDownMock: vi.fn(),
 }))
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
@@ -293,6 +299,7 @@ beforeEach(() => {
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
 	mockVault.windingDown = false
+	mockVault.windDownClaimable = 0n
 	mockFigures.uncovered = 0n
 	mockIdentity.allowed = true
 	mockIdentity.frozen = false
@@ -304,6 +311,7 @@ afterEach(() => {
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
 	mockVault.windingDown = false
+	mockVault.windDownClaimable = 0n
 	mockFigures.uncovered = 0n
 	mockIdentity.allowed = true
 	mockIdentity.frozen = false
@@ -351,6 +359,10 @@ vi.mock("../config/clients", () => {
 					}
 				: null,
 		}),
+		wind_down_claimable: async () => ({
+			result: mockVault.windDownClaimable,
+		}),
+		claim_wind_down: claimWindDownMock,
 		request_deposit: requestDepositMock,
 		cancel_deposit: cancelDepositMock,
 		claim_deposit: claimDepositMock,
@@ -1534,6 +1546,74 @@ describe("VaultPreview", () => {
 
 		expect(await screen.findByText("Held")).toBeTruthy()
 		expect(screen.queryByRole("button", { name: "Claim" })).toBeNull()
+	})
+
+	it("offers a wind-down claim under Ready to claim and pays it through claim_wind_down", async () => {
+		mockVault.windingDown = true
+		mockVault.windDownClaimable = 25_0000000n
+		claimWindDownMock.mockImplementation(async () => ({
+			simulation: undefined,
+			signAndSend: async ({
+				watcher,
+			}: {
+				watcher: { onSubmitted: () => void }
+			}) => {
+				watcher.onSubmitted()
+				mockVault.windDownClaimable = 0n
+				return {
+					getTransactionResponse: { status: "SUCCESS" },
+					result: 25_0000000n,
+				}
+			},
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(
+			await screen.findByRole("tab", { name: "Ready to claim 1" }),
+		)
+		expect(screen.getByText("Wind-down claim")).toBeTruthy()
+		fireEvent.click(screen.getByRole("button", { name: "Claim" }))
+
+		expect(
+			await screen.findByRole("heading", { name: "USDC claimed" }),
+		).toBeTruthy()
+		expect(claimWindDownMock).toHaveBeenCalledWith({
+			holder: investorAddress,
+		})
+		expect(
+			await screen.findByRole("tab", { name: "Ready to claim 0" }),
+		).toBeTruthy()
+	})
+
+	it("shows a frozen holder's wind-down claim as held at zero", async () => {
+		mockVault.windingDown = true
+		mockIdentity.frozen = true
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Blocked 1" }))
+
+		expect(await screen.findByText("Wind-down claim")).toBeTruthy()
+		expect(screen.getByText("Held")).toBeTruthy()
+		expect(screen.getByText("0.00 USDC")).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Claim" })).toBeNull()
+	})
+
+	it("tells an investor cancelling a redemption in a wind-down that the shares move into the wind-down claim", async () => {
+		mockVault.windingDown = true
+		mockRequests.redeems.set(mockRequests.currentEpoch, {
+			shares: 150_0000000n,
+			claimed: false,
+		})
+		cancelRedeemMock.mockImplementation(async () => ({
+			simulation: undefined,
+			signAndSend: () => new Promise(() => {}),
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Waiting 1" }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		expect(await screen.findByText(/into your wind-down claim/)).toBeTruthy()
 	})
 
 	const readyRedeemEpoch = 7n

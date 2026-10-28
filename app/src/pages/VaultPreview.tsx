@@ -27,6 +27,7 @@ import { useCancelDeposit } from "../hooks/useCancelDeposit"
 import { useCancelRedeem } from "../hooks/useCancelRedeem"
 import { useClaimDeposit } from "../hooks/useClaimDeposit"
 import { useClaimRedeem } from "../hooks/useClaimRedeem"
+import { useClaimWindDown } from "../hooks/useClaimWindDown"
 import { useDepositBalance } from "../hooks/useDepositBalance"
 import { useHolderFrozen } from "../hooks/useHolderFrozen"
 import {
@@ -45,6 +46,7 @@ import { useVaultFigures } from "../hooks/useVaultFigures"
 import { useVaultPaused } from "../hooks/useVaultPaused"
 import { useWallet } from "../hooks/useWallet"
 import { useWindDownActive } from "../hooks/useWindDownActive"
+import { useWindDownClaimable } from "../hooks/useWindDownClaimable"
 import typeStyles from "../styles/type.module.css"
 import {
 	deriveAccess,
@@ -67,6 +69,7 @@ import {
 	outlookFor,
 	owedAmount,
 	toRequestEntriesByStage,
+	toWindDownEntry,
 } from "./vaultRequests"
 
 const sections: { id: string; label: string }[] = [
@@ -107,12 +110,14 @@ const VaultPreview: React.FC = () => {
 	const { pause } = useVaultPaused()
 	const { frozen } = useHolderFrozen()
 	const { windingDown } = useWindDownActive()
+	const { claimable } = useWindDownClaimable()
 	const requestDeposit = usePendingTransaction(useRequestDeposit())
 	const cancelDepositTx = usePendingTransaction(useCancelDeposit())
 	const claimDepositTx = usePendingTransaction(useClaimDeposit())
 	const requestRedeem = usePendingTransaction(useRequestRedeem())
 	const cancelRedeemTx = usePendingTransaction(useCancelRedeem())
 	const claimRedeemTx = usePendingTransaction(useClaimRedeem())
+	const claimWindDownTx = usePendingTransaction(useClaimWindDown())
 	const { state, appNetwork, walletNetwork } = networkStatus(
 		address,
 		networkPassphrase,
@@ -184,6 +189,22 @@ const VaultPreview: React.FC = () => {
 					},
 				)
 			: undefined
+	const windDownClaim = toWindDownEntry({
+		windingDown,
+		frozen,
+		claimable,
+		shares: position.status === "held" ? position.shares : null,
+		tokens: { token: tokenSymbol, shareToken: shareTokenSymbol },
+		onClaim: () => {
+			if (claimable !== null)
+				claimWindDownTx.submit(
+					undefined,
+					formatExact(claimable, AMOUNT_DECIMALS),
+				)
+		},
+	})
+	if (entriesByStage !== undefined && windDownClaim !== undefined)
+		entriesByStage[windDownClaim.stage].unshift(windDownClaim.entry)
 	const requestGroups: [RequestGroup, ...RequestGroup[]] = [
 		{
 			id: "ready",
@@ -300,6 +321,7 @@ const VaultPreview: React.FC = () => {
 			amount: cancelRedeemTx.amountLabel,
 			ticker: shareTokenSymbol,
 			assetTicker: tokenSymbol,
+			windingDown: windingDown === true,
 			onClose: cancelRedeemTx.reset,
 			onRetry: cancelRedeemTx.retry,
 		},
@@ -311,6 +333,15 @@ const VaultPreview: React.FC = () => {
 			shareTicker: shareTokenSymbol,
 			onClose: claimDepositTx.reset,
 			onRetry: claimDepositTx.retry,
+		},
+		{
+			action: "claim-wind-down",
+			status: claimWindDownTx.status,
+			amount: claimWindDownTx.amountLabel,
+			ticker: tokenSymbol,
+			shareTicker: shareTokenSymbol,
+			onClose: claimWindDownTx.reset,
+			onRetry: claimWindDownTx.retry,
 		},
 		{
 			action: "claim-redeem",

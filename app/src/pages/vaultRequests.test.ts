@@ -18,6 +18,8 @@ import {
 	outlookFor,
 	type HolderInputs,
 	toRequestEntriesByStage,
+	toWindDownEntry,
+	type WindDownClaimInput,
 } from "./vaultRequests"
 
 const amount = (value: bigint): Amount => value as Amount
@@ -612,5 +614,59 @@ describe("toRequestEntriesByStage", () => {
 				},
 			},
 		])
+	})
+})
+
+describe("toWindDownEntry", () => {
+	const claim: Omit<WindDownClaimInput, "tokens" | "onClaim"> = {
+		windingDown: true,
+		frozen: false,
+		claimable: amount(25_0000000n),
+		shares: amount(40_0000000n),
+	}
+
+	it("offers a ready wind-down claim with what it pays and the shares it turns in", () => {
+		const onClaim = vi.fn()
+		const placed = toWindDownEntry({ ...claim, tokens, onClaim })
+
+		expect(placed?.stage).toBe("ready")
+		expect(placed?.entry).toMatchObject({
+			inLabel: "Wind-down claim",
+			inAmount: "40.00 vUSDC",
+			outAmount: "25.00 USDC",
+			state: "Claimable",
+			actions: [{ label: "Claim", kind: "primary" }],
+		})
+		placed?.entry.actions[0]?.onPress()
+		expect(onClaim).toHaveBeenCalled()
+	})
+
+	it("shows a frozen holder's wind-down claim as held at zero, with no Claim", () => {
+		const placed = toWindDownEntry({
+			...claim,
+			frozen: true,
+			claimable: amount(0n),
+			tokens,
+			onClaim: () => {},
+		})
+
+		expect(placed?.stage).toBe("blocked")
+		expect(placed?.entry).toMatchObject({
+			outAmount: "0.00 USDC",
+			state: "Held",
+			actions: [],
+			tooltip: { label: "Why this request is held", text: HELD_WHILE_FROZEN },
+		})
+	})
+
+	it.each<[string, Partial<WindDownClaimInput>]>([
+		["no wind-down is active", { windingDown: false }],
+		["the wind-down state cannot be read", { windingDown: null }],
+		["nothing is claimable yet", { claimable: amount(0n) }],
+		["the claimable amount cannot be read", { claimable: null }],
+	])("shows no wind-down claim when %s", (_label, overrides) => {
+		expect(
+			toWindDownEntry({ ...claim, ...overrides, tokens, onClaim: () => {} }),
+		).toBeUndefined()
 	})
 })

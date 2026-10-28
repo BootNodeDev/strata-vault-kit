@@ -14,6 +14,7 @@ import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
+import { type ClaimWindDownStatus } from "../../hooks/useClaimWindDown"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
@@ -1245,6 +1246,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 150_0000000n as Amount,
+			sharesReturned: false,
 			hash: "b".repeat(64),
 		})
 
@@ -1256,6 +1258,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 952380952n as Amount,
+			sharesReturned: false,
 			hash: "b".repeat(64),
 		})
 
@@ -1266,6 +1269,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 0n as Amount,
+			sharesReturned: true,
 			hash: "b".repeat(64),
 		})
 
@@ -2963,5 +2967,112 @@ describe("TransactionModal, conversion and surrender outcomes", () => {
 		expect(
 			screen.getByRole("heading", { name: "Request cancelled" }),
 		).toBeTruthy()
+	})
+})
+
+describe("TransactionModal, wind-down outcomes", () => {
+	it("tells the investor a zero-price claim burned the shares during a wind-down, never that they came back", () => {
+		renderClaimRedeemModal({
+			status: "confirmed",
+			assetsClaimed: 0n as Amount,
+			sharesReturned: false,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Nothing to pay out" }),
+		).toBeTruthy()
+		expect(screen.getByText(/winding down/)).toBeTruthy()
+		expect(screen.getByText(/burned/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+})
+
+describe("TransactionModal, cancelling a redemption in a wind-down", () => {
+	it("tells the signer the shares move into the wind-down claim, never that they return", () => {
+		render(
+			<TransactionModal
+				action="cancel-redeem"
+				status={{ status: "awaiting-signature" }}
+				amount="100.00"
+				ticker="vUSDC"
+				assetTicker="USDC"
+				windingDown
+				onClose={vi.fn()}
+				onRetry={vi.fn()}
+			/>,
+		)
+
+		expect(screen.getByText(/wind-down claim/)).toBeTruthy()
+		expect(screen.queryByText(/returns/)).toBeNull()
+	})
+})
+
+const renderClaimWindDownModal = (status: ClaimWindDownStatus) =>
+	render(
+		<TransactionModal
+			action="claim-wind-down"
+			status={status}
+			amount="25.00"
+			ticker="USDC"
+			shareTicker="vUSDC"
+			onClose={vi.fn()}
+			onRetry={vi.fn()}
+		/>,
+	)
+
+describe("TransactionModal, claiming from the wind-down", () => {
+	it("tells the signer what they receive and that their shares are turned in", () => {
+		renderClaimWindDownModal({ status: "awaiting-signature" })
+
+		expect(screen.getByText(/25\.00 USDC/)).toBeTruthy()
+		expect(screen.getByText(/turns in your unfrozen vUSDC/)).toBeTruthy()
+	})
+
+	it("shows the assets paid and the shares turned in once confirmed", () => {
+		renderClaimWindDownModal({
+			status: "confirmed",
+			assetsClaimed: 25_0000000n as Amount,
+			sharesSurrendered: 40_0000000n as Amount,
+		})
+
+		expect(screen.getByRole("heading", { name: "USDC claimed" })).toBeTruthy()
+		expect(screen.getByText(/25\.00 USDC has been added/)).toBeTruthy()
+		expect(screen.getByText(/40\.00 vUSDC/)).toBeTruthy()
+	})
+
+	it("reads a claim that paid nothing as shares turned in for later rounds", () => {
+		renderClaimWindDownModal({
+			status: "confirmed",
+			assetsClaimed: 0n as Amount,
+			sharesSurrendered: 40_0000000n as Amount,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Shares turned in" }),
+		).toBeTruthy()
+		expect(screen.getByText(/later rounds/)).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6051, /first payout/],
+		[6054, /nothing to claim from the wind-down/],
+		[6071, /held until the freeze is lifted/],
+	])("names refusal %i in the dapp's words", (code, text) => {
+		renderClaimWindDownModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(screen.getByText(text)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for a wind-down claim error it does not recognize", () => {
+		renderClaimWindDownModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 })

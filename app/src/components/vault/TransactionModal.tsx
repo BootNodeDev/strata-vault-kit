@@ -15,6 +15,7 @@ import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
+import { type ClaimWindDownStatus } from "../../hooks/useClaimWindDown"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import {
 	type TransactionFailure,
@@ -105,6 +106,7 @@ export type TransactionModalProps =
 			amount: string
 			ticker: string
 			assetTicker: string
+			windingDown?: boolean
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -131,6 +133,15 @@ export type TransactionModalProps =
 			amount: string
 			ticker: string
 			uncovered?: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "claim-wind-down"
+			status: ClaimWindDownStatus
+			amount: string
+			ticker: string
+			shareTicker: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -305,6 +316,19 @@ const claimRedeemContractErrorReason = (
 			return `The price left nothing to pay out, so the vault tried to return your shares. ${SHARES_NOT_RETURNABLE}`
 		default:
 			return claimContractErrorReason(code)
+	}
+}
+
+const windDownClaimContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6051:
+			return "The wind-down has not made its first payout yet. Check back once it does."
+		case 6054:
+			return "You have nothing to claim from the wind-down right now."
+		case 6071:
+			return HELD_WHILE_FROZEN
+		default:
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -580,6 +604,7 @@ const describeCancelRedeemStatus = (
 	amount: string,
 	ticker: string,
 	assetTicker: string,
+	windingDown: boolean,
 ): { heading: string; body: string; hash?: string } | undefined => {
 	switch (status.status) {
 		case "idle":
@@ -592,7 +617,9 @@ const describeCancelRedeemStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `Your request is withdrawn, not priced. Signing returns ${amount} ${ticker} from escrow to your wallet.`,
+				body: windingDown
+					? `Your request is withdrawn, not priced. The vault is winding down, so signing moves ${amount} ${ticker} into your wind-down claim instead of your wallet.`
+					: `Your request is withdrawn, not priced. Signing returns ${amount} ${ticker} from escrow to your wallet.`,
 			}
 		case "submitted":
 			return {
@@ -688,6 +715,67 @@ const describeClaimStatus = (
 	}
 }
 
+const describeClaimWindDownStatus = (
+	status: ClaimWindDownStatus,
+	amount: string,
+	ticker: string,
+	shareTicker: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your claim",
+				body: "We are getting your claim ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `You receive ${amount} ${ticker}, your share of the wind-down so far. Signing also turns in your unfrozen ${shareTicker}, so later rounds pay you for them.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending your claim",
+				body: "Your claim is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				...windDownClaimOutcome(status, ticker, shareTicker),
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(status.failure, windDownClaimContractErrorReason),
+				hash: status.hash,
+			}
+	}
+}
+
+const windDownClaimOutcome = (
+	{
+		assetsClaimed,
+		sharesSurrendered,
+	}: Extract<ClaimWindDownStatus, { status: "confirmed" }>,
+	ticker: string,
+	shareTicker: string,
+): { heading: string; body: string } => {
+	const turnedIn =
+		sharesSurrendered > 0n
+			? `${formatExact(sharesSurrendered, AMOUNT_DECIMALS)} ${shareTicker} were turned in, and later rounds pay you for them.`
+			: "Later rounds pay what you are owed."
+	return assetsClaimed > 0n
+		? {
+				heading: `${ticker} claimed`,
+				body: `${formatExact(assetsClaimed, AMOUNT_DECIMALS)} ${ticker} has been added to your wallet. ${turnedIn}`,
+			}
+		: {
+				heading: "Shares turned in",
+				body: `Nothing was paid this time. ${turnedIn}`,
+			}
+}
+
 const describeRedeemStatus = (
 	status: RequestRedeemStatus,
 	amount: string,
@@ -758,11 +846,17 @@ const describeClaimRedeemStatus = (
 						body: `${formatExact(status.assetsClaimed, AMOUNT_DECIMALS)} ${ticker} has been added to your wallet.`,
 						hash: status.hash,
 					}
-				: {
-						heading: "Shares returned",
-						body: "The price left nothing to claim, so your shares have been returned to your wallet instead.",
-						hash: status.hash,
-					}
+				: status.sharesReturned
+					? {
+							heading: "Shares returned",
+							body: "The price left nothing to claim, so your shares have been returned to your wallet instead.",
+							hash: status.hash,
+						}
+					: {
+							heading: "Nothing to pay out",
+							body: "The price left nothing to pay out, and the vault is winding down, so these shares were burned.",
+							hash: status.hash,
+						}
 		case "failed":
 			return {
 				...describeFailure(status.failure, (code) =>
@@ -1578,6 +1672,7 @@ const describeStatus = (
 				props.amount,
 				props.ticker,
 				props.assetTicker,
+				props.windingDown === true,
 			)
 		case "claim":
 			return describeClaimStatus(
@@ -1594,6 +1689,13 @@ const describeStatus = (
 				props.amount,
 				props.ticker,
 				props.uncovered,
+			)
+		case "claim-wind-down":
+			return describeClaimWindDownStatus(
+				props.status,
+				props.amount,
+				props.ticker,
+				props.shareTicker,
 			)
 		case "close-epoch":
 			return describeCloseEpochStatus(props.status, props.epoch)

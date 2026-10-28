@@ -335,3 +335,64 @@ export function toRequestEntriesByStage(
 
 	return entries
 }
+
+export type WindDownClaimInput = {
+	windingDown: boolean | null
+	frozen: boolean | null
+	claimable: Amount | null
+	shares: Amount | null
+	tokens: RequestTokens
+	onClaim?: () => void
+}
+
+const assetAmount = (value: Amount, tokens: RequestTokens): string =>
+	`${formatExact(value, AMOUNT_DECIMALS)} ${tokens.token}`
+
+export function toWindDownEntry({
+	windingDown,
+	frozen,
+	claimable,
+	shares,
+	tokens,
+	onClaim,
+}: WindDownClaimInput):
+	{ stage: RequestStage; entry: RequestEntry } | undefined {
+	if (windingDown !== true || claimable === null) return undefined
+	const base = {
+		id: "wind-down",
+		inLabel: "Wind-down claim",
+		inAmount:
+			shares === null
+				? "Unknown amount"
+				: `${formatExact(shares, AMOUNT_DECIMALS)} ${tokens.shareToken}`,
+		outLabel: "Owed to you",
+		outAmount: assetAmount(claimable, tokens),
+	}
+	if (frozen === true)
+		return {
+			stage: "blocked",
+			entry: {
+				...base,
+				outTone: "stop",
+				state: "Held",
+				tone: stageTone.blocked,
+				actions: [],
+				tooltip: { label: "Why this request is held", text: HELD_WHILE_FROZEN },
+			},
+		}
+	if (claimable === 0n) return undefined
+	return {
+		stage: "ready",
+		entry: {
+			...base,
+			outTone: "ok",
+			state: "Claimable",
+			tone: stageTone.ready,
+			actions:
+				onClaim === undefined
+					? []
+					: [{ label: "Claim", kind: "primary", onPress: onClaim }],
+			note: "Claiming turns in your unfrozen shares, and later rounds pay you for them.",
+		},
+	}
+}
