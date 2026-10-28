@@ -728,6 +728,12 @@ impl AsyncVault {
         state::current_epoch(e)
     }
 
+    /// Ledger time, in seconds, the open epoch started (when setup finished or
+    /// the epoch before it was sealed). `None` before setup finishes.
+    pub fn epoch_opened_at(e: &Env) -> Option<u64> {
+        state::epoch_opened_at(e)
+    }
+
     /// An epoch: its status, deposits in asset base units, redemptions in share
     /// base units, price in WAD, and close and pricing times in seconds.
     ///

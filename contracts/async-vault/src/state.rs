@@ -91,6 +91,16 @@ pub(crate) fn notice(e: &Env) -> u64 {
     strata_storage::get_instance(e, &DataKey::Notice).unwrap_or(0)
 }
 
+pub(crate) fn set_epoch_opened_at(e: &Env, at: u64) {
+    strata_storage::set_instance(e, &DataKey::EpochOpenedAt, &at);
+}
+
+/// Ledger time the open epoch started. Absent before setup finishes, and on a
+/// vault upgraded from a release that did not record it.
+pub(crate) fn epoch_opened_at(e: &Env) -> Option<u64> {
+    strata_storage::get_instance(e, &DataKey::EpochOpenedAt)
+}
+
 pub(crate) fn set_epoch(e: &Env, id: u64, epoch: &EpochInfo) {
     strata_storage::set_persistent(e, &DataKey::Epoch(id), epoch);
 }

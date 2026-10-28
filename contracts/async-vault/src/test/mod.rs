@@ -18,6 +18,7 @@ mod oracle_pricing;
 mod oracle_swap;
 mod pricing;
 mod redeem;
+mod sealing;
 mod settlement;
 mod setup;
 mod share_returns;

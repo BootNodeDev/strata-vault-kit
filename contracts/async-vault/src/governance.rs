@@ -206,6 +206,7 @@ pub(crate) fn finish_setup(e: &Env) {
     guards::no_hand_over_pending(e);
     guards::wiring_complete(e);
     setup::finish::<AsyncVault>(e).unwrap_or_else(|r| refuse(e, r));
+    state::set_epoch_opened_at(e, e.ledger().timestamp());
     SetupFinished {}.publish(e);
 }
 

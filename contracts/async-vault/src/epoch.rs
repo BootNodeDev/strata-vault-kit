@@ -78,6 +78,7 @@ pub(crate) fn close(e: &Env) -> u64 {
 
     state::set_epoch(e, next, &open(0));
     state::set_current_epoch(e, next);
+    state::set_epoch_opened_at(e, closed_at);
 
     EpochClosed {
         epoch: current,
