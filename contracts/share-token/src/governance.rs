@@ -11,6 +11,7 @@ use crate::error::ShareTokenError;
 use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, SetupFinished, VaultBound};
 use crate::extend;
 use crate::guards;
+use crate::roles::COMPLIANCE_ROLE;
 use crate::ShareToken;
 
 /// Seven days of five-second ledgers: how long the next admin has to accept a
@@ -42,6 +43,22 @@ impl TimelockHost for ShareToken {
     fn clock(e: &Env) -> Result<Clock, Refusal> {
         strata_timelock::clock::from_source(e)
     }
+}
+
+/// The vault's clock with its wind-down ignored: a `compliance` grant moves
+/// no value and is the only way to lift a freeze then.
+struct ComplianceGrantHost;
+
+impl TimelockHost for ComplianceGrantHost {
+    fn clock(e: &Env) -> Result<Clock, Refusal> {
+        let mut clock = <ShareToken as TimelockHost>::clock(e)?;
+        clock.winding_down = false;
+        Ok(clock)
+    }
+}
+
+fn grants_compliance(e: &Env, change: &TokenChange) -> bool {
+    matches!(change, TokenChange::GrantRole(role, _) if *role == Symbol::new(e, COMPLIANCE_ROLE))
 }
 
 fn refuse(e: &Env, refusal: Refusal) -> ! {
@@ -82,7 +99,12 @@ pub(crate) fn finish_setup(e: &Env) {
 pub(crate) fn propose(e: &Env, change: TokenChange) -> u32 {
     guards::valid_change(e, &change);
     guards::not_a_second_upgrade(e, &change);
-    let id = queue::propose::<ShareToken, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
+    let queued = if grants_compliance(e, &change) {
+        queue::propose::<ComplianceGrantHost, _>(e, &change)
+    } else {
+        queue::propose::<ShareToken, _>(e, &change)
+    };
+    let id = queued.unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
         queue::pending::<TokenChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));
     // No pause has run since the proposal, so the eta needs no second clock read.
@@ -101,8 +123,14 @@ pub(crate) fn cancel(e: &Env, id: u32) {
 }
 
 pub(crate) fn apply(e: &Env, id: u32) {
-    let change: TokenChange =
-        queue::take_ready::<ShareToken, _>(e, id).unwrap_or_else(|r| refuse(e, r));
+    let (waiting, _) =
+        queue::pending::<TokenChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));
+    let ready = if grants_compliance(e, &waiting) {
+        queue::take_ready::<ComplianceGrantHost, TokenChange>(e, id)
+    } else {
+        queue::take_ready::<ShareToken, TokenChange>(e, id)
+    };
+    let change = ready.unwrap_or_else(|r| refuse(e, r));
     // The new contract may have changed since the proposal; this check decides.
     guards::valid_change(e, &change);
     let admin = access_control::get_admin(e)

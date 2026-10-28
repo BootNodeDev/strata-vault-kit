@@ -581,6 +581,31 @@ fn a_frozen_holders_redemption_stays_escrowed_in_a_wind_down() {
     assert_eq!(f.vault.claim_wind_down(&user), 400);
 }
 
+#[test]
+fn a_frozen_holder_is_paid_once_a_compliance_holder_granted_in_the_wind_down_lifts_the_freeze() {
+    let f = setup();
+    let frozen = f.holder(500);
+    let other = f.holder(500);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+    let role = soroban_sdk::Symbol::new(&f.e, "compliance");
+    f.share.set_address_frozen(&frozen, &true, &f.compliance);
+    f.share.revoke_role(&f.compliance, &role, &f.admin);
+    let paid = f.vault.claim_wind_down(&other);
+
+    let successor = Address::generate(&f.e);
+    let id = f.share.propose_change(&share_token::TokenChange::GrantRole(
+        role,
+        successor.clone(),
+    ));
+    f.advance(MIN_UPGRADE_DELAY);
+    f.share.apply_change(&id);
+    f.share.set_address_frozen(&frozen, &false, &successor);
+
+    assert_eq!(f.vault.claim_wind_down(&frozen), paid);
+    assert_eq!(f.vault.wind_down_owed(), 0);
+}
+
 /// The snapshot left this escrow out, so its shares must not come back to be surrendered.
 #[test]
 fn a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down() {

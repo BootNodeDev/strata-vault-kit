@@ -12,7 +12,7 @@ use stellar_access::access_control::{self as access_control, AccessControlError}
 use stellar_tokens::rwa::RWAError;
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
 
-use crate::{ShareToken, ShareTokenClient};
+use crate::{ShareToken, ShareTokenClient, ShareTokenError};
 use compliance::{Compliance, ComplianceClient};
 use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
 
@@ -250,6 +250,28 @@ fn the_admin_cannot_renounce_itself_out_of_the_token() {
     f.token.pause(&f.admin);
     f.token.unpause(&f.admin);
     assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
+}
+
+#[test]
+fn the_last_compliance_holder_cannot_renounce() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let f = setup_fixture(&e);
+    let role = Symbol::new(&e, "compliance");
+
+    assert_eq!(
+        f.token
+            .try_renounce_role(&role, &f.compliance_authority)
+            .err(),
+        Some(Ok(ShareTokenError::LastComplianceHolder.into())),
+    );
+    let backup = Address::generate(&e);
+    f.token.grant_role(&backup, &role, &f.admin);
+    f.token.renounce_role(&role, &f.compliance_authority);
+    assert_eq!(
+        f.token.try_renounce_role(&role, &backup).err(),
+        Some(Ok(ShareTokenError::LastComplianceHolder.into())),
+    );
 }
 
 #[test]
@@ -618,6 +640,7 @@ fn each_role_call_asks_its_holder_for_one_signature() {
     );
 
     let role = Symbol::new(&e, "compliance");
+    f.token.grant_role(&Address::generate(&e), &role, &f.admin);
     f.token.renounce_role(&role, compliance);
     f.signed_once_by(
         &[compliance],

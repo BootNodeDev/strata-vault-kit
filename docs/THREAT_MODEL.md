@@ -376,11 +376,11 @@ Someone takes governance's keys and changes code, roles or wiring.
 
   The delay is 7 to 90 days, and never shorter than the notice when the change
   applies. Time the vault spends paused does not count, nothing applies while it
-  is paused, nothing is proposed or applied during a wind-down, and no admin
-  hand-over is accepted then. One code change waits at a time. No contract
-  offers an immediate upgrade. Renouncing the admin and setting a role admin are
-  always refused. Every proposal is published (`ChangeProposed`) and listed by
-  `pending_changes()`.
+  is paused, nothing but a grant of the token's `compliance` role is proposed or
+  applied during a wind-down, and no admin hand-over is accepted then. One code
+  change waits at a time. No contract offers an immediate upgrade. Renouncing
+  the admin and setting a role admin are always refused. Every proposal is
+  published (`ChangeProposed`) and listed by `pending_changes()`.
 - **Residual:** The delay is notice, not a guaranteed exit: leaving needs a
   sealed epoch, a valid price accepted after the seal, and cash. Once the delay
   runs, an upgrade can do anything, and a vault upgrade can also change the
@@ -658,22 +658,36 @@ not.
   its vault. Compliance cannot mint, burn, use `forced_transfer` or swap the
   token's rules or verifier, and it moves a holder's shares only with
   governance's signature in the same call (R10). Governance revokes the token's
-  `compliance` role at once. A delisted holder still leaves in cash (X4), and
-  what a frozen holder is owed stays recorded (X3).
+  `compliance` role at once. The token's last `compliance` holder cannot
+  renounce (`LastComplianceHolder`). A grant of `compliance` goes through the
+  token's timelock even during a wind-down, after the normal delay. A delisted
+  holder still leaves in cash (X4), and what a frozen holder is owed stays
+  recorded (X3).
 - **Residual:** A wrongful freeze holds all of a holder's exits, covered claims
-  included, until it is lifted; nothing on chain checks for a legal order. The
-  testnet verifier stub's admin, the compliance key by deploy, lists and delists
-  at once, without an event, and can be replaced only by swapping the verifier,
-  which waits for the timelock after setup. The verifier and
-  compliance contracts in this repository are testnet stubs;
+  included, until it is lifted; nothing on chain checks for a legal order. A
+  frozen holder's exits, a wind-down claim included, wait for a live
+  `compliance` holder. If governance revokes the last one or its key is lost, a
+  freeze stays until a grant lands one delay later; with no backup and no
+  governance action, it stays for good. The testnet verifier stub's admin, the
+  compliance key by deploy, lists and delists at once, without an event, and
+  can be replaced only by swapping the verifier, which waits for the timelock
+  after setup. The verifier and compliance contracts in this repository are
+  testnet stubs;
   [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238) chooses
   what replaces them on mainnet.
 - **Tests:** `the_vault_address_cannot_be_frozen`,
-  `compliance_alone_cannot_move_shares`, `compliance_no_longer_forces_transfers`
-  and `the_compliance_authority_cannot_mint_burn_or_swap_the_rules` in
+  `compliance_alone_cannot_move_shares`, `compliance_no_longer_forces_transfers`,
+  `the_compliance_authority_cannot_mint_burn_or_swap_the_rules` and
+  `the_last_compliance_holder_cannot_renounce` in
   [`share-token/src/test.rs`](../contracts/share-token/src/test.rs);
-  `revoking_compliance_stays_instant_after_setup` in
+  `revoking_compliance_stays_instant_after_setup`,
+  `governance_still_revokes_the_last_compliance_holder_at_once`,
+  `a_compliance_grant_lands_through_the_timelock_during_a_wind_down`,
+  `a_compliance_grant_proposed_before_the_wind_down_lands_during_it` and
+  `a_paused_vault_still_holds_a_compliance_grant_in_a_wind_down` in
   [`share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs);
+  `a_frozen_holder_is_paid_once_a_compliance_holder_granted_in_the_wind_down_lifts_the_freeze`
+  in [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
   `only_admin_can_allow` in
   [`identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs);
   "governance and the vault manager cannot freeze a holder" in
@@ -823,10 +837,10 @@ A freeze is used to take or redirect a holder's value.
   the free shares. Lifting the freeze releases everything. A legal transfer
   reaches only wallet shares (R10).
 - **Residual:** A freeze holds even a covered claim, for as long as it lasts.
-  The record is safe, but the cash behind it is pooled: while the reserve is
-  short, other covered claims pay first (X1), and after a loss of reserve in a
-  wind-down, claims can spend each other's cash (X8). The vault cannot pay an
-  authority directly. A refund for a deposit worth less than one share at its
+  Lifting a freeze needs a live `compliance` holder (R9). The record is safe,
+  but the cash behind it is pooled: while the reserve is short, other covered
+  claims pay first (X1), and after a loss of reserve in a wind-down, claims can
+  spend each other's cash (X8). The vault cannot pay an authority directly. A refund for a deposit worth less than one share at its
   price is not tracked as owed: it waits in the free reserve, where the
   treasury can deploy it or a wind-down round can credit it to others. Counsel
   must confirm the hold for each jurisdiction.
@@ -966,8 +980,9 @@ others' cost.
   - A holder who never claims is never paid. Rounding leaves less than one unit
     per holder in `wind_down_owed` at any price the oracle allows, plus the
     value of any shares the snapshot counted that were never minted.
-  - No queued change applies during a wind-down, so nothing can be fixed then, a
-    failing module included (X6).
+  - No queued change applies during a wind-down except a grant of the token's
+    `compliance` role, so nothing else can be fixed then, a failing module
+    included (X6).
   - `uncovered()` leaves out what the rounds owe, although `free_reserve()`
     subtracts it. After a loss of reserve, such as an issuer clawback (X10),
     `uncovered()` can read zero while the vault cannot pay both its priced exits

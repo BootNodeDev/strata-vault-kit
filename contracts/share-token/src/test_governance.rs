@@ -601,10 +601,74 @@ fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
         ShareTokenError::WindDownActive,
     );
     refused(
+        f.token.try_propose_change(&TokenChange::RevokeRole(
+            compliance(&f.e),
+            Address::generate(&f.e),
+        )),
+        ShareTokenError::WindDownActive,
+    );
+    refused(
         f.token.try_apply_change(&id),
         ShareTokenError::WindDownActive,
     );
     f.token.cancel_change(&id);
+}
+
+#[test]
+fn a_compliance_grant_lands_through_the_timelock_during_a_wind_down() {
+    let f = setup();
+    f.finish();
+    f.clock(|c| c.winding_down = true);
+    let successor = Address::generate(&f.e);
+    let id = f.propose(TokenChange::GrantRole(compliance(&f.e), successor.clone()));
+
+    refused(
+        f.token.try_apply_change(&id),
+        ShareTokenError::ChangeNotReady,
+    );
+    f.advance(MIN_DELAY);
+    f.token.apply_change(&id);
+    assert!(f.token.has_role(&successor, &compliance(&f.e)).is_some());
+}
+
+#[test]
+fn a_compliance_grant_proposed_before_the_wind_down_lands_during_it() {
+    let f = setup();
+    f.finish();
+    let successor = Address::generate(&f.e);
+    let id = f.propose(TokenChange::GrantRole(compliance(&f.e), successor.clone()));
+    f.clock(|c| c.winding_down = true);
+    f.advance(MIN_DELAY);
+
+    f.token.apply_change(&id);
+    assert!(f.token.has_role(&successor, &compliance(&f.e)).is_some());
+}
+
+#[test]
+fn a_paused_vault_still_holds_a_compliance_grant_in_a_wind_down() {
+    let f = setup();
+    f.finish();
+    f.clock(|c| {
+        c.winding_down = true;
+        c.paused = true;
+    });
+    let id = f.propose(TokenChange::GrantRole(
+        compliance(&f.e),
+        Address::generate(&f.e),
+    ));
+    f.advance(MIN_DELAY);
+
+    refused(f.token.try_apply_change(&id), ShareTokenError::VaultPaused);
+}
+
+#[test]
+fn governance_still_revokes_the_last_compliance_holder_at_once() {
+    let f = setup();
+    f.finish();
+    let holder = f.token.get_role_member(&compliance(&f.e), &0);
+
+    f.token.revoke_role(&holder, &compliance(&f.e), &f.admin);
+    assert_eq!(f.token.get_role_member_count(&compliance(&f.e)), 0);
 }
 
 #[test]

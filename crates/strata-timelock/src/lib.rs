@@ -22,7 +22,9 @@
 //!   waiting changes until it comes down or they are proposed again.
 //! - **Nothing lands in a wind-down.** Nothing is proposed or applied once it
 //!   starts. The cost: nothing can be fixed during a wind-down, a failing
-//!   compliance module included.
+//!   compliance module included. A host may read the clock without the flag
+//!   for a change that moves no value; the share token does, for a
+//!   `compliance` grant.
 //! - **Seven to ninety days.** `MIN_DELAY` and `MAX_DELAY` bound the delay the
 //!   vault sets. The cost: the fastest fix after setup takes a week.
 

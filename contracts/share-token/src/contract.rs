@@ -132,7 +132,8 @@ impl ShareToken {
     /// * `VerifierRefusesVault` - The new verifier does not accept the vault.
     /// * `UpgradeAlreadyPending` - An upgrade already waits.
     /// * `SetupOpen` - Setup has not finished; change it directly.
-    /// * `WindDownActive` - The vault is winding down.
+    /// * `WindDownActive` - The vault is winding down, and the change is not
+    ///   a grant of `compliance`.
     /// * `TooManyPendingChanges` - The queue is full.
     ///
     /// # Events
@@ -180,7 +181,8 @@ impl ShareToken {
     /// # Errors
     ///
     /// * `ChangeNotFound` - No pending change has this id.
-    /// * `WindDownActive` - The vault is winding down.
+    /// * `WindDownActive` - The vault is winding down, and the change is not
+    ///   a grant of `compliance`.
     /// * `VaultPaused` - The vault is paused.
     /// * `DelayBelowNotice` - The change's delay is shorter than the vault's
     ///   notice now.
@@ -499,7 +501,9 @@ impl AccessControl for ShareToken {
 
     /// Takes `role` from `account`. Instant for `compliance`. Revoking
     /// `manager` waits like a grant after setup, because the vault needs it
-    /// to pay claims: propose a `RevokeRole` change.
+    /// to pay claims: propose a `RevokeRole` change. Revoking the last
+    /// `compliance` holder stays instant; a successor's grant waits one
+    /// delay, during a wind-down too.
     ///
     /// # Arguments
     ///
@@ -524,6 +528,33 @@ impl AccessControl for ShareToken {
         guards::direct_revoke_allowed(e, &role);
         strata_storage::bump_instance(e);
         access_control::revoke_role(e, &account, &role, &caller);
+    }
+
+    /// Gives up `role`. The last `compliance` holder cannot: without one, no
+    /// freeze can be lifted until a grant waits out the timelock.
+    ///
+    /// # Arguments
+    ///
+    /// * `role` - The role to give up.
+    /// * `caller` - The holder.
+    ///
+    /// # Errors
+    ///
+    /// * `LastComplianceHolder` - `role` is `compliance` and has at most one
+    ///   holder.
+    /// * `AccessControlError::RoleNotHeld` - `caller` does not hold `role`.
+    ///
+    /// # Events
+    ///
+    /// * `RoleRevoked`
+    ///
+    /// # Authorization
+    ///
+    /// `caller` signs.
+    fn renounce_role(e: &Env, role: Symbol, caller: Address) {
+        guards::not_last_compliance_holder(e, &role);
+        strata_storage::bump_instance(e);
+        access_control::renounce_role(e, &role, &caller);
     }
 
     /// Offers the admin role to `new_admin`, who takes it with

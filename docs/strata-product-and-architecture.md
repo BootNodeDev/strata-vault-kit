@@ -449,7 +449,9 @@ interface today.
   (`legal_transfer`) and recovering a lost wallet (`recover_balance`) also need
   governance's signature in the same call. Neither moves shares out of or into
   the vault's address, and that address cannot be frozen once the token knows
-  its vault; an earlier freeze makes the vault's `finish_setup` refuse.
+  its vault; an earlier freeze makes the vault's `finish_setup` refuse. Lifting
+  a freeze needs a `compliance` holder, so the last one cannot renounce and a
+  grant of the role is never shut out by a wind-down.
 - The complete specification of investor states (Allowlisted, De-listed, Frozen)
   and the exit-only cash path across all vault lifecycle operations is detailed in
   [`docs/COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md).
@@ -496,7 +498,8 @@ interface today.
   burns them through the token, which calls the compliance contract's
   `destroyed` hook, so a module that starts failing during a wind-down blocks
   those claims; it cannot be removed then, because removing a module waits for
-  the timelock and no timelocked change applies during a wind-down.
+  the timelock and no timelocked change but a `compliance` grant applies during
+  a wind-down.
 - Funding a vault that is winding down cannot be undone. What arrives first
   covers priced exits and refundable escrow; the surplus is taken by the next
   round and credited to holders, and no entrypoint returns it. Treasury sends
