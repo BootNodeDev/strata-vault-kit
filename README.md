@@ -194,6 +194,10 @@ environment, or `--config <record>` for a deployment record. The
 [TTL policy](./docs/kit-spec.md#5-storage-lifetime-ttl-policy) says what each
 contract extends on its own.
 
+With `--config`, it uses the network the record names (`local` or `testnet`)
+unless `--env` names another environment, and it prints the network and RPC it
+uses before it sends anything.
+
 ## Reference base
 
 Built on our own

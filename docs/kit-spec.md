@@ -490,6 +490,8 @@ it runs, and each pending timelock change. Other entries, such as balances and
 roles, are restored by the call that needs them (see **Restoring**). It reads
 the contracts in `environments.toml [staging.contracts]`; `--env <name>` picks
 another environment, and `--config <record>` reads a deployment record instead.
+With `--config` it uses the network the record names, unless `--env` names
+another, and it prints the network and RPC before it sends anything.
 Extending needs no authority, so any funded account can pay.
 
 **Restoring.** Since Protocol 23 an invocation can restore archived entries
