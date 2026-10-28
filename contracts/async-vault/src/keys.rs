@@ -27,4 +27,5 @@ pub(crate) enum DataKey {
     DepositCap,
     Settlement(u64),
     EpochOpenedAt,
+    MinEpochDuration,
 }

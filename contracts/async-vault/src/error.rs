@@ -14,8 +14,9 @@ strata_bindings::error_enum! {
         RolesNotDistinct = 6000,
         /// The holder has no request in the given epoch.
         RequestNotFound = 6001,
-        /// An amount or share quantity of zero or less was specified, or a
-        /// negative deposit cap.
+        /// An amount or share quantity of zero or less was specified, a
+        /// negative deposit cap, or a minimum epoch duration outside 1 to 30
+        /// days.
         InvalidAmount = 6007,
         /// The holder already has an unclaimed request in this epoch. A
         /// second request is rejected rather than added to the first, so that at

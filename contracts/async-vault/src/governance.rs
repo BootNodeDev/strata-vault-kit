@@ -21,7 +21,9 @@ use strata_bindings::{OracleFeedClient, VaultBindingClient};
 use strata_timelock::{queue, setup, Clock, Refusal};
 
 use crate::error::VaultError;
-use crate::event::{ChangeApplied, ChangeCancelled, ChangeProposed, NoticeSet, SetupFinished};
+use crate::event::{
+    ChangeApplied, ChangeCancelled, ChangeProposed, MinEpochDurationSet, NoticeSet, SetupFinished,
+};
 use crate::extend;
 use crate::guards;
 use crate::keys::DataKey;
@@ -48,6 +50,7 @@ pub enum VaultChange {
     RevokeRole(Symbol, Address),
     Admin(Address),
     Oracle(Address),
+    MinEpochDuration(u64),
 }
 
 #[contracttype]
@@ -215,6 +218,11 @@ pub(crate) fn set_notice(e: &Env, secs: u64) {
     NoticeSet { secs }.publish(e);
 }
 
+pub(crate) fn set_min_epoch_duration(e: &Env, secs: u64) {
+    state::set_min_epoch_duration(e, secs);
+    MinEpochDurationSet { secs }.publish(e);
+}
+
 pub(crate) fn propose(e: &Env, change: VaultChange) -> u32 {
     guards::not_winding_down(e);
     guards::setup_finished(e);
@@ -257,6 +265,13 @@ pub(crate) fn apply(e: &Env, id: u32) {
         }
         VaultChange::Admin(next) => offer_admin(e, &admin, next),
         VaultChange::Oracle(feed) => state::set_addr(e, &DataKey::Oracle, feed),
+        VaultChange::MinEpochDuration(secs) => {
+            set_min_epoch_duration(e, *secs);
+            // A vault upgraded in place has no recorded start.
+            if state::epoch_opened_at(e).is_none() {
+                state::set_epoch_opened_at(e, e.ledger().timestamp());
+            }
+        }
     }
     ChangeApplied { id, change }.publish(e);
 }

@@ -101,6 +101,14 @@ pub(crate) fn epoch_opened_at(e: &Env) -> Option<u64> {
     strata_storage::get_instance(e, &DataKey::EpochOpenedAt)
 }
 
+pub(crate) fn set_min_epoch_duration(e: &Env, secs: u64) {
+    strata_storage::set_instance(e, &DataKey::MinEpochDuration, &secs);
+}
+
+pub(crate) fn min_epoch_duration(e: &Env) -> Option<u64> {
+    strata_storage::get_instance(e, &DataKey::MinEpochDuration)
+}
+
 pub(crate) fn set_epoch(e: &Env, id: u64, epoch: &EpochInfo) {
     strata_storage::set_persistent(e, &DataKey::Epoch(id), epoch);
 }

@@ -73,9 +73,9 @@ pub use error::VaultError;
 pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
     DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
-    EpochReconciled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, RedemptionSurrendered,
-    SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
-    WindDownProposed, WindDownRoundFinalized,
+    EpochReconciled, Funded, MinEpochDurationSet, NoticeSet, RedeemClaimed, RedeemRequested,
+    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -91,6 +91,12 @@ pub use wind_down::{
 /// Thirty days. Longer than any notice a real structure uses, short enough that
 /// setting it by mistake is survivable.
 pub const MAX_NOTICE_SECS: u64 = 30 * DAY_DURATION;
+
+/// One day, so outsiders cannot seal a stream of tiny epochs.
+pub const MIN_EPOCH_DURATION_FLOOR: u64 = DAY_DURATION;
+
+/// Thirty days: monthly epochs fit, and a silent manager stalls no longer.
+pub const MIN_EPOCH_DURATION_CEILING: u64 = 30 * DAY_DURATION;
 
 #[cfg(feature = "short_wind_down")]
 soroban_sdk::contractmeta!(key = "build", val = "short wind-down; local tests only");
@@ -352,6 +358,39 @@ impl AsyncVault {
         wind_down::delay(e)
     }
 
+    /// Sets how long the open epoch must stay open before anyone may seal it.
+    /// Instant during setup; afterwards it changes through the timelock.
+    ///
+    /// # Arguments
+    ///
+    /// * `secs` - Seconds, from 1 to 30 days.
+    ///
+    /// # Errors
+    ///
+    /// * `InvalidAmount` - `secs` is under 1 day or over 30 days.
+    /// * `UseTimelock` - Setup has finished.
+    ///
+    /// # Events
+    ///
+    /// * `MinEpochDurationSet`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
+    #[only_admin]
+    pub fn set_min_epoch_duration(e: &Env, secs: u64) {
+        guards::min_epoch_duration_in_bounds(e, secs);
+        guards::direct_change_allowed(e);
+        governance::set_min_epoch_duration(e, secs);
+    }
+
+    /// Seconds the open epoch must stay open before anyone but the manager may
+    /// seal it. `None` until governance sets one, and then only the manager
+    /// seals.
+    pub fn min_epoch_duration(e: &Env) -> Option<u64> {
+        state::min_epoch_duration(e)
+    }
+
     /// The wind-down once proposed: whether it is proposed or active, the time
     /// in seconds it may start, and the rounds finalised.
     pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
@@ -563,8 +602,8 @@ impl AsyncVault {
     /// # Arguments
     ///
     /// * `change` - An upgrade, a new upgrade delay, custodian, notice,
-    ///   wind-down delay or oracle, a role grant or revoke, or an admin
-    ///   hand-over. Durations in seconds.
+    ///   wind-down delay, oracle or minimum epoch duration, a role grant or
+    ///   revoke, or an admin hand-over. Durations in seconds.
     ///
     /// # Errors
     ///
@@ -573,7 +612,7 @@ impl AsyncVault {
     /// * `UpgradeDelayTooShort`, `UpgradeDelayTooLong`,
     ///   `UpgradeDelayBelowNotice`, `NoticeTooLong`, `NoticeAboveUpgradeDelay`,
     ///   `WindDownDelayTooShort`, `WindDownDelayTooLong`, `FeedNotBound`,
-    ///   `InvalidCustodian` - The change is out of bounds.
+    ///   `InvalidCustodian`, `InvalidAmount` - The change is out of bounds.
     /// * `UpgradeProposalExists` - An upgrade or an upgrade delay change, while
     ///   one of the two already waits.
     /// * `TooManyPendingChanges` - The queue is full.
@@ -634,8 +673,8 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `ChangeApplied`, after the change's own: `CustodianSet`, `NoticeSet`,
-    ///   `WindDownDelaySet`, `RoleGranted`, `RoleRevoked` or
-    ///   `AdminTransferInitiated`.
+    ///   `WindDownDelaySet`, `MinEpochDurationSet`, `RoleGranted`,
+    ///   `RoleRevoked` or `AdminTransferInitiated`.
     ///
     /// # Authorization
     ///
