@@ -1,3 +1,4 @@
+import { xdr } from "@stellar/stellar-sdk"
 import { networkPassphrase } from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { renderHook } from "@testing-library/react"
@@ -41,3 +42,25 @@ export const deferred = <T>() => {
 	})
 	return { promise, resolve, reject }
 }
+
+export const contractEvent = (name: string, data: xdr.ScVal) =>
+	new xdr.ContractEvent({
+		ext: new xdr.ExtensionPoint(0),
+		contractId: null,
+		type: xdr.ContractEventType.contract(),
+		body: new xdr.ContractEventBody(
+			0,
+			new xdr.ContractEventV0({
+				topics: [xdr.ScVal.scvSymbol(name)],
+				data,
+			}),
+		),
+	})
+
+export const succeededWith = <T>(result: T, events: xdr.ContractEvent[]) => ({
+	getTransactionResponse: {
+		status: "SUCCESS",
+		events: { transactionEventsXdr: [], contractEventsXdr: [events] },
+	},
+	result,
+})

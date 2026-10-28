@@ -802,6 +802,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		renderCancelRedeemModal({
 			status: "confirmed",
 			returnedShares: 100_0000000n as Amount,
+			surrendered: false,
 			hash: "b".repeat(64),
 		})
 
@@ -816,6 +817,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		renderCancelRedeemModal({
 			status: "confirmed",
 			returnedShares: 952380952n as Amount,
+			surrendered: false,
 			hash: "b".repeat(64),
 		})
 
@@ -2844,6 +2846,122 @@ describe("TransactionModal, compliance actions", () => {
 
 		expect(
 			screen.getByText(/check the Compliance tab before trying again/),
+		).toBeTruthy()
+	})
+})
+
+describe("TransactionModal, allowlist and freeze refusals", () => {
+	const contractError = (code: number) => ({
+		status: "failed" as const,
+		failure: { kind: "contract-error" as const, code },
+	})
+
+	it("names NotAllowlisted on a subscription as an address that cannot subscribe", () => {
+		renderModal(contractError(6068))
+
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/can subscribe/)).toBeTruthy()
+	})
+
+	it("names Frozen on a subscription as a frozen address", () => {
+		renderModal(contractError(6071))
+
+		expect(screen.getByText(/frozen/)).toBeTruthy()
+		expect(screen.getByText(/cannot subscribe/)).toBeTruthy()
+	})
+
+	it("names Frozen on a redemption request as a frozen address or frozen shares", () => {
+		renderRedeemModal(contractError(6071))
+
+		expect(screen.getByText(/shares are frozen/)).toBeTruthy()
+		expect(screen.getByText(/free shares/)).toBeTruthy()
+	})
+
+	it.each<[string, () => void]>([
+		["cancelling a subscription", () => renderCancelModal(contractError(6071))],
+		[
+			"cancelling a redemption",
+			() => renderCancelRedeemModal(contractError(6071)),
+		],
+		["claiming shares", () => renderClaimModal(contractError(6071))],
+		[
+			"claiming a redemption",
+			() => renderClaimRedeemModal(contractError(6071)),
+		],
+	])("names Frozen on %s as held until the freeze lifts", (_name, render) => {
+		render()
+
+		expect(screen.getByText(/held until the freeze is lifted/)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for NotAllowlisted on a subscription cancellation, since a delisted holder may still cancel", () => {
+		renderCancelModal(contractError(6068))
+
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
+	})
+})
+
+describe("TransactionModal, conversion and surrender outcomes", () => {
+	it("tells a delisted investor their claimed shares were queued as a redemption", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 0n as Amount,
+			queuedInto: 5n,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Queued as a redemption" }),
+		).toBeTruthy()
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/pay out in USDC at the next price/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+
+	it("tells a delisted investor in a wind-down their claimed shares joined the wind-down claim", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 0n as Amount,
+			queuedInto: 0n,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Moved to your wind-down claim" }),
+		).toBeTruthy()
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+	})
+
+	it("still reads a zero-share claim without a conversion as a returned deposit", () => {
+		renderClaimModal({ status: "confirmed", sharesMinted: 0n as Amount })
+
+		expect(
+			screen.getByRole("heading", { name: "Deposit returned" }),
+		).toBeTruthy()
+	})
+
+	it("tells the investor a cancelled redemption moved into the wind-down claim", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 100_0000000n as Amount,
+			surrendered: true,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Moved to your wind-down claim" }),
+		).toBeTruthy()
+		expect(screen.getByText(/winding down/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+
+	it("still reads a returned redemption as cancelled", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 100_0000000n as Amount,
+			surrendered: false,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Request cancelled" }),
 		).toBeTruthy()
 	})
 })

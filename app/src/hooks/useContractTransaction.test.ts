@@ -1,4 +1,6 @@
+import { xdr } from "@stellar/stellar-sdk"
 import { type AssembledTransaction } from "@stellar/stellar-sdk/contract"
+import { type TransactionEvent } from "@stellar-scaffold/app-lib"
 import { act } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { investorAddress, renderWithWallet } from "./testSupport"
@@ -30,6 +32,49 @@ const renderTransaction = (simulationError?: string) =>
 	)
 
 describe("useContractTransaction", () => {
+	it("hands the confirmed transaction's contract events to its confirmation", async () => {
+		const surrendered = new xdr.ContractEvent({
+			ext: new xdr.ExtensionPoint(0),
+			contractId: null,
+			type: xdr.ContractEventType.contract(),
+			body: new xdr.ContractEventBody(
+				0,
+				new xdr.ContractEventV0({
+					topics: [xdr.ScVal.scvSymbol("redemption_surrendered")],
+					data: xdr.ScVal.scvVoid(),
+				}),
+			),
+		})
+		const tx = {
+			simulation: undefined,
+			signAndSend: vi.fn().mockResolvedValue({
+				getTransactionResponse: {
+					status: "SUCCESS",
+					events: {
+						transactionEventsXdr: [],
+						contractEventsXdr: [[surrendered]],
+					},
+				},
+				result: 1n,
+			}),
+		} as unknown as AssembledTransaction<bigint>
+		const { result } = renderWithWallet(() =>
+			useContractTransaction(
+				async () => tx,
+				(_result: bigint, events: TransactionEvent[]) => ({
+					names: events.map((event) => event.name),
+				}),
+			),
+		)
+
+		await act(() => result.current.submit(undefined))
+
+		expect(result.current.status).toEqual({
+			status: "confirmed",
+			names: ["redemption_surrendered"],
+		})
+	})
+
 	it("refreshes the extra query keys alongside the investor's once the transaction confirms", async () => {
 		const { result, queryClient } = renderTransaction()
 		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")

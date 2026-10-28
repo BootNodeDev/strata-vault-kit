@@ -187,10 +187,14 @@ export type TransactionModalProps =
 const GENERIC_REFUSAL =
 	"The vault refused this request. Try again, and contact support if it keeps happening."
 
-const NOT_ALLOWLISTED = "Your address is not allowlisted."
+export const NOT_ALLOWLISTED = "Your address is not allowlisted."
 
 const SHARES_NOT_RETURNABLE =
 	"Your address cannot receive these shares right now, so they stay with the vault."
+
+const FROZEN = "Your address is frozen."
+
+export const HELD_WHILE_FROZEN = `${FROZEN} This request is held until the freeze is lifted.`
 
 const subscribeContractErrorReason = (code: number): string => {
 	switch (code) {
@@ -204,6 +208,10 @@ const subscribeContractErrorReason = (code: number): string => {
 			return "The vault is winding down and is not accepting new subscriptions."
 		case 6064:
 			return "The vault's setup is still open. Subscriptions start once it closes."
+		case 6068:
+			return `${NOT_ALLOWLISTED} Only allowlisted addresses can subscribe.`
+		case 6071:
+			return `${FROZEN} It cannot subscribe until the freeze is lifted.`
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -219,6 +227,8 @@ const cancelContractErrorReason = (code: number): string => {
 			return "This request has already been priced. Claim your shares instead of cancelling."
 		case 6041:
 			return "A price is available, so this request can no longer be cancelled. It will be priced shortly, and your shares are claimable once it is."
+		case 6071:
+			return HELD_WHILE_FROZEN
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -253,6 +263,8 @@ const claimContractErrorReason = (code: number): string => {
 			return "This request has already been claimed."
 		case 6037:
 			return "The vault does not yet hold enough in reserve to cover this claim. Try again shortly."
+		case 6071:
+			return HELD_WHILE_FROZEN
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -270,6 +282,8 @@ const redeemContractErrorReason = (code: number): string => {
 			return "This request could not be found."
 		case 6046:
 			return "The vault is winding down and is not accepting new redemptions."
+		case 6071:
+			return "Your address or some of these shares are frozen. Redeem only your free shares, or wait until the freeze is lifted."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -587,11 +601,17 @@ const describeCancelRedeemStatus = (
 				hash: status.hash,
 			}
 		case "confirmed":
-			return {
-				heading: "Request cancelled",
-				body: `${formatExact(status.returnedShares, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
-				hash: status.hash,
-			}
+			return status.surrendered
+				? {
+						heading: MOVED_TO_WIND_DOWN,
+						body: "The vault is winding down, so these shares were added to your wind-down claim instead of coming back to your wallet.",
+						hash: status.hash,
+					}
+				: {
+						heading: "Request cancelled",
+						body: `${formatExact(status.returnedShares, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
+						hash: status.hash,
+					}
 		case "failed":
 			return {
 				...describeFailure(status.failure, (code) =>
@@ -601,6 +621,22 @@ const describeCancelRedeemStatus = (
 			}
 	}
 }
+
+const MOVED_TO_WIND_DOWN = "Moved to your wind-down claim"
+
+const convertedOutcome = (
+	queuedInto: bigint,
+	ticker: string,
+): { heading: string; body: string } =>
+	queuedInto === 0n
+		? {
+				heading: MOVED_TO_WIND_DOWN,
+				body: `${NOT_ALLOWLISTED} Your shares were added to your wind-down claim instead.`,
+			}
+		: {
+				heading: "Queued as a redemption",
+				body: `${NOT_ALLOWLISTED} Your shares were queued as a redemption instead, and pay out in ${ticker} at the next price.`,
+			}
 
 const describeClaimStatus = (
 	status: ClaimDepositStatus,
@@ -628,6 +664,11 @@ const describeClaimStatus = (
 				hash: status.hash,
 			}
 		case "confirmed":
+			if (status.queuedInto !== undefined)
+				return {
+					...convertedOutcome(status.queuedInto, ticker),
+					hash: status.hash,
+				}
 			return status.sharesMinted > 0n
 				? {
 						heading: "Shares claimed",

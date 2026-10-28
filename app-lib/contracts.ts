@@ -14,6 +14,7 @@ import {
 	type RedeemRequest,
 	type VaultChange,
 	type VaultPendingChange,
+	type WindDownInfo,
 } from "./clients/async_vault/src/index"
 import { Client as IdentityVerifierApi } from "./clients/identity_verifier/src/index"
 import {
@@ -43,6 +44,7 @@ export type {
 	TokenPendingChange,
 	VaultChange,
 	VaultPendingChange,
+	WindDownInfo,
 }
 
 export interface Signer {
