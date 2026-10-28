@@ -29,21 +29,29 @@
           hash = "sha256-o0GtzBUuGGXqYdbDMudbPYKx8vMhCBmPrJfFCHixcDQ=";
         };
       };
+      # stellar-scaffold prebuilt tarball, same version CI installs (build.yml).
+      scaffoldVersion = "0.0.27";
+      scaffoldHashes = {
+        x86_64-darwin = "sha256-kzM5ikay1etB1bBLtCo8jNq7jZgJstl36OkUClc2jWY=";
+        aarch64-darwin = "sha256-un7QXXsfi82zb0w98fOZEbHxkTGlTlQtl3ZqINWb9ic=";
+        x86_64-linux = "sha256-8kcJ3lfjMVXv1yVHyShrUi1DYKN5veWvnutVGTlvEMw=";
+        aarch64-linux = "sha256-IACcbOz+tDZl4RHTIfXOqvD+a+vptTVbBMNrcOQh82E=";
+      };
       systems = builtins.attrNames cliAssets;
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f system nixpkgs.legacyPackages.${system});
 
-      mkStellarCli =
-        system: pkgs:
-        let
-          asset = cliAssets.${system};
-        in
+      mkPrebuilt =
+        pkgs:
+        {
+          pname,
+          version,
+          bin,
+          url,
+          hash,
+        }:
         pkgs.stdenvNoCC.mkDerivation {
-          pname = "stellar-cli";
-          version = cliVersion;
-          src = pkgs.fetchurl {
-            url = "https://github.com/stellar/stellar-cli/releases/download/v${cliVersion}/stellar-cli-${cliVersion}-${asset.target}.tar.gz";
-            inherit (asset) hash;
-          };
+          inherit pname version;
+          src = pkgs.fetchurl { inherit url hash; };
           sourceRoot = ".";
           nativeBuildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.autoPatchelfHook ];
           buildInputs = pkgs.lib.optionals pkgs.stdenv.isLinux [
@@ -51,14 +59,35 @@
             pkgs.openssl
             pkgs.zlib
           ];
-          installPhase = "runHook preInstall; install -Dm755 stellar $out/bin/stellar; runHook postInstall";
-          meta.mainProgram = "stellar";
+          installPhase = "runHook preInstall; install -Dm755 ${bin} $out/bin/${bin}; runHook postInstall";
+          meta.mainProgram = bin;
+        };
+
+      mkStellarCli =
+        system: pkgs:
+        mkPrebuilt pkgs {
+          pname = "stellar-cli";
+          version = cliVersion;
+          bin = "stellar";
+          url = "https://github.com/stellar/stellar-cli/releases/download/v${cliVersion}/stellar-cli-${cliVersion}-${cliAssets.${system}.target}.tar.gz";
+          inherit (cliAssets.${system}) hash;
+        };
+
+      mkStellarScaffold =
+        system: pkgs:
+        mkPrebuilt pkgs {
+          pname = "stellar-scaffold-cli";
+          version = scaffoldVersion;
+          bin = "stellar-scaffold";
+          url = "https://github.com/stellar-scaffold/cli/releases/download/stellar-scaffold-cli-v${scaffoldVersion}/stellar-scaffold-cli-v${scaffoldVersion}-${cliAssets.${system}.target}.tar.gz";
+          hash = scaffoldHashes.${system};
         };
     in
     {
       packages = forAllSystems (
         system: pkgs: {
           stellar-cli = mkStellarCli system pkgs;
+          stellar-scaffold = mkStellarScaffold system pkgs;
           default = mkStellarCli system pkgs;
         }
       );
@@ -70,6 +99,7 @@
               # Soroban / Rust
               pkgs.rustup # honors ./rust-toolchain.toml (stable + wasm32v1-none + rust-src)
               (mkStellarCli system pkgs)
+              (mkStellarScaffold system pkgs)
               pkgs.wabt # wasm2wat / wasm-objdump
               pkgs.twiggy # wasm size profiler
               pkgs.cargo-nextest
@@ -86,6 +116,7 @@
               rustup show >/dev/null 2>&1 || true
               echo "open-rwa-vault devshell"
               echo "  stellar: $(stellar --version 2>/dev/null | head -1)"
+              echo "  scaffold: $(stellar-scaffold --version 2>/dev/null | head -1)"
               echo "  rust:    $(rustc --version 2>/dev/null || echo '(run any cargo/rustc to trigger rustup)')"
               echo "  tla:     $(tlc 2>&1 | head -1 | sed 's/^/           /' | xargs echo | cut -c1-60)  (tlc + pcal)"
               echo "  loop:    pcal spec/Token.tla -> tlc -config spec/Token.cfg spec/Token.tla"
