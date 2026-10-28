@@ -510,6 +510,12 @@ fn build<'a>(
     }
     if finish {
         vault.finish_setup();
+        // Deposits need a valid report; a second on, so the next sealed epoch is not priced by it.
+        oracle.attest(
+            &nav_input(&e, oracle.config().max_answer / 2, u64::MAX),
+            &attester,
+        );
+        e.ledger().set_timestamp(e.ledger().timestamp() + 1);
     }
 
     Fixture {

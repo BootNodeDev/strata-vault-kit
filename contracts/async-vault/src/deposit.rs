@@ -18,6 +18,7 @@ pub(crate) fn request(e: &Env, holder: &Address, amount: i128) -> u64 {
     holder.require_auth();
     guards::positive_amount(e, amount);
     guards::allowed_to(e, Exit::RequestDeposit, holder);
+    guards::feed_valid(e);
     guards::within_cap(e, amount);
     let epoch_id = state::current_epoch(e);
     guards::no_open_deposit(e, epoch_id, holder);

@@ -319,7 +319,7 @@ batch boundary, though not the price it receives.
 
 #### Subscription
 
-- Request: moves the deposit asset into escrow; at most one active request per holder. The vault first asks the share token whether the address is frozen and asks the token's identity verifier, and refuses a frozen address or one that could not receive the shares, before any cash moves; the token checks again when it mints at claim time.
+- Request: moves the deposit asset into escrow; at most one active request per holder. Refused while the feed cannot price: the report is stale or the NAV is paused. The vault first asks the share token whether the address is frozen and asks the token's identity verifier, and refuses a frozen address or one that could not receive the shares, before any cash moves; the token checks again when it mints at claim time.
 - Pricing: the escrow leaves the cancellable bucket, the share quantity is set at the epoch's price, and the economic supply liability is recorded. To avoid unbounded loops that exceed Soroban transaction resource limits, physical share minting occurs lazily when each investor executes `claim_deposit`.
 - Cancellation: atomic, and returns the escrowed asset in full. Open while the epoch is open. Once sealed, a readable price closes it, even while the notice still runs: an investor who can see the price cannot decline it. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — it opens again, so escrow is never stuck behind a stalled feed. The epoch is then priced at the latest valid report at fulfil time. Cancellation also remains open during an active wind-down, allowing pending depositors to recover their escrowed assets when pricing is closed. A frozen depositor's cancellation is held until the freeze is lifted, in a wind-down too.
 - Share claim: verifies the receiver and delivers the shares via `mint`. A receiver off the allowlist gets no shares: they join the holder's redemption in the open epoch and are paid in cash at that epoch's price; in a wind-down they join the holder's wind-down entitlement. A frozen receiver is held until the freeze is lifted. The only refund after pricing is for a deposit worth less than one share base unit, which mints nothing: its asset comes back at claim, from the free reserve. Pricing does not set that refund aside, because it sees only the epoch's totals and reserving it would mean visiting every request for less than one share base unit each. Treasury can deploy that cash, or a wind-down round credit it, before the claim, which then waits until the free reserve covers it again.
@@ -409,7 +409,8 @@ never priced against a valuation accepted before it closed, and the oracle's
 cooldown therefore bounds how soon a closed epoch can be priced.
 
 **Freshness and pause:** each attestation opens a validity window; when it
-lapses the feed is stale and new requests stop being priced. The guardian can
+lapses the feed is stale, new requests stop being priced and new deposit
+requests are refused. The same holds while the NAV is paused. The guardian can
 pause the vault: deposit requests, epoch pricing and upgrade application stop
 and the upgrade timelock freezes; redemption requests, custodian deployments,
 payable claims, and pending cancellations continue; attestations that pass the

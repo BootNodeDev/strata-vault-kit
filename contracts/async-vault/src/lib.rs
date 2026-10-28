@@ -765,7 +765,7 @@ impl AsyncVault {
 
     /// Escrows `amount` of the asset into the open epoch and returns the
     /// epoch's id. The deposit can be priced once the epoch closes and its
-    /// notice has run.
+    /// notice has run. Refused while the feed cannot price.
     ///
     /// # Arguments
     ///
@@ -780,6 +780,7 @@ impl AsyncVault {
     /// * `InvalidAmount` - `amount` is zero or negative.
     /// * `NotAllowlisted` - `holder` fails the identity check.
     /// * `Frozen` - `holder` is frozen.
+    /// * `FeedNotValid` - The feed is stale or the NAV is paused.
     /// * `DepositCapExceeded` - The deposit would pass the cap.
     /// * `RequestOutstanding` - `holder` has a deposit in this epoch already.
     /// * `AmountTooLarge` - A total would overflow.

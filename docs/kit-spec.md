@@ -257,7 +257,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 
 | Contract | Entrypoint | Calling Authority | Access Control Guard | Pausable? |
 |---|---|---|---|---|
-| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
+| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) and while the feed is not valid (`FeedNotValid`) | Yes (halted by pause) |
 | **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | No (open during pause; refused in a wind-down) |
@@ -349,7 +349,7 @@ A clean deployment executes in three sequenced phases:
    - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap. The custodian is required, and the vault's own address is refused (`InvalidCustodian`).
    - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit, redemption, seal or pricing before it.
 3. **Phase 3: Operational Parameterization**
-   - Oracle reporter submits the genesis NAV attestation (`attest`).
+   - Oracle reporter submits the genesis NAV attestation (`attest`). Deposits open only once it is valid, so post it before announcing the vault.
 
 ---
 

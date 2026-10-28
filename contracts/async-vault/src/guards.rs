@@ -7,6 +7,7 @@ use stellar_tokens::{
     fungible::FungibleTokenClient,
     rwa::{compliance::ComplianceClient as RulesClient, RWATokenClient},
 };
+use strata_bindings::{OracleFeedClient, OracleState};
 use strata_timelock::{queue, setup};
 
 use crate::epoch;
@@ -251,6 +252,13 @@ pub(crate) fn has_entitlement(e: &Env, surrendered: i128, assets: i128) {
 pub(crate) fn positive_amount(e: &Env, amount: i128) {
     if amount <= 0 {
         panic_with_error!(e, VaultError::InvalidAmount);
+    }
+}
+
+pub(crate) fn feed_valid(e: &Env) {
+    let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
+    if feed.state() != OracleState::Valid {
+        panic_with_error!(e, VaultError::FeedNotValid);
     }
 }
 

@@ -244,3 +244,45 @@ fn escrow_that_would_overflow_is_refused_by_name() {
         VaultError::AmountTooLarge,
     );
 }
+
+#[test]
+fn a_deposit_is_refused_while_the_feed_is_stale() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.advance(f.oracle.config().freshness_duration);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    assert_eq!(f.balance(&investor), 1_000);
+    assert_eq!(f.vault.cancellable_escrow(), 0);
+
+    f.attest(wad(1));
+    f.vault.request_deposit(&investor, &100);
+}
+
+#[test]
+fn a_deposit_is_refused_while_the_nav_is_paused() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.oracle.pause_nav(&f.guardian);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    f.oracle.set_nav_paused(&false);
+    f.vault.request_deposit(&investor, &100);
+}
+
+#[test]
+fn a_deposit_is_refused_before_the_first_report() {
+    let f = setup_unfinished();
+    f.vault.finish_setup();
+    let investor = f.investor(1_000);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    f.attest(wad(1));
+    f.vault.request_deposit(&investor, &100);
+}

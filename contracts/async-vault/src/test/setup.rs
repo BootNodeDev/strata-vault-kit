@@ -81,6 +81,7 @@ fn setup_finishes_once_the_wiring_is_complete() {
     f.vault.finish_setup();
 
     assert!(!f.vault.setup_open());
+    f.attest(wad(1));
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &100);
 }

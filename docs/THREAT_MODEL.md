@@ -158,10 +158,12 @@ The attester stops reporting, or the last report expires.
 
 - **Control:** A report expires at the earlier of its own `expires_at` and its
   acceptance plus `freshness_duration`. A stale feed makes `fulfill_epoch`
-  fail, and requests in a sealed epoch can be cancelled again. Priced claims
-  still pay: no claim reads the oracle. Governance revokes the attester at once.
-  `health()` reports `feed_valid`, and `freshness_covers_notice` is false when
-  the freshness window is shorter than the notice.
+  fail, and requests in a sealed epoch can be cancelled again. A stale feed
+  also makes `request_deposit` refuse (`FeedNotValid`), so no new deposit waits
+  on it. Priced claims still pay: no claim reads the oracle. Governance revokes
+  the attester at once. `health()` reports `feed_valid`, and
+  `freshness_covers_notice` is false when the freshness window is shorter than
+  the notice.
 - **Residual:** Holders with shares cannot exit until a report lands, or until
   a wind-down pays them pro rata (X8). After setup, granting a new attester
   waits for the timelock: at least seven days, plus any time the vault spends
@@ -172,6 +174,9 @@ The attester stops reporting, or the last report expires.
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
   `a_sealed_epoch_cancels_once_the_feed_goes_stale` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
+  `a_deposit_is_refused_while_the_feed_is_stale` and
+  `a_deposit_is_refused_before_the_first_report` in
+  [`deposit.rs`](../contracts/async-vault/src/test/deposit.rs);
   `a_notice_longer_than_a_report_lives_is_reported` in
   [`health.rs`](../contracts/async-vault/src/test/health.rs).
 
@@ -229,8 +234,9 @@ them.
 
 A compromised guardian pauses the NAV, again and again.
 
-- **Control:** The NAV pause stops only new reports and pricing. Requests,
-  claims and cancellations go on, and sealed epochs can be cancelled again.
+- **Control:** The NAV pause stops only new reports, pricing and new deposits.
+  Redemption requests, claims and cancellations go on, and sealed epochs can be
+  cancelled again.
   Only the oracle admin lifts it (`set_nav_paused(false)`), and revoking the
   oracle's guardian is instant.
 - **Residual:** Pricing waits until governance lifts the pause. Revoking the
@@ -244,7 +250,9 @@ A compromised guardian pauses the NAV, again and again.
   `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
   `a_sealed_epoch_cancels_while_the_nav_is_paused` in
-  [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs).
+  [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
+  `a_deposit_is_refused_while_the_nav_is_paused` in
+  [`deposit.rs`](../contracts/async-vault/src/test/deposit.rs).
 
 ### O8. Clearing the stored report
 
