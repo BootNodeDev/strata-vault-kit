@@ -186,6 +186,28 @@ fn a_deposit_below_one_share_is_refunded_at_claim() {
 }
 
 #[test]
+fn a_refund_after_pricing_leaves_the_priced_total_unchanged() {
+    let f = setup();
+    let user = f.investor(1_000);
+    f.vault.request_deposit(&user, &1);
+    let epoch = f.fulfill_epoch(wad(2));
+
+    assert_eq!(f.vault.claim_deposit(&user, &epoch), 0);
+
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().total_deposited, 1);
+    assert!(f.vault.get_epoch_settlement(&epoch).unwrap().reconciled);
+}
+
+#[test]
+fn a_cancellation_takes_the_deposit_out_of_its_epoch() {
+    let f = setup();
+    let user = f.investor(1_000);
+    f.vault.request_deposit(&user, &400);
+    f.vault.cancel_deposit(&user, &1);
+    assert_eq!(f.vault.get_epoch(&1).unwrap().total_deposited, 0);
+}
+
+#[test]
 fn claiming_needs_the_investor_authorisation() {
     let f = setup();
     let user = f.investor(1_000);

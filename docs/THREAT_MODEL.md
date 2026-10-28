@@ -1012,7 +1012,8 @@ Rounding lets a claim take more than its share, or a tiny deposit is lost.
   `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once` and
   `a_total_that_would_go_below_zero_fails_loudly` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
-  `a_deposit_below_one_share_is_refunded_at_claim` in
+  `a_deposit_below_one_share_is_refunded_at_claim` and
+  `a_refund_after_pricing_leaves_the_priced_total_unchanged` in
   [`deposit.rs`](../contracts/async-vault/src/test/deposit.rs);
   `a_dust_refund_never_takes_committed_money` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);

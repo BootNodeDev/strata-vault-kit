@@ -142,12 +142,8 @@ fn convert_to_exit(
 }
 
 /// Returns the settlement asset and clears the request. Used by cancellation and
-/// by a claim whose conversion floors to zero.
+/// by a claim whose conversion floors to zero; leaves a priced epoch's total alone.
 fn refund_deposit(e: &Env, holder: &Address, epoch_id: u64, amount: i128) {
-    let mut epoch = state::get_epoch(e, epoch_id)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-    epoch.total_deposited = state::reduce(e, epoch.total_deposited, amount);
-    state::set_epoch(e, epoch_id, &epoch);
     state::remove_deposit_request(e, epoch_id, holder);
 
     let asset = state::get_addr(e, &DataKey::Asset);
@@ -159,6 +155,14 @@ fn refund_deposit(e: &Env, holder: &Address, epoch_id: u64, amount: i128) {
         amount,
     }
     .publish(e);
+}
+
+/// Lowers an epoch's deposit total; only a cancellation still open for the epoch does this.
+fn remove_from_epoch_total(e: &Env, epoch_id: u64, amount: i128) {
+    let mut epoch = state::get_epoch(e, epoch_id)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
+    epoch.total_deposited = state::reduce(e, epoch.total_deposited, amount);
+    state::set_epoch(e, epoch_id, &epoch);
 }
 
 pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
@@ -175,6 +179,7 @@ pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
         e,
         state::reduce(e, state::cancellable_escrow(e), request.amount),
     );
+    remove_from_epoch_total(e, epoch_id, request.amount);
     settlement::on_deposit_cancelled(e, epoch_id);
     refund_deposit(e, holder, epoch_id, request.amount);
     request.amount
