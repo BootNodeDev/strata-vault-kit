@@ -285,6 +285,12 @@ enum Miswire {
     OracleNotAFeed,
     NoCustodian,
     CustodianIsVault,
+    EpochAdvanced,
+    DepositBooked,
+    RedemptionBooked,
+    Committed,
+    SharesOwed,
+    SharesToBurn,
 }
 
 /// An asset with six decimals, where the share token has seven.
@@ -476,6 +482,31 @@ fn build<'a>(
             crate::state::set_addr(&e, &crate::keys::DataKey::Custodian, &contract_id)
         }),
         _ => vault.set_custodian(&custodian),
+    }
+    // No entrypoint can book these during setup any more, so the test writes
+    // the vault's storage directly to prove `finish_setup` still catches them.
+    match miswire {
+        Miswire::EpochAdvanced => {
+            e.as_contract(&contract_id, || crate::state::set_current_epoch(&e, 2))
+        }
+        Miswire::DepositBooked => e.as_contract(&contract_id, || {
+            let mut epoch = crate::state::get_epoch(&e, crate::state::FIRST_EPOCH).unwrap();
+            epoch.total_deposited = 100;
+            crate::state::set_epoch(&e, crate::state::FIRST_EPOCH, &epoch);
+        }),
+        Miswire::RedemptionBooked => e.as_contract(&contract_id, || {
+            let mut epoch = crate::state::get_epoch(&e, crate::state::FIRST_EPOCH).unwrap();
+            epoch.total_shares_redeeming = 100;
+            crate::state::set_epoch(&e, crate::state::FIRST_EPOCH, &epoch);
+        }),
+        Miswire::Committed => e.as_contract(&contract_id, || crate::state::set_committed(&e, 100)),
+        Miswire::SharesOwed => e.as_contract(&contract_id, || {
+            crate::state::set_pending_mint_shares(&e, 100)
+        }),
+        Miswire::SharesToBurn => e.as_contract(&contract_id, || {
+            crate::state::set_pending_burn_shares(&e, 100)
+        }),
+        _ => {}
     }
     if finish {
         vault.finish_setup();

@@ -29,8 +29,9 @@
 //!   redemption in the open epoch, or their wind-down entitlement. The cost:
 //!   another epoch at its price, and a wait while the vault itself is delisted.
 //! - **Setup, then the timelock.** Until `finish_setup` checks the wiring,
-//!   admin changes are instant and deposits refused; after it, changes that
-//!   move value or cut a wait are timelocked. The cost: fixes take a week.
+//!   admin changes are instant and requests and epochs refused; after it,
+//!   changes that move value or cut a wait are timelocked. The cost: fixes
+//!   take a week.
 //! - **Wind-down claims run the compliance hooks:** surrendered shares burn
 //!   through the `destroyed` modules. The cost: one failing in a wind-down
 //!   blocks those claims, and no change can remove it then.
@@ -522,15 +523,17 @@ impl AsyncVault {
     }
 
     /// Ends the window in which admin changes are instant. Needs every wiring
-    /// check `health()` reports, no shares outstanding and no admin hand-over
-    /// pending. Deposits open from here on, and it never reopens.
+    /// check `health()` reports, no shares outstanding, the vault's own books
+    /// empty and no admin hand-over pending. Deposits open from here on, and
+    /// it never reopens.
     ///
     /// # Errors
     ///
     /// * `SetupClosed` - Setup has already finished.
     /// * `AdminTransferPending` - An admin hand-over offered during setup is
     ///   still open.
-    /// * `SetupIncomplete` - A wiring check fails, or shares are outstanding.
+    /// * `SetupIncomplete` - A wiring check fails, shares are outstanding, or
+    ///   the vault's own books are not empty.
     ///
     /// # Events
     ///
@@ -551,8 +554,8 @@ impl AsyncVault {
     }
 
     /// Whether setup is open, the wiring `finish_setup` checks except the share
-    /// supply, and the feed: whether it can price now, and whether its reports
-    /// outlive the notice.
+    /// supply and the vault's own books, and the feed: whether it can price
+    /// now, and whether its reports outlive the notice.
     pub fn health(e: &Env) -> Health {
         health::health(e)
     }
@@ -903,6 +906,7 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     /// * `InvalidAmount` - `shares` is zero or negative.
     /// * `Frozen` - `holder` is frozen, or `shares` needs frozen shares.
     /// * `RequestOutstanding` - `holder` has a redemption in this epoch
@@ -975,6 +979,7 @@ impl AsyncVault {
     ///
     /// * `AccessControlError::Unauthorized` - `caller` lacks `manager`.
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     ///
     /// # Events
     ///
@@ -1001,6 +1006,7 @@ impl AsyncVault {
     ///
     /// * `PausableError::EnforcedPause` - The vault is paused.
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     /// * `EpochNotFound` - No such epoch.
     /// * `EpochNotPending` - The epoch is open or already priced.
     /// * `NoticeNotElapsed` - The notice has not run.

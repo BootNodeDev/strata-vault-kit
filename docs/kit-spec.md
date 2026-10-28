@@ -91,7 +91,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**:
   - Upgrade delay $`\in [7 \text{ days}, 90 \text{ days}]`$ and $`\text{delay} \ge \text{notice}`$, checked when a delay change is proposed and again when it applies.
   - Wind-down delay $`\in [7 \text{ days}, 90 \text{ days}]`$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
-  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and a custodian other than the vault. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
+  - The vault takes no deposit, redemption, seal or pricing until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, a custodian other than the vault, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted. Shares minted before setup closes would redeem against depositors' money, and a request booked before setup would be paid from it, so both the token supply and the vault's books must be empty. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
   - After setup, the vault's custodian, role grants, revoking `manager`, admin hand-overs and lowering the notice or the wind-down delay go through the queue; a direct call is refused with `UseTimelock`. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking any other role stay instant. A `Notice` or `WindDownDelay` change is checked against its bounds when proposed and again when it applies.
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
@@ -173,11 +173,11 @@ The `async_vault` constructor refuses these four pairs of equal addresses and co
 
 ### Health View
 
-`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out two `finish_setup` checks: that the share token has no shares outstanding, which stops being true once the vault has holders, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while every field from `token_bound` to `feed_answers` is true, shares were minted before setup; the token's `total_supply()` shows them.
+`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out three `finish_setup` checks: that the share token has no shares outstanding and that the vault's own books are empty, both of which stop being true once the vault has its first request, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while every field from `token_bound` to `feed_answers` is true, shares were minted before setup; the token's `total_supply()` shows them.
 
 | Field | True when |
 |---|---|
-| `setup_open` | `finish_setup` has not run yet. While true, admin changes are instant and deposits are refused. |
+| `setup_open` | `finish_setup` has not run yet. While true, admin changes are instant and requests and epochs are refused. |
 | `token_bound` | The share token names this vault through `vault()` and its own setup is finished. |
 | `oracle_bound` | The oracle names this vault through `vault()` and its own setup is finished. |
 | `sole_token_manager` | This vault is the share token's only `manager`. |
@@ -260,18 +260,18 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
 | **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
-| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause; refused in a wind-down) |
+| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | No (open during pause; refused in a wind-down) |
 | **`AsyncVault`** | `cancel_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_redeem` | Investor (Caller) | `holder.require_auth()` | No (always open) |
-| **`AsyncVault`** | `close_epoch` | Manager | `#[only_role(caller, "manager")]` | No |
-| **`AsyncVault`** | `fulfill_epoch` | Permissionless | None | Yes (halted by pause) |
+| **`AsyncVault`** | `close_epoch` | Manager | `#[only_role(caller, "manager")]`; refused until setup finishes (`SetupOpen`) | No |
+| **`AsyncVault`** | `fulfill_epoch` | Permissionless | None; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
 | **`AsyncVault`** | `pause` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
 | **`AsyncVault`** | `unpause` | Governance | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
 | **`AsyncVault`** | `set_notice` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change` | No |
 | **`AsyncVault`** | `set_custodian` | Governance | `#[only_admin]`; instant during setup, then `propose_change`; never the vault itself (`InvalidCustodian`) | No |
 | **`AsyncVault`** | `set_deposit_cap` | Governance | `#[only_admin]`; instant both ways | No |
 | **`AsyncVault`** | `set_wind_down_delay` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change`; never below 7 days | No |
-| **`AsyncVault`** | `finish_setup` | Governance | `#[only_admin]`; needs the wiring complete and no pending admin hand-over; once | No |
+| **`AsyncVault`** | `finish_setup` | Governance | `#[only_admin]`; needs the wiring complete, the vault's own books empty, and no pending admin hand-over; once | No |
 | **`AsyncVault`** | `setup_open` | Permissionless | None (view) | No |
 | **`AsyncVault`** | `propose_wind_down` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `cancel_wind_down_proposal` | Governance | `#[only_admin]` | No |
@@ -347,7 +347,7 @@ A clean deployment executes in three sequenced phases:
    - Call `Compliance::bind_token(share_token_address, governance)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
    - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap. The custodian is required, and the vault's own address is refused (`InvalidCustodian`).
-   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, and an oracle that answers `state()` and `freshness_duration()`. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit before it.
+   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit, redemption, seal or pricing before it.
 3. **Phase 3: Operational Parameterization**
    - Oracle reporter submits the genesis NAV attestation (`attest`).
 

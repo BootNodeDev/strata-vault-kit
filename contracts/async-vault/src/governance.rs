@@ -62,8 +62,8 @@ pub struct VaultPendingChange {
 const TOKEN_MANAGER_ROLE: Symbol = symbol_short!("manager");
 
 /// What `finish_setup` needs to see before deposits open. `health()` reports
-/// every check but `no_shares_outstanding`: a healthy vault has shares
-/// outstanding from its first claim on.
+/// every check but `no_shares_outstanding` and `books_empty`: a live vault has
+/// both from its first request on.
 pub(crate) struct Wiring {
     pub token_bound: bool,
     pub oracle_bound: bool,
@@ -77,6 +77,8 @@ pub(crate) struct Wiring {
     pub addresses_distinct: bool,
     pub custodian_set: bool,
     pub feed_answers: bool,
+    /// A request booked before setup would be paid from a depositor's money.
+    pub books_empty: bool,
 }
 
 impl Wiring {
@@ -92,6 +94,7 @@ impl Wiring {
             && self.addresses_distinct
             && self.custodian_set
             && self.feed_answers
+            && self.books_empty
     }
 }
 
@@ -152,6 +155,20 @@ fn compliance_bound(e: &Env, compliance: &Address, token: &Address) -> bool {
     linked && bound_here_or_external
 }
 
+/// True when nothing has been requested, committed or priced in the vault's
+/// own books: the first epoch is still open and empty, and nothing is owed.
+pub(crate) fn books_empty(e: &Env) -> bool {
+    let first_epoch_empty = match state::get_epoch(e, state::FIRST_EPOCH) {
+        Some(epoch) => epoch.total_deposited == 0 && epoch.total_shares_redeeming == 0,
+        None => false,
+    };
+    state::current_epoch(e) == state::FIRST_EPOCH
+        && first_epoch_empty
+        && state::committed(e) == 0
+        && state::pending_mint_shares(e) == 0
+        && state::pending_burn_shares(e) == 0
+}
+
 fn all_different(addresses: &[&Address]) -> bool {
     addresses
         .iter()
@@ -198,6 +215,7 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
         custodian_set: state::get_addr_opt(e, &DataKey::Custodian)
             .is_some_and(|custodian| custodian != me),
         feed_answers: answers_as_feed(e, &oracle),
+        books_empty: books_empty(e),
     }
 }
 

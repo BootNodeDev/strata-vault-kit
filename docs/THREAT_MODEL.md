@@ -453,8 +453,9 @@ binding missing.
 - **Control:** The vault, the share token, the oracle and the compliance
   contract each start in a setup window in which admin changes are instant.
   `finish_setup` closes it once, and it never reopens. The vault refuses
-  deposits until its own setup is finished (`SetupOpen`). Its `finish_setup`
-  refuses (`SetupIncomplete`) unless:
+  deposits, redemptions, and sealing or pricing an epoch until its own setup
+  is finished (`SetupOpen`). Its `finish_setup` refuses (`SetupIncomplete`)
+  unless:
   - the token and the oracle name this vault and have finished their own setup;
   - the vault is the token's only `manager`, and no shares exist yet;
   - the vault passes the identity check and is not frozen on the token;
@@ -465,11 +466,13 @@ binding missing.
   - the asset and the token have the same decimals, and the asset, the token,
     the oracle and the vault are four different addresses;
   - the oracle answers `state()` and `freshness_duration()`, and a custodian
-    other than the vault is set.
+    other than the vault is set;
+  - the vault's own books are empty: the first epoch, with no deposit or
+    redemption booked in it, nothing committed, and no shares owed or to burn.
 
   It also refuses while an admin hand-over offered during setup is still open.
-  `health()` reports each of these checks except two: that no shares exist yet,
-  and that no hand-over is pending.
+  `health()` reports each of these checks except three: that no shares exist
+  yet, that the vault's own books are empty, and that no hand-over is pending.
 - **Residual:** Before `finish_setup`, the admin changes anything at once. The
   checks read only the token's `manager` list: a second attester, treasury or
   guardian is not checked, though each contract shows its role holders. An
@@ -478,6 +481,10 @@ binding missing.
   meta, activates a wind-down with no delay, and nothing on chain refuses that
   build.
 - **Tests:** `a_deposit_before_setup_finishes_is_refused`,
+  `a_redemption_before_setup_finishes_is_refused`,
+  `no_epoch_is_sealed_or_priced_before_setup_finishes`,
+  `a_redemption_planted_during_setup_never_reaches_a_depositor`,
+  `setup_finishes_after_cash_is_funded_during_it`,
   `every_wiring_step_is_checked_before_setup_finishes`,
   `a_compliance_contract_from_outside_the_kit_is_accepted`,
   `setup_cannot_finish_while_a_hand_over_is_pending` and

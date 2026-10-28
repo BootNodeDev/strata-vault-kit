@@ -126,7 +126,8 @@ strata_bindings::error_enum! {
         /// first.
         TooManyPendingChanges = 6063,
         /// Setup is still open, so the timelock protects nothing yet: the vault
-        /// takes no deposit and queues no change. Governance finishes setup first.
+        /// takes no request, seals or prices no epoch, and queues no change.
+        /// Governance finishes setup first.
         SetupOpen = 6064,
         /// A direct call cannot make this change. After setup it goes through
         /// `propose_change`; setting a role admin is never allowed.
@@ -136,7 +137,8 @@ strata_bindings::error_enum! {
         /// A wiring check `health()` reports is false (token, oracle and compliance
         /// bound, sole token manager, allowlisted, not frozen, matching decimals,
         /// distinct addresses, a feed that answers, a custodian) or the token has
-        /// shares outstanding, so setup cannot finish.
+        /// shares outstanding, or the vault's own books are not empty, so setup
+        /// cannot finish.
         SetupIncomplete = 6067,
         /// The holder fails the share token's identity check, so the vault takes no
         /// deposit request from them and returns no escrowed shares to them. A
