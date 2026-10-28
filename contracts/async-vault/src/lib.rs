@@ -4,9 +4,11 @@
 //! is sealed and priced at the oracle's report, and each holder claims the
 //! result.
 //!
-//! - **The manager seals, anyone prices.** The price is the oracle's, not the
-//!   caller's. The cost: a silent manager or attester stalls every request, and
-//!   after setup a replacement waits for the timelock.
+//! - **The manager seals at any time, and anyone once the open epoch has run
+//!   the minimum epoch duration governance sets; anyone prices.** The price is
+//!   the oracle's, not the caller's. The cost: a silent attester stalls every
+//!   request; a silent manager stalls them until the minimum runs, or, with no
+//!   minimum set, until a replacement passes the timelock.
 //! - **Pricing records totals; claims mint and burn.** Pricing costs the same
 //!   for any number of requests. The cost: an epoch's rounding remainder stays
 //!   in `committed` and `pending_mint_shares` until its last request settles.
@@ -1010,15 +1012,21 @@ impl AsyncVault {
     }
 
     /// Seals the open epoch, opens the next, and returns the sealed epoch's
-    /// id. It can be priced once its notice has run.
+    /// id. The manager seals at any time, anyone else once the open epoch has
+    /// been open for the minimum epoch duration. It can be priced once its
+    /// notice has run.
     ///
     /// # Arguments
     ///
-    /// * `caller` - A `manager` holder.
+    /// * `caller` - A `manager` holder, or any account once the minimum has
+    ///   run.
     ///
     /// # Errors
     ///
-    /// * `AccessControlError::Unauthorized` - `caller` lacks `manager`.
+    /// * `AccessControlError::Unauthorized` - `caller` lacks `manager` and no
+    ///   minimum epoch duration is set.
+    /// * `MinEpochDurationNotElapsed` - `caller` lacks `manager` and the open
+    ///   epoch has not run the minimum.
     /// * `WindDownActive` - The vault is winding down.
     ///
     /// # Events
@@ -1028,8 +1036,9 @@ impl AsyncVault {
     /// # Authorization
     ///
     /// `caller` signs.
-    #[only_role(caller, "manager")]
     pub fn close_epoch(e: &Env, caller: Address) -> u64 {
+        guards::allowed_to_seal(e, &caller);
+        caller.require_auth();
         epoch::close(e)
     }
 

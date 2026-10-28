@@ -1,6 +1,6 @@
 use soroban_sdk::{panic_with_error, Address, Env, Symbol};
 use stellar_access::{
-    access_control::{self, AccessControlStorageKey},
+    access_control::{self, AccessControlError, AccessControlStorageKey},
     role_transfer,
 };
 use stellar_tokens::{
@@ -379,5 +379,20 @@ pub(crate) fn allowed_to(e: &Env, exit: Exit, holder: &Address) {
 pub(crate) fn not_refused(e: &Env, decision: Decision, standing: Standing) {
     if matches!(decision, Decision::Refuse | Decision::Hold) {
         panic_with_error!(e, lock_policy::refused_with(standing));
+    }
+}
+
+/// The manager seals at any time, anyone else once the open epoch has run the minimum.
+pub(crate) fn allowed_to_seal(e: &Env, caller: &Address) {
+    if access_control::has_role(e, caller, &MANAGER_ROLE).is_some() {
+        return;
+    }
+    let Some(minimum) = state::min_epoch_duration(e) else {
+        panic_with_error!(e, AccessControlError::Unauthorized);
+    };
+    let elapsed = state::epoch_opened_at(e)
+        .is_some_and(|start| e.ledger().timestamp() >= start.saturating_add(minimum));
+    if !elapsed {
+        panic_with_error!(e, VaultError::MinEpochDurationNotElapsed);
     }
 }

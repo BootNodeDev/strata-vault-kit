@@ -170,5 +170,9 @@ strata_bindings::error_enum! {
         /// The custodian would be the vault itself. Capital deployed to it would
         /// never leave, and the books would count it as both held and deployed.
         InvalidCustodian = 6075,
+        /// The caller lacks `manager` and the open epoch has been open less than
+        /// the minimum epoch duration, or has no recorded start yet (setup is
+        /// still open).
+        MinEpochDurationNotElapsed = 6077,
     }
 }
