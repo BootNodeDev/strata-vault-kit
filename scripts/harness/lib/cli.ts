@@ -4,7 +4,13 @@ import { createRequire } from "node:module"
 import { basename, join } from "node:path"
 import { promisify } from "node:util"
 
-import { StrKey, type Asset, type Keypair } from "@stellar/stellar-sdk"
+import {
+	Contract,
+	StrKey,
+	type Asset,
+	type Keypair,
+	type rpc,
+} from "@stellar/stellar-sdk"
 
 import { type Network } from "./network.js"
 
@@ -36,14 +42,17 @@ async function exec(
 	}
 }
 
-async function stellar(
+export async function stellar(
 	args: readonly string[],
 	options: Record<string, unknown> = {},
 ): Promise<string> {
 	return exec("stellar", args, options)
 }
 
-function rpcArgs(net: Network): string[] {
+/** The two settings every network command needs. */
+export type Rpc = Pick<Network, "rpcUrl" | "passphrase">
+
+export function rpcArgs(net: Rpc): string[] {
 	return ["--rpc-url", net.rpcUrl, "--network-passphrase", net.passphrase]
 }
 
@@ -90,7 +99,7 @@ export async function deployContract(
 	return lastContractId(out)
 }
 
-export async function deployAssetContract(
+async function deployAssetContract(
 	net: Network,
 	asset: Asset,
 	source: Keypair,
@@ -107,6 +116,21 @@ export async function deployAssetContract(
 		withSource(source),
 	)
 	return lastContractId(out)
+}
+
+// The asset contract's id follows from the asset, so a kept issuer may have one.
+export async function ensureAssetContract(
+	net: Network,
+	server: rpc.Server,
+	asset: Asset,
+	source: Keypair,
+): Promise<string> {
+	const id = asset.contractId(net.passphrase)
+	const { entries } = await server.getLedgerEntries(
+		new Contract(id).getFootprint(),
+	)
+	if (entries.length > 0) return id
+	return deployAssetContract(net, asset, source)
 }
 
 export async function generateClient(
@@ -129,7 +153,7 @@ export async function generateClient(
 			dependencies?: Record<string, string>
 		}
 		if (pkg.dependencies?.["@stellar/stellar-sdk"]) {
-			pkg.dependencies["@stellar/stellar-sdk"] = "16.1.0"
+			pkg.dependencies["@stellar/stellar-sdk"] = "16.4.1"
 			writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n")
 		}
 	}

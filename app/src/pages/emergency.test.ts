@@ -28,9 +28,15 @@ const everyRole = [
 	grantOf("share-token admin"),
 ]
 
-const calm: EmergencyState = { vault: "open", token: "open", oracle: "valid" }
+const calm: EmergencyState = {
+	vault: "open",
+	setup: "closed",
+	token: "open",
+	oracle: "valid",
+}
 const alarmed: EmergencyState = {
 	vault: "paused",
+	setup: "closed",
 	token: "paused",
 	oracle: "paused",
 }
@@ -50,6 +56,7 @@ describe("toEmergencyActions", () => {
 	it("holds no action back on a state still being read, showing the condition as unknown", () => {
 		const reading: EmergencyState = {
 			vault: "checking",
+			setup: "checking",
 			token: "checking",
 			oracle: "checking",
 		}
@@ -67,6 +74,7 @@ describe("toEmergencyActions", () => {
 	it("decides each action from its own state only", () => {
 		const state: EmergencyState = {
 			vault: "checking",
+			setup: "checking",
 			token: "paused",
 			oracle: "checking",
 		}
@@ -84,8 +92,8 @@ describe("toEmergencyActions", () => {
 		expect(ids(calm, everyRole)).toEqual([
 			"pause-vault",
 			"unpause-vault",
-			"raise-ripcord",
-			"lower-ripcord",
+			"pause-nav",
+			"unpause-nav",
 			"clear-latest",
 			"pause-token",
 			"unpause-token",
@@ -95,32 +103,32 @@ describe("toEmergencyActions", () => {
 	it.each<[string, string[]]>([
 		["vault guardian", ["pause-vault"]],
 		["vault governance", ["unpause-vault"]],
-		["oracle guardian", ["raise-ripcord"]],
-		["oracle admin", ["raise-ripcord", "lower-ripcord", "clear-latest"]],
+		["oracle guardian", ["pause-nav"]],
+		["oracle admin", ["pause-nav", "unpause-nav", "clear-latest"]],
 		["share-token admin", ["pause-token", "unpause-token"]],
 	])("offers %s only what its guard permits", (role, expected) => {
 		expect(ids(calm, [grantOf(role)])).toEqual(expected)
 	})
 
-	it("raises through raise_ripcord for the oracle guardian and set_ripcord for the oracle admin", () => {
+	it("pauses through pause_nav for the oracle guardian and set_nav_paused for the oracle admin", () => {
 		expect(
-			actionOf(calm, [grantOf("oracle guardian")], "raise-ripcord"),
+			actionOf(calm, [grantOf("oracle guardian")], "pause-nav"),
 		).toMatchObject({ viaAdmin: false })
 		expect(
-			actionOf(calm, [grantOf("oracle admin")], "raise-ripcord"),
+			actionOf(calm, [grantOf("oracle admin")], "pause-nav"),
 		).toMatchObject({ viaAdmin: true })
-		expect(actionOf(calm, everyRole, "raise-ripcord")).toMatchObject({
+		expect(actionOf(calm, everyRole, "pause-nav")).toMatchObject({
 			viaAdmin: false,
 		})
 	})
 
-	it("raises through the oracle admin when the guardian grant needs more signatures", () => {
+	it("pauses through the oracle admin when the guardian grant needs more signatures", () => {
 		const grants = [
 			grantOf("oracle guardian", { standing: { needs: 2 } }),
 			grantOf("oracle admin"),
 		]
 
-		expect(actionOf(calm, grants, "raise-ripcord")).toMatchObject({
+		expect(actionOf(calm, grants, "pause-nav")).toMatchObject({
 			viaAdmin: true,
 			enabled: true,
 		})
@@ -134,13 +142,13 @@ describe("toEmergencyActions", () => {
 
 		expect(enabled).toEqual([
 			"pause-vault",
-			"raise-ripcord",
-			"lower-ripcord",
+			"pause-nav",
+			"unpause-nav",
 			"pause-token",
 		])
 	})
 
-	it("enables unpausing, lowering and clearing once everything is paused", () => {
+	it("enables unpausing the vault, unpausing the NAV and clearing once everything is paused", () => {
 		const actions = toEmergencyActions(alarmed, everyRole, wallet)
 		const enabled = actions
 			.filter((action) => action.enabled)
@@ -148,8 +156,8 @@ describe("toEmergencyActions", () => {
 
 		expect(enabled).toEqual([
 			"unpause-vault",
-			"raise-ripcord",
-			"lower-ripcord",
+			"pause-nav",
+			"unpause-nav",
 			"clear-latest",
 			"unpause-token",
 		])
@@ -163,9 +171,9 @@ describe("toEmergencyActions", () => {
 			{ label: "Vault is paused", met: false },
 		])
 		expect(actionOf(calm, everyRole, "clear-latest").conditions).toEqual([
-			{ label: "Ripcord raised", met: false },
+			{ label: "NAV paused", met: false },
 		])
-		expect(actionOf(calm, everyRole, "lower-ripcord").conditions).toEqual([])
+		expect(actionOf(calm, everyRole, "unpause-nav").conditions).toEqual([])
 		expect(actionOf(alarmed, everyRole, "unpause-token").conditions).toEqual([
 			{ label: "Share token is paused", met: true },
 		])
@@ -174,6 +182,7 @@ describe("toEmergencyActions", () => {
 	it("leaves a precondition undecided when its state is unreadable", () => {
 		const state: EmergencyState = {
 			vault: "unreadable",
+			setup: "unreadable",
 			token: "unreadable",
 			oracle: "unreadable",
 		}
@@ -185,13 +194,13 @@ describe("toEmergencyActions", () => {
 		expect(actions.every((action) => action.enabled)).toBe(true)
 	})
 
-	it("keeps raising the ripcord available once raised, noting it already is", () => {
-		const raise = actionOf(alarmed, everyRole, "raise-ripcord")
+	it("keeps pausing the NAV available once paused, noting it already is", () => {
+		const pause = actionOf(alarmed, everyRole, "pause-nav")
 
-		expect(raise.enabled).toBe(true)
-		expect(raise.conditions).toEqual([])
-		expect(raise.note).toBe("Ripcord already raised.")
-		expect(actionOf(calm, everyRole, "raise-ripcord").note).toBeUndefined()
+		expect(pause.enabled).toBe(true)
+		expect(pause.conditions).toEqual([])
+		expect(pause.note).toBe("NAV already paused.")
+		expect(actionOf(calm, everyRole, "pause-nav").note).toBeUndefined()
 	})
 
 	it("says what each action blocks and what stays open", () => {
@@ -204,8 +213,8 @@ describe("toEmergencyActions", () => {
 		expect(actionOf(alarmed, everyRole, "unpause-token").outcome).toBe(
 			"Resumes holder transfers and returns of escrowed shares.",
 		)
-		expect(actionOf(calm, everyRole, "raise-ripcord").outcome).toBe(
-			"Stops pricing: no epoch can be fulfilled until it is lowered. Attesting stays open.",
+		expect(actionOf(calm, everyRole, "pause-nav").outcome).toBe(
+			"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open.",
 		)
 	})
 
@@ -220,8 +229,8 @@ describe("toEmergencyActions", () => {
 		expect(tones).toEqual({
 			"pause-vault": "danger",
 			"unpause-vault": undefined,
-			"raise-ripcord": "danger",
-			"lower-ripcord": undefined,
+			"pause-nav": "danger",
+			"unpause-nav": undefined,
 			"clear-latest": "danger",
 			"pause-token": "danger",
 			"unpause-token": undefined,
@@ -241,39 +250,73 @@ describe("toEmergencyTiles", () => {
 	it("shows pending tiles while reading", () => {
 		const tiles = toEmergencyTiles({
 			vault: "checking",
+			setup: "checking",
 			token: "checking",
 			oracle: "checking",
 		})
 
 		expect(tiles.map(({ label, pending }) => [label, pending])).toEqual([
 			["Vault", true],
+			["Setup", true],
 			["Share token", true],
 			["Oracle", true],
 		])
 	})
 
-	it("states each contract's current pause and the ripcord", () => {
+	it("states each contract's current pause and the NAV pause", () => {
 		expect(toEmergencyTiles(calm)).toEqual([
 			{ label: "Vault", value: "Open" },
+			{
+				label: "Setup",
+				value: "Closed",
+				note: "Changes wait for the timelock",
+			},
 			{ label: "Share token", value: "Open" },
-			{ label: "Oracle", value: "Valid", note: "Ripcord not raised" },
+			{ label: "Oracle", value: "Valid", note: "NAV not paused" },
 		])
 		expect(toEmergencyTiles(alarmed)).toEqual([
 			{ label: "Vault", value: "Paused" },
+			{
+				label: "Setup",
+				value: "Closed",
+				note: "Changes wait for the timelock",
+			},
 			{ label: "Share token", value: "Paused" },
-			{ label: "Oracle", value: "Paused", note: "Ripcord raised" },
+			{ label: "Oracle", value: "Paused", note: "NAV paused" },
 		])
 	})
 
-	it("shows a stale oracle as stale with the ripcord down, and an unreadable state as unknown", () => {
+	it("says setup is open beside the vault, and what that means", () => {
+		expect(toEmergencyTiles({ ...calm, setup: "open" })[1]).toEqual({
+			label: "Setup",
+			value: "Open",
+			note: "Changes apply at once; no deposits yet",
+		})
+		expect(toEmergencyTiles({ ...calm, setup: "unreadable" })[1]).toEqual({
+			label: "Setup",
+			value: null,
+		})
+	})
+
+	it("shows a stale oracle as stale with the NAV not paused, and an unreadable state as unknown", () => {
 		expect(
-			toEmergencyTiles({ vault: "unreadable", token: "open", oracle: "stale" }),
+			toEmergencyTiles({
+				vault: "unreadable",
+				setup: "closed",
+				token: "open",
+				oracle: "stale",
+			}),
 		).toEqual([
 			{ label: "Vault", value: null },
+			{
+				label: "Setup",
+				value: "Closed",
+				note: "Changes wait for the timelock",
+			},
 			{ label: "Share token", value: "Open" },
-			{ label: "Oracle", value: "Stale", note: "Ripcord not raised" },
+			{ label: "Oracle", value: "Stale", note: "NAV not paused" },
 		])
-		expect(toEmergencyTiles({ ...calm, oracle: "unreadable" })[2]).toEqual({
+		expect(toEmergencyTiles({ ...calm, oracle: "unreadable" })[3]).toEqual({
 			label: "Oracle",
 			value: null,
 		})

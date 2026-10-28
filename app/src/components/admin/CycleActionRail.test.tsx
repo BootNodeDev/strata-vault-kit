@@ -52,6 +52,8 @@ const attestAction: CycleAction = {
 	},
 	price: null,
 	freshness: null,
+	proofHash: null,
+	proofUri: "",
 	enabled: false,
 }
 
@@ -422,15 +424,15 @@ describe("CycleActionRail", () => {
 
 	it("states an action's note outside the conditions", () => {
 		renderRail([
-			{ ...attestAction, note: "Ripcord raised — attesting does not lift it." },
+			{ ...attestAction, note: "NAV paused — attesting does not unpause it." },
 		])
 		expand("Attest price")
 
 		const list = screen.getByRole("list", { name: "Attest price conditions" })
 		expect(
-			screen.getByText("Ripcord raised — attesting does not lift it."),
+			screen.getByText("NAV paused — attesting does not unpause it."),
 		).toBeTruthy()
-		expect(within(list).queryByText(/Ripcord/)).toBeNull()
+		expect(within(list).queryByText(/NAV paused/)).toBeNull()
 	})
 })
 
@@ -489,6 +491,27 @@ describe("CycleActionRail with keyed fields", () => {
 
 		expect(onInput).toHaveBeenNthCalledWith(1, setLimits, "3d", "freshness")
 		expect(onInput).toHaveBeenNthCalledWith(2, setLimits, "0.6", "floor")
+	})
+
+	it("keeps an action open and its field focused when its route changes id", () => {
+		const setNotice: RailAction = { ...setLimits, slot: "set-limits" }
+		const rail = (action: RailAction) => (
+			<CycleActionRail
+				scope="configuration"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+			/>
+		)
+		const { rerender } = render(rail(setNotice))
+		const field = screen.getByRole("textbox", { name: "Freshness window" })
+		field.focus()
+
+		rerender(rail({ ...setNotice, id: "propose-oracle-config" }))
+
+		expect(expanded("Set the oracle limits")).toBe(true)
+		expect(document.activeElement).toBe(field)
 	})
 
 	it("shows the current value next to the field and the new one once it reads", () => {
@@ -733,6 +756,33 @@ describe("CycleActionRail readiness", () => {
 		expect(onReady).toHaveBeenLastCalledWith(
 			expect.objectContaining({ epochId: 6n }),
 		)
+	})
+
+	it("reports the new route of an open action whose id changes within its slot", () => {
+		vi.useFakeTimers()
+		const release = vi.fn()
+		const onReady = vi.fn(() => release)
+		const direct: RailAction = { ...closeAction, slot: "close" }
+		const proposed: RailAction = { ...direct, id: "propose-close" }
+		const rail = (action: RailAction) => (
+			<CycleActionRail
+				scope="cycle"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={onReady}
+			/>
+		)
+		const { rerender } = render(rail(direct))
+		vi.advanceTimersByTime(400)
+
+		rerender(rail(proposed))
+		vi.advanceTimersByTime(400)
+
+		expect(release).toHaveBeenCalledTimes(1)
+		expect(onReady).toHaveBeenNthCalledWith(1, direct)
+		expect(onReady).toHaveBeenNthCalledWith(2, proposed)
 	})
 
 	it("does not report an open action that is blocked", () => {

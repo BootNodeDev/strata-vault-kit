@@ -1,3 +1,5 @@
+use soroban_sdk::IntoVal;
+
 use super::*;
 
 #[test]
@@ -5,7 +7,6 @@ fn capital_makes_the_round_trip_to_the_custodian() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     // Escrow stays refundable until the epoch prices, so none of it is free.
     assert_eq!(f.vault.free_reserve(), 0);
@@ -31,7 +32,6 @@ fn returning_more_than_was_deployed_shows_as_negative_net() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
     f.close_epoch();
     f.attest(wad(2));
     f.vault.fulfill_epoch(&epoch);
@@ -48,7 +48,6 @@ fn assets_owed_to_a_priced_redemption_cannot_be_deployed() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &500);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     assert_eq!(f.fulfill_epoch(wad(2)), epoch);
 
@@ -64,7 +63,6 @@ fn an_unpriced_redemption_does_not_reserve_anything_yet() {
     let f = setup();
     let holder = f.holder(500);
     f.vault.request_redeem(&holder, &500);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     assert_eq!(f.vault.free_reserve(), 1_000);
     assert_eq!(f.vault.deploy_to_custodian(&f.treasury, &1_000), 1_000);
@@ -95,7 +93,6 @@ fn deploying_needs_the_treasury_role() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     assert!(f.vault.try_deploy_to_custodian(&f.manager, &100).is_err());
     assert!(f.vault.try_deploy_to_custodian(&f.admin, &100).is_err());
@@ -104,25 +101,42 @@ fn deploying_needs_the_treasury_role() {
 
 #[test]
 fn deploying_without_a_custodian_is_rejected() {
-    let f = setup();
-    let investor = f.investor(1_000);
-    f.vault.request_deposit(&investor, &1_000);
+    let f = miswired(Miswire::NoCustodian);
+    let backer = f.investor(1_000);
+    f.vault.fund(&backer, &1_000);
 
     assert_eq!(f.vault.custodian(), None);
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &100).is_err());
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &100),
+        VaultError::CustodianNotSet,
+    );
 }
 
 #[test]
 fn setting_the_custodian_needs_the_admin_signature() {
-    let f = setup();
+    let f = miswired(Miswire::NoCustodian);
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_set_custodian(&f.custodian, &f.admin).is_err());
-    assert!(f
-        .vault
-        .try_set_custodian(&f.custodian, &f.treasury)
-        .is_err());
+    assert!(f.vault.try_set_custodian(&f.custodian).is_err());
+    f.sign_only_as(
+        &f.treasury,
+        "set_custodian",
+        (f.custodian.clone(),).into_val(&f.e),
+    );
+    assert!(f.vault.try_set_custodian(&f.custodian).is_err());
     assert_eq!(f.vault.custodian(), None);
+}
+
+#[test]
+fn setting_the_vault_as_its_own_custodian_is_refused() {
+    for f in [setup_unfinished(), setup()] {
+        let before = f.vault.custodian();
+        refused(
+            f.vault.try_set_custodian(&f.vault.address),
+            VaultError::InvalidCustodian,
+        );
+        assert_eq!(f.vault.custodian(), before);
+    }
 }
 
 #[test]
@@ -130,8 +144,31 @@ fn deploying_a_non_positive_amount_is_rejected() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     assert!(f.vault.try_deploy_to_custodian(&f.treasury, &0).is_err());
     assert!(f.vault.try_deploy_to_custodian(&f.treasury, &-1).is_err());
+}
+
+/// Exits priced after a gain can owe more than the capital the vault counts,
+/// so the result may be negative; only leaving the type's range is refused.
+#[test]
+fn deposited_capital_fails_by_name_instead_of_overflowing() {
+    let f = setup();
+    let investor = f.investor(1);
+    f.vault.request_deposit(&investor, &1);
+    let capital = |net_deployed: i128, committed: i128| {
+        f.e.try_as_contract::<i128, VaultError>(&f.vault.address, || {
+            crate::state::set_net_deployed(&f.e, net_deployed);
+            crate::state::set_committed(&f.e, committed);
+            crate::treasury::deposited_capital(&f.e)
+        })
+    };
+
+    assert_eq!(capital(10, 3), Ok(8));
+    assert_eq!(capital(0, 5), Ok(-4));
+    assert_eq!(capital(i128::MAX, 0), Err(Ok(VaultError::AmountTooLarge)));
+    assert_eq!(
+        capital(i128::MIN, 2),
+        Err(Ok(VaultError::AccountingMismatch))
+    );
 }

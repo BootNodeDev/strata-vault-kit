@@ -8,7 +8,7 @@ export interface OracleConfig {
 	freshness_duration: number
 	cooldown_secs: number
 	max_up_bps: number
-	max_down_bps: number | null
+	max_down_bps: number
 	min_answer: string
 	max_answer: string
 }
@@ -25,9 +25,10 @@ export interface Network {
 }
 
 // The band is the protocol's; only the two waits are the fixture's choice.
+// A fall of any size lands at once, as a real loss must.
 const band = {
 	max_up_bps: 1000,
-	max_down_bps: null,
+	max_down_bps: 10_000,
 	min_answer: (WAD / 2n).toString(),
 	max_answer: (WAD * 100n).toString(),
 }

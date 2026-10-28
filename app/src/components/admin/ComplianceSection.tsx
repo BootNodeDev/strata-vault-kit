@@ -117,7 +117,6 @@ const ComplianceSection: React.FC<{
 		verifier,
 		target,
 		destination: destinationOf(inputs),
-		active,
 	})
 	const flows = useComplianceFlows()
 

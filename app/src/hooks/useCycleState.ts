@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import {
 	type Amount,
 	type ChainEvent,
@@ -48,7 +49,7 @@ export type OracleLimits = {
 	freshness: bigint
 	cooldown: bigint
 	maxUpBps: number
-	maxDownBps: number | null
+	maxDownBps: number
 	min: bigint
 	max: bigint
 }
@@ -58,7 +59,8 @@ export type CycleOracle = {
 	price: Price | null
 	attestedAt: bigint | null
 	expiresAt: bigint | null
-	ripcord: boolean | null
+	proof: { hash: string; uri: string } | null
+	navPaused: boolean | null
 	recorded: boolean | null
 	limits: OracleLimits | null
 }
@@ -128,7 +130,7 @@ export function toOracle(
 		freshness_duration: bigint
 		cooldown_secs: bigint
 		max_up_bps: number
-		max_down_bps: number | null
+		max_down_bps: number
 		min_answer: bigint
 		max_answer: bigint
 	}>,
@@ -139,9 +141,16 @@ export function toOracle(
 	return {
 		state: nav.status,
 		price: report === null ? null : (report.nav_per_share as Price),
-		attestedAt: report?.timestamp ?? null,
+		attestedAt: report?.accepted_at ?? null,
 		expiresAt: report?.expires_at ?? null,
-		ripcord: nav.status === "unreadable" ? null : nav.status === "paused",
+		proof:
+			report === null
+				? null
+				: {
+						hash: Buffer.from(report.proof_hash).toString("hex"),
+						uri: report.proof_uri,
+					},
+		navPaused: nav.status === "unreadable" ? null : nav.status === "paused",
 		recorded: recordedOf(latest),
 		limits:
 			config.kind === "value"
@@ -262,24 +271,24 @@ async function fetchCustodianBalance(
 	return toAmount(balance)
 }
 
-export function useCycleReads(active: boolean): CycleReads | undefined {
+export function useCycleReads(): CycleReads | undefined {
 	const { data } = useQuery({
 		queryKey: cycleReadsKey,
 		queryFn: fetchCycleReads,
 		staleTime: STALE_MS,
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
 	return data
 }
 
-export function useCycleState({ active = true }: { active?: boolean } = {}): {
+export function useCycleState(): {
 	cycle: CycleState
 } {
 	const { history } = useEpochHistory()
 	const { figures, isPending: figuresPending } = useVaultFigures()
 	const { pause } = useVaultPaused()
 	const { authorities, isPending: authoritiesPending } = useVaultAuthorities()
-	const reads = useCycleReads(active)
+	const reads = useCycleReads()
 	const custodian = authorities?.custodian ?? { kind: "unreadable" }
 	const custodianAddress = custodian.kind === "set" ? custodian.address : null
 	const { data: custodianBalance, isPending: balancePending } = useQuery({

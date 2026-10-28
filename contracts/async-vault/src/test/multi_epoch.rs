@@ -46,16 +46,16 @@ fn a_younger_epoch_can_be_priced_first() {
     );
 }
 
-/// One aggregate floor is credited at pricing, one floor per claimant is debited.
-/// The sum of floors is at most the floor of the sum, so a residue is left behind
-/// that no path releases. Three odd share counts lose half a unit each; the odd
-/// aggregate loses only half.
+/// Each claim floors, so the epoch pays out less than its total credited. Once
+/// the last claim settles, the shortfall leaves `committed` and stays in the
+/// reserve: nothing is owed for it, and nobody is paid it.
 #[test]
-fn the_rounding_residue_is_never_released() {
+fn the_rounding_residue_stays_in_the_reserve_once_the_epoch_settles() {
     let f = setup();
     let a = f.holder(101);
     let b = f.holder(103);
     let c = f.holder(105);
+    let held = f.balance(&f.vault.address);
 
     f.vault.request_redeem(&a, &101);
     f.vault.request_redeem(&b, &103);
@@ -72,15 +72,17 @@ fn the_rounding_residue_is_never_released() {
     f.vault.claim_redeem(&b, &epoch); // floor(103 * 1.5) = 154
     f.vault.claim_redeem(&c, &epoch); // floor(105 * 1.5) = 157
 
-    // 151 + 154 + 157 = 462, one short of the 463 credited.
-    assert_eq!(f.vault.committed(), 1);
+    // 151 + 154 + 157 = 462: the unit left over is no longer owed.
+    assert_eq!(f.vault.committed(), 0);
+    assert_eq!(f.balance(&f.vault.address), held - 462);
+    assert_eq!(f.vault.free_reserve(), held - 462);
 }
 
-/// One controller may hold a live redemption in two epochs at once, because the
+/// One holder may hold a live redemption in two epochs at once, because the
 /// outstanding-request check is keyed per epoch. Claims are taken newest first
 /// here, which today is allowed.
 #[test]
-fn one_controller_redeems_across_two_epochs() {
+fn one_holder_redeems_across_two_epochs() {
     let f = setup();
     let a = f.holder(500);
 
@@ -264,7 +266,6 @@ fn the_treasury_cannot_deploy_while_anything_is_uncovered() {
     let f = setup();
     let a = f.holder(200);
 
-    f.vault.set_custodian(&f.custodian, &f.admin);
     f.vault.request_redeem(&a, &200);
     let epoch = f.close_epoch();
     f.attest(wad(3));

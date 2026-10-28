@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import {
 	formatDate,
@@ -92,7 +93,7 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 const defaultCancelDepositImpl = async ({
 	epoch_id,
 }: {
-	from: string
+	holder: string
 	epoch_id: bigint
 }) => {
 	const request = mockRequests.deposits.get(epoch_id)
@@ -117,7 +118,7 @@ const defaultCancelDepositImpl = async ({
 const defaultRequestDepositImpl = async ({
 	amount,
 }: {
-	from: string
+	holder: string
 	amount: bigint
 }) => {
 	const epochId = mockRequests.currentEpoch
@@ -138,7 +139,7 @@ const defaultRequestDepositImpl = async ({
 const defaultRequestRedeemImpl = async ({
 	shares,
 }: {
-	from: string
+	holder: string
 	shares: bigint
 }) => {
 	const epochId = mockRequests.currentEpoch
@@ -159,7 +160,7 @@ const defaultRequestRedeemImpl = async ({
 const defaultCancelRedeemImpl = async ({
 	epoch_id,
 }: {
-	from: string
+	holder: string
 	epoch_id: bigint
 }) => {
 	const request = mockRequests.redeems.get(epoch_id)
@@ -186,7 +187,7 @@ const WAD_SCALE = 1_000000000000000000n
 const defaultClaimDepositImpl = async ({
 	epoch_id,
 }: {
-	caller: string
+	holder: string
 	epoch_id: bigint
 }) => {
 	const request = mockRequests.deposits.get(epoch_id)
@@ -215,7 +216,7 @@ const defaultClaimDepositImpl = async ({
 const defaultClaimRedeemImpl = async ({
 	epoch_id,
 }: {
-	caller: string
+	holder: string
 	epoch_id: bigint
 }) => {
 	const request = mockRequests.redeems.get(epoch_id)
@@ -345,7 +346,9 @@ vi.mock("../config/clients", () => {
 			result: {
 				nav_per_share: 1500000000000000000n,
 				expires_at: 1800000000n,
-				timestamp: 1757900000n,
+				accepted_at: 1757900000n,
+				proof_hash: Buffer.alloc(32, 0xab),
+				proof_uri: "",
 			},
 		}),
 	}
@@ -678,7 +681,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestRedeemMock).toHaveBeenCalledTimes(1))
 		expect(requestRedeemMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			shares: 150_0000000n,
 		})
 	})
@@ -700,7 +703,7 @@ describe("VaultPreview", () => {
 			timeout: 2000,
 		})
 		expect(requestDepositMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			amount: 100_0000000n,
 		})
 	})
@@ -739,7 +742,7 @@ describe("VaultPreview", () => {
 			timeout: 2000,
 		})
 		expect(requestRedeemMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			shares: 100_0000000n,
 		})
 		expect(requestDepositMock).toHaveBeenCalledTimes(1)
@@ -868,7 +871,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1))
 		expect(requestDepositMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			amount: 150_0000000n,
 		})
 	})
@@ -884,7 +887,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1))
 		expect(requestDepositMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			amount: 150_0000000n,
 		})
 	})
@@ -941,7 +944,7 @@ describe("VaultPreview", () => {
 			resolveSend = resolve
 		})
 		requestDepositMock.mockImplementationOnce(
-			async ({ amount }: { from: string; amount: bigint }) => ({
+			async ({ amount }: { holder: string; amount: bigint }) => ({
 				simulation: undefined,
 				signAndSend: async ({
 					watcher,
@@ -990,7 +993,7 @@ describe("VaultPreview", () => {
 			resolveSend = resolve
 		})
 		requestDepositMock.mockImplementationOnce(
-			async ({ amount }: { from: string; amount: bigint }) => ({
+			async ({ amount }: { holder: string; amount: bigint }) => ({
 				simulation: undefined,
 				signAndSend: async ({
 					watcher,
@@ -1062,7 +1065,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(2))
 		expect(requestDepositMock).toHaveBeenLastCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			amount: 150_0000000n,
 		})
 	})
@@ -1093,7 +1096,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestRedeemMock).toHaveBeenCalledTimes(2))
 		expect(requestRedeemMock).toHaveBeenLastCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			shares: 150_0000000n,
 		})
 	})
@@ -1190,7 +1193,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(cancelDepositMock).toHaveBeenCalledTimes(1))
 		expect(cancelDepositMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: mockRequests.currentEpoch,
 		})
 	})
@@ -1305,7 +1308,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(cancelRedeemMock).toHaveBeenCalledTimes(1))
 		expect(cancelRedeemMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: mockRequests.currentEpoch,
 		})
 	})
@@ -1397,7 +1400,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(claimDepositMock).toHaveBeenCalledTimes(1))
 		expect(claimDepositMock).toHaveBeenCalledWith({
-			caller: investorAddress,
+			holder: investorAddress,
 			epoch_id: readyDepositEpoch,
 		})
 	})
@@ -1557,7 +1560,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(claimRedeemMock).toHaveBeenCalledTimes(1))
 		expect(claimRedeemMock).toHaveBeenCalledWith({
-			caller: investorAddress,
+			holder: investorAddress,
 			epoch_id: readyRedeemEpoch,
 		})
 	})

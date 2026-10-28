@@ -57,7 +57,11 @@ fn redeeming_more_shares_than_held_is_rejected() {
     let f = setup();
     let user = f.holder(500);
 
-    assert!(f.vault.try_request_redeem(&user, &501).is_err());
+    // Nothing is frozen, so the token's own balance check applies, not `Frozen`.
+    assert_eq!(
+        f.vault.try_request_redeem(&user, &501).err(),
+        Some(Ok(soroban_sdk::Error::from_contract_error(300)))
+    );
     assert_eq!(f.shares(&user), 500);
 }
 

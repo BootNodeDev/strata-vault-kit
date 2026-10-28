@@ -20,15 +20,18 @@ result. Three states per side, none skipped: **pending, priced, claimed**.
 
 What the contracts enforce:
 
-1. **Entry is gated** by a post-KYC allowlist, checked on the receiver of a
-   subscription (enforced on share claim in contracts today; request-time
-   check is targeted for a future milestone) and on every share transfer.
+1. **Only allowlisted addresses enter.** The post-KYC allowlist is checked
+   when a subscription is requested, again when its shares are minted, and on
+   every share transfer.
 2. **A covered claim always pays.** Once priced and covered, a cash claim cannot
    be blocked by a pause, a stale valuation, or the investor losing their
    allowlist place. Priced claims are never re-priced and never identity-gated;
-   a delisted, non-frozen investor leaves through the exit-only cash path.
-3. **Cancellation is atomic and single-step**, open only until the attestation
-   that prices the request is accepted. There is no instant exit.
+   a delisted, non-frozen investor leaves through the exit-only cash path,
+   including a deposit that was priced before the delisting.
+3. **Cancellation is atomic and single-step**, open only while the vault cannot
+   price the request: the attestation that prices it closes cancellation, and
+   cancellation reopens if that report expires, the NAV is paused or the vault
+   is paused. There is no instant exit.
 
 Five authorities, each a native Stellar multisig: governance, compliance,
 attestation, treasury, guardian. Testnet only. Not audited.
@@ -80,7 +83,13 @@ apply as the corresponding code lands here.
   `scripts/generate-clients.mjs`, which reads the contract ids and RPC URL of
   `ADDRESSES_ENV` (default `staging`) from `environments.toml` and writes
   `app-lib/clients/<contract>/` from each contract's on-chain spec, with Node
-  alone. Those generated types are the only contract types; `app-lib/contracts.ts`
+  alone. `development` declares no ids: there the script resolves each
+  `[development.contracts.<name>]` block plus an alias named `asset` through
+  `stellar contract alias show`, so CI builds the app against the contracts
+  the branch just deployed. The scaffold registers the block aliases when it
+  deploys; the asset is a Stellar Asset Contract a developer registers once with
+  `stellar contract asset deploy --asset native --alias asset --source me`
+  against the local network. Those generated types are the only contract types; `app-lib/contracts.ts`
   re-exports them and builds each runtime client with `new Client(...)` from its
   generated `src/index`, whose embedded spec means no page fetches a contract's
   instance or Wasm. Vite dedupes `@stellar/stellar-sdk` so a client's nested copy
@@ -111,6 +120,45 @@ Not recorded here on purpose. The reference base kept them in this file and they
 drifted: its `AGENTS.md` and its generated client pointed at two different vault
 contracts. The addresses emitted by the deploy script are authoritative.
 
+## Code conventions
+
+- **Crate names.** Shared crates in `crates/` start with `strata-`
+  (`strata-timelock`, `strata-storage`, `strata-bindings`), so a path such as
+  `strata_timelock::DAY_DURATION` reads as the kit's own code.
+- **Addresses in entrypoints.** In an entrypoint the kit defines, `caller` is
+  the account that must sign the call, and `holder` is the account whose
+  position, request or balance the call is about. When one account is both, the
+  entrypoint takes `holder` and that account signs. The two ends of a share
+  transfer are `from` and `to`, and other addresses are named for what they
+  are (`custodian`, `vault`, the allowlisted `account`). OpenZeppelin trait
+  methods keep their own names (`operator`, `user_address`).
+- **Named errors.** Contract code fails with a named error variant, never with
+  `unwrap`, `expect` or a bare `panic!`. Tests may unwrap. Each contract
+  declares its error enum through `strata_bindings::error_enum!`, which fails
+  the build if a code leaves the contract's block (`docs/kit-spec.md`, section
+  7).
+- **No boolean switches.** A new entrypoint does one thing. Two behaviours get
+  two functions, like `freeze_partial_tokens` and `unfreeze_partial_tokens`,
+  not one function that takes a `bool`.
+- **Guards.** Each precondition is a `pub(crate) fn` in the contract's
+  `guards.rs`. Its name is the condition it checks (`positive_amount`,
+  `not_winding_down`), and it panics with a named error when the condition
+  fails. An entrypoint calls its guards first and then does its work, so its
+  preconditions are the first lines a reader sees.
+- **Doc comments.** Every public entrypoint has one, in OpenZeppelin's style: a
+  one-line summary, then `# Arguments` with units (asset base units, share base
+  units, WAD prices, seconds or ledgers), `# Errors`, `# Events` and
+  `# Authorization`. Every error variant's doc says when it happens. Keep them
+  short: they are stored in the Wasm as part of the contract spec, which keeps
+  1,024 bytes of each doc and drops the rest without a warning.
+  `every_contract_doc_fits_the_spec` (`crates/strata-bindings/tests/spec_docs.rs`)
+  fails when one is longer.
+- **Design notes.** Each contract's `lib.rs` opens with a `//! # Design`
+  section: five to ten bullets, each a choice and its trade-off, in plain words
+  and with no issue numbers or decision ids.
+- **Exact pins.** Every crates.io dependency, dev-dependencies included, is
+  pinned with `=` to the version in `Cargo.lock`.
+
 ## Conventions
 
 - Conventional Commits, imperative, subject ≤ 50 chars. **No AI attribution.**
@@ -118,8 +166,8 @@ contracts. The addresses emitted by the deploy script are authoritative.
   `feat/<issue>-<desc>`, `fix/...`, `chore/...`.
 - Issue bodies follow the templates in `.github/ISSUE_TEMPLATE/`, 200 words of
   prose hard cap. Titles are natural language with no prefix.
-- Exact dependency pins. Dependencies are never upgraded mid-milestone; each
-  migration is its own issue in the following one.
+- Dependencies are never upgraded mid-milestone; each migration is its own
+  issue in the following one.
 - Estimates live in the `Estimate` field of the
   [project board](https://github.com/orgs/BootNodeDev/projects/29), not in issue
   bodies.

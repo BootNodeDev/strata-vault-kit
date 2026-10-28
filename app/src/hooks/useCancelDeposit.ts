@@ -20,7 +20,7 @@ export function useCancelDeposit(): UseCancelDeposit {
 	const call = useCallback(
 		(signer: Signer, epochId: bigint) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.cancel_deposit({ from: signer.publicKey, epoch_id: epochId }),
+				vault.cancel_deposit({ holder: signer.publicKey, epoch_id: epochId }),
 			),
 		[],
 	)

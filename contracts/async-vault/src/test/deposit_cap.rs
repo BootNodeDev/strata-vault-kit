@@ -1,3 +1,5 @@
+use soroban_sdk::IntoVal;
+
 use super::*;
 
 #[test]
@@ -15,15 +17,15 @@ fn governance_sets_updates_and_clears_cap() {
     let f = setup();
 
     // Set cap
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
     assert_eq!(f.vault.deposit_cap(), Some(1_000));
 
     // Update cap
-    f.vault.set_deposit_cap(&Some(2_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(2_000));
     assert_eq!(f.vault.deposit_cap(), Some(2_000));
 
     // Clear cap
-    f.vault.set_deposit_cap(&None, &f.admin);
+    f.vault.set_deposit_cap(&None);
     assert_eq!(f.vault.deposit_cap(), None);
 }
 
@@ -31,7 +33,7 @@ fn governance_sets_updates_and_clears_cap() {
 fn negative_cap_rejected() {
     let f = setup();
     refused(
-        f.vault.try_set_deposit_cap(&Some(-1), &f.admin),
+        f.vault.try_set_deposit_cap(&Some(-1)),
         VaultError::InvalidAmount,
     );
 }
@@ -41,26 +43,17 @@ fn unauthorized_caller_rejected() {
     let f = setup();
     let rando = Address::generate(&f.e);
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_set_deposit_cap(&Some(1_000), &rando).is_err());
-    assert!(f
-        .vault
-        .try_set_deposit_cap(&Some(1_000), &f.manager)
-        .is_err());
-    assert!(f
-        .vault
-        .try_set_deposit_cap(&Some(1_000), &f.guardian)
-        .is_err());
-    assert!(f
-        .vault
-        .try_set_deposit_cap(&Some(1_000), &f.treasury)
-        .is_err());
+    for who in [&rando, &f.manager, &f.guardian, &f.treasury] {
+        f.sign_only_as(who, "set_deposit_cap", (Some(1_000_i128),).into_val(&f.e));
+        assert!(f.vault.try_set_deposit_cap(&Some(1_000)).is_err());
+    }
+    assert_eq!(f.vault.deposit_cap(), None);
 }
 
 #[test]
 fn boundary_value_enforcement() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
 
     let investor1 = f.investor(2_000);
     let investor2 = f.investor(2_000);
@@ -85,7 +78,7 @@ fn boundary_value_enforcement() {
 #[test]
 fn cancellation_frees_capacity() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
 
     let investor1 = f.investor(1_000);
     let investor2 = f.investor(1_000);
@@ -110,7 +103,7 @@ fn cancellation_frees_capacity() {
 #[test]
 fn deployed_capital_and_multi_epoch_accounting() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
 
     let investor1 = f.investor(1_000);
     let investor2 = f.investor(1_000);
@@ -122,7 +115,6 @@ fn deployed_capital_and_multi_epoch_accounting() {
     f.vault.fulfill_epoch(&1);
 
     // Deploy 800 to custodian
-    f.vault.set_custodian(&f.custodian, &f.admin);
     f.vault.deploy_to_custodian(&f.treasury, &800);
     assert_eq!(f.vault.net_deployed(), 800);
 
@@ -133,7 +125,7 @@ fn deployed_capital_and_multi_epoch_accounting() {
     );
 
     // Governance raises cap to 1_500
-    f.vault.set_deposit_cap(&Some(1_500), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_500));
 
     // Now investor2 can deposit 500
     let epoch2 = f.vault.request_deposit(&investor2, &500);
@@ -143,7 +135,7 @@ fn deployed_capital_and_multi_epoch_accounting() {
 #[test]
 fn redemptions_free_capacity() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(1_000), &f.admin);
+    f.vault.set_deposit_cap(&Some(1_000));
 
     let investor1 = f.investor(1_000);
     let investor2 = f.investor(1_000);
@@ -178,11 +170,89 @@ fn redemptions_free_capacity() {
 #[test]
 fn zero_cap_blocks_all_deposits() {
     let f = setup();
-    f.vault.set_deposit_cap(&Some(0), &f.admin);
+    f.vault.set_deposit_cap(&Some(0));
 
     let investor = f.investor(100);
     refused(
         f.vault.try_request_deposit(&investor, &1),
+        VaultError::DepositCapExceeded,
+    );
+}
+
+/// 1,000 deposited, priced and sent to the custodian; the cap is then 1,500.
+fn capital_deployed_under_a_cap(f: &Fixture) -> Address {
+    let investor = f.investor(2_000);
+    f.vault.set_deposit_cap(&Some(1_000));
+    let epoch = f.vault.request_deposit(&investor, &1_000);
+    f.close_epoch();
+    f.fulfill_epoch_at(epoch, wad(1));
+    f.vault.deploy_to_custodian(&f.treasury, &1_000);
+    f.vault.set_deposit_cap(&Some(1_500));
+    investor
+}
+
+#[test]
+fn capital_funded_back_counts_once_toward_the_cap() {
+    let f = setup();
+    let investor = capital_deployed_under_a_cap(&f);
+
+    f.vault.fund(&f.custodian, &500);
+
+    assert_eq!(f.vault.net_deployed(), 500);
+    f.vault.request_deposit(&investor, &500);
+}
+
+#[test]
+fn a_plain_transfer_back_counts_twice_toward_the_cap() {
+    let f = setup();
+    let investor = capital_deployed_under_a_cap(&f);
+
+    TokenClient::new(&f.e, &f.asset).transfer(&f.custodian, &f.vault.address, &500);
+
+    assert_eq!(f.vault.net_deployed(), 1_000);
+    refused(
+        f.vault.try_request_deposit(&investor, &1),
+        VaultError::DepositCapExceeded,
+    );
+}
+
+#[test]
+fn a_gain_paid_out_to_leavers_leaves_room_above_the_cap() {
+    let f = setup();
+    let investor = capital_deployed_under_a_cap(&f);
+    f.vault.claim_deposit(&investor, &1);
+    StellarAssetClient::new(&f.e, &f.asset).mint(&f.custodian, &1_000);
+    f.vault.fund(&f.custodian, &2_000);
+    let exit = f.vault.request_redeem(&investor, &1_000);
+    f.fulfill_epoch(wad(2));
+    f.vault.claim_redeem(&investor, &exit);
+
+    assert_eq!(f.vault.net_deployed(), -1_000);
+    assert_eq!(f.balance(&f.vault.address), 0);
+    let newcomer = f.investor(3_000);
+    f.vault.request_deposit(&newcomer, &2_500);
+    refused(
+        f.vault.try_request_deposit(&newcomer, &1),
+        VaultError::DepositCapExceeded,
+    );
+}
+
+#[test]
+fn a_loss_at_the_custodian_still_counts_toward_the_cap() {
+    let f = setup();
+    let investor = capital_deployed_under_a_cap(&f);
+    f.vault.claim_deposit(&investor, &1);
+    f.vault.fund(&f.custodian, &500);
+    let exit = f.vault.request_redeem(&investor, &1_000);
+    f.fulfill_epoch(wad(1) / 2);
+    f.vault.claim_redeem(&investor, &exit);
+
+    assert_eq!(f.vault.net_deployed(), 500);
+    assert_eq!(f.balance(&f.vault.address), 0);
+    let newcomer = f.investor(1_500);
+    f.vault.request_deposit(&newcomer, &1_000);
+    refused(
+        f.vault.try_request_deposit(&newcomer, &1),
         VaultError::DepositCapExceeded,
     );
 }

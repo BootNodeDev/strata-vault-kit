@@ -20,7 +20,7 @@ export function useCancelRedeem(): UseCancelRedeem {
 	const call = useCallback(
 		(signer: Signer, epochId: bigint) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.cancel_redeem({ from: signer.publicKey, epoch_id: epochId }),
+				vault.cancel_redeem({ holder: signer.publicKey, epoch_id: epochId }),
 			),
 		[],
 	)

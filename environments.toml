@@ -34,13 +34,14 @@ constructor_args = "--admin me"
 client = true
 constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --compliance_authority me --compliance compliance --identity_verifier identity_verifier'
 
-# `--config` takes the OracleConfig struct as JSON. The values mirror the
-# contract's own tests: a one-hour freshness window, a one-minute cooldown, a
-# 10% deviation cap and a 0.5–100 band at the 18-decimal scale. The two i128
-# fields are strings because they do not survive a JSON number round trip.
+# `--config` takes the OracleConfig struct as JSON. The values match the
+# harness's testnet oracle: a one-hour freshness window, a one-minute cooldown,
+# a 10% cap on a rise, no cap on a fall (10,000 bps lets a loss of any size
+# land at once) and a 0.5–100 band at the 18-decimal scale. The two i128 fields
+# are strings because they do not survive a JSON number round trip.
 [development.contracts.nav_oracle]
 client = true
-constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_up_bps\":1000,\"max_down_bps\":null,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
+constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_up_bps\":1000,\"max_down_bps\":10000,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
 
 [development.contracts.async_vault]
 client = true
@@ -51,8 +52,18 @@ constructor_args = '--asset share_token --share_token share_token --oracle nav_o
 # The vault needs the share token's manager role and needs allowlisting on the
 # identity verifier, and both target other contracts while requiring the vault's
 # own address, which only exists after it deploys last. The deploy in
-# scripts/harness performs and verifies both. A deployment made only from
-# this file can take deposits but can neither deliver shares nor return them.
+# scripts/harness performs and verifies both.
+#
+# Setup cannot finish from this file either. The vault's `finish_setup` checks
+# the token, oracle and compliance bindings, the manager role and the
+# allowlist, which only the harness deploy wires, and that the token has no
+# shares outstanding. It also checks that the asset has the token's decimals,
+# that the asset, the token, the oracle and the vault are four different
+# addresses (here the asset is the share token, so this one fails too), that
+# the oracle answers as a feed, and that a custodian other than the vault is
+# set. A deploy made only from this file leaves the compliance
+# contract's, the token's, the oracle's and the vault's setup open, so its
+# vault refuses deposits with `SetupOpen`. The harness deploy closes all four.
 
 
 ### Staging environment configuration
@@ -71,12 +82,12 @@ default = true
 # underlying Stellar Asset Contract and has no crate here; it still gets a
 # generated client, because a SAC carries its own spec.
 [staging.contracts]
-async_vault = { id = "CAXGUAAIZOCM6FIQ6PRTQEBBZG62GMN422TNT6N6UMIYY4HGFLJDUFCV" }
-nav_oracle = { id = "CBYVXBRLCKJTH56FVIZFBX7XUIBOLJOROP2DM4NYA4V6FOTTFZO7VJPL" }
-share_token = { id = "CCBANVMWNZXZ46WMV7N7EDGBPW3LIFOXZLILIOTRDTE63H4QXBM7XVYF" }
-identity_verifier = { id = "CBLCGV3YT5AM7ZQNFEIEX3FLA3ZY3XDVW3U2YQO4ZWSJVI47763LLL5T" }
-compliance = { id = "CA45ZSCHMNUMJEF2UDUT4UMCKHHMEG3LYYIB7QBK6LG2NIC7JYZ7XKRA" }
-asset = { id = "CCTSSUV5XYKFEMT44SJBS2GUNBEMMRUQXLK422RAJMPTGLF7WV6ALDKR" }
+async_vault = { id = "CCDWVENC7GNFO757JON65OKWJXHYIEGPVPDWVCGRZOPAHOQURPHQRPUG" }
+nav_oracle = { id = "CADX6LVWOQ6DGFHEQ6AMJHDPKWOO2RTHEEIERVPWHOUJCN3WNEGYHHL3" }
+share_token = { id = "CDRAUSDVE7OKWKCJJNPD4HYTMLGF5XFVG5DY7KMLQCBHJTW53TYN7UGK" }
+identity_verifier = { id = "CBZEZBVOFNEYBGWRMON7WDFAXCNLH3DEAF3EDIS7PJRSLY6BK7XN5O7J" }
+compliance = { id = "CDHEEBIAMKLMJHJZHQ3R63PVWQUMQAX4WY6WDODZOY2E5X5GNSFFG6DR" }
+asset = { id = "CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E" }
 
 ### Production environment configuration
 # Commented out on purpose. Mainnet needs an external audit and an audited

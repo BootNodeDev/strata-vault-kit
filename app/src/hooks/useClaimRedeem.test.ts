@@ -83,7 +83,7 @@ describe("useClaimRedeem", () => {
 		)
 
 		expect(vaultMock.claim_redeem).toHaveBeenCalledWith({
-			caller: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 	})

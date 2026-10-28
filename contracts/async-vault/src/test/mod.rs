@@ -3,15 +3,25 @@ mod compliance;
 mod constructor;
 mod controls;
 mod conversions;
+mod delisted;
 mod deposit;
 mod deposit_cap;
 mod epochs;
 mod events;
+mod governance;
+mod guards;
+mod health;
+mod lock_policy;
 mod multi_epoch;
 mod notice;
 mod oracle_pricing;
+mod oracle_swap;
 mod pricing;
 mod redeem;
+mod settlement;
+mod setup;
+mod share_returns;
+mod signatures;
 mod supply;
 mod timing;
 mod treasury;
@@ -21,6 +31,7 @@ mod wind_down;
 
 extern crate std;
 
+use soroban_sdk::{contract, contractimpl};
 pub(crate) use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, Ledger as _},
@@ -28,21 +39,32 @@ pub(crate) use soroban_sdk::{
     Address, BytesN, Env, String,
 };
 
-pub(crate) use ::compliance::{Compliance, ComplianceClient};
+pub(crate) use ::compliance::{Compliance, ComplianceChange, ComplianceClient};
 pub(crate) use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
-pub(crate) use nav_oracle::{NavOracleContract, NavOracleContractClient, NavReport, OracleConfig};
+pub(crate) use nav_oracle::{NavInput, NavOracleContract, NavOracleContractClient, OracleConfig};
 pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
+use stellar_tokens::rwa::compliance::ComplianceHook;
+pub(crate) use strata_timelock::DAY_DURATION;
 
 pub(crate) use crate::{
-    AsyncVault, AsyncVaultClient, DirectUnitPricing, EpochStatus, PricingScheme, UpgradeAction,
-    VaultError, VaultRoles, WindDownStatus, MAX_NOTICE_SECS, MAX_UPGRADE_DELAY,
-    MAX_WIND_DOWN_DELAY, MIN_UPGRADE_DELAY,
+    AsyncVault, AsyncVaultClient, DirectUnitPricing, EpochStatus, PricingScheme, VaultChange,
+    VaultError, VaultPendingChange, VaultRoles, WindDownStatus, MAX_NOTICE_SECS, MAX_UPGRADE_DELAY,
+    MAX_WIND_DOWN_DELAY, MIN_UPGRADE_DELAY, MIN_WIND_DOWN_DELAY,
 };
 
 fn wad(whole: i128) -> i128 {
     whole * WAD_SCALE
+}
+
+fn nav_input(e: &Env, nav_per_share: i128, expires_at: u64) -> NavInput {
+    NavInput {
+        nav_per_share,
+        expires_at,
+        proof_hash: BytesN::from_array(e, &[7; 32]),
+        proof_uri: String::from_str(e, "ipfs://strata-proof"),
+    }
 }
 
 struct Fixture<'a> {
@@ -72,9 +94,48 @@ impl Fixture<'_> {
         });
     }
 
+    /// Signs one call to the vault as `who` and nothing else, so the call's own
+    /// role check is the only thing that can refuse it.
+    fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<soroban_sdk::Val>) {
+        use soroban_sdk::testutils::{MockAuth, MockAuthInvoke};
+        self.e.mock_auths(&[MockAuth {
+            address: who,
+            invoke: &MockAuthInvoke {
+                contract: &self.vault.address,
+                fn_name,
+                args,
+                sub_invokes: &[],
+            },
+        }]);
+    }
+
+    /// The last call asked `who` alone to sign, once, on exactly this call.
+    fn signed_once_by(
+        &self,
+        who: &Address,
+        fn_name: &str,
+        args: soroban_sdk::Vec<soroban_sdk::Val>,
+    ) {
+        use soroban_sdk::testutils::{AuthorizedFunction, AuthorizedInvocation};
+        assert_eq!(
+            self.e.auths(),
+            std::vec![(
+                who.clone(),
+                AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        self.vault.address.clone(),
+                        soroban_sdk::Symbol::new(&self.e, fn_name),
+                        args,
+                    )),
+                    sub_invocations: std::vec![],
+                },
+            )]
+        );
+    }
+
     fn investor(&self, funded: i128) -> Address {
         let who = self.unverified_investor(funded);
-        self.identity.allow(&who, &true, &self.compliance);
+        self.identity.allow(&who, &true);
         who
     }
 
@@ -92,15 +153,23 @@ impl Fixture<'_> {
         self.share.balance(who)
     }
 
+    /// Posts a report that the feed's own freshness window bounds, waiting out
+    /// the cooldown first when the last report is too recent.
     fn attest(&self, nav_per_share: i128) {
-        self.oracle.attest(
-            &NavReport {
-                nav_per_share,
-                timestamp: 0,
-                expires_at: 1_000_000,
-            },
-            &self.attester,
-        );
+        self.wait_out_the_cooldown();
+        self.oracle
+            .attest(&nav_input(&self.e, nav_per_share, u64::MAX), &self.attester);
+    }
+
+    fn wait_out_the_cooldown(&self) {
+        let Ok(Ok(latest)) = self.oracle.try_latest() else {
+            return;
+        };
+        let ready = latest.accepted_at + self.oracle.config().cooldown_secs;
+        let now = self.e.ledger().timestamp();
+        if now < ready {
+            self.advance(ready - now);
+        }
     }
 
     fn holder(&self, shares: i128) -> Address {
@@ -127,11 +196,18 @@ impl Fixture<'_> {
     }
 
     fn empty_reserve(&self) {
-        self.vault.set_custodian(&self.custodian, &self.admin);
         let free = self.vault.free_reserve();
         if free > 0 {
             self.vault.deploy_to_custodian(&self.treasury, &free);
         }
+    }
+
+    /// After setup, a module lands only through the compliance contract's timelock.
+    fn add_compliance_module(&self, hook: ComplianceHook, module: &Address) {
+        let rules = ComplianceClient::new(&self.e, &self.share.compliance());
+        let id = rules.propose_change(&ComplianceChange::AddModule(hook, module.clone()));
+        self.advance(MIN_UPGRADE_DELAY);
+        rules.apply_change(&id);
     }
 }
 
@@ -162,13 +238,13 @@ pub(crate) fn register_with(e: &Env, roles: VaultRoles) -> Address {
     e.register(AsyncVault, (&asset, &asset, &asset, roles))
 }
 
-/// The permissive feed most tests want: no cooldown, no effective cap.
+/// The permissive feed most tests want: the shortest cooldown, no effective cap.
 fn open_feed() -> OracleConfig {
     OracleConfig {
         freshness_duration: 3_600,
-        cooldown_secs: 0,
+        cooldown_secs: 1,
         max_up_bps: 10_000,
-        max_down_bps: Some(10_000),
+        max_down_bps: 10_000,
         min_answer: 1,
         max_answer: 1_000 * WAD_SCALE,
     }
@@ -178,9 +254,87 @@ fn setup<'a>() -> Fixture<'a> {
     setup_with_feed(open_feed())
 }
 
+/// A vault whose wiring is complete but whose own setup is still open: admin
+/// changes are instant and deposits are refused.
+fn setup_unfinished<'a>() -> Fixture<'a> {
+    miswired(Miswire::Nothing)
+}
+
+/// A wiring step a test leaves out or gets wrong, to see `finish_setup` refuse.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Miswire {
+    Nothing,
+    TokenUnbound,
+    TokenBoundElsewhere,
+    TokenSetupOpen,
+    OracleUnbound,
+    OracleBoundElsewhere,
+    OracleSetupOpen,
+    NoManagerRole,
+    OtherManager,
+    SecondManager,
+    PreMinted,
+    NotAllowlisted,
+    VaultFrozen,
+    ComplianceUnbound,
+    ComplianceBoundElsewhere,
+    ComplianceSetupOpen,
+    AssetDecimalsDiffer,
+    AssetIsShareToken,
+    /// The compliance contract passed as the oracle: bound here, but no feed.
+    OracleNotAFeed,
+    NoCustodian,
+    CustodianIsVault,
+}
+
+/// An asset with six decimals, where the share token has seven.
+#[contract]
+struct SixDecimalAsset;
+
+#[contractimpl]
+impl SixDecimalAsset {
+    pub fn decimals(_e: Env) -> u32 {
+        6
+    }
+}
+
+/// A vault left in setup, wired except for `miswire`.
+fn miswired<'a>(miswire: Miswire) -> Fixture<'a> {
+    build(
+        open_feed(),
+        |e, args| e.register(ShareToken, args),
+        miswire,
+        false,
+    )
+}
+
 /// Builds the vault against a caller-chosen feed, so cooldown, freshness and the
 /// deviation cap can be exercised from a vault test rather than only an oracle one.
 fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
+    setup_with(feed, |e, args| e.register(ShareToken, args))
+}
+
+/// Builds a vault set whose setup has finished, around a token the caller
+/// registers, so a test can run the token's built Wasm instead of its native
+/// code.
+fn setup_with<'a>(
+    feed: OracleConfig,
+    register_token: impl FnOnce(&Env, TokenArgs) -> Address,
+) -> Fixture<'a> {
+    build(feed, register_token, Miswire::Nothing, true)
+}
+
+/// The share token's constructor arguments, in order.
+type TokenArgs = (String, String, Address, Address, Address, Address);
+
+/// Wires the set the way the deploy does, custodian included, apart from
+/// `miswire`, then finishes the vault's setup when `finish` is set.
+fn build<'a>(
+    feed: OracleConfig,
+    register_token: impl FnOnce(&Env, TokenArgs) -> Address,
+    miswire: Miswire,
+    finish: bool,
+) -> Fixture<'a> {
     let e = Env::default();
     e.mock_all_auths();
     e.ledger().set_timestamp(10_000);
@@ -203,8 +357,8 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
 
     let share = ShareTokenClient::new(
         &e,
-        &e.register(
-            ShareToken,
+        &register_token(
+            &e,
             (
                 String::from_str(&e, "Strata Vault USDC"),
                 String::from_str(&e, "bvUSDC"),
@@ -215,7 +369,9 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
             ),
         ),
     );
-    compliance.bind_token(&share.address, &admin);
+    if miswire != Miswire::ComplianceUnbound {
+        compliance.bind_token(&share.address, &admin);
+    }
 
     let oracle = NavOracleContractClient::new(
         &e,
@@ -225,12 +381,21 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
         ),
     );
 
+    let vault_asset = match miswire {
+        Miswire::AssetDecimalsDiffer => e.register(SixDecimalAsset, ()),
+        Miswire::AssetIsShareToken => share.address.clone(),
+        _ => asset.clone(),
+    };
+    let vault_oracle = match miswire {
+        Miswire::OracleNotAFeed => compliance.address.clone(),
+        _ => oracle.address.clone(),
+    };
     let contract_id = e.register(
         AsyncVault,
         (
-            &asset,
+            &vault_asset,
             &share.address,
-            &oracle.address,
+            &vault_oracle,
             VaultRoles {
                 governance: admin.clone(),
                 manager: manager.clone(),
@@ -241,14 +406,83 @@ fn setup_with_feed<'a>(feed: OracleConfig) -> Fixture<'a> {
             },
         ),
     );
-    share.grant_role(&contract_id, &symbol_short!("manager"), &admin);
-    // The vault holds escrowed shares, so returning them on cancellation goes
-    // through the token's checked transfer. That verifies both sides, so the
-    // vault has to be a recognised holder itself.
-    identity.allow(&contract_id, &true, &compliance_authority);
+    match miswire {
+        Miswire::NoManagerRole => {}
+        Miswire::OtherManager => {
+            share.grant_role(&Address::generate(&e), &symbol_short!("manager"), &admin)
+        }
+        _ => share.grant_role(&contract_id, &symbol_short!("manager"), &admin),
+    }
+    if miswire == Miswire::SecondManager {
+        share.grant_role(&Address::generate(&e), &symbol_short!("manager"), &admin);
+    }
+    if miswire == Miswire::PreMinted {
+        // The token's admin mints during the token's own setup, then steps back.
+        let holder = Address::generate(&e);
+        identity.allow(&holder, &true);
+        share.grant_role(&admin, &symbol_short!("manager"), &admin);
+        share.mint(&holder, &100, &admin);
+        share.revoke_role(&admin, &symbol_short!("manager"), &admin);
+    }
+    // Converting a delisted holder's deposit mints into the vault's own escrow.
+    if miswire != Miswire::NotAllowlisted {
+        identity.allow(&contract_id, &true);
+    }
+    if miswire == Miswire::VaultFrozen {
+        // Until `bind_vault`, the token does not know this address is its vault.
+        share.set_address_frozen(&contract_id, &true, &compliance_authority);
+    }
+    match miswire {
+        Miswire::TokenUnbound => {}
+        Miswire::TokenBoundElsewhere => {
+            share.bind_vault(&register_with(&e, distinct_roles(&e)));
+            share.finish_setup();
+        }
+        Miswire::TokenSetupOpen => share.bind_vault(&contract_id),
+        _ => {
+            share.bind_vault(&contract_id);
+            share.finish_setup();
+        }
+    }
+    match miswire {
+        Miswire::OracleUnbound => {}
+        Miswire::OracleBoundElsewhere => {
+            oracle.bind_vault(&register_with(&e, distinct_roles(&e)));
+            oracle.finish_setup();
+        }
+        Miswire::OracleSetupOpen => oracle.bind_vault(&contract_id),
+        _ => {
+            oracle.bind_vault(&contract_id);
+            oracle.finish_setup();
+        }
+    }
+    match miswire {
+        Miswire::ComplianceUnbound => {}
+        Miswire::ComplianceBoundElsewhere => {
+            compliance.bind_vault(&register_with(&e, distinct_roles(&e)));
+            compliance.finish_setup();
+        }
+        Miswire::ComplianceSetupOpen => compliance.bind_vault(&contract_id),
+        _ => {
+            compliance.bind_vault(&contract_id);
+            compliance.finish_setup();
+        }
+    }
+    let vault = AsyncVaultClient::new(&e, &contract_id);
+    match miswire {
+        Miswire::NoCustodian => {}
+        // No entrypoint takes the vault as its own custodian, so the test stores it.
+        Miswire::CustodianIsVault => e.as_contract(&contract_id, || {
+            crate::state::set_addr(&e, &crate::keys::DataKey::Custodian, &contract_id)
+        }),
+        _ => vault.set_custodian(&custodian),
+    }
+    if finish {
+        vault.finish_setup();
+    }
 
     Fixture {
-        vault: AsyncVaultClient::new(&e, &contract_id),
+        vault,
         share,
         identity,
         oracle,

@@ -32,7 +32,7 @@ import TransactionModal, {
 import CycleActionRail from "./CycleActionRail"
 import CycleSurface from "./CycleSurface"
 
-const useAmountInput = (confirmed: boolean) => {
+const useClearedInput = (confirmed: boolean) => {
 	const [input, setInput] = useState("")
 	useEffect(() => {
 		if (confirmed) setInput("")
@@ -46,7 +46,7 @@ const CycleSection: React.FC<{
 	contracts?: React.ReactNode
 	active?: boolean
 }> = ({ grants, wallet, contracts, active = true }) => {
-	const { cycle } = useCycleState({ active })
+	const { cycle } = useCycleState()
 	const { history } = useEpochHistory()
 	const { cycleEvents } = useCycleEvents()
 	const { balance } = useDepositBalance()
@@ -57,13 +57,14 @@ const CycleSection: React.FC<{
 	const fund = usePendingTransaction(useFund())
 	const activateWindDown = usePendingTransaction(useActivateWindDown())
 	const finalizeRound = usePendingTransaction(useFinalizeWindDownRound())
-	const [priceInput, setPriceInput] = useAmountInput(
-		attest.status.status === "confirmed",
-	)
-	const [deployInput, setDeployInput] = useAmountInput(
+	const attested = attest.status.status === "confirmed"
+	const [priceInput, setPriceInput] = useClearedInput(attested)
+	const [proofHashInput, setProofHashInput] = useClearedInput(attested)
+	const [proofUriInput, setProofUriInput] = useClearedInput(attested)
+	const [deployInput, setDeployInput] = useClearedInput(
 		deploy.status.status === "confirmed",
 	)
-	const [fundInput, setFundInput] = useAmountInput(
+	const [fundInput, setFundInput] = useClearedInput(
 		fund.status.status === "confirmed",
 	)
 
@@ -83,10 +84,19 @@ const CycleSection: React.FC<{
 					return send(fulfillEpoch, action.epochId, String(action.epochId))
 				return undefined
 			case "attest":
-				if (action.price !== null && action.freshness !== null)
+				if (
+					action.price !== null &&
+					action.freshness !== null &&
+					action.proofHash !== null
+				)
 					return send(
 						attest,
-						{ price: action.price, freshness: action.freshness },
+						{
+							price: action.price,
+							freshness: action.freshness,
+							proofHash: action.proofHash,
+							proofUri: action.proofUri,
+						},
 						formatSignedPrice(action.price),
 						action.grant,
 					)
@@ -113,10 +123,12 @@ const CycleSection: React.FC<{
 		}
 	}
 
-	const onInput = (action: CycleAction, value: string) => {
+	const onInput = (action: CycleAction, value: string, key?: string) => {
 		switch (action.id) {
 			case "attest":
-				setPriceInput(value)
+				if (key === "proof-hash") setProofHashInput(value)
+				else if (key === "proof-uri") setProofUriInput(value)
+				else setPriceInput(value)
 				return
 			case "deploy":
 				setDeployInput(value)
@@ -134,6 +146,8 @@ const CycleSection: React.FC<{
 
 	const actions = toCycleActions(cycle, grants, wallet, {
 		price: priceInput,
+		proofHash: proofHashInput,
+		proofUri: proofUriInput,
 		deploy: deployInput,
 		fund: fundInput,
 		walletBalance: balance.status === "held" ? balance.amount : null,

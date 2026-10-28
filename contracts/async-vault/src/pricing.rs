@@ -1,6 +1,6 @@
-use bindings::OracleFeedClient;
 use soroban_sdk::Env;
 use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
+use strata_bindings::OracleFeedClient;
 
 use crate::error::VaultError;
 use crate::keys::DataKey;

@@ -1,19 +1,36 @@
+import { createHash } from "node:crypto"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { oracle, send, type Connected } from "./clients.js"
+import { REPO_ROOT } from "./deployment.js"
 import { outcome } from "./refused.js"
 
-export interface NavReport {
+export interface NavInput {
 	nav_per_share: bigint
 	expires_at: bigint
-	timestamp: bigint
+	proof_hash: Buffer
+	proof_uri: string
 }
 
-export function navReport(nav: bigint, freshnessSecs: number): NavReport {
-	const now = BigInt(Math.floor(Date.now() / 1000))
+/** The latest expiry a u64 holds: the oracle cuts it to its own window. */
+const NO_EXPIRY = (1n << 64n) - 1n
+
+const SAMPLE_PROOF = join(REPO_ROOT, "docs", "evidence", "sample-valuation.md")
+
+// The release attests against the tag's copy; local runs use main's.
+export const SAMPLE_PROOF_URI =
+	process.env["PROOF_URI"] ??
+	"https://raw.githubusercontent.com/BootNodeDev/strata-vault-kit/main/docs/evidence/sample-valuation.md"
+
+export function navInput(nav: bigint): NavInput {
 	return {
 		nav_per_share: nav,
-		expires_at: now + BigInt(freshnessSecs),
-		timestamp: now,
+		expires_at: NO_EXPIRY,
+		proof_hash: createHash("sha256")
+			.update(readFileSync(SAMPLE_PROOF))
+			.digest(),
+		proof_uri: SAMPLE_PROOF_URI,
 	}
 }
 
@@ -24,7 +41,7 @@ export async function attest(c: Connected, nav: bigint): Promise<void> {
 	const deadline = Date.now() + (c.net.oracle.cooldown_secs + 60) * 1_000
 	for (;;) {
 		const tx = await client.attest({
-			report: navReport(nav, c.net.oracle.freshness_duration),
+			input: navInput(nav),
 			caller: attester.publicKey(),
 		})
 		const result = outcome(tx, client)

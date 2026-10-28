@@ -34,7 +34,7 @@ describe("useOracleState", () => {
 		vi.clearAllMocks()
 	})
 
-	it("reports the oracle as paused while the ripcord is raised", async () => {
+	it("reports the oracle as paused while the NAV is paused", async () => {
 		oracleMock.state.mockResolvedValue({
 			result: { tag: "Paused", values: undefined },
 		})

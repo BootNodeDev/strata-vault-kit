@@ -20,7 +20,7 @@ export function useRequestDeposit(): UseRequestDeposit {
 	const call = useCallback(
 		(signer: Signer, amount: Amount) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.request_deposit({ from: signer.publicKey, amount }),
+				vault.request_deposit({ holder: signer.publicKey, amount }),
 			),
 		[],
 	)

@@ -74,11 +74,25 @@ jobs:
           if ! command -v stellar &> /dev/null; then
             cargo binstall --locked stellar-cli@27.0.0
           fi
+      # The upgrade tests run built Wasm, so they need the fixture, both
+      # contracts and their probe builds first (docs/TESTING.md).
+      - name: Run the Wasm upgrade tests
+        run: |
+          stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
+          stellar contract build --package share-token
+          stellar contract build --package nav-oracle
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
+          SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
       - name: Start Stellar local network
         # No tagged releases upstream, so this pins main as read on 2026-08-14
         uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
         with:
           enable: "core,rpc"
+          # Pinned by digest: "latest" moves with every protocol build.
+          tag: v687-b1580.1-latest@sha256:7711899e9942c60316ebacf8ab901be15bed7a5a31705d847b55375ff3bc8356
+          # The image's own default can be a protocol its RPC cannot simulate.
+          protocol_version: "30"
       - name: Add master account as default identity
         run: |
           mkdir -p .config/stellar/identity
@@ -90,6 +104,8 @@ jobs:
           set -o pipefail
           STELLAR_SCAFFOLD_ENV=development stellar-scaffold build \
             --build-clients 2>&1 | tee build_clients.log
+          # Build the clients against the workspace @stellar/stellar-sdk, not the scaffold's copy.
+          rm -rf app-lib/clients/*/node_modules
       - name: Check client generation summary
         run: |
           # Extract the number after "Failed: "
@@ -125,7 +141,23 @@ jobs:
             exit 1
           fi
           echo "Generated $ACTUAL client(s)."
-      - run: npm run build --workspaces --if-present
+      - name:
+          Deploy the native asset contract and register it as the alias asset
+        # The console is written against a Stellar Asset Contract, so the
+        # development build needs one. Its id is deterministic, so a rerun only
+        # re-registers the alias.
+        run: |
+          RPC=http://localhost:8000/rpc
+          PASSPHRASE="Standalone Network ; February 2017"
+          ID=$(stellar contract id asset --asset native --rpc-url "$RPC" --network-passphrase "$PASSPHRASE")
+          if ! stellar contract invoke --id "$ID" --source me --rpc-url "$RPC" --network-passphrase "$PASSPHRASE" -- name > /dev/null 2>&1; then
+            stellar contract asset deploy --asset native --source me --rpc-url "$RPC" --network-passphrase "$PASSPHRASE"
+          fi
+          stellar contract alias add asset --id "$ID" --rpc-url "$RPC" --network-passphrase "$PASSPHRASE"
+      - name: Build the workspaces against the contracts deployed above
+        run: npm run build --workspaces --if-present
+        env:
+          ADDRESSES_ENV: development
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
         working-directory: e2e
@@ -146,10 +178,45 @@ jobs:
         run: npm run test:guards -w scripts/harness
         env:
           HARNESS_NETWORK: local
+      - name: Build the vault without the wind-down minimum
+        run:
+          CARGO_TARGET_DIR=target/short-wind-down stellar contract build
+          --package async-vault --features short_wind_down
+      - name: Run a wind-down on a throwaway vault on the local network
+        run: npm run test:wind-down -w scripts/harness
+        env:
+          HARNESS_NETWORK: local
       - name: Keep the harness report when it fails
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: harness-runs
           path: scripts/harness/runs/
           if-no-files-found: ignore
+
+  rust-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-checks-${{ hashFiles('**/Cargo.lock') }}
+      # rustup reads rust-toolchain.toml, which includes clippy and rustfmt.
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Lint with warnings as errors
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: Check licences, advisories, bans and sources
+        uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          # Replaces the action's default --all-features, so CI runs the
+          # same command as docs/TESTING.md.
+          arguments: --locked
+          command: check

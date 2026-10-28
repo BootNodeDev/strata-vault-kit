@@ -6,6 +6,7 @@ import {
 	type OracleLimits,
 	useCycleReads,
 } from "./useCycleState"
+import { type SetupState, useSetupOpen } from "./useSetupOpen"
 import { type Custodian, useVaultAuthorities } from "./useVaultAuthorities"
 
 const STALE_MS = 30_000
@@ -19,6 +20,8 @@ export type ConfigurationValues = {
 	notice: bigint | null
 	windDownDelay: bigint | null
 	upgradeDelay: bigint | null
+	setupOpen: boolean | null
+	tokenSetupOpen: boolean | null
 	oracle: OracleLimits | null
 	compliance: string | null
 	identityVerifier: string | null
@@ -26,6 +29,9 @@ export type ConfigurationValues = {
 
 export type ConfigurationState =
 	{ status: "checking" } | ({ status: "ready" } & ConfigurationValues)
+
+const openOf = (setup: SetupState): boolean | null =>
+	setup === "unreadable" ? null : setup === "open"
 
 const valueOf = <T>(read: ContractRead<T>): T | null =>
 	read.kind === "value" ? read.value : null
@@ -43,19 +49,27 @@ async function fetchConfigurationReads() {
 	}
 }
 
-export function useConfigurationState({
-	active = true,
-}: { active?: boolean } = {}): { configuration: ConfigurationState } {
-	const cycle = useCycleReads(active)
+export function useConfigurationState(): {
+	configuration: ConfigurationState
+} {
+	const cycle = useCycleReads()
 	const { authorities, isPending } = useVaultAuthorities()
+	const { setup } = useSetupOpen("vault")
+	const { setup: tokenSetup } = useSetupOpen("token")
 	const { data: reads } = useQuery({
 		queryKey: configurationReadsKey,
 		queryFn: fetchConfigurationReads,
 		staleTime: STALE_MS,
-		refetchInterval: active ? REFRESH_MS : false,
+		refetchInterval: REFRESH_MS,
 	})
 
-	if (cycle === undefined || reads === undefined || isPending)
+	if (
+		cycle === undefined ||
+		reads === undefined ||
+		isPending ||
+		setup === "checking" ||
+		tokenSetup === "checking"
+	)
 		return { configuration: { status: "checking" } }
 
 	return {
@@ -65,6 +79,8 @@ export function useConfigurationState({
 			custodian: authorities?.custodian ?? { kind: "unreadable" },
 			notice: valueOf(cycle.notice),
 			windDownDelay: cycle.windDown.delay,
+			setupOpen: openOf(setup),
+			tokenSetupOpen: openOf(tokenSetup),
 			oracle: cycle.oracle.limits,
 			...reads,
 		},

@@ -278,6 +278,9 @@ function ActionBody<A extends RailAction<RailField>>({
 	)
 }
 
+const slotOf = (action: RailAction<RailField> | undefined) =>
+	action === undefined ? undefined : (action.slot ?? action.id)
+
 function CycleActionRail<A extends RailAction<RailField>>({
 	scope,
 	actions,
@@ -297,8 +300,10 @@ function CycleActionRail<A extends RailAction<RailField>>({
 }) {
 	const [open, setOpen] = useState<string | null | undefined>()
 	if (open === undefined && actions.length > 0)
-		setOpen(actions.find((action) => action.enabled)?.id ?? null)
-	const ready = actions.find((action) => action.id === open && action.enabled)
+		setOpen(slotOf(actions.find((action) => action.enabled)) ?? null)
+	const ready = actions.find(
+		(action) => slotOf(action) === open && action.enabled,
+	)
 
 	const latest = useRef({ ready, onReady })
 	useEffect(() => {
@@ -346,10 +351,11 @@ function CycleActionRail<A extends RailAction<RailField>>({
 				<ul className={styles.list}>
 					{actions.map((action) => {
 						const state = readiness(action)
-						const expanded = open === action.id
-						const id = `${scope}-${action.id}-action`
+						const slot = slotOf(action)
+						const expanded = open === slot
+						const id = `${scope}-${slot}-action`
 						return (
-							<li className={styles.item} key={action.id}>
+							<li className={styles.item} key={slot}>
 								<button
 									type="button"
 									className={styles.toggle}
@@ -357,7 +363,7 @@ function CycleActionRail<A extends RailAction<RailField>>({
 									aria-controls={id}
 									aria-labelledby={`${id}-label`}
 									aria-describedby={`${id}-summary`}
-									onClick={() => setOpen(expanded ? null : action.id)}
+									onClick={() => setOpen(expanded ? null : slot)}
 								>
 									<span
 										aria-hidden="true"
@@ -382,7 +388,7 @@ function CycleActionRail<A extends RailAction<RailField>>({
 								</button>
 								<div id={id} className={styles.body} hidden={!expanded}>
 									<ActionBody
-										fieldId={`${scope}-${action.id}-field`}
+										fieldId={`${scope}-${slot}-field`}
 										action={action}
 										onRun={onRun}
 										onInput={onInput}

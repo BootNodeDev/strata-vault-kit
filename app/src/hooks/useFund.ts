@@ -31,7 +31,7 @@ export function useFund(): UseFund {
 	const call = useCallback(
 		(signer: Signer, assets: Amount) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.fund({ from: signer.publicKey, assets }),
+				vault.fund({ caller: signer.publicKey, assets }),
 			),
 		[],
 	)

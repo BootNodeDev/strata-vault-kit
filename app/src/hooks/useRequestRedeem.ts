@@ -20,7 +20,7 @@ export function useRequestRedeem(): UseRequestRedeem {
 	const call = useCallback(
 		(signer: Signer, shares: Amount) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.request_redeem({ from: signer.publicKey, shares }),
+				vault.request_redeem({ holder: signer.publicKey, shares }),
 			),
 		[],
 	)

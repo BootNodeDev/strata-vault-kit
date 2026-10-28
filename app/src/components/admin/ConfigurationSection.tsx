@@ -2,6 +2,11 @@ import React, { useEffect, useState } from "react"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { useConfigurationState } from "../../hooks/useConfigurationState"
 import {
+	useProposeCompliance,
+	useProposeCustodian,
+	useProposeIdentityVerifier,
+	useProposeNotice,
+	useProposeWindDownDelay,
 	useSetCompliance,
 	useSetCustodian,
 	useSetDepositCap,
@@ -56,14 +61,21 @@ const ConfigurationSection: React.FC<{
 	contracts?: React.ReactNode
 	active?: boolean
 }> = ({ grants, wallet, contracts, active = true }) => {
-	const { configuration } = useConfigurationState({ active })
+	const { configuration } = useConfigurationState()
 	const depositCap = usePendingTransaction(useSetDepositCap())
 	const custodian = usePendingTransaction(useSetCustodian())
 	const notice = usePendingTransaction(useSetNotice())
 	const windDownDelay = usePendingTransaction(useSetWindDownDelay())
+	const proposeCustodian = usePendingTransaction(useProposeCustodian())
+	const proposeNotice = usePendingTransaction(useProposeNotice())
+	const proposeWindDownDelay = usePendingTransaction(useProposeWindDownDelay())
 	const oracleConfig = usePendingTransaction(useSetOracleConfig())
 	const compliance = usePendingTransaction(useSetCompliance())
 	const identityVerifier = usePendingTransaction(useSetIdentityVerifier())
+	const proposeCompliance = usePendingTransaction(useProposeCompliance())
+	const proposeIdentityVerifier = usePendingTransaction(
+		useProposeIdentityVerifier(),
+	)
 	const [inputs, setInputs] = useState<ConfigurationInputs>({})
 
 	const modalFlows = (
@@ -72,9 +84,14 @@ const ConfigurationSection: React.FC<{
 			["set-custodian", custodian],
 			["set-notice", notice],
 			["set-wind-down-delay", windDownDelay],
+			["propose-custodian", proposeCustodian],
+			["propose-notice", proposeNotice],
+			["propose-wind-down-delay", proposeWindDownDelay],
 			["set-oracle-config", oracleConfig],
 			["set-compliance", compliance],
 			["set-identity-verifier", identityVerifier],
+			["propose-compliance", proposeCompliance],
+			["propose-identity-verifier", proposeIdentityVerifier],
 		] satisfies [ConfigurationModalAction, Flow][]
 	).map(([id, transaction]) => flow(id, transaction))
 	const recorded = modalFlows.some(
@@ -97,12 +114,27 @@ const ConfigurationSection: React.FC<{
 				return send(notice, action.arg, action.next, action.grant)
 			case "set-wind-down-delay":
 				return send(windDownDelay, action.arg, action.next, action.grant)
+			case "propose-custodian":
+				return send(proposeCustodian, action.arg, action.next, action.grant)
+			case "propose-notice":
+				return send(proposeNotice, action.arg, action.next, action.grant)
+			case "propose-wind-down-delay":
+				return send(proposeWindDownDelay, action.arg, action.next, action.grant)
 			case "set-oracle-config":
 				return send(oracleConfig, action.arg, action.next, action.grant)
 			case "set-compliance":
 				return send(compliance, action.arg, action.next, action.grant)
 			case "set-identity-verifier":
 				return send(identityVerifier, action.arg, action.next, action.grant)
+			case "propose-compliance":
+				return send(proposeCompliance, action.arg, action.next, action.grant)
+			case "propose-identity-verifier":
+				return send(
+					proposeIdentityVerifier,
+					action.arg,
+					action.next,
+					action.grant,
+				)
 		}
 	}
 
