@@ -200,5 +200,11 @@ the seven-day minimum and carries a `build` meta entry, and is never deployed
 elsewhere. The test runs a deposit, a claim, a redeem request, a wind-down, a
 round and a claim, then checks that every function in the vault's spec was
 called through the generated client. The full wind-down logic is tested in
-Rust (`contracts/async-vault/src/test/wind_down.rs`). The testnet run is
-spread over seven days in the Tranche 2 release.
+Rust (`contracts/async-vault/src/test/wind_down.rs`), down to a round of one
+asset unit at the lowest price the oracle allows
+(`a_round_of_one_unit_at_the_lowest_price_still_credits_it`,
+`at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`) and a claim
+view that shows what the claim pays and fails where it fails
+(`the_claimable_view_shows_what_the_claim_then_pays`,
+`the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge`). The
+testnet run is spread over seven days in the Tranche 2 release.

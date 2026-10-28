@@ -187,7 +187,7 @@ describe("a wind-down on a throwaway vault", () => {
 			"wind_down",
 			"wind_down_owed",
 			"wind_down_supply",
-			"wind_down_acc",
+			"wind_down_distributed",
 			"notice",
 			"current_epoch",
 			"upgrade_delay",

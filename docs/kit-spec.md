@@ -105,10 +105,11 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - Once its one-time setup closes, the compliance contract's module changes, token bindings and admin hand-overs wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`.
 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
-- **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital credited to that round.
-- **Mathematical Statement**:
-  $`\sum_{i} \text{payout}_i \le \text{round\_assets}`$
-- **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. Active wind-down is strictly irreversible.
+- **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital the rounds have credited.
+- **Mathematical Statement**: with $`D`$ the assets all rounds credited and $`S`$ the snapshot,
+  $`\text{payout}_i = \lfloor e_i \cdot D / S \rfloor`$ and $`\sum_i \text{payout}_i \le D`$.
+- **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. A round credits the whole free reserve at any price the oracle allows: the vault records assets credited, not a rate per share, so a round never rounds to zero while the pot holds one unit (`a_round_of_one_unit_at_the_lowest_price_still_credits_it`). Once every holder has claimed, `wind_down_owed` keeps less than one asset base unit per holder (`at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`). Active wind-down is strictly irreversible.
+- `wind_down_claimable` and `claim_wind_down` compute the payout with one function and fail alike (`the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge`).
 - A proposal already stops new deposits (`WindDownAlreadyProposed`); exits, pricing and treasury go on until it activates, and cancelling the proposal reopens deposits.
 - An escrowed redemption cancelled during the wind-down counts toward the holder's entitlement, and so does a priced deposit a delisted holder claims. Credited before the first round, those shares count in its supply snapshot (`a_credit_before_the_first_round_leaves_every_holder_their_share`).
 - During an active wind-down, a priced redemption whose claim pays nothing burns its escrowed shares instead of returning them, because the snapshot left them out (`a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down`).

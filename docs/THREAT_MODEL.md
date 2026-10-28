@@ -963,8 +963,8 @@ others' cost.
   - It pays out only what is on chain. The vault cannot make the custodian
     return capital.
   - A holder who never claims is never paid. Rounding leaves less than one unit
-    per holder in `wind_down_owed`, plus the value of any shares the snapshot
-    counted that were never minted.
+    per holder in `wind_down_owed` at any price the oracle allows, plus the
+    value of any shares the snapshot counted that were never minted.
   - No queued change applies during a wind-down, so nothing can be fixed then, a
     failing module included (X6).
   - `uncovered()` leaves out what the rounds owe, although `free_reserve()`
@@ -972,18 +972,24 @@ others' cost.
     `uncovered()` can read zero while the vault cannot pay both its priced exits
     and its round credits. A claim of either kind can then take cash owed to the
     other, and a wind-down claim, which checks no coverage at all, can also take
-    deposit escrow. A fix is planned.
+    deposit escrow. This stays a stated limit (Known limits, item 5): the vault
+    does not decide who bears a loss of reserve (X10), and funding the gap
+    lifts it.
 - **Tests:** `only_governance_proposes`, `activation_is_open_to_a_stranger`,
   `governance_cancels_a_proposal_before_activation`,
   `an_active_wind_down_cannot_be_cancelled`, `anyone_may_finalise_a_round`,
   `a_round_leaves_priced_liabilities_alone`,
-  `the_payouts_never_exceed_what_the_rounds_credited` and
-  `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder` in
+  `the_payouts_never_exceed_what_the_rounds_credited`,
+  `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`,
+  `a_round_of_one_unit_at_the_lowest_price_still_credits_it`,
+  `at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`,
+  `the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge` and
+  `the_claimable_view_shows_what_the_claim_then_pays` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
   `wind_down_delay_elapsed_refuses_before_the_activation_time` (the guard
   `activate_wind_down` runs) in
   [`guards.rs`](../contracts/async-vault/src/test/guards.rs). For
-  `uncovered()` with round credits: none, because the fix is not built.
+  `uncovered()` with round credits, none: the limit is stated, not built.
 
 ### X9. Rounding and amounts below one share
 
@@ -1145,7 +1151,8 @@ These are decided, and stated as they stand:
    a deployment may choose to run every role from one key, which the
    constructor's four refusals forbid today at construction.
 5. `uncovered()` leaves out what a wind-down owes, although `free_reserve()`
-   subtracts it (X8).
+   subtracts it, and a wind-down claim checks no coverage, so after a loss of
+   reserve it can spend deposit escrow (X8, X10).
 6. No test signs through a relayer: the kit runs none, and whoever sends a
    transaction pays its fee (R4).
 7. The testnet deployment in the README runs older code than this commit

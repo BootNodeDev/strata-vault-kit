@@ -590,13 +590,13 @@ fn a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down() {
     let epoch = f.vault.request_redeem(&a, &1);
     f.fulfill_epoch(WAD_SCALE / 2);
     wind_down_now(&f);
-    assert_eq!(f.vault.finalize_wind_down_round(), 799);
+    assert_eq!(f.vault.finalize_wind_down_round(), 800);
 
     assert_eq!(f.vault.claim_redeem(&a, &epoch), 0);
     let paid = f.vault.claim_wind_down(&a) + f.vault.claim_wind_down(&b);
 
     assert_eq!(paid, 799);
-    assert_eq!(f.vault.wind_down_owed(), 0);
+    assert_eq!(f.vault.wind_down_owed(), 1);
     assert_eq!(f.shares(&a), 0);
     assert_eq!(f.shares(&f.vault.address), 0);
 }
@@ -699,8 +699,8 @@ fn shares_acquired_after_first_claim_earn_all_prior_rounds() {
     let expected_total = stellar_contract_utils::math::i128_fixed_point::checked_mul_div_floor(
         &f.e,
         &600,
-        &f.vault.wind_down_acc(),
-        &WAD_SCALE,
+        &f.vault.wind_down_distributed(),
+        &f.vault.wind_down_supply(),
     )
     .unwrap();
     assert_eq!(paid1 + paid2, expected_total);
@@ -810,6 +810,46 @@ fn after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder() {
     assert!(f.balance(&f.vault.address) >= f.vault.wind_down_owed());
 }
 
+#[test]
+fn a_round_of_one_unit_at_the_lowest_price_still_credits_it() {
+    let f = setup();
+    let whale = f.investor(10i128.pow(13));
+    let epoch = f.vault.request_deposit(&whale, &10i128.pow(13));
+    f.fulfill_epoch(MIN_ANSWER);
+    f.vault.claim_deposit(&whale, &epoch);
+    assert_eq!(f.shares(&whale), 10i128.pow(19));
+    f.empty_reserve();
+    wind_down_now(&f);
+    f.vault.fund(&f.custodian, &1);
+
+    assert_eq!(f.vault.finalize_wind_down_round(), 1);
+    assert_eq!(f.vault.claim_wind_down(&whale), 1);
+    assert_eq!(f.vault.wind_down_owed(), 0);
+}
+
+#[test]
+fn at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each() {
+    let f = setup();
+    let deposit = 5 * 10i128.pow(12);
+    let a = f.investor(deposit);
+    let b = f.investor(deposit);
+    let epoch = f.vault.request_deposit(&a, &deposit);
+    f.vault.request_deposit(&b, &deposit);
+    f.fulfill_epoch(MIN_ANSWER);
+    f.vault.claim_deposit(&a, &epoch);
+    f.vault.claim_deposit(&b, &epoch);
+    f.empty_reserve();
+    wind_down_now(&f);
+    let pot = 1_000_000_007;
+    f.vault.fund(&f.custodian, &pot);
+
+    assert_eq!(f.vault.finalize_wind_down_round(), pot);
+    let paid = f.vault.claim_wind_down(&a) + f.vault.claim_wind_down(&b);
+    let owed = f.vault.wind_down_owed();
+    assert!(owed < 2);
+    assert_eq!(paid + owed, pot);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
@@ -903,6 +943,49 @@ fn wind_down_claimable_is_zero_for_a_frozen_holder() {
 }
 
 #[test]
+fn the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge() {
+    let f = setup();
+    let holder = f.holder(500);
+    f.empty_reserve();
+    wind_down_now(&f);
+    f.vault.fund(&f.custodian, &100);
+    f.vault.finalize_wind_down_round();
+    f.e.as_contract(&f.vault.address, || {
+        strata_storage::set_persistent(
+            &f.e,
+            &crate::keys::DataKey::WindDownPosition(holder.clone()),
+            &crate::WindDownPosition {
+                entitlement: i128::MAX - 100,
+                paid: 0,
+            },
+        )
+    });
+
+    refused(
+        f.vault.try_wind_down_claimable(&holder),
+        VaultError::AmountTooLarge,
+    );
+    refused(
+        f.vault.try_claim_wind_down(&holder),
+        VaultError::AmountTooLarge,
+    );
+}
+
+#[test]
+fn the_claimable_view_shows_what_the_claim_then_pays() {
+    let f = setup();
+    let a = f.holder(300);
+    let _b = f.holder(700);
+    wind_down_now(&f);
+    f.vault.finalize_wind_down_round();
+
+    let shown = f.vault.wind_down_claimable(&a);
+    assert!(shown > 0);
+    assert_eq!(f.vault.claim_wind_down(&a), shown);
+    assert_eq!(f.vault.wind_down_claimable(&a), 0);
+}
+
+#[test]
 fn a_partial_freeze_keeps_frozen_shares_out_of_a_wind_down_claim() {
     let f = setup();
     let holder = f.holder(500);
@@ -953,6 +1036,10 @@ fn a_payout_below_what_was_already_paid_fails_loudly() {
         )
     });
 
+    refused(
+        f.vault.try_wind_down_claimable(&newcomer),
+        VaultError::AccountingMismatch,
+    );
     refused(
         f.vault.try_claim_wind_down(&newcomer),
         VaultError::AccountingMismatch,

@@ -479,8 +479,9 @@ interface today.
   Anyone may then finalize distribution rounds: each round takes the free
   reserve, so priced exit liabilities and refundable subscription escrow are paid
   first, and holders pull their pro-rata share against a supply snapshot taken at
-  the first round. Every payment rounds in the vault's favour and the remainder
-  joins the next round's pot.
+  the first round. Each round credits the whole free reserve. Each holder's
+  payment rounds down once, in the vault's favour, and what rounding keeps stays
+  owed: less than one unit per holder.
 - A wind-down distributes what is on chain. The vault cannot compel the custodian
   to return capital; recovering the rest is off-chain work, and nothing here is a
   guarantee that it will be recovered. Three further limits are on the record: a
