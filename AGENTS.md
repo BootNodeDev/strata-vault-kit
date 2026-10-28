@@ -51,7 +51,8 @@ does not carry over. Read it for Soroban and OZ mechanics only.
 - **Tests:** `cargo test` from the repo root runs every workspace member against
   the in-memory `Env`. There is no unit-test runner for `app/` or `app-lib/`;
   `e2e/` runs Playwright separately. CI runs `cargo test --locked` on every pull
-  request.
+  request except one that changes only Markdown files or `docs/` (outside
+  `docs/evidence/`): that one skips the Rust and local-network jobs.
 - **Toolchain:** `nix develop` provides it, or rustup honours
   `rust-toolchain.toml`.
 
