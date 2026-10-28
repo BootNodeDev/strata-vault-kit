@@ -9,7 +9,7 @@ use super::wind_down::wind_down_now;
 use super::*;
 use crate::guards;
 use crate::lock_policy::{Decision, Exit, Standing};
-use crate::{EpochInfo, WindDownInfo};
+use crate::{EpochInfo, WindDownInfo, MIN_EPOCH_DURATION_CEILING, MIN_EPOCH_DURATION_FLOOR};
 
 /// Runs `guard` inside the vault, as an entrypoint would.
 fn run(f: &Fixture, guard: impl FnOnce()) -> Result<(), Result<soroban_sdk::Error, InvokeError>> {
@@ -318,6 +318,7 @@ fn valid_change_checks_each_kind_of_change() {
         VaultChange::RevokeRole(symbol_short!("guardian"), stranger.clone()),
         VaultChange::Admin(stranger.clone()),
         VaultChange::Oracle(f.oracle.address.clone()),
+        VaultChange::MinEpochDuration(MIN_EPOCH_DURATION_FLOOR),
     ] {
         holds(&f, || guards::valid_change(&f.e, &change));
     }
@@ -346,6 +347,10 @@ fn valid_change_checks_each_kind_of_change() {
         (
             VaultChange::Custodian(f.vault.address.clone()),
             VaultError::InvalidCustodian,
+        ),
+        (
+            VaultChange::MinEpochDuration(MIN_EPOCH_DURATION_CEILING + 1),
+            VaultError::InvalidAmount,
         ),
     ] {
         refuses(&f, error, || guards::valid_change(&f.e, &change));

@@ -360,3 +360,14 @@ fn an_upgraded_vault_lets_anyone_seal_a_minimum_after_it_lands() {
     advance_to(&f, landed + DAY_DURATION);
     assert_eq!(f.vault.close_epoch(&outsider), open);
 }
+
+#[test]
+fn lowering_the_minimum_also_waits_the_timelock() {
+    let f = with_minimum(10 * DAY_DURATION);
+    refused(
+        f.vault.try_set_min_epoch_duration(&DAY_DURATION),
+        VaultError::UseTimelock,
+    );
+    land(&f, VaultChange::MinEpochDuration(DAY_DURATION));
+    assert_eq!(f.vault.min_epoch_duration(), Some(DAY_DURATION));
+}
