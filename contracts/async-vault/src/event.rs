@@ -141,7 +141,8 @@ pub struct WindDownRoundFinalized {
     pub round: u32,
     pub pot: i128,
     pub credited: i128,
-    pub acc_per_share: i128,
+    /// Asset base units credited by every round so far.
+    pub distributed: i128,
 }
 
 #[contractevent]

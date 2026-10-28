@@ -104,22 +104,26 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
   - Time spent paused does not count. Applying while paused is refused.
-  - Nothing is proposed or applied during an active wind-down (`WindDownActive`).
+  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The one exception is a grant of the share token's `compliance` role, which waits the normal delay.
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
-  - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant.
+  - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant, granting it also lands during a wind-down, and the last holder cannot renounce (`LastComplianceHolder`).
   - A compliance swap needs a contract that lists the token in `linked_tokens`; one that answers `vault()` and `setup_open()` must also name the token's vault with its own setup finished (`ComplianceNotBound`). As at `finish_setup`, one that does not answer them is an external module and is accepted. A verifier swap needs a verifier whose `verify_identity` accepts the vault's address (`VerifierRefusesVault`). Both are checked when the change is proposed and again when it applies, and a contract that does not answer `linked_tokens` or `verify_identity` fails the check.
   - Once its one-time setup closes, the oracle's upgrades, grants, admin hand-overs and every config change except a shorter `freshness_duration` wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `attester` or `guardian`, the NAV pause and `clear_latest` stay instant.
   - Once its one-time setup closes, the compliance contract's module changes, token bindings and admin hand-overs wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`.
 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
-- **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital credited to that round.
-- **Mathematical Statement**:
-  $`\sum_{i} \text{payout}_i \le \text{round\_assets}`$
-- **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. Active wind-down is strictly irreversible.
+- **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital the rounds have credited.
+- **Mathematical Statement**: with $`D`$ the assets all rounds credited and $`S`$ the snapshot,
+  $`\text{payout}_i = \lfloor e_i \cdot D / S \rfloor`$ and $`\sum_i \text{payout}_i \le D`$.
+- **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. A round credits the whole free reserve at any price the oracle allows: the vault records assets credited, not a rate per share, so a round never rounds to zero while the pot holds one unit (`a_round_of_one_unit_at_the_lowest_price_still_credits_it`). Once every holder has claimed, `wind_down_owed` keeps less than one asset base unit per holder (`at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`). Active wind-down is strictly irreversible.
+- `wind_down_claimable` and `claim_wind_down` compute the payout with one function and fail alike (`the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge`).
+- A proposal already stops new deposits (`WindDownAlreadyProposed`); exits, pricing and treasury go on until it activates, and cancelling the proposal reopens deposits.
 - An escrowed redemption cancelled during the wind-down counts toward the holder's entitlement, and so does a priced deposit a delisted holder claims. Credited before the first round, those shares count in its supply snapshot (`a_credit_before_the_first_round_leaves_every_holder_their_share`).
 - During an active wind-down, a priced redemption whose claim pays nothing burns its escrowed shares instead of returning them, because the snapshot left them out (`a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down`).
+- The share token refuses a plain transfer into the vault, so the snapshot counts holders' shares only (`shares_sent_to_the_vault_are_refused_so_the_snapshot_counts_holders_only`). Shares sent to a vault before its token was upgraded to carry this refusal stay in the snapshot, with no one able to claim their slice.
 - Each payout floors per holder. Once every holder whose shares were all surrendered has claimed, `wind_down_owed` keeps less than one unit per such holder, plus whatever value the snapshot counted in shares that never actually minted (for example `pending_mint_shares` from an epoch that promised more shares than it later minted). That remainder is not released: a later round lets each holder's floor catch up and needs it (`a_later_round_needs_the_units_an_earlier_round_left_in_owed`, `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`, `owed_stays_below_the_holder_count_once_every_share_is_surrendered`).
+- A frozen holder's slice stays in `wind_down_owed` until the freeze lifts, and lifting it needs a holder of the share token's `compliance` role. So the claim depends on a live compliance holder: the last one cannot renounce, a grant of the role passes the token's timelock during a wind-down after the normal delay, and a deployment keeps a backup holder granted during setup (§4) (`a_frozen_holder_is_paid_once_a_compliance_holder_granted_in_the_wind_down_lifts_the_freeze`).
 
 ---
 
@@ -146,7 +150,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`nav_oracle`** | `config.cooldown_secs` | `u64` (seconds) | Minimum time between consecutive attestations. At least 1 s (`MIN_COOLDOWN_SECS`), so at most one report per ledger. At most `freshness_duration`, so a new report can always replace the last one before the freshness window ends | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Largest upward move per attestation, 1 to 10,000 | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_down_bps` | `u32` (basis points) | Largest downward move per attestation, 1 to 10,000; 10,000 lets a loss of any size land at once | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share (cannot be zero or negative) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share, at least `MIN_ANSWER` ($`10^{12}`$, a millionth of an asset unit per share). An oracle upgraded in place keeps a lower stored floor until a `Config` change, which must meet it | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{18}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
 | **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC) | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |
@@ -281,7 +285,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`AsyncVault`** | `set_wind_down_delay` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change`; never below 7 days | No |
 | **`AsyncVault`** | `finish_setup` | Governance | `#[only_admin]`; needs the wiring complete, the vault's own books empty, and no pending admin hand-over; once | No |
 | **`AsyncVault`** | `setup_open` | Permissionless | None (view) | No |
-| **`AsyncVault`** | `propose_wind_down` | Governance | `#[only_admin]` | No |
+| **`AsyncVault`** | `propose_wind_down` | Governance | `#[only_admin]`; new deposits stop until it is cancelled | No |
 | **`AsyncVault`** | `cancel_wind_down_proposal` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `activate_wind_down` | Permissionless | None (requires timelock elapsed) | No |
 | **`AsyncVault`** | `finalize_wind_down_round` | Permissionless | None | No |
@@ -295,7 +299,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`AsyncVault`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`AsyncVault`** | `revoke_role` | Governance | `treasury`, `guardian`: instant. `manager`: instant during setup, then `propose_change` | No |
 | **`AsyncVault`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
-| **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()` | No |
+| **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
 | **`NavOracle`** | `attest` | Attester | `#[only_role(caller, "attester")]` | Refused if the NAV is paused |
 | **`NavOracle`** | `pause_nav` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
 | **`NavOracle`** | `set_nav_paused` | Governance | `#[only_admin]` | N/A |
@@ -308,6 +312,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`NavOracle`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
 | **`NavOracle`** | `pending_changes` | Permissionless | None (view) | No |
 | **`NavOracle`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
+| **`NavOracle`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
 | **`NavOracle`** | `revoke_role` | Governance | Instant (`attester`, `guardian`) | No |
 | **`NavOracle`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`ShareToken`** | `pause` | Admin (Governance) | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
@@ -321,12 +326,14 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `operator` must be the admin (`AdminRequired`), then `operator.require_auth()`; instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `bind_vault` | Governance (token admin) | `#[only_admin]`; during setup, once | No |
 | **`ShareToken`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
-| **`ShareToken`** | `propose_change` | Governance | `#[only_admin]`; after setup; a compliance or verifier swap passes its check (`ComplianceNotBound`, `VerifierRefusesVault`) | No |
+| **`ShareToken`** | `propose_change` | Governance | `#[only_admin]`; after setup; refused while the vault is winding down, except a grant of `compliance`; a compliance or verifier swap passes its check (`ComplianceNotBound`, `VerifierRefusesVault`) | No |
 | **`ShareToken`** | `cancel_change` | Governance | `#[only_admin]` | No |
-| **`ShareToken`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay; a compliance or verifier swap passes its check again | Refused while the vault is paused or winding down |
+| **`ShareToken`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay; a compliance or verifier swap passes its check again | Refused while the vault is paused; while it winds down too, except a grant of `compliance` |
 | **`ShareToken`** | `pending_changes` | Permissionless | None (view) | No |
 | **`ShareToken`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
-| **`ShareToken`** | `revoke_role` | Governance | `compliance`: instant. `manager`: instant during setup, then `propose_change` | No |
+| **`ShareToken`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
+| **`ShareToken`** | `revoke_role` | Governance | `compliance`: instant, the last holder included; a successor's grant waits one delay, during a wind-down too. `manager`: instant during setup, then `propose_change` | No |
+| **`ShareToken`** | `renounce_role` | The role's holder | `caller.require_auth()`; the last `compliance` holder is refused (`LastComplianceHolder`) | No |
 | **`ShareToken`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`IdentityVerifier`** | `allow` | Admin (Compliance) | `#[only_admin]` | No |
 | **`IdentityVerifier`** | `set_claim_topics_and_issuers`| Admin (Compliance) | `#[only_admin]`; `operator` is not read | No |
@@ -338,7 +345,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
 | **`Compliance`** | `pending_changes` | Permissionless | None (view) | No |
 | **`Compliance`** | `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
-| **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()` | No |
+| **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
 
 ---
 
@@ -350,6 +357,7 @@ A clean deployment executes in three sequenced phases:
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role(vault_address, "manager", governance)` to authorize lazy share minting and burning.
+   - Call `ShareToken::grant_role(backup, "compliance", governance)` for a second compliance account kept cold, before the token's `finish_setup`. Required: lifting a freeze needs a `compliance` holder, and after setup a new one waits one timelock delay.
    - Call `ShareToken::bind_vault(vault_address)`, then `ShareToken::finish_setup()`. The token's admin changes are instant until then and wait for the vault's timelock afterwards.
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so a delisted holder's priced deposit can be minted into the vault's escrow; `finish_setup` requires it.
    - Call `Compliance::bind_token(share_token_address, governance)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
@@ -583,7 +591,7 @@ for the same failure, so `304` says what failed, not where.
 |---|---|---|---|
 | `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
 | `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6076 |
-| `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7018 |
+| `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7019 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
 
 The blocks are defined once, in `crates/strata-bindings` (`ORACLE_ERRORS`,

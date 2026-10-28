@@ -26,10 +26,14 @@ a URL to it: the copy on `main`, or `PROOF_URI` when set.
 
 ## Account keys
 
-The harness signs with thirteen accounts: `deployer`, `governance`, `manager`,
-`treasury`, `guardian`, `compliance`, `attester`, `custodian`, `issuer`,
-`holder-1`, `holder-2`, `holder-3` and `outsider`. Their secret keys live in
-`.env.keys.<network>` at the repository root, one line per account.
+The harness signs with fourteen accounts: `deployer`, `governance`, `manager`,
+`treasury`, `guardian`, `compliance`, `compliance-backup`, `attester`,
+`custodian`, `issuer`, `holder-1`, `holder-2`, `holder-3` and `outsider`.
+Their secret keys live in `.env.keys.<network>` at the repository root, one
+line per account.
+
+`compliance-backup` holds the share token's `compliance` role as a cold spare
+and signs nothing in the tests.
 
 - The first deploy creates the file, with a new key for every account.
 - Later deploys reuse the keys in the file. A deploy adds a key only for an

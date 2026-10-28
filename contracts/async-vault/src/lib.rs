@@ -361,6 +361,7 @@ impl AsyncVault {
     }
 
     /// Announces a wind-down, which anyone can start once the delay has run.
+    /// New deposits stop at once; exits go on.
     ///
     /// # Errors
     ///
@@ -428,7 +429,7 @@ impl AsyncVault {
     ///
     /// * `WindDownNotActive` - The wind-down has not started.
     /// * `NothingToDistribute` - No supply to divide by, or the free reserve
-    ///   credits nothing.
+    ///   is empty.
     /// * `AmountTooLarge` - A figure of the round would overflow.
     ///
     /// # Events
@@ -452,9 +453,10 @@ impl AsyncVault {
         wind_down::supply_snapshot(e)
     }
 
-    /// Asset base units credited per share base unit so far, in WAD.
-    pub fn wind_down_acc(e: &Env) -> i128 {
-        wind_down::acc(e)
+    /// Asset base units every round has credited so far. A holder has earned
+    /// their entitlement's share of it over `wind_down_supply`.
+    pub fn wind_down_distributed(e: &Env) -> i128 {
+        wind_down::distributed(e)
     }
 
     /// Surrenders the free shares the holder holds and pays their share of
@@ -486,7 +488,8 @@ impl AsyncVault {
     }
 
     /// What `claim_wind_down` would pay `holder` now, in asset base units:
-    /// zero before the first round and for a frozen holder.
+    /// zero before the first round and for a frozen holder; fails as the claim
+    /// would at an overflow.
     ///
     /// # Arguments
     ///
@@ -776,7 +779,8 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `PausableError::EnforcedPause` - The vault is paused.
-    /// * `WindDownActive` - The vault is winding down.
+    /// * `WindDownActive`, `WindDownAlreadyProposed` - A wind-down is active
+    ///   or proposed.
     /// * `SetupOpen` - Setup has not finished.
     /// * `InvalidAmount` - `amount` is zero or negative.
     /// * `NotAllowlisted` - `holder` fails the identity check.
@@ -1120,6 +1124,28 @@ impl AccessControl for AsyncVault {
     fn transfer_admin_role(e: &Env, new_admin: Address, live_until_ledger: u32) {
         guards::direct_hand_over_allowed(e, live_until_ledger);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
+    }
+
+    /// Makes the nominee of a pending hand-over the admin. Refused while the
+    /// vault winds down: no admin power changes hands then.
+    ///
+    /// # Errors
+    ///
+    /// * `WindDownActive` - The vault is winding down.
+    /// * `RoleTransferError::NoPendingTransfer` - No offer is pending.
+    /// * `RoleTransferError::TransferExpired` - The offer's last ledger has
+    ///   passed.
+    ///
+    /// # Events
+    ///
+    /// * `AdminTransferCompleted`
+    ///
+    /// # Authorization
+    ///
+    /// The nominee signs.
+    fn accept_admin_transfer(e: &Env) {
+        guards::not_winding_down(e);
+        access_control::accept_admin_transfer(e);
     }
 
     /// Refused. A role admin could grant that role with no delay.

@@ -125,6 +125,12 @@ describe("a wind-down on a throwaway vault", () => {
 		expect(await call("propose_wind_down", "governance", {}, true)).toBe(
 			"accepted",
 		)
+		expect(
+			await call("request_deposit", "holder-1", {
+				holder: holder(),
+				amount: usdc(1),
+			}),
+		).toBe("refused: WindDownAlreadyProposed")
 		expect(await call("activate_wind_down", "outsider", {}, true)).toBe(
 			"accepted",
 		)
@@ -182,7 +188,7 @@ describe("a wind-down on a throwaway vault", () => {
 			"wind_down",
 			"wind_down_owed",
 			"wind_down_supply",
-			"wind_down_acc",
+			"wind_down_distributed",
 			"notice",
 			"current_epoch",
 			"upgrade_delay",
@@ -291,7 +297,7 @@ describe("a wind-down on a throwaway vault", () => {
 				{ new_admin: someone, live_until_ledger: 1 },
 				"refused: UseTimelock",
 			],
-			["accept_admin_transfer", "outsider", {}, "refused: NoPendingTransfer"],
+			["accept_admin_transfer", "outsider", {}, "refused: WindDownActive"],
 			[
 				"set_role_admin",
 				"governance",

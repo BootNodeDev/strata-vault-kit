@@ -795,6 +795,21 @@ fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
 }
 
 #[test]
+fn an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down() {
+    let f = setup();
+    f.finish();
+    let next = Address::generate(&f.e);
+    f.offer_admin(&next);
+    f.clock(|c| c.winding_down = true);
+
+    refused(
+        f.oracle.try_accept_admin_transfer(),
+        OracleError::WindDownActive,
+    );
+    assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
+}
+
+#[test]
 fn a_change_shorter_than_a_raised_notice_never_lands() {
     let f = setup();
     f.finish();

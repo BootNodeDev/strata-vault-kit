@@ -450,7 +450,9 @@ interface today.
   (`legal_transfer`) and recovering a lost wallet (`recover_balance`) also need
   governance's signature in the same call. Neither moves shares out of or into
   the vault's address, and that address cannot be frozen once the token knows
-  its vault; an earlier freeze makes the vault's `finish_setup` refuse.
+  its vault; an earlier freeze makes the vault's `finish_setup` refuse. Lifting
+  a freeze needs a `compliance` holder, so the last one cannot renounce and a
+  grant of the role is never shut out by a wind-down.
 - The complete specification of investor states (Allowlisted, De-listed, Frozen)
   and the exit-only cash path across all vault lifecycle operations is detailed in
   [`docs/COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md).
@@ -468,18 +470,21 @@ interface today.
 - The exposed figures (share price, liquid reserve, committed, uncovered) make
   reserve coverage legible to investors and integrators.
 - Closing a vault is a dedicated, announced state. Governance proposes a
-  wind-down and may cancel the proposal during the delay, which is never shorter
-  than seven days. Once its delay has run,
-  anyone may activate it, so the operator cannot announce a closure and then stall
-  it. Once activated, wind-down is strictly irreversible: the vault permanently
-  ceases regular intake and distributes capital through pro-rata rounds. While it
-  is active the vault takes no new requests, prices nothing and sends nothing to
-  the custodian, while cancellation, priced claims and funding all stay open.
+  wind-down and may cancel the proposal during the delay, which is never
+  shorter than seven days. From the proposal on, the vault takes no new
+  deposit; exits and pricing go on until activation. Once its delay has run,
+  anyone may activate it, so the operator cannot announce a closure and then
+  stall it. Once activated, wind-down is strictly irreversible: the vault
+  permanently ceases regular intake and distributes capital through pro-rata
+  rounds. While it is active the vault takes no new requests, prices nothing
+  and sends nothing to the custodian, and no admin power changes hands;
+  cancellation, priced claims and funding all stay open.
   Anyone may then finalize distribution rounds: each round takes the free
   reserve, so priced exit liabilities and refundable subscription escrow are paid
   first, and holders pull their pro-rata share against a supply snapshot taken at
-  the first round. Every payment rounds in the vault's favour and the remainder
-  joins the next round's pot.
+  the first round. Each round credits the whole free reserve. Each holder's
+  payment rounds down once, in the vault's favour, and what rounding keeps stays
+  owed: less than one unit per holder.
 - A wind-down distributes what is on chain. The vault cannot compel the custodian
   to return capital; recovering the rest is off-chain work, and nothing here is a
   guarantee that it will be recovered. Three further limits are on the record: a
@@ -494,7 +499,8 @@ interface today.
   burns them through the token, which calls the compliance contract's
   `destroyed` hook, so a module that starts failing during a wind-down blocks
   those claims; it cannot be removed then, because removing a module waits for
-  the timelock and no timelocked change applies during a wind-down.
+  the timelock and no timelocked change but a `compliance` grant applies during
+  a wind-down.
 - Funding a vault that is winding down cannot be undone. What arrives first
   covers priced exits and refundable escrow; the surplus is taken by the next
   round and credited to holders, and no entrypoint returns it. Treasury sends
@@ -659,8 +665,9 @@ quality of the data behind each attestation, and the operator's key ceremony.
 
 Deployment is scripted and ends with no human key holding governance. It is
 complete only when the final state is verified on-chain: every authority is the
-intended multisig, no bootstrap key retains any role, the configuration matches
-the request, and the deposit asset's auth flags are checked and reported.
+intended multisig, the share token's `compliance` role has a second, cold
+holder, no bootstrap key retains any role, the configuration matches the
+request, and the deposit asset's auth flags are checked and reported.
 
 ## 9. Relationship to existing Stellar tooling
 
