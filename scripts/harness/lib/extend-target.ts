@@ -19,23 +19,48 @@ export interface ExtendTarget {
 }
 
 interface DeploymentRecord {
-	network?: string
-	contracts: Record<string, string>
-	asset?: { contract: string }
+	network?: unknown
+	contracts?: unknown
+	asset?: unknown
 }
 
 function flagValue(argv: readonly string[], flag: string): string | undefined {
 	const at = argv.indexOf(flag)
 	if (at === -1) return undefined
 	const value = argv[at + 1]
-	if (value === undefined) throw new Error(`${flag} needs a value`)
+	if (value === undefined || value.startsWith("--"))
+		throw new Error(`${flag} needs a value`)
 	return value
 }
 
-function recordContracts(record: DeploymentRecord): Array<[string, string]> {
-	const contracts: Array<[string, string]> = Object.entries(record.contracts)
-	if (record.asset !== undefined)
-		contracts.push(["asset", record.asset.contract])
+function assetContract(asset: unknown): string | undefined {
+	if (typeof asset !== "object" || asset === null) return undefined
+	const contract = (asset as Record<string, unknown>)["contract"]
+	return typeof contract === "string" ? contract : undefined
+}
+
+function recordContracts(
+	record: DeploymentRecord,
+	source: string,
+): Array<[string, string]> {
+	const contracts: Array<[string, string]> = []
+	const raw = record.contracts
+	if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+		for (const [name, id] of Object.entries(raw)) {
+			if (typeof id !== "string")
+				throw new Error(
+					`${source} has a contract id that is not a string: ${name}`,
+				)
+			contracts.push([name, id])
+		}
+	}
+	if (record.asset !== undefined) {
+		const contract = assetContract(record.asset)
+		if (contract === undefined)
+			throw new Error(`${source} has a contract id that is not a string: asset`)
+		contracts.push(["asset", contract])
+	}
+	if (contracts.length === 0) throw new Error(`${source} lists no contracts`)
 	return contracts
 }
 
@@ -66,8 +91,7 @@ export function resolveTarget(
 	const record = JSON.parse(readFile(path)) as DeploymentRecord
 	if (record.network !== "local" && record.network !== "testnet")
 		throw new Error(`${config} has no network of local or testnet`)
-	const contracts = recordContracts(record)
-	if (contracts.length === 0) throw new Error(`${config} lists no contracts`)
+	const contracts = recordContracts(record, config)
 
 	if (envFlag === undefined) {
 		const { rpcUrl, passphrase } = networkNamed(record.network)

@@ -105,6 +105,49 @@ describe("resolveTarget", () => {
 		).toThrow(/lists no contracts/)
 	})
 
+	it("refuses contracts that are not an object", () => {
+		const record = { network: "local", contracts: "oops" }
+
+		expect(() =>
+			resolveTarget(
+				["--config", "deployed.local.json"],
+				ENV,
+				readFileFor(record),
+			),
+		).toThrow(/lists no contracts/)
+	})
+
+	it("refuses a contract id that is not a string", () => {
+		const record = { network: "local", contracts: { async_vault: 5 } }
+
+		expect(() =>
+			resolveTarget(
+				["--config", "deployed.local.json"],
+				ENV,
+				readFileFor(record),
+			),
+		).toThrow(/contract id that is not a string: async_vault/)
+	})
+
+	it.each([null, {}, { contract: 5 }])(
+		"refuses an asset with no string contract",
+		(asset) => {
+			const record = {
+				network: "local",
+				contracts: { async_vault: "CV" },
+				asset,
+			}
+
+			expect(() =>
+				resolveTarget(
+					["--config", "deployed.local.json"],
+					ENV,
+					readFileFor(record),
+				),
+			).toThrow(/contract id that is not a string: asset/)
+		},
+	)
+
 	it.each(["--config", "--env"] as const)(
 		"refuses a flag with no value: %s",
 		(flag) => {
@@ -113,6 +156,16 @@ describe("resolveTarget", () => {
 			)
 		},
 	)
+
+	it("refuses --config followed by another flag as its value", () => {
+		expect(() =>
+			resolveTarget(
+				["--config", "--env", "testnet"],
+				ENV,
+				readFileFor(undefined),
+			),
+		).toThrow(/--config needs a value/)
+	})
 
 	it("describes the network and RPC", () => {
 		const target = resolveTarget(
