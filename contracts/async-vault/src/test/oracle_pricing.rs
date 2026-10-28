@@ -2,7 +2,8 @@ use super::*;
 
 #[test]
 fn fulfill_is_rejected_before_the_first_attestation() {
-    let f = setup();
+    let f = setup_unfinished();
+    f.vault.finish_setup();
     f.close_epoch();
 
     refused(f.vault.try_fulfill_epoch(&1), VaultError::FeedNotValid);
@@ -28,7 +29,7 @@ fn fulfill_is_rejected_once_the_feed_goes_stale() {
     f.close_epoch();
     f.attest(wad(2));
 
-    f.e.ledger().set_timestamp(10_000 + 3_601);
+    f.advance(3_601);
     assert!(f.oracle.is_stale());
     refused(f.vault.try_fulfill_epoch(&1), VaultError::FeedNotValid);
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Pending);

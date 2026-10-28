@@ -74,7 +74,8 @@ strata_bindings::error_enum! {
         /// The standing valuation was accepted before the epoch closed. Pricing
         /// against it would use a number the close already outran.
         AttestationBeforeClose = 6043,
-        /// The feed is paused or stale, so the epoch has no price to take.
+        /// The feed is paused or stale, so no epoch can be priced from it and no
+        /// deposit is taken.
         FeedNotValid = 6044,
         /// The notice exceeds the longest the vault accepts. A notice no investor
         /// could outlive would strand their exit with no way to undo it.
@@ -126,7 +127,8 @@ strata_bindings::error_enum! {
         /// first.
         TooManyPendingChanges = 6063,
         /// Setup is still open, so the timelock protects nothing yet: the vault
-        /// takes no deposit and queues no change. Governance finishes setup first.
+        /// takes no request, seals or prices no epoch, and queues no change.
+        /// Governance finishes setup first.
         SetupOpen = 6064,
         /// A direct call cannot make this change. After setup it goes through
         /// `propose_change`; setting a role admin is never allowed.
@@ -136,7 +138,8 @@ strata_bindings::error_enum! {
         /// A wiring check `health()` reports is false (token, oracle and compliance
         /// bound, sole token manager, allowlisted, not frozen, matching decimals,
         /// distinct addresses, a feed that answers, a custodian) or the token has
-        /// shares outstanding, so setup cannot finish.
+        /// shares outstanding, or the vault's own books are not empty, so setup
+        /// cannot finish.
         SetupIncomplete = 6067,
         /// The holder fails the share token's identity check, so the vault takes no
         /// deposit request from them and returns no escrowed shares to them. A
@@ -169,5 +172,10 @@ strata_bindings::error_enum! {
         /// The custodian would be the vault itself. Capital deployed to it would
         /// never leave, and the books would count it as both held and deployed.
         InvalidCustodian = 6075,
+        /// The vault holds less than the escrow depositors can still cancel,
+        /// because the asset's issuer took part of its balance. A cancellation
+        /// the balance cannot cover waits, and no new deposit is taken, until the
+        /// vault is funded.
+        EscrowNotCovered = 6076,
     }
 }
