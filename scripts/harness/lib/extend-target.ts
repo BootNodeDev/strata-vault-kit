@@ -106,7 +106,15 @@ export function resolveTarget(
 
 	// npm runs workspace scripts from the workspace; resolve from where it was called.
 	const path = resolve(env["INIT_CWD"] ?? process.cwd(), config)
-	const record = JSON.parse(readFile(path)) as DeploymentRecord
+	let parsed: unknown
+	try {
+		parsed = JSON.parse(readFile(path))
+	} catch (cause) {
+		throw new Error(`${config} is not valid JSON (${String(cause)})`)
+	}
+	if (typeof parsed !== "object" || parsed === null)
+		throw new Error(`${config} is not a JSON object`)
+	const record = parsed as DeploymentRecord
 	if (record.network !== "local" && record.network !== "testnet")
 		throw new Error(`${config} has no network of local or testnet`)
 	const contracts = recordContracts(record, config)

@@ -192,6 +192,22 @@ describe("resolveTarget", () => {
 		},
 	)
 
+	it("names the file when its JSON is malformed", () => {
+		expect(() =>
+			resolveTarget(
+				["--config", "deployed.local.json"],
+				ENV,
+				() => "{ not json",
+			),
+		).toThrow(/deployed\.local\.json/)
+	})
+
+	it("names the file when its JSON is null", () => {
+		expect(() =>
+			resolveTarget(["--config", "deployed.local.json"], ENV, () => "null"),
+		).toThrow(/deployed\.local\.json/)
+	})
+
 	it("describes the network and RPC", () => {
 		const target = resolveTarget(
 			["--config", "deployed.local.json"],
