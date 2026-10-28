@@ -1041,7 +1041,10 @@ The issuer of the deposit asset freezes the vault's balance or takes it back.
      (`deploy_to_custodian`, `ReserveCommittedToExits`).
 
   `uncovered()` shows the gap, `committed + cancellable_escrow - balance` when
-  positive. Once the treasury funds it with `fund`, every refusal above lifts.
+  positive. Once the treasury funds it with `fund`, the refusals for
+  cancellations, priced claims and new deposits lift. A refund of a deposit
+  below one share and a transfer to the custodian also need free reserve, which
+  `uncovered()` does not show.
 - **Residual:**
   - Within each class, whoever acts first is paid first. The vault does not
     decide who finally bears the loss.
@@ -1052,8 +1055,9 @@ The issuer of the deposit asset freezes the vault's balance or takes it back.
     cash exit waits until the freeze lifts.
   - No deploy script reads the asset's authorization flags yet, although the
     design doc's §8.10 says a deployment checks and reports them.
-  - In a wind-down, `uncovered()` understates the gap and a wind-down claim
-    checks no coverage (X8).
+  - In a wind-down, `uncovered()` understates the gap, and a wind-down claim
+    checks no coverage before it transfers (X8). It can take deposit escrow, or
+    fail inside the asset with the asset's own error when the balance is short.
 - **Tests:** `a_cancellation_the_balance_cannot_cover_is_refused_by_name`,
   `cancellations_are_paid_in_the_order_they_come_while_the_balance_lasts`,
   `no_deposit_is_taken_while_the_balance_is_below_the_escrow`,

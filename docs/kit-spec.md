@@ -28,7 +28,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   2. Priced redemption claims come next. Each pays when the liquid reserve covers its own amount, in any order; otherwise `ClaimNotCovered`.
   3. What wind-down rounds owe sits beside priced claims in the free reserve. A wind-down claim's own gap is covered in [THREAT_MODEL X8](./THREAT_MODEL.md#x8-wind-down).
   4. A refund of a deposit below one share and a transfer to the custodian come last, only from the free reserve (`ClaimNotCovered`, `ReserveCommittedToExits`).
-  5. `uncovered()` shows the gap, $`\text{committed} + \text{cancellable\_escrow} - \text{held}`$ when positive. `fund` closes it, and every refusal above lifts.
+  5. `uncovered()` shows the gap, $`\text{committed} + \text{cancellable\_escrow} - \text{held}`$ when positive. Funding that gap with `fund` lifts the refusals for cancellations, priced claims and new deposits. A refund of a deposit below one share and a transfer to the custodian also need free reserve, which `uncovered()` does not show.
   6. The vault does not decide who finally bears the loss. Until treasury funds the gap, whoever acts first within a class is paid first. Pricing does not read the balance: an epoch priced during the gap mints its deposits in full, and the loss reaches holders through the NAV.
   7. A freeze of the vault's balance, unlike a clawback, leaves the balance readable. The vault's checks pass, and the asset refuses the transfer with its own error.
 
