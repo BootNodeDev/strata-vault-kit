@@ -8,7 +8,8 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A cancelled push run would leave a failed build check on that commit.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -42,7 +43,7 @@ jobs:
                 "") ;;
                 # The harness hashes the sample valuation.
                 docs/evidence/*) code=true ;;
-                docs/* | *.md) ;;
+                *.md) ;;
                 *) code=true ;;
               esac
             done <<< "$CHANGED"
@@ -120,11 +121,16 @@ jobs:
           IMAGE: docker.io/stellar/quickstart:v687-b1580.1-latest@sha256:7711899e9942c60316ebacf8ab901be15bed7a5a31705d847b55375ff3bc8356
           # The image's own default can be a protocol its RPC cannot simulate.
           PROTOCOL_VERSION: "30"
+        # The exit file lets the wait step fail at once when the pull or start fails.
         run: |
-          nohup docker run -d --name stellar -p 8000:8000 \
-            -e ENABLE_LOGS=true -e ENABLE=core,rpc -e NETWORK=local \
-            -e PROTOCOL_VERSION="$PROTOCOL_VERSION" \
-            "$IMAGE" > "$RUNNER_TEMP/quickstart.log" 2>&1 &
+          (
+            trap '' HUP
+            status=0
+            docker run -d --name stellar -p 8000:8000 \
+              -e ENABLE_LOGS=true -e ENABLE=core,rpc -e NETWORK=local \
+              -e PROTOCOL_VERSION="$PROTOCOL_VERSION" "$IMAGE" || status=$?
+            echo "$status" > "$RUNNER_TEMP/quickstart.exit"
+          ) > "$RUNNER_TEMP/quickstart.log" 2>&1 &
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -187,21 +193,32 @@ jobs:
         working-directory: e2e
 
       - name: Wait for the local network
+        timeout-minutes: 12
         run: |
-          for _ in $(seq 1 300); do
-            if curl --no-progress-meter -X POST -H 'Content-Type: application/json' \
+          fail() {
+            echo "$1"
+            cat "$RUNNER_TEMP/quickstart.log"
+            docker logs stellar || true
+            exit 1
+          }
+          while [ "$SECONDS" -lt 600 ]; do
+            EXIT=$(cat "$RUNNER_TEMP/quickstart.exit" 2>/dev/null || true)
+            if [ -n "$EXIT" ] && [ "$EXIT" != 0 ]; then
+              fail "docker run failed with exit code $EXIT."
+            fi
+            case "$(docker inspect -f '{{.State.Status}}' stellar 2>/dev/null || true)" in
+              exited | dead) fail "The local network container stopped." ;;
+            esac
+            if curl --no-progress-meter --max-time 5 -X POST -H 'Content-Type: application/json' \
                 -d '{"jsonrpc": "2.0", "id": 1, "method": "getHealth"}' \
                 http://localhost:8000/rpc 2>/dev/null | grep -q healthy &&
-              curl --no-progress-meter http://localhost:8000/friendbot 2>/dev/null |
+              curl --no-progress-meter --max-time 5 http://localhost:8000/friendbot 2>/dev/null |
                 grep -q '"invalid_field": "addr"'; then
               exit 0
             fi
             sleep 2
           done
-          echo "The local network did not start in 10 minutes."
-          cat "$RUNNER_TEMP/quickstart.log"
-          docker logs stellar || true
-          exit 1
+          fail "The local network did not start in 10 minutes."
       - name: Add master account as default identity
         run: |
           mkdir -p .config/stellar/identity
