@@ -117,6 +117,22 @@ describe("resolveTarget", () => {
 		).toThrow(/lists no contracts/)
 	})
 
+	it("refuses contracts that are not an object, even with a valid asset", () => {
+		const record = {
+			network: "local",
+			contracts: "garbage",
+			asset: { contract: "CS" },
+		}
+
+		expect(() =>
+			resolveTarget(
+				["--config", "deployed.local.json"],
+				ENV,
+				readFileFor(record),
+			),
+		).toThrow(/lists no contracts/)
+	})
+
 	it("refuses a contract id that is not a string", () => {
 		const record = { network: "local", contracts: { async_vault: 5 } }
 

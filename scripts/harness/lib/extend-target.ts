@@ -43,16 +43,17 @@ function recordContracts(
 	record: DeploymentRecord,
 	source: string,
 ): Array<[string, string]> {
-	const contracts: Array<[string, string]> = []
 	const raw = record.contracts
-	if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
-		for (const [name, id] of Object.entries(raw)) {
-			if (typeof id !== "string")
-				throw new Error(
-					`${source} has a contract id that is not a string: ${name}`,
-				)
-			contracts.push([name, id])
-		}
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw))
+		throw new Error(`${source} lists no contracts`)
+
+	const contracts: Array<[string, string]> = []
+	for (const [name, id] of Object.entries(raw)) {
+		if (typeof id !== "string")
+			throw new Error(
+				`${source} has a contract id that is not a string: ${name}`,
+			)
+		contracts.push([name, id])
 	}
 	if (record.asset !== undefined) {
 		const contract = assetContract(record.asset)
