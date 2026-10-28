@@ -109,6 +109,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Mathematical Statement**:
   $`\sum_{i} \text{payout}_i \le \text{round\_assets}`$
 - **Testable Property**: In any distribution round with arbitrary share distributions and rounding remainders, the vault remains solvent for the last claimant. Active wind-down is strictly irreversible.
+- A proposal already stops new deposits (`WindDownAlreadyProposed`); exits, pricing and treasury go on until it activates, and cancelling the proposal reopens deposits.
 - An escrowed redemption cancelled during the wind-down counts toward the holder's entitlement, and so does a priced deposit a delisted holder claims. Credited before the first round, those shares count in its supply snapshot (`a_credit_before_the_first_round_leaves_every_holder_their_share`).
 - During an active wind-down, a priced redemption whose claim pays nothing burns its escrowed shares instead of returning them, because the snapshot left them out (`a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down`).
 - Each payout floors per holder. Once every holder whose shares were all surrendered has claimed, `wind_down_owed` keeps less than one unit per such holder, plus whatever value the snapshot counted in shares that never actually minted (for example `pending_mint_shares` from an epoch that promised more shares than it later minted). That remainder is not released: a later round lets each holder's floor catch up and needs it (`a_later_round_needs_the_units_an_earlier_round_left_in_owed`, `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`, `owed_stays_below_the_holder_count_once_every_share_is_surrendered`).
@@ -273,7 +274,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`AsyncVault`** | `set_wind_down_delay` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change`; never below 7 days | No |
 | **`AsyncVault`** | `finish_setup` | Governance | `#[only_admin]`; needs the wiring complete and no pending admin hand-over; once | No |
 | **`AsyncVault`** | `setup_open` | Permissionless | None (view) | No |
-| **`AsyncVault`** | `propose_wind_down` | Governance | `#[only_admin]` | No |
+| **`AsyncVault`** | `propose_wind_down` | Governance | `#[only_admin]`; new deposits stop until it is cancelled | No |
 | **`AsyncVault`** | `cancel_wind_down_proposal` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `activate_wind_down` | Permissionless | None (requires timelock elapsed) | No |
 | **`AsyncVault`** | `finalize_wind_down_round` | Permissionless | None | No |

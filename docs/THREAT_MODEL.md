@@ -948,12 +948,13 @@ A wind-down is used to trap holders, is stalled, or pays some holders at
 others' cost.
 
 - **Control:** Governance proposes it. Once its delay of 7 to 90 days has run,
-  anyone can activate it; until then governance may cancel it. Once active, it
-  cannot be undone. It takes no new requests, prices nothing and sends nothing
-  to the custodian, while priced claims, cancellations and funding go on.
-  Anyone finalizes a round. Each round credits only the free reserve, pro rata
-  to a supply snapshot taken at the first round, and every payment rounds in
-  the vault's favour.
+  anyone can activate it; until then governance may cancel it. From the
+  proposal on, the vault takes no new deposit. Once active, it cannot be
+  undone. It takes no new requests, prices nothing and sends nothing to the
+  custodian, while priced claims, cancellations and funding go on. Anyone
+  finalizes a round. Each round credits only the free reserve, pro rata to a
+  supply snapshot taken at the first round, and every payment rounds in the
+  vault's favour.
 - **Residual:**
   - It pays out only what is on chain. The vault cannot make the custodian
     return capital.

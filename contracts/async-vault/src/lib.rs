@@ -359,6 +359,7 @@ impl AsyncVault {
     }
 
     /// Announces a wind-down, which anyone can start once the delay has run.
+    /// New deposits stop at once; exits go on.
     ///
     /// # Errors
     ///
@@ -772,7 +773,8 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `PausableError::EnforcedPause` - The vault is paused.
-    /// * `WindDownActive` - The vault is winding down.
+    /// * `WindDownActive`, `WindDownAlreadyProposed` - A wind-down is active
+    ///   or proposed.
     /// * `SetupOpen` - Setup has not finished.
     /// * `InvalidAmount` - `amount` is zero or negative.
     /// * `NotAllowlisted` - `holder` fails the identity check.

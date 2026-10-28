@@ -124,6 +124,12 @@ describe("a wind-down on a throwaway vault", () => {
 		expect(await call("propose_wind_down", "governance", {}, true)).toBe(
 			"accepted",
 		)
+		expect(
+			await call("request_deposit", "holder-1", {
+				holder: holder(),
+				amount: usdc(1),
+			}),
+		).toBe("refused: WindDownAlreadyProposed")
 		expect(await call("activate_wind_down", "outsider", {}, true)).toBe(
 			"accepted",
 		)

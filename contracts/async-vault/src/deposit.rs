@@ -14,6 +14,7 @@ use crate::wind_down;
 
 pub(crate) fn request(e: &Env, holder: &Address, amount: i128) -> u64 {
     guards::not_winding_down(e);
+    guards::no_wind_down_proposed(e);
     guards::setup_finished(e);
     holder.require_auth();
     guards::positive_amount(e, amount);

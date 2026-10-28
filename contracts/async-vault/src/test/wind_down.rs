@@ -195,6 +195,33 @@ fn an_active_wind_down_takes_no_new_requests() {
 }
 
 #[test]
+fn a_proposed_wind_down_takes_no_new_deposit() {
+    let f = setup();
+    let holder = f.holder(500);
+    let early = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&early, &100);
+    let late = f.investor(1_000);
+    f.vault.propose_wind_down();
+
+    refused(
+        f.vault.try_request_deposit(&late, &100),
+        VaultError::WindDownAlreadyProposed,
+    );
+    f.vault.request_redeem(&holder, &100);
+    assert_eq!(f.vault.cancel_deposit(&early, &epoch), 100);
+}
+
+#[test]
+fn cancelling_the_proposal_reopens_deposits() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.vault.propose_wind_down();
+    f.vault.cancel_wind_down_proposal();
+
+    f.vault.request_deposit(&investor, &100);
+}
+
+#[test]
 fn an_active_wind_down_prices_nothing_and_closes_no_epoch() {
     let f = setup();
     let investor = f.investor(1_000);

@@ -467,14 +467,15 @@ interface today.
 - The exposed figures (share price, liquid reserve, committed, uncovered) make
   reserve coverage legible to investors and integrators.
 - Closing a vault is a dedicated, announced state. Governance proposes a
-  wind-down and may cancel the proposal during the delay, which is never shorter
-  than seven days. Once its delay has run,
-  anyone may activate it, so the operator cannot announce a closure and then stall
-  it. Once activated, wind-down is strictly irreversible: the vault permanently
-  ceases regular intake and distributes capital through pro-rata rounds. While it
-  is active the vault takes no new requests, prices nothing and sends nothing to
-  the custodian, and no admin power changes hands; cancellation, priced claims
-  and funding all stay open.
+  wind-down and may cancel the proposal during the delay, which is never
+  shorter than seven days. From the proposal on, the vault takes no new
+  deposit; exits and pricing go on until activation. Once its delay has run,
+  anyone may activate it, so the operator cannot announce a closure and then
+  stall it. Once activated, wind-down is strictly irreversible: the vault
+  permanently ceases regular intake and distributes capital through pro-rata
+  rounds. While it is active the vault takes no new requests, prices nothing
+  and sends nothing to the custodian, and no admin power changes hands;
+  cancellation, priced claims and funding all stay open.
   Anyone may then finalize distribution rounds: each round takes the free
   reserve, so priced exit liabilities and refundable subscription escrow are paid
   first, and holders pull their pro-rata share against a supply snapshot taken at

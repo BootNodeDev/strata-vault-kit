@@ -86,7 +86,8 @@ strata_bindings::error_enum! {
         /// No wind-down proposal stands.
         WindDownNotProposed = 6047,
         /// A proposal already stands. Re-proposing would let governance push the
-        /// activation date back indefinitely.
+        /// activation date back indefinitely. While it stands, the vault takes
+        /// no new deposit.
         WindDownAlreadyProposed = 6048,
         /// The announcement has not run its delay yet.
         WindDownDelayNotElapsed = 6049,
