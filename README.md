@@ -196,7 +196,8 @@ contract extends on its own.
 
 With `--config`, it uses the network the record names (`local` or `testnet`)
 unless `--env` names another environment, and it prints the network and RPC it
-uses before it sends anything.
+uses before it sends anything. Put flags after `--`, or npm swallows them:
+`npm run extend -w scripts/harness -- --config <record>`.
 
 ## Reference base
 

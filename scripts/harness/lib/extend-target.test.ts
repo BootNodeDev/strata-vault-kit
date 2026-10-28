@@ -183,6 +183,15 @@ describe("resolveTarget", () => {
 		).toThrow(/--config needs a value/)
 	})
 
+	it.each([["rec.json"], ["--config=rec.json"], ["--confg", "x"]])(
+		"refuses an argument npm let through as-is: %j",
+		(...argv) => {
+			expect(() => resolveTarget(argv, ENV, readFileFor(undefined))).toThrow(
+				/npm run extend -w scripts\/harness -- --config <record>/,
+			)
+		},
+	)
+
 	it("describes the network and RPC", () => {
 		const target = resolveTarget(
 			["--config", "deployed.local.json"],

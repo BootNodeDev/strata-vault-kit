@@ -24,13 +24,31 @@ interface DeploymentRecord {
 	asset?: unknown
 }
 
-function flagValue(argv: readonly string[], flag: string): string | undefined {
-	const at = argv.indexOf(flag)
-	if (at === -1) return undefined
-	const value = argv[at + 1]
-	if (value === undefined || value.startsWith("--"))
-		throw new Error(`${flag} needs a value`)
-	return value
+const USAGE = "npm run extend -w scripts/harness -- --config <record>"
+
+interface ParsedFlags {
+	config?: string
+	env?: string
+}
+
+/**
+ * Without the `--` separator, npm swallows `--config`/`--env` on its own,
+ * silently handing the script whatever is left over. Accept only the two
+ * known flags, each immediately followed by its value.
+ */
+function parseArgv(argv: readonly string[]): ParsedFlags {
+	const flags: ParsedFlags = {}
+	for (let at = 0; at < argv.length; at += 2) {
+		const flag = argv[at]
+		if (flag !== "--config" && flag !== "--env")
+			throw new Error(`unexpected argument "${flag}"; use ${USAGE}`)
+		const value = argv[at + 1]
+		if (value === undefined || value.startsWith("--"))
+			throw new Error(`${flag} needs a value; use ${USAGE}`)
+		if (flag === "--config") flags.config = value
+		else flags.env = value
+	}
+	return flags
 }
 
 function assetContract(asset: unknown): string | undefined {
@@ -70,8 +88,7 @@ export function resolveTarget(
 	env: Record<string, string | undefined>,
 	readFile: (path: string) => string = (p) => readFileSync(p, "utf8"),
 ): ExtendTarget {
-	const config = flagValue(argv, "--config")
-	const envFlag = flagValue(argv, "--env")
+	const { config, env: envFlag } = parseArgv(argv)
 	const toml = () => readFile(join(REPO_ROOT, "environments.toml"))
 
 	if (config === undefined) {
