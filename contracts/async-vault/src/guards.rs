@@ -325,6 +325,20 @@ pub(crate) fn payout_covered(e: &Env, assets: i128) {
     }
 }
 
+/// Against the raw balance: after a clawback, cancellations are paid in arrival order.
+pub(crate) fn cancellation_covered(e: &Env, amount: i128) {
+    if treasury::held(e) < amount {
+        panic_with_error!(e, VaultError::EscrowNotCovered);
+    }
+}
+
+/// A new deposit never pays an earlier cancellation the vault can no longer cover.
+pub(crate) fn escrow_covered(e: &Env) {
+    if treasury::liquid_reserve(e) < 0 {
+        panic_with_error!(e, VaultError::EscrowNotCovered);
+    }
+}
+
 /// The holder may hold shares and the compliance rules let the vault send them.
 pub(crate) fn eligible_to_receive(e: &Env, holder: &Address, shares: i128) {
     let vault = e.current_contract_address();

@@ -172,5 +172,10 @@ strata_bindings::error_enum! {
         /// The custodian would be the vault itself. Capital deployed to it would
         /// never leave, and the books would count it as both held and deployed.
         InvalidCustodian = 6075,
+        /// The vault holds less than the escrow depositors can still cancel,
+        /// because the asset's issuer took part of its balance. A cancellation
+        /// the balance cannot cover waits, and no new deposit is taken, until the
+        /// vault is funded.
+        EscrowNotCovered = 6076,
     }
 }

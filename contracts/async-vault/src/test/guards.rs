@@ -589,6 +589,33 @@ fn payout_covered_refuses_a_payout_beyond_the_liquid_reserve() {
 }
 
 #[test]
+fn cancellation_covered_refuses_a_cancellation_beyond_the_balance() {
+    let f = setup();
+    let investor = f.investor(100);
+    f.vault.request_deposit(&investor, &100);
+    holds(&f, || guards::cancellation_covered(&f.e, 100));
+
+    f.claw_back(1);
+    holds(&f, || guards::cancellation_covered(&f.e, 99));
+    refuses(&f, VaultError::EscrowNotCovered, || {
+        guards::cancellation_covered(&f.e, 100)
+    });
+}
+
+#[test]
+fn escrow_covered_refuses_while_the_balance_is_below_the_escrow() {
+    let f = setup();
+    let investor = f.investor(100);
+    f.vault.request_deposit(&investor, &100);
+    holds(&f, || guards::escrow_covered(&f.e));
+
+    f.claw_back(1);
+    refuses(&f, VaultError::EscrowNotCovered, || {
+        guards::escrow_covered(&f.e)
+    });
+}
+
+#[test]
 fn eligible_to_receive_refuses_a_holder_the_token_would_not_take() {
     let f = setup();
     let listed = f.investor(0);

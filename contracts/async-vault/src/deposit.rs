@@ -19,6 +19,7 @@ pub(crate) fn request(e: &Env, holder: &Address, amount: i128) -> u64 {
     guards::positive_amount(e, amount);
     guards::allowed_to(e, Exit::RequestDeposit, holder);
     guards::feed_valid(e);
+    guards::escrow_covered(e);
     guards::within_cap(e, amount);
     let epoch_id = state::current_epoch(e);
     guards::no_open_deposit(e, epoch_id, holder);
@@ -174,6 +175,7 @@ pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
     let request = state::get_deposit_request(e, epoch_id, holder)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::RequestNotFound));
     guards::allowed_to(e, Exit::CancelDeposit, holder);
+    guards::cancellation_covered(e, request.amount);
 
     state::set_cancellable_escrow(
         e,

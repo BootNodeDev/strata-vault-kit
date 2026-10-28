@@ -257,6 +257,8 @@ fn deposits_after_fulfilling_land_in_the_new_epoch() {
 fn escrow_that_would_overflow_is_refused_by_name() {
     let f = setup();
     let investor = f.investor(1);
+    // Held in full, so only the escrow sum can refuse.
+    StellarAssetClient::new(&f.e, &f.asset).mint(&f.vault.address, &i128::MAX);
     f.e.as_contract(&f.vault.address, || {
         crate::state::set_cancellable_escrow(&f.e, i128::MAX)
     });

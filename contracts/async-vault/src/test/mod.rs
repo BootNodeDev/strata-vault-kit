@@ -1,4 +1,5 @@
 mod cancel;
+mod clawback;
 mod compliance;
 mod constructor;
 mod controls;
@@ -147,6 +148,11 @@ impl Fixture<'_> {
 
     fn balance(&self, who: &Address) -> i128 {
         TokenClient::new(&self.e, &self.asset).balance(who)
+    }
+
+    /// The asset's issuer takes `amount` out of the vault's balance.
+    fn claw_back(&self, amount: i128) {
+        StellarAssetClient::new(&self.e, &self.asset).clawback(&self.vault.address, &amount);
     }
 
     fn shares(&self, who: &Address) -> i128 {
@@ -346,7 +352,11 @@ fn build<'a>(
     e.ledger().set_timestamp(10_000);
 
     let issuer = Address::generate(&e);
-    let asset = e.register_stellar_asset_contract_v2(issuer).address();
+    let sac = e.register_stellar_asset_contract_v2(issuer);
+    // A balance can be clawed back only if the flag was set when it was created.
+    sac.issuer()
+        .set_flag(soroban_sdk::testutils::IssuerFlags::ClawbackEnabledFlag);
+    let asset = sac.address();
     let manager = Address::generate(&e);
     let treasury = Address::generate(&e);
     let guardian = Address::generate(&e);

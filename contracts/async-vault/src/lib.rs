@@ -217,14 +217,15 @@ impl AsyncVault {
         state::committed(e)
     }
 
-    /// Asset base units owed to priced redemptions beyond the liquid reserve.
-    /// While it is positive, nothing can be deployed to the custodian.
+    /// Asset base units owed to priced redemptions and cancellable escrow
+    /// beyond what the vault holds. While it is positive, nothing can be
+    /// deployed to the custodian.
     pub fn uncovered(e: &Env) -> i128 {
         treasury::uncovered(e)
     }
 
     /// Asset base units the vault holds, less the escrow depositors can still
-    /// cancel.
+    /// cancel. Can turn negative after the asset's issuer takes from the vault.
     pub fn liquid_reserve(e: &Env) -> i128 {
         treasury::liquid_reserve(e)
     }
@@ -781,6 +782,7 @@ impl AsyncVault {
     /// * `NotAllowlisted` - `holder` fails the identity check.
     /// * `Frozen` - `holder` is frozen.
     /// * `FeedNotValid` - The feed is stale or the NAV is paused.
+    /// * `EscrowNotCovered` - The vault holds less than its pending escrow.
     /// * `DepositCapExceeded` - The deposit would pass the cap.
     /// * `RequestOutstanding` - `holder` has a deposit in this epoch already.
     /// * `AmountTooLarge` - A total would overflow.
@@ -850,6 +852,7 @@ impl AsyncVault {
     ///   price is known, even while the notice runs.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `Frozen` - `holder` is frozen.
+    /// * `EscrowNotCovered` - The vault's balance cannot cover the refund yet.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events

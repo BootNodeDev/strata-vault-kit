@@ -1024,20 +1024,47 @@ Rounding lets a claim take more than its share, or a tiny deposit is lost.
 
 The issuer of the deposit asset freezes the vault's balance or takes it back.
 
-- **Control:** None in the kit; it is a declared risk of the chosen asset. A
-  payout goes only to the holder's own address, and a claim the vault cannot pay
-  stays owed in `committed`.
-- **Residual:** While the issuer freezes the vault's balance, every cash exit
-  waits. A clawback takes the cash; claims then wait for the treasury to cover
-  the gap, and those who claim first are paid first. In a wind-down,
-  `uncovered()` then understates the gap (X8). No deploy script reads the
-  asset's authorization flags yet, although the design doc's §8.10 says a
-  deployment checks and reports them.
-- **Tests:** none for the issuer's controls: the kit has no control here to
-  show, and no test freezes or claws back the vault's balance.
+- **Control:** The kit cannot stop the issuer; it is a declared risk of the
+  chosen asset. A payout goes only to the holder's own address. After a
+  clawback, the vault pays in this order and refuses the rest by name:
+  1. Escrow a depositor can still cancel. `cancel_deposit` pays when the
+     vault's balance covers that deposit's own amount; otherwise
+     `EscrowNotCovered`. While the balance is below the total cancellable
+     escrow, `request_deposit` refuses with `EscrowNotCovered`, so a new
+     deposit never pays an earlier cancellation.
+  2. Priced redemptions. `claim_redeem` pays when the liquid reserve (the
+     balance less cancellable escrow) covers its own amount; otherwise
+     `ClaimNotCovered`, and the claim stays owed in `committed`.
+  3. What wind-down rounds owe, beside priced redemptions in the free reserve.
+  4. Last, and only from the free reserve: a refund of a deposit below one
+     share (`claim_deposit`, `ClaimNotCovered`) and a transfer to the custodian
+     (`deploy_to_custodian`, `ReserveCommittedToExits`).
+
+  `uncovered()` shows the gap, `committed + cancellable_escrow - balance` when
+  positive. Once the treasury funds it with `fund`, every refusal above lifts.
+- **Residual:**
+  - Within each class, whoever acts first is paid first. The vault does not
+    decide who finally bears the loss.
+  - Pricing does not read the balance. An epoch priced during the gap mints its
+    deposits in full, and the loss reaches holders through the NAV.
+  - A freeze leaves the vault's balance readable, so the vault's checks pass
+    and the transfer fails inside the asset with the asset's own error. Every
+    cash exit waits until the freeze lifts.
+  - No deploy script reads the asset's authorization flags yet, although the
+    design doc's §8.10 says a deployment checks and reports them.
+  - In a wind-down, `uncovered()` understates the gap and a wind-down claim
+    checks no coverage (X8).
+- **Tests:** `a_cancellation_the_balance_cannot_cover_is_refused_by_name`,
+  `cancellations_are_paid_in_the_order_they_come_while_the_balance_lasts`,
+  `no_deposit_is_taken_while_the_balance_is_below_the_escrow`,
+  `a_priced_redemption_waits_while_the_issuer_has_taken_the_escrow`,
+  `a_refund_below_one_share_waits_while_the_issuer_has_taken_the_escrow`,
+  `nothing_goes_to_the_custodian_while_the_issuer_has_taken_the_escrow` and
+  `pricing_ignores_a_shortfall_and_mints_the_full_deposit` in
+  [`clawback.rs`](../contracts/async-vault/src/test/clawback.rs);
   `a_claim_waits_until_the_reserve_covers_it` in
-  [`multi_epoch.rs`](../contracts/async-vault/src/test/multi_epoch.rs) shows
-  that a claim the vault cannot pay stays owed.
+  [`multi_epoch.rs`](../contracts/async-vault/src/test/multi_epoch.rs). None
+  freezes the vault's balance.
 
 ### X11. Storage that expires
 
@@ -1156,6 +1183,10 @@ These are decided, and stated as they stand:
    transaction pays its fee (R4).
 7. The testnet deployment in the README runs older code than this commit
    ([Scope](#scope)).
+8. A clawback of the vault's cash by the asset's issuer is a loss of the fund
+   that the vault does not assign. While it lasts, the vault refuses by name
+   what its balance cannot cover: `EscrowNotCovered` for cancellations and new
+   deposits, `ClaimNotCovered` for claims (X10).
 
 ## What has no test yet
 
@@ -1168,8 +1199,8 @@ For Tranche 3's matrix:
 - Role separation after construction and across contracts, which nothing
   checks yet (R5).
 - `uncovered()` with wind-down credits (X8).
-- The deposit asset's issuer freezing or clawing back the vault's balance, and
-  a deploy check of the asset's authorization flags (X10).
+- The deposit asset's issuer freezing the vault's balance, and a deploy check
+  of the asset's authorization flags (X10).
 - The cost of a call, and contention between calls in one ledger (X12).
 - A vault upgrade over requests, positions or queued changes stored in an
   earlier shape (X13).

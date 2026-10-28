@@ -21,8 +21,16 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   $`\text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)`$
 
   $`\text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)`$
-- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $`\text{assets} > \text{free\_reserve}`$, so after every operation $`\text{held} \ge \text{cancellable\_escrow}`$. While $`\text{uncovered} > 0`$, the free reserve is zero and nothing leaves for the custodian.
+- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $`\text{assets} > \text{free\_reserve}`$, so after every operation $`\text{held} \ge \text{cancellable\_escrow}`$, unless the asset's issuer takes from the vault's balance. While $`\text{uncovered} > 0`$, the free reserve is zero and nothing leaves for the custodian.
 - **Enforcement**: `deploy_to_custodian` is the only outbound path to the custodian, and it moves at most the free reserve.
+- **When the vault holds less than it owes**: the asset's issuer can claw back part of the vault's balance. The kit cannot stop that. The vault then pays in this order and refuses the rest by name until it is funded:
+  1. Escrow a depositor can still cancel is paid first. `cancel_deposit` pays from the vault's whole balance when that balance covers the deposit's own amount, in any order; otherwise `EscrowNotCovered`. While $`\text{held} < \text{cancellable\_escrow}`$, `request_deposit` is refused with `EscrowNotCovered`, so a new deposit never pays an earlier cancellation.
+  2. Priced redemption claims come next. Each pays when the liquid reserve covers its own amount, in any order; otherwise `ClaimNotCovered`.
+  3. What wind-down rounds owe sits beside priced claims in the free reserve. A wind-down claim's own gap is covered in [THREAT_MODEL X8](./THREAT_MODEL.md#x8-wind-down).
+  4. A refund of a deposit below one share and a transfer to the custodian come last, only from the free reserve (`ClaimNotCovered`, `ReserveCommittedToExits`).
+  5. `uncovered()` shows the gap, $`\text{committed} + \text{cancellable\_escrow} - \text{held}`$ when positive. `fund` closes it, and every refusal above lifts.
+  6. The vault does not decide who finally bears the loss. Until treasury funds the gap, whoever acts first within a class is paid first. Pricing does not read the balance: an epoch priced during the gap mints its deposits in full, and the loss reaches holders through the NAV.
+  7. A freeze of the vault's balance, unlike a clawback, leaves the balance readable. The vault's checks pass, and the asset refuses the transfer with its own error.
 
 ### Invariant 2: Notice Period Respected
 - **Definition**: An epoch cannot be fulfilled or priced until its standing notice period has fully elapsed.
@@ -257,8 +265,8 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 
 | Contract | Entrypoint | Calling Authority | Access Control Guard | Pausable? |
 |---|---|---|---|---|
-| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) and while the feed is not valid (`FeedNotValid`) | Yes (halted by pause) |
-| **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
+| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`), while the feed is not valid (`FeedNotValid`) and while the vault holds less than its pending escrow (`EscrowNotCovered`) | Yes (halted by pause) |
+| **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()`; refused while the vault's balance cannot cover the refund (`EscrowNotCovered`) | No (open during pause) |
 | **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | No (open during pause; refused in a wind-down) |
 | **`AsyncVault`** | `cancel_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
@@ -568,7 +576,7 @@ for the same failure, so `304` says what failed, not where.
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|
 | `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
-| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6075 |
+| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6076 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7018 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
 
