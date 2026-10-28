@@ -60,12 +60,12 @@ Console tests, also cited by title, run with `npm run test`.
 | --- | --- |
 | Governance | Admin of the vault. By deploy, also admin of the share token, the oracle and the compliance contract. |
 | Guardian | Pauses the vault (vault `guardian`). By deploy, also pauses the NAV (oracle `guardian`). |
-| Manager | Seals the open epoch with `close_epoch` (vault `manager`); "sealed" below means closed this way. A role, not one of the five authorities. |
+| Manager | Seals the open epoch with `close_epoch` (vault `manager`) at any time; "sealed" below means closed by the manager or by anyone once the minimum epoch duration has run. A role, not one of the five authorities. |
 | Treasury | Sends free reserve to the custodian (vault `treasury`). |
 | Attester | Posts the share price (oracle `attester`). |
 | Compliance | Freezes holders, and with governance makes legal transfers and recoveries (share token `compliance`). By deploy, also lists and delists addresses (identity verifier admin). |
 | The vault contract | Mints, burns and moves escrowed shares (share token `manager`, which `finish_setup` requires it to hold alone). |
-| Anyone | Prices a sealed epoch, funds the vault, activates a wind-down once it is due, finalizes a round. Each holder signs their own requests, cancellations and claims. |
+| Anyone | Prices a sealed epoch, funds the vault, activates a wind-down once it is due, finalizes a round, seals an epoch that has been open for the minimum epoch duration once governance has set one. Each holder signs their own requests, cancellations and claims. |
 | Outside the kit | The custodian, the deposit asset's issuer, external compliance or identity contracts, wallets, and whoever hosts a frontend. |
 
 "By deploy" means the deploy script sets it and no contract checks it (R5). The
@@ -621,18 +621,24 @@ The treasury drains the reserve.
 
 The manager stops sealing, so nothing is priced, or seals when it suits someone.
 
-- **Control:** The manager can only seal the open epoch. It cannot set the
-  price: anyone prices a sealed epoch from the oracle. Requests in the open
-  epoch can be cancelled at any time, apart from the holds in X3 and X4.
-- **Residual:** The manager decides which requests share a price. A manager who
-  stops sealing blocks every exit at a price; holders can still cancel, getting
-  a deposit back as cash and a redemption back as shares. After setup, replacing
-  the manager waits for the timelock, at least seven days.
-  [#335](https://github.com/BootNodeDev/strata-vault-kit/issues/335) plans to
-  let anyone seal an epoch that has been open for a minimum time.
+- **Control:** The manager can seal the open epoch at any time; once governance
+  sets a minimum epoch duration, anyone else may seal an epoch that has been
+  open that long. Neither can set the price: anyone prices a sealed epoch from
+  the oracle. Requests in the open epoch can be cancelled at any time, apart
+  from the holds in X3 and X4.
+- **Residual:** The manager decides which requests share a price until the
+  minimum has run. A manager who stops sealing holds priced exits back for up
+  to the minimum epoch duration; once it has run, anyone seals. Without a
+  minimum set, exits at a price wait until governance replaces the manager
+  through the timelock, at least seven days. Holders can still cancel at any
+  time: a deposit comes back as cash, a redemption as shares.
 - **Tests:** `a_non_manager_cannot_close` and
   `anyone_may_fulfill_a_closed_epoch` in
   [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
+  `a_raised_minimum_counts_from_the_epochs_start`,
+  `an_outsider_seals_once_the_minimum_has_run` and
+  `with_no_manager_anyone_still_seals_after_the_minimum` in
+  [`sealing.rs`](../contracts/async-vault/src/test/sealing.rs);
   `cancelling_a_deposit_returns_the_asset` and
   `cancelling_a_redemption_returns_the_shares` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
@@ -1123,9 +1129,9 @@ These are decided, and stated as they stand:
 1. A compliance module that refuses can block a covered exit, and removing it
    waits for the timelock (X6). Which modules mainnet uses is decided in
    [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238).
-2. A manager who stops sealing blocks every exit at a price; holders can still
-   cancel (R8). [#335](https://github.com/BootNodeDev/strata-vault-kit/issues/335)
-   plans sealing by anyone after a minimum epoch length.
+2. A stopped manager holds exits at a price back until the open epoch has run
+   the minimum epoch duration, then anyone seals; with none set, holders wait
+   until governance replaces the manager (R8).
 3. The identity verifier and compliance contracts in this repository are
    testnet stubs, not for mainnet (R9, R11).
 4. The vault's constructor is the only check on who holds which role, for four

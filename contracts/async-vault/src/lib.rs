@@ -387,8 +387,8 @@ impl AsyncVault {
     }
 
     /// Seconds the open epoch must stay open before anyone but the manager may
-    /// seal it. `None` until governance sets one, and then only the manager
-    /// seals.
+    /// seal it. `None` until governance sets one; while `None`, only the
+    /// manager seals.
     pub fn min_epoch_duration(e: &Env) -> Option<u64> {
         state::min_epoch_duration(e)
     }
