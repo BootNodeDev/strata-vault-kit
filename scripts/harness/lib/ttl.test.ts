@@ -50,6 +50,7 @@ describe("inspect", () => {
 			archived: true,
 			found: false,
 			instance: undefined,
+			latestLedger: 174,
 		})
 	})
 
@@ -168,10 +169,10 @@ describe("extend", () => {
 		},
 	)
 
-	it("refuses a live-until ledger of 0, which the CLI prints for an archived entry", async () => {
-		await expect(
-			extend(RPC, { id: CONTRACT_A }, 100, run("0")),
-		).rejects.toThrow(/still archived/)
+	it("returns 0 as-is, leaving the staleness check to keepAlive", async () => {
+		await expect(extend(RPC, { id: CONTRACT_A }, 100, run("0"))).resolves.toBe(
+			0,
+		)
 	})
 })
 

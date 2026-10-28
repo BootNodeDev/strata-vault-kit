@@ -20,6 +20,7 @@ export interface Inspection {
 	archived: boolean
 	found: boolean
 	instance: xdr.ScContractInstance | undefined
+	latestLedger: number
 }
 
 const entryArgs = (entry: Entry): string[] =>
@@ -80,11 +81,16 @@ export async function inspect(
 		throw fetchError(out)
 	}
 	if (typeof parsed !== "object" || parsed === null) throw fetchError(out)
-	const { entries, latestLedger } = parsed as Record<string, unknown>
-	if (!Array.isArray(entries) || typeof latestLedger !== "number")
+	const { entries, latestLedger: latest } = parsed as Record<string, unknown>
+	if (!Array.isArray(entries) || typeof latest !== "number")
 		throw fetchError(out)
 	if (entries.length === 0)
-		return { archived: true, found: false, instance: undefined }
+		return {
+			archived: true,
+			found: false,
+			instance: undefined,
+			latestLedger: latest,
+		}
 	if (entries.length > 1) throw fetchError(out)
 
 	const [found] = entries as unknown[]
@@ -101,9 +107,10 @@ export async function inspect(
 	}
 
 	return {
-		archived: liveUntilLedgerSeq < latestLedger,
+		archived: liveUntilLedgerSeq < latest,
 		found: true,
 		instance: instanceOf(entry, decoded, out),
+		latestLedger: latest,
 	}
 }
 
@@ -138,13 +145,7 @@ export async function extend(
 			`stellar contract extend printed no live-until ledger:\n${out}`,
 		)
 	}
-	const until = Number(last)
-	if (until === 0) {
-		throw new Error(
-			"the entry is still archived; stellar contract extend made no change",
-		)
-	}
-	return until
+	return Number(last)
 }
 
 export async function latestLedger(

@@ -40,6 +40,11 @@ export async function keepAlive(
 			throw new Error(`${label} is still archived after the restore`)
 	}
 	const until = await extend(rpc, entry, EXTEND_LEDGERS, run)
+	if (until < inspection.latestLedger + EXTEND_LEDGERS) {
+		throw new Error(
+			`${label}: stellar contract extend reported live until ledger ${until}, but the latest ledger was ${inspection.latestLedger}. The RPC may be lagging; retry.`,
+		)
+	}
 	log(`${label} live until ledger ${until}`)
 	return inspection.instance
 }

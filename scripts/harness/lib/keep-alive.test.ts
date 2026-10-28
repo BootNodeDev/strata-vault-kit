@@ -10,12 +10,13 @@ import {
 	WASM_HASH,
 	codeData,
 	entryKey,
+	fetchOutput,
 	instanceData,
 	pendingData,
 } from "./fake-ledger.js"
 import { keepAlive, keepDeploymentAlive, type Log } from "./keep-alive.js"
 import { openChangesKey, pendingChangeKey } from "./timelock-keys.js"
-import { wasmHashOf } from "./ttl.js"
+import { type Runner, wasmHashOf } from "./ttl.js"
 
 const steps = (ledger: FakeLedger) =>
 	ledger.calls.map((args) => args.slice(0, 2).join(" "))
@@ -121,6 +122,66 @@ describe("keepAlive", () => {
 				lines.push(l),
 			),
 		).rejects.toThrow(/still archived after the restore/)
+	})
+
+	/** A runner whose `contract extend` answer is fixed, independent of the fetch. */
+	function scriptedExtend(latest: number, extendsTo: string): Runner {
+		return (args) => {
+			if (args[0] === "contract" && args[1] === "extend")
+				return Promise.resolve(extendsTo)
+			return Promise.resolve(
+				fetchOutput(latest, [
+					{
+						xdr: instanceData(CONTRACT_A, { wasmHash: WASM_HASH }),
+						liveUntilLedgerSeq: latest + 1000,
+					},
+				]),
+			)
+		}
+	}
+
+	it("refuses a live-until behind the latest ledger plus the extend length", async () => {
+		await expect(
+			keepAlive(
+				RPC,
+				{ id: CONTRACT_A },
+				"vault instance",
+				scriptedExtend(300, "299"),
+			),
+		).rejects.toThrow(/vault instance.*299.*300/s)
+	})
+
+	it("refuses a live-until ledger of 0 from a lagging extend", async () => {
+		await expect(
+			keepAlive(
+				RPC,
+				{ id: CONTRACT_A },
+				"vault instance",
+				scriptedExtend(300, "0"),
+			),
+		).rejects.toThrow(/vault instance.*0.*300/s)
+	})
+
+	it("accepts a normal extend to latest plus the extend length", async () => {
+		await expect(
+			keepAlive(
+				RPC,
+				{ id: CONTRACT_A },
+				"vault instance",
+				scriptedExtend(300, String(300 + 518_400)),
+			),
+		).resolves.toBeDefined()
+	})
+
+	it("accepts an entry already living longer than the target", async () => {
+		await expect(
+			keepAlive(
+				RPC,
+				{ id: CONTRACT_A },
+				"vault instance",
+				scriptedExtend(300, String(300 + 518_400 + 1_000_000)),
+			),
+		).resolves.toBeDefined()
 	})
 })
 
