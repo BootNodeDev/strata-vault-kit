@@ -7,11 +7,10 @@ import {
 	selectedEnvironment,
 } from "../lib/environments.mjs"
 
-import { rpcArgs, stellar, type Rpc } from "./lib/cli.js"
+import { type Rpc } from "./lib/cli.js"
 import { REPO_ROOT } from "./lib/deployment.js"
-import { keepAlive } from "./lib/keep-alive.js"
-import { pendingChangeKey } from "./lib/timelock-keys.js"
-import { latestLedger, wasmHashOf } from "./lib/ttl.js"
+import { keepDeploymentAlive } from "./lib/keep-alive.js"
+import { latestLedger } from "./lib/ttl.js"
 
 // Restores, when archived, and extends by 30 days each contract instance, the
 // Wasm it runs and each pending timelock change, so an idle deployment stays
@@ -20,31 +19,6 @@ import { latestLedger, wasmHashOf } from "./lib/ttl.js"
 interface DeploymentRecord {
 	contracts: Record<string, string>
 	asset?: { contract: string }
-}
-
-// Contracts whose storage holds a timelock change queue, by the name they
-// deploy under.
-const CONTRACTS_WITH_QUEUES = new Set([
-	"async_vault",
-	"share_token",
-	"nav_oracle",
-	"compliance",
-])
-
-/** The ids still waiting in a contract's queue, read through its `pending_changes` view. */
-async function openChangeIds(rpc: Rpc, contractId: string): Promise<number[]> {
-	const out = await stellar([
-		"contract",
-		"invoke",
-		"--id",
-		contractId,
-		"--send",
-		"no",
-		...rpcArgs(rpc),
-		"--",
-		"pending_changes",
-	])
-	return (JSON.parse(out) as Array<{ id: number }>).map(({ id }) => id)
 }
 
 function option(flag: string): string | undefined {
@@ -82,27 +56,7 @@ async function main(): Promise<void> {
 	console.log(
 		`extending ${contracts.length} contracts, latest ledger ${latest}`,
 	)
-
-	const code = new Set<string>()
-	for (const [name, id] of contracts) {
-		const instance = await keepAlive(rpc, { id }, `${name} instance`)
-		const wasmHash = instance === undefined ? undefined : wasmHashOf(instance)
-		if (wasmHash !== undefined) code.add(wasmHash)
-	}
-	for (const wasmHash of code) {
-		await keepAlive(rpc, { wasmHash }, `code ${wasmHash.slice(0, 8)}`)
-	}
-	// Reading a queue simulates a call, so the instance and its Wasm come first.
-	for (const [name, id] of contracts) {
-		if (!CONTRACTS_WITH_QUEUES.has(name)) continue
-		for (const changeId of await openChangeIds(rpc, id)) {
-			await keepAlive(
-				rpc,
-				{ id, keyXdr: pendingChangeKey(changeId).toXDR("base64") },
-				`${name} pending change ${changeId}`,
-			)
-		}
-	}
+	await keepDeploymentAlive(rpc, contracts)
 }
 
 main().catch((error: unknown) => {

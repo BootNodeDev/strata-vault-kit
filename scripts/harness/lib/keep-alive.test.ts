@@ -1,18 +1,30 @@
+import { xdr } from "@stellar/stellar-sdk"
 import { describe, expect, it } from "vitest"
 
 import {
 	CONTRACT_A,
+	CONTRACT_B,
+	CONTRACT_C,
 	FakeLedger,
 	RPC,
 	WASM_HASH,
+	codeData,
 	entryKey,
 	instanceData,
+	pendingData,
 } from "./fake-ledger.js"
-import { keepAlive } from "./keep-alive.js"
+import { keepAlive, keepDeploymentAlive, type Log } from "./keep-alive.js"
+import { openChangesKey, pendingChangeKey } from "./timelock-keys.js"
 import { wasmHashOf } from "./ttl.js"
 
 const steps = (ledger: FakeLedger) =>
 	ledger.calls.map((args) => args.slice(0, 2).join(" "))
+
+const open = (...ids: number[]): xdr.ScMapEntry =>
+	new xdr.ScMapEntry({
+		key: openChangesKey(),
+		val: xdr.ScVal.scvVec(ids.map((id) => xdr.ScVal.scvU32(id))),
+	})
 
 describe("keepAlive", () => {
 	it("extends a live entry without restoring it", async () => {
@@ -109,5 +121,98 @@ describe("keepAlive", () => {
 				lines.push(l),
 			),
 		).rejects.toThrow(/still archived after the restore/)
+	})
+})
+
+describe("keepDeploymentAlive", () => {
+	it("keeps alive each instance, the Wasm it runs once per hash, and each open change", async () => {
+		const ledger = new FakeLedger()
+		const lines: string[] = []
+		const log: Log = (l) => lines.push(l)
+
+		ledger.put(
+			entryKey({ id: CONTRACT_A }),
+			instanceData(CONTRACT_A, { wasmHash: WASM_HASH, storage: [open(1, 2)] }),
+			2000,
+		)
+		ledger.put(
+			entryKey({ id: CONTRACT_B }),
+			instanceData(CONTRACT_B, { wasmHash: WASM_HASH }),
+			2000,
+		)
+		ledger.put(entryKey({ id: CONTRACT_C }), instanceData(CONTRACT_C, {}), 2000)
+		ledger.put(entryKey({ wasmHash: WASM_HASH }), codeData(WASM_HASH), 2000)
+		ledger.put(
+			entryKey({
+				id: CONTRACT_A,
+				keyXdr: pendingChangeKey(1).toXDR("base64"),
+			}),
+			pendingData(CONTRACT_A, pendingChangeKey(1).toXDR("base64")),
+			2000,
+		)
+		ledger.put(
+			entryKey({
+				id: CONTRACT_A,
+				keyXdr: pendingChangeKey(2).toXDR("base64"),
+			}),
+			pendingData(CONTRACT_A, pendingChangeKey(2).toXDR("base64")),
+			900,
+			"absent",
+		)
+
+		await keepDeploymentAlive(
+			RPC,
+			[
+				["vault", CONTRACT_A],
+				["oracle", CONTRACT_B],
+				["asset", CONTRACT_C],
+			],
+			ledger.run,
+			log,
+		)
+
+		expect(lines).toEqual([
+			"vault instance live until ledger 519400",
+			"oracle instance live until ledger 519400",
+			"asset instance live until ledger 519400",
+			`code ${WASM_HASH.slice(0, 8)} live until ledger 519400`,
+			"vault pending change 1 live until ledger 519400",
+			"vault pending change 2 restored",
+			"vault pending change 2 live until ledger 519400",
+		])
+		const restored = ledger.calls.find((a) => a[1] === "restore")
+		expect(restored).toContain(pendingChangeKey(2).toXDR("base64"))
+		expect(
+			ledger.calls
+				.filter((a) => a.includes("--key-xdr"))
+				.every((a) => a.includes(CONTRACT_A)),
+		).toBe(true)
+	})
+
+	it("reads open changes from an instance restored from archive", async () => {
+		const ledger = new FakeLedger()
+		const lines: string[] = []
+		const log: Log = (l) => lines.push(l)
+
+		ledger.put(
+			entryKey({ id: CONTRACT_A }),
+			instanceData(CONTRACT_A, { wasmHash: WASM_HASH, storage: [open(3)] }),
+			900,
+			"absent",
+		)
+		ledger.put(entryKey({ wasmHash: WASM_HASH }), codeData(WASM_HASH), 2000)
+		ledger.put(
+			entryKey({
+				id: CONTRACT_A,
+				keyXdr: pendingChangeKey(3).toXDR("base64"),
+			}),
+			pendingData(CONTRACT_A, pendingChangeKey(3).toXDR("base64")),
+			2000,
+		)
+
+		await keepDeploymentAlive(RPC, [["vault", CONTRACT_A]], ledger.run, log)
+
+		expect(lines).toContain("vault instance restored")
+		expect(lines).toContain("vault pending change 3 live until ledger 519400")
 	})
 })

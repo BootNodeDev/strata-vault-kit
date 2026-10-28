@@ -391,10 +391,12 @@ extended to 30 days when it is proposed. The wait itself can run up to 90 days
 (`strata_timelock::MAX_DELAY`), so a change nobody touches can archive before it is
 due. Nothing is lost: the call that applies it restores the archived entry
 itself and pays the restore fee, the same as any other archived entry.
-`npm run extend` also keeps it alive: it reads each contract's open ids from
-its `pending_changes()` view, builds each one's storage key the way the
-timelock crate does, and extends it the same 30 days as every instance and
-Wasm.
+`npm run extend` also keeps it alive. It reads each contract's open ids from
+the contract's instance, where the timelock stores them, so it never reads the
+pending entries to find them. It builds each entry's storage key the way the
+timelock crate does, and a test checks that the two agree. If the entry has
+archived, it restores it, then extends it the same 30 days as every instance
+and Wasm.
 
 **What OpenZeppelin extends, and what the kit adds.** `stellar-tokens` 0.7.2
 stores the share token's balances and freeze entries, and the compliance
