@@ -1,8 +1,6 @@
 import { readFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 
-import { xdr } from "@stellar/stellar-sdk"
-
 import {
 	contractIds,
 	networkOf,
@@ -11,6 +9,7 @@ import {
 
 import { rpcArgs, stellar, type Rpc } from "./lib/cli.js"
 import { REPO_ROOT } from "./lib/deployment.js"
+import { pendingChangeKey } from "./lib/timelock-keys.js"
 import {
 	EXTEND_LEDGERS,
 	extend,
@@ -37,18 +36,6 @@ const CONTRACTS_WITH_QUEUES = new Set([
 	"nav_oracle",
 	"compliance",
 ])
-
-/**
- * The timelock's own storage key for a change still waiting:
- * `Key::TimelockPending(id)`, a contracttype variant whose ScVal is a vec of
- * its symbol and the id (`crates/strata-timelock/src/keys.rs`, `queue.rs`).
- */
-function pendingChangeKey(id: number): string {
-	return xdr.ScVal.scvVec([
-		xdr.ScVal.scvSymbol("TimelockPending"),
-		xdr.ScVal.scvU32(id),
-	]).toXDR("base64")
-}
 
 /** The ids still waiting in a contract's queue, read through its `pending_changes` view. */
 async function openChangeIds(rpc: Rpc, contractId: string): Promise<number[]> {
@@ -132,7 +119,7 @@ async function main(): Promise<void> {
 		for (const changeId of await openChangeIds(rpc, id)) {
 			await keepAlive(
 				rpc,
-				{ id, keyXdr: pendingChangeKey(changeId) },
+				{ id, keyXdr: pendingChangeKey(changeId).toXDR("base64") },
 				`${name} pending change ${changeId}`,
 				latest,
 			)
