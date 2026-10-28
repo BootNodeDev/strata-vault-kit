@@ -40,6 +40,7 @@ In `scripts/harness/deploy.ts` and automated deployment scripts, the separation 
 - The share token's constructor grants `compliance` to the compliance key and grants `manager` to no one; the identity verifier is constructed with the compliance key as admin.
 - The share token role is granted to the deployed vault contract: `token.grant_role({ account: asyncVault.address, role: "manager", caller: governance })`.
 - After granting, the script checks `token.has_role({ account: vault, role: "manager" })` and stops if the vault does not hold the role. That no other account holds it is checked by the vault's `finish_setup` below.
+- It grants `compliance` to a second account, `compliance-backup`, kept cold, and stops unless the token reports two holders.
 - It then calls `token.bind_vault({ vault })` and `token.finish_setup()`, each signed by governance, and stops if `token.setup_open()` still reads true. From then on the token's admin changes wait for the vault's timelock (§5.2).
 - It calls `compliance.bind_token({ token, operator: governance })`, then `compliance.bind_vault({ vault })` and `compliance.finish_setup()`, and stops if `compliance.setup_open()` still reads true. From then on the compliance contract's module, token-binding and admin changes wait for the vault's timelock (§5.5).
 - It calls `oracle.bind_vault({ vault })` and `oracle.finish_setup()`, and stops if `oracle.setup_open()` still reads true. From then on the oracle's admin changes wait for the vault's timelock (§5.3).

@@ -661,8 +661,9 @@ quality of the data behind each attestation, and the operator's key ceremony.
 
 Deployment is scripted and ends with no human key holding governance. It is
 complete only when the final state is verified on-chain: every authority is the
-intended multisig, no bootstrap key retains any role, the configuration matches
-the request, and the deposit asset's auth flags are checked and reported.
+intended multisig, the share token's `compliance` role has a second, cold
+holder, no bootstrap key retains any role, the configuration matches the
+request, and the deposit asset's auth flags are checked and reported.
 
 ## 9. Relationship to existing Stellar tooling
 

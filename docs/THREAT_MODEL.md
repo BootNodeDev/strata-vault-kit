@@ -664,9 +664,9 @@ not.
   governance's signature in the same call (R10). Governance revokes the token's
   `compliance` role at once. The token's last `compliance` holder cannot
   renounce (`LastComplianceHolder`). A grant of `compliance` goes through the
-  token's timelock even during a wind-down, after the normal delay. A delisted
-  holder still leaves in cash (X4), and what a frozen holder is owed stays
-  recorded (X3).
+  token's timelock even during a wind-down, after the normal delay. The deploy
+  grants a cold backup holder during setup. A delisted holder still leaves in
+  cash (X4), and what a frozen holder is owed stays recorded (X3).
 - **Residual:** A wrongful freeze holds all of a holder's exits, covered claims
   included, until it is lifted; nothing on chain checks for a legal order. A
   frozen holder's exits, a wind-down claim included, wait for a live

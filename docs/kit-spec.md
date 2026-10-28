@@ -349,6 +349,7 @@ A clean deployment executes in three sequenced phases:
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role(vault_address, "manager", governance)` to authorize lazy share minting and burning.
+   - Call `ShareToken::grant_role(backup, "compliance", governance)` for a second compliance account kept cold, before the token's `finish_setup`. Required: lifting a freeze needs a `compliance` holder, and after setup a new one waits one timelock delay.
    - Call `ShareToken::bind_vault(vault_address)`, then `ShareToken::finish_setup()`. The token's admin changes are instant until then and wait for the vault's timelock afterwards.
    - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so a delisted holder's priced deposit can be minted into the vault's escrow; `finish_setup` requires it.
    - Call `Compliance::bind_token(share_token_address, governance)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
