@@ -631,7 +631,13 @@ The manager stops sealing, so nothing is priced, or seals when it suits someone.
   to the minimum epoch duration; once it has run, anyone seals. Without a
   minimum set, exits at a price wait until governance replaces the manager
   through the timelock, at least seven days. Holders can still cancel at any
-  time: a deposit comes back as cash, a redemption as shares.
+  time: a deposit comes back as cash, a redemption as shares. Once the minimum
+  has run, anyone can seal at a moment chosen to match a valuation they
+  already know, the ordering O5 names: a report accepted after the seal can
+  carry a valuation made before it. Before this branch only the manager could
+  pick that moment; now any outsider can too. Holders still get no price
+  older than the seal, so the risk falls on the operator's own cut-off
+  routine, which must now assume an outsider may seal first.
 - **Tests:** `a_non_manager_cannot_close` and
   `anyone_may_fulfill_a_closed_epoch` in
   [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
