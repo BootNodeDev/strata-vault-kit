@@ -31,7 +31,8 @@ strata_bindings::error_enum! {
         SetupClosed = 7006,
         /// Setup cannot finish before the token is bound to its vault.
         VaultNotBound = 7007,
-        /// The vault is winding down, so no change may be proposed or applied.
+        /// The vault is winding down, so no change may be proposed or applied,
+        /// and no admin hand-over is accepted.
         WindDownActive = 7008,
         /// The vault is paused, which holds every timelocked change.
         VaultPaused = 7009,

@@ -608,6 +608,21 @@ fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
 }
 
 #[test]
+fn an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down() {
+    let f = setup();
+    f.finish();
+    let next = Address::generate(&f.e);
+    f.offer_admin(&next);
+    f.clock(|c| c.winding_down = true);
+
+    refused(
+        f.token.try_accept_admin_transfer(),
+        ShareTokenError::WindDownActive,
+    );
+    assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
+}
+
+#[test]
 fn a_change_shorter_than_a_raised_notice_never_lands() {
     let f = setup();
     f.finish();

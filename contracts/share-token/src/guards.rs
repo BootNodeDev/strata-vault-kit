@@ -7,11 +7,12 @@ use stellar_tokens::rwa::{
     identity_verification::IdentityVerifierClient, utils::token_binder::TokenBinderClient, RWA,
 };
 use strata_bindings::VaultBindingClient;
-use strata_timelock::{queue, setup};
+use strata_timelock::{queue, setup, TimelockHost};
 
 use crate::error::ShareTokenError;
 use crate::governance::TokenChange;
 use crate::roles::MANAGER_ROLE;
+use crate::ShareToken;
 use crate::MAX_REFERENCE_LEN;
 
 pub(crate) fn setup_open(e: &Env) {
@@ -25,6 +26,13 @@ pub(crate) fn setup_open(e: &Env) {
 pub(crate) fn no_hand_over_pending(e: &Env) {
     if role_transfer::has_active_pending_transfer(e, &AccessControlStorageKey::PendingAdmin) {
         panic_with_error!(e, ShareTokenError::AdminTransferPending);
+    }
+}
+
+/// Passes before a vault is bound: there is no wind-down to read yet.
+pub(crate) fn vault_not_winding_down(e: &Env) {
+    if <ShareToken as TimelockHost>::clock(e).is_ok_and(|clock| clock.winding_down) {
+        panic_with_error!(e, ShareTokenError::WindDownActive);
     }
 }
 

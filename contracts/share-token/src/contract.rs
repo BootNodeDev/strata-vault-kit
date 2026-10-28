@@ -554,6 +554,29 @@ impl AccessControl for ShareToken {
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
     }
 
+    /// Makes the nominee of a pending hand-over the admin. Refused while the
+    /// vault winds down: no admin power changes hands then.
+    ///
+    /// # Errors
+    ///
+    /// * `WindDownActive` - The vault is winding down.
+    /// * `RoleTransferError::NoPendingTransfer` - No offer is pending.
+    /// * `RoleTransferError::TransferExpired` - The offer's last ledger has
+    ///   passed.
+    ///
+    /// # Events
+    ///
+    /// * `AdminTransferCompleted`
+    ///
+    /// # Authorization
+    ///
+    /// The nominee signs.
+    fn accept_admin_transfer(e: &Env) {
+        guards::vault_not_winding_down(e);
+        strata_storage::bump_instance(e);
+        access_control::accept_admin_transfer(e);
+    }
+
     /// Refused. A role admin could grant that role with no delay.
     ///
     /// # Arguments

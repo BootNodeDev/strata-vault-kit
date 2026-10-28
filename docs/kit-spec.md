@@ -96,7 +96,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
   - Time spent paused does not count. Applying while paused is refused.
-  - Nothing is proposed or applied during an active wind-down (`WindDownActive`).
+  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`).
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
   - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant.
@@ -287,7 +287,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`AsyncVault`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`AsyncVault`** | `revoke_role` | Governance | `treasury`, `guardian`: instant. `manager`: instant during setup, then `propose_change` | No |
 | **`AsyncVault`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
-| **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()` | No |
+| **`AsyncVault`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
 | **`NavOracle`** | `attest` | Attester | `#[only_role(caller, "attester")]` | Refused if the NAV is paused |
 | **`NavOracle`** | `pause_nav` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
 | **`NavOracle`** | `set_nav_paused` | Governance | `#[only_admin]` | N/A |
@@ -300,6 +300,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`NavOracle`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
 | **`NavOracle`** | `pending_changes` | Permissionless | None (view) | No |
 | **`NavOracle`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
+| **`NavOracle`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
 | **`NavOracle`** | `revoke_role` | Governance | Instant (`attester`, `guardian`) | No |
 | **`NavOracle`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`ShareToken`** | `pause` | Admin (Governance) | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
@@ -318,6 +319,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`ShareToken`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay; a compliance or verifier swap passes its check again | Refused while the vault is paused or winding down |
 | **`ShareToken`** | `pending_changes` | Permissionless | None (view) | No |
 | **`ShareToken`** | `grant_role`, `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
+| **`ShareToken`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
 | **`ShareToken`** | `revoke_role` | Governance | `compliance`: instant. `manager`: instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`IdentityVerifier`** | `allow` | Admin (Compliance) | `#[only_admin]` | No |
@@ -330,7 +332,7 @@ Sealing is meant to become permissionless once a minimum epoch duration bounds i
 | **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
 | **`Compliance`** | `pending_changes` | Permissionless | None (view) | No |
 | **`Compliance`** | `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
-| **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()` | No |
+| **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
 
 ---
 

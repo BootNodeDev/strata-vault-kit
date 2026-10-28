@@ -120,7 +120,8 @@ strata_bindings::error_enum! {
         SetupClosed = 3016,
         /// Setup cannot finish before the oracle is bound to its vault.
         VaultNotBound = 3017,
-        /// The vault is winding down, so no change may be proposed or applied.
+        /// The vault is winding down, so no change may be proposed or applied,
+        /// and no admin hand-over is accepted.
         WindDownActive = 3018,
         /// The vault is paused, which holds every timelocked change.
         VaultPaused = 3019,
@@ -297,6 +298,29 @@ impl AccessControl for NavOracleContract {
         guards::direct_hand_over_allowed(e, live_until_ledger);
         strata_storage::bump_instance(e);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
+    }
+
+    /// Makes the nominee of a pending hand-over the admin. Refused while the
+    /// vault winds down: no admin power changes hands then.
+    ///
+    /// # Errors
+    ///
+    /// * `WindDownActive` - The vault is winding down.
+    /// * `RoleTransferError::NoPendingTransfer` - No offer is pending.
+    /// * `RoleTransferError::TransferExpired` - The offer's last ledger has
+    ///   passed.
+    ///
+    /// # Events
+    ///
+    /// * `AdminTransferCompleted`
+    ///
+    /// # Authorization
+    ///
+    /// The nominee signs.
+    fn accept_admin_transfer(e: &Env) {
+        guards::vault_not_winding_down(e);
+        strata_storage::bump_instance(e);
+        access_control::accept_admin_transfer(e);
     }
 
     /// Refused. A role admin could grant that role with no delay.

@@ -80,8 +80,8 @@ strata_bindings::error_enum! {
         /// could outlive would strand their exit with no way to undo it.
         NoticeTooLong = 6045,
         /// The vault is winding down. New requests, epoch closes, pricing,
-        /// transfers to the custodian, wind-down proposals and timelocked
-        /// changes are closed for the rest of its life.
+        /// transfers to the custodian, wind-down proposals, admin hand-overs
+        /// and timelocked changes are closed for the rest of its life.
         WindDownActive = 6046,
         /// No wind-down proposal stands.
         WindDownNotProposed = 6047,

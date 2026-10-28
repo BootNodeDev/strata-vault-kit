@@ -372,10 +372,11 @@ Someone takes governance's keys and changes code, roles or wiring.
 
   The delay is 7 to 90 days, and never shorter than the notice when the change
   applies. Time the vault spends paused does not count, nothing applies while it
-  is paused, and nothing is proposed or applied during a wind-down. One code
-  change waits at a time. No contract offers an immediate upgrade. Renouncing
-  the admin and setting a role admin are always refused. Every proposal is
-  published (`ChangeProposed`) and listed by `pending_changes()`.
+  is paused, nothing is proposed or applied during a wind-down, and no admin
+  hand-over is accepted then. One code change waits at a time. No contract
+  offers an immediate upgrade. Renouncing the admin and setting a role admin are
+  always refused. Every proposal is published (`ChangeProposed`) and listed by
+  `pending_changes()`.
 - **Residual:** The delay is notice, not a guaranteed exit: leaving needs a
   sealed epoch, a valid price accepted after the seal, and cash. Once the delay
   runs, an upgrade can do anything, and a vault upgrade can also change the
@@ -386,8 +387,9 @@ Someone takes governance's keys and changes code, roles or wiring.
   compliance contract, stops every request, claim and cancellation that mints,
   burns or moves shares.
 - **Tests:** `grants_and_manager_revokes_wait_for_the_timelock`,
-  `a_change_shorter_than_a_raised_notice_never_lands` and
-  `nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included` in
+  `a_change_shorter_than_a_raised_notice_never_lands`,
+  `nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included` and
+  `an_admin_hand_over_cannot_be_accepted_during_a_wind_down` in
   [`governance.rs`](../contracts/async-vault/src/test/governance.rs);
   `applying_before_the_eta_is_refused`, `applying_while_paused_is_refused`,
   `a_pause_freezes_the_upgrade_timelock_clock`,
@@ -398,13 +400,16 @@ Someone takes governance's keys and changes code, roles or wiring.
   [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
   `governance_cannot_renounce_itself_out_of_the_vault` in
   [`controls.rs`](../contracts/async-vault/src/test/controls.rs);
-  `grants_and_manager_revokes_wait_after_setup` and
-  `rule_and_verifier_swaps_wait_after_setup` in
+  `grants_and_manager_revokes_wait_after_setup`,
+  `rule_and_verifier_swaps_wait_after_setup` and
+  `an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down` in
   [`share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs);
-  `grants_wait_after_setup_and_land_through_the_timelock` and, with
+  `grants_wait_after_setup_and_land_through_the_timelock`,
+  `an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down` and, with
   `upgrade_wasm`, `the_oracle_exposes_no_immediate_upgrade` in
   [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
-  `after_setup_rule_changes_wait_for_the_timelock` in
+  `after_setup_rule_changes_wait_for_the_timelock` and
+  `an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down` in
   [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs);
   `time_spent_paused_does_not_count_toward_the_delay` in
   [`strata-timelock/src/test/schedule.rs`](../crates/strata-timelock/src/test/schedule.rs);

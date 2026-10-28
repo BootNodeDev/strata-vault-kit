@@ -290,7 +290,7 @@ describe("a wind-down on a throwaway vault", () => {
 				{ new_admin: someone, live_until_ledger: 1 },
 				"refused: UseTimelock",
 			],
-			["accept_admin_transfer", "outsider", {}, "refused: NoPendingTransfer"],
+			["accept_admin_transfer", "outsider", {}, "refused: WindDownActive"],
 			[
 				"set_role_admin",
 				"governance",
