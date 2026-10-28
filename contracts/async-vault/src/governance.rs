@@ -158,12 +158,14 @@ fn compliance_bound(e: &Env, compliance: &Address, token: &Address) -> bool {
 /// True when nothing has been requested, committed or priced in the vault's
 /// own books: the first epoch is still open and empty, and nothing is owed.
 pub(crate) fn books_empty(e: &Env) -> bool {
+    if state::current_epoch(e) != state::FIRST_EPOCH {
+        return false;
+    }
     let first_epoch_empty = match state::get_epoch(e, state::FIRST_EPOCH) {
         Some(epoch) => epoch.total_deposited == 0 && epoch.total_shares_redeeming == 0,
         None => false,
     };
-    state::current_epoch(e) == state::FIRST_EPOCH
-        && first_epoch_empty
+    first_epoch_empty
         && state::committed(e) == 0
         && state::pending_mint_shares(e) == 0
         && state::pending_burn_shares(e) == 0
