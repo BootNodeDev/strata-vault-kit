@@ -10,12 +10,14 @@ import {
 } from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { addresses } from "../config/addresses"
 import { renderWithWallet } from "./testSupport"
 import {
 	toEpoch,
 	toOracle,
 	toWindDown,
 	useCycleEvents,
+	useLegalTransfers,
 	useCycleState,
 } from "./useCycleState"
 import { type EpochHistoryRead, type EpochRecord } from "./useEpochHistory"
@@ -463,6 +465,50 @@ describe("useCycleEvents", () => {
 
 		await waitFor(() =>
 			expect(result.current.cycleEvents).toEqual({ status: "unreadable" }),
+		)
+	})
+})
+
+describe("useLegalTransfers", () => {
+	beforeEach(() => {
+		readEventsMock.mockReset()
+	})
+
+	it("asks for the share token's legal transfers over the last seven days of ledgers", async () => {
+		readEventsMock.mockResolvedValue({
+			kind: "value",
+			value: [],
+			partial: false,
+		})
+
+		const { result } = renderWithWallet(useLegalTransfers)
+		await waitFor(() =>
+			expect(result.current.legalTransfers).toEqual({
+				status: "loaded",
+				events: [],
+				partial: false,
+			}),
+		)
+
+		expect(readEventsMock).toHaveBeenCalledWith(
+			[
+				{
+					contractId: addresses.share_token,
+					names: ["legal_transfer"],
+					topics: 2,
+				},
+			],
+			120_960,
+		)
+	})
+
+	it("is unreadable when the RPC cannot serve the events", async () => {
+		readEventsMock.mockResolvedValue(unreadable)
+
+		const { result } = renderWithWallet(useLegalTransfers)
+
+		await waitFor(() =>
+			expect(result.current.legalTransfers).toEqual({ status: "unreadable" }),
 		)
 	})
 })

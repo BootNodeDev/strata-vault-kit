@@ -2762,11 +2762,11 @@ describe("TransactionModal, compliance actions", () => {
 			"Froze 5.00 shares of GABC...WXYZ.",
 		],
 		[
-			"force-transfer",
-			"5.00 shares from GABC...WXYZ to CVAU...LTID",
-			"Signing moves 5.00 shares from GABC...WXYZ to CVAU...LTID.",
-			"Transfer forced",
-			"Moved 5.00 shares from GABC...WXYZ to CVAU...LTID.",
+			"legal-transfer",
+			"5.00 shares from GABC...WXYZ to GDEF...UVWX",
+			"Signing approves moving 5.00 shares from GABC...WXYZ to GDEF...UVWX.",
+			"Legal transfer made",
+			"Moved 5.00 shares from GABC...WXYZ to GDEF...UVWX.",
 		],
 	])("names what %s changes", (action, value, signing, done, doneBody) => {
 		const { unmount } = renderComplianceModal(
@@ -2789,6 +2789,21 @@ describe("TransactionModal, compliance actions", () => {
 		["freeze-address", 2000, "share token", /does not hold the role/],
 		["allow-address", 2000, "identity verifier", /does not hold the role/],
 		["disallow-address", 2001, "identity verifier", /verifier has no admin/],
+		[
+			"legal-transfer",
+			7013,
+			"share token",
+			/compliance account and the token admin must be two different accounts/,
+		],
+		["legal-transfer", 7015, "share token", /reference of 1 to 128 bytes/],
+		[
+			"legal-transfer",
+			7012,
+			"share token",
+			/never moves shares into or out of the vault/,
+		],
+		["legal-transfer", 304, "share token", /destination is not allowlisted/],
+		["legal-transfer", 300, "share token", /does not hold enough shares/],
 	])(
 		"names the reason %s was refused with code %i",
 		(action, code, refuser, sentence) => {
@@ -2805,6 +2820,45 @@ describe("TransactionModal, compliance actions", () => {
 			expect(screen.getByText(sentence)).toBeTruthy()
 		},
 	)
+
+	it("asks for the token admin's authorization before compliance signs", () => {
+		renderComplianceModal("legal-transfer", {
+			status: "shared",
+			xdr: "AAAAXDR",
+			standing: "admin-authorization",
+			expiresAt: null,
+		})
+
+		expect(
+			screen.getByRole("heading", {
+				name: "Needs the token admin's authorization",
+			}),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Share the link with the token admin. Once they authorize it, compliance's signers sign it.",
+			),
+		).toBeTruthy()
+		expect(
+			screen.getByRole<HTMLInputElement>("textbox", { name: "Signing link" })
+				.value,
+		).toBe(`${window.location.origin}/sign#AAAAXDR`)
+	})
+
+	it("names the wallets that can sign an authorization", () => {
+		renderComplianceModal("legal-transfer", {
+			status: "failed",
+			failure: { kind: "cannot-authorize" },
+		})
+
+		expect(
+			screen.getByText(
+				"This wallet cannot sign authorizations. Use Freighter, Hana or WalletConnect.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByText("You declined the request")).toBeNull()
+		expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+	})
 
 	it("sends an unknown outcome to the Compliance tab", () => {
 		renderComplianceModal("unfreeze-address", {

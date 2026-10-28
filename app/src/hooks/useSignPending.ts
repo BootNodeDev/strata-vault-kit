@@ -1,19 +1,34 @@
 import {
 	type AccountSigners,
 	accountSigners,
+	authorizePending,
+	type CoSignStep,
 	decodePending,
 	hasSigned,
 	InvalidPendingTransaction,
+	latestLedger,
 	networkPassphrase,
+	type PendingAuthorization,
 	type PendingTransaction,
+	prepareCoSigned,
+	readContract,
+	requiredWeight,
+	type SignAuthEntry,
 	signatureWeight,
 	submitSigned,
 	transactionStatus,
 } from "@stellar-scaffold/app-lib"
-import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+	queryOptions,
+	skipToken,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query"
 import { useCallback, useMemo, useRef, useState } from "react"
 import { addresses } from "../config/addresses"
+import { shareToken } from "../config/clients"
 import {
+	type AuthorizationState,
 	describePending,
 	type PendingState,
 	pendingState,
@@ -30,6 +45,22 @@ export const accountSignersKey = (source: string) =>
 	["account-signers", source] as const
 
 export const transactionKey = (hash: string) => ["transaction", hash] as const
+
+const tokenAdminQuery = queryOptions({
+	queryKey: ["share-token", "admin"] as const,
+	queryFn: async () => {
+		const read = await readContract(async () =>
+			(await shareToken()).get_admin(),
+		)
+		if (read.kind !== "value") {
+			throw new Error(`share token get_admin read failed: ${read.kind}`)
+		}
+		return read.value ?? null
+	},
+	retry: false,
+})
+
+const latestLedgerKey = ["latest-ledger"] as const
 
 const signAddresses = (identityVerifier: string) => ({
 	vault: addresses.async_vault,
@@ -111,17 +142,43 @@ const countersigned = (
 const NOBODY = { signedBy: [] as string[], weight: 0 }
 
 const USER_REJECTED = -4
+const UNSUPPORTED = -3
 
-const signFailure = (error: unknown): TransactionFailure =>
-	typeof error === "object" &&
-	error !== null &&
-	"code" in error &&
-	error.code === USER_REJECTED
-		? { kind: "declined" }
-		: { kind: "unsigned" }
+const signFailure = (error: unknown): TransactionFailure => {
+	const code =
+		typeof error === "object" && error !== null && "code" in error
+			? error.code
+			: undefined
+	if (code === USER_REJECTED) return { kind: "declined" }
+	if (code === UNSUPPORTED) return { kind: "cannot-authorize" }
+	return { kind: "unsigned" }
+}
+
+const authorizedBy = (
+	decoded: Decoded | null,
+	admin: string | null | undefined,
+	adminFailed: boolean,
+): Decoded | null | undefined => {
+	const authorization = decoded?.pending.authorization
+	if (decoded === null || authorization == null) return decoded
+	if (decoded.pending.contractId !== addresses.share_token) return null
+	if (admin === undefined) return adminFailed ? null : undefined
+	return admin === authorization.address ? decoded : null
+}
+
+const authorizationState = (
+	authorization: PendingAuthorization | null | undefined,
+	ledger: number | undefined,
+): AuthorizationState => {
+	if (authorization == null) return "none"
+	if (!authorization.signed) return "awaiting"
+	if (ledger !== undefined && ledger >= authorization.expirationLedger)
+		return "expired"
+	return "authorized"
+}
 
 export function useSignPending(initialXdr: string): UseSignPending {
-	const { address, signTransaction } = useWallet()
+	const { address, signTransaction, signAuthEntry } = useWallet()
 	const queryClient = useQueryClient()
 	const [xdr, setXdr] = useState(initialXdr)
 	const [status, setStatus] = useState<SignStatus>({ status: "idle" })
@@ -137,7 +194,7 @@ export function useSignPending(initialXdr: string): UseSignPending {
 	const { data: vaultChanges } = useQuery(pendingChangesQuery("vault"))
 	const { data: tokenChanges } = useQuery(pendingChangesQuery("token"))
 	const envelope = useMemo(() => isEnvelope(xdr), [xdr])
-	const decoded = useMemo(
+	const described = useMemo(
 		() =>
 			verifier === undefined
 				? null
@@ -147,6 +204,17 @@ export function useSignPending(initialXdr: string): UseSignPending {
 					}),
 		[xdr, verifier, vaultChanges, tokenChanges],
 	)
+	const authorization = described?.pending.authorization ?? null
+	const { data: admin, isError: adminFailed } = useQuery({
+		...tokenAdminQuery,
+		enabled: authorization !== null,
+	})
+	const checked = authorizedBy(described, admin, adminFailed)
+	const decoded = checked ?? null
+	const { data: ledger } = useQuery({
+		queryKey: latestLedgerKey,
+		queryFn: decoded?.pending.authorization?.signed ? latestLedger : skipToken,
+	})
 	const source = decoded?.pending.source
 	const { data: signers } = useQuery({
 		queryKey: accountSignersKey(source ?? ""),
@@ -177,9 +245,15 @@ export function useSignPending(initialXdr: string): UseSignPending {
 					sequence: decoded.pending.sequence,
 					accountSequence: signers?.sequence ?? null,
 					weight: collected.weight,
-					threshold: signers?.thresholds.med ?? Number.POSITIVE_INFINITY,
+					threshold: signers
+						? requiredWeight(signers)
+						: Number.POSITIVE_INFINITY,
 					walletIsSigner,
 					walletHasSigned,
+					authorization: authorizationState(
+						decoded.pending.authorization,
+						ledger,
+					),
 				})
 	const hash = decoded?.pending.hash
 	const { data: outcome } = useQuery({
@@ -196,7 +270,11 @@ export function useSignPending(initialXdr: string): UseSignPending {
 		outcome === "success"
 			? "executed"
 			: sequenceState
-	const canSign = state === "valid" && walletIsSigner === true
+	const walletIsAdmin =
+		address !== undefined && decoded?.pending.authorization?.address === address
+	const canSign =
+		(state === "valid" && walletIsSigner === true) ||
+		(state === "awaiting-authorization" && walletIsAdmin)
 	const canSubmit = state === "ready"
 
 	const apply = useCallback((next: SignStatus) => {
@@ -240,13 +318,63 @@ export function useSignPending(initialXdr: string): UseSignPending {
 		[apply],
 	)
 
-	const sign = useCallback(() => {
-		if (!canSign || address === undefined || !signers || decoded === null)
-			return
-		guarded(async () => {
-			const signed = await signTransaction(xdr, {
+	const replaceXdr = useCallback((next: string) => {
+		window.history.replaceState(window.history.state, "", `#${next}`)
+		setXdr(next)
+	}, [])
+
+	const authorize = useCallback(
+		async (pending: PendingTransaction, wallet: string) => {
+			const signAs: SignAuthEntry = (entry, opts) =>
+				signAuthEntry(entry, { ...opts, networkPassphrase, address: wallet })
+			const step = await authorizePending(
+				(await shareToken()).txFromXDR(xdr),
+				pending,
+				signAs,
+			).catch((error: unknown) => signFailure(error))
+			if (step.kind === "refused") {
+				apply({
+					status: "failed",
+					failure: { kind: "contract-error", code: step.code },
+				})
+			} else if (step.kind === "ready") {
+				replaceXdr(step.xdr)
+			} else {
+				apply({ status: "failed", failure: step })
+			}
+		},
+		[xdr, signAuthEntry, apply, replaceXdr],
+	)
+
+	const envelopeToSign = useCallback(
+		async (
+			pending: PendingTransaction,
+			signedBefore: string[],
+		): Promise<CoSignStep> => {
+			if (pending.authorization === null || signedBefore.length > 0)
+				return { kind: "ready", xdr, pending }
+			return prepareCoSigned((await shareToken()).txFromXDR(xdr), pending)
+		},
+		[xdr],
+	)
+
+	const countersign = useCallback(
+		async (
+			pending: PendingTransaction,
+			wallet: string,
+			signers: AccountSigners,
+		) => {
+			const prepared = await envelopeToSign(pending, collected.signedBy)
+			if (prepared.kind === "refused") {
+				apply({
+					status: "failed",
+					failure: { kind: "contract-error", code: prepared.code },
+				})
+				return
+			}
+			const signed = await signTransaction(prepared.xdr, {
 				networkPassphrase,
-				address,
+				address: wallet,
 			}).catch((error: unknown) => signFailure(error))
 			if ("kind" in signed) {
 				apply({ status: "failed", failure: signed })
@@ -254,8 +382,8 @@ export function useSignPending(initialXdr: string): UseSignPending {
 			}
 			const next = countersigned(
 				signed.signedTxXdr,
-				decoded.pending,
-				address,
+				prepared.pending,
+				wallet,
 				collected.signedBy,
 				signers,
 			)
@@ -263,26 +391,37 @@ export function useSignPending(initialXdr: string): UseSignPending {
 				apply({ status: "failed", failure: { kind: "unsigned" } })
 				return
 			}
-			window.history.replaceState(
-				window.history.state,
-				"",
-				`#${signed.signedTxXdr}`,
-			)
-			setXdr(signed.signedTxXdr)
+			replaceXdr(signed.signedTxXdr)
 			const { weight } = signatureWeight(next.transaction, signers)
-			if (weight >= signers.thresholds.med) await run(next)
-		})
+			if (weight >= requiredWeight(signers)) await run(next)
+		},
+		[
+			envelopeToSign,
+			collected.signedBy,
+			apply,
+			signTransaction,
+			replaceXdr,
+			run,
+		],
+	)
+
+	const sign = useCallback(() => {
+		if (!canSign || address === undefined || !signers || decoded === null)
+			return
+		guarded(() =>
+			state === "awaiting-authorization"
+				? authorize(decoded.pending, address)
+				: countersign(decoded.pending, address, signers),
+		)
 	}, [
 		canSign,
 		address,
 		signers,
 		decoded,
-		collected.signedBy,
+		state,
 		guarded,
-		apply,
-		signTransaction,
-		xdr,
-		run,
+		authorize,
+		countersign,
 	])
 
 	const submit = useCallback(() => {
@@ -297,7 +436,7 @@ export function useSignPending(initialXdr: string): UseSignPending {
 
 	return {
 		xdr,
-		loading: envelope && verifier === undefined,
+		loading: envelope && (verifier === undefined || checked === undefined),
 		pending: decoded?.pending ?? null,
 		description: decoded?.description ?? null,
 		signers,

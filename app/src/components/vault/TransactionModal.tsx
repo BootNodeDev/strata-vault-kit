@@ -455,6 +455,11 @@ const describeFailure = (
 				heading: "The wallet did not sign",
 				body: "Nothing was sent. Try again when you're ready.",
 			}
+		case "cannot-authorize":
+			return {
+				heading: "This wallet cannot authorize",
+				body: "This wallet cannot sign authorizations. Use Freighter, Hana or WalletConnect.",
+			}
 		case "contract-error":
 			return {
 				heading: `The ${refuser} refused this request`,
@@ -1306,6 +1311,13 @@ const GOVERNANCE_COPY: Record<
 	"cancel-wind-down": cancelWindDownCopy,
 }
 
+const LEGAL_TRANSFER_REASONS: Partial<Record<number, string>> = {
+	7012: "A legal transfer never moves shares into or out of the vault: they are other investors' escrow.",
+	7013: "The compliance account and the token admin must be two different accounts.",
+	7015: "Enter a reference of 1 to 128 bytes.",
+	304: "The destination is not allowlisted, so it cannot receive shares.",
+}
+
 const COMPLIANCE_COPY: Record<
 	ComplianceModalAction,
 	(value: string) => AdminCopy
@@ -1352,11 +1364,12 @@ const COMPLIANCE_COPY: Record<
 		done: "Shares unfrozen",
 		doneBody: `Unfroze ${value}.`,
 	}),
-	"force-transfer": (value) => ({
+	"legal-transfer": (value) => ({
 		refuser: "share token",
-		verb: "force a transfer",
-		signing: `Signing moves ${value}.`,
-		done: "Transfer forced",
+		reasons: LEGAL_TRANSFER_REASONS,
+		verb: "make a legal transfer",
+		signing: `Signing approves moving ${value}.`,
+		done: "Legal transfer made",
 		doneBody: `Moved ${value}.`,
 	}),
 }
@@ -1494,6 +1507,11 @@ const describeAdminStatus = (
 				hash: status.hash,
 			}
 		case "shared":
+			if (status.standing === "admin-authorization")
+				return {
+					heading: "Needs the token admin's authorization",
+					body: "Share the link with the token admin. Once they authorize it, compliance's signers sign it.",
+				}
 			return {
 				heading: describeStanding(status.standing),
 				body: describeShared(status.expiresAt),
@@ -1629,7 +1647,7 @@ const describeStatus = (
 		case "unfreeze-address":
 		case "freeze-shares":
 		case "unfreeze-shares":
-		case "force-transfer":
+		case "legal-transfer":
 			return describeAdminStatus(
 				COMPLIANCE_COPY[props.action](props.value),
 				props.status,
