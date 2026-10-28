@@ -9,15 +9,9 @@ import {
 
 import { rpcArgs, stellar, type Rpc } from "./lib/cli.js"
 import { REPO_ROOT } from "./lib/deployment.js"
+import { keepAlive } from "./lib/keep-alive.js"
 import { pendingChangeKey } from "./lib/timelock-keys.js"
-import {
-	EXTEND_LEDGERS,
-	extend,
-	inspect,
-	latestLedger,
-	restore,
-	type Entry,
-} from "./lib/ttl.js"
+import { latestLedger, wasmHashOf } from "./lib/ttl.js"
 
 // Restores, when archived, and extends by 30 days each contract instance, the
 // Wasm it runs and each pending timelock change, so an idle deployment stays
@@ -78,22 +72,6 @@ function target(): { rpc: Rpc; contracts: Array<[string, string]> } {
 	return { rpc, contracts }
 }
 
-async function keepAlive(
-	rpc: Rpc,
-	entry: Entry,
-	label: string,
-	latest: number,
-): Promise<string | undefined> {
-	const before = await inspect(rpc, entry)
-	if (before.liveUntil < latest) {
-		await restore(rpc, entry)
-		console.log(`${label} restored`)
-	}
-	const until = await extend(rpc, entry, EXTEND_LEDGERS)
-	console.log(`${label} live until ledger ${until}`)
-	return before.wasmHash
-}
-
 async function main(): Promise<void> {
 	if (!process.env["STELLAR_ACCOUNT"])
 		throw new Error(
@@ -107,11 +85,12 @@ async function main(): Promise<void> {
 
 	const code = new Set<string>()
 	for (const [name, id] of contracts) {
-		const wasmHash = await keepAlive(rpc, { id }, `${name} instance`, latest)
+		const instance = await keepAlive(rpc, { id }, `${name} instance`)
+		const wasmHash = instance === undefined ? undefined : wasmHashOf(instance)
 		if (wasmHash !== undefined) code.add(wasmHash)
 	}
 	for (const wasmHash of code) {
-		await keepAlive(rpc, { wasmHash }, `code ${wasmHash.slice(0, 8)}`, latest)
+		await keepAlive(rpc, { wasmHash }, `code ${wasmHash.slice(0, 8)}`)
 	}
 	// Reading a queue simulates a call, so the instance and its Wasm come first.
 	for (const [name, id] of contracts) {
@@ -121,7 +100,6 @@ async function main(): Promise<void> {
 				rpc,
 				{ id, keyXdr: pendingChangeKey(changeId).toXDR("base64") },
 				`${name} pending change ${changeId}`,
-				latest,
 			)
 		}
 	}
