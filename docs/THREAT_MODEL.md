@@ -125,8 +125,8 @@ A compromised attester moves the price in many steps, each inside the caps.
 - **Residual:** The price can move by one cap per cooldown, and the steps
   compound. With the shortest cooldown, one second, a report can land in every
   ledger. The band is the only absolute limit. Nothing on chain raises an
-  alarm; alerts on large moves belong to the monitoring plan, a separate
-  document not written yet.
+  alarm; alerts on large moves belong to the
+  [monitoring plan](./MONITORING_PLAN.md#v5-a-run-of-reports-one-way).
 - **Tests:** `two_reports_in_one_ledger_are_refused_at_the_shortest_cooldown`
   and `attest_enforces_cooldown_and_deviation` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
@@ -266,8 +266,8 @@ cap it.
   and so can the first report after deployment. Pausing the NAV, clearing and
   lifting the pause are all instant, also after setup, so the oracle admin and
   an attester acting together can set any price in the band at once. Alerts on
-  `LatestCleared` and on the report after it belong to the monitoring plan, not
-  written yet.
+  `LatestCleared` and on the report after it belong to the
+  [monitoring plan](./MONITORING_PLAN.md#v6-the-stored-report-is-cleared).
 - **Tests:** `the_record_clears_only_while_the_nav_is_paused` and
   `only_admin_can_clear_latest` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
@@ -1213,7 +1213,7 @@ For Tranche 3's matrix:
 - A vault upgrade over requests, positions or queued changes stored in an
   earlier shape (X13).
 - Alerts on large price moves, on `LatestCleared` and on the report after it
-  (O2, O8), which belong to the monitoring plan.
+  (O2, O8), which belong to the [monitoring plan](./MONITORING_PLAN.md).
 
 ## Out of scope
 

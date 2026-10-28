@@ -649,6 +649,9 @@ public surface given the vault address.
 The full threat model, with the test for each control, is in
 [`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
 
+The monitoring plan, with what an operator watches on chain and the response to
+each signal, is in [`docs/MONITORING_PLAN.md`](./MONITORING_PLAN.md).
+
 Disclosed trust assumptions: the accuracy of the operator's KYC process, the
 quality of the data behind each attestation, and the operator's key ceremony.
 
@@ -698,9 +701,10 @@ adopter feedback and adoption metrics. Ordered by expected business impact.
 
 1. **Fee module.** Management and performance fees with a high-water mark,
    crystallized by share dilution; rates as per-deployment configuration.
-2. **Operator notifications and alerting.** Implementation of the monitoring
-   plan as push alerts (stale valuation, reserve coverage, privileged actions)
-   via DMe, BootNode's open-source notification layer.
+2. **Operator notifications and alerting.** Implementation of the
+   [monitoring plan](./MONITORING_PLAN.md) as push alerts (stale valuation,
+   reserve coverage, privileged actions) via DMe, BootNode's open-source
+   notification layer.
 3. **No-code vault launcher.** A wizard that configures and deploys a vault
    instance without touching code.
 4. **Factory contract.** One-transaction deployment of a configured vault
