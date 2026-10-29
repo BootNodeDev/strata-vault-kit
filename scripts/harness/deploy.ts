@@ -161,6 +161,16 @@ async function grantAndVerify(
 		throw new Error("the vault did not receive the share token's manager role")
 	console.log("vault holds share_token manager role")
 
+	const backup = accounts["compliance-backup"].publicKey()
+	await (
+		await token.grant_role({ account: backup, role: "compliance", caller })
+	).signAndSend()
+	const holders = (await token.get_role_member_count({ role: "compliance" }))
+		.result
+	if (holders !== 2)
+		throw new Error("the share token needs a backup compliance holder")
+	console.log("share_token has a backup compliance holder")
+
 	// Grants are instant only during setup, so the token's setup closes after them.
 	await (await token.bind_vault({ vault })).signAndSend()
 	await (await token.finish_setup()).signAndSend()

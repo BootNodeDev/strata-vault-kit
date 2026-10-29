@@ -6,8 +6,9 @@ import {
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 
 export type ClaimRedeemStatus = TransactionStatus<{
@@ -18,6 +19,7 @@ export type ClaimRedeemStatus = TransactionStatus<{
 export interface UseClaimRedeem {
 	status: ClaimRedeemStatus
 	submit: (epochId: bigint) => boolean
+	prepare: (epochId: bigint) => Release
 	reset: () => void
 }
 

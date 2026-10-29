@@ -31,7 +31,8 @@ strata_bindings::error_enum! {
         SetupClosed = 7006,
         /// Setup cannot finish before the token is bound to its vault.
         VaultNotBound = 7007,
-        /// The vault is winding down, so no change may be proposed or applied.
+        /// The vault is winding down, and the change is not a grant of
+        /// `compliance`. No admin hand-over is accepted then either.
         WindDownActive = 7008,
         /// The vault is paused, which holds every timelocked change.
         VaultPaused = 7009,
@@ -40,9 +41,9 @@ strata_bindings::error_enum! {
         DelayBelowNotice = 7010,
         /// An upgrade already waits. Cancel it before proposing another.
         UpgradeAlreadyPending = 7011,
-        /// The vault's own address cannot be frozen, and a legal transfer or a
-        /// recovery never moves shares out of it or into it: its balance is other
-        /// investors' escrow.
+        /// The vault's own address cannot be frozen, and no transfer, legal
+        /// transfer or recovery moves shares into it or out of it: its balance
+        /// is other investors' escrow.
         VaultAddress = 7012,
         /// A legal transfer or a recovery needs the compliance authority and the
         /// admin as two different accounts, so no single key moves value.
@@ -66,5 +67,9 @@ strata_bindings::error_enum! {
         /// a delisted holder's deposit, and a verifier that cannot answer makes
         /// every holder look delisted.
         VerifierRefusesVault = 7018,
+        /// Renouncing `compliance` is refused while it has at most one holder.
+        /// Lifting a freeze needs the role, so it cannot be given up; grant a
+        /// successor first. The admin can still revoke it.
+        LastComplianceHolder = 7019,
     }
 }

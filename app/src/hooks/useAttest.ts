@@ -3,8 +3,9 @@ import { type Price, type Signer } from "@stellar-scaffold/app-lib"
 import { useCallback } from "react"
 import { navOracleWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 import { cycleWriteKeys } from "./useCycleState"
 import { navLatestKey } from "./useNavPrice"
@@ -23,6 +24,7 @@ export const attestWriteKeys = [...cycleWriteKeys, navLatestKey] as const
 export interface UseAttest {
 	status: AttestStatus
 	submit: (attestation: Attestation) => boolean
+	prepare: (attestation: Attestation) => Release
 	reset: () => void
 }
 

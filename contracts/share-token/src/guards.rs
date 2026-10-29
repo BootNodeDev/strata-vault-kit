@@ -7,11 +7,12 @@ use stellar_tokens::rwa::{
     identity_verification::IdentityVerifierClient, utils::token_binder::TokenBinderClient, RWA,
 };
 use strata_bindings::VaultBindingClient;
-use strata_timelock::{queue, setup};
+use strata_timelock::{queue, setup, TimelockHost};
 
 use crate::error::ShareTokenError;
 use crate::governance::TokenChange;
-use crate::roles::MANAGER_ROLE;
+use crate::roles::{COMPLIANCE_ROLE, MANAGER_ROLE};
+use crate::ShareToken;
 use crate::MAX_REFERENCE_LEN;
 
 pub(crate) fn setup_open(e: &Env) {
@@ -28,6 +29,13 @@ pub(crate) fn no_hand_over_pending(e: &Env) {
     }
 }
 
+/// Passes before a vault is bound: there is no wind-down to read yet.
+pub(crate) fn vault_not_winding_down(e: &Env) {
+    if <ShareToken as TimelockHost>::clock(e).is_ok_and(|clock| clock.winding_down) {
+        panic_with_error!(e, ShareTokenError::WindDownActive);
+    }
+}
+
 /// Direct admin calls are instant only before setup finishes.
 pub(crate) fn direct_change_allowed(e: &Env) {
     if !setup::is_open(e) {
@@ -40,6 +48,15 @@ pub(crate) fn direct_change_allowed(e: &Env) {
 pub(crate) fn direct_revoke_allowed(e: &Env, role: &Symbol) {
     if *role == MANAGER_ROLE {
         direct_change_allowed(e);
+    }
+}
+
+/// Lifting a freeze needs `compliance`; only the admin may leave it without a holder.
+pub(crate) fn not_last_compliance_holder(e: &Env, role: &Symbol) {
+    if *role == Symbol::new(e, COMPLIANCE_ROLE)
+        && access_control::get_role_member_count(e, role) <= 1
+    {
+        panic_with_error!(e, ShareTokenError::LastComplianceHolder);
     }
 }
 

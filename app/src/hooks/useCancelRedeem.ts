@@ -6,8 +6,9 @@ import {
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 
 export type CancelRedeemStatus = TransactionStatus<{
@@ -18,6 +19,7 @@ export type CancelRedeemStatus = TransactionStatus<{
 export interface UseCancelRedeem {
 	status: CancelRedeemStatus
 	submit: (epochId: bigint) => boolean
+	prepare: (epochId: bigint) => Release
 	reset: () => void
 }
 

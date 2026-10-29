@@ -6,8 +6,9 @@ import {
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 
 export type ClaimDepositOutcome = { sharesMinted: Amount; queuedInto?: bigint }
@@ -25,6 +26,7 @@ const queuedIntoOf = (events: TransactionEvent[]): bigint | undefined => {
 export interface UseClaimDeposit {
 	status: ClaimDepositStatus
 	submit: (epochId: bigint) => boolean
+	prepare: (epochId: bigint) => Release
 	reset: () => void
 }
 

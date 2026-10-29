@@ -1,11 +1,12 @@
 use soroban_sdk::{panic_with_error, BytesN, Env, String};
 use stellar_access::{access_control::AccessControlStorageKey, role_transfer};
-use strata_timelock::{queue, setup};
+use strata_timelock::{queue, setup, TimelockHost};
 
 use crate::state::{self, get_config, NavReport, OracleConfig, OracleState};
+use crate::NavOracleContract;
 use crate::{
     compute_state, in_band, shortens_freshness_only, OracleChange, OracleError, BPS_DENOM,
-    MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN, MIN_COOLDOWN_SECS,
+    MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN, MIN_ANSWER, MIN_COOLDOWN_SECS,
 };
 
 pub(crate) fn valid_config(e: &Env, cfg: &OracleConfig) {
@@ -13,7 +14,7 @@ pub(crate) fn valid_config(e: &Env, cfg: &OracleConfig) {
         || cfg.freshness_duration > MAX_FRESHNESS_SECS
         || cfg.cooldown_secs < MIN_COOLDOWN_SECS
         || cfg.cooldown_secs > cfg.freshness_duration
-        || cfg.min_answer <= 0
+        || cfg.min_answer < MIN_ANSWER
         || cfg.max_answer < cfg.min_answer
         || cfg.max_answer > MAX_ANSWER
         || !bps_in_range(cfg.max_up_bps)
@@ -38,6 +39,13 @@ pub(crate) fn setup_open(e: &Env) {
 pub(crate) fn no_hand_over_pending(e: &Env) {
     if role_transfer::has_active_pending_transfer(e, &AccessControlStorageKey::PendingAdmin) {
         panic_with_error!(e, OracleError::AdminTransferPending);
+    }
+}
+
+/// Passes before a vault is bound: there is no wind-down to read yet.
+pub(crate) fn vault_not_winding_down(e: &Env) {
+    if <NavOracleContract as TimelockHost>::clock(e).is_ok_and(|clock| clock.winding_down) {
+        panic_with_error!(e, OracleError::WindDownActive);
     }
 }
 

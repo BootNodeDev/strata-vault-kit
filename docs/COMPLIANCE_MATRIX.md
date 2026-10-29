@@ -21,7 +21,7 @@ Every investor account in the vault ecosystem exists in one of three primary com
 3. **Frozen (`Frozen`)**:
    - The account is subject to sanctions, legal freezing, or security hold (`is_frozen(account) == true` via `ShareToken::set_address_frozen`).
    - The share token refuses a `transfer` from or to a frozen address. Minting does not check freezes, and `forced_transfer` ignores them.
-   - What the vault owes a frozen investor is **held**: not paid, not returned, not moved. Priced cash stays in `committed` and a wind-down slice stays in `wind_down_owed`, where no other holder can take it; only an unfreeze releases it. A refund for a deposit priced at zero shares is the exception: it is not tracked as owed, so it waits in the free reserve, where treasury can deploy it or a wind-down round can credit it to other holders (see the limits in the design doc's [§8.7](./strata-product-and-architecture.md#87-treasury-and-custodian)). A legal-order transfer (`legal_transfer`), which compliance and governance sign together, can move shares in the investor's own wallet, but not value the vault holds for them: deposit escrow, priced but unminted shares, shares escrowed in a redemption, priced cash, or a wind-down slice. A partial freeze limits exits to the free balance.
+   - What the vault owes a frozen investor is **held**: not paid, not returned, not moved. Priced cash stays in `committed` and a wind-down slice stays in `wind_down_owed`, where no other holder can take it; only an unfreeze releases it. Lifting a freeze needs a holder of the share token's `compliance` role, so a frozen investor's wind-down slice waits for one to be live: the last holder cannot renounce, and a grant of the role passes the token's timelock even during a wind-down. A refund for a deposit priced at zero shares is the exception: it is not tracked as owed, so it waits in the free reserve, where treasury can deploy it or a wind-down round can credit it to other holders (see the limits in the design doc's [§8.7](./strata-product-and-architecture.md#87-treasury-and-custodian)). A legal-order transfer (`legal_transfer`), which compliance and governance sign together, can move shares in the investor's own wallet, but not value the vault holds for them: deposit escrow, priced but unminted shares, shares escrowed in a redemption, priced cash, or a wind-down slice. A partial freeze limits exits to the free balance.
 
      This follows how asset-freeze and blocking rules generally treat frozen property: held, not released, not returned to the owner and not confiscated, with the entitlement kept and recorded. It is not legal advice; counsel must confirm it for each jurisdiction.
 
@@ -38,7 +38,7 @@ Every investor account in the vault ecosystem exists in one of three primary com
 | **`cancel_redeem`** | ✅ Allowed | ❌ **Refused**; ↪ **surrendered** in a wind-down | ⛔ **Held**; a partial freeze does not stop it: the shares return and stay partly frozen | Outside a wind-down the vault refuses a de-listed holder (`NotAllowlisted`) and holds one whose address is frozen (`Frozen`). For anyone else it checks the receiver itself (passes the identity check, not frozen, accepted by the compliance rules' `can_transfer`) and returns the shares with the manager `forced_transfer`; a move the rules refuse gets `HolderNotEligible`. Neither the vault's own allowlist place nor the share-token pause stops a return. A refused holder stays in the queue and exits in cash once the epoch is priced. In an active wind-down no shares come back: the escrow is burned into the holder's wind-down entitlement (`RedemptionSurrendered`), allowlisted or not. A frozen holder's escrow stays until the freeze is lifted. |
 | **`claim_redeem`** | ✅ Allowed | ✅ **Allowed** | ❌ **Refused** (`Frozen`); the cash stays in `committed` | **Exit-Only Cash Path**: the settlement asset pays out from the liquid reserve and the escrowed shares are burned from the vault. The cash claim checks `is_frozen` on the share token first; it does not check the allowlist. A partial freeze is not checked. Outside a wind-down, a claim that pays nothing returns the escrowed shares instead, under the same checks as `cancel_redeem`: a de-listed holder's is refused with `HolderNotEligible` and the request stays. In a wind-down such a claim burns the escrowed shares. |
 | **`claim_wind_down`** | ✅ Allowed | ✅ **Allowed** | ❌ **Refused** (`Frozen`); the slice stays in `wind_down_owed` | **Wind-Down Payout**: pays the holder's pro-rata entitlement and burns the free shares it surrenders. The vault checks `is_frozen` and `get_frozen_tokens` on the share token first; a partial freeze surrenders only the free shares — the rest keeps earning every round and is paid once unfrozen. |
-| **`transfer`** (Secondary) | ✅ Allowed | ❌ **Refused** | ❌ **Refused** | Standard peer-to-peer share transfer via SEP-57. Requires both sender and receiver to be allowlisted and neither to be frozen. |
+| **`transfer`** (Secondary) | ✅ Allowed | ❌ **Refused** | ❌ **Refused** | Standard peer-to-peer share transfer via SEP-57. Requires both sender and receiver to be allowlisted and neither to be frozen, never to the vault's address (`VaultAddress`). |
 | **`legal_transfer`** (compliance + governance) | ✅ Allowed | ✅ Allowed | ✅ Allowed | Moves shares in the holder's wallet under a legal order; the destination must pass `verify_identity`; never into or out of the vault. It cannot reach value the vault holds for a frozen holder; only an unfreeze releases that. |
 
 ---
@@ -68,7 +68,7 @@ If an investor deposits while allowlisted but is de-listed after the epoch is pr
 - **`cancel_deposit` is refused** with `AlreadyPriced`: once an epoch has a price, cancellation is closed.
 - **In a wind-down**, which prices nothing further, the shares join her wind-down entitlement and `claim_wind_down` pays them.
 - **In a wind-down, cancelling any escrowed redemption**, whether from her converted deposit or one she requested before the delisting, burns the escrow into the holder's wind-down entitlement (`RedemptionSurrendered`). No shares come back, for any holder.
-- **The conversion needs the vault's own allowlist place**, because the vault mints the shares into its own escrow. If compliance removes the vault's address, her conversion waits until the vault is relisted. Nothing is lost.
+- **The conversion needs the vault's own allowlist place**, because the vault mints the shares into its own escrow. If compliance removes the vault's address, her conversion waits until the vault is relisted. Nothing is lost. This is kept as a stated limit: delisting the vault is a compliance operator acting against holders, which the kit does not guard against (THREAT_MODEL R9), and `health().allowlisted` reads false meanwhile.
 - **Relisting first** still works: if compliance re-allowlists her before she claims, `claim_deposit` mints the shares to her.
 - **A freeze holds her.** If she is also frozen, `claim_deposit` fails with `Frozen` (6071) and the priced deposit stays unclaimed until the freeze is lifted.
 
@@ -89,7 +89,7 @@ The share token is OpenZeppelin's RWA token. The allowlist and freeze checks sit
 
 | Token operation | Freeze check | Allowlist check (`verify_identity`) | Compliance hooks |
 |---|---|---|---|
-| `transfer` | Refuses if sender or receiver is frozen; the sender needs enough unfrozen balance | Sender and receiver | `can_transfer` before, `transferred` after |
+| `transfer` | Refuses if sender or receiver is frozen; the sender needs enough unfrozen balance; never to the vault's address (`VaultAddress`) | Sender and receiver | `can_transfer` before, `transferred` after |
 | `mint` | None | Receiver | `can_create` before, `created` after |
 | `forced_transfer` | None; releases as much of a partial freeze as the amount needs | None | `transferred` after |
 | `legal_transfer` (the kit's own, built on `forced_transfer`) | None; releases as much of a partial freeze as the amount needs | Receiver | `transferred` after |
@@ -100,6 +100,8 @@ The share token is OpenZeppelin's RWA token. The allowlist and freeze checks sit
 When the vault returns escrowed shares with `forced_transfer`, it makes the receiver checks itself first: the freeze, `verify_identity` and `can_transfer`. It does not check the token pause.
 
 The kit's compliance contract registers no modules, so `can_transfer` and `can_create` always allow today. Until rule modules are added, the allowlist and freeze rules are exactly the token checks in the table above. Adding or removing a module waits for the vault's timelock once its setup is finished, so holders get at least the delay as notice of a rule change. An exit still needs a sealed epoch, a price and cash, so the delay does not promise that one completes first.
+
+The `transfer` checks above and the token pause are the kit's two transfer modes; see [Transfer Modes](./kit-spec.md#transfer-modes).
 
 ---
 

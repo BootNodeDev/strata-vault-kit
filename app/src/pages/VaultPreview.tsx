@@ -28,6 +28,7 @@ import { useCancelRedeem } from "../hooks/useCancelRedeem"
 import { useClaimDeposit } from "../hooks/useClaimDeposit"
 import { useClaimRedeem } from "../hooks/useClaimRedeem"
 import { useClaimWindDown } from "../hooks/useClaimWindDown"
+import { type Release } from "../hooks/useContractTransaction"
 import { useDepositBalance } from "../hooks/useDepositBalance"
 import { useHolderFrozen } from "../hooks/useHolderFrozen"
 import {
@@ -71,6 +72,8 @@ import {
 	toRequestEntriesByStage,
 	toWindDownEntry,
 } from "./vaultRequests"
+
+const PREPARE_DELAY_MS = 400
 
 const sections: { id: string; label: string }[] = [
 	{ id: "requests", label: "Requests" },
@@ -276,6 +279,30 @@ const VaultPreview: React.FC = () => {
 		}
 		requestRedeem.submit(amount, amountLabel)
 	}
+
+	const settledAmount =
+		block === undefined ? parseUnits(actionAmount, AMOUNT_DECIMALS) : null
+	const preparable =
+		settledAmount !== null &&
+		settledAmount > 0n &&
+		(balance === null || settledAmount <= balance)
+			? settledAmount
+			: null
+	const prepareDeposit = requestDeposit.prepare
+	const prepareRedeem = requestRedeem.prepare
+
+	React.useEffect(() => {
+		if (preparable === null) return
+		const prepare = isSubscribe ? prepareDeposit : prepareRedeem
+		let release: Release | undefined
+		const timer = setTimeout(() => {
+			release = prepare(preparable)
+		}, PREPARE_DELAY_MS)
+		return () => {
+			clearTimeout(timer)
+			release?.()
+		}
+	}, [preparable, isSubscribe, prepareDeposit, prepareRedeem])
 
 	React.useEffect(() => {
 		if (requestDeposit.status.status === "confirmed") setActionAmount("")
