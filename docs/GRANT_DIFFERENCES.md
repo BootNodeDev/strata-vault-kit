@@ -14,33 +14,34 @@ spec" is the [Kit specification](./kit-spec.md).
 1. **Claims are priced once per epoch and paid in any order.** The proposal said
    "FIFO claim priced at claim": claims paid first in, first out, each at the
    price of the moment it is claimed. The kit batches requests into epochs. It
-   prices each epoch once, at fulfilment, from a valid net asset value (NAV)
-   report (`fulfill_epoch`), and every request in the epoch gets that one
-   price. A priced claim pays as soon as the vault's cash covers its own
-   amount, in any order. First in, first out would let one large claim the
-   cash cannot cover yet block every smaller claim behind it. One price per
-   epoch also treats every request in it the same. See design doc
+   prices each epoch once, when the epoch is fulfilled (`fulfill_epoch`), from
+   a valid net asset value (NAV) report, and every request in the epoch gets
+   that one price. A priced claim pays as soon as the vault's cash, not
+   counting deposits that can still be cancelled, covers its own amount, in
+   any order. First in, first out would let one large claim the cash cannot
+   cover yet block every smaller claim behind it. One price per epoch also
+   treats every request in it the same. See design doc
    [§6](./strata-product-and-architecture.md#6-how-it-works) and
    [§8.4](./strata-product-and-architecture.md#84-request-lifecycle).
 
-2. **The attester posts the whole per-share NAV.** The proposal described split
-   accounting: the attester reports only the value held off chain, and the
-   contract adds its own USDC balance to get the price. In the kit, the
-   attester computes the full NAV per share off chain, from the value deployed
-   off chain and the vault's public figures, and posts it. The oracle checks
-   each report against a band of allowed prices, caps on how far the price may
-   rise or fall in one report, and a cooldown between reports. A report stays
-   valid for a set freshness window, and the guardian can pause the NAV in an
-   emergency. The USDC the vault holds is the reserve that pays claims. It has
-   its own public figures: the cash available to pay exits, the cash owed to
-   priced redemptions, and any shortfall. The contract does not add it to the
-   price. This keeps the price fixed between reports: moving cash to the
+2. **The attester posts the whole per-share NAV.** The proposal said the
+   "reporter attests off-chain value only, contract adds its own USDC
+   balance". In the kit, the attester computes the full NAV per share off
+   chain, from the value deployed off chain and the vault's public figures,
+   and posts it. The oracle checks each report against a band of allowed
+   prices, caps on how far the price may rise or fall in one report, and a
+   cooldown between reports. A report stays valid for a set freshness window,
+   and the guardian can pause the NAV in an emergency. The USDC the vault
+   holds is the reserve that pays claims, kept in its own public figures (the
+   design doc's split accounting): the cash available to pay exits, the cash
+   owed to priced redemptions, and any shortfall. The contract does not add it
+   to the price. This keeps the price fixed between reports: moving cash to the
    custodian or back does not change it. See design doc
    [§8.5](./strata-product-and-architecture.md#85-valuation-and-accounting).
 
-3. **The timelock is the kit's own `strata-timelock` crate.** The proposal said
-   the timelock would come from OpenZeppelin. The kit needs four things
-   OpenZeppelin's governance timelock does not do:
+3. **The timelock is the kit's own `strata-timelock` crate.** The proposal does
+   not mention a timelock. An earlier version of the design planned to use
+   OpenZeppelin's timelock. The kit needs four things it does not do:
    - one clock shared by the vault, the share token, the oracle and the
      compliance contract;
    - paused time does not count, so a vault pause pushes back the time a
@@ -55,21 +56,24 @@ spec" is the [Kit specification](./kit-spec.md).
 
 4. **A compliance freeze holds a priced claim.** The proposal said exits are
    "never gated or pausable". In the kit, a vault pause, a delisting, or a
-   stale or paused price never blocks a priced claim the vault's cash covers.
-   A compliance freeze does hold it. When the compliance authority freezes a
-   holder, what the vault owes them is held until the freeze is lifted. It is
-   not paid, not returned, and not given to anyone else. This follows how
-   asset-freeze rules generally treat frozen property. There is one more
-   exception. A redemption so small that it rounds down to zero assets pays
-   no cash and gives the shares back, so the holder must be able to receive
-   shares. If the holder has been removed from the allowlist (delisted), that
-   claim waits until they are listed again. In a wind-down the shares are
-   burned instead. See kit spec
-   [Invariant 4](./kit-spec.md#invariant-4-covered-claims-always-pay-exit-guarantee)
-   and the [compliance matrix](./COMPLIANCE_MATRIX.md#1-investor-states).
+   stale or paused price never blocks a priced claim once the vault's cash,
+   not counting deposits that can still be cancelled, covers it. A compliance
+   freeze does hold it. When the compliance authority freezes a holder, what
+   the vault owes them is held until the freeze is lifted. It is not paid, not
+   returned, and not given to anyone else. This follows how asset-freeze rules
+   generally treat frozen property. One edge case, a frozen holder's deposit
+   too small to mint any shares, is described in the
+   [compliance matrix](./COMPLIANCE_MATRIX.md#1-investor-states). There is one
+   more exception. A redemption so small that it rounds down to zero assets
+   pays no cash and gives the shares back, so the holder must be able to
+   receive shares. If the holder has been removed from the allowlist
+   (delisted), that claim waits until they are listed again. In a wind-down
+   the shares are burned instead. See kit spec
+   [Invariant 4](./kit-spec.md#invariant-4-covered-claims-always-pay-exit-guarantee).
 
 5. **New deposits stop while the price cannot be trusted or the cash is
-   short.** The vault refuses a new deposit request when:
+   short.** The proposal did not set this rule. Besides its usual checks, the
+   vault refuses a new deposit request when:
    - the NAV feed is stale (its last report expired), cleared or paused
      (`FeedNotValid`);
    - the deposit asset's issuer has taken back part of the vault's cash (a
@@ -83,14 +87,14 @@ spec" is the [Kit specification](./kit-spec.md).
    already in the vault. See design doc
    [§8.4](./strata-product-and-architecture.md#84-request-lifecycle).
 
-6. **Anyone may seal an epoch once it has run a minimum time.** Sealing an
-   epoch closes it to new requests so it can be priced. The manager may seal
-   the open epoch at any time. Governance can also set a minimum epoch
-   duration, from 1 to 30 days. Once the open epoch has been open that long,
-   anyone may seal it, so pricing does not stop if the manager does. The 1-day
-   floor stops outsiders from sealing a stream of tiny epochs. Whoever seals
-   picks where the batch ends, not the price. Left unset, only the manager
-   seals. See kit spec
+6. **Anyone may seal an epoch once it has run a minimum time.** The proposal
+   did not set this rule. Sealing an epoch closes it to new requests so it can
+   be priced. The manager may seal the open epoch at any time. Governance can
+   also set a minimum epoch duration, from 1 to 30 days. Once the open epoch
+   has been open that long, anyone may seal it, so pricing does not stop if
+   the manager does. The 1-day floor stops outsiders from sealing a stream of
+   tiny epochs. Whoever seals picks where the batch ends, not the price. Left
+   unset, only the manager seals. See kit spec
    [When the Manager or the Attester Stops](./kit-spec.md#when-the-manager-or-the-attester-stops).
 
 7. **Transfer modes are the token pause and the allowlist check on both
@@ -105,16 +109,16 @@ spec" is the [Kit specification](./kit-spec.md).
 
 ## Not built yet
 
-8. **Multisig authorities.** The proposal's Tranche 1 promised native Stellar
-   multisig accounts, created and wired by script. Today the deploy script
-   gives each authority a single key, not a multisig. It checks that setup has
-   closed, that the vault's own wiring checks (its `health()` view) all pass,
-   that the vault holds the share token's `manager` role, and that the token's
-   `compliance` role has two holders. Still to come, before a mainnet
-   deployment: creating the multisig accounts, checking that each authority is
-   the intended multisig, checking that no key used only to deploy keeps a
-   role, and reading the deposit asset's authorization flags (whether its
-   issuer can freeze or claw back balances). See design doc
+8. **Multisig authorities.** The proposal's first tranche included "Role
+   framework and multisig setup". Today the deploy script gives each authority
+   a single key, not a multisig. It checks that setup has closed, that the
+   vault's own wiring checks (its `health()` view) all pass, that the vault
+   holds the share token's `manager` role, and that the token's `compliance`
+   role has two holders. Still to come, before a mainnet deployment: creating
+   the multisig accounts, checking that each authority is the intended
+   multisig, checking that no key used only to deploy keeps a role, and
+   reading the deposit asset's authorization flags (whether its issuer can
+   freeze or claw back balances). See design doc
    [§8.10](./strata-product-and-architecture.md#810-deployment).
 
 ## Delivered as its own document
@@ -136,13 +140,16 @@ spec" is the [Kit specification](./kit-spec.md).
     The deposit asset's issuer can take back the vault's cash, and the kit
     cannot stop it. After a clawback the vault pays in a fixed order: first
     deposits that can still be cancelled, then priced redemptions, and only
-    then anything else. Each payment it cannot cover is refused with a named
-    error (`EscrowNotCovered` or `ClaimNotCovered`) until the treasury
-    authority sends cash to cover the gap. The kit does not insure the loss: it
-    reaches holders through the NAV the attester reports. If the issuer freezes
-    the vault's balance instead, every cash exit waits until the freeze is
-    lifted. See threat model
-    [X10](./THREAT_MODEL.md#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash).
+    then anything else. A cancellation or a priced claim the cash cannot cover
+    is refused with a named error (`EscrowNotCovered` or `ClaimNotCovered`)
+    until the treasury authority sends cash to cover the gap. A wind-down claim
+    is the exception: it does not check coverage first. It can take cash held
+    for pending deposits, or fail with the asset's own error. The kit does not
+    insure the loss: it reaches holders through the NAV the attester reports.
+    If the issuer freezes the vault's balance instead, every cash exit waits
+    until the freeze is lifted. See threat model
+    [X10](./THREAT_MODEL.md#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash)
+    and [X8](./THREAT_MODEL.md#x8-wind-down).
 
 12. **In a wind-down, a failing compliance module can block claims.** In a
     wind-down, a holder collects their part of the cash by surrendering
