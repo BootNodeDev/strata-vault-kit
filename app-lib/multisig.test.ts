@@ -1,42 +1,58 @@
+import { Buffer } from "buffer"
 import {
 	Account,
 	Address,
 	BASE_FEE,
+	hash,
 	Keypair,
 	nativeToScVal,
 	Operation,
+	SorobanDataBuilder,
 	StrKey,
 	TimeoutInfinite,
 	type Transaction,
 	TransactionBuilder,
 	xdr,
 } from "@stellar/stellar-sdk"
+import {
+	AssembledTransaction,
+	Spec,
+	type ClientOptions,
+} from "@stellar/stellar-sdk/contract"
 import { Api } from "@stellar/stellar-sdk/rpc"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { Client as GeneratedClient } from "../vitest.clients"
 import { connectAsyncVault } from "./contracts"
 import { networkPassphrase } from "./env"
 import {
+	AUTHORIZATION_LEDGERS,
+	authorizePending,
 	decodePending,
 	hasSigned,
 	InvalidPendingTransaction,
 	OPERATOR_TIMEOUT_SECONDS,
+	prepareCoSigned,
 	signatureWeight,
 	submitSigned,
 	transactionStatus,
 } from "./multisig"
 
-const { sendMock, pollMock, getMock } = vi.hoisted(() => ({
-	sendMock: vi.fn(),
-	pollMock: vi.fn(),
-	getMock: vi.fn(),
-}))
+const { sendMock, pollMock, getMock, latestLedgerMock, simulateMock } =
+	vi.hoisted(() => ({
+		sendMock: vi.fn(),
+		pollMock: vi.fn(),
+		getMock: vi.fn(),
+		latestLedgerMock: vi.fn(),
+		simulateMock: vi.fn(),
+	}))
 
 vi.mock("./rpc", () => ({
 	server: {
 		sendTransaction: sendMock,
 		pollTransaction: pollMock,
 		getTransaction: getMock,
+		getLatestLedger: latestLedgerMock,
+		simulateTransaction: simulateMock,
 	},
 }))
 
@@ -551,5 +567,322 @@ describe("operator timeout", () => {
 
 	it("leaves the client default alone when no timeout is given", async () => {
 		expect(timeoutOf(await connectAsyncVault(contractId))).toBeUndefined()
+	})
+})
+
+const admin = Keypair.random()
+const holder = Keypair.random().publicKey()
+
+const transferArgs = (shares = 25n) => [
+	new Address(holder).toScVal(),
+	new Address(recipient).toScVal(),
+	nativeToScVal(shares, { type: "i128" }),
+	nativeToScVal("ORDER-1", { type: "string" }),
+	new Address(authority.publicKey()).toScVal(),
+]
+
+const invocationArgs = (fn: string, args = transferArgs()) =>
+	new xdr.InvokeContractArgs({
+		contractAddress: new Address(contractId).toScAddress(),
+		functionName: fn,
+		args,
+	})
+
+const authorized = (
+	args: xdr.InvokeContractArgs,
+	subInvocations: xdr.SorobanAuthorizedInvocation[] = [],
+) =>
+	new xdr.SorobanAuthorizedInvocation({
+		function:
+			xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
+				args,
+			),
+		subInvocations,
+	})
+
+const addressEntry = (
+	address: string,
+	invocation = authorized(invocationArgs("legal_transfer")),
+	signature = xdr.ScVal.scvVoid(),
+	expiration = 0,
+) =>
+	new xdr.SorobanAuthorizationEntry({
+		credentials: xdr.SorobanCredentials.sorobanCredentialsAddress(
+			new xdr.SorobanAddressCredentials({
+				address: new Address(address).toScAddress(),
+				nonce: xdr.Int64.fromString("7"),
+				signatureExpirationLedger: expiration,
+				signature,
+			}),
+		),
+		rootInvocation: invocation,
+	})
+
+const sourceEntry = () =>
+	new xdr.SorobanAuthorizationEntry({
+		credentials: xdr.SorobanCredentials.sorobanCredentialsSourceAccount(),
+		rootInvocation: authorized(invocationArgs("legal_transfer")),
+	})
+
+const coSigned = (
+	auth: xdr.SorobanAuthorizationEntry[],
+	fn = "legal_transfer",
+	args = transferArgs(),
+) =>
+	builder()
+		.addOperation(
+			Operation.invokeContractFunction({
+				contract: contractId,
+				function: fn,
+				args,
+				auth,
+			}),
+		)
+		.build()
+		.toEnvelope()
+		.toXDR("base64")
+
+const legalTransfer = () =>
+	coSigned([sourceEntry(), addressEntry(admin.publicKey())])
+
+describe("decodePending with a co-signer's authorization", () => {
+	it("reads one unsigned address authorization on a legal transfer", () => {
+		expect(decodePending(legalTransfer()).authorization).toEqual({
+			address: admin.publicKey(),
+			signed: false,
+			expirationLedger: 0,
+		})
+	})
+
+	it("reads a signed authorization and the ledger it expires after", () => {
+		const signature = xdr.ScVal.scvVec([xdr.ScVal.scvMap([])])
+		const encoded = coSigned([
+			sourceEntry(),
+			addressEntry(admin.publicKey(), undefined, signature, 900),
+		])
+
+		expect(decodePending(encoded).authorization).toEqual({
+			address: admin.publicKey(),
+			signed: true,
+			expirationLedger: 900,
+		})
+	})
+
+	it("has no authorization when every entry is the source account's", () => {
+		expect(decodePending(coSigned([sourceEntry()])).authorization).toBeNull()
+	})
+
+	it("refuses two address authorizations", () => {
+		const encoded = coSigned([
+			addressEntry(admin.publicKey()),
+			addressEntry(outsider.publicKey()),
+		])
+
+		expect(() => decodePending(encoded)).toThrow(InvalidPendingTransaction)
+	})
+
+	it("refuses an address authorization on any function but a legal transfer", () => {
+		const args = [nativeToScVal(42n, { type: "i128" })]
+		const encoded = coSigned(
+			[
+				addressEntry(
+					admin.publicKey(),
+					authorized(invocationArgs("forced_transfer", args)),
+				),
+			],
+			"forced_transfer",
+			args,
+		)
+
+		expect(() => decodePending(encoded)).toThrow(InvalidPendingTransaction)
+	})
+
+	it("refuses an authorization for an invocation the operation does not make", () => {
+		const encoded = coSigned([
+			addressEntry(
+				admin.publicKey(),
+				authorized(invocationArgs("legal_transfer", transferArgs(99n))),
+			),
+		])
+
+		expect(() => decodePending(encoded)).toThrow(InvalidPendingTransaction)
+	})
+
+	it("refuses an authorization that also covers nested calls", () => {
+		const nested = authorized(invocationArgs("legal_transfer"), [
+			authorized(invocationArgs("transfer", [])),
+		])
+		const encoded = coSigned([addressEntry(admin.publicKey(), nested)])
+
+		expect(() => decodePending(encoded)).toThrow(InvalidPendingTransaction)
+	})
+
+	it("refuses an authorization by a contract address", () => {
+		const encoded = coSigned([addressEntry(contractId)])
+
+		expect(() => decodePending(encoded)).toThrow(InvalidPendingTransaction)
+	})
+})
+
+const legalTransferSpec = new Spec([
+	xdr.ScSpecEntry.scSpecEntryFunctionV0(
+		new xdr.ScSpecFunctionV0({
+			doc: "",
+			name: "legal_transfer",
+			inputs: [],
+			outputs: [],
+		}),
+	),
+])
+
+const assembled = (encoded: string, options: Partial<ClientOptions> = {}) =>
+	AssembledTransaction.fromXDR(
+		{
+			contractId,
+			networkPassphrase,
+			rpcUrl: "http://localhost:8000/rpc",
+			allowHttp: true,
+			server: { simulateTransaction: simulateMock },
+			...options,
+		} as unknown as ClientOptions,
+		encoded,
+		legalTransferSpec,
+	)
+
+const simulated = (): Api.SimulateTransactionSuccessResponse => ({
+	id: "1",
+	latestLedger: 1_000,
+	events: [],
+	_parsed: true,
+	transactionData: new SorobanDataBuilder().setResourceFee(5_000),
+	minResourceFee: "5000",
+	result: { auth: [], retval: xdr.ScVal.scvVoid() },
+})
+
+const refused = (code: number): Api.SimulateTransactionErrorResponse => ({
+	id: "1",
+	latestLedger: 1_000,
+	events: [],
+	_parsed: true,
+	error: `HostError: Error(Contract, #${code})`,
+})
+
+const adminWallet = vi.fn(async (preimage: string) => ({
+	signedAuthEntry: admin
+		.sign(hash(Buffer.from(preimage, "base64")))
+		.toString("base64"),
+	signerAddress: admin.publicKey(),
+}))
+
+describe("authorizePending", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		latestLedgerMock.mockResolvedValue({ sequence: 1_000 })
+		simulateMock.mockResolvedValue(simulated())
+	})
+
+	it("signs the admin's entry for the operator timeout and re-simulates", async () => {
+		const encoded = legalTransfer()
+		const pending = decodePending(encoded)
+
+		const step = await authorizePending(
+			assembled(encoded),
+			pending,
+			adminWallet,
+		)
+
+		if (step.kind !== "ready") throw new Error(`unexpected ${step.kind}`)
+		expect(decodePending(step.xdr)).toEqual(step.pending)
+		expect(step.pending.authorization).toEqual({
+			address: admin.publicKey(),
+			signed: true,
+			expirationLedger: 1_000 + AUTHORIZATION_LEDGERS,
+		})
+		expect(AUTHORIZATION_LEDGERS).toBe(OPERATOR_TIMEOUT_SECONDS / 5)
+		expect(adminWallet).toHaveBeenCalledWith(expect.any(String), {
+			address: admin.publicKey(),
+		})
+		expect(simulateMock).toHaveBeenCalledTimes(1)
+		expect(step.pending.args).toEqual(pending.args)
+		expect(step.pending.expiresAt).toEqual(pending.expiresAt)
+	})
+
+	it("reports the contract's refusal from the re-simulation", async () => {
+		simulateMock.mockResolvedValue(refused(300))
+		const encoded = legalTransfer()
+
+		await expect(
+			authorizePending(assembled(encoded), decodePending(encoded), adminWallet),
+		).resolves.toEqual({ kind: "refused", code: 300 })
+	})
+
+	it("refuses a transaction whose authorization is already signed", async () => {
+		const signature = xdr.ScVal.scvVec([xdr.ScVal.scvMap([])])
+		const encoded = coSigned([
+			sourceEntry(),
+			addressEntry(admin.publicKey(), undefined, signature, 900),
+		])
+
+		await expect(
+			authorizePending(assembled(encoded), decodePending(encoded), adminWallet),
+		).rejects.toThrow(InvalidPendingTransaction)
+		expect(adminWallet).not.toHaveBeenCalled()
+	})
+})
+
+describe("prepareCoSigned", () => {
+	beforeEach(() => {
+		vi.clearAllMocks()
+		latestLedgerMock.mockResolvedValue({ sequence: 1_000 })
+		simulateMock.mockResolvedValue(simulated())
+	})
+
+	const authorizedTransfer = async () => {
+		const encoded = legalTransfer()
+		const step = await authorizePending(
+			assembled(encoded),
+			decodePending(encoded),
+			adminWallet,
+		)
+		if (step.kind !== "ready") throw new Error(`unexpected ${step.kind}`)
+		return step.pending
+	}
+
+	it("re-simulates and starts the operator timeout now, keeping the authorization", async () => {
+		const pending = await authorizedTransfer()
+		const encoded = pending.transaction.toEnvelope().toXDR("base64")
+		const before = Date.now()
+
+		const step = await prepareCoSigned(assembled(encoded), pending)
+
+		if (step.kind !== "ready") throw new Error(`unexpected ${step.kind}`)
+		const expiresAt = step.pending.expiresAt?.getTime() ?? 0
+		expect(expiresAt).toBeGreaterThanOrEqual(
+			Math.floor(before / 1000) * 1000 + OPERATOR_TIMEOUT_SECONDS * 1000,
+		)
+		expect(step.pending.authorization).toEqual(pending.authorization)
+		expect(step.pending.transaction.fee).toBe(pending.transaction.fee)
+		expect(step.pending.sequence).toBe(pending.sequence)
+		expect(step.pending.transaction.signatures).toEqual([])
+	})
+
+	it("reports the contract's refusal from the simulation", async () => {
+		const pending = await authorizedTransfer()
+		simulateMock.mockResolvedValue(refused(304))
+
+		await expect(
+			prepareCoSigned(
+				assembled(pending.transaction.toEnvelope().toXDR("base64")),
+				pending,
+			),
+		).resolves.toEqual({ kind: "refused", code: 304 })
+	})
+
+	it("refuses a transaction the admin has not authorized", async () => {
+		const encoded = legalTransfer()
+
+		await expect(
+			prepareCoSigned(assembled(encoded), decodePending(encoded)),
+		).rejects.toThrow(InvalidPendingTransaction)
 	})
 })

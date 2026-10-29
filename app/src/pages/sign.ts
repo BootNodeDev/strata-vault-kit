@@ -8,6 +8,7 @@ import {
 	type PendingTransaction,
 	PRICE_DECIMALS,
 	type Price,
+	requiredWeight,
 	shortAddress,
 	uniformWeights,
 } from "@stellar-scaffold/app-lib"
@@ -369,9 +370,15 @@ const tokenDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 		action: "unfreeze-shares",
 		args: [addr("Address", account), amount("Amount", shares)],
 	}),
-	forced_transfer: ([from, to, shares]) => ({
-		action: "force-transfer",
-		args: [addr("From", from), addr("To", to), amount("Amount", shares)],
+	legal_transfer: ([from, to, shares, reference, caller]) => ({
+		action: "legal-transfer",
+		args: [
+			addr("From", from),
+			addr("To", to),
+			amount("Amount", shares),
+			{ label: "Reference", value: text(reference) },
+			addr("Caller", caller),
+		],
 	}),
 })
 
@@ -431,6 +438,10 @@ export type PendingState =
 	| "not-signer"
 	| "already-signed"
 	| "ready"
+	| "awaiting-authorization"
+	| "authorization-expired"
+
+export type AuthorizationState = "none" | "awaiting" | "expired" | "authorized"
 
 export type PendingStateInput = {
 	now: Date
@@ -441,6 +452,7 @@ export type PendingStateInput = {
 	threshold: number
 	walletIsSigner: boolean | null
 	walletHasSigned: boolean
+	authorization: AuthorizationState
 }
 
 export function pendingState(input: PendingStateInput): PendingState {
@@ -451,6 +463,8 @@ export function pendingState(input: PendingStateInput): PendingState {
 	) {
 		return "consumed"
 	}
+	if (input.authorization === "expired") return "authorization-expired"
+	if (input.authorization === "awaiting") return "awaiting-authorization"
 	if (input.weight >= input.threshold) return "ready"
 	if (input.walletHasSigned) return "already-signed"
 	if (input.walletIsSigner === false) return "not-signer"
@@ -465,6 +479,9 @@ export const STATE_COPY: Record<PendingState, string> = {
 	"not-signer": "Your wallet does not sign for this account.",
 	"already-signed": "You already signed. Share the link with the next signer.",
 	ready: "Signatures complete. Anyone can submit.",
+	"awaiting-authorization": "Waiting for the token admin's authorization.",
+	"authorization-expired":
+		"The token admin's authorization expired. The link must be rebuilt.",
 }
 
 export type StateTone = "neutral" | "success" | "danger" | "muted"
@@ -522,10 +539,28 @@ export const STATE_VIEW: Record<PendingState, StateView> = {
 		nextStep: "Only a signer of this account can sign.",
 		shareable: true,
 	},
+	"awaiting-authorization": {
+		pill: "Awaiting the admin's authorization",
+		tone: "neutral",
+		nextStep:
+			"The token admin authorizes first. Then compliance's signers sign.",
+		shareable: true,
+	},
+	"authorization-expired": {
+		pill: "Authorization expired",
+		tone: "danger",
+		nextStep: "Ask compliance to build the legal transfer again.",
+		shareable: false,
+	},
 }
 
 export type PrimaryAction = {
-	label: "Sign" | "Submit" | "Connect a wallet to sign"
+	label:
+		| "Sign"
+		| "Submit"
+		| "Authorize"
+		| "Connect a wallet to sign"
+		| "Connect a wallet to authorize"
 	enabled: boolean
 }
 
@@ -535,6 +570,10 @@ export const primaryAction = (
 	canSign: boolean,
 ): PrimaryAction | null => {
 	if (state === "ready") return { label: "Submit", enabled: true }
+	if (state === "awaiting-authorization")
+		return hasWallet
+			? { label: "Authorize", enabled: canSign }
+			: { label: "Connect a wallet to authorize", enabled: false }
 	if (state !== "valid") return null
 	return hasWallet
 		? { label: "Sign", enabled: canSign }
@@ -558,7 +597,7 @@ export const describeCollected = (
 	weight: number,
 	signers: AccountSigners,
 ): string => {
-	const threshold = signers.thresholds.med
+	const threshold = requiredWeight(signers)
 	return uniformWeights(signers.signers)
 		? `${weight} of ${threshold} signatures`
 		: `weight ${weight} of threshold ${threshold}`
@@ -605,6 +644,15 @@ export function toModalProps(
 			}
 		case "deploy":
 			return { action, status, amount: args[0]?.value ?? "", ...handlers }
+		case "legal-transfer": {
+			const [from, to, shares] = args.map(({ value }) => value)
+			return {
+				action,
+				status,
+				value: `${shares ?? ""} shares from ${from ?? ""} to ${to ?? ""}`,
+				...handlers,
+			}
+		}
 		default:
 			if (isEmergency(action)) return { action, status, ...handlers }
 			return {

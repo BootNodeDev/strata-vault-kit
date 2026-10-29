@@ -12,31 +12,34 @@ import { type Grant } from "../../hooks/useAdminAuthority"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import ComplianceSection from "./ComplianceSection"
 
-const { txs, useComplianceStateMock } = vi.hoisted(() => {
-	const tx = (): {
-		status: TransactionStatus
-		submit: Mock<() => boolean>
-		prepare: Mock
-		reset: Mock
-	} => ({
-		status: { status: "idle" },
-		submit: vi.fn(() => true),
-		prepare: vi.fn(),
-		reset: vi.fn(),
-	})
-	return {
-		txs: {
-			useAllowAddress: tx(),
-			useDisallowAddress: tx(),
-			useFreezeAddress: tx(),
-			useUnfreezeAddress: tx(),
-			useFreezeShares: tx(),
-			useUnfreezeShares: tx(),
-			useForceTransfer: tx(),
-		},
-		useComplianceStateMock: vi.fn(),
-	}
-})
+const { txs, useComplianceStateMock, useLegalTransfersMock } = vi.hoisted(
+	() => {
+		const tx = (): {
+			status: TransactionStatus
+			submit: Mock<() => boolean>
+			prepare: Mock
+			reset: Mock
+		} => ({
+			status: { status: "idle" },
+			submit: vi.fn(() => true),
+			prepare: vi.fn(),
+			reset: vi.fn(),
+		})
+		return {
+			txs: {
+				useAllowAddress: tx(),
+				useDisallowAddress: tx(),
+				useFreezeAddress: tx(),
+				useUnfreezeAddress: tx(),
+				useFreezeShares: tx(),
+				useUnfreezeShares: tx(),
+				useLegalTransfer: tx(),
+			},
+			useComplianceStateMock: vi.fn(),
+			useLegalTransfersMock: vi.fn(),
+		}
+	},
+)
 
 vi.mock("../../hooks/useComplianceTransactions", () =>
 	Object.fromEntries(
@@ -45,6 +48,9 @@ vi.mock("../../hooks/useComplianceTransactions", () =>
 )
 vi.mock("../../hooks/useComplianceState", () => ({
 	useComplianceState: useComplianceStateMock,
+}))
+vi.mock("../../hooks/useCycleState", () => ({
+	useLegalTransfers: useLegalTransfersMock,
 }))
 vi.mock("../../config/contracts", () => ({
 	vaultContractId: "CABQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGCK3",
@@ -114,6 +120,9 @@ describe("ComplianceSection", () => {
 		for (const transaction of Object.values(txs))
 			transaction.status = { status: "idle" }
 		useComplianceStateMock.mockImplementation(readsFor)
+		useLegalTransfersMock.mockReturnValue({
+			legalTransfers: { status: "loaded", events: [], partial: false },
+		})
 	})
 
 	it("blocks the actions until a target address is entered", () => {
@@ -363,5 +372,50 @@ describe("ComplianceSection", () => {
 			/>,
 		)
 		expect(screen.queryAllByRole("dialog", { hidden: true })).toHaveLength(0)
+	})
+
+	it("lists recent legal transfers with their reference", () => {
+		useLegalTransfersMock.mockReturnValue({
+			legalTransfers: {
+				status: "loaded",
+				partial: false,
+				events: [
+					{
+						contractId: "CTOKEN",
+						name: "legal_transfer",
+						topics: [TARGET, WALLET],
+						data: { amount: 5n * UNIT, reference: "COURT-ORDER-17" },
+						ledger: 10,
+						closedAt: 1_700_000_000n,
+					},
+				],
+			},
+		})
+		render(
+			<ComplianceSection
+				grants={[officer]}
+				wallet={WALLET}
+				addresses={ADDRESSES}
+			/>,
+		)
+
+		const table = screen.getByRole("table", { name: "Legal transfers" })
+		expect(within(table).getByText("Legal transfer")).toBeTruthy()
+		expect(within(table).getByText(/COURT-ORDER-17/)).toBeTruthy()
+		expect(within(table).getByText("5.00")).toBeTruthy()
+	})
+
+	it("says when no legal transfer happened in the last 7 days", () => {
+		render(
+			<ComplianceSection
+				grants={[officer]}
+				wallet={WALLET}
+				addresses={ADDRESSES}
+			/>,
+		)
+
+		expect(
+			screen.getByText("No legal transfers in the last 7 days."),
+		).toBeTruthy()
 	})
 })

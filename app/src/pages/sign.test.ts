@@ -39,6 +39,7 @@ const pending = (
 	fn,
 	args,
 	hash: "abc123",
+	authorization: null,
 })
 
 describe("describePending", () => {
@@ -191,8 +192,34 @@ describe("describePending", () => {
 		expect(args.at(-1)).toEqual({ label: "Proof URI", value: "None" })
 	})
 
-	it("maps a forced transfer with shortened addresses and an amount", () => {
+	it("maps a legal transfer with its reference and the compliance caller", () => {
 		expect(
+			describePending(
+				pending(addresses.shareToken, "legal_transfer", [
+					account,
+					other,
+					25_000_000n,
+					"COURT-ORDER-2026/17",
+					other,
+				]),
+				addresses,
+			),
+		).toEqual({
+			contract: "Share token",
+			action: "legal-transfer",
+			label: "Make a legal transfer",
+			args: [
+				{ label: "From", value: "GBRP...OX2H" },
+				{ label: "To", value: "GDQN...KTL3" },
+				{ label: "Amount", value: "2.50" },
+				{ label: "Reference", value: "COURT-ORDER-2026/17" },
+				{ label: "Caller", value: "GDQN...KTL3" },
+			],
+		})
+	})
+
+	it("no longer describes a forced transfer", () => {
+		expect(() =>
 			describePending(
 				pending(addresses.shareToken, "forced_transfer", [
 					account,
@@ -202,16 +229,7 @@ describe("describePending", () => {
 				]),
 				addresses,
 			),
-		).toEqual({
-			contract: "Share token",
-			action: "force-transfer",
-			label: "Force a transfer",
-			args: [
-				{ label: "From", value: "GBRP...OX2H" },
-				{ label: "To", value: "GDQN...KTL3" },
-				{ label: "Amount", value: "2.50" },
-			],
-		})
+		).toThrow(InvalidPendingTransaction)
 	})
 
 	it("maps a role grant on the share token", () => {
@@ -642,6 +660,7 @@ const base: PendingStateInput = {
 	threshold: 2,
 	walletIsSigner: true,
 	walletHasSigned: false,
+	authorization: "none",
 }
 
 describe("pendingState", () => {
@@ -652,6 +671,9 @@ describe("pendingState", () => {
 		["not-signer", { walletIsSigner: false }],
 		["already-signed", { walletHasSigned: true }],
 		["ready", { weight: 2 }],
+		["awaiting-authorization", { authorization: "awaiting" }],
+		["authorization-expired", { authorization: "expired" }],
+		["valid", { authorization: "authorized" }],
 	] as const)("is %s", (state, overrides) => {
 		expect(pendingState({ ...base, ...overrides })).toBe(state)
 	})
@@ -665,6 +687,25 @@ describe("pendingState", () => {
 				walletIsSigner: null,
 			}),
 		).toBe("valid")
+	})
+
+	it("waits for the admin's authorization before any envelope signature counts", () => {
+		expect(
+			pendingState({ ...base, weight: 2, authorization: "awaiting" }),
+		).toBe("awaiting-authorization")
+		expect(
+			pendingState({
+				...base,
+				walletIsSigner: false,
+				authorization: "awaiting",
+			}),
+		).toBe("awaiting-authorization")
+	})
+
+	it("ranks an expired authorization over a complete signature set", () => {
+		expect(pendingState({ ...base, weight: 2, authorization: "expired" })).toBe(
+			"authorization-expired",
+		)
 	})
 
 	it("ranks expiry over a complete signature set", () => {
@@ -690,6 +731,16 @@ const signers: AccountSigners = {
 describe("describeCollected", () => {
 	it("counts signatures when every signer weighs one", () => {
 		expect(describeCollected(1, signers)).toBe("1 of 2 signatures")
+	})
+
+	it("counts one required signature for a single-key account", () => {
+		expect(
+			describeCollected(0, {
+				...signers,
+				signers: [{ key: account, weight: 1 }],
+				thresholds: { low: 0, med: 0, high: 0 },
+			}),
+		).toBe("0 of 1 signatures")
 	})
 
 	it("reports weight against the threshold otherwise", () => {
@@ -744,6 +795,21 @@ describe("primaryAction", () => {
 		})
 	})
 
+	it("offers Authorize while the token admin's authorization is missing", () => {
+		expect(primaryAction("awaiting-authorization", true, true)).toEqual({
+			label: "Authorize",
+			enabled: true,
+		})
+		expect(primaryAction("awaiting-authorization", true, false)).toEqual({
+			label: "Authorize",
+			enabled: false,
+		})
+		expect(primaryAction("awaiting-authorization", false, false)).toEqual({
+			label: "Connect a wallet to authorize",
+			enabled: false,
+		})
+	})
+
 	it("offers nothing in every other state", () => {
 		for (const state of [
 			"expired",
@@ -751,6 +817,7 @@ describe("primaryAction", () => {
 			"executed",
 			"not-signer",
 			"already-signed",
+			"authorization-expired",
 		] as const) {
 			expect(primaryAction(state, true, false)).toBeNull()
 		}
@@ -793,6 +860,26 @@ describe("toModalProps", () => {
 		).toMatchObject({
 			action: "grant-token-role",
 			value: "compliance, GDQN...KTL3",
+		})
+	})
+
+	it("names the shares, sender and receiver of a legal transfer", () => {
+		const description = describePending(
+			pending(addresses.shareToken, "legal_transfer", [
+				account,
+				other,
+				25_000_000n,
+				"ORDER-1",
+				other,
+			]),
+			addresses,
+		)
+
+		expect(
+			toModalProps(description, { status: "submitted" }, handlers),
+		).toMatchObject({
+			action: "legal-transfer",
+			value: "2.50 shares from GBRP...OX2H to GDQN...KTL3",
 		})
 	})
 

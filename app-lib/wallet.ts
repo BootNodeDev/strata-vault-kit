@@ -33,6 +33,8 @@ export const disconnectWallet = () => StellarWalletsKit.disconnect()
 /** Sign a transaction with the active wallet. Passed to generated contract clients. */
 export const signTransaction = StellarWalletsKit.signTransaction
 
+export const signAuthEntry = StellarWalletsKit.signAuthEntry
+
 /**
  * Use the wallet's reported network if it supports it, otherwise flag the
  * wallet as unsupported. Note that even if a wallet is `unsupported`, this

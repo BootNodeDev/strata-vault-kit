@@ -208,10 +208,10 @@ describe("toEmergencyActions", () => {
 			"Stops new deposits, pricing and upgrades. Redemptions, claims, cancels and closing epochs stay open.",
 		)
 		expect(actionOf(calm, everyRole, "pause-token").outcome).toBe(
-			"Stops holder transfers and returns of escrowed shares. Minting, burning and forced transfers stay open.",
+			"Stops holder transfers only. Minting, burning, the vault's escrow moves and legal transfers continue.",
 		)
 		expect(actionOf(alarmed, everyRole, "unpause-token").outcome).toBe(
-			"Resumes holder transfers and returns of escrowed shares.",
+			"Resumes holder transfers.",
 		)
 		expect(actionOf(calm, everyRole, "pause-nav").outcome).toBe(
 			"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open. Revoking an attester is instant; granting a replacement waits for the timelock once the oracle's setup is closed.",
