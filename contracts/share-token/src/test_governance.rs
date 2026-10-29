@@ -1043,6 +1043,9 @@ fn every_admin_call_restores_the_instance_ttl() {
     let id = f.propose(grant);
     f.advance(MIN_DELAY);
     f.restores_the_instance(|| f.token.apply_change(&id));
+
+    f.offer_admin(&next);
+    f.restores_the_instance(|| f.token.accept_admin_transfer());
 }
 
 #[test]

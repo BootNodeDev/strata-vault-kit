@@ -963,6 +963,9 @@ fn setup_grants_hand_overs_and_changes_restore_the_instance_ttl() {
     let id = f.propose(change);
     f.advance(MIN_DELAY);
     f.restores_the_instance(|| f.oracle.apply_change(&id));
+
+    f.offer_admin(&next);
+    f.restores_the_instance(|| f.oracle.accept_admin_transfer());
 }
 
 /// Mirrors OpenZeppelin's private member-list key: same variant and fields, same encoding.
