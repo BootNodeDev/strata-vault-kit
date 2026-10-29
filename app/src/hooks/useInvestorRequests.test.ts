@@ -113,6 +113,7 @@ describe("classifyRequest", () => {
 				amount: 100_0000000n as Amount,
 				claimed: false,
 				priceableAt: openEpoch.priceable_at,
+				closedAt: openEpoch.closed_at,
 			},
 		})
 	})
@@ -130,6 +131,7 @@ describe("classifyRequest", () => {
 				amount: 100_0000000n as Amount,
 				claimed: true,
 				priceableAt: fulfilledEpoch.priceable_at,
+				closedAt: fulfilledEpoch.closed_at,
 			},
 		})
 	})
@@ -147,6 +149,7 @@ describe("classifyRequest", () => {
 				amount: 20_0000000n as Amount,
 				claimed: false,
 				priceableAt: fulfilledEpoch.priceable_at,
+				closedAt: fulfilledEpoch.closed_at,
 			},
 		})
 	})
@@ -240,6 +243,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 100_0000000n as Amount,
 					claimed: false,
 					priceableAt: openEpoch.priceable_at,
+					closedAt: openEpoch.closed_at,
 				},
 				{
 					epochId: 3n,
@@ -249,6 +253,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 50_0000000n as Amount,
 					claimed: true,
 					priceableAt: fulfilledEpoch.priceable_at,
+					closedAt: fulfilledEpoch.closed_at,
 				},
 				{
 					epochId: 3n,
@@ -258,6 +263,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 20_0000000n as Amount,
 					claimed: false,
 					priceableAt: fulfilledEpoch.priceable_at,
+					closedAt: fulfilledEpoch.closed_at,
 				},
 			],
 			archived: [],
@@ -341,6 +347,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 30_0000000n as Amount,
 					claimed: false,
 					priceableAt: pendingEpoch.priceable_at,
+					closedAt: pendingEpoch.closed_at,
 				},
 			],
 			archived: [],
@@ -390,6 +397,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 30_0000000n as Amount,
 					claimed: false,
 					priceableAt: pendingEpoch.priceable_at,
+					closedAt: pendingEpoch.closed_at,
 				},
 			],
 			archived: [],
@@ -453,6 +461,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 10_0000000n as Amount,
 					claimed: false,
 					priceableAt: openEpoch.priceable_at,
+					closedAt: openEpoch.closed_at,
 				},
 			],
 			archived: [],
@@ -508,6 +517,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 10_0000000n as Amount,
 					claimed: false,
 					priceableAt: pendingEpoch.priceable_at,
+					closedAt: pendingEpoch.closed_at,
 				},
 			],
 			archived: [],
@@ -554,6 +564,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 10_0000000n as Amount,
 					claimed: false,
 					priceableAt: openEpoch.priceable_at,
+					closedAt: openEpoch.closed_at,
 				},
 			],
 			archived: [],
@@ -601,6 +612,7 @@ describe("fetchInvestorRequests", () => {
 					amount: 10_0000000n as Amount,
 					claimed: false,
 					priceableAt: openEpoch.priceable_at,
+					closedAt: openEpoch.closed_at,
 				},
 			],
 			archived: [],
