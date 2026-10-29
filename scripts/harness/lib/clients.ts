@@ -7,6 +7,7 @@ import { Client as IdentityVerifierClient } from "../../../app-lib/clients/ident
 import { Client as OracleClient } from "../../../app-lib/clients/nav_oracle/dist/index.js"
 import { Client as ShareTokenClient } from "../../../app-lib/clients/share_token/dist/index.js"
 import { type Accounts } from "./accounts.js"
+import { assetBalance } from "./balances.js"
 import {
 	loadDeployment,
 	publicKeysOf,
@@ -83,23 +84,6 @@ export async function send<T>(tx: Promise<Sendable<T>>): Promise<T> {
 	return (await awaited.signAndSend()).result
 }
 
-export async function usdcBalance(
-	c: Connected,
-	address: string,
-): Promise<bigint> {
-	try {
-		const { balanceEntry } = await c.server.getAssetBalance(
-			address,
-			c.asset,
-			c.net.passphrase,
-		)
-		return BigInt(balanceEntry?.amount ?? "0")
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			/Trustline for .* not found for/.test(error.message)
-		)
-			return 0n
-		throw error
-	}
+export function usdcBalance(c: Connected, address: string): Promise<bigint> {
+	return assetBalance(c.server, address, c.asset, c.net.passphrase)
 }

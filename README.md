@@ -178,6 +178,10 @@ after closing it. `test:wind-down` ignores `deployed.local.json`: it deploys
 its own throwaway vault set, built from the `short_wind_down` wasm above, so
 it can reach an active wind-down without the real seven-day minimum.
 
+Each deploy first returns any deposit asset the harness accounts hold to its
+issuer, so every holder starts a new set at zero. Deploy again and the suites
+run again on the same network.
+
 ### Keeping a deployment alive
 
 Every contract extends its own storage when it is called, but a deployment

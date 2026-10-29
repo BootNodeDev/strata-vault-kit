@@ -11,7 +11,8 @@ import type * as IdentityVerifierModule from "../../app-lib/clients/identity_ver
 import type * as NavOracleModule from "../../app-lib/clients/nav_oracle/dist/index.js"
 import type * as ShareTokenModule from "../../app-lib/clients/share_token/dist/index.js"
 
-import { ACCOUNT_NAMES, fund, type Accounts } from "./lib/accounts.js"
+import { ACCOUNT_NAMES, fund, pay, type Accounts } from "./lib/accounts.js"
+import { returnToIssuer } from "./lib/balances.js"
 import {
 	deployContract,
 	ensureAssetContract,
@@ -288,6 +289,14 @@ async function freshSet(
 		accounts.issuer,
 	)
 	console.log("asset contract", assetContract)
+
+	const issuer = asset.getIssuer() ?? accounts.issuer.publicKey()
+	const returned = await returnToIssuer(server, keys, asset, (from, amount) =>
+		pay(net, server, from, issuer, asset, amount),
+	)
+	console.log(
+		`returned the deposit asset of ${returned} accounts to its issuer`,
+	)
 
 	const contracts = await deployContracts(net, accounts, assetContract, wasms)
 

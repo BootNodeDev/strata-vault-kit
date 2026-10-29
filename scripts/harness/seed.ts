@@ -3,6 +3,7 @@ import { type Keypair } from "@stellar/stellar-sdk"
 import { accountRow } from "./lib/account-table.js"
 import { pay, trustline } from "./lib/accounts.js"
 import { price, units } from "./lib/amounts.js"
+import { trustlineBalance } from "./lib/balances.js"
 import {
 	connect,
 	identityVerifier,
@@ -30,18 +31,7 @@ function formatWad(wad: bigint): string {
 }
 
 async function hasTrustline(c: Connected, address: string): Promise<boolean> {
-	try {
-		await c.server.getAssetBalance(address, c.asset, c.net.passphrase)
-		return true
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			/Trustline for .* not found for/.test(error.message)
-		) {
-			return false
-		}
-		throw error
-	}
+	return (await trustlineBalance(c.server, address, c.asset)) !== undefined
 }
 
 async function ensureTrustline(
