@@ -11,8 +11,8 @@ import { complianceReadsKey } from "./useComplianceState"
 import {
 	useAllowAddress,
 	useDisallowAddress,
-	useForceTransfer,
 	useFreezeAddress,
+	useLegalTransfer,
 	useFreezeShares,
 	useUnfreezeAddress,
 	useUnfreezeShares,
@@ -32,7 +32,7 @@ import {
 	useSetOracleConfig,
 	useSetWindDownDelay,
 } from "./useConfigurationTransactions"
-import { cycleReadsKey } from "./useCycleState"
+import { cycleReadsKey, legalTransfersKey } from "./useCycleState"
 import {
 	useClearLatest,
 	usePauseToken,
@@ -122,7 +122,7 @@ const {
 		set_address_frozen: vi.fn(),
 		freeze_partial_tokens: vi.fn(),
 		unfreeze_partial_tokens: vi.fn(),
-		forced_transfer: vi.fn(),
+		legal_transfer: vi.fn(),
 		propose_change: vi.fn(),
 		apply_change: vi.fn(),
 		cancel_change: vi.fn(),
@@ -666,17 +666,18 @@ const complianceCases: Case[] = [
 		refusal: 303,
 	},
 	{
-		name: "useForceTransfer",
-		useHook: useForceTransfer,
-		method: token.forced_transfer,
-		arg: { from: TARGET, to: DESTINATION, amount: 5n },
+		name: "useLegalTransfer",
+		useHook: useLegalTransfer,
+		method: token.legal_transfer,
+		arg: { from: TARGET, to: DESTINATION, amount: 5n, reference: "ORDER-1" },
 		args: {
 			from: TARGET,
 			to: DESTINATION,
 			amount: 5n,
-			operator: investorAddress,
+			reference: "ORDER-1",
+			caller: investorAddress,
 		},
-		keys: [complianceReadsKey, ["share", "balance"]],
+		keys: [complianceReadsKey, ["share", "balance"], legalTransfersKey],
 		refusal: 300,
 	},
 ]
@@ -795,6 +796,7 @@ describe("usePauseVault with a grant", () => {
 			simulation: undefined,
 			result: undefined,
 			signed: undefined as typeof signed | undefined,
+			needsNonInvokerSigningBy: vi.fn((): string[] => []),
 			sign: vi.fn(async () => {
 				tx.signed = signed
 			}),
@@ -890,5 +892,55 @@ describe("usePauseVault with a grant", () => {
 		expect(tx.sign).not.toHaveBeenCalled()
 		expect(submitSignedMock).not.toHaveBeenCalled()
 		expect(result.current.status).toEqual({ status: "confirmed" })
+	})
+})
+
+describe("useLegalTransfer with a grant", () => {
+	const AUTHORITY = "GAUTHORITYACCOUNT0987654321"
+	const ADMIN = "GTOKENADMINACCOUNT12345678"
+	const order = {
+		from: "GFROMACCOUNT",
+		to: "GTOACCOUNT",
+		amount: 5n,
+		reference: "ORDER-1",
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("shares the simulated transaction unsigned while the token admin must authorize it", async () => {
+		const tx = {
+			simulation: undefined,
+			result: undefined,
+			built: { toEnvelope: () => ({ toXDR: () => "UNSIGNEDXDR" }) },
+			needsNonInvokerSigningBy: vi.fn(() => [ADMIN]),
+			sign: vi.fn(),
+			signAndSend: vi.fn(),
+		}
+		token.legal_transfer.mockResolvedValue(tx)
+		const { result } = renderWithWallet(useLegalTransfer)
+
+		await act(() =>
+			result.current.submit(order, {
+				role: "share-token compliance",
+				authority: AUTHORITY,
+				standing: "signs-alone",
+			}),
+		)
+
+		expect(token.legal_transfer).toHaveBeenCalledWith({
+			...order,
+			caller: AUTHORITY,
+		})
+		expect(tx.sign).not.toHaveBeenCalled()
+		expect(tx.signAndSend).not.toHaveBeenCalled()
+		expect(submitSignedMock).not.toHaveBeenCalled()
+		expect(result.current.status).toEqual({
+			status: "shared",
+			xdr: "UNSIGNEDXDR",
+			standing: "admin-authorization",
+			expiresAt: null,
+		})
 	})
 })

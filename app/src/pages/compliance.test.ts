@@ -86,7 +86,7 @@ describe("toComplianceActions", () => {
 			"unfreeze-address",
 			"freeze-shares",
 			"unfreeze-shares",
-			"force-transfer",
+			"legal-transfer",
 		])
 		expect(ids([grantOf("share-token admin")])).toEqual([])
 	})
@@ -287,13 +287,17 @@ describe("toComplianceActions", () => {
 		).toBe(false)
 	})
 
-	it("forces a transfer within the balance, unfreezing the shortfall", () => {
-		const inputs = {
-			"force-transfer-destination": DESTINATION,
-			"force-transfer-amount": "95",
-		}
-		const action = actionOf(stateOf(HOLDER), "force-transfer", inputs)
+	const transfer = (overrides: Record<string, string> = {}) => ({
+		"legal-transfer-destination": DESTINATION,
+		"legal-transfer-amount": "95",
+		"legal-transfer-reference": "ORDER-1",
+		...overrides,
+	})
 
+	it("makes a legal transfer within the balance, unfreezing the shortfall", () => {
+		const action = actionOf(stateOf(HOLDER), "legal-transfer", transfer())
+
+		expect(action.label).toBe("Legal transfer")
 		expect(action.enabled).toBe(true)
 		expect(action.outcome).toBe(
 			"Shares 100.00 → 5.00. Frozen shares 10.00 → 5.00.",
@@ -302,33 +306,67 @@ describe("toComplianceActions", () => {
 			from: HOLDER,
 			to: DESTINATION,
 			amount: 95n * UNIT,
+			reference: "ORDER-1",
 		})
 		expect(action.note).toBeUndefined()
 	})
 
+	it("refuses an empty reference and one over 128 bytes", () => {
+		const empty = actionOf(
+			stateOf(HOLDER),
+			"legal-transfer",
+			transfer({ "legal-transfer-reference": "" }),
+		)
+		const overlong = actionOf(
+			stateOf(HOLDER),
+			"legal-transfer",
+			transfer({ "legal-transfer-reference": "é".repeat(65) }),
+		)
+		const longest = actionOf(
+			stateOf(HOLDER),
+			"legal-transfer",
+			transfer({ "legal-transfer-reference": "a".repeat(128) }),
+		)
+
+		expect(unmet(empty)).toEqual([["Reference of 1 to 128 bytes", null]])
+		expect(empty.enabled).toBe(false)
+		expect(empty.arg).toBeUndefined()
+		expect(unmet(overlong)).toEqual([["Reference of 1 to 128 bytes", false]])
+		expect(overlong.fields?.find(({ label }) => label === "Reference")).toEqual(
+			expect.objectContaining({ invalid: true }),
+		)
+		expect(overlong.enabled).toBe(false)
+		expect(longest.enabled).toBe(true)
+	})
+
 	it("refuses a transfer above the balance and waits for a destination", () => {
-		const over = actionOf(stateOf(HOLDER), "force-transfer", {
-			"force-transfer-destination": DESTINATION,
-			"force-transfer-amount": "100.0000001",
-		})
-		const missing = actionOf(stateOf(HOLDER), "force-transfer", {
-			"force-transfer-amount": "1",
-		})
+		const over = actionOf(
+			stateOf(HOLDER),
+			"legal-transfer",
+			transfer({ "legal-transfer-amount": "100.0000001" }),
+		)
+		const missing = actionOf(
+			stateOf(HOLDER),
+			"legal-transfer",
+			transfer({ "legal-transfer-destination": "" }),
+		)
 
 		expect(unmet(over)).toEqual([["Amount ≤ shares", false]])
 		expect(over.enabled).toBe(false)
 		expect(unmet(missing)).toEqual([
 			["Destination entered", null],
 			["Destination differs from the address", null],
+			["Neither account is the vault", null],
 		])
 		expect(missing.enabled).toBe(false)
 	})
 
 	it("refuses a destination equal to the target and shows no outcome", () => {
-		const action = actionOf(stateOf(HOLDER), "force-transfer", {
-			"force-transfer-destination": HOLDER,
-			"force-transfer-amount": "5",
-		})
+		const action = actionOf(
+			stateOf(HOLDER),
+			"legal-transfer",
+			transfer({ "legal-transfer-destination": HOLDER }),
+		)
 
 		expect(unmet(action)).toEqual([
 			["Destination differs from the address", false],
@@ -341,30 +379,29 @@ describe("toComplianceActions", () => {
 	it("notes a destination that is not allowlisted", () => {
 		const action = actionOf(
 			stateOf(HOLDER, {}, "not-allowed"),
-			"force-transfer",
-			{
-				"force-transfer-destination": DESTINATION,
-				"force-transfer-amount": "1",
-			},
+			"legal-transfer",
+			transfer({ "legal-transfer-amount": "1" }),
 		)
 
 		expect(action.enabled).toBe(true)
 		expect(action.note).toBe(
-			"The destination is not allowlisted and cannot move them.",
+			"The destination is not allowlisted, so the share token will refuse the transfer.",
 		)
 	})
 
-	it("asks to confirm a transfer out of the vault", () => {
-		const action = actionOf(stateOf(VAULT), "force-transfer", {
-			"force-transfer-destination": DESTINATION,
-			"force-transfer-amount": "1",
-		})
+	it("refuses the vault as either account", () => {
+		const out = actionOf(stateOf(VAULT), "legal-transfer", transfer())
+		const into = actionOf(
+			stateOf(HOLDER),
+			"legal-transfer",
+			transfer({ "legal-transfer-destination": VAULT }),
+		)
 
-		expect(action.enabled).toBe(false)
-		expect(action.fields?.at(-1)).toMatchObject({
-			kind: "confirm",
-			label: "Drains the vault's redemption escrow.",
-		})
+		expect(unmet(out)).toEqual([["Neither account is the vault", false]])
+		expect(out.enabled).toBe(false)
+		expect(unmet(into)).toEqual([["Neither account is the vault", false]])
+		expect(into.enabled).toBe(false)
+		expect(into.arg).toBeUndefined()
 	})
 })
 
