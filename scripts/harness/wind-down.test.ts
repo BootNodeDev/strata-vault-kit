@@ -218,101 +218,124 @@ describe("a wind-down on a throwaway vault", () => {
 			})
 		expect(
 			await call("wind_down_claimable", "outsider", { holder: holder() }),
+			"wind_down_claimable",
 		).toBe("accepted")
-		expect(await call("get_epoch", "outsider", { epoch_id: 1n })).toBe(
-			"accepted",
-		)
+		expect(
+			await call("get_epoch", "outsider", { epoch_id: 1n }),
+			"get_epoch",
+		).toBe("accepted")
 		expect(
 			await call("get_epoch_settlement", "outsider", { epoch_id: 1n }),
+			"get_epoch_settlement",
 		).toBe("accepted")
 		expect(
 			await call("get_deposit_request", "outsider", {
 				epoch_id: 1n,
 				holder: holder(),
 			}),
+			"get_deposit_request",
 		).toBe("accepted")
 		expect(
 			await call("get_redeem_request", "outsider", {
 				epoch_id: 2n,
 				holder: holder(),
 			}),
+			"get_redeem_request",
 		).toBe("accepted")
 		expect(
 			await call("has_role", "outsider", { account: gov, role: "manager" }),
+			"has_role",
 		).toBe("accepted")
 		expect(
 			await call("get_role_member_count", "outsider", { role: "manager" }),
+			"get_role_member_count",
 		).toBe("accepted")
 		expect(
 			await call("get_role_member", "outsider", {
 				role: "manager",
 				index: 0,
 			}),
+			"get_role_member",
 		).toBe("accepted")
-		expect(await call("get_role_admin", "outsider", { role: "manager" })).toBe(
-			"accepted",
-		)
+		expect(
+			await call("get_role_admin", "outsider", { role: "manager" }),
+			"get_role_admin",
+		).toBe("accepted")
 
 		// Simulated, never sent — each still reaches the contract for its
 		// wind-down answer.
-		expect(await call("set_deposit_cap", "governance", { cap: 1n })).toBe(
-			"accepted",
-		)
+		expect(
+			await call("set_deposit_cap", "governance", { cap: 1n }),
+			"set_deposit_cap",
+		).toBe("accepted")
 		expect(
 			await call("set_custodian", "governance", { custodian: someone }),
+			"set_custodian",
 		).toBe("refused: UseTimelock")
-		expect(await call("set_wind_down_delay", "governance", { secs: 1n })).toBe(
-			"accepted",
-		)
-		expect(await call("cancel_wind_down_proposal", "governance")).toBe(
-			"refused: WindDownActive",
-		)
-		expect(await call("set_notice", "governance", { secs: 1n })).toBe(
-			"accepted",
-		)
+		expect(
+			await call("set_wind_down_delay", "governance", { secs: 1n }),
+			"set_wind_down_delay",
+		).toBe("accepted")
+		expect(
+			await call("cancel_wind_down_proposal", "governance"),
+			"cancel_wind_down_proposal",
+		).toBe("refused: WindDownActive")
+		expect(
+			await call("set_notice", "governance", { secs: 1n }),
+			"set_notice",
+		).toBe("accepted")
 		expect(
 			await call("set_min_epoch_duration", "governance", { secs: 86_400n }),
+			"set_min_epoch_duration",
 		).toBe("refused: UseTimelock")
-		expect(await call("finish_setup", "governance")).toBe(
+		expect(await call("finish_setup", "governance"), "finish_setup").toBe(
 			"refused: SetupClosed",
 		)
 		expect(
 			await call("propose_change", "governance", {
 				change: { tag: "Custodian", values: [someone] },
 			}),
+			"propose_change",
 		).toBe("refused: WindDownActive")
-		expect(await call("cancel_change", "governance", { id: 1 })).toBe(
-			"refused: ChangeNotFound",
-		)
-		expect(await call("apply_change", "governance", { id: 1 })).toBe(
-			"refused: ChangeNotFound",
-		)
+		expect(
+			await call("cancel_change", "governance", { id: 1 }),
+			"cancel_change",
+		).toBe("refused: ChangeNotFound")
+		expect(
+			await call("apply_change", "governance", { id: 1 }),
+			"apply_change",
+		).toBe("refused: ChangeNotFound")
 		expect(
 			await call("deploy_to_custodian", "treasury", {
 				caller: c.keys.treasury.publicKey(),
 				assets: 1n,
 			}),
+			"deploy_to_custodian",
 		).toBe("refused: WindDownActive")
 		expect(
 			await call("fund", "holder-1", { caller: holder(), assets: 1n }),
+			"fund",
 		).toBe("accepted")
 		expect(
 			await call("cancel_deposit", "holder-1", {
 				holder: holder(),
 				epoch_id: 1n,
 			}),
+			"cancel_deposit",
 		).toBe("refused: AlreadyPriced")
 		expect(
 			await call("cancel_redeem", "holder-1", {
 				holder: holder(),
 				epoch_id: 2n,
 			}),
+			"cancel_redeem",
 		).toBe("accepted")
 		expect(
 			await call("claim_redeem", "holder-1", {
 				holder: holder(),
 				epoch_id: 2n,
 			}),
+			"claim_redeem",
 		).toBe("refused: EpochNotFulfilled")
 		expect(
 			await call("grant_role", "governance", {
@@ -320,6 +343,7 @@ describe("a wind-down on a throwaway vault", () => {
 				role: "manager",
 				caller: gov,
 			}),
+			"grant_role",
 		).toBe("refused: UseTimelock")
 		expect(
 			await call("revoke_role", "governance", {
@@ -327,39 +351,46 @@ describe("a wind-down on a throwaway vault", () => {
 				role: "manager",
 				caller: gov,
 			}),
+			"revoke_role",
 		).toBe("refused: UseTimelock")
 		expect(
 			await call("renounce_role", "outsider", {
 				role: "manager",
 				caller: someone,
 			}),
+			"renounce_role",
 		).toBe("refused: RoleNotHeld")
 		expect(
 			await call("transfer_admin_role", "governance", {
 				new_admin: someone,
 				live_until_ledger: 1,
 			}),
+			"transfer_admin_role",
 		).toBe("refused: UseTimelock")
-		expect(await call("accept_admin_transfer", "outsider")).toBe(
-			"refused: WindDownActive",
-		)
+		expect(
+			await call("accept_admin_transfer", "outsider"),
+			"accept_admin_transfer",
+		).toBe("refused: WindDownActive")
 		expect(
 			await call("set_role_admin", "governance", {
 				role: "manager",
 				admin_role: "guardian",
 			}),
+			"set_role_admin",
 		).toBe("refused: UseTimelock")
-		expect(await call("renounce_admin", "governance")).toBe(
+		expect(await call("renounce_admin", "governance"), "renounce_admin").toBe(
 			"refused: AdminRequired",
 		)
 		expect(
 			await call("pause", "guardian", {
 				caller: c.keys.guardian.publicKey(),
 			}),
+			"pause",
 		).toBe("accepted")
-		expect(await call("unpause", "governance", { caller: gov })).toBe(
-			"refused: ExpectedPause",
-		)
+		expect(
+			await call("unpause", "governance", { caller: gov }),
+			"unpause",
+		).toBe("refused: ExpectedPause")
 
 		const spec = vault(c, c.keys.outsider).spec
 		const every = spec
