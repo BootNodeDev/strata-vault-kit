@@ -672,7 +672,10 @@ not.
   frozen holder's exits, a wind-down claim included, wait for a live
   `compliance` holder. If governance revokes the last one or its key is lost, a
   freeze stays until a grant lands one delay later; with no backup and no
-  governance action, it stays for good. The testnet verifier stub's admin, the
+  governance action, it stays for good. The backup holder carries every
+  `compliance` power the primary does: it freezes at once and co-signs legal
+  transfers (R10), so it is one more key to guard, not a spare with less
+  reach. The testnet verifier stub's admin, the
   compliance key by deploy, lists and delists at once, without an event, and
   can be replaced only by swapping the verifier, which waits for the timelock
   after setup. The verifier and compliance contracts in this repository are
@@ -712,7 +715,9 @@ The two authorities, colluding or both compromised, take a holder's shares.
   verifier stub, compliance itself lists the destination. Nothing on chain
   checks that a legal order exists. `recover_balance` needs the same two
   signatures and a recovery account named by the verifier; the testnet stub
-  names none, so recovery always fails there.
+  names none, so recovery always fails there. Governance can grant
+  `compliance` to an account it controls after one published delay, a
+  wind-down included (R1), reaching both signatures alone.
 - **Tests:** `compliance_and_the_admin_move_shares_together`,
   `one_account_cannot_co_sign_with_itself`, `nothing_leaves_the_vault_address`,
   `nothing_lands_on_the_vault_address`,
