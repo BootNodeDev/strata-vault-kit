@@ -17,12 +17,71 @@ fn a_deposit_before_setup_finishes_is_refused() {
 }
 
 #[test]
+fn a_redemption_before_setup_finishes_is_refused() {
+    let f = setup_unfinished();
+    let investor = f.investor(1_000);
+    refused(
+        f.vault.try_request_redeem(&investor, &100),
+        VaultError::SetupOpen,
+    );
+}
+
+#[test]
+fn no_epoch_is_sealed_or_priced_before_setup_finishes() {
+    let f = setup_unfinished();
+    refused(f.vault.try_close_epoch(&f.manager), VaultError::SetupOpen);
+    refused(f.vault.try_fulfill_epoch(&1), VaultError::SetupOpen);
+    assert_eq!(f.vault.current_epoch(), 1);
+}
+
+/// Shares minted during the token's setup, escrowed for redemption, then
+/// burned out of the vault.
+#[test]
+fn a_redemption_planted_during_setup_never_reaches_a_depositor() {
+    let f = miswired(Miswire::TokenSetupOpen);
+    let planter = f.investor(1);
+    f.share
+        .grant_role(&f.admin, &symbol_short!("manager"), &f.admin);
+    f.share.mint(&planter, &100, &f.admin);
+    refused(
+        f.vault.try_request_redeem(&planter, &100),
+        VaultError::SetupOpen,
+    );
+    f.share.burn(&planter, &100, &f.admin);
+    f.share
+        .revoke_role(&f.admin, &symbol_short!("manager"), &f.admin);
+    f.share.finish_setup();
+    f.vault.finish_setup();
+
+    let investor = f.investor(1_000);
+    f.attest(wad(1));
+    f.vault.request_deposit(&investor, &100);
+    let entry = f.fulfill_epoch(wad(1));
+    assert_eq!(f.vault.claim_deposit(&investor, &entry), 100);
+    f.vault.request_redeem(&investor, &100);
+    let exit = f.fulfill_epoch(wad(1));
+    assert_eq!(f.vault.claim_redeem(&investor, &exit), 100);
+    assert_eq!(f.balance(&investor), 1_000);
+    assert_eq!(f.shares(&planter), 0);
+}
+
+#[test]
+fn setup_finishes_after_cash_is_funded_during_it() {
+    let f = setup_unfinished();
+    let funder = f.unverified_investor(100);
+    f.vault.fund(&funder, &100);
+    f.vault.finish_setup();
+    assert!(!f.vault.setup_open());
+}
+
+#[test]
 fn setup_finishes_once_the_wiring_is_complete() {
     let f = setup_unfinished();
 
     f.vault.finish_setup();
 
     assert!(!f.vault.setup_open());
+    f.attest(wad(1));
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &100);
 }
@@ -69,6 +128,12 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
         Miswire::OracleNotAFeed,
         Miswire::NoCustodian,
         Miswire::CustodianIsVault,
+        Miswire::EpochAdvanced,
+        Miswire::DepositBooked,
+        Miswire::RedemptionBooked,
+        Miswire::Committed,
+        Miswire::SharesOwed,
+        Miswire::SharesToBurn,
     ] {
         let f = miswired(miswire);
 

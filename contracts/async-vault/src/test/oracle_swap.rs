@@ -87,11 +87,13 @@ fn the_next_epoch_prices_from_the_new_feed() {
         .propose_change(&VaultChange::Oracle(next.address.clone()));
     f.advance(MIN_UPGRADE_DELAY);
     f.vault.apply_change(&id);
+    attest_on(&f, &next, wad(2));
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
     let epoch = f.close_epoch();
 
     f.attest(wad(2));
+    f.advance(next.config().cooldown_secs);
     attest_on(&f, &next, wad(4));
     f.vault.fulfill_epoch(&epoch);
 

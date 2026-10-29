@@ -1,12 +1,13 @@
 use soroban_sdk::{panic_with_error, Address, Env, Symbol};
 use stellar_access::{
-    access_control::{self, AccessControlStorageKey},
+    access_control::{self, AccessControlError, AccessControlStorageKey},
     role_transfer,
 };
 use stellar_tokens::{
     fungible::FungibleTokenClient,
     rwa::{compliance::ComplianceClient as RulesClient, RWATokenClient},
 };
+use strata_bindings::{OracleFeedClient, OracleState};
 use strata_timelock::{queue, setup};
 
 use crate::epoch;
@@ -21,7 +22,7 @@ use crate::upgrade::{self, MAX_UPGRADE_DELAY, MIN_UPGRADE_DELAY};
 use crate::wind_down::{
     self, WindDownInfo, WindDownStatus, MAX_WIND_DOWN_DELAY, MIN_WIND_DOWN_DELAY,
 };
-use crate::MAX_NOTICE_SECS;
+use crate::{MAX_NOTICE_SECS, MIN_EPOCH_DURATION_CEILING, MIN_EPOCH_DURATION_FLOOR};
 
 pub(crate) fn roles_distinct(e: &Env, roles: &VaultRoles) {
     if roles.treasury == roles.guardian
@@ -149,6 +150,12 @@ pub(crate) fn upgrade_delay_in_bounds(e: &Env, secs: u64) {
     }
 }
 
+pub(crate) fn min_epoch_duration_in_bounds(e: &Env, secs: u64) {
+    if !(MIN_EPOCH_DURATION_FLOOR..=MIN_EPOCH_DURATION_CEILING).contains(&secs) {
+        panic_with_error!(e, VaultError::InvalidAmount);
+    }
+}
+
 pub(crate) fn custodian_not_the_vault(e: &Env, custodian: &Address) {
     if *custodian == e.current_contract_address() {
         panic_with_error!(e, VaultError::InvalidCustodian);
@@ -163,8 +170,8 @@ pub(crate) fn feed_bound_here_and_answering(e: &Env, feed: &Address) {
 }
 
 /// What a change must meet when it is proposed and again when it applies: a
-/// delay or notice within its bounds, a feed bound here that answers, or a
-/// custodian other than the vault.
+/// delay, notice or minimum within its bounds, a feed bound here that answers,
+/// or a custodian other than the vault.
 pub(crate) fn valid_change(e: &Env, change: &VaultChange) {
     match change {
         VaultChange::UpgradeDelay(secs) => upgrade_delay_in_bounds(e, *secs),
@@ -172,6 +179,7 @@ pub(crate) fn valid_change(e: &Env, change: &VaultChange) {
         VaultChange::WindDownDelay(secs) => wind_down_delay_in_bounds(e, *secs),
         VaultChange::Oracle(feed) => feed_bound_here_and_answering(e, feed),
         VaultChange::Custodian(custodian) => custodian_not_the_vault(e, custodian),
+        VaultChange::MinEpochDuration(secs) => min_epoch_duration_in_bounds(e, *secs),
         VaultChange::Upgrade(_)
         | VaultChange::GrantRole(..)
         | VaultChange::RevokeRole(..)
@@ -254,6 +262,13 @@ pub(crate) fn positive_amount(e: &Env, amount: i128) {
     }
 }
 
+pub(crate) fn feed_valid(e: &Env) {
+    let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
+    if feed.state() != OracleState::Valid {
+        panic_with_error!(e, VaultError::FeedNotValid);
+    }
+}
+
 pub(crate) fn within_cap(e: &Env, amount: i128) {
     let Some(cap) = state::deposit_cap(e) else {
         return;
@@ -317,6 +332,20 @@ pub(crate) fn payout_covered(e: &Env, assets: i128) {
     }
 }
 
+/// Against the raw balance: after a clawback, cancellations are paid in arrival order.
+pub(crate) fn cancellation_covered(e: &Env, amount: i128) {
+    if treasury::held(e) < amount {
+        panic_with_error!(e, VaultError::EscrowNotCovered);
+    }
+}
+
+/// A new deposit never pays an earlier cancellation the vault can no longer cover.
+pub(crate) fn escrow_covered(e: &Env) {
+    if treasury::liquid_reserve(e) < 0 {
+        panic_with_error!(e, VaultError::EscrowNotCovered);
+    }
+}
+
 /// The holder may hold shares and the compliance rules let the vault send them.
 pub(crate) fn eligible_to_receive(e: &Env, holder: &Address, shares: i128) {
     let vault = e.current_contract_address();
@@ -372,5 +401,20 @@ pub(crate) fn allowed_to(e: &Env, exit: Exit, holder: &Address) {
 pub(crate) fn not_refused(e: &Env, decision: Decision, standing: Standing) {
     if matches!(decision, Decision::Refuse | Decision::Hold) {
         panic_with_error!(e, lock_policy::refused_with(standing));
+    }
+}
+
+/// The manager seals at any time, anyone else once the open epoch has run the minimum.
+pub(crate) fn allowed_to_seal(e: &Env, caller: &Address) {
+    if access_control::has_role(e, caller, &MANAGER_ROLE).is_some() {
+        return;
+    }
+    let Some(minimum) = state::min_epoch_duration(e) else {
+        panic_with_error!(e, AccessControlError::Unauthorized);
+    };
+    let elapsed = state::epoch_opened_at(e)
+        .is_some_and(|start| e.ledger().timestamp() >= start.saturating_add(minimum));
+    if !elapsed {
+        panic_with_error!(e, VaultError::MinEpochDurationNotElapsed);
     }
 }

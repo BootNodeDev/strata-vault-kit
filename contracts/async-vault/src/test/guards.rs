@@ -9,7 +9,7 @@ use super::wind_down::wind_down_now;
 use super::*;
 use crate::guards;
 use crate::lock_policy::{Decision, Exit, Standing};
-use crate::{EpochInfo, WindDownInfo};
+use crate::{EpochInfo, WindDownInfo, MIN_EPOCH_DURATION_CEILING, MIN_EPOCH_DURATION_FLOOR};
 
 /// Runs `guard` inside the vault, as an entrypoint would.
 fn run(f: &Fixture, guard: impl FnOnce()) -> Result<(), Result<soroban_sdk::Error, InvokeError>> {
@@ -318,6 +318,7 @@ fn valid_change_checks_each_kind_of_change() {
         VaultChange::RevokeRole(symbol_short!("guardian"), stranger.clone()),
         VaultChange::Admin(stranger.clone()),
         VaultChange::Oracle(f.oracle.address.clone()),
+        VaultChange::MinEpochDuration(MIN_EPOCH_DURATION_FLOOR),
     ] {
         holds(&f, || guards::valid_change(&f.e, &change));
     }
@@ -346,6 +347,10 @@ fn valid_change_checks_each_kind_of_change() {
         (
             VaultChange::Custodian(f.vault.address.clone()),
             VaultError::InvalidCustodian,
+        ),
+        (
+            VaultChange::MinEpochDuration(MIN_EPOCH_DURATION_CEILING + 1),
+            VaultError::InvalidAmount,
         ),
     ] {
         refuses(&f, error, || guards::valid_change(&f.e, &change));
@@ -467,6 +472,21 @@ fn positive_amount_refuses_zero_and_below() {
 }
 
 #[test]
+fn feed_valid_refuses_a_stale_or_paused_feed() {
+    let f = setup();
+    f.attest(wad(1));
+    holds(&f, || guards::feed_valid(&f.e));
+
+    f.advance(f.oracle.config().freshness_duration + 1);
+    refuses(&f, VaultError::FeedNotValid, || guards::feed_valid(&f.e));
+
+    f.attest(wad(1));
+    holds(&f, || guards::feed_valid(&f.e));
+    f.oracle.pause_nav(&f.guardian);
+    refuses(&f, VaultError::FeedNotValid, || guards::feed_valid(&f.e));
+}
+
+#[test]
 fn within_cap_refuses_a_deposit_past_the_cap() {
     let f = setup();
     holds(&f, || guards::within_cap(&f.e, i128::MAX));
@@ -574,6 +594,33 @@ fn payout_covered_refuses_a_payout_beyond_the_liquid_reserve() {
 }
 
 #[test]
+fn cancellation_covered_refuses_a_cancellation_beyond_the_balance() {
+    let f = setup();
+    let investor = f.investor(100);
+    f.vault.request_deposit(&investor, &100);
+    holds(&f, || guards::cancellation_covered(&f.e, 100));
+
+    f.claw_back(1);
+    holds(&f, || guards::cancellation_covered(&f.e, 99));
+    refuses(&f, VaultError::EscrowNotCovered, || {
+        guards::cancellation_covered(&f.e, 100)
+    });
+}
+
+#[test]
+fn escrow_covered_refuses_while_the_balance_is_below_the_escrow() {
+    let f = setup();
+    let investor = f.investor(100);
+    f.vault.request_deposit(&investor, &100);
+    holds(&f, || guards::escrow_covered(&f.e));
+
+    f.claw_back(1);
+    refuses(&f, VaultError::EscrowNotCovered, || {
+        guards::escrow_covered(&f.e)
+    });
+}
+
+#[test]
 fn eligible_to_receive_refuses_a_holder_the_token_would_not_take() {
     let f = setup();
     let listed = f.investor(0);
@@ -669,6 +716,7 @@ fn fulfilable_refuses_an_epoch_the_vault_cannot_price_yet() {
         guards::fulfilable(&f.e, &open)
     });
 
+    f.advance(f.oracle.config().freshness_duration);
     let unpriced = epoch(&f, f.close_epoch());
     refuses(&f, VaultError::FeedNotValid, || {
         guards::fulfilable(&f.e, &unpriced)

@@ -14,6 +14,7 @@ export type AddressGroup = {
 export type FigureRow = {
 	label: string
 	value: string | null
+	note?: string
 	pending?: boolean
 	href?: string
 }
@@ -64,6 +65,11 @@ const AboutVault: React.FC<AboutVaultProps> = ({
 								}`}
 							>
 								{row.value ?? "Unavailable"}
+							</span>
+						)}
+						{row.note !== undefined && (
+							<span className={`${typeStyles.metricSub} ${styles.rowNote}`}>
+								{row.note}
 							</span>
 						)}
 					</li>

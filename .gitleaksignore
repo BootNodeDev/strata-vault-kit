@@ -1,0 +1,2 @@
+# A captured RPC fetch response used as a test fixture, not a secret
+scripts/harness/lib/ttl.test.ts:generic-api-key:22
