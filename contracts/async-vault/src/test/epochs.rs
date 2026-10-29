@@ -93,7 +93,7 @@ fn an_open_epoch_cannot_be_fulfilled() {
     let f = setup();
     f.attest(wad(2));
 
-    assert!(f.vault.try_fulfill_epoch(&1).is_err());
+    refused(f.vault.try_fulfill_epoch(&1), VaultError::EpochNotPending);
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Open);
 }
 
@@ -120,7 +120,10 @@ fn a_fulfilled_epoch_cannot_be_fulfilled_again() {
     let f = setup();
     let epoch = f.fulfill_epoch(wad(2));
 
-    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
+    refused(
+        f.vault.try_fulfill_epoch(&epoch),
+        VaultError::EpochNotPending,
+    );
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
 }
 
@@ -164,6 +167,8 @@ fn closing_needs_the_manager_authorisation() {
     let f = setup();
 
     f.e.set_auths(&[]);
+    // Any error: the manager is the right caller, but no one signed, so the
+    // missing signature traps in the host rather than naming an error.
     assert!(f.vault.try_close_epoch(&f.manager).is_err());
     assert_eq!(f.vault.current_epoch(), 1);
 }

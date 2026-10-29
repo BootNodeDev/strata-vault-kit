@@ -1,3 +1,4 @@
+use stellar_access::access_control::AccessControlError;
 use stellar_contract_utils::pausable::PausableError;
 
 use super::*;
@@ -9,7 +10,10 @@ fn a_paused_vault_takes_no_deposits() {
 
     f.vault.pause(&f.guardian);
     assert!(f.vault.paused());
-    assert!(f.vault.try_request_deposit(&investor, &100).is_err());
+    assert_eq!(
+        f.vault.try_request_deposit(&investor, &100),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
 
     f.vault.unpause(&f.admin);
     f.vault.request_deposit(&investor, &100);
@@ -21,10 +25,22 @@ fn only_the_guardian_pauses() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    assert!(f.vault.try_pause(&stranger).is_err());
-    assert!(f.vault.try_pause(&f.admin).is_err());
-    assert!(f.vault.try_pause(&f.manager).is_err());
-    assert!(f.vault.try_pause(&f.treasury).is_err());
+    assert_eq!(
+        f.vault.try_pause(&stranger),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.vault.try_pause(&f.admin),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.vault.try_pause(&f.manager),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.vault.try_pause(&f.treasury),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
     assert!(!f.vault.paused());
 
     f.vault.pause(&f.guardian);
@@ -37,7 +53,9 @@ fn the_guardian_pauses_but_only_governance_unpauses() {
     f.vault.pause(&f.guardian);
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_unpause(&f.guardian).is_err());
+    refused(f.vault.try_unpause(&f.guardian), VaultError::AdminRequired);
+    // Any error: the admin is the right caller, but no one signed, so the
+    // missing signature traps in the host rather than naming an error.
     assert!(f.vault.try_unpause(&f.admin).is_err());
     assert!(f.vault.paused());
 
@@ -100,7 +118,10 @@ fn a_paused_vault_does_not_fulfill_epochs() {
     f.attest(wad(2));
     f.vault.pause(&f.guardian);
 
-    assert!(f.vault.try_fulfill_epoch(&1).is_err());
+    assert_eq!(
+        f.vault.try_fulfill_epoch(&1),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
 
     f.vault.unpause(&f.admin);
     assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
@@ -189,7 +210,10 @@ fn governance_can_replace_the_guardian() {
     f.vault.apply_change(&revoke);
 
     assert_eq!(f.vault.guardian(), Some(next.clone()));
-    assert!(f.vault.try_pause(&f.guardian).is_err());
+    assert_eq!(
+        f.vault.try_pause(&f.guardian),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
     f.vault.pause(&next);
     assert!(f.vault.paused());
 }
@@ -220,10 +244,11 @@ fn a_cooldown_holds_the_standing_price() {
     // Inside the cooldown a new attestation is refused, so the epoch prices at
     // the record already standing rather than one the attester cannot post.
     f.advance(60);
-    assert!(f
-        .oracle
-        .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester)
-        .is_err());
+    assert_eq!(
+        f.oracle
+            .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester),
+        Err(Ok(nav_oracle::OracleError::CooldownActive.into()))
+    );
 
     f.vault.fulfill_epoch(&epoch);
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
@@ -244,10 +269,11 @@ fn a_cooldown_delays_pricing_until_the_attester_can_post() {
 
     // Inside the cooldown the attester cannot post, so the epoch has no
     // valuation younger than its close and waits.
-    assert!(f
-        .oracle
-        .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester)
-        .is_err());
+    assert_eq!(
+        f.oracle
+            .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester),
+        Err(Ok(nav_oracle::OracleError::CooldownActive.into()))
+    );
     refused(
         f.vault.try_fulfill_epoch(&epoch),
         VaultError::AttestationBeforeClose,

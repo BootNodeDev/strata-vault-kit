@@ -17,10 +17,10 @@ fn governance_sets_the_delay_within_the_maximum() {
 fn the_delay_cannot_exceed_the_maximum() {
     let f = setup();
 
-    assert!(f
-        .vault
-        .try_set_wind_down_delay(&(MAX_WIND_DOWN_DELAY + 1))
-        .is_err());
+    refused(
+        f.vault.try_set_wind_down_delay(&(MAX_WIND_DOWN_DELAY + 1)),
+        VaultError::WindDownDelayTooLong,
+    );
     assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 }
 
@@ -30,6 +30,8 @@ fn only_governance_sets_the_delay() {
     let stranger = Address::generate(&f.e);
     let longer = 2 * MIN_WIND_DOWN_DELAY;
 
+    // Any error: only the admin's own signature satisfies this call, so a
+    // mismatched signer traps in the host rather than naming an error.
     for who in [&stranger, &f.manager, &f.treasury, &f.guardian] {
         f.sign_only_as(who, "set_wind_down_delay", (longer,).into_val(&f.e));
         assert!(f.vault.try_set_wind_down_delay(&longer).is_err());
@@ -73,6 +75,8 @@ fn only_governance_proposes() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
+    // Any error: only the admin's own signature satisfies this call, so a
+    // mismatched signer traps in the host rather than naming an error.
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(who, "propose_wind_down", soroban_sdk::Vec::new(&f.e));
         assert!(f.vault.try_propose_wind_down().is_err());
@@ -87,7 +91,10 @@ fn a_second_proposal_cannot_push_the_date_back() {
     let first = f.vault.wind_down().unwrap().active_at;
 
     f.advance(MIN_WIND_DOWN_DELAY / 2);
-    assert!(f.vault.try_propose_wind_down().is_err());
+    refused(
+        f.vault.try_propose_wind_down(),
+        VaultError::WindDownAlreadyProposed,
+    );
 
     assert_eq!(f.vault.wind_down().unwrap().active_at, first);
 }
@@ -98,6 +105,8 @@ fn governance_cancels_a_proposal_before_activation() {
     f.vault.propose_wind_down();
 
     let stranger = Address::generate(&f.e);
+    // Any error: only the admin's own signature satisfies this call, so a
+    // mismatched signer traps in the host rather than naming an error.
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(
             who,
@@ -123,7 +132,10 @@ fn an_active_wind_down_cannot_be_cancelled() {
     let f = setup();
     wind_down_now(&f);
 
-    assert!(f.vault.try_cancel_wind_down_proposal().is_err());
+    refused(
+        f.vault.try_cancel_wind_down_proposal(),
+        VaultError::WindDownActive,
+    );
     assert_eq!(f.vault.wind_down().unwrap().status, WindDownStatus::Active);
 }
 
@@ -131,7 +143,10 @@ fn an_active_wind_down_cannot_be_cancelled() {
 fn activating_without_a_proposal_is_refused() {
     let f = setup();
 
-    assert!(f.vault.try_activate_wind_down().is_err());
+    refused(
+        f.vault.try_activate_wind_down(),
+        VaultError::WindDownNotProposed,
+    );
 }
 
 #[test]
@@ -164,8 +179,14 @@ fn an_active_wind_down_takes_no_new_requests() {
     let holder = f.holder(500);
     wind_down_now(&f);
 
-    assert!(f.vault.try_request_deposit(&investor, &100).is_err());
-    assert!(f.vault.try_request_redeem(&holder, &100).is_err());
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::WindDownActive,
+    );
+    refused(
+        f.vault.try_request_redeem(&holder, &100),
+        VaultError::WindDownActive,
+    );
 }
 
 #[test]
@@ -204,8 +225,14 @@ fn an_active_wind_down_prices_nothing_and_closes_no_epoch() {
     wind_down_now(&f);
 
     f.attest(wad(2));
-    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
-    assert!(f.vault.try_close_epoch(&f.manager).is_err());
+    refused(
+        f.vault.try_fulfill_epoch(&epoch),
+        VaultError::WindDownActive,
+    );
+    refused(
+        f.vault.try_close_epoch(&f.manager),
+        VaultError::WindDownActive,
+    );
 }
 
 #[test]
@@ -216,7 +243,10 @@ fn an_active_wind_down_sends_nothing_to_the_custodian() {
     f.fulfill_epoch(wad(2));
     wind_down_now(&f);
 
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &100).is_err());
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &100),
+        VaultError::WindDownActive,
+    );
 }
 
 #[test]
@@ -261,7 +291,10 @@ fn an_epoch_sealed_before_the_announcement_is_still_cancellable() {
     f.attest(wad(2));
 
     // The price is readable, so without a wind-down this cancel is refused.
-    assert!(f.vault.try_cancel_deposit(&investor, &epoch).is_err());
+    refused(
+        f.vault.try_cancel_deposit(&investor, &epoch),
+        VaultError::PriceAvailable,
+    );
 
     wind_down_now(&f);
 
@@ -324,7 +357,10 @@ fn a_round_with_nothing_to_distribute_is_refused() {
     let _user = f.holder(500);
     first_round_now(&f);
 
-    assert!(f.vault.try_finalize_wind_down_round().is_err());
+    refused(
+        f.vault.try_finalize_wind_down_round(),
+        VaultError::NothingToDistribute,
+    );
 }
 
 #[test]
@@ -333,7 +369,10 @@ fn a_round_before_activation_is_refused() {
     let _user = f.holder(500);
     f.vault.propose_wind_down();
 
-    assert!(f.vault.try_finalize_wind_down_round().is_err());
+    refused(
+        f.vault.try_finalize_wind_down_round(),
+        VaultError::WindDownNotActive,
+    );
 }
 
 #[test]
@@ -455,7 +494,10 @@ fn claiming_burns_the_shares_and_pays_once() {
     assert!(paid > 0);
     assert_eq!(f.shares(&user), 0);
 
-    assert!(f.vault.try_claim_wind_down(&user).is_err());
+    refused(
+        f.vault.try_claim_wind_down(&user),
+        VaultError::NoEntitlement,
+    );
     assert_eq!(f.balance(&user), paid);
 }
 
@@ -468,7 +510,10 @@ fn surrendering_between_rounds_pays_nothing_and_is_allowed() {
     f.vault.claim_wind_down(&user);
 
     // Nothing surrendered, nothing owed.
-    assert!(f.vault.try_claim_wind_down(&user).is_err());
+    refused(
+        f.vault.try_claim_wind_down(&user),
+        VaultError::NoEntitlement,
+    );
 
     f.vault.fund(&backer, &800);
     f.vault.finalize_wind_down_round();
@@ -481,7 +526,10 @@ fn claiming_before_the_first_round_is_refused() {
     let user = f.holder(500);
     wind_down_now(&f);
 
-    assert!(f.vault.try_claim_wind_down(&user).is_err());
+    refused(
+        f.vault.try_claim_wind_down(&user),
+        VaultError::DistributionNotStarted,
+    );
 }
 
 #[test]
@@ -491,7 +539,10 @@ fn a_holder_with_no_shares_cannot_claim() {
     let stranger = Address::generate(&f.e);
     first_round_now(&f);
 
-    assert!(f.vault.try_claim_wind_down(&stranger).is_err());
+    refused(
+        f.vault.try_claim_wind_down(&stranger),
+        VaultError::NoEntitlement,
+    );
 }
 
 #[test]
@@ -501,7 +552,10 @@ fn a_cancelled_redemption_joins_the_wind_down_payout() {
     let epoch = f.vault.request_redeem(&user, &200);
     first_round_now(&f);
 
-    assert!(f.vault.try_claim_wind_down(&user).is_err());
+    refused(
+        f.vault.try_claim_wind_down(&user),
+        VaultError::NoEntitlement,
+    );
     f.vault.cancel_redeem(&user, &epoch);
 
     assert_eq!(f.shares(&user), 0);
@@ -624,7 +678,10 @@ fn a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve() {
 
     // Known limit: the refund is not tracked as a liability, so a round can
     // credit the assets it needed.
-    assert!(f.vault.try_claim_deposit(&investor, &epoch).is_err());
+    refused(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        VaultError::ClaimNotCovered,
+    );
 }
 
 #[test]
