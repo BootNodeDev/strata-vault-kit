@@ -68,7 +68,12 @@ export type SubmitFailure =
 	| "unknown"
 
 export type SubmitResult =
-	| { status: "success"; hash: string; result: unknown }
+	| {
+			status: "success"
+			hash: string
+			result: unknown
+			events: xdr.ContractEvent[][]
+	  }
 	| { status: "failed"; reason: SubmitFailure; hash: string }
 
 const parseEnvelope = (encoded: string) => {
@@ -360,7 +365,12 @@ export async function submitSigned(
 			polled.returnValue === undefined
 				? undefined
 				: scValToNative(polled.returnValue)
-		return { status: "success", hash, result }
+		return {
+			status: "success",
+			hash,
+			result,
+			events: polled.events.contractEventsXdr,
+		}
 	}
 	if (polled.status === Api.GetTransactionStatus.FAILED) {
 		return { status: "failed", reason: failureOf(polled.resultXdr), hash }
