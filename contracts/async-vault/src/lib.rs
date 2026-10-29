@@ -4,9 +4,11 @@
 //! is sealed and priced at the oracle's report, and each holder claims the
 //! result.
 //!
-//! - **The manager seals, anyone prices.** The price is the oracle's, not the
-//!   caller's. The cost: a silent manager or attester stalls every request, and
-//!   after setup a replacement waits for the timelock.
+//! - **The manager seals at any time, and anyone once the open epoch has run
+//!   the minimum epoch duration governance sets; anyone prices.** The price is
+//!   the oracle's, not the caller's. The cost: a silent attester stalls every
+//!   request; a silent manager stalls them until the minimum runs, or, with no
+//!   minimum set, until a replacement passes the timelock.
 //! - **Pricing records totals; claims mint and burn.** Pricing costs the same
 //!   for any number of requests. The cost: an epoch's rounding remainder stays
 //!   in `committed` and `pending_mint_shares` until its last request settles.
@@ -29,8 +31,9 @@
 //!   redemption in the open epoch, or their wind-down entitlement. The cost:
 //!   another epoch at its price, and a wait while the vault itself is delisted.
 //! - **Setup, then the timelock.** Until `finish_setup` checks the wiring,
-//!   admin changes are instant and deposits refused; after it, changes that
-//!   move value or cut a wait are timelocked. The cost: fixes take a week.
+//!   admin changes are instant and requests and epochs refused; after it,
+//!   changes that move value or cut a wait are timelocked. The cost: fixes
+//!   take a week.
 //! - **Wind-down claims run the compliance hooks:** surrendered shares burn
 //!   through the `destroyed` modules. The cost: one failing in a wind-down
 //!   blocks those claims, and no change can remove it then.
@@ -73,9 +76,9 @@ pub use error::VaultError;
 pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
     DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
-    EpochReconciled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, RedemptionSurrendered,
-    SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
-    WindDownProposed, WindDownRoundFinalized,
+    EpochReconciled, Funded, MinEpochDurationSet, NoticeSet, RedeemClaimed, RedeemRequested,
+    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -91,6 +94,12 @@ pub use wind_down::{
 /// Thirty days. Longer than any notice a real structure uses, short enough that
 /// setting it by mistake is survivable.
 pub const MAX_NOTICE_SECS: u64 = 30 * DAY_DURATION;
+
+/// One day, so outsiders cannot seal a stream of tiny epochs.
+pub const MIN_EPOCH_DURATION_FLOOR: u64 = DAY_DURATION;
+
+/// Thirty days: monthly epochs fit, and a silent manager stalls no longer.
+pub const MIN_EPOCH_DURATION_CEILING: u64 = 30 * DAY_DURATION;
 
 #[cfg(feature = "short_wind_down")]
 soroban_sdk::contractmeta!(key = "build", val = "short wind-down; local tests only");
@@ -216,14 +225,15 @@ impl AsyncVault {
         state::committed(e)
     }
 
-    /// Asset base units owed to priced redemptions beyond the liquid reserve.
-    /// While it is positive, nothing can be deployed to the custodian.
+    /// Asset base units owed to priced redemptions and cancellable escrow
+    /// beyond what the vault holds. While it is positive, nothing can be
+    /// deployed to the custodian.
     pub fn uncovered(e: &Env) -> i128 {
         treasury::uncovered(e)
     }
 
     /// Asset base units the vault holds, less the escrow depositors can still
-    /// cancel.
+    /// cancel. Can turn negative after the asset's issuer takes from the vault.
     pub fn liquid_reserve(e: &Env) -> i128 {
         treasury::liquid_reserve(e)
     }
@@ -350,6 +360,39 @@ impl AsyncVault {
     /// Seconds a wind-down proposal waits before it can start.
     pub fn wind_down_delay(e: &Env) -> u64 {
         wind_down::delay(e)
+    }
+
+    /// Sets how long the open epoch must stay open before anyone may seal it.
+    /// Instant during setup; afterwards it changes through the timelock.
+    ///
+    /// # Arguments
+    ///
+    /// * `secs` - Seconds, from 1 to 30 days.
+    ///
+    /// # Errors
+    ///
+    /// * `InvalidAmount` - `secs` is under 1 day or over 30 days.
+    /// * `UseTimelock` - Setup has finished.
+    ///
+    /// # Events
+    ///
+    /// * `MinEpochDurationSet`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
+    #[only_admin]
+    pub fn set_min_epoch_duration(e: &Env, secs: u64) {
+        guards::min_epoch_duration_in_bounds(e, secs);
+        guards::direct_change_allowed(e);
+        governance::set_min_epoch_duration(e, secs);
+    }
+
+    /// Seconds the open epoch must stay open before anyone but the manager may
+    /// seal it. `None` until governance sets one; while `None`, only the
+    /// manager seals.
+    pub fn min_epoch_duration(e: &Env) -> Option<u64> {
+        state::min_epoch_duration(e)
     }
 
     /// The wind-down once proposed: whether it is proposed or active, the time
@@ -522,15 +565,17 @@ impl AsyncVault {
     }
 
     /// Ends the window in which admin changes are instant. Needs every wiring
-    /// check `health()` reports, no shares outstanding and no admin hand-over
-    /// pending. Deposits open from here on, and it never reopens.
+    /// check `health()` reports, no shares outstanding, the vault's own books
+    /// empty and no admin hand-over pending. Deposits open from here on, and
+    /// it never reopens.
     ///
     /// # Errors
     ///
     /// * `SetupClosed` - Setup has already finished.
     /// * `AdminTransferPending` - An admin hand-over offered during setup is
     ///   still open.
-    /// * `SetupIncomplete` - A wiring check fails, or shares are outstanding.
+    /// * `SetupIncomplete` - A wiring check fails, shares are outstanding, or
+    ///   the vault's own books are not empty.
     ///
     /// # Events
     ///
@@ -544,15 +589,15 @@ impl AsyncVault {
         governance::finish_setup(e);
     }
 
-    /// Whether setup is still open: admin changes are instant and deposits
-    /// are refused.
+    /// Whether setup is still open: admin changes are instant, and the vault
+    /// takes no request and seals or prices no epoch.
     pub fn setup_open(e: &Env) -> bool {
         strata_timelock::setup::is_open(e)
     }
 
     /// Whether setup is open, the wiring `finish_setup` checks except the share
-    /// supply, and the feed: whether it can price now, and whether its reports
-    /// outlive the notice.
+    /// supply and the vault's own books, and the feed: whether it can price
+    /// now, and whether its reports outlive the notice.
     pub fn health(e: &Env) -> Health {
         health::health(e)
     }
@@ -563,8 +608,8 @@ impl AsyncVault {
     /// # Arguments
     ///
     /// * `change` - An upgrade, a new upgrade delay, custodian, notice,
-    ///   wind-down delay or oracle, a role grant or revoke, or an admin
-    ///   hand-over. Durations in seconds.
+    ///   wind-down delay, oracle or minimum epoch duration, a role grant or
+    ///   revoke, or an admin hand-over. Durations in seconds.
     ///
     /// # Errors
     ///
@@ -573,7 +618,7 @@ impl AsyncVault {
     /// * `UpgradeDelayTooShort`, `UpgradeDelayTooLong`,
     ///   `UpgradeDelayBelowNotice`, `NoticeTooLong`, `NoticeAboveUpgradeDelay`,
     ///   `WindDownDelayTooShort`, `WindDownDelayTooLong`, `FeedNotBound`,
-    ///   `InvalidCustodian` - The change is out of bounds.
+    ///   `InvalidCustodian`, `InvalidAmount` - The change is out of bounds.
     /// * `UpgradeProposalExists` - An upgrade or an upgrade delay change, while
     ///   one of the two already waits.
     /// * `TooManyPendingChanges` - The queue is full.
@@ -634,8 +679,8 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `ChangeApplied`, after the change's own: `CustodianSet`, `NoticeSet`,
-    ///   `WindDownDelaySet`, `RoleGranted`, `RoleRevoked` or
-    ///   `AdminTransferInitiated`.
+    ///   `WindDownDelaySet`, `MinEpochDurationSet`, `RoleGranted`,
+    ///   `RoleRevoked` or `AdminTransferInitiated`.
     ///
     /// # Authorization
     ///
@@ -728,6 +773,12 @@ impl AsyncVault {
         state::current_epoch(e)
     }
 
+    /// Ledger time, in seconds, the open epoch started (when setup finished or
+    /// the epoch before it was sealed). `None` before setup finishes.
+    pub fn epoch_opened_at(e: &Env) -> Option<u64> {
+        state::epoch_opened_at(e)
+    }
+
     /// An epoch: its status, deposits in asset base units, redemptions in share
     /// base units, price in WAD, and close and pricing times in seconds.
     ///
@@ -762,7 +813,7 @@ impl AsyncVault {
 
     /// Escrows `amount` of the asset into the open epoch and returns the
     /// epoch's id. The deposit can be priced once the epoch closes and its
-    /// notice has run.
+    /// notice has run. Refused while the feed cannot price.
     ///
     /// # Arguments
     ///
@@ -777,6 +828,8 @@ impl AsyncVault {
     /// * `InvalidAmount` - `amount` is zero or negative.
     /// * `NotAllowlisted` - `holder` fails the identity check.
     /// * `Frozen` - `holder` is frozen.
+    /// * `FeedNotValid` - The feed is stale or the NAV is paused.
+    /// * `EscrowNotCovered` - The vault holds less than its pending escrow.
     /// * `DepositCapExceeded` - The deposit would pass the cap.
     /// * `RequestOutstanding` - `holder` has a deposit in this epoch already.
     /// * `AmountTooLarge` - A total would overflow.
@@ -846,6 +899,7 @@ impl AsyncVault {
     ///   price is known, even while the notice runs.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `Frozen` - `holder` is frozen.
+    /// * `EscrowNotCovered` - The vault's balance cannot cover the refund yet.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -903,6 +957,7 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     /// * `InvalidAmount` - `shares` is zero or negative.
     /// * `Frozen` - `holder` is frozen, or `shares` needs frozen shares.
     /// * `RequestOutstanding` - `holder` has a redemption in this epoch
@@ -965,16 +1020,23 @@ impl AsyncVault {
     }
 
     /// Seals the open epoch, opens the next, and returns the sealed epoch's
-    /// id. It can be priced once its notice has run.
+    /// id. The manager seals at any time, anyone else once the open epoch has
+    /// been open for the minimum epoch duration. It can be priced once its
+    /// notice has run.
     ///
     /// # Arguments
     ///
-    /// * `caller` - A `manager` holder.
+    /// * `caller` - A `manager` holder, or any account once the minimum has
+    ///   run.
     ///
     /// # Errors
     ///
-    /// * `AccessControlError::Unauthorized` - `caller` lacks `manager`.
+    /// * `AccessControlError::Unauthorized` - `caller` lacks `manager` and no
+    ///   minimum epoch duration is set.
+    /// * `MinEpochDurationNotElapsed` - `caller` lacks `manager` and the open
+    ///   epoch has not run the minimum.
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     ///
     /// # Events
     ///
@@ -983,8 +1045,9 @@ impl AsyncVault {
     /// # Authorization
     ///
     /// `caller` signs.
-    #[only_role(caller, "manager")]
     pub fn close_epoch(e: &Env, caller: Address) -> u64 {
+        guards::allowed_to_seal(e, &caller);
+        caller.require_auth();
         epoch::close(e)
     }
 
@@ -1001,6 +1064,7 @@ impl AsyncVault {
     ///
     /// * `PausableError::EnforcedPause` - The vault is paused.
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     /// * `EpochNotFound` - No such epoch.
     /// * `EpochNotPending` - The epoch is open or already priced.
     /// * `NoticeNotElapsed` - The notice has not run.

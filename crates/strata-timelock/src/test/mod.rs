@@ -6,6 +6,7 @@ mod pause;
 mod queue;
 mod schedule;
 mod setup;
+mod storage_keys;
 
 use soroban_sdk::{contract, contractimpl, contracttype, testutils::Ledger as _, Address, Env};
 
