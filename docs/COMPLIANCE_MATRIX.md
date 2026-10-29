@@ -101,6 +101,8 @@ When the vault returns escrowed shares with `forced_transfer`, it makes the rece
 
 The kit's compliance contract registers no modules, so `can_transfer` and `can_create` always allow today. Until rule modules are added, the allowlist and freeze rules are exactly the token checks in the table above. Adding or removing a module waits for the vault's timelock once its setup is finished, so holders get at least the delay as notice of a rule change. An exit still needs a sealed epoch, a price and cash, so the delay does not promise that one completes first.
 
+The `transfer` checks above and the token pause are the kit's two transfer modes; see [Transfer Modes](./kit-spec.md#transfer-modes).
+
 ---
 
 ## 5. Automated Test Coverage
