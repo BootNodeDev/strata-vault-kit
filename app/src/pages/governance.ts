@@ -599,6 +599,7 @@ const acceptSpec = (
 	contract: GovernedContract,
 	ledger: Ledger,
 	pending: PendingTransfer,
+	upgrades?: ReadyUpgrades,
 ): Spec<AcceptActionId> & { arg: undefined; next: string } => ({
 	id: `accept-${contract}-admin`,
 	label: `Accept ${CONTRACTS[contract].name} admin`,
@@ -608,6 +609,7 @@ const acceptSpec = (
 			met: true,
 			detail: formatTimestamp(ledgerTime(ledger, pending.liveUntilLedger)),
 		},
+		windDownInactive(upgrades),
 	],
 	outcome: `${shortAddress(pending.address)} becomes the admin of the ${CONTRACTS[contract].subject}.`,
 	arg: undefined,
@@ -929,7 +931,17 @@ function acceptAction(
 		grant.authority !== pending.address
 	)
 		return []
-	return [build(acceptSpec(contract, state.handovers.ledger, pending), grant)]
+	return [
+		build(
+			acceptSpec(
+				contract,
+				state.handovers.ledger,
+				pending,
+				readyUpgrades(state, contract),
+			),
+			grant,
+		),
+	]
 }
 
 export function toGovernanceActions(

@@ -519,6 +519,35 @@ describe("admin handover", () => {
 			),
 		).toEqual([])
 	})
+
+	it.each([
+		["vault", "vault pending admin"],
+		["oracle", "oracle pending admin"],
+		["token", "share-token pending admin"],
+	] as const)(
+		"blocks accepting the %s admin while the vault winds down",
+		(contract, role) => {
+			const id = `accept-${contract}-admin` as const
+			const open = state({}, { [contract]: transfer() })
+			const windingDown = (phase: "proposed" | "active"): GovernanceState => {
+				const shared = upgrades({ windDown: { ...upgradesWindDown, phase } })
+				return {
+					...open,
+					upgrades: { vault: shared, token: shared, oracle: shared },
+				}
+			}
+			const accept = (current: GovernanceState) =>
+				find(id, [grantOf(role)], {}, current)
+
+			expect(condition(accept(open), "Wind-down not active")).toBe(true)
+			expect(accept(open).enabled).toBe(true)
+			expect(accept(windingDown("proposed")).enabled).toBe(true)
+			expect(
+				condition(accept(windingDown("active")), "Wind-down not active"),
+			).toBe(false)
+			expect(accept(windingDown("active")).enabled).toBe(false)
+		},
+	)
 })
 
 describe("vault timelock", () => {
