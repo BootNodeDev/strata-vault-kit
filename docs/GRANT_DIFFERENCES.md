@@ -115,10 +115,15 @@ spec" is the [Kit specification](./kit-spec.md).
 
 8. **Multisig authorities.** The proposal's first tranche included "Role
    framework and multisig setup". Today the deploy script gives each authority
-   a single key, not a multisig. It checks that setup has closed, that the
-   vault's own wiring checks (its `health()` view) all pass, that the vault
-   holds the share token's `manager` role, and that the token's `compliance`
-   role has two holders. Still to come, before a mainnet deployment: creating
+   a single key, not a multisig. The scripted testnet deploy and CI sign every
+   setup step themselves, so each authority is one key there. The admin console
+   already collects the signatures for a privileged call and compares their
+   weight with the account's threshold; what is missing is the deploy creating
+   and checking the multisig accounts. The deploy checks that setup has
+   closed, that the vault's own wiring checks (its `health()` view) all pass,
+   that the vault holds the share token's `manager` role, and that the token's
+   `compliance` role has two holders. Still to come, before a mainnet
+   deployment: creating
    the multisig accounts, checking that each authority is the intended
    multisig, checking that no key used only to deploy keeps a role, and
    reading the deposit asset's authorization flags (whether its issuer can
