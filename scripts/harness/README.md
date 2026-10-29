@@ -73,4 +73,31 @@ A new deploy keeps the previous record as
 `deployed.<network>.<timestamp>.json`, named after the time of that deploy,
 instead of overwriting it. Git ignores these files too.
 
+### Checking a deployment against the source
+
+The record keeps the `commit` it was built from and `wasmHashes`, the SHA-256
+of each contract's Wasm. With `uncommittedChanges: true`, the commit alone
+cannot reproduce the build.
+
+Rebuild and compare:
+
+```sh
+git checkout <commit>
+stellar contract build   # stellar-cli 27.0.0, the toolchain in rust-toolchain.toml
+shasum -a 256 target/wasm32v1-none/release/*.wasm
+```
+
+Each hash must equal the matching entry in `wasmHashes`.
+
+To check what the network runs instead of what the source builds:
+
+```sh
+stellar contract fetch --id <id> --rpc-url <rpc> \
+  --network-passphrase "<passphrase>" --out-file fetched.wasm
+shasum -a 256 fetched.wasm
+```
+
+Run `stellar contract fetch --help` for the current flags. CI prints the hash
+of every contract it builds.
+
 Test reports write to `runs/<network>.json`.

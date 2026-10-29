@@ -33,6 +33,8 @@ afterEach(() => {
 const record = (deployedAt: string): Deployment => ({
 	network: "local",
 	deployedAt,
+	commit: "0123456789abcdef0123456789abcdef01234567",
+	uncommittedChanges: false,
 	ledger: 1,
 	asset: { code: "USDC", issuer: "G", contract: "C" },
 	contracts: {
@@ -41,6 +43,13 @@ const record = (deployedAt: string): Deployment => ({
 		share_token: "C3",
 		nav_oracle: "C4",
 		async_vault: "C5",
+	},
+	wasmHashes: {
+		compliance: "H1",
+		identity_verifier: "H2",
+		share_token: "H3",
+		nav_oracle: "H4",
+		async_vault: "H5",
 	},
 	accounts: {} as Deployment["accounts"],
 })

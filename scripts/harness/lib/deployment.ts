@@ -24,9 +24,12 @@ export type ContractName = (typeof CONTRACT_NAMES)[number]
 export interface Deployment {
 	network: NetworkName
 	deployedAt: string
+	commit: string
+	uncommittedChanges: boolean
 	ledger: number
 	asset: { code: string; issuer: string; contract: string }
 	contracts: Record<ContractName, string>
+	wasmHashes: Record<ContractName, string>
 	accounts: Record<AccountName, { public: string }>
 }
 

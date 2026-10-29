@@ -28,6 +28,7 @@ import {
 } from "./lib/deployment.js"
 import { ensureKeys } from "./lib/keys.js"
 import { network, type Network } from "./lib/network.js"
+import { sourceCommit, wasmHash } from "./lib/provenance.js"
 
 const RELEASE_DIR = join(REPO_ROOT, "target", "wasm32v1-none", "release")
 export const SHORT_WIND_DOWN_DIR = join(
@@ -303,6 +304,7 @@ async function freshSet(
 	return {
 		network: net.name,
 		deployedAt: new Date().toISOString(),
+		...sourceCommit(REPO_ROOT),
 		ledger: (await server.getLatestLedger()).sequence,
 		asset: {
 			code: asset.getCode(),
@@ -310,6 +312,9 @@ async function freshSet(
 			contract: assetContract,
 		},
 		contracts,
+		wasmHashes: Object.fromEntries(
+			CONTRACT_NAMES.map((name) => [name, wasmHash(wasms[name])]),
+		) as Record<ContractName, string>,
 		accounts: publicKeysOf(accounts),
 	}
 }
@@ -350,6 +355,9 @@ async function main(): Promise<void> {
 		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
 	) as Record<ContractName, string>
 	const record = await freshSet(net, wasms, accounts)
+	console.log(
+		`commit ${record.commit}${record.uncommittedChanges ? " with uncommitted changes" : ""}`,
+	)
 
 	for (const name of CONTRACT_NAMES) {
 		await generateClient(wasmOf(name), clientDir(name))
