@@ -52,7 +52,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**: If `liquid_reserve >= assets_owed`, `claim_redeem` succeeds when:
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
-  3. The caller has been de-listed in the `IdentityVerifier`.
+  3. The caller has been de-listed in the `IdentityVerifier`, unless the claim pays zero assets outside a wind-down (see below).
   Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back, so the holder must be able to receive them. Outside a wind-down, a delisted holder's such claim is refused with `HolderNotEligible` and the request stays until the holder is listed again; in a wind-down the claim burns the shares instead (`a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted`, `a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down`).
 
 ### Invariant 5: Exit Rights Never Gated or Pausable

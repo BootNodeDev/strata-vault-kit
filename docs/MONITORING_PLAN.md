@@ -472,8 +472,9 @@ lists the powers that act at once.
 - **Threshold:** every one.
 - **Severity:** Critical when proposed or activated; Info otherwise. **Told:**
   governance, treasury, holders.
-- **Effect:** from the proposal on, `request_deposit` refuses with
-  `WindDownAlreadyProposed` (6048).
+- **Effect:** while the wind-down is proposed, `request_deposit` refuses with
+  `WindDownAlreadyProposed` (6048); once it is active, with `WindDownActive`
+  (6046).
 - **Response:** once `active_at` passes, anyone can activate it; until then
   governance can cancel it. Once active it cannot be undone, nothing is priced,
   and holders exit through rounds paid from the free reserve. Treasury brings
