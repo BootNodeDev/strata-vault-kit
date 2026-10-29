@@ -89,6 +89,14 @@ fn a_claim_waits_while_the_capital_is_deployed() {
 }
 
 #[test]
+fn funding_a_zero_amount_is_rejected() {
+    let f = setup();
+    let investor = f.investor(1_000);
+
+    refused(f.vault.try_fund(&investor, &0), VaultError::InvalidAmount);
+}
+
+#[test]
 fn deploying_needs_the_treasury_role() {
     let f = setup();
     let investor = f.investor(1_000);
@@ -145,8 +153,14 @@ fn deploying_a_non_positive_amount_is_rejected() {
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &1_000);
 
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &0).is_err());
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &-1).is_err());
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &0),
+        VaultError::InvalidAmount,
+    );
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &-1),
+        VaultError::InvalidAmount,
+    );
 }
 
 /// Exits priced after a gain can owe more than the capital the vault counts,

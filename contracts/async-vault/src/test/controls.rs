@@ -110,6 +110,29 @@ fn a_paused_vault_still_pays_redemptions() {
 }
 
 #[test]
+fn a_paused_vault_still_funds_and_deploys_to_custodian() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+    f.vault.pause(&f.guardian);
+
+    let free = f.vault.free_reserve();
+    assert!(free > 0);
+    let vault_before = f.balance(&f.vault.address);
+    f.vault.deploy_to_custodian(&f.treasury, &free);
+    assert_eq!(f.balance(&f.custodian), free);
+    assert_eq!(f.balance(&f.vault.address), vault_before - free);
+
+    let funder = f.unverified_investor(1_000);
+    let vault_before_fund = f.balance(&f.vault.address);
+    f.vault.fund(&funder, &100);
+    assert_eq!(f.balance(&funder), 900);
+    assert_eq!(f.balance(&f.vault.address), vault_before_fund + 100);
+    assert!(f.vault.paused());
+}
+
+#[test]
 fn a_paused_vault_does_not_fulfill_epochs() {
     let f = setup();
     f.close_epoch();
