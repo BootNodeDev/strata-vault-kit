@@ -215,8 +215,8 @@ asset unit at the lowest price the oracle allows
 `at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`) and a claim
 view that shows what the claim pays and fails where it fails
 (`the_claimable_view_shows_what_the_claim_then_pays`,
-`the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge`), and the
-vault's own address claiming against its own escrow
+`the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge`), and a
+claim by the vault against its own escrow, which is refused
 (`the_vault_cannot_claim_against_its_own_escrowed_shares`). Every unit a round
 credits is paid or still owed, and the vault holds what it owes
 (`the_payouts_never_exceed_what_the_rounds_credited`,

@@ -47,17 +47,16 @@ fn a_fresh_vault_is_not_winding_down() {
 #[test]
 fn governance_proposes_and_anyone_activates_after_the_delay() {
     let f = setup();
+    let delay = 2 * MIN_WIND_DOWN_DELAY;
+    f.vault.set_wind_down_delay(&delay);
 
     f.vault.propose_wind_down();
     let proposed = f.vault.wind_down().unwrap();
     assert_eq!(proposed.status, WindDownStatus::Proposed);
     assert_eq!(proposed.round, 0);
-    assert_eq!(
-        proposed.active_at,
-        f.e.ledger().timestamp() + MIN_WIND_DOWN_DELAY
-    );
+    assert_eq!(proposed.active_at, f.e.ledger().timestamp() + delay);
 
-    f.advance(MIN_WIND_DOWN_DELAY - 1);
+    f.advance(delay - 1);
     refused(
         f.vault.try_activate_wind_down(),
         VaultError::WindDownDelayNotElapsed,
