@@ -199,6 +199,10 @@ const subscribeContractErrorReason = (code: number): string => {
 			return "The vault is winding down and is not accepting new subscriptions."
 		case 6064:
 			return "The vault's setup is still open. Subscriptions start once it closes."
+		case 6044:
+			return "The vault's price feed is not valid right now, so subscriptions are paused until it is."
+		case 6076:
+			return "The vault does not hold enough to cover its pending deposits right now, so it is not taking new subscriptions until it is funded again."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -214,6 +218,8 @@ const cancelContractErrorReason = (code: number): string => {
 			return "This request has already been priced. Claim your shares instead of cancelling."
 		case 6041:
 			return "A price is available, so this request can no longer be cancelled. It will be priced shortly, and your shares are claimable once it is."
+		case 6076:
+			return "The vault does not hold enough to return this deposit right now. You can cancel once it is funded again."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -262,6 +268,8 @@ const redeemContractErrorReason = (code: number): string => {
 			return "This request could not be found."
 		case 6046:
 			return "The vault is winding down and is not accepting new redemptions."
+		case 6064:
+			return "The vault's setup is still open. Redemptions start once it closes."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -298,6 +306,10 @@ const closeEpochContractErrorReason = (code: number): string => {
 			return "This wallet is not authorized to close epochs."
 		case 2007:
 			return "This wallet does not hold the manager role."
+		case 6077:
+			return "Only the manager can seal this epoch until it has been open for the minimum duration."
+		case 6064:
+			return "The vault's setup is still open, so no epoch can be sealed yet."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -323,6 +335,8 @@ const fulfillEpochContractErrorReason = (code: number): string => {
 			return "The settlement total is too large for the vault to record."
 		case 1000:
 			return "The vault is paused, so epochs cannot be priced."
+		case 6064:
+			return "The vault's setup is still open, so no epoch can be priced yet."
 		default:
 			return GENERIC_REFUSAL
 	}
