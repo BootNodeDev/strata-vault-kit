@@ -1,3 +1,5 @@
+use stellar_contract_utils::pausable::PausableError;
+
 use super::*;
 
 #[test]
@@ -102,6 +104,61 @@ fn a_paused_vault_does_not_fulfill_epochs() {
 
     f.vault.unpause(&f.admin);
     assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
+}
+
+#[test]
+fn the_token_admin_pauses_transfers_at_once_after_setup() {
+    let f = setup();
+    let holder = f.holder(500);
+    let other = f.investor(0);
+    let spender = Address::generate(&f.e);
+    f.share
+        .approve(&holder, &spender, &10, &(f.e.ledger().sequence() + 1_000));
+    assert!(!f.share.setup_open());
+
+    f.share.pause(&f.admin);
+    assert!(f.share.paused());
+    assert!(f.share.pending_changes().is_empty());
+    assert_eq!(
+        f.share.try_transfer(&holder, &other, &1),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
+    assert_eq!(
+        f.share.try_transfer_from(&spender, &holder, &other, &1),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
+
+    f.share.unpause(&f.admin);
+    f.share.transfer(&holder, &other, &1);
+    f.share.transfer_from(&spender, &holder, &other, &1);
+    assert_eq!(f.shares(&other), 2);
+}
+
+#[test]
+fn a_token_pause_leaves_deposits_exits_and_cancellations_open() {
+    let f = setup();
+    let redeemer = f.holder(500);
+    let leaver = f.holder(500);
+    let depositor = f.investor(1_000);
+    let quitter = f.investor(1_000);
+    f.share.pause(&f.admin);
+
+    let epoch = f.vault.request_deposit(&depositor, &400);
+    assert_eq!(f.vault.request_redeem(&redeemer, &200), epoch);
+    assert_eq!(f.vault.request_redeem(&leaver, &100), epoch);
+    assert_eq!(f.shares(&f.vault.address), 300);
+
+    f.vault.request_deposit(&quitter, &300);
+    assert_eq!(f.vault.cancel_deposit(&quitter, &epoch), 300);
+    assert_eq!(f.vault.cancel_redeem(&leaver, &epoch), 100);
+    assert_eq!(f.shares(&leaver), 500);
+
+    f.fulfill_epoch(wad(2));
+    assert_eq!(f.vault.claim_deposit(&depositor, &epoch), 200);
+    assert_eq!(f.shares(&depositor), 200);
+    assert_eq!(f.vault.claim_redeem(&redeemer, &epoch), 400);
+    assert_eq!(f.balance(&redeemer), 400);
+    assert!(f.share.paused());
 }
 
 #[test]
