@@ -27,6 +27,10 @@ CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracl
 SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
 ```
 
+CI runs the same command and then `scripts/ci/check-tests-ran.sh`, which fails
+the step unless both `with_wasm` modules ran a passing test, because a filter
+that matches nothing makes `cargo test` pass.
+
 The `short_wind_down` feature builds a vault whose wind-down minimum is zero,
 for a local harness only; its WASM carries the meta entry `build = short
 wind-down; local tests only`. Check that it compiles with
