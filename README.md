@@ -36,6 +36,9 @@ and once a wind-down is proposed.
   test for each control.
 - [Monitoring plan](./docs/MONITORING_PLAN.md) — what an operator watches on
   chain, where each signal comes from, and what to do when it fires.
+- [Grant differences](./docs/GRANT_DIFFERENCES.md) — where the built kit
+  differs from the SCF grant proposal, what is not built yet, and the limits an
+  adopter should know.
 
 ## Status
 
