@@ -410,7 +410,11 @@ export async function readContractAdmin(
 	}
 }
 
-export type EventSelection = { contractId: string; names: string[] }
+export type EventSelection = {
+	contractId: string
+	names: string[]
+	topics?: number
+}
 
 export type ChainEvent = {
 	contractId: string
@@ -421,13 +425,18 @@ export type ChainEvent = {
 	closedAt: bigint
 }
 
+// "*" matches exactly one topic, so the filter names every topic after the symbol.
 const toEventFilter = ({
 	contractId,
 	names,
+	topics = 1,
 }: EventSelection): Api.EventFilter => ({
 	type: "contract",
 	contractIds: [contractId],
-	topics: names.map((name) => [xdr.ScVal.scvSymbol(name).toXDR("base64"), "*"]),
+	topics: names.map((name) => [
+		xdr.ScVal.scvSymbol(name).toXDR("base64"),
+		...Array<string>(topics).fill("*"),
+	]),
 })
 
 const decodeEvent = (event: Api.EventResponse): ChainEvent | null => {

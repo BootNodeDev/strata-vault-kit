@@ -416,6 +416,7 @@ const connectedWallet: WalletContextType = {
 	isPending: false,
 	updateBalances: async () => {},
 	signTransaction: vi.fn() as WalletContextType["signTransaction"],
+	signAuthEntry: vi.fn() as WalletContextType["signAuthEntry"],
 }
 
 const wrongNetworkWallet: WalletContextType = {

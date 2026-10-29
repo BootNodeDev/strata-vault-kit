@@ -482,6 +482,28 @@ describe("readEvents", () => {
 		])
 	})
 
+	it("matches every topic an event names after its symbol", async () => {
+		getHealthMock.mockResolvedValue({
+			latestLedger: 500_000,
+			oldestLedger: 1,
+		})
+		getEventsMock.mockResolvedValue({ events: [], cursor: "c" })
+
+		await readEvents(
+			[{ contractId: CONTRACT_ID, names: ["legal_transfer"], topics: 2 }],
+			SEVEN_DAYS_OF_LEDGERS,
+		)
+
+		const [request] = getEventsMock.mock.calls[0] as [{ filters: unknown[] }]
+		expect(request.filters).toEqual([
+			{
+				type: "contract",
+				contractIds: [CONTRACT_ID],
+				topics: [[symbolTopic("legal_transfer").toXDR("base64"), "*", "*"]],
+			},
+		])
+	})
+
 	it("never starts before the oldest ledger the RPC still holds", async () => {
 		getHealthMock.mockResolvedValue({
 			latestLedger: 500_000,

@@ -33,16 +33,20 @@ import { useWallet } from "./useWallet"
 export type TransactionFailure =
 	| { kind: "declined" }
 	| { kind: "unsigned" }
+	| { kind: "cannot-authorize" }
 	| { kind: "contract-error"; code: number }
 	| { kind: "interrupted" }
 	| { kind: "network"; reason: SubmitFailure }
 	| { kind: "stale" }
 	| { kind: "unknown" }
 
+export type SharedStanding =
+	Exclude<Standing, "signs-alone"> | "admin-authorization"
+
 export type SharedTransaction = {
 	status: "shared"
 	xdr: string
-	standing: Exclude<Standing, "signs-alone">
+	standing: SharedStanding
 	expiresAt: Date | null
 }
 
@@ -108,6 +112,19 @@ const shared = (
 		xdr,
 		standing,
 		expiresAt: decodePending(xdr).expiresAt,
+	}
+}
+
+const awaitingAuthorization = <TResult>(
+	tx: AssembledTransaction<TResult>,
+): SharedTransaction | null => {
+	if (tx.needsNonInvokerSigningBy().length === 0 || tx.built === undefined)
+		return null
+	return {
+		status: "shared",
+		xdr: tx.built.toEnvelope().toXDR("base64"),
+		standing: "admin-authorization",
+		expiresAt: null,
 	}
 }
 
@@ -403,6 +420,11 @@ export function useContractTransaction<
 						failure: { kind: "contract-error", code },
 					})
 					invalidate(extraKeys)
+					return
+				}
+				const awaiting = grant === undefined ? null : awaitingAuthorization(tx)
+				if (awaiting !== null) {
+					applyStatus(awaiting)
 					return
 				}
 				signatureRequested = true
