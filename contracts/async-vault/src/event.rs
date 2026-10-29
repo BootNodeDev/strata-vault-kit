@@ -186,3 +186,8 @@ pub struct DepositCapUpdated {
     pub old_cap: Option<i128>,
     pub new_cap: Option<i128>,
 }
+
+#[contractevent]
+pub struct MinEpochDurationSet {
+    pub secs: u64,
+}

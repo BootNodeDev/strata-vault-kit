@@ -60,12 +60,12 @@ Console tests, also cited by title, run with `npm run test`.
 | --- | --- |
 | Governance | Admin of the vault. By deploy, also admin of the share token, the oracle and the compliance contract. |
 | Guardian | Pauses the vault (vault `guardian`). By deploy, also pauses the NAV (oracle `guardian`). |
-| Manager | Seals the open epoch with `close_epoch` (vault `manager`); "sealed" below means closed this way. A role, not one of the five authorities. |
+| Manager | Seals the open epoch with `close_epoch` (vault `manager`) at any time; "sealed" below means closed by the manager or by anyone once the minimum epoch duration has run. A role, not one of the five authorities. |
 | Treasury | Sends free reserve to the custodian (vault `treasury`). |
 | Attester | Posts the share price (oracle `attester`). |
 | Compliance | Freezes holders, and with governance makes legal transfers and recoveries (share token `compliance`). By deploy, also lists and delists addresses (identity verifier admin). |
 | The vault contract | Mints, burns and moves escrowed shares (share token `manager`, which `finish_setup` requires it to hold alone). |
-| Anyone | Prices a sealed epoch, funds the vault, activates a wind-down once it is due, finalizes a round. Each holder signs their own requests, cancellations and claims. |
+| Anyone | Prices a sealed epoch, funds the vault, activates a wind-down once it is due, finalizes a round, seals an epoch that has been open for the minimum epoch duration once governance has set one. Each holder signs their own requests, cancellations and claims. |
 | Outside the kit | The custodian, the deposit asset's issuer, external compliance or identity contracts, wallets, and whoever hosts a frontend. |
 
 "By deploy" means the deploy script sets it and no contract checks it (R5). The
@@ -125,8 +125,8 @@ A compromised attester moves the price in many steps, each inside the caps.
 - **Residual:** The price can move by one cap per cooldown, and the steps
   compound. With the shortest cooldown, one second, a report can land in every
   ledger. The band is the only absolute limit. Nothing on chain raises an
-  alarm; alerts on large moves belong to the monitoring plan, a separate
-  document not written yet.
+  alarm; alerts on large moves belong to the
+  [monitoring plan](./MONITORING_PLAN.md#v5-a-run-of-reports-one-way).
 - **Tests:** `two_reports_in_one_ledger_are_refused_at_the_shortest_cooldown`
   and `attest_enforces_cooldown_and_deviation` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
@@ -158,10 +158,12 @@ The attester stops reporting, or the last report expires.
 
 - **Control:** A report expires at the earlier of its own `expires_at` and its
   acceptance plus `freshness_duration`. A stale feed makes `fulfill_epoch`
-  fail, and requests in a sealed epoch can be cancelled again. Priced claims
-  still pay: no claim reads the oracle. Governance revokes the attester at once.
-  `health()` reports `feed_valid`, and `freshness_covers_notice` is false when
-  the freshness window is shorter than the notice.
+  fail, and requests in a sealed epoch can be cancelled again. A stale feed
+  also makes `request_deposit` refuse (`FeedNotValid`), so no new deposit waits
+  on it. Priced claims still pay: no claim reads the oracle. Governance revokes
+  the attester at once. `health()` reports `feed_valid`, and
+  `freshness_covers_notice` is false when the freshness window is shorter than
+  the notice.
 - **Residual:** Holders with shares cannot exit until a report lands, or until
   a wind-down pays them pro rata (X8). After setup, granting a new attester
   waits for the timelock: at least seven days, plus any time the vault spends
@@ -172,6 +174,9 @@ The attester stops reporting, or the last report expires.
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
   `a_sealed_epoch_cancels_once_the_feed_goes_stale` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
+  `a_deposit_is_refused_while_the_feed_is_stale` and
+  `a_deposit_is_refused_before_the_first_report` in
+  [`deposit.rs`](../contracts/async-vault/src/test/deposit.rs);
   `a_notice_longer_than_a_report_lives_is_reported` in
   [`health.rs`](../contracts/async-vault/src/test/health.rs).
 
@@ -229,8 +234,9 @@ them.
 
 A compromised guardian pauses the NAV, again and again.
 
-- **Control:** The NAV pause stops only new reports and pricing. Requests,
-  claims and cancellations go on, and sealed epochs can be cancelled again.
+- **Control:** The NAV pause stops only new reports, pricing and new deposits.
+  Redemption requests, claims and cancellations go on, and sealed epochs can be
+  cancelled again.
   Only the oracle admin lifts it (`set_nav_paused(false)`), and revoking the
   oracle's guardian is instant.
 - **Residual:** Pricing waits until governance lifts the pause. Revoking the
@@ -244,7 +250,9 @@ A compromised guardian pauses the NAV, again and again.
   `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
   `a_sealed_epoch_cancels_while_the_nav_is_paused` in
-  [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs).
+  [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
+  `a_deposit_is_refused_while_the_nav_is_paused` in
+  [`deposit.rs`](../contracts/async-vault/src/test/deposit.rs).
 
 ### O8. Clearing the stored report
 
@@ -258,8 +266,8 @@ cap it.
   and so can the first report after deployment. Pausing the NAV, clearing and
   lifting the pause are all instant, also after setup, so the oracle admin and
   an attester acting together can set any price in the band at once. Alerts on
-  `LatestCleared` and on the report after it belong to the monitoring plan, not
-  written yet.
+  `LatestCleared` and on the report after it belong to the
+  [monitoring plan](./MONITORING_PLAN.md#v6-the-stored-report-is-cleared).
 - **Tests:** `the_record_clears_only_while_the_nav_is_paused` and
   `only_admin_can_clear_latest` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
@@ -333,8 +341,11 @@ vault or during a wind-down still works: the vault does not ask the feed then.
   reading the report, and neither `pause_nav` nor `clear_latest` reads it. After
   setup the upgrade itself waits for the timelock.
 - **Residual:** If the upgrade lands before the NAV pause, pricing and those
-  cancellations fail until the NAV is paused. The first report after the clear
-  has no earlier price to cap it (O8). A fresh deployment has no old report.
+  cancellations fail until the NAV is paused. Deposits are refused while the
+  NAV is paused (`FeedNotValid`) or the feed cannot answer, so the vault takes
+  none from the upgrade or the pause until the first report after the clear.
+  That report has no earlier price to cap it (O8). A fresh deployment has no
+  old report.
 - **Tests:** `a_report_of_the_earlier_shape_is_cleared_and_replaced` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
 
@@ -466,8 +477,9 @@ binding missing.
 - **Control:** The vault, the share token, the oracle and the compliance
   contract each start in a setup window in which admin changes are instant.
   `finish_setup` closes it once, and it never reopens. The vault refuses
-  deposits until its own setup is finished (`SetupOpen`). Its `finish_setup`
-  refuses (`SetupIncomplete`) unless:
+  deposits, redemptions, and sealing or pricing an epoch until its own setup
+  is finished (`SetupOpen`). Its `finish_setup` refuses (`SetupIncomplete`)
+  unless:
   - the token and the oracle name this vault and have finished their own setup;
   - the vault is the token's only `manager`, and no shares exist yet;
   - the vault passes the identity check and is not frozen on the token;
@@ -478,11 +490,13 @@ binding missing.
   - the asset and the token have the same decimals, and the asset, the token,
     the oracle and the vault are four different addresses;
   - the oracle answers `state()` and `freshness_duration()`, and a custodian
-    other than the vault is set.
+    other than the vault is set;
+  - the vault's own books are empty: the first epoch, with no deposit or
+    redemption booked in it, nothing committed, and no shares owed or to burn.
 
   It also refuses while an admin hand-over offered during setup is still open.
-  `health()` reports each of these checks except two: that no shares exist yet,
-  and that no hand-over is pending.
+  `health()` reports each of these checks except three: that no shares exist
+  yet, that the vault's own books are empty, and that no hand-over is pending.
 - **Residual:** Before `finish_setup`, the admin changes anything at once. The
   checks read only the token's `manager` list: a second attester, treasury or
   guardian is not checked, though each contract shows its role holders. An
@@ -491,6 +505,10 @@ binding missing.
   meta, activates a wind-down with no delay, and nothing on chain refuses that
   build.
 - **Tests:** `a_deposit_before_setup_finishes_is_refused`,
+  `a_redemption_before_setup_finishes_is_refused`,
+  `no_epoch_is_sealed_or_priced_before_setup_finishes`,
+  `a_redemption_planted_during_setup_never_reaches_a_depositor`,
+  `setup_finishes_after_cash_is_funded_during_it`,
   `every_wiring_step_is_checked_before_setup_finishes`,
   `a_compliance_contract_from_outside_the_kit_is_accepted`,
   `setup_cannot_finish_while_a_hand_over_is_pending` and
@@ -634,18 +652,30 @@ The treasury drains the reserve.
 
 The manager stops sealing, so nothing is priced, or seals when it suits someone.
 
-- **Control:** The manager can only seal the open epoch. It cannot set the
-  price: anyone prices a sealed epoch from the oracle. Requests in the open
-  epoch can be cancelled at any time, apart from the holds in X3 and X4.
-- **Residual:** The manager decides which requests share a price. A manager who
-  stops sealing blocks every exit at a price; holders can still cancel, getting
-  a deposit back as cash and a redemption back as shares. After setup, replacing
-  the manager waits for the timelock, at least seven days.
-  [#335](https://github.com/BootNodeDev/strata-vault-kit/issues/335) plans to
-  let anyone seal an epoch that has been open for a minimum time.
+- **Control:** The manager can seal the open epoch at any time; once governance
+  sets a minimum epoch duration, anyone else may seal an epoch that has been
+  open that long. Neither can set the price: anyone prices a sealed epoch from
+  the oracle. Requests in the open epoch can be cancelled at any time, apart
+  from the holds in X3 and X4.
+- **Residual:** The manager decides which requests share a price until the
+  minimum has run. A manager who stops sealing holds priced exits back for up
+  to the minimum epoch duration; once it has run, anyone seals. Without a
+  minimum set, exits at a price wait until governance replaces the manager
+  through the timelock, at least seven days. Holders can still cancel at any
+  time: a deposit comes back as cash, a redemption as shares. Once the minimum
+  has run, anyone can seal at a moment chosen to match a valuation they
+  already know, the ordering O5 names: a report accepted after the seal can
+  carry a valuation made before it. Before this branch only the manager could
+  pick that moment; now any outsider can too. Holders still get no price
+  older than the seal, so the risk falls on the operator's own cut-off
+  routine, which must now assume an outsider may seal first.
 - **Tests:** `a_non_manager_cannot_close` and
   `anyone_may_fulfill_a_closed_epoch` in
   [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
+  `a_raised_minimum_counts_from_the_epochs_start`,
+  `an_outsider_seals_once_the_minimum_has_run` and
+  `with_no_manager_anyone_still_seals_after_the_minimum` in
+  [`sealing.rs`](../contracts/async-vault/src/test/sealing.rs);
   `cancelling_a_deposit_returns_the_asset` and
   `cancelling_a_redemption_returns_the_shares` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
@@ -1041,7 +1071,8 @@ Rounding lets a claim take more than its share, or a tiny deposit is lost.
   `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once` and
   `a_total_that_would_go_below_zero_fails_loudly` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
-  `a_deposit_below_one_share_is_refunded_at_claim` in
+  `a_deposit_below_one_share_is_refunded_at_claim` and
+  `a_refund_after_pricing_leaves_the_priced_total_unchanged` in
   [`deposit.rs`](../contracts/async-vault/src/test/deposit.rs);
   `a_dust_refund_never_takes_committed_money` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
@@ -1052,20 +1083,52 @@ Rounding lets a claim take more than its share, or a tiny deposit is lost.
 
 The issuer of the deposit asset freezes the vault's balance or takes it back.
 
-- **Control:** None in the kit; it is a declared risk of the chosen asset. A
-  payout goes only to the holder's own address, and a claim the vault cannot pay
-  stays owed in `committed`.
-- **Residual:** While the issuer freezes the vault's balance, every cash exit
-  waits. A clawback takes the cash; claims then wait for the treasury to cover
-  the gap, and those who claim first are paid first. In a wind-down,
-  `uncovered()` then understates the gap (X8). No deploy script reads the
-  asset's authorization flags yet, although the design doc's §8.10 says a
-  deployment checks and reports them.
-- **Tests:** none for the issuer's controls: the kit has no control here to
-  show, and no test freezes or claws back the vault's balance.
+- **Control:** The kit cannot stop the issuer; it is a declared risk of the
+  chosen asset. A payout goes only to the holder's own address. After a
+  clawback, the vault pays in this order and refuses the rest by name:
+  1. Escrow a depositor can still cancel. `cancel_deposit` pays when the
+     vault's balance covers that deposit's own amount; otherwise
+     `EscrowNotCovered`. While the balance is below the total cancellable
+     escrow, `request_deposit` refuses with `EscrowNotCovered`, so a new
+     deposit never pays an earlier cancellation.
+  2. Priced redemptions. `claim_redeem` pays when the liquid reserve (the
+     balance less cancellable escrow) covers its own amount; otherwise
+     `ClaimNotCovered`, and the claim stays owed in `committed`.
+  3. What wind-down rounds owe sits beside priced redemptions in the free
+     reserve.
+  4. Last, and only from the free reserve: a refund of a deposit below one
+     share (`claim_deposit`, `ClaimNotCovered`) and a transfer to the custodian
+     (`deploy_to_custodian`, `ReserveCommittedToExits`).
+
+  `uncovered()` shows the gap, `committed + cancellable_escrow - balance` when
+  positive. Once the treasury funds it with `fund`, the refusals for
+  cancellations, priced claims and new deposits lift. A refund of a deposit
+  below one share and a transfer to the custodian also need free reserve, which
+  `uncovered()` does not show.
+- **Residual:**
+  - Within each class, whoever acts first is paid first. The vault does not
+    decide who finally bears the loss.
+  - Pricing does not read the balance. An epoch priced during the gap mints its
+    deposits in full, and the loss reaches holders through the NAV.
+  - A freeze leaves the vault's balance readable, so the vault's checks pass
+    and the transfer fails inside the asset with the asset's own error. Every
+    cash exit waits until the freeze lifts.
+  - No deploy script reads the asset's authorization flags yet, although the
+    design doc's §8.10 says a deployment checks and reports them.
+  - In a wind-down, `uncovered()` understates the gap, and a wind-down claim
+    checks no coverage before it transfers (X8). It can take deposit escrow, or
+    fail inside the asset with the asset's own error when the balance is short.
+- **Tests:** `a_cancellation_the_balance_cannot_cover_is_refused_by_name`,
+  `cancellations_are_paid_in_the_order_they_come_while_the_balance_lasts`,
+  `no_deposit_is_taken_while_the_balance_is_below_the_escrow`,
+  `a_priced_redemption_waits_while_the_issuer_has_taken_the_escrow`,
+  `a_refund_below_one_share_waits_while_the_issuer_has_taken_the_escrow`,
+  `nothing_goes_to_the_custodian_while_the_issuer_has_taken_the_escrow` and
+  `pricing_ignores_a_shortfall_and_mints_the_full_deposit` in
+  [`clawback.rs`](../contracts/async-vault/src/test/clawback.rs);
   `a_claim_waits_until_the_reserve_covers_it` in
-  [`multi_epoch.rs`](../contracts/async-vault/src/test/multi_epoch.rs) shows
-  that a claim the vault cannot pay stays owed.
+  [`multi_epoch.rs`](../contracts/async-vault/src/test/multi_epoch.rs). None
+  freezes the vault's balance.
 
 ### X11. Storage that expires
 
@@ -1167,9 +1230,9 @@ These are decided, and stated as they stand:
 1. A compliance module that refuses can block a covered exit, and removing it
    waits for the timelock (X6). Which modules mainnet uses is decided in
    [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238).
-2. A manager who stops sealing blocks every exit at a price; holders can still
-   cancel (R8). [#335](https://github.com/BootNodeDev/strata-vault-kit/issues/335)
-   plans sealing by anyone after a minimum epoch length.
+2. A stopped manager holds exits at a price back until the open epoch has run
+   the minimum epoch duration, then anyone seals; with none set, holders wait
+   until governance replaces the manager (R8).
 3. The identity verifier and compliance contracts in this repository are
    testnet stubs, not for mainnet (R9, R11).
 4. The vault's constructor is the only check on who holds which role, for four
@@ -1185,6 +1248,10 @@ These are decided, and stated as they stand:
    transaction pays its fee (R4).
 7. The testnet deployment in the README runs older code than this commit
    ([Scope](#scope)).
+8. A clawback of the vault's cash by the asset's issuer is a loss of the fund
+   that the vault does not assign. While it lasts, the vault refuses by name
+   what its balance cannot cover: `EscrowNotCovered` for cancellations and new
+   deposits, `ClaimNotCovered` for claims (X10).
 
 ## What has no test yet
 
@@ -1197,13 +1264,13 @@ For Tranche 3's matrix:
 - Role separation after construction and across contracts, which nothing
   checks yet (R5).
 - `uncovered()` with wind-down credits (X8).
-- The deposit asset's issuer freezing or clawing back the vault's balance, and
-  a deploy check of the asset's authorization flags (X10).
+- The deposit asset's issuer freezing the vault's balance, and a deploy check
+  of the asset's authorization flags (X10).
 - The cost of a call, and contention between calls in one ledger (X12).
 - A vault upgrade over requests, positions or queued changes stored in an
   earlier shape (X13).
 - Alerts on large price moves, on `LatestCleared` and on the report after it
-  (O2, O8), which belong to the monitoring plan.
+  (O2, O8), which belong to the [monitoring plan](./MONITORING_PLAN.md).
 
 ## Out of scope
 
