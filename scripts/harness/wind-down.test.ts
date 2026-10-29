@@ -57,11 +57,11 @@ async function call(
 }
 
 beforeAll(async () => {
-	const deployment = await deployThrowaway(
+	const { deployment, keys } = await deployThrowaway(
 		net,
 		wasmOf("async_vault", SHORT_WIND_DOWN_DIR),
 	)
-	c = connectTo(net, deployment)
+	c = connectTo(net, deployment, keys)
 	decimals = (await shareToken(c, c.keys.outsider).decimals()).result
 	const holder = c.keys["holder-1"]
 	await trustline(c.net, c.server, holder, c.asset)

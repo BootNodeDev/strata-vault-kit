@@ -58,8 +58,15 @@ file.
 
 ## Deployment records
 
-`deployed.<network>.json` records the deployed contract IDs and the accounts,
-secrets included. A new deploy keeps the previous record as
+`deployed.<network>.json` records the deployed contract IDs and each account's
+**public** key. It holds no secret key. `.env.keys.<network>` is the only
+harness file that does. Every script that signs reads it, and stops if a key
+there is not the one the deployment was made with.
+
+Records written by older versions of the harness hold every secret key: delete
+them.
+
+A new deploy keeps the previous record as
 `deployed.<network>.<timestamp>.json`, named after the time of that deploy,
 instead of overwriting it. Git ignores these files too.
 

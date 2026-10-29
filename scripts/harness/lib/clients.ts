@@ -1,4 +1,4 @@
-import { Asset, Keypair, rpc } from "@stellar/stellar-sdk"
+import { Asset, rpc, type Keypair } from "@stellar/stellar-sdk"
 import { basicNodeSigner } from "@stellar/stellar-sdk/contract"
 
 import { Client as VaultClient } from "../../../app-lib/clients/async_vault/dist/index.js"
@@ -6,34 +6,35 @@ import { Client as ComplianceClient } from "../../../app-lib/clients/compliance/
 import { Client as IdentityVerifierClient } from "../../../app-lib/clients/identity_verifier/dist/index.js"
 import { Client as OracleClient } from "../../../app-lib/clients/nav_oracle/dist/index.js"
 import { Client as ShareTokenClient } from "../../../app-lib/clients/share_token/dist/index.js"
-import { ACCOUNT_NAMES, type AccountName } from "./accounts.js"
+import { type Accounts } from "./accounts.js"
 import {
 	loadDeployment,
+	REPO_ROOT,
 	type ContractName,
 	type Deployment,
 } from "./deployment.js"
+import { keysFor } from "./keys.js"
 import { network, type Network } from "./network.js"
 
 export interface Connected {
 	net: Network
 	deployment: Deployment
-	keys: Record<AccountName, Keypair>
+	keys: Accounts
 	server: rpc.Server
 	asset: Asset
 }
 
 export function connect(): Connected {
 	const net = network()
-	return connectTo(net, loadDeployment(net.name))
+	const deployment = loadDeployment(net.name)
+	return connectTo(net, deployment, keysFor(deployment, REPO_ROOT))
 }
 
-export function connectTo(net: Network, deployment: Deployment): Connected {
-	const keys = Object.fromEntries(
-		ACCOUNT_NAMES.map((name) => [
-			name,
-			Keypair.fromSecret(deployment.accounts[name].secret),
-		]),
-	) as Record<AccountName, Keypair>
+export function connectTo(
+	net: Network,
+	deployment: Deployment,
+	keys: Accounts,
+): Connected {
 	return {
 		net,
 		deployment,

@@ -19,6 +19,7 @@ import {
 } from "./lib/cli.js"
 import {
 	CONTRACT_NAMES,
+	publicKeysOf,
 	REPO_ROOT,
 	saveDeployment,
 	type ContractName,
@@ -300,12 +301,7 @@ async function freshSet(
 			contract: assetContract,
 		},
 		contracts,
-		accounts: Object.fromEntries(
-			Object.entries(accounts).map(([name, key]) => [
-				name,
-				{ public: key.publicKey(), secret: key.secret() },
-			]),
-		) as Deployment["accounts"],
+		accounts: publicKeysOf(accounts),
 	}
 }
 
@@ -315,30 +311,22 @@ const throwawayAccounts = (): Accounts =>
 		ACCOUNT_NAMES.map((name) => [name, Keypair.random()]),
 	) as Accounts
 
-const keysOf = (record: Deployment): Accounts =>
-	Object.fromEntries(
-		Object.entries(record.accounts).map(([name, key]) => [
-			name,
-			Keypair.fromSecret(key.secret),
-		]),
-	) as Accounts
-
 // A full, wired vault set built from a different vault Wasm. It reuses the
 // clients the main deploy generated, and nothing is written to disk.
 export async function deployThrowaway(
 	net: Network,
 	vaultWasm: string,
-): Promise<Deployment> {
+): Promise<{ deployment: Deployment; keys: Accounts }> {
 	requireWasm(vaultWasm)
 	const wasms = Object.fromEntries(
 		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
 	) as Record<ContractName, string>
 	wasms.async_vault = vaultWasm
-	const record = await freshSet(net, wasms, throwawayAccounts())
-	const accounts = keysOf(record)
-	await grantAndVerify(net, accounts, record.contracts)
-	await finishVaultSetup(net, accounts, record.contracts)
-	return record
+	const keys = throwawayAccounts()
+	const deployment = await freshSet(net, wasms, keys)
+	await grantAndVerify(net, keys, deployment.contracts)
+	await finishVaultSetup(net, keys, deployment.contracts)
+	return { deployment, keys }
 }
 
 async function main(): Promise<void> {

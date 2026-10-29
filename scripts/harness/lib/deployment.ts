@@ -8,7 +8,7 @@ import {
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { type AccountName } from "./accounts.js"
+import { ACCOUNT_NAMES, type AccountName, type Accounts } from "./accounts.js"
 import { type NetworkName } from "./network.js"
 
 export const CONTRACT_NAMES = [
@@ -27,7 +27,13 @@ export interface Deployment {
 	ledger: number
 	asset: { code: string; issuer: string; contract: string }
 	contracts: Record<ContractName, string>
-	accounts: Record<AccountName, { public: string; secret: string }>
+	accounts: Record<AccountName, { public: string }>
+}
+
+export function publicKeysOf(accounts: Accounts): Deployment["accounts"] {
+	return Object.fromEntries(
+		ACCOUNT_NAMES.map((name) => [name, { public: accounts[name].publicKey() }]),
+	) as Deployment["accounts"]
 }
 
 export const PACKAGE_ROOT = resolve(

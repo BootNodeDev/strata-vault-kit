@@ -9,10 +9,13 @@ import {
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { Keypair } from "@stellar/stellar-sdk"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
+import { ACCOUNT_NAMES, type Accounts } from "./accounts.js"
 import {
 	deploymentFile,
+	publicKeysOf,
 	saveDeployment,
 	type Deployment,
 } from "./deployment.js"
@@ -99,4 +102,24 @@ describe("saveDeployment", () => {
 			expect(readFileSync(kept ?? "", "utf8")).toBe(content)
 		},
 	)
+})
+
+describe("publicKeysOf", () => {
+	it("records each account's public key and no secret key", () => {
+		const accounts = Object.fromEntries(
+			ACCOUNT_NAMES.map((name) => [name, Keypair.random()]),
+		) as Accounts
+		saveDeployment(
+			{
+				...record("2026-10-01T12:30:45.678Z"),
+				accounts: publicKeysOf(accounts),
+			},
+			dir,
+		)
+		const text = readFileSync(deploymentFile("local", dir), "utf8")
+		for (const name of ACCOUNT_NAMES) {
+			expect(text).toContain(accounts[name].publicKey())
+			expect(text).not.toContain(accounts[name].secret())
+		}
+	})
 })
