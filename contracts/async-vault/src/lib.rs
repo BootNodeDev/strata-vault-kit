@@ -4,9 +4,11 @@
 //! is sealed and priced at the oracle's report, and each holder claims the
 //! result.
 //!
-//! - **The manager seals, anyone prices.** The price is the oracle's, not the
-//!   caller's. The cost: a silent manager or attester stalls every request, and
-//!   after setup a replacement waits for the timelock.
+//! - **The manager seals at any time, and anyone once the open epoch has run
+//!   the minimum epoch duration governance sets; anyone prices.** The price is
+//!   the oracle's, not the caller's. The cost: a silent attester stalls every
+//!   request; a silent manager stalls them until the minimum runs, or, with no
+//!   minimum set, until a replacement passes the timelock.
 //! - **Pricing records totals; claims mint and burn.** Pricing costs the same
 //!   for any number of requests. The cost: an epoch's rounding remainder stays
 //!   in `committed` and `pending_mint_shares` until its last request settles.
@@ -74,9 +76,9 @@ pub use error::VaultError;
 pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
     DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
-    EpochReconciled, Funded, NoticeSet, RedeemClaimed, RedeemRequested, RedemptionSurrendered,
-    SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
-    WindDownProposed, WindDownRoundFinalized,
+    EpochReconciled, Funded, MinEpochDurationSet, NoticeSet, RedeemClaimed, RedeemRequested,
+    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -92,6 +94,12 @@ pub use wind_down::{
 /// Thirty days. Longer than any notice a real structure uses, short enough that
 /// setting it by mistake is survivable.
 pub const MAX_NOTICE_SECS: u64 = 30 * DAY_DURATION;
+
+/// One day, so outsiders cannot seal a stream of tiny epochs.
+pub const MIN_EPOCH_DURATION_FLOOR: u64 = DAY_DURATION;
+
+/// Thirty days: monthly epochs fit, and a silent manager stalls no longer.
+pub const MIN_EPOCH_DURATION_CEILING: u64 = 30 * DAY_DURATION;
 
 #[cfg(feature = "short_wind_down")]
 soroban_sdk::contractmeta!(key = "build", val = "short wind-down; local tests only");
@@ -354,6 +362,39 @@ impl AsyncVault {
         wind_down::delay(e)
     }
 
+    /// Sets how long the open epoch must stay open before anyone may seal it.
+    /// Instant during setup; afterwards it changes through the timelock.
+    ///
+    /// # Arguments
+    ///
+    /// * `secs` - Seconds, from 1 to 30 days.
+    ///
+    /// # Errors
+    ///
+    /// * `InvalidAmount` - `secs` is under 1 day or over 30 days.
+    /// * `UseTimelock` - Setup has finished.
+    ///
+    /// # Events
+    ///
+    /// * `MinEpochDurationSet`
+    ///
+    /// # Authorization
+    ///
+    /// The admin signs.
+    #[only_admin]
+    pub fn set_min_epoch_duration(e: &Env, secs: u64) {
+        guards::min_epoch_duration_in_bounds(e, secs);
+        guards::direct_change_allowed(e);
+        governance::set_min_epoch_duration(e, secs);
+    }
+
+    /// Seconds the open epoch must stay open before anyone but the manager may
+    /// seal it. `None` until governance sets one; while `None`, only the
+    /// manager seals.
+    pub fn min_epoch_duration(e: &Env) -> Option<u64> {
+        state::min_epoch_duration(e)
+    }
+
     /// The wind-down once proposed: whether it is proposed or active, the time
     /// in seconds it may start, and the rounds finalised.
     pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
@@ -567,8 +608,8 @@ impl AsyncVault {
     /// # Arguments
     ///
     /// * `change` - An upgrade, a new upgrade delay, custodian, notice,
-    ///   wind-down delay or oracle, a role grant or revoke, or an admin
-    ///   hand-over. Durations in seconds.
+    ///   wind-down delay, oracle or minimum epoch duration, a role grant or
+    ///   revoke, or an admin hand-over. Durations in seconds.
     ///
     /// # Errors
     ///
@@ -577,7 +618,7 @@ impl AsyncVault {
     /// * `UpgradeDelayTooShort`, `UpgradeDelayTooLong`,
     ///   `UpgradeDelayBelowNotice`, `NoticeTooLong`, `NoticeAboveUpgradeDelay`,
     ///   `WindDownDelayTooShort`, `WindDownDelayTooLong`, `FeedNotBound`,
-    ///   `InvalidCustodian` - The change is out of bounds.
+    ///   `InvalidCustodian`, `InvalidAmount` - The change is out of bounds.
     /// * `UpgradeProposalExists` - An upgrade or an upgrade delay change, while
     ///   one of the two already waits.
     /// * `TooManyPendingChanges` - The queue is full.
@@ -638,8 +679,8 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `ChangeApplied`, after the change's own: `CustodianSet`, `NoticeSet`,
-    ///   `WindDownDelaySet`, `RoleGranted`, `RoleRevoked` or
-    ///   `AdminTransferInitiated`.
+    ///   `WindDownDelaySet`, `MinEpochDurationSet`, `RoleGranted`,
+    ///   `RoleRevoked` or `AdminTransferInitiated`.
     ///
     /// # Authorization
     ///
@@ -730,6 +771,12 @@ impl AsyncVault {
     /// The id of the open epoch, which takes new requests.
     pub fn current_epoch(e: &Env) -> u64 {
         state::current_epoch(e)
+    }
+
+    /// Ledger time, in seconds, the open epoch started (when setup finished or
+    /// the epoch before it was sealed). `None` before setup finishes.
+    pub fn epoch_opened_at(e: &Env) -> Option<u64> {
+        state::epoch_opened_at(e)
     }
 
     /// An epoch: its status, deposits in asset base units, redemptions in share
@@ -973,15 +1020,21 @@ impl AsyncVault {
     }
 
     /// Seals the open epoch, opens the next, and returns the sealed epoch's
-    /// id. It can be priced once its notice has run.
+    /// id. The manager seals at any time, anyone else once the open epoch has
+    /// been open for the minimum epoch duration. It can be priced once its
+    /// notice has run.
     ///
     /// # Arguments
     ///
-    /// * `caller` - A `manager` holder.
+    /// * `caller` - A `manager` holder, or any account once the minimum has
+    ///   run.
     ///
     /// # Errors
     ///
-    /// * `AccessControlError::Unauthorized` - `caller` lacks `manager`.
+    /// * `AccessControlError::Unauthorized` - `caller` lacks `manager` and no
+    ///   minimum epoch duration is set.
+    /// * `MinEpochDurationNotElapsed` - `caller` lacks `manager` and the open
+    ///   epoch has not run the minimum.
     /// * `WindDownActive` - The vault is winding down.
     /// * `SetupOpen` - Setup has not finished.
     ///
@@ -992,8 +1045,9 @@ impl AsyncVault {
     /// # Authorization
     ///
     /// `caller` signs.
-    #[only_role(caller, "manager")]
     pub fn close_epoch(e: &Env, caller: Address) -> u64 {
+        guards::allowed_to_seal(e, &caller);
+        caller.require_auth();
         epoch::close(e)
     }
 
