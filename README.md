@@ -100,7 +100,7 @@ the shell — and your editor's language server — automatically.
 ```sh
 rustup show                                # installs the toolchain pinned in rust-toolchain.toml
 rustup target add wasm32v1-none            # Soroban's wasm target
-cargo install --locked stellar-cli@27.0.0  # or: brew install stellar-cli
+cargo install --locked stellar-cli@27.0.0
 stellar contract build && cargo test
 ```
 
@@ -115,7 +115,8 @@ From a fresh clone to a vault set deployed on a local network. Run these inside
 ```sh
 # A local Stellar network, RPC at http://localhost:8000/rpc
 docker run --rm -d -p 8000:8000 --name stellar-local \
-  stellar/quickstart --local --enable core,rpc --protocol-version 30
+  docker.io/stellar/quickstart:v687-b1580.1-latest@sha256:7711899e9942c60316ebacf8ab901be15bed7a5a31705d847b55375ff3bc8356 \
+  --local --enable core,rpc --protocol-version 30
 
 npm ci                                         # JS dependencies, including the harness
 stellar contract build                         # contract wasms
