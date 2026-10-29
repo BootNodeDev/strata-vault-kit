@@ -65,7 +65,8 @@ strata_bindings::error_enum! {
         SetupClosed = 8006,
         /// Setup cannot finish before the contract is bound to its vault.
         VaultNotBound = 8007,
-        /// The vault is winding down, so no change may be proposed or applied.
+        /// The vault is winding down, so no change may be proposed or applied,
+        /// and no admin hand-over is accepted.
         WindDownActive = 8008,
         /// The vault is paused, which holds every timelocked change.
         VaultPaused = 8009,
@@ -297,10 +298,12 @@ impl Compliance {
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
     }
 
-    /// Makes the nominee of a pending hand-over the admin.
+    /// Makes the nominee of a pending hand-over the admin. Refused while the
+    /// vault winds down: no admin power changes hands then.
     ///
     /// # Errors
     ///
+    /// * `WindDownActive` - The vault is winding down.
     /// * `RoleTransferError::NoPendingTransfer` - No offer is pending.
     /// * `RoleTransferError::TransferExpired` - The offer's last ledger has
     ///   passed.
@@ -313,6 +316,7 @@ impl Compliance {
     ///
     /// The nominee signs.
     pub fn accept_admin_transfer(e: &Env) {
+        guards::vault_not_winding_down(e);
         strata_storage::bump_instance(e);
         access_control::accept_admin_transfer(e);
     }
