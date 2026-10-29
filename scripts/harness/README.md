@@ -86,11 +86,12 @@ complete record is left alone.
 
 ### Checking a deployment against the source
 
-The record keeps the `commit` it was built from and `wasmHashes`, the SHA-256
-of each contract's Wasm. With `uncommittedChanges: true`, the commit alone
-cannot reproduce the build.
+The record keeps `commit`, the commit checked out when the deploy ran, and
+`wasmHashes`, the SHA-256 of each Wasm file it deployed. The deploy does not
+rebuild, so build right before you deploy. With `uncommittedChanges: true`,
+the commit alone cannot reproduce the build.
 
-Rebuild and compare:
+Rebuild and compare on the same operating system and CPU as the deploy:
 
 ```sh
 git checkout <commit>
@@ -98,9 +99,12 @@ stellar contract build   # stellar-cli 27.0.0, the toolchain in rust-toolchain.t
 shasum -a 256 target/wasm32v1-none/release/*.wasm
 ```
 
-Each hash must equal the matching entry in `wasmHashes`.
+Each hash should equal the matching entry in `wasmHashes`. A build on
+another platform can differ: CI's Linux build and a macOS build of the same
+commit hash differently for four of the five contracts, with no build path
+in either.
 
-To check what the network runs instead of what the source builds:
+To check what the network runs, which needs no rebuild:
 
 ```sh
 stellar contract fetch --id <id> --rpc-url <rpc> \
@@ -108,7 +112,7 @@ stellar contract fetch --id <id> --rpc-url <rpc> \
 shasum -a 256 fetched.wasm
 ```
 
-Run `stellar contract fetch --help` for the current flags. CI prints the hash
-of every contract it builds.
+Run `stellar contract fetch --help` for the current flags. CI prints the
+hash of each contract in its main build, built on Linux x86_64.
 
 Test reports write to `runs/<network>.json`.

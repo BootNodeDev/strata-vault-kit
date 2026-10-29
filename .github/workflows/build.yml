@@ -161,12 +161,12 @@ jobs:
       # The same cargo build Scaffold runs, so its build below reuses the Wasm.
       - name: Build the contracts
         run: stellar contract build
-      # The deploy records these hashes; a build path in the Wasm would make them differ per machine.
+      # A build path in the Wasm would tie its hash to the checkout location.
       - name: Print the Wasm hashes and check no build path is embedded
         run: |
           sha256sum target/wasm32v1-none/release/*.wasm
           if grep -l -a -E '/home/runner|/Users/|\.cargo/registry' target/wasm32v1-none/release/*.wasm; then
-            echo "These Wasm files embed a build path, so a rebuild elsewhere would not match the recorded hash."
+            echo "These Wasm files embed a build path, so their hashes depend on where the repository is checked out."
             exit 1
           fi
       - name: Build the vault without the wind-down minimum

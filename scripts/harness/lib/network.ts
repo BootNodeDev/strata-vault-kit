@@ -45,8 +45,7 @@ const QUICKSTART_ROOT =
 const LOCAL_COOLDOWN_SECS = 5
 const TESTNET_COOLDOWN_SECS = 60
 
-// Twice the cooldown, so a sealed epoch's price is never readable before its
-// notice ends only because of the oracle's own cooldown.
+// Twice the cooldown, so a valuation attested after the close lands before the notice ends.
 const noticeFor = (cooldownSecs: number): VaultConfig => ({
 	notice_secs: 2 * cooldownSecs,
 })

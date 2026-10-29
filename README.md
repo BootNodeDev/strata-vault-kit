@@ -148,11 +148,13 @@ deploying to local (http://localhost:8000/rpc)
 account keys in .env.keys.local (13 new)
 funded 13 accounts; 0 already existed
 asset contract CCW7OKVOXBBBX3YK6O7F6TZPNIFG32OG4UY7R2K6NSWZUI4R75QCEPVT
+returned the deposit asset of 0 accounts to its issuer
 compliance CDPCD2BQQKVQBQFAFI4YBLN3TRX34J5NZUQQMUBGHPYNY64LCEM63DTL
 identity_verifier CC4SRUIMKOBZSEO2GKGVQMDWPWCBJBBIMYYE7BBCUEZE6VMD3SFQDAMW
 share_token CDC7SRTDZIMJSLC5AONUD3FIFYZGMFOHRAS7LLYV2ATJRT7RMTMQO2DG
 nav_oracle CCUUBP3RGOIZZL4DUGRL4FBOSQJZKBPNQ7VUWIN6UOOYBJYYKGNT5E52
 async_vault CB2KVM2WHLXDZRHGCYPTGE7PZM6OORXCNVBUMC3L7GY5KX4BA6NMADXE
+commit <sha>
 clients generated
 vault holds share_token manager role
 share_token bound to the vault, setup finished
@@ -177,10 +179,9 @@ CARGO_TARGET_DIR=target/short-wind-down stellar contract build --package async-v
 npm run test:wind-down -w scripts/harness
 ```
 
-Deploy afresh before each run of the suites. The deploy leaves the vault's
-notice at twice the oracle cooldown (10 seconds on the local network), and
-lowering it back waits for the timelock, so a second run against the same
-deployment can fail wherever it prices an epoch right after closing it.
+Deploy afresh before each run of the suites. The deploy sets the vault's
+notice to twice the oracle cooldown (10 seconds on the local network, 120 on
+testnet), and the suites wait out the notice before they price an epoch.
 `test:wind-down` ignores `deployed.local.json`: it deploys its own throwaway
 vault set, built from the `short_wind_down` wasm above, so it can reach an
 active wind-down without the real seven-day minimum.
