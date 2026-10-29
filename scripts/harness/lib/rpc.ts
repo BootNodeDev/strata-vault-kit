@@ -12,6 +12,7 @@ function isAccountNotFound(error: unknown): boolean {
 // Never wrap code that expects "not found" to mean the account is new.
 export function withAccountRetry<S extends Pick<rpc.Server, "getAccount">>(
 	server: S,
+	wait: (ms: number) => Promise<void> = sleep,
 ): S {
 	const getAccount = server.getAccount.bind(server)
 	server.getAccount = async (address: string) => {
@@ -20,7 +21,7 @@ export function withAccountRetry<S extends Pick<rpc.Server, "getAccount">>(
 				return await getAccount(address)
 			} catch (error) {
 				if (!isAccountNotFound(error) || attempt >= ATTEMPTS) throw error
-				await sleep(INTERVAL_MS)
+				await wait(INTERVAL_MS)
 			}
 		}
 	}

@@ -20,11 +20,14 @@ const notFound = () =>
 	Promise.reject(new Error(`Account not found: ${address}`))
 const found = () => Promise.resolve(new Account(address, "1"))
 
+// Skips the production retry interval so the suite runs in milliseconds.
+const noWait = () => Promise.resolve()
+
 describe("withAccountRetry", () => {
 	it("returns the account once a retry succeeds", async () => {
 		const { server, callCount } = fakeServer([notFound, notFound, found])
 
-		const account = await withAccountRetry(server).getAccount(address)
+		const account = await withAccountRetry(server, noWait).getAccount(address)
 
 		expect(account.accountId()).toBe(address)
 		expect(callCount()).toBe(3)
@@ -33,9 +36,9 @@ describe("withAccountRetry", () => {
 	it("rethrows the error once the attempts run out", async () => {
 		const { server, callCount } = fakeServer([notFound])
 
-		await expect(withAccountRetry(server).getAccount(address)).rejects.toThrow(
-			`Account not found: ${address}`,
-		)
+		await expect(
+			withAccountRetry(server, noWait).getAccount(address),
+		).rejects.toThrow(`Account not found: ${address}`)
 		expect(callCount()).toBe(10)
 	})
 
@@ -44,9 +47,9 @@ describe("withAccountRetry", () => {
 			() => Promise.reject(new Error("socket hang up")),
 		])
 
-		await expect(withAccountRetry(server).getAccount(address)).rejects.toThrow(
-			"socket hang up",
-		)
+		await expect(
+			withAccountRetry(server, noWait).getAccount(address),
+		).rejects.toThrow("socket hang up")
 		expect(callCount()).toBe(1)
 	})
 })
