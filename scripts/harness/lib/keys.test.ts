@@ -238,6 +238,8 @@ describe("keysFor", () => {
 
 		expect(message).toContain(keysFile("local", dir))
 		expect(message).toContain("Restore it from your backup")
+		expect(message).toContain("deploy again")
+		expect(message).toContain("`secret` fields of an older record")
 		expect(existsSync(keysFile("local", dir))).toBe(false)
 	})
 

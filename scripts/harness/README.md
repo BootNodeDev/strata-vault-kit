@@ -63,8 +63,11 @@ file.
 harness file that does. Every script that signs reads it, and stops if a key
 there is not the one the deployment was made with.
 
-Records written by older versions of the harness hold every secret key: delete
-them.
+Records written by older versions of the harness also hold each account's
+secret key. Keep a record while you still use its deployment. Make sure
+`.env.keys.<network>` holds the same keys (copy any missing one from the
+record's `secret` field, as `HOLDER_1_SECRET=S...`), then remove the `secret`
+fields. Delete old timestamped records you no longer need.
 
 A new deploy keeps the previous record as
 `deployed.<network>.<timestamp>.json`, named after the time of that deploy,

@@ -102,7 +102,7 @@ export function readKeys(network: NetworkName, dir: string): Accounts {
 	const file = keysFile(network, dir)
 	if (!existsSync(file)) {
 		throw new Error(
-			`no key file at ${file}: the harness signs with the keys in it. Restore it from your backup.`,
+			`no key file at ${file}: the harness signs with the keys in it. Restore it from your backup, deploy again to create it, or rebuild it from the \`secret\` fields of an older record.`,
 		)
 	}
 	const { secrets } = parse(readFileSync(file, "utf8"), file, headerOf(network))

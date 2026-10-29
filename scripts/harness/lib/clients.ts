@@ -9,6 +9,7 @@ import { Client as ShareTokenClient } from "../../../app-lib/clients/share_token
 import { type Accounts } from "./accounts.js"
 import {
 	loadDeployment,
+	publicKeysOf,
 	REPO_ROOT,
 	type ContractName,
 	type Deployment,
@@ -27,7 +28,9 @@ export interface Connected {
 export function connect(): Connected {
 	const net = network()
 	const deployment = loadDeployment(net.name)
-	return connectTo(net, deployment, keysFor(deployment, REPO_ROOT))
+	const keys = keysFor(deployment, REPO_ROOT)
+	// An older record also holds secret keys; keep only the public ones in memory.
+	return connectTo(net, { ...deployment, accounts: publicKeysOf(keys) }, keys)
 }
 
 export function connectTo(
