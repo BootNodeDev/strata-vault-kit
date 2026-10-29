@@ -292,9 +292,10 @@ controls.
   not a guaranteed exit (R1). An epoch sealed before the swap is priced by
   whichever feed stands when it is priced.
 
-  The checks do not ask for `attested_at()` or `nav_per_share()`: a new feed
-  has no report yet, so it cannot answer either. A feed that traps on either
-  view, or answers a share price of zero or less, is still installed. The
+  The checks do not ask for `attested_at()` or `nav_per_share()`: a freshly
+  deployed oracle has no report yet and refuses both, so asking would refuse a
+  sound swap. A feed that traps on either view, or answers a share price of
+  zero or less, is still installed. The
   vault reads it as having no price: cancellation on a sealed epoch stays
   open, and `fulfill_epoch` refuses with `FeedNotValid`, or with
   `InvalidSharePrice` for a price of zero or less. Deposits still land while

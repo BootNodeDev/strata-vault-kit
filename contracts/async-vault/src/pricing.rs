@@ -9,8 +9,9 @@ use crate::state;
 /// Defines the pricing interface for epoch share price resolution and conversions.
 /// A deployment or vault variant selects or implements a scheme conforming to this trait.
 pub trait PricingScheme {
-    /// Resolves the share price for an epoch being fulfilled.
-    /// Returns the share price in WAD scale (18 decimals), or a VaultError if invalid.
+    /// Resolves the share price an epoch would take now, in WAD scale (18
+    /// decimals), or a VaultError if invalid. Cancellation calls it too, to
+    /// decide whether a price is readable, so it must not write state.
     fn resolve_share_price(e: &Env) -> Result<i128, VaultError>;
 
     /// Converts asset amount to share amount at `share_price`, rounding down

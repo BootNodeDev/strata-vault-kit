@@ -901,8 +901,9 @@ impl AsyncVault {
     ///
     /// * `EpochNotFound` - No such epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
-    /// * `PriceAvailable` - A report accepted after the close is valid, so the
-    ///   price is known, even while the notice runs.
+    /// * `PriceAvailable` - A valid report accepted after the close gives a
+    ///   share price above zero, so the price is known, even while the notice
+    ///   runs.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `Frozen` - `holder` is frozen.
     /// * `EscrowNotCovered` - The vault's balance cannot cover the refund yet.
@@ -933,8 +934,9 @@ impl AsyncVault {
     ///
     /// * `EpochNotFound` - No such epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
-    /// * `PriceAvailable` - A report accepted after the close is valid, so the
-    ///   price is known, even while the notice runs.
+    /// * `PriceAvailable` - A valid report accepted after the close gives a
+    ///   share price above zero, so the price is known, even while the notice
+    ///   runs.
     /// * `RequestNotFound` - `holder` has no redemption in the epoch.
     /// * `NotAllowlisted` - `holder` is delisted.
     /// * `Frozen` - `holder` is frozen.

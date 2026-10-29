@@ -1,3 +1,4 @@
+use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
 use soroban_sdk::{contract, contractimpl, Symbol};
 
 use super::*;
@@ -330,6 +331,13 @@ fn a_feed_that_traps_on_its_state_neither_prices_nor_blocks_a_cancel() {
 
     refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
     assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+
+    let trapped =
+        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction);
+    assert_eq!(
+        f.vault.try_request_deposit(&investor, &400),
+        Err(Ok(trapped))
+    );
 }
 
 /// A deposit and a redemption sealed in one epoch, as `(investor, holder, epoch)`.

@@ -66,8 +66,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 
 ### Invariant 6: Single-Step Atomic Cancellation
 - **Definition**: Cancellation is all-or-nothing, and it is open exactly while the vault could not price the epoch now. Three rules decide it:
-  1. A readable price closes cancellation, even while the notice still runs. A price is readable when the feed is valid and its report was accepted at or after the epoch closed.
-  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — cancellation opens again. That is the way out, so escrow is never stuck behind a stalled feed. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, or a paused vault can.
+  1. A readable price closes cancellation, even while the notice still runs. A price is readable when the feed answers that it is valid, its report was accepted at or after the epoch closed, and it answers a share price above zero. A feed that fails to answer any of these has no readable price.
+  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, the vault is paused, or the feed fails to answer or prices at zero or less — cancellation opens again. That is the way out, so escrow is never stuck behind a stalled feed. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, a paused vault or a broken feed installed by governance can.
   3. The epoch is priced at the latest valid report at fulfil time that was accepted at or after the close — not necessarily the report that first closed the window.
 - **Testable Property**:
   - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow, unless an issuer clawback leaves the balance below the deposit (`EscrowNotCovered`, see Invariant 1).
