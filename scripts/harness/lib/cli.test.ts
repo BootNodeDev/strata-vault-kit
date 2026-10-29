@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
+
 import {
 	Address,
 	Asset,
@@ -8,7 +11,8 @@ import {
 } from "@stellar/stellar-sdk"
 import { describe, expect, it } from "vitest"
 
-import { ensureAssetContract } from "./cli.js"
+import { ensureAssetContract, pinClientSdk } from "./cli.js"
+import { REPO_ROOT } from "./deployment.js"
 import { type Network } from "./network.js"
 
 describe("ensureAssetContract", () => {
@@ -30,5 +34,39 @@ describe("ensureAssetContract", () => {
 		} as unknown as rpc.Server
 
 		expect(await ensureAssetContract(net, server, asset, issuer)).toBe(id)
+	})
+})
+
+describe("pinClientSdk", () => {
+	it("pins a client's stellar-sdk dependency to the given version", () => {
+		const pkg = {
+			name: "example",
+			dependencies: { "@stellar/stellar-sdk": "^14.5.0", buffer: "6.0.3" },
+		}
+
+		expect(pinClientSdk(pkg, "16.4.1")).toEqual({
+			name: "example",
+			dependencies: { "@stellar/stellar-sdk": "16.4.1", buffer: "6.0.3" },
+		})
+	})
+
+	it("leaves a package without the dependency unchanged", () => {
+		const pkg = { name: "example", dependencies: { buffer: "6.0.3" } }
+
+		expect(pinClientSdk(pkg, "16.4.1")).toBe(pkg)
+	})
+
+	it("pins to the version the root package.json overrides", () => {
+		const rootPkg = JSON.parse(
+			readFileSync(join(REPO_ROOT, "package.json"), "utf8"),
+		) as { overrides?: Record<string, string> }
+		const version = rootPkg.overrides?.["@stellar/stellar-sdk"]
+		expect(typeof version).toBe("string")
+
+		const pkg = { dependencies: { "@stellar/stellar-sdk": "^14.5.0" } }
+
+		expect(pinClientSdk(pkg, version as string)).toEqual({
+			dependencies: { "@stellar/stellar-sdk": version },
+		})
 	})
 })
