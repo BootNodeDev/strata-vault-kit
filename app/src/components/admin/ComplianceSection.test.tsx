@@ -1,5 +1,13 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import {
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	type Mock,
+	vi,
+} from "vitest"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import ComplianceSection from "./ComplianceSection"
@@ -9,10 +17,12 @@ const { txs, useComplianceStateMock, useLegalTransfersMock } = vi.hoisted(
 		const tx = (): {
 			status: TransactionStatus
 			submit: Mock<() => boolean>
+			prepare: Mock
 			reset: Mock
 		} => ({
 			status: { status: "idle" },
 			submit: vi.fn(() => true),
+			prepare: vi.fn(),
 			reset: vi.fn(),
 		})
 		return {
@@ -101,6 +111,10 @@ const readsFor = ({ target }: { target: string | undefined }) => ({
 })
 
 describe("ComplianceSection", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
 	beforeEach(() => {
 		vi.clearAllMocks()
 		for (const transaction of Object.values(txs))
@@ -226,6 +240,56 @@ describe("ComplianceSection", () => {
 		expect(
 			screen.getByLabelText("Target address").hasAttribute("aria-describedby"),
 		).toBe(false)
+	})
+
+	it("prepares allowing the target once it settles and still submits it on click", () => {
+		vi.useFakeTimers()
+		render(
+			<ComplianceSection
+				grants={[verifierAdmin]}
+				wallet={WALLET}
+				addresses={ADDRESSES}
+			/>,
+		)
+		enterTarget(TARGET)
+		openRow("Allow the address")
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		const allowArg = { verifier: "CVERIFIERADDRESS", account: TARGET }
+		expect(txs.useAllowAddress.prepare).toHaveBeenCalledWith(
+			allowArg,
+			verifierAdmin,
+		)
+
+		fireEvent.click(button("Allow the address"))
+
+		expect(txs.useAllowAddress.submit).toHaveBeenCalledWith(
+			allowArg,
+			verifierAdmin,
+		)
+	})
+
+	it("prepares nothing while the compliance tab is hidden", () => {
+		vi.useFakeTimers()
+		render(
+			<ComplianceSection
+				grants={[verifierAdmin]}
+				wallet={WALLET}
+				addresses={ADDRESSES}
+				active={false}
+			/>,
+		)
+		enterTarget(TARGET)
+		openRow("Allow the address")
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(txs.useAllowAddress.prepare).not.toHaveBeenCalled()
 	})
 
 	it("allows the target and follows it in the modal", () => {

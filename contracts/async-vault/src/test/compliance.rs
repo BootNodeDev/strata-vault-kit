@@ -1,5 +1,5 @@
 use soroban_sdk::{contract, contractimpl};
-use stellar_tokens::rwa::{compliance::ComplianceHook, RWA};
+use stellar_tokens::rwa::{compliance::ComplianceHook, RWAError, RWA};
 
 use super::*;
 
@@ -252,6 +252,46 @@ fn a_frozen_or_delisted_holder_cannot_transfer_shares() {
     f.identity.allow(&user, &true);
     f.share.set_address_frozen(&user, &true, &f.compliance);
     assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
+}
+
+#[test]
+fn rules_with_no_modules_accept_any_pair_yet_the_token_still_checks_both_sides() {
+    let f = setup();
+    let rules = ComplianceClient::new(&f.e, &f.share.compliance());
+    let holder = f.holder(500);
+    let listed = f.investor(0);
+    let unlisted = f.unverified_investor(0);
+    let frozen = f.investor(0);
+    f.share.set_address_frozen(&frozen, &true, &f.compliance);
+    let delisted_sender = f.holder(500);
+    f.identity.allow(&delisted_sender, &false);
+    let frozen_sender = f.holder(500);
+    f.share
+        .set_address_frozen(&frozen_sender, &true, &f.compliance);
+    let spender = Address::generate(&f.e);
+    let live_until = f.e.ledger().sequence() + 1_000;
+
+    for (from, to, error) in [
+        (&holder, &unlisted, RWAError::IdentityVerificationFailed),
+        (&holder, &frozen, RWAError::AddressFrozen),
+        (
+            &delisted_sender,
+            &listed,
+            RWAError::IdentityVerificationFailed,
+        ),
+        (&frozen_sender, &listed, RWAError::AddressFrozen),
+    ] {
+        assert!(rules.can_transfer(from, to, &1, &f.share.address));
+        assert_eq!(f.share.try_transfer(from, to, &1), Err(Ok(error.into())));
+        f.share.approve(from, &spender, &1, &live_until);
+        assert_eq!(
+            f.share.try_transfer_from(&spender, from, to, &1),
+            Err(Ok(error.into()))
+        );
+    }
+
+    f.share.transfer(&holder, &listed, &1);
+    assert_eq!(f.shares(&listed), 1);
 }
 
 #[test]

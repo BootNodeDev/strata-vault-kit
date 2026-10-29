@@ -2,8 +2,9 @@ import { type Amount, type Signer } from "@stellar-scaffold/app-lib"
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 
 export type RequestDepositStatus = TransactionStatus
@@ -11,6 +12,7 @@ export type RequestDepositStatus = TransactionStatus
 export interface UseRequestDeposit {
 	status: RequestDepositStatus
 	submit: (amount: Amount) => boolean
+	prepare: (amount: Amount) => Release
 	reset: () => void
 }
 

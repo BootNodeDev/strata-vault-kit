@@ -790,6 +790,7 @@ describe("usePauseVault with a grant", () => {
 	const signable = () => {
 		const signed = {
 			toEnvelope: () => ({ toXDR: () => "SIGNEDXDR" }),
+			hash: () => ({ toString: () => "abcd" }),
 		}
 		const tx = {
 			simulation: undefined,
