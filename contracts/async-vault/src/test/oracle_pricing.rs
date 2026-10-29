@@ -17,7 +17,7 @@ fn fulfill_is_rejected_while_the_nav_is_paused() {
     let f = setup();
     f.close_epoch();
     f.attest(wad(2));
-    f.oracle.set_nav_paused(&true);
+    f.oracle.pause_nav(&f.guardian);
 
     refused(f.vault.try_fulfill_epoch(&1), VaultError::FeedNotValid);
 
@@ -35,6 +35,10 @@ fn fulfill_is_rejected_once_the_feed_goes_stale() {
     assert!(f.oracle.is_stale());
     refused(f.vault.try_fulfill_epoch(&1), VaultError::FeedNotValid);
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Pending);
+
+    f.attest(wad(1));
+    f.vault.fulfill_epoch(&1);
+    assert_eq!(f.vault.get_epoch(&1).unwrap().share_price, wad(1));
 }
 
 #[test]
@@ -50,18 +54,6 @@ fn the_epoch_is_priced_at_the_attestation() {
         3 * WAD_SCALE / 2
     );
     assert_eq!(f.oracle.nav_per_share(), 3 * WAD_SCALE / 2);
-}
-
-#[test]
-fn a_paused_feed_is_refused_by_the_vault_not_the_oracle() {
-    let f = setup();
-    let holder = f.holder(100);
-    f.vault.request_redeem(&holder, &100);
-    let epoch = f.close_epoch();
-
-    f.oracle.pause_nav(&f.guardian);
-
-    refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
 }
 
 #[test]

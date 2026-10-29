@@ -310,9 +310,7 @@ fn the_vault_exposes_no_immediate_upgrade() {
 #[test]
 fn nothing_is_proposed_during_a_wind_down() {
     let f = setup();
-    f.vault.propose_wind_down();
-    f.advance(MIN_WIND_DOWN_DELAY);
-    f.vault.activate_wind_down();
+    super::wind_down::wind_down_now(&f);
 
     refused(
         f.vault
@@ -325,9 +323,7 @@ fn nothing_is_proposed_during_a_wind_down() {
 fn a_change_standing_when_the_wind_down_starts_never_applies() {
     let f = setup();
     let id = propose(&f, VaultChange::Upgrade(wasm(&f, 7)));
-    f.vault.propose_wind_down();
-    f.advance(MIN_WIND_DOWN_DELAY);
-    f.vault.activate_wind_down();
+    super::wind_down::wind_down_now(&f);
     f.advance(MAX_UPGRADE_DELAY);
 
     refused(f.vault.try_apply_change(&id), VaultError::WindDownActive);

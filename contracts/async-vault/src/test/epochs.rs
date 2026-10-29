@@ -1,3 +1,5 @@
+use stellar_access::access_control::AccessControlError;
+
 use super::*;
 
 #[test]
@@ -144,19 +146,16 @@ fn epochs_can_be_fulfilled_out_of_order_after_closing() {
 }
 
 #[test]
-#[should_panic(expected = "#2000")]
 fn a_non_manager_cannot_close() {
     let f = setup();
     let impostor = Address::generate(&f.e);
 
-    f.vault.close_epoch(&impostor);
-}
-
-#[test]
-fn the_admin_is_not_the_manager() {
-    let f = setup();
-
-    assert!(f.vault.try_close_epoch(&f.admin).is_err());
+    for who in [&impostor, &f.admin] {
+        assert_eq!(
+            f.vault.try_close_epoch(who),
+            Err(Ok(AccessControlError::Unauthorized.into()))
+        );
+    }
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Open);
 }
 
@@ -172,7 +171,6 @@ fn closing_needs_the_manager_authorisation() {
 #[test]
 fn anyone_may_fulfill_a_closed_epoch() {
     let f = setup();
-    let stranger = Address::generate(&f.e);
     let epoch = f.close_epoch();
     f.attest(wad(2));
 
@@ -183,5 +181,4 @@ fn anyone_may_fulfill_a_closed_epoch() {
         f.vault.get_epoch(&epoch).unwrap().status,
         EpochStatus::Fulfilled
     );
-    assert_eq!(f.shares(&stranger), 0);
 }

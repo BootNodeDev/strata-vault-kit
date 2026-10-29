@@ -44,8 +44,6 @@ fn a_fresh_vault_is_not_winding_down() {
     assert_eq!(f.vault.wind_down(), None);
 }
 
-const WEEK: u64 = 7 * DAY_DURATION;
-
 #[test]
 fn governance_proposes_and_anyone_activates_after_the_delay() {
     let f = setup();
@@ -86,11 +84,10 @@ fn only_governance_proposes() {
 #[test]
 fn a_second_proposal_cannot_push_the_date_back() {
     let f = setup();
-    f.vault.set_wind_down_delay(&WEEK);
     f.vault.propose_wind_down();
     let first = f.vault.wind_down().unwrap().active_at;
 
-    f.advance(WEEK / 2);
+    f.advance(MIN_WIND_DOWN_DELAY / 2);
     assert!(f.vault.try_propose_wind_down().is_err());
 
     assert_eq!(f.vault.wind_down().unwrap().active_at, first);
@@ -99,7 +96,6 @@ fn a_second_proposal_cannot_push_the_date_back() {
 #[test]
 fn governance_cancels_a_proposal_before_activation() {
     let f = setup();
-    f.vault.set_wind_down_delay(&WEEK);
     f.vault.propose_wind_down();
 
     let stranger = Address::generate(&f.e);
@@ -126,10 +122,7 @@ fn governance_cancels_a_proposal_before_activation() {
 #[test]
 fn an_active_wind_down_cannot_be_cancelled() {
     let f = setup();
-    f.vault.set_wind_down_delay(&WEEK);
-    f.vault.propose_wind_down();
-    f.advance(WEEK);
-    f.vault.activate_wind_down();
+    wind_down_now(&f);
 
     assert!(f.vault.try_cancel_wind_down_proposal().is_err());
     assert_eq!(f.vault.wind_down().unwrap().status, WindDownStatus::Active);
@@ -157,6 +150,12 @@ pub(super) fn wind_down_now(f: &Fixture) {
     f.vault.propose_wind_down();
     f.advance(MIN_WIND_DOWN_DELAY);
     f.vault.activate_wind_down();
+}
+
+/// Winds down and finalises the first round; returns what it credited.
+pub(super) fn first_round_now(f: &Fixture) -> i128 {
+    wind_down_now(f);
+    f.vault.finalize_wind_down_round()
 }
 
 #[test]
@@ -310,9 +309,7 @@ fn a_second_round_does_not_credit_the_first_round_again() {
     let f = setup();
     let _user = f.holder(500);
     let backer = f.investor(1_000);
-    wind_down_now(&f);
-
-    let first = f.vault.finalize_wind_down_round();
+    let first = first_round_now(&f);
     assert!(first > 0);
 
     f.vault.fund(&backer, &600);
@@ -326,8 +323,7 @@ fn a_second_round_does_not_credit_the_first_round_again() {
 fn a_round_with_nothing_to_distribute_is_refused() {
     let f = setup();
     let _user = f.holder(500);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     assert!(f.vault.try_finalize_wind_down_round().is_err());
 }
@@ -361,9 +357,7 @@ fn a_round_leaves_priced_liabilities_alone() {
     f.fulfill_epoch(wad(2));
     let committed = f.vault.committed();
     assert_eq!(committed, 400);
-    wind_down_now(&f);
-
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     assert_eq!(f.vault.committed(), committed);
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
@@ -374,9 +368,7 @@ fn two_holders_split_a_round_in_proportion() {
     let f = setup();
     let big = f.holder(600);
     let small = f.holder(200);
-    wind_down_now(&f);
-
-    let pot = f.vault.finalize_wind_down_round();
+    let pot = first_round_now(&f);
     let supply = f.vault.wind_down_supply();
 
     let big_shares = f.shares(&big);
@@ -398,9 +390,7 @@ fn a_holder_who_waits_collects_every_round_at_once() {
     let patient = f.holder(400);
     let prompt = f.holder(400);
     let backer = f.investor(10_000);
-    wind_down_now(&f);
-
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     let first = f.vault.claim_wind_down(&prompt);
 
     f.vault.fund(&backer, &800);
@@ -435,8 +425,7 @@ fn a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed() {
     let holder = f.holder(500);
     let module = f.e.register(FailsEveryBurn, ());
     f.add_compliance_module(ComplianceHook::Destroyed, &module);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     assert_eq!(
         f.vault.try_claim_wind_down(&holder),
@@ -461,8 +450,7 @@ fn a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed() {
 fn claiming_burns_the_shares_and_pays_once() {
     let f = setup();
     let user = f.holder(500);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     let paid = f.vault.claim_wind_down(&user);
     assert!(paid > 0);
@@ -477,8 +465,7 @@ fn surrendering_between_rounds_pays_nothing_and_is_allowed() {
     let f = setup();
     let user = f.holder(500);
     let backer = f.investor(10_000);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     f.vault.claim_wind_down(&user);
 
     // Nothing surrendered, nothing owed.
@@ -503,8 +490,7 @@ fn a_holder_with_no_shares_cannot_claim() {
     let f = setup();
     let _user = f.holder(500);
     let stranger = Address::generate(&f.e);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     assert!(f.vault.try_claim_wind_down(&stranger).is_err());
 }
@@ -514,8 +500,7 @@ fn a_cancelled_redemption_joins_the_wind_down_payout() {
     let f = setup();
     let user = f.holder(200);
     let epoch = f.vault.request_redeem(&user, &200);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     assert!(f.vault.try_claim_wind_down(&user).is_err());
     f.vault.cancel_redeem(&user, &epoch);
@@ -529,8 +514,7 @@ fn a_token_pause_does_not_hold_a_redemption_in_a_wind_down() {
     let f = setup();
     let user = f.holder(200);
     let epoch = f.vault.request_redeem(&user, &200);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     f.share.pause(&f.admin);
 
     f.vault.cancel_redeem(&user, &epoch);
@@ -544,8 +528,7 @@ fn a_frozen_holders_redemption_stays_escrowed_in_a_wind_down() {
     let f = setup();
     let user = f.holder(200);
     let epoch = f.vault.request_redeem(&user, &200);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     f.share.set_address_frozen(&user, &true, &f.compliance);
 
     refused(f.vault.try_cancel_redeem(&user, &epoch), VaultError::Frozen);
@@ -562,8 +545,7 @@ fn a_frozen_holder_is_paid_once_a_compliance_holder_granted_in_the_wind_down_lif
     let f = setup();
     let frozen = f.holder(500);
     let other = f.holder(500);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     let role = soroban_sdk::Symbol::new(&f.e, "compliance");
     f.share.set_address_frozen(&frozen, &true, &f.compliance);
     f.share.revoke_role(&f.compliance, &role, &f.admin);
@@ -624,8 +606,7 @@ fn the_payouts_never_exceed_what_the_rounds_credited() {
 fn the_pause_does_not_block_a_wind_down_claim() {
     let f = setup();
     let user = f.holder(500);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     f.vault.pause(&f.guardian);
 
     assert!(f.vault.claim_wind_down(&user) > 0);
@@ -640,8 +621,7 @@ fn a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve() {
     f.close_epoch();
     // A price high enough that one unit of the asset buys no shares at all.
     f.fulfill_epoch_at(epoch, wad(2));
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     // Known limit: the refund is not tracked as a liability, so a round can
     // credit the assets it needed.
@@ -653,8 +633,7 @@ fn the_vault_cannot_claim_against_its_own_escrowed_shares() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     let owed = f.vault.wind_down_owed();
 
     assert_eq!(f.vault.wind_down_claimable(&f.vault.address), 0);
@@ -672,8 +651,7 @@ fn a_position_survives_the_ledger_advancing() {
     let f = setup();
     let user = f.holder(500);
     let backer = f.investor(10_000);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     f.vault.claim_wind_down(&user);
 
     f.advance(29 * DAY_DURATION);
@@ -689,10 +667,8 @@ fn shares_acquired_after_first_claim_earn_all_prior_rounds() {
     let u1 = f.holder(300);
     let u2 = f.holder(300);
     let backer = f.investor(10_000);
-    wind_down_now(&f);
-
     // Round 1
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     let paid1 = f.vault.claim_wind_down(&u1);
     assert!(paid1 > 0);
 
@@ -725,9 +701,7 @@ fn multiple_rounds_with_floor_dust_remain_solvent_for_last_claimant() {
     let h2 = f.holder(333);
     let h3 = f.holder(334);
     let backer = f.investor(10_000);
-    wind_down_now(&f);
-
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     let first = f.vault.claim_wind_down(&h1);
 
     f.vault.fund(&backer, &333);
@@ -741,9 +715,8 @@ fn multiple_rounds_with_floor_dust_remain_solvent_for_last_claimant() {
     let late = [f.vault.claim_wind_down(&h1), f.vault.claim_wind_down(&h2)];
     let paid = first + second + last + late[0] + late[1];
 
-    assert_eq!([first, second], [666, 776]);
+    assert_eq!([first, second, last], [666, 776, 890]);
     assert_eq!(late, [221, 111]);
-    assert_eq!(last, 890);
     assert_eq!(f.vault.wind_down_distributed(), 2_666);
     assert_eq!(paid + f.vault.wind_down_owed(), 2_666);
     assert_eq!(f.vault.wind_down_owed(), 2);
@@ -783,8 +756,7 @@ fn shares_sent_to_the_vault_are_refused_so_the_snapshot_counts_holders_only() {
         f.share.try_transfer(&a, &f.vault.address, &100),
         Err(Ok(share_token::ShareTokenError::VaultAddress.into())),
     );
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     assert_eq!(f.vault.wind_down_supply(), 800);
 }
 
@@ -807,9 +779,7 @@ fn a_later_round_needs_the_units_an_earlier_round_left_in_owed() {
     let a = f.holder(1);
     let b = f.holder(1);
     f.empty_reserve();
-    f.vault.propose_wind_down();
-    f.advance(MIN_WIND_DOWN_DELAY);
-    f.vault.activate_wind_down();
+    wind_down_now(&f);
 
     f.vault.fund(&f.custodian, &1);
     assert_eq!(f.vault.finalize_wind_down_round(), 1);
@@ -824,25 +794,6 @@ fn a_later_round_needs_the_units_an_earlier_round_left_in_owed() {
 
     assert_eq!(f.vault.wind_down_owed(), 0);
     assert_eq!(f.balance(&f.vault.address), 0);
-}
-
-#[test]
-fn after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder() {
-    let f = setup();
-    let holders = [f.holder(1), f.holder(2), f.holder(4)];
-    f.empty_reserve();
-    f.vault.propose_wind_down();
-    f.advance(MIN_WIND_DOWN_DELAY);
-    f.vault.activate_wind_down();
-    f.vault.fund(&f.custodian, &5);
-    f.vault.finalize_wind_down_round();
-
-    for holder in &holders {
-        f.vault.claim_wind_down(holder);
-    }
-
-    assert!(f.vault.wind_down_owed() <= holders.len() as i128);
-    assert!(f.balance(&f.vault.address) >= f.vault.wind_down_owed());
 }
 
 #[test]
@@ -903,9 +854,7 @@ proptest! {
         let total_shares: i128 = holdings.iter().sum();
         let backer = f.investor(total_shares + 10_000);
         f.empty_reserve();
-        f.vault.propose_wind_down();
-        f.advance(MIN_WIND_DOWN_DELAY);
-        f.vault.activate_wind_down();
+        wind_down_now(&f);
 
         // Funds exactly the snapshot, so the first round always credits
         // something whatever the random holdings: every holder below then
@@ -923,6 +872,7 @@ proptest! {
         }
 
         prop_assert!(f.vault.wind_down_owed() < holders.len() as i128);
+        prop_assert!(f.balance(&f.vault.address) >= f.vault.wind_down_owed());
     }
 }
 
@@ -931,8 +881,7 @@ fn a_frozen_holders_slice_stays_owed_until_the_freeze_lifts() {
     let f = setup();
     let frozen = f.holder(500);
     let other = f.holder(500);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     f.share.set_address_frozen(&frozen, &true, &f.compliance);
 
     refused(f.vault.try_claim_wind_down(&frozen), VaultError::Frozen);
@@ -952,8 +901,7 @@ fn a_frozen_holders_escrowed_exit_waits_through_a_wind_down() {
     let _other = f.holder(500);
     let epoch = f.vault.request_redeem(&frozen, &500);
     f.share.set_address_frozen(&frozen, &true, &f.compliance);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     refused(
         f.vault.try_cancel_redeem(&frozen, &epoch),
@@ -970,8 +918,7 @@ fn a_frozen_holders_escrowed_exit_waits_through_a_wind_down() {
 fn wind_down_claimable_is_zero_for_a_frozen_holder() {
     let f = setup();
     let holder = f.holder(500);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     f.share.set_address_frozen(&holder, &true, &f.compliance);
 
     assert_eq!(f.vault.wind_down_claimable(&holder), 0);
@@ -1011,8 +958,7 @@ fn the_claimable_view_shows_what_the_claim_then_pays() {
     let f = setup();
     let a = f.holder(300);
     let _b = f.holder(700);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
 
     let shown = f.vault.wind_down_claimable(&a);
     assert!(shown > 0);
@@ -1025,8 +971,7 @@ fn a_partial_freeze_keeps_frozen_shares_out_of_a_wind_down_claim() {
     let f = setup();
     let holder = f.holder(500);
     let _other = f.holder(500);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     f.share.freeze_partial_tokens(&holder, &400, &f.compliance);
 
     let first = f.vault.claim_wind_down(&holder);
@@ -1057,8 +1002,7 @@ fn a_snapshot_with_more_shares_to_burn_than_exist_fails_loudly() {
 fn a_payout_below_what_was_already_paid_fails_loudly() {
     let f = setup();
     let _holder = f.holder(500);
-    wind_down_now(&f);
-    f.vault.finalize_wind_down_round();
+    first_round_now(&f);
     let newcomer = f.investor(0);
     f.e.as_contract(&f.vault.address, || {
         strata_storage::set_persistent(

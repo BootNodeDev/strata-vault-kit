@@ -364,7 +364,7 @@ without checking the feed's state.
 - **Tests:** `the_nav_pause_holds_regardless_of_freshness` and
   `heartbeat_expiry_makes_it_stale` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
-  `a_paused_feed_is_refused_by_the_vault_not_the_oracle` in
+  `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
 
 ## Roles
@@ -1040,7 +1040,6 @@ others' cost.
   `a_round_leaves_priced_liabilities_alone`,
   `the_payouts_never_exceed_what_the_rounds_credited`,
   `multiple_rounds_with_floor_dust_remain_solvent_for_last_claimant`,
-  `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`,
   `a_round_of_one_unit_at_the_lowest_price_still_credits_it`,
   `at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`,
   `the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge`,

@@ -263,23 +263,6 @@ fn a_cooldown_delays_pricing_until_the_attester_can_post() {
 }
 
 #[test]
-fn a_stale_feed_refuses_to_price_until_reattested() {
-    let f = setup();
-    let holder = f.holder(100);
-
-    f.attest(wad(1));
-    f.vault.request_redeem(&holder, &100);
-    let epoch = f.close_epoch();
-
-    f.advance(7_200); // past the 3600s freshness window
-    refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
-
-    f.attest(wad(1));
-    f.vault.fulfill_epoch(&epoch);
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(1));
-}
-
-#[test]
 fn governance_cannot_renounce_itself_out_of_the_vault() {
     let f = setup();
 
