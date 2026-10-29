@@ -74,11 +74,12 @@ use state::FIRST_EPOCH;
 
 pub use error::VaultError;
 pub use event::{
-    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
-    DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
-    EpochReconciled, Funded, MinEpochDurationSet, NoticeSet, RedeemClaimed, RedeemRequested,
-    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
-    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
+    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCancelled,
+    DepositCapUpdated, DepositClaimed, DepositConvertedToExit, DepositRefunded, DepositRequested,
+    EpochClosed, EpochFulfilled, EpochReconciled, Funded, MinEpochDurationSet, NoticeSet,
+    RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered, SetupFinished,
+    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
+    WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -878,7 +879,7 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
-    ///   `DepositCancelled`.
+    ///   `DepositRefunded`.
     /// * `EpochReconciled` once the epoch's last request settles.
     ///
     /// # Authorization
