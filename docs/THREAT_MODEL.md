@@ -1215,9 +1215,9 @@ or queued changes.
   the vault also an upgrade-delay change). Cancelling such a change still
   works, since cancelling does not read it. Recovery needs a migration written
   for that release.
-- **Tests:** `applying_a_wasm_change_replaces_the_code` and
-  `a_migration_refuses_a_second_run` (a stand-in contract with a test-only
-  `migrate`), `the_token_upgrades_under_live_balances_and_open_requests`
+- **Tests:** `applying_a_wasm_change_replaces_the_code` (a probe build of the
+  vault with a test-only `migrate`),
+  `the_token_upgrades_under_live_balances_and_open_requests`
   (a token upgrade that keeps the storage shape, under live balances and open
   requests), and `the_vault_upgrades_under_open_requests_and_a_proposed_wind_down`
   (a vault upgrade that keeps an open epoch, a priced redemption, a queued

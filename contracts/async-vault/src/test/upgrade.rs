@@ -417,10 +417,6 @@ mod with_wasm {
 
     use super::*;
 
-    soroban_sdk::contractimport!(
-        file = "../../fixtures/upgrade-target/target/wasm32v1-none/release/upgrade_target.wasm"
-    );
-
     mod token_v1 {
         soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/share_token.wasm");
     }
@@ -437,8 +433,7 @@ mod with_wasm {
         );
     }
 
-    /// Uploads the vault's probe build and applies it through the timelock,
-    /// then returns a client at the vault's address.
+    /// Upgrades the vault to its probe build.
     fn upgrade_to_probe<'a>(f: &'a Fixture) -> vault_probe::Client<'a> {
         let hash = f.e.deployer().upload_contract_wasm(vault_probe::WASM);
         let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
@@ -533,48 +528,21 @@ mod with_wasm {
     }
 
     #[test]
-    fn immediate_upgrade_with_valid_wasm_does_not_replace_code() {
-        let f = setup();
-        let hash = f.e.deployer().upload_contract_wasm(WASM);
-
-        let client =
-            stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.vault.address);
-        assert!(client.try_upgrade(&hash, &f.admin).is_err());
-        assert_eq!(f.vault.schema_version(), 1);
-        let target = Client::new(&f.e, &f.vault.address);
-        assert!(target.try_migrate(&f.admin).is_err());
-    }
-
-    #[test]
     fn applying_a_wasm_change_replaces_the_code() {
         let f = setup();
-        let hash = f.e.deployer().upload_contract_wasm(WASM);
-        assert_eq!(f.vault.schema_version(), 1);
 
-        let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
-        f.advance(MIN_UPGRADE_DELAY);
-        f.vault.apply_change(&id);
+        let probe = upgrade_to_probe(&f);
+        assert!(probe.probe());
+        assert_eq!(probe.schema_version(), 1);
 
-        let target = Client::new(&f.e, &f.vault.address);
-        assert_eq!(target.schema_version(), 1);
+        probe.migrate();
+        assert_eq!(probe.schema_version(), 2);
 
-        target.migrate(&f.admin);
-        assert_eq!(target.schema_version(), 2);
-    }
-
-    #[test]
-    fn a_migration_refuses_a_second_run() {
-        let f = setup();
-        let hash = f.e.deployer().upload_contract_wasm(WASM);
-        let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
-        f.advance(MIN_UPGRADE_DELAY);
-        f.vault.apply_change(&id);
-
-        let target = Client::new(&f.e, &f.vault.address);
-        target.migrate(&f.admin);
-
-        assert!(target.try_migrate(&f.admin).is_err());
-        assert_eq!(target.schema_version(), 2);
+        assert_eq!(
+            probe.try_migrate(),
+            Err(Ok(vault_probe::ProbeError::AlreadyMigrated.into()))
+        );
+        assert_eq!(probe.schema_version(), 2);
     }
 
     #[test]

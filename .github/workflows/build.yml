@@ -80,7 +80,6 @@ jobs:
           cache-bin: "false"
           workspaces: |
             . -> target
-            fixtures/upgrade-target -> target
       # Before the CLI install so a broken contract test fails without
       # waiting on it. rustup picks the toolchain from rust-toolchain.toml.
       - name: Run the contract unit tests
@@ -95,13 +94,12 @@ jobs:
           if ! command -v stellar &> /dev/null; then
             cargo binstall --locked stellar-cli@27.0.0
           fi
-      # The upgrade tests run built Wasm, so they need the fixture, both
-      # contracts and their probe builds first (docs/TESTING.md).
+      # The upgrade tests run built Wasm, so they need both contracts and
+      # their probe builds first (docs/TESTING.md).
       - name: Run the Wasm upgrade tests
         run: |
           # Setting pipefail so a failing test run is not hidden by `tee`
           set -o pipefail
-          stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
           stellar contract build --package share-token
           stellar contract build --package nav-oracle
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
