@@ -130,11 +130,9 @@ fn only_governance_proposes_and_cancels() {
     let change = VaultChange::Upgrade(wasm(&f, 7));
     let stranger = Address::generate(&f.e);
 
-    // Any error: only the admin's own signature satisfies these calls, so a
-    // mismatched signer traps in the host rather than naming an error.
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(who, "propose_change", (change.clone(),).into_val(&f.e));
-        assert!(f.vault.try_propose_change(&change).is_err());
+        missing_auth(f.vault.try_propose_change(&change));
     }
     let delay = VaultChange::UpgradeDelay(30 * DAY_DURATION);
     f.sign_only_as(
@@ -142,13 +140,13 @@ fn only_governance_proposes_and_cancels() {
         "propose_change",
         (delay.clone(),).into_val(&f.e),
     );
-    assert!(f.vault.try_propose_change(&delay).is_err());
+    missing_auth(f.vault.try_propose_change(&delay));
 
     f.e.mock_all_auths();
     let id = propose(&f, change);
     for who in [&stranger, &f.guardian] {
         f.sign_only_as(who, "cancel_change", (id,).into_val(&f.e));
-        assert!(f.vault.try_cancel_change(&id).is_err());
+        missing_auth(f.vault.try_cancel_change(&id));
     }
 }
 
@@ -277,11 +275,9 @@ fn only_governance_applies() {
     let id = propose(&f, VaultChange::UpgradeDelay(30 * DAY_DURATION));
     f.advance(MIN_UPGRADE_DELAY);
 
-    // Any error: only the admin's own signature satisfies this call, so a
-    // mismatched signer traps in the host rather than naming an error.
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(who, "apply_change", (id,).into_val(&f.e));
-        assert!(f.vault.try_apply_change(&id).is_err());
+        missing_auth(f.vault.try_apply_change(&id));
     }
     assert_eq!(f.vault.pending_changes().len(), 1);
 }

@@ -167,9 +167,7 @@ fn closing_needs_the_manager_authorisation() {
     let f = setup();
 
     f.e.set_auths(&[]);
-    // Any error: the manager is the right caller, but no one signed, so the
-    // missing signature traps in the host rather than naming an error.
-    assert!(f.vault.try_close_epoch(&f.manager).is_err());
+    missing_auth(f.vault.try_close_epoch(&f.manager));
     assert_eq!(f.vault.current_epoch(), 1);
 }
 

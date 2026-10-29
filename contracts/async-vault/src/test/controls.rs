@@ -54,9 +54,7 @@ fn the_guardian_pauses_but_only_governance_unpauses() {
 
     f.e.set_auths(&[]);
     refused(f.vault.try_unpause(&f.guardian), VaultError::AdminRequired);
-    // Any error: the admin is the right caller, but no one signed, so the
-    // missing signature traps in the host rather than naming an error.
-    assert!(f.vault.try_unpause(&f.admin).is_err());
+    missing_auth(f.vault.try_unpause(&f.admin));
     assert!(f.vault.paused());
 
     f.e.mock_all_auths();

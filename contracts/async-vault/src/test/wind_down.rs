@@ -30,11 +30,9 @@ fn only_governance_sets_the_delay() {
     let stranger = Address::generate(&f.e);
     let longer = 2 * MIN_WIND_DOWN_DELAY;
 
-    // Any error: only the admin's own signature satisfies this call, so a
-    // mismatched signer traps in the host rather than naming an error.
     for who in [&stranger, &f.manager, &f.treasury, &f.guardian] {
         f.sign_only_as(who, "set_wind_down_delay", (longer,).into_val(&f.e));
-        assert!(f.vault.try_set_wind_down_delay(&longer).is_err());
+        missing_auth(f.vault.try_set_wind_down_delay(&longer));
     }
     assert_eq!(f.vault.wind_down_delay(), MIN_WIND_DOWN_DELAY);
 }
@@ -75,11 +73,9 @@ fn only_governance_proposes() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    // Any error: only the admin's own signature satisfies this call, so a
-    // mismatched signer traps in the host rather than naming an error.
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(who, "propose_wind_down", soroban_sdk::Vec::new(&f.e));
-        assert!(f.vault.try_propose_wind_down().is_err());
+        missing_auth(f.vault.try_propose_wind_down());
     }
     assert_eq!(f.vault.wind_down(), None);
 }
@@ -105,15 +101,13 @@ fn governance_cancels_a_proposal_before_activation() {
     f.vault.propose_wind_down();
 
     let stranger = Address::generate(&f.e);
-    // Any error: only the admin's own signature satisfies this call, so a
-    // mismatched signer traps in the host rather than naming an error.
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(
             who,
             "cancel_wind_down_proposal",
             soroban_sdk::Vec::new(&f.e),
         );
-        assert!(f.vault.try_cancel_wind_down_proposal().is_err());
+        missing_auth(f.vault.try_cancel_wind_down_proposal());
     }
 
     f.e.mock_all_auths();
