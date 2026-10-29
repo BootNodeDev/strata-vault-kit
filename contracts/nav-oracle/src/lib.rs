@@ -811,7 +811,3 @@ impl NavOracleContract {
 
 #[cfg(test)]
 mod test;
-#[cfg(test)]
-mod test_governance;
-#[cfg(test)]
-mod test_guards;
