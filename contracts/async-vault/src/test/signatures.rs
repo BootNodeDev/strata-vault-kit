@@ -28,6 +28,12 @@ fn each_setup_call_asks_the_admin_for_one_signature() {
         "set_deposit_cap",
         (Some(1_000_i128),).into_val(&f.e),
     );
+    f.vault.set_min_epoch_duration(&DAY_DURATION);
+    f.signed_once_by(
+        &f.admin,
+        "set_min_epoch_duration",
+        (DAY_DURATION,).into_val(&f.e),
+    );
     f.vault.grant_role(&holder, &treasury, &f.admin);
     f.signed_once_by(
         &f.admin,

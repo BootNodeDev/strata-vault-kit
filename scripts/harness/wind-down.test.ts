@@ -14,7 +14,7 @@ import {
 } from "./lib/clients.js"
 import { network } from "./lib/network.js"
 import { waitForNotice } from "./lib/notice.js"
-import { attest } from "./lib/oracle.js"
+import { attest, freshFeed } from "./lib/oracle.js"
 import { outcome } from "./lib/refused.js"
 
 const net = network()
@@ -80,6 +80,7 @@ describe("a wind-down on a throwaway vault", () => {
 	const holder = () => c.keys["holder-1"].publicKey()
 
 	it("a holder subscribes, is priced and claims shares", async () => {
+		await freshFeed(c, 2n * 10n ** 18n)
 		expect(
 			await call(
 				"request_deposit",
@@ -186,6 +187,8 @@ describe("a wind-down on a throwaway vault", () => {
 			"wind_down_acc",
 			"notice",
 			"current_epoch",
+			"epoch_opened_at",
+			"min_epoch_duration",
 			"upgrade_delay",
 			"schema_version",
 			"pending_changes",
@@ -234,6 +237,12 @@ describe("a wind-down on a throwaway vault", () => {
 				"refused: WindDownActive",
 			],
 			["set_notice", "governance", { secs: 1n }, "refused: UseTimelock"],
+			[
+				"set_min_epoch_duration",
+				"governance",
+				{ secs: 86_400n },
+				"refused: UseTimelock",
+			],
 			["finish_setup", "governance", {}, "refused: SetupClosed"],
 			[
 				"propose_change",

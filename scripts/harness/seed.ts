@@ -15,7 +15,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
-import { attest } from "./lib/oracle.js"
+import { attest, freshFeed } from "./lib/oracle.js"
 
 function formatAmount(amount: bigint, decimals: number): string {
 	const factor = 10n ** BigInt(decimals)
@@ -174,6 +174,7 @@ async function main(): Promise<void> {
 			console.log(
 				"  + requesting deposits in Epoch 1 (holder-1: 5,000 USDC, holder-2: 3,000 USDC)...",
 			)
+			await freshFeed(c, price(1))
 			await send(
 				vault(c, holder1).request_deposit({
 					holder: holder1.publicKey(),
@@ -284,6 +285,7 @@ async function main(): Promise<void> {
 		).result
 		if (!h3DepositReq) {
 			console.log("  + holder-3 requesting deposit of 2,500 USDC...")
+			await freshFeed(c, price(1))
 			await send(
 				vault(c, holder3).request_deposit({
 					holder: holder3.publicKey(),

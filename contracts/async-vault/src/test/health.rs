@@ -162,7 +162,7 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
 
 #[test]
 fn a_feed_with_no_report_or_the_nav_paused_is_not_valid() {
-    let f = setup();
+    let f = setup_unfinished();
     assert!(!f.vault.health().feed_valid);
 
     f.attest(wad(1));

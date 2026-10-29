@@ -14,7 +14,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
-import { attest, navInput } from "./lib/oracle.js"
+import { attest, freshFeed, navInput } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -377,6 +377,7 @@ describe("invalid amounts and duplicate requests in an epoch", () => {
 	})
 
 	it("rejects a second request from the same account in one epoch", async () => {
+		await freshFeed(c, firstPrice)
 		const v = vault(c, first)
 		const epoch = await send(
 			v.request_deposit({ holder: first.publicKey(), amount: usdc(10) }),
@@ -411,6 +412,7 @@ let epochB = 0n
 
 describe("two epochs pending at once", () => {
 	it("both read Pending", async () => {
+		await freshFeed(c, firstPrice)
 		epochA = await send(
 			vault(c, first).request_deposit({
 				holder: first.publicKey(),
@@ -418,6 +420,7 @@ describe("two epochs pending at once", () => {
 			}),
 		)
 		expect(await closeEpoch()).toBe(epochA)
+		await freshFeed(c, firstPrice)
 		epochB = await send(
 			vault(c, second).request_deposit({
 				holder: second.publicKey(),
@@ -569,6 +572,7 @@ describe("a deposit too small to mint a share", () => {
 
 	it("is refunded at claim", async () => {
 		const before = await usdcBalance(c, third.publicKey())
+		await freshFeed(c, firstPrice)
 		epoch = await send(
 			vault(c, third).request_deposit({
 				holder: third.publicKey(),
@@ -652,6 +656,7 @@ describe("a sealed epoch while the feed is down", () => {
 
 	it("cannot be cancelled while the feed can price it", async () => {
 		redeeming = await shares(first.publicKey())
+		await freshFeed(c, firstPrice)
 		await send(
 			vault(c, first).request_deposit({
 				holder: first.publicKey(),
@@ -746,6 +751,7 @@ describe("the notice period and valuation age rules", () => {
 	})
 
 	it("records priceable_at at close and holds it through the notice", async () => {
+		await freshFeed(c, firstPrice)
 		await send(
 			vault(c, first).request_deposit({
 				holder: first.publicKey(),
@@ -780,6 +786,7 @@ describe("the notice period and valuation age rules", () => {
 	})
 
 	it("refuses cancellation while the notice is running once price is readable", async () => {
+		await freshFeed(c, firstPrice)
 		await send(
 			vault(c, first).request_deposit({
 				holder: first.publicKey(),
