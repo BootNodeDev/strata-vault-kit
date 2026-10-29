@@ -5,12 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const ROLE_ATTRIBUTES: [&str; 4] = [
-    "#[only_role(",
-    "#[has_role(",
-    "#[only_any_role(",
-    "#[has_any_role(",
-];
+const ROLE_ATTRIBUTE_NAMES: [&str; 4] = ["only_role", "has_role", "only_any_role", "has_any_role"];
 
 /// `.rs` files under `src`, skipping test modules: `test.rs`, `test_*.rs`,
 /// and anything inside a `test/` directory.
@@ -33,20 +28,100 @@ fn production_sources(dir: &Path, sources: &mut Vec<PathBuf>) {
     }
 }
 
-/// The first `"..."` substring on `line`, if any.
-fn quoted(line: &str) -> Option<String> {
-    let (_, rest) = line.split_once('"')?;
+/// The first `"..."` substring in `text`, if any.
+fn quoted(text: &str) -> Option<String> {
+    let (_, rest) = text.split_once('"')?;
     let (value, _) = rest.split_once('"')?;
     Some(value.to_string())
 }
 
-/// The string value of every `pub const ..._ROLE: ... = ...;` declared in
-/// `source`.
+fn is_path_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == ':'
+}
+
+/// The byte offset of the `#` that opens the attribute whose name starts at
+/// `name_start`, if `name_start` is written as an attribute: `#[name(...)]`
+/// or, with a path prefix, `#[some::path::name(...)]`.
+fn attribute_start(source: &str, name_start: usize) -> Option<usize> {
+    let prefix = &source[..name_start];
+    let path_start = prefix
+        .rfind(|c: char| !is_path_char(c))
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    prefix[..path_start]
+        .ends_with("#[")
+        .then_some(path_start - 2)
+}
+
+/// The text between the parens that open at `open` (which must point at
+/// `(`), and the byte offset just past the matching close. Parens inside a
+/// string literal do not count.
+fn matching_parens(source: &str, open: usize) -> Option<(&str, usize)> {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    for (offset, ch) in source[open..].char_indices() {
+        match ch {
+            '"' => in_string = !in_string,
+            '(' if !in_string => depth += 1,
+            ')' if !in_string => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some((&source[open + 1..open + offset], open + offset + 1));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn line_number(source: &str, byte_offset: usize) -> usize {
+    source[..byte_offset].matches('\n').count() + 1
+}
+
+/// Every role-attribute call in `source` — `#[only_role(...)]` and its
+/// siblings, spanning one line or several, with or without a path prefix
+/// such as `stellar_macros::only_role(...)` — as (line, name, argument
+/// text). A plain function or method call of the same name (not written as
+/// an attribute) is not a match.
+fn role_attribute_calls(source: &str) -> Vec<(usize, &'static str, String)> {
+    let mut calls = Vec::new();
+    for name in ROLE_ATTRIBUTE_NAMES {
+        let mut from = 0;
+        while let Some(rel) = source[from..].find(name) {
+            let start = from + rel;
+            let after = start + name.len();
+            from = after;
+            if !source[after..].starts_with('(') {
+                continue;
+            }
+            let boundary_ok = match source[..start].chars().next_back() {
+                Some(c) => !(c.is_ascii_alphanumeric() || c == '_'),
+                None => true,
+            };
+            if !boundary_ok {
+                continue;
+            }
+            let Some(attr_start) = attribute_start(source, start) else {
+                continue;
+            };
+            let Some((args, _end)) = matching_parens(source, after) else {
+                continue;
+            };
+            calls.push((line_number(source, attr_start), name, args.to_string()));
+        }
+    }
+    calls
+}
+
+/// The string value of every `const ..._ROLE: ... = ...;` declared in
+/// `source`, `pub` or not.
 fn role_constants(source: &str) -> Vec<String> {
     source
         .lines()
         .map(str::trim)
-        .filter(|line| line.starts_with("pub const") && line.contains("ROLE"))
+        .map(|line| line.strip_prefix("pub ").unwrap_or(line))
+        .filter(|line| line.starts_with("const") && line.contains("ROLE"))
         .filter_map(quoted)
         .collect()
 }
@@ -68,20 +143,17 @@ fn every_only_role_literal_matches_its_role_constant() {
             .collect();
         for path in &sources {
             let source = fs::read_to_string(path).unwrap();
-            for (number, line) in source.lines().enumerate() {
-                let line = line.trim();
-                if !ROLE_ATTRIBUTES.iter().any(|attr| line.starts_with(attr)) {
-                    continue;
-                }
-                let Some(literal) = quoted(line) else {
-                    continue;
-                };
-                if !roles.contains(&literal) {
-                    mismatches.push(format!(
-                        "{}:{}: \"{literal}\" matches none of this contract's role constants",
-                        path.display(),
-                        number + 1
-                    ));
+            for (line, name, args) in role_attribute_calls(&source) {
+                match quoted(&args) {
+                    Some(literal) if roles.contains(&literal) => {}
+                    Some(literal) => mismatches.push(format!(
+                        "{}:{line}: \"{literal}\" matches none of this contract's role constants",
+                        path.display()
+                    )),
+                    None => mismatches.push(format!(
+                        "{}:{line}: {name}(...) carries no role literal",
+                        path.display()
+                    )),
                 }
             }
         }
@@ -90,5 +162,31 @@ fn every_only_role_literal_matches_its_role_constant() {
         mismatches.is_empty(),
         "role checks must match the role constants:\n{}",
         mismatches.join("\n")
+    );
+}
+
+#[test]
+fn role_attribute_calls_spans_lines_and_paths() {
+    let fixture = concat!(
+        "#[only_role(\n",
+        "    caller,\n",
+        "    \"treasury\"\n",
+        ")]\n",
+        "fn deploy() {}\n",
+        "\n",
+        "#[stellar_macros::only_role(caller, \"guardian\")]\n",
+        "fn pause() {}\n",
+        "\n",
+        "fn not_an_attribute() {\n",
+        "    access_control::has_role(e, caller, &MANAGER_ROLE)\n",
+        "}\n",
+    );
+    let literals: Vec<String> = role_attribute_calls(fixture)
+        .iter()
+        .map(|(_, _, args)| quoted(args).unwrap())
+        .collect();
+    assert_eq!(
+        literals,
+        vec!["treasury".to_string(), "guardian".to_string()]
     );
 }
