@@ -1,6 +1,6 @@
 import { type Amount, type Price } from "@stellar-scaffold/app-lib"
-import { fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type ActivateWindDownStatus } from "../../hooks/useActivateWindDown"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { type AttestStatus } from "../../hooks/useAttest"
@@ -34,36 +34,43 @@ const {
 	closeEpochMock: {
 		status: { status: "idle" } as CloseEpochStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	fulfillEpochMock: {
 		status: { status: "idle" } as FulfillEpochStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	attestMock: {
 		status: { status: "idle" } as AttestStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	deployMock: {
 		status: { status: "idle" } as DeployToCustodianStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	fundMock: {
 		status: { status: "idle" } as FundStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	activateMock: {
 		status: { status: "idle" } as ActivateWindDownStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	finalizeMock: {
 		status: { status: "idle" } as FinalizeWindDownRoundStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 }))
@@ -229,6 +236,10 @@ const fieldOf = (name: string) => {
 }
 
 describe("CycleSection", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
 	beforeEach(() => {
 		vi.clearAllMocks()
 		closeEpochMock.status = { status: "idle" }
@@ -642,6 +653,32 @@ describe("CycleSection", () => {
 		expect(button("Fulfill epoch").disabled).toBe(true)
 		const notice = screen.getByText("Notice elapsed").closest("li")!
 		expect(notice.textContent).toMatch(/^Fail: Notice elapsed/)
+	})
+
+	it("prepares the open ready close and still submits it on click", () => {
+		vi.useFakeTimers()
+		render(<CycleSection grants={[manager]} wallet={WALLET} />)
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(closeEpochMock.prepare).toHaveBeenCalledWith(undefined, manager)
+
+		fireEvent.click(button("Close epoch"))
+
+		expect(closeEpochMock.submit).toHaveBeenCalledWith(undefined, manager)
+	})
+
+	it("prepares nothing while the cycle tab is hidden", () => {
+		vi.useFakeTimers()
+		render(<CycleSection grants={[manager]} wallet={WALLET} active={false} />)
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(closeEpochMock.prepare).not.toHaveBeenCalled()
 	})
 
 	it("lets a manager signing through a multisig close the epoch, passing its grant", () => {
