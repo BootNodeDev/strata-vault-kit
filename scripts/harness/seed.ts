@@ -1,5 +1,6 @@
 import { type Keypair } from "@stellar/stellar-sdk"
 
+import { accountRow } from "./lib/account-table.js"
 import { pay, trustline } from "./lib/accounts.js"
 import { price, units } from "./lib/amounts.js"
 import {
@@ -345,20 +346,16 @@ async function main(): Promise<void> {
 		const pub = keypair.publicKey()
 		const usdcBal = await usdcBalance(c, pub)
 		const shares = (await tokenReader.balance({ account: pub })).result
-		accountsSummary.push({
-			Role: role,
-			PublicKey: pub,
-			SecretKey: keypair.secret(),
-			"USDC Balance": formatAmount(usdcBal, decimals),
-			"Shares Balance": formatAmount(shares, decimals),
-		})
+		accountsSummary.push(
+			accountRow(
+				role,
+				keypair,
+				formatAmount(usdcBal, decimals),
+				formatAmount(shares, decimals),
+			),
+		)
 	}
-	console.table(accountsSummary, [
-		"Role",
-		"PublicKey",
-		"USDC Balance",
-		"Shares Balance",
-	])
+	console.table(accountsSummary)
 
 	console.log("\n--- ACTIVE REQUESTS IN EPOCH #" + finalEpoch + " ---")
 	const activeRequests = []
