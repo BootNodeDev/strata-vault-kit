@@ -1044,6 +1044,7 @@ impl AsyncVault {
     ///   epoch has not run the minimum.
     /// * `WindDownActive` - The vault is winding down.
     /// * `SetupOpen` - Setup has not finished.
+    /// * `AmountTooLarge` - The notice would end past the largest ledger time.
     ///
     /// # Events
     ///

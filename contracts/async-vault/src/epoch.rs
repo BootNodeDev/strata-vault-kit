@@ -74,7 +74,8 @@ pub(crate) fn close(e: &Env) -> u64 {
 
     epoch.status = EpochStatus::Pending;
     epoch.closed_at = closed_at;
-    epoch.priceable_at = Timing::priceable_at(closed_at, state::notice(e));
+    epoch.priceable_at = Timing::priceable_at(closed_at, state::notice(e))
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
     state::set_epoch(e, current, &epoch);
 
     state::set_epoch(e, next, &open(0));
