@@ -365,6 +365,7 @@ A clean deployment executes in three sequenced phases:
 
 1. **Phase 1: Contract Deployment**
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
+   - The harness deploy script (`scripts/harness/deploy.ts`) gives each authority one key. It does not create multisig accounts or check the deposit asset's auth flags yet; see the design doc's [§8.10](./strata-product-and-architecture.md#810-deployment).
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role(vault_address, "manager", governance)` to authorize lazy share minting and burning.
    - Call `ShareToken::grant_role(backup, "compliance", governance)` for a second compliance account kept cold, before the token's `finish_setup`. Required: lifting a freeze needs a `compliance` holder, and after setup a new one waits one timelock delay.

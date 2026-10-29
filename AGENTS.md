@@ -34,8 +34,9 @@ What the contracts enforce:
    cancellation reopens if that report expires, the NAV is paused or the vault
    is paused. There is no instant exit.
 
-Five authorities, each a native Stellar multisig: governance, compliance,
-attestation, treasury, guardian. Testnet only. Not audited.
+Five authorities, each meant to be a native Stellar multisig: governance,
+compliance, attestation, treasury, guardian. The deploy script gives each one
+key for now. Testnet only. Not audited.
 
 ## Reference base
 
