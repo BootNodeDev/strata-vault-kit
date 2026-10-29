@@ -291,6 +291,18 @@ controls.
   governance writes can answer them and report any price. The delay is notice,
   not a guaranteed exit (R1). An epoch sealed before the swap is priced by
   whichever feed stands when it is priced.
+
+  The checks do not ask for `attested_at()` or `nav_per_share()`: a new feed
+  has no report yet, so it cannot answer either. A feed that traps on
+  `attested_at()` is still installed. The vault reads it as having no price:
+  cancellation on a sealed epoch stays open and `fulfill_epoch` refuses with
+  `FeedNotValid`. Deposits still land while its `state()` answers `Valid`, and
+  each can be cancelled. A feed that starts trapping on `state()` after the
+  swap is read the same way, but deposits fail too. A feed that traps only on
+  `nav_per_share()` also makes `fulfill_epoch` refuse with `FeedNotValid`, but
+  a current attestation still closes cancellation; a guardian pause reopens
+  it. In every case, the way back to pricing is a second timelocked swap to a
+  working feed.
 - **Tests:** `a_tighter_cap_or_band_waits_after_setup`,
   `a_shorter_freshness_window_stays_instant_after_setup` and
   `a_config_outside_the_bounds_is_refused_when_it_applies` in
@@ -301,8 +313,14 @@ controls.
   `the_oracle_changes_only_through_the_timelock`,
   `a_feed_outside_this_vault_is_never_proposed`,
   `a_feed_that_stops_naming_this_vault_is_never_installed`,
-  `a_contract_that_is_not_a_feed_is_refused_when_proposed_and_when_applied`
-  and `a_sealed_epoch_is_priced_by_the_feed_standing_at_fulfilment` in
+  `a_contract_that_is_not_a_feed_is_refused_when_proposed_and_when_applied`,
+  `a_sealed_epoch_is_priced_by_the_feed_standing_at_fulfilment`,
+  `a_sealed_deposit_cancels_when_the_feed_traps`,
+  `a_sealed_redemption_cancels_when_the_feed_traps`,
+  `a_feed_that_traps_on_its_attestation_refuses_fulfilment`,
+  `a_feed_that_traps_on_its_price_refuses_fulfilment`,
+  `a_feed_that_traps_on_its_state_neither_prices_nor_blocks_a_cancel` and
+  `a_deposit_still_lands_and_can_leave_when_the_feed_traps` in
   [`oracle_swap.rs`](../contracts/async-vault/src/test/oracle_swap.rs);
   "governance cannot loosen the feed config at once" in
   [`scripts/harness/guards.test.ts`](../scripts/harness/guards.test.ts).
@@ -981,8 +999,8 @@ coming back.
   valid report accepted at or after the seal can be read with the vault
   unpaused, even during the notice (O6). It opens again if that report expires
   or falls out of the band, if the NAV or the vault is paused, or if the report
-  is cleared or an oracle swap leaves none. It stays open throughout a
-  wind-down.
+  is cleared, an oracle swap leaves none, or the feed traps on `state()` or
+  `attested_at()` (O9). It stays open throughout a wind-down.
 - **Residual:** Between a readable report and the end of the notice, a request
   can be neither cancelled nor priced; the notice is at most 30 days. A frozen
   holder cannot cancel (X3). A delisted holder's redemption does not come back
@@ -995,6 +1013,10 @@ coming back.
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
   `the_notice_does_not_reopen_the_cancellation_window` in
   [`notice.rs`](../contracts/async-vault/src/test/notice.rs);
+  `a_sealed_deposit_cancels_when_the_feed_traps`,
+  `a_sealed_redemption_cancels_when_the_feed_traps` and
+  `a_feed_that_traps_on_its_state_neither_prices_nor_blocks_a_cancel` in
+  [`oracle_swap.rs`](../contracts/async-vault/src/test/oracle_swap.rs);
   `an_epoch_sealed_before_the_announcement_is_still_cancellable` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs); "the deposit
   can now be cancelled and the asset returns" in
