@@ -165,13 +165,18 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
 
 5. **Payable claims always pay.** Neither the guardian pause, a delisting, nor a
    stale valuation can block the payment of an already-priced, funded cash
-   claim. A pause can delay unpriced requests. Priced claims are never re-priced
-   and never identity-gated. A delisted, non-frozen investor exits through the
-   exit-only cash path. A frozen investor's claims are held, not paid, until
-   the freeze is lifted ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1).
-   A legal-order transfer moves only shares in the investor's wallet, never
-   value the vault holds. Outside this guarantee, disclosed as trust
-   assumptions: deposit-asset issuer controls and reserve liquidity.
+   claim. A pause can delay unpriced requests. Priced claims are never
+   re-priced, and a cash payout never needs the identity check. A delisted,
+   non-frozen investor exits through the exit-only cash path. The one exception
+   is a redemption priced at zero assets: it pays no cash and gives the shares
+   back, so a delisted holder's claim waits until they are listed again, or
+   until a wind-down burns the shares
+   ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §2). A frozen investor's
+   claims are held, not paid, until the freeze is lifted
+   ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1). A legal-order transfer
+   moves only shares in the investor's wallet, never value the vault holds.
+   Outside this guarantee, disclosed as trust assumptions: deposit-asset issuer
+   controls and reserve liquidity.
 
 6. **Split accounting, with priced and payable as separate states.** The vault
    exposes committed (priced redemption liabilities), cancellable escrow

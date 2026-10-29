@@ -572,8 +572,8 @@ impl AsyncVault {
 
     /// Ends the window in which admin changes are instant. Needs every wiring
     /// check `health()` reports, no shares outstanding, the vault's own books
-    /// empty and no admin hand-over pending. Deposits open from here on, and
-    /// it never reopens.
+    /// empty and no admin hand-over pending. Deposits open once the feed
+    /// holds a valid report, and setup never reopens.
     ///
     /// # Errors
     ///

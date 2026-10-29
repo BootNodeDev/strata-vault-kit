@@ -25,9 +25,10 @@ What the contracts enforce:
    every share transfer.
 2. **A covered claim always pays.** Once priced and covered, a cash claim cannot
    be blocked by a pause, a stale valuation, or the investor losing their
-   allowlist place. Priced claims are never re-priced and never identity-gated;
-   a delisted, non-frozen investor leaves through the exit-only cash path,
-   including a deposit that was priced before the delisting.
+   allowlist place. Priced claims are never re-priced, and a cash payout never
+   needs the identity check; a delisted, non-frozen investor leaves through
+   the exit-only cash path, including a deposit that was priced before the
+   delisting. A compliance freeze holds the claim until it is lifted.
 3. **Cancellation is atomic and single-step**, open only while the vault cannot
    price the request: the attestation that prices it closes cancellation, and
    cancellation reopens if that report expires, the NAV is paused or the vault

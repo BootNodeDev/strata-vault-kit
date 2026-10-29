@@ -53,7 +53,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
   3. The caller has been de-listed in the `IdentityVerifier`.
-  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`.
+  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back, so the holder must be able to receive them. Outside a wind-down, a delisted holder's such claim is refused with `HolderNotEligible` and the request stays until the holder is listed again; in a wind-down the claim burns the shares instead (`a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted`, `a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down`).
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
 - **Definition**: Investors cannot be trapped in the vault by a vault pause.
@@ -269,7 +269,7 @@ The test `a_report_of_the_earlier_shape_is_cleared_and_replaced` stores a report
 Pricing needs both roles. Once governance has set a minimum epoch duration, anyone can seal in the manager's place; nothing on chain replaces the attester. The kit assumes both keep working; until then, holders keep these ways out:
 
 - **The manager stops sealing.** Requests in the open epoch stay pending, and each holder can still cancel: a deposit comes back as cash, a redemption as shares. Once governance has set a minimum epoch duration, anyone may seal the open epoch once it has been open that long; the earliest a holder then sees a price is the minimum plus the standing notice, counted from when the epoch opened. Without a minimum set, the way out is the same as today: governance grants a new manager, which after setup waits for the vault's timelock, at least seven days, plus any time the vault spends paused.
-- **The attester stops reporting.** An epoch sealed after the last report has no readable price, so its requests stay cancellable, and claims already priced still pay. Governance revokes the attester on the oracle at once and grants a replacement, which waits for the timelock after setup, as in steps 2 and 3 above.
+- **The attester stops reporting.** Once the last report expires, new deposits are refused (`FeedNotValid`). An epoch sealed after the last report has no readable price, so its requests stay cancellable, and claims already priced still pay. Governance revokes the attester on the oracle at once and grants a replacement, which waits for the timelock after setup, as in steps 2 and 3 above.
 - **Neither comes back.** No holder can exit at a price. Governance can propose a wind-down; once its delay has run, anyone activates it, and its rounds pay every holder pro rata from the cash the vault holds and whatever the custodian returns through `fund`, with no price needed.
 
 ---
