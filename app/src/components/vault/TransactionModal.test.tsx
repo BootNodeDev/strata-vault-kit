@@ -833,15 +833,36 @@ describe("TransactionModal, cancelling a redemption", () => {
 		).toBeTruthy()
 	})
 
-	it("names a delisted controller as unable to receive its shares back, distinct from the claim wording for the same code", () => {
+	it("names NotAllowlisted as a delisted holder whose shares stay queued, pointing to the cash claim instead", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6068 },
+		})
+
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
+	})
+
+	it("names HolderNotEligible as shares the address cannot receive, pointing to the cash claim instead", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6073 },
+		})
+
+		expect(
+			screen.getByText(/cannot receive these shares right now/),
+		).toBeTruthy()
+		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for 304 on a withdrawal cancellation, since the vault checks the holder itself", () => {
 		renderCancelRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/shares cannot be returned/)).toBeTruthy()
-		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
-		expect(screen.queryByText(/cannot receive shares/)).toBeNull()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("falls back to a generic refusal for a cancel-redeem error it does not recognize, without the raw code", () => {
@@ -987,13 +1008,14 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.getByText(/too large to complete/)).toBeTruthy()
 	})
 
-	it("names the identity verifier's cross-contract refusal as no longer allowlisted, distinct from every other code", () => {
+	it("falls back to a generic refusal for 304 on a share claim, since a delisted holder's shares join an exit instead", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/no longer allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("falls back to a generic refusal for a claim error it does not recognize, without the raw code", () => {
@@ -1274,19 +1296,27 @@ describe("TransactionModal, claiming a redemption", () => {
 		expect(screen.getByText(/enough USDC in reserve/)).toBeTruthy()
 	})
 
-	it("names a delisted controller as unable to receive the shares the zero-price branch tried to return, distinct from the claim and cancel-redeem wording for the same code", () => {
+	it("names HolderNotEligible as the zero-price return the address cannot receive, in the same words as a withdrawal cancellation", () => {
+		renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6073 },
+		})
+
+		expect(screen.getByText(/tried to return your shares/)).toBeTruthy()
+		expect(
+			screen.getByText(/cannot receive these shares right now/),
+		).toBeTruthy()
+		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
+	})
+
+	it("falls back to a generic refusal for 304 on a withdrawal claim, since the vault checks the holder itself", () => {
 		renderClaimRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/tried to return your shares instead/)).toBeTruthy()
-		expect(
-			screen.queryByText(
-				/^Your address is no longer allowlisted, so it cannot receive shares\.$/,
-			),
-		).toBeNull()
-		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("names AlreadyClaimed by delegating to the shared claim wording", () => {
@@ -2175,13 +2205,13 @@ describe("TransactionModal, emergency actions", () => {
 	it.each<[EmergencyModalAction, string, string]>([
 		[
 			"pause-token",
-			"Signing stops holder transfers and returns of escrowed shares.",
-			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
+			"Signing stops holder transfers only.",
+			"Holder transfers are stopped. Minting, burning, the vault's escrow moves and legal transfers continue.",
 		],
 		[
 			"unpause-token",
-			"Signing resumes holder transfers and returns of escrowed shares.",
-			"Holder transfers and returns of escrowed shares are open again.",
+			"Signing resumes holder transfers.",
+			"Holder transfers are open again.",
 		],
 	])(
 		"words %s after what the share token enforces",
