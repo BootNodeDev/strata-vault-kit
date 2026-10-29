@@ -49,33 +49,25 @@ const WEEK: u64 = 7 * DAY_DURATION;
 #[test]
 fn governance_proposes_and_anyone_activates_after_the_delay() {
     let f = setup();
-    let stranger = Address::generate(&f.e);
-    f.vault.set_wind_down_delay(&WEEK);
 
     f.vault.propose_wind_down();
     let proposed = f.vault.wind_down().unwrap();
     assert_eq!(proposed.status, WindDownStatus::Proposed);
     assert_eq!(proposed.round, 0);
+    assert_eq!(
+        proposed.active_at,
+        f.e.ledger().timestamp() + MIN_WIND_DOWN_DELAY
+    );
 
-    assert!(f.vault.try_activate_wind_down().is_err());
+    f.advance(MIN_WIND_DOWN_DELAY - 1);
+    refused(
+        f.vault.try_activate_wind_down(),
+        VaultError::WindDownDelayNotElapsed,
+    );
 
-    f.advance(WEEK);
-    f.vault.activate_wind_down();
-
-    assert_eq!(f.vault.wind_down().unwrap().status, WindDownStatus::Active);
-    let _ = stranger;
-}
-
-#[test]
-fn activation_is_open_to_a_stranger() {
-    let f = setup();
-    f.vault.set_wind_down_delay(&WEEK);
-    f.vault.propose_wind_down();
-    f.advance(WEEK);
-
+    f.advance(1);
     f.e.set_auths(&[]);
     f.vault.activate_wind_down();
-
     assert_eq!(f.vault.wind_down().unwrap().status, WindDownStatus::Active);
 }
 
@@ -148,22 +140,6 @@ fn activating_without_a_proposal_is_refused() {
     let f = setup();
 
     assert!(f.vault.try_activate_wind_down().is_err());
-}
-
-#[test]
-fn an_unset_delay_still_waits_the_minimum() {
-    let f = setup();
-
-    f.vault.propose_wind_down();
-    f.advance(MIN_WIND_DOWN_DELAY - 1);
-    refused(
-        f.vault.try_activate_wind_down(),
-        VaultError::WindDownDelayNotElapsed,
-    );
-
-    f.advance(1);
-    f.vault.activate_wind_down();
-    assert_eq!(f.vault.wind_down().unwrap().status, WindDownStatus::Active);
 }
 
 #[test]
@@ -631,13 +607,17 @@ fn the_payouts_never_exceed_what_the_rounds_credited() {
     let f = setup();
     let a = f.holder(333);
     let b = f.holder(667);
+    f.empty_reserve();
     wind_down_now(&f);
+    f.vault.fund(&f.custodian, &7);
+    assert_eq!(f.vault.finalize_wind_down_round(), 7);
 
-    let pot = f.vault.finalize_wind_down_round();
     let paid = f.vault.claim_wind_down(&a) + f.vault.claim_wind_down(&b);
 
-    assert!(paid <= pot);
-    assert!(f.vault.wind_down_owed() >= 0);
+    assert_eq!(paid, 6);
+    assert_eq!(f.balance(&a) + f.balance(&b), paid);
+    assert_eq!(paid + f.vault.wind_down_owed(), 7);
+    assert_eq!(f.balance(&f.vault.address), f.vault.wind_down_owed());
 }
 
 #[test]
@@ -748,18 +728,26 @@ fn multiple_rounds_with_floor_dust_remain_solvent_for_last_claimant() {
     wind_down_now(&f);
 
     f.vault.finalize_wind_down_round();
-    f.vault.claim_wind_down(&h1);
+    let first = f.vault.claim_wind_down(&h1);
 
     f.vault.fund(&backer, &333);
     f.vault.finalize_wind_down_round();
-    f.vault.claim_wind_down(&h2);
+    let second = f.vault.claim_wind_down(&h2);
 
     f.vault.fund(&backer, &333);
     f.vault.finalize_wind_down_round();
+    let last = f.vault.claim_wind_down(&h3);
 
-    let paid3 = f.vault.claim_wind_down(&h3);
-    assert!(paid3 > 0);
-    assert!(f.vault.wind_down_owed() >= 0);
+    let late = [f.vault.claim_wind_down(&h1), f.vault.claim_wind_down(&h2)];
+    let paid = first + second + last + late[0] + late[1];
+
+    assert_eq!([first, second], [666, 776]);
+    assert_eq!(late, [221, 111]);
+    assert_eq!(last, 890);
+    assert_eq!(f.vault.wind_down_distributed(), 2_666);
+    assert_eq!(paid + f.vault.wind_down_owed(), 2_666);
+    assert_eq!(f.vault.wind_down_owed(), 2);
+    assert_eq!(f.balance(&f.vault.address), f.vault.wind_down_owed());
 }
 
 #[test]

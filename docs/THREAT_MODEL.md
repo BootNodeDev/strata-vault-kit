@@ -1033,11 +1033,13 @@ others' cost.
     lifts it.
   - Shares sent to a vault before its token was upgraded stay in the snapshot,
     and no one can claim their slice.
-- **Tests:** `only_governance_proposes`, `activation_is_open_to_a_stranger`,
+- **Tests:** `only_governance_proposes`,
+  `governance_proposes_and_anyone_activates_after_the_delay`,
   `governance_cancels_a_proposal_before_activation`,
   `an_active_wind_down_cannot_be_cancelled`, `anyone_may_finalise_a_round`,
   `a_round_leaves_priced_liabilities_alone`,
   `the_payouts_never_exceed_what_the_rounds_credited`,
+  `multiple_rounds_with_floor_dust_remain_solvent_for_last_claimant`,
   `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`,
   `a_round_of_one_unit_at_the_lowest_price_still_credits_it`,
   `at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`,

@@ -98,11 +98,19 @@ fn an_open_epoch_cannot_be_fulfilled() {
 #[test]
 fn a_sealed_epoch_cannot_be_closed_again() {
     let f = setup();
-    f.close_epoch();
+    let sealed = f.close_epoch();
+    let record = f.vault.get_epoch(&sealed).unwrap();
+    f.advance(60);
+    // No entrypoint points the vault back at a sealed epoch.
+    f.e.as_contract(&f.vault.address, || {
+        crate::state::set_current_epoch(&f.e, sealed)
+    });
 
-    assert!(f.vault.try_fulfill_epoch(&1).is_err());
-    assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Pending);
-    assert_eq!(f.vault.current_epoch(), 2);
+    refused(
+        f.vault.try_close_epoch(&f.manager),
+        VaultError::EpochNotOpen,
+    );
+    assert_eq!(f.vault.get_epoch(&sealed).unwrap(), record);
 }
 
 #[test]
