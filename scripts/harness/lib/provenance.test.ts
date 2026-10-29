@@ -18,7 +18,12 @@ afterEach(() => {
 })
 
 function git(...args: string[]): string {
-	return execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" })
+	// Isolate from the machine's global hooks (e.g. gitleaks on commit).
+	return execFileSync(
+		"git",
+		["-C", dir, "-c", "core.hooksPath=/dev/null", ...args],
+		{ encoding: "utf8" },
+	)
 }
 
 function commitFile(name: string, content: string): void {
