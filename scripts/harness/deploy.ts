@@ -270,6 +270,12 @@ async function finishVaultSetup(
 			custodian: accounts.custodian.publicKey(),
 		})
 	).signAndSend()
+	const noticeSecs = BigInt(net.vault.notice_secs)
+	await (await vault.set_notice({ secs: noticeSecs })).signAndSend()
+	const notice = (await vault.notice()).result
+	if (notice !== noticeSecs)
+		throw new Error(`vault notice is ${notice}, expected ${noticeSecs}`)
+	console.log(`vault notice set to ${noticeSecs} seconds`)
 	await (await vault.finish_setup()).signAndSend()
 	if ((await vault.setup_open()).result)
 		throw new Error("the vault's setup did not finish")

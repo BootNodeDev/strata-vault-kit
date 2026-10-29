@@ -13,6 +13,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { network } from "./lib/network.js"
+import { waitForNotice } from "./lib/notice.js"
 import { attest } from "./lib/oracle.js"
 import { outcome } from "./lib/refused.js"
 
@@ -96,6 +97,7 @@ describe("a wind-down on a throwaway vault", () => {
 			),
 		).toBe("accepted")
 		await attest(c, 2n * 10n ** 18n)
+		await waitForNotice(c, vault(c, c.keys.outsider), 1n)
 		expect(
 			await call("fulfill_epoch", "outsider", { epoch_id: 1n }, true),
 		).toBe("accepted")
@@ -231,7 +233,7 @@ describe("a wind-down on a throwaway vault", () => {
 				{},
 				"refused: WindDownActive",
 			],
-			["set_notice", "governance", { secs: 1n }, "accepted"],
+			["set_notice", "governance", { secs: 1n }, "refused: UseTimelock"],
 			["finish_setup", "governance", {}, "refused: SetupClosed"],
 			[
 				"propose_change",

@@ -24,6 +24,7 @@ const networkWith = (funding: Funding): Network => ({
 		min_answer: "1",
 		max_answer: "2",
 	},
+	vault: { notice_secs: 10 },
 })
 
 // Knows which accounts exist, and creates the ones a transaction creates.

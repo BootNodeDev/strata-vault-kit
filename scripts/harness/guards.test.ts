@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises"
 import { beforeAll, describe, expect, it } from "vitest"
 
 import { pay, trustline } from "./lib/accounts.js"
@@ -14,8 +13,9 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
+import { waitForNotice } from "./lib/notice.js"
 import { attest, navInput } from "./lib/oracle.js"
-import { expectRefused, outcome } from "./lib/refused.js"
+import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
 const holders = [
@@ -47,8 +47,10 @@ const epochOf = async (id: bigint) =>
 
 const closeEpoch = () =>
 	send(vault(c, manager).close_epoch({ caller: manager.publicKey() }))
-const fulfill = (id: bigint) =>
-	send(vault(c, outsider).fulfill_epoch({ epoch_id: id }))
+const fulfill = async (id: bigint) => {
+	await waitForNotice(c, reader, id)
+	return send(vault(c, outsider).fulfill_epoch({ epoch_id: id }))
+}
 
 beforeAll(async () => {
 	decimals = (await shareToken(c, outsider).decimals()).result
@@ -678,6 +680,7 @@ describe("a sealed epoch while the feed is down", () => {
 	})
 
 	it("the guardian pauses the NAV and pricing is refused", async () => {
+		await waitForNotice(c, reader, epoch)
 		await send(oracle(c, guardian).pause_nav({ caller: guardian.publicKey() }))
 		expect((await feed.state()).result.tag).toBe("Paused")
 		expectRefused(
@@ -730,19 +733,6 @@ describe("the notice period and valuation age rules", () => {
 	let epochA = 0n
 	let epochB = 0n
 
-	// Ledger time decides the notice, so ask the contract.
-	const waitForNotice = async (epochId: bigint): Promise<void> => {
-		const deadline = Date.now() + (Number(noticeSecs) + 60) * 1000
-		for (;;) {
-			const tx = await reader.fulfill_epoch({ epoch_id: epochId })
-			if (outcome(tx, reader) !== "refused: NoticeNotElapsed") return
-			if (Date.now() > deadline) {
-				throw new Error(`notice never elapsed for epoch ${epochId}`)
-			}
-			await sleep(2_000)
-		}
-	}
-
 	beforeAll(async () => {
 		await send(
 			oracle(c, governance).set_nav_paused({
@@ -776,7 +766,7 @@ describe("the notice period and valuation age rules", () => {
 	})
 
 	it("refuses pricing after the notice when the valuation is before the close", async () => {
-		await waitForNotice(epochA)
+		await waitForNotice(c, reader, epochA)
 		expectRefused(
 			await vault(c, outsider).fulfill_epoch({ epoch_id: epochA }),
 			reader,
@@ -810,7 +800,7 @@ describe("the notice period and valuation age rules", () => {
 			reader,
 			"NoticeNotElapsed",
 		)
-		await waitForNotice(epochB)
+		await waitForNotice(c, reader, epochB)
 		expect(await fulfill(epochB)).toBe(secondPrice)
 	})
 

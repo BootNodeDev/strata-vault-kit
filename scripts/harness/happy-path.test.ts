@@ -12,6 +12,7 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
+import { waitForNotice } from "./lib/notice.js"
 import { attest, navInput, SAMPLE_PROOF_URI } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
@@ -179,6 +180,7 @@ describe("pricing", () => {
 	})
 
 	it("an account with no role prices the epoch", async () => {
+		await waitForNotice(c, reader, subscriptionEpoch)
 		const priced = await send(
 			vault(c, outsider).fulfill_epoch({ epoch_id: subscriptionEpoch }),
 		)
@@ -329,6 +331,7 @@ describe("treasury", () => {
 	it("the exits are priced while the reserve is deployed", async () => {
 		await send(vault(c, manager).close_epoch({ caller: manager.publicKey() }))
 		await attest(c, nav)
+		await waitForNotice(c, reader, redemptionEpoch)
 		await send(vault(c, outsider).fulfill_epoch({ epoch_id: redemptionEpoch }))
 		expect(await epochStatus(redemptionEpoch)).toBe("Fulfilled")
 		const total = [...redeemed.values()].reduce((a, b) => a + b, 0n)

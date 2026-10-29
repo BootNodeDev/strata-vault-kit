@@ -1,6 +1,8 @@
 # Test & deploy harness
 
-Deploys the vault contracts to a network and runs integration tests.
+Deploys the vault contracts to a network and runs integration tests. Before it
+closes setup, the deploy sets the vault's custodian and its notice to twice
+the network's oracle cooldown.
 
 ## Usage
 

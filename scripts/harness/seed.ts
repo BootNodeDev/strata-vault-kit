@@ -14,6 +14,7 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
+import { waitForNotice } from "./lib/notice.js"
 import { attest } from "./lib/oracle.js"
 
 function formatAmount(amount: bigint, decimals: number): string {
@@ -197,6 +198,7 @@ async function main(): Promise<void> {
 			console.log("  ✓ NAV attested on oracle")
 
 			console.log("  + fulfilling Epoch 1...")
+			await waitForNotice(c, reader, 1n)
 			await send(vault(c, outsider).fulfill_epoch({ epoch_id: 1n }))
 			console.log("  ✓ Epoch 1 fulfilled")
 

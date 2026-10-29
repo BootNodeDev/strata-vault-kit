@@ -160,6 +160,7 @@ vault is allowlisted
 share_token bound to compliance
 compliance bound to the vault, setup finished
 nav_oracle bound to the vault, setup finished
+vault notice set to 10 seconds
 vault setup finished
 health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
 wrote deployed.local.json
@@ -176,7 +177,7 @@ CARGO_TARGET_DIR=target/short-wind-down stellar contract build --package async-v
 npm run test:wind-down -w scripts/harness
 ```
 
-Deploy afresh before each run of the suites. The guards leave the vault's
+Deploy afresh before each run of the suites. The deploy leaves the vault's
 notice at twice the oracle cooldown (10 seconds on the local network), and
 lowering it back waits for the timelock, so a second run against the same
 deployment can fail wherever it prices an epoch right after closing it.
