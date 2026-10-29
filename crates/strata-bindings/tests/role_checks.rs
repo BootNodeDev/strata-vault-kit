@@ -165,6 +165,29 @@ fn every_only_role_literal_matches_its_role_constant() {
     );
 }
 
+/// A refactor that drops a role check silently should fail here instead.
+#[test]
+fn only_role_sites_do_not_quietly_shrink() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut sites = 0;
+    for contract in fs::read_dir(root.join("contracts")).unwrap() {
+        let src = contract.unwrap().path().join("src");
+        if !src.is_dir() {
+            continue;
+        }
+        let mut sources = Vec::new();
+        production_sources(&src, &mut sources);
+        for path in &sources {
+            let source = fs::read_to_string(path).unwrap();
+            sites += role_attribute_calls(&source)
+                .iter()
+                .filter(|(_, name, _)| *name == "only_role")
+                .count();
+        }
+    }
+    assert!(sites >= 12, "found only {sites} #[only_role] sites");
+}
+
 #[test]
 fn role_attribute_calls_spans_lines_and_paths() {
     let fixture = concat!(
