@@ -41,7 +41,8 @@ spec" is the [Kit specification](./kit-spec.md).
 
 3. **The timelock is the kit's own `strata-timelock` crate.** The proposal does
    not mention a timelock. An earlier version of the design planned to use
-   OpenZeppelin's timelock. The kit needs four things it does not do:
+   OpenZeppelin's timelock. OpenZeppelin's timelock lacks four things the kit
+   needs:
    - one clock shared by the vault, the share token, the oracle and the
      compliance contract;
    - paused time does not count, so a vault pause pushes back the time a
@@ -54,7 +55,8 @@ spec" is the [Kit specification](./kit-spec.md).
    The delay is 7 to 90 days. See design doc
    [§9](./strata-product-and-architecture.md#9-relationship-to-existing-stellar-tooling).
 
-4. **A compliance freeze holds a priced claim.** The proposal said exits are
+4. **Two cases hold a priced claim: a compliance freeze, and a delisted
+   holder's redemption that rounds to zero.** The proposal said exits are
    "never gated or pausable". In the kit, a vault pause, a delisting, or a
    stale or paused price never blocks a priced claim once the vault's cash,
    not counting deposits that can still be cancelled, covers it. A compliance
@@ -79,13 +81,15 @@ spec" is the [Kit specification](./kit-spec.md).
    - the deposit asset's issuer has taken back part of the vault's cash (a
      clawback), and the vault now holds less than the deposits still waiting
      to be priced (`EscrowNotCovered`);
-   - governance has proposed a wind-down (`WindDownAlreadyProposed`).
+   - governance has proposed a wind-down (`WindDownAlreadyProposed`) or it is
+     active (`WindDownActive`).
 
    A new deposit should not buy shares at a price nobody vouches for, fund an
    earlier depositor's refund after a clawback, or join a vault that is about
    to close. This rule stops only new deposits. It closes no exit for money
    already in the vault. See design doc
-   [§8.4](./strata-product-and-architecture.md#84-request-lifecycle).
+   [§8.4](./strata-product-and-architecture.md#84-request-lifecycle) and
+   [§8.7](./strata-product-and-architecture.md#87-treasury-and-custodian).
 
 6. **Anyone may seal an epoch once it has run a minimum time.** The proposal
    did not set this rule. Sealing an epoch closes it to new requests so it can

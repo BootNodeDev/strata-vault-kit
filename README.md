@@ -19,9 +19,9 @@ A request can be cancelled until the vault can read its price. Once an epoch is
 sealed, a valid report accepted after the seal closes cancellation, even while
 the notice still runs; the epoch is priced once the notice ends. If that report
 expires, or the NAV or the vault is paused, cancellation opens again. New
-deposits are refused while the valuation is stale or the NAV is paused, while
-an issuer clawback leaves the vault holding less than its pending deposits,
-and once a wind-down is proposed.
+deposits are refused while the vault is paused, while the valuation is stale
+or the NAV is paused, while an issuer clawback leaves the vault holding less
+than its pending deposits, and once a wind-down is proposed.
 
 ## Documentation
 

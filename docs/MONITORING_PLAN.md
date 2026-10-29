@@ -424,8 +424,8 @@ lists the powers that act at once.
   the share token, the oracle and the compliance contract. The event's `eta`
   is the one `pending_changes()` reports at that moment. Every second the
   vault spends paused afterwards, a pause already running included, moves the
-  real one later, so P7 reads `pending_changes()`. `pending_changes()` on each
-  lists what waits.
+  real one later, so P7 reads the `eta` from `pending_changes()`, which lists
+  what waits on each contract.
 - **Threshold:** every one.
 - **Severity:** Critical for `Upgrade`, `Admin`, `GrantRole`, `RevokeRole`,
   the vault's `Oracle` and `Custodian`, the token's `Compliance` and
