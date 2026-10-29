@@ -11,7 +11,12 @@ import {
 	useUnpauseVault,
 } from "../../hooks/useEmergencyTransactions"
 import { useOracleState } from "../../hooks/useOracleState"
-import { usePendingTransaction } from "../../hooks/usePendingTransaction"
+import {
+	prepareFor,
+	type Send,
+	submitTo,
+	usePendingTransaction,
+} from "../../hooks/usePendingTransaction"
 import { useSetupOpen } from "../../hooks/useSetupOpen"
 import { useTokenPaused } from "../../hooks/useTokenPaused"
 import { useVaultPaused } from "../../hooks/useVaultPaused"
@@ -54,29 +59,24 @@ const EmergencySection: React.FC<{
 	const state: EmergencyState = { vault, setup, token, oracle }
 	const actions = toEmergencyActions(state, grants, wallet)
 
-	const run = (action: EmergencyAction) => {
+	const dispatch = (action: EmergencyAction, send: Send) => {
 		switch (action.id) {
 			case "pause-vault":
-				pauseVault.submit(undefined, "", action.grant)
-				return
+				return send(pauseVault, undefined, "", action.grant)
 			case "unpause-vault":
-				unpauseVault.submit(undefined, "", action.grant)
-				return
+				return send(unpauseVault, undefined, "", action.grant)
 			case "pause-nav":
-				if (action.viaAdmin) setNavPaused.submit(true, PAUSE, action.grant)
-				else pauseNav.submit(undefined, "", action.grant)
-				return
+				return action.viaAdmin
+					? send(setNavPaused, true, PAUSE, action.grant)
+					: send(pauseNav, undefined, "", action.grant)
 			case "unpause-nav":
-				setNavPaused.submit(false, UNPAUSE, action.grant)
-				return
+				return send(setNavPaused, false, UNPAUSE, action.grant)
 			case "clear-latest":
-				clearLatest.submit(undefined, "", action.grant)
-				return
+				return send(clearLatest, undefined, "", action.grant)
 			case "pause-token":
-				pauseToken.submit(undefined, "", action.grant)
-				return
+				return send(pauseToken, undefined, "", action.grant)
 			case "unpause-token":
-				unpauseToken.submit(undefined, "", action.grant)
+				return send(unpauseToken, undefined, "", action.grant)
 		}
 	}
 
@@ -117,7 +117,10 @@ const EmergencySection: React.FC<{
 						actions={actions}
 						pending={false}
 						unreadable={false}
-						onRun={run}
+						onRun={(action) => dispatch(action, submitTo)}
+						onReady={
+							active ? (action) => dispatch(action, prepareFor) : undefined
+						}
 					/>
 				}
 			>

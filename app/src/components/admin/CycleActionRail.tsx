@@ -1,4 +1,5 @@
-import React, { useState } from "react"
+import React, { useEffect, useRef, useState } from "react"
+import { type Release } from "../../hooks/useContractTransaction"
 import {
 	type ActionField as ActionFieldSpec,
 	type Condition,
@@ -15,6 +16,13 @@ import Skeleton from "../Skeleton"
 import styles from "./CycleActionRail.module.css"
 
 type OnInput<A> = (action: A, value: string, key?: string) => void
+
+const PREPARE_DELAY_MS = 400
+
+const serialise = (value: unknown): string =>
+	JSON.stringify(value, (_name, part: unknown) =>
+		typeof part === "bigint" ? `${part}n` : part,
+	)
 
 type Status = "pass" | "fail" | "pending"
 
@@ -279,6 +287,7 @@ function CycleActionRail<A extends RailAction<RailField>>({
 	pending,
 	unreadable,
 	onRun,
+	onReady,
 	onInput,
 }: {
 	scope: string
@@ -286,11 +295,35 @@ function CycleActionRail<A extends RailAction<RailField>>({
 	pending: boolean
 	unreadable: boolean
 	onRun: (action: A) => void
+	onReady?: (action: A) => Release | undefined
 	onInput?: OnInput<A>
 }) {
 	const [open, setOpen] = useState<string | null | undefined>()
 	if (open === undefined && actions.length > 0)
 		setOpen(slotOf(actions.find((action) => action.enabled)) ?? null)
+	const ready = actions.find(
+		(action) => slotOf(action) === open && action.enabled,
+	)
+
+	const latest = useRef({ ready, onReady })
+	useEffect(() => {
+		latest.current = { ready, onReady }
+	})
+	const readyKey = ready === undefined ? null : serialise(ready)
+	const reportable = onReady !== undefined
+
+	useEffect(() => {
+		if (readyKey === null || !reportable) return
+		let release: Release | undefined
+		const timer = setTimeout(() => {
+			const { ready: action, onReady: report } = latest.current
+			if (action !== undefined) release = report?.(action)
+		}, PREPARE_DELAY_MS)
+		return () => {
+			clearTimeout(timer)
+			release?.()
+		}
+	}, [readyKey, reportable])
 
 	return (
 		<div className={styles.panel}>
