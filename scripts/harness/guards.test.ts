@@ -728,8 +728,7 @@ describe("a sealed epoch while the feed is down", () => {
 })
 
 describe("the notice period and valuation age rules", () => {
-	// Outlasts a full oracle cooldown, which the report after a close may wait out.
-	const noticeSecs = BigInt(2 * c.net.oracle.cooldown_secs)
+	const noticeSecs = BigInt(c.net.vault.notice_secs)
 	let epochA = 0n
 	let epochB = 0n
 

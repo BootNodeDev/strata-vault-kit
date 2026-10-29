@@ -33,12 +33,22 @@ describe("withAccountRetry", () => {
 		expect(callCount()).toBe(3)
 	})
 
-	it("rethrows the error once the attempts run out", async () => {
+	it("rethrows with context once the attempts run out", async () => {
 		const { server, callCount } = fakeServer([notFound])
 
-		await expect(
-			withAccountRetry(server, noWait).getAccount(address),
-		).rejects.toThrow(`Account not found: ${address}`)
+		let caught: unknown
+		try {
+			await withAccountRetry(server, noWait).getAccount(address)
+		} catch (error) {
+			caught = error
+		}
+
+		expect(caught).toBeInstanceOf(Error)
+		const error = caught as Error
+		expect(error.message).toBe(
+			`Account not found: ${address} (after 10 tries; the SDK reports an unreachable RPC the same way)`,
+		)
+		expect(error.cause).toBeInstanceOf(Error)
 		expect(callCount()).toBe(10)
 	})
 

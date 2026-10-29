@@ -11,7 +11,7 @@ import {
 } from "@stellar/stellar-sdk"
 import { describe, expect, it } from "vitest"
 
-import { ensureAssetContract, pinClientSdk } from "./cli.js"
+import { ensureAssetContract, pinClientSdk, rootSdkVersion } from "./cli.js"
 import { REPO_ROOT } from "./deployment.js"
 import { type Network } from "./network.js"
 
@@ -57,16 +57,21 @@ describe("pinClientSdk", () => {
 	})
 
 	it("pins to the version the root package.json overrides", () => {
+		const version = rootSdkVersion()
+		const pkg = { dependencies: { "@stellar/stellar-sdk": "^14.5.0" } }
+
+		expect(pinClientSdk(pkg, version)).toEqual({
+			dependencies: { "@stellar/stellar-sdk": version },
+		})
+	})
+})
+
+describe("rootSdkVersion", () => {
+	it("reads the stellar-sdk override from the root package.json", () => {
 		const rootPkg = JSON.parse(
 			readFileSync(join(REPO_ROOT, "package.json"), "utf8"),
 		) as { overrides?: Record<string, string> }
-		const version = rootPkg.overrides?.["@stellar/stellar-sdk"]
-		expect(typeof version).toBe("string")
 
-		const pkg = { dependencies: { "@stellar/stellar-sdk": "^14.5.0" } }
-
-		expect(pinClientSdk(pkg, version as string)).toEqual({
-			dependencies: { "@stellar/stellar-sdk": version },
-		})
+		expect(rootSdkVersion()).toBe(rootPkg.overrides?.["@stellar/stellar-sdk"])
 	})
 })
