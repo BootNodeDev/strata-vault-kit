@@ -140,6 +140,7 @@ pub struct WindDownRoundFinalized {
     #[topic]
     pub round: u32,
     pub pot: i128,
+    /// Always equal to `pot`; kept for callers that read it separately.
     pub credited: i128,
     /// Asset base units credited by every round so far.
     pub distributed: i128,
