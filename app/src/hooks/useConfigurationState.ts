@@ -22,6 +22,7 @@ export type ConfigurationValues = {
 	upgradeDelay: bigint | null
 	setupOpen: boolean | null
 	tokenSetupOpen: boolean | null
+	oracleSetupOpen: boolean | null
 	oracle: OracleLimits | null
 	compliance: string | null
 	identityVerifier: string | null
@@ -56,6 +57,7 @@ export function useConfigurationState(): {
 	const { authorities, isPending } = useVaultAuthorities()
 	const { setup } = useSetupOpen("vault")
 	const { setup: tokenSetup } = useSetupOpen("token")
+	const { setup: oracleSetup } = useSetupOpen("oracle")
 	const { data: reads } = useQuery({
 		queryKey: configurationReadsKey,
 		queryFn: fetchConfigurationReads,
@@ -68,7 +70,8 @@ export function useConfigurationState(): {
 		reads === undefined ||
 		isPending ||
 		setup === "checking" ||
-		tokenSetup === "checking"
+		tokenSetup === "checking" ||
+		oracleSetup === "checking"
 	)
 		return { configuration: { status: "checking" } }
 
@@ -81,6 +84,7 @@ export function useConfigurationState(): {
 			windDownDelay: cycle.windDown.delay,
 			setupOpen: openOf(setup),
 			tokenSetupOpen: openOf(tokenSetup),
+			oracleSetupOpen: openOf(oracleSetup),
 			oracle: cycle.oracle.limits,
 			...reads,
 		},

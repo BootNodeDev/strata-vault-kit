@@ -124,7 +124,7 @@ const pauseSpec = (oracle: OracleStatus): Spec<"pause-nav"> => ({
 	label: "Pause the NAV",
 	conditions: [],
 	outcome:
-		"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open.",
+		"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open. Revoking an attester is instant; granting a replacement waits for the timelock once the oracle's setup is closed.",
 	...(oracle === "paused" ? { note: "NAV already paused." } : {}),
 	danger: true,
 })

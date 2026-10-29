@@ -2466,6 +2466,13 @@ describe("TransactionModal, configuration actions", () => {
 			"Signing queues identity verifier CABC...WXYZ.",
 			"Identity verifier CABC...WXYZ applies once the vault's upgrade delay passes.",
 		],
+		[
+			"propose-oracle-config",
+			"",
+			"Preparing to propose oracle limits",
+			"Signing queues every new oracle limit.",
+			"The new oracle limits apply once the vault's upgrade delay passes.",
+		],
 	])(
 		"walks %s from preparing to proposed",
 		(action, value, preparing, signing, doneBody) => {
@@ -2658,6 +2665,17 @@ describe("TransactionModal, governance actions", () => {
 			"share token",
 			/hand-over is still pending/,
 		],
+		["cancel-oracle-change", 3011, "oracle", /no pending change with that id/],
+		["apply-oracle-change", 3012, "oracle", /delay has not passed yet/],
+		["propose-oracle-grant-role", 3013, "oracle", /16 pending changes/],
+		["propose-oracle-admin", 3014, "oracle", /Setup is still open/],
+		["grant-oracle-role", 3015, "oracle", /goes through the timelock/],
+		["apply-oracle-change", 3016, "oracle", /setup has already finished/],
+		["apply-oracle-change", 3017, "oracle", /not bound to a vault/],
+		["apply-oracle-change", 3018, "oracle", /vault is winding down/],
+		["apply-oracle-change", 3019, "oracle", /holds every oracle change/],
+		["apply-oracle-change", 3020, "oracle", /shorter than the vault's notice/],
+		["propose-oracle-upgrade", 3021, "oracle", /upgrade is already pending/],
 	])(
 		"names the reason %s was refused with code %i",
 		(action, code, refuser, sentence) => {
@@ -2791,6 +2809,41 @@ describe("TransactionModal, governance actions", () => {
 			"Signing withdraws share token change #1: Compliance contract CABC...WXYZ.",
 			"Change cancelled",
 			"Withdrew share token change #1: Compliance contract CABC...WXYZ.",
+		],
+		[
+			"propose-oracle-grant-role",
+			"Attester to GABC...WXYZ",
+			"Signing queues the grant of Attester to GABC...WXYZ.",
+			"Change proposed",
+			"The grant of Attester to GABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
+		[
+			"propose-oracle-admin",
+			"GABC...WXYZ",
+			"Signing queues the hand-over to GABC...WXYZ.",
+			"Change proposed",
+			"The hand-over to GABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
+		[
+			"propose-oracle-upgrade",
+			"Code abab...abab",
+			"Signing queues Code abab...abab.",
+			"Upgrade proposed",
+			"Code abab...abab can apply once the vault's upgrade delay passes.",
+		],
+		[
+			"apply-oracle-change",
+			"oracle change #1: Admin hand-over GABC...WXYZ",
+			"Signing applies oracle change #1: Admin hand-over GABC...WXYZ.",
+			"Change applied",
+			"Applied oracle change #1: Admin hand-over GABC...WXYZ.",
+		],
+		[
+			"cancel-oracle-change",
+			"oracle change #1: Admin hand-over GABC...WXYZ",
+			"Signing withdraws oracle change #1: Admin hand-over GABC...WXYZ.",
+			"Change cancelled",
+			"Withdrew oracle change #1: Admin hand-over GABC...WXYZ.",
 		],
 		[
 			"propose-wind-down",

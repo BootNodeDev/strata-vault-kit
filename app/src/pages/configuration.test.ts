@@ -40,6 +40,7 @@ const ready = (
 	upgradeDelay: 3n * DAY,
 	setupOpen: false,
 	tokenSetupOpen: true,
+	oracleSetupOpen: true,
 	oracle: {
 		freshness: DAY,
 		cooldown: 3_600n,
@@ -475,6 +476,81 @@ describe("toConfigurationActions", () => {
 
 		expect(condition(verifier, "Setup state read")).toBeNull()
 		expect(verifier.enabled).toBe(false)
+	})
+
+	it("proposes new oracle limits once the oracle's own setup closes", () => {
+		const closed = ready({ setupOpen: true, oracleSetupOpen: false })
+		const config = find(
+			"propose-oracle-config",
+			[oracleAdmin],
+			{ maxRise: "5" },
+			closed,
+		)
+
+		expect(config).toMatchObject({
+			slot: "set-oracle-config",
+			label: "Set the oracle limits",
+			enabled: true,
+		})
+		expect(config.arg?.max_up_bps).toBe(500)
+		expect(config.conditions).toContainEqual({
+			label: "Waits for the timelock",
+			met: true,
+			detail: "3d",
+		})
+	})
+
+	it("sets a shorter freshness window at once after setup, and nothing else with it", () => {
+		const closed = ready({ oracleSetupOpen: false })
+		const shorter = find(
+			"set-oracle-config",
+			[oracleAdmin],
+			{ freshness: "12h" },
+			closed,
+		)
+		const longer = find(
+			"propose-oracle-config",
+			[oracleAdmin],
+			{ freshness: "2d" },
+			closed,
+		)
+		const withRise = find(
+			"propose-oracle-config",
+			[oracleAdmin],
+			{ freshness: "12h", maxRise: "5" },
+			closed,
+		)
+
+		expect(shorter.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Shortening the freshness window is instant",
+		})
+		expect(shorter.enabled).toBe(true)
+		expect(longer.enabled).toBe(true)
+		expect(withRise.enabled).toBe(true)
+	})
+
+	it("sets the oracle limits at once while the oracle's setup is open, even after the vault's closes", () => {
+		const config = find("set-oracle-config", [oracleAdmin], { maxRise: "5" })
+
+		expect(config.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("holds the oracle limits while the oracle's setup state is unknown", () => {
+		const config = find(
+			"set-oracle-config",
+			[oracleAdmin],
+			{ maxRise: "5" },
+			ready({ oracleSetupOpen: null }),
+		)
+
+		expect(condition(config, "Setup state read")).toBeNull()
+		expect(config.enabled).toBe(false)
 	})
 
 	it("prefills every oracle limit and sends them all when one changes", () => {
