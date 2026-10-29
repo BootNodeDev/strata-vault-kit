@@ -16,6 +16,9 @@ import {
 	useSetWindDownDelay,
 } from "../../hooks/useConfigurationTransactions"
 import {
+	prepareFor,
+	type Send,
+	submitTo,
 	usePendingTransaction,
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
@@ -100,37 +103,34 @@ const ConfigurationSection: React.FC<{
 
 	const actions = toConfigurationActions(configuration, grants, wallet, inputs)
 
-	const run = (action: ConfigurationAction) => {
+	const dispatch = (action: ConfigurationAction, send: Send) => {
 		if (action.arg === undefined) return
 		switch (action.id) {
 			case "set-deposit-cap":
-				return depositCap.submit(action.arg, action.next, action.grant)
+				return send(depositCap, action.arg, action.next, action.grant)
 			case "set-custodian":
-				return custodian.submit(action.arg, action.next, action.grant)
+				return send(custodian, action.arg, action.next, action.grant)
 			case "set-notice":
-				return notice.submit(action.arg, action.next, action.grant)
+				return send(notice, action.arg, action.next, action.grant)
 			case "set-wind-down-delay":
-				return windDownDelay.submit(action.arg, action.next, action.grant)
+				return send(windDownDelay, action.arg, action.next, action.grant)
 			case "propose-custodian":
-				return proposeCustodian.submit(action.arg, action.next, action.grant)
+				return send(proposeCustodian, action.arg, action.next, action.grant)
 			case "propose-notice":
-				return proposeNotice.submit(action.arg, action.next, action.grant)
+				return send(proposeNotice, action.arg, action.next, action.grant)
 			case "propose-wind-down-delay":
-				return proposeWindDownDelay.submit(
-					action.arg,
-					action.next,
-					action.grant,
-				)
+				return send(proposeWindDownDelay, action.arg, action.next, action.grant)
 			case "set-oracle-config":
-				return oracleConfig.submit(action.arg, action.next, action.grant)
+				return send(oracleConfig, action.arg, action.next, action.grant)
 			case "set-compliance":
-				return compliance.submit(action.arg, action.next, action.grant)
+				return send(compliance, action.arg, action.next, action.grant)
 			case "set-identity-verifier":
-				return identityVerifier.submit(action.arg, action.next, action.grant)
+				return send(identityVerifier, action.arg, action.next, action.grant)
 			case "propose-compliance":
-				return proposeCompliance.submit(action.arg, action.next, action.grant)
+				return send(proposeCompliance, action.arg, action.next, action.grant)
 			case "propose-identity-verifier":
-				return proposeIdentityVerifier.submit(
+				return send(
+					proposeIdentityVerifier,
 					action.arg,
 					action.next,
 					action.grant,
@@ -154,7 +154,10 @@ const ConfigurationSection: React.FC<{
 						actions={actions}
 						pending={configuration.status === "checking"}
 						unreadable={false}
-						onRun={run}
+						onRun={(action) => dispatch(action, submitTo)}
+						onReady={
+							active ? (action) => dispatch(action, prepareFor) : undefined
+						}
 						onInput={onInput}
 					/>
 				}
