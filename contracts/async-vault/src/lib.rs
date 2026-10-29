@@ -471,8 +471,8 @@ impl AsyncVault {
     /// * `DistributionNotStarted` - No round has been finalised.
     /// * `Frozen` - `holder` is frozen.
     /// * `AmountTooLarge` - A total would overflow.
-    /// * `NoEntitlement` - Nothing to surrender and nothing owed.
     /// * `AccountingMismatch` - A payout would go below what was already paid.
+    /// * `NoEntitlement` - Nothing to surrender and nothing owed.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
