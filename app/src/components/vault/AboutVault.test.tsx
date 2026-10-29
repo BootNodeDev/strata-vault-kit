@@ -64,6 +64,29 @@ describe("AboutVault", () => {
 		expect(screen.getByRole("progressbar")).toBeTruthy()
 	})
 
+	it("renders a figure's definition inside its row", () => {
+		render(
+			<AboutVault
+				summary={[]}
+				figures={{
+					title: "Vault size",
+					rows: [
+						{
+							label: "Economic supply",
+							value: "1,000.00",
+							note: "Shares outside the vault",
+						},
+					],
+				}}
+				groups={[]}
+			/>,
+		)
+
+		const [row] = within(screen.getByRole("list")).getAllByRole("listitem")
+
+		expect(within(row!).getByText("Shares outside the vault")).toBeTruthy()
+	})
+
 	it("renders the figures group before the address groups", () => {
 		renderAboutVault([
 			{

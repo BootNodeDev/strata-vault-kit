@@ -55,3 +55,14 @@ export async function attest(c: Connected, nav: bigint): Promise<void> {
 		await sleep(2_000)
 	}
 }
+
+// Deposits need a valid feed: a lapsed report is posted again at its own value.
+export async function freshFeed(c: Connected, fallback: bigint): Promise<void> {
+	const reader = oracle(c, c.keys.outsider)
+	if ((await reader.state()).result.tag !== "Stale") return
+	const latest = await reader.latest()
+	const stored = outcome(latest, reader)
+	if (stored === "accepted") return attest(c, latest.result.nav_per_share)
+	if (stored === "refused: NoRecord") return attest(c, fallback)
+	throw new Error(stored)
+}
