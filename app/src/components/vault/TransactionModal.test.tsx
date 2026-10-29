@@ -499,6 +499,30 @@ describe("TransactionModal", () => {
 		expect(screen.getByText(/once it closes/)).toBeTruthy()
 	})
 
+	it("names FeedNotValid as subscriptions paused until the price feed is valid again", () => {
+		renderModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6044 },
+		})
+
+		expect(screen.getByText(/price feed is not valid right now/)).toBeTruthy()
+		expect(screen.getByText(/subscriptions are paused/)).toBeTruthy()
+	})
+
+	it("names EscrowNotCovered as subscriptions refused until the vault is funded again", () => {
+		renderModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6076 },
+		})
+
+		expect(
+			screen.getByText(/enough to cover its pending deposits/),
+		).toBeTruthy()
+		expect(
+			screen.getByText(/not taking new subscriptions until it is funded again/),
+		).toBeTruthy()
+	})
+
 	it("falls back to a generic refusal for a contract error it does not recognize, without the raw code", () => {
 		renderModal({
 			status: "failed",
@@ -722,6 +746,20 @@ describe("TransactionModal, cancelling", () => {
 		})
 
 		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
+	})
+
+	it("names EscrowNotCovered as a deposit the vault cannot return until it is funded again", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6076 },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(/You can cancel once it is funded again/),
+		).toBeTruthy()
 	})
 
 	it("falls back to a generic refusal for a cancel error it does not recognize, without the raw code", () => {
@@ -1166,6 +1204,16 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/not accepting new redemptions/)).toBeTruthy()
 	})
 
+	it("names SetupOpen as redemptions starting once setup closes", () => {
+		renderRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6064 },
+		})
+
+		expect(screen.getByText(/setup is still open/)).toBeTruthy()
+		expect(screen.getByText(/Redemptions start once it closes/)).toBeTruthy()
+	})
+
 	it("falls back to a generic refusal for a redeem error it does not recognize, without the raw code", () => {
 		renderRedeemModal({
 			status: "failed",
@@ -1443,6 +1491,8 @@ describe("TransactionModal, closing an epoch", () => {
 		[6032, /not open/],
 		[2000, /not authorized to close/],
 		[2007, /does not hold the manager role/],
+		[6077, /Only the manager can seal this epoch/],
+		[6064, /setup is still open, so no epoch can be sealed/],
 	])("names the vault's reason for code %i", (code, sentence) => {
 		renderCloseEpochModal({
 			status: "failed",
@@ -1552,6 +1602,7 @@ describe("TransactionModal, pricing an epoch", () => {
 		[6031, /could not resolve a valid share price/],
 		[6014, /too large/],
 		[1000, /paused/],
+		[6064, /setup is still open, so no epoch can be priced/],
 	])("names the vault's reason for code %i", (code, sentence) => {
 		renderFulfillEpochModal({
 			status: "failed",
