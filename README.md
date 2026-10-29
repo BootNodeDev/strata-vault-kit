@@ -178,9 +178,9 @@ Deploy afresh before each run of the suites. The guards leave the vault's
 notice at twice the oracle cooldown (10 seconds on the local network), and
 lowering it back waits for the timelock, so a second run against the same
 deployment can fail wherever it prices an epoch right after closing it.
-`test:wind-down` ignores `deployed.local.json`: it deploys
-its own throwaway vault set, built from the `short_wind_down` wasm above, so
-it can reach an active wind-down without the real seven-day minimum.
+`test:wind-down` ignores `deployed.local.json`: it deploys its own throwaway
+vault set, built from the `short_wind_down` wasm above, so it can reach an
+active wind-down without the real seven-day minimum.
 
 Each deploy first returns any deposit asset the harness accounts hold to its
 issuer, so every holder starts a new set at zero. Deploy again and the suites

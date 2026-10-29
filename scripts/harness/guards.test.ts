@@ -730,8 +730,7 @@ describe("the notice period and valuation age rules", () => {
 	let epochA = 0n
 	let epochB = 0n
 
-	// Ledger time, not wall-clock time, decides the notice: poll the contract
-	// itself instead of sleeping for a guessed duration.
+	// Ledger time decides the notice, so ask the contract.
 	const waitForNotice = async (epochId: bigint): Promise<void> => {
 		const deadline = Date.now() + (Number(noticeSecs) + 60) * 1000
 		for (;;) {

@@ -17,6 +17,7 @@ import {
 } from "./deployment.js"
 import { keysFor } from "./keys.js"
 import { network, type Network } from "./network.js"
+import { withAccountRetry } from "./rpc.js"
 
 export interface Connected {
 	net: Network
@@ -43,7 +44,9 @@ export function connectTo(
 		net,
 		deployment,
 		keys,
-		server: new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" }),
+		server: withAccountRetry(
+			new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" }),
+		),
 		asset: new Asset(deployment.asset.code, deployment.asset.issuer),
 	}
 }
@@ -55,6 +58,7 @@ function options(c: Connected, contract: ContractName, as: Keypair) {
 		networkPassphrase: c.net.passphrase,
 		allowHttp: c.net.name === "local",
 		publicKey: as.publicKey(),
+		server: c.server,
 		...basicNodeSigner(as, c.net.passphrase),
 	}
 }

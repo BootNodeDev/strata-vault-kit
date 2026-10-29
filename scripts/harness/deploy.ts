@@ -33,6 +33,7 @@ import {
 import { ensureKeys } from "./lib/keys.js"
 import { network, type Network } from "./lib/network.js"
 import { sourceCommit, wasmHash } from "./lib/provenance.js"
+import { withAccountRetry } from "./lib/rpc.js"
 
 const RELEASE_DIR = join(REPO_ROOT, "target", "wasm32v1-none", "release")
 export const SHORT_WIND_DOWN_DIR = join(
@@ -63,13 +64,19 @@ function requireWasm(vaultWasm: string = wasmOf("async_vault")): void {
 	}
 }
 
-function clientOptions(net: Network, contractId: string, signer: Keypair) {
+function clientOptions(
+	net: Network,
+	contractId: string,
+	signer: Keypair,
+	server: rpc.Server,
+) {
 	return {
 		contractId,
 		rpcUrl: net.rpcUrl,
 		networkPassphrase: net.passphrase,
 		allowHttp: net.name === "local",
 		publicKey: signer.publicKey(),
+		server,
 		...basicNodeSigner(signer, net.passphrase),
 	}
 }
@@ -153,6 +160,7 @@ async function grantAndVerify(
 	net: Network,
 	accounts: Accounts,
 	contracts: Record<ContractName, string>,
+	server: rpc.Server,
 ): Promise<void> {
 	const governance = accounts.governance
 	const caller = governance.publicKey()
@@ -162,7 +170,7 @@ async function grantAndVerify(
 		clientEntry("share_token")
 	)) as typeof ShareTokenModule
 	const token = new ShareToken(
-		clientOptions(net, contracts.share_token, governance),
+		clientOptions(net, contracts.share_token, governance, server),
 	)
 	await (
 		await token.grant_role({ account: vault, role: "manager", caller })
@@ -185,7 +193,12 @@ async function grantAndVerify(
 		clientEntry("identity_verifier")
 	)) as typeof IdentityVerifierModule
 	const verifier = new IdentityVerifier(
-		clientOptions(net, contracts.identity_verifier, accounts.compliance),
+		clientOptions(
+			net,
+			contracts.identity_verifier,
+			accounts.compliance,
+			server,
+		),
 	)
 	await (
 		await verifier.allow({
@@ -202,7 +215,7 @@ async function grantAndVerify(
 		clientEntry("compliance")
 	)) as typeof ComplianceModule
 	const compliance = new Compliance(
-		clientOptions(net, contracts.compliance, governance),
+		clientOptions(net, contracts.compliance, governance, server),
 	)
 	await (
 		await compliance.bind_token({
@@ -227,7 +240,7 @@ async function grantAndVerify(
 		clientEntry("nav_oracle")
 	)) as typeof NavOracleModule
 	const feed = new NavOracle(
-		clientOptions(net, contracts.nav_oracle, governance),
+		clientOptions(net, contracts.nav_oracle, governance, server),
 	)
 	await (await feed.bind_vault({ vault })).signAndSend()
 	await (await feed.finish_setup()).signAndSend()
@@ -243,13 +256,14 @@ async function finishVaultSetup(
 	net: Network,
 	accounts: Accounts,
 	contracts: Record<ContractName, string>,
+	server: rpc.Server,
 ): Promise<void> {
 	const governance = accounts.governance
 	const { Client: AsyncVault } = (await import(
 		clientEntry("async_vault")
 	)) as typeof AsyncVaultModule
 	const vault = new AsyncVault(
-		clientOptions(net, contracts.async_vault, governance),
+		clientOptions(net, contracts.async_vault, governance, server),
 	)
 	await (
 		await vault.set_custodian({
@@ -284,11 +298,15 @@ async function freshSet(
 	net: Network,
 	wasms: Record<ContractName, string>,
 	accounts: Accounts,
+	server: rpc.Server,
 	onProgress?: (progress: IncompleteDeployment) => void,
 ): Promise<Deployment> {
-	const server = new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" })
+	// fund() reads "not found" as "not yet created"; it needs the plain server.
+	const fundingServer = new rpc.Server(net.rpcUrl, {
+		allowHttp: net.name === "local",
+	})
 	const keys = Object.values(accounts)
-	const funded = await fund(net, server, keys)
+	const funded = await fund(net, fundingServer, keys)
 	console.log(
 		`funded ${funded} accounts; ${keys.length - funded} already existed`,
 	)
@@ -365,9 +383,12 @@ export async function deployThrowaway(
 	) as Record<ContractName, string>
 	wasms.async_vault = vaultWasm
 	const keys = throwawayAccounts()
-	const deployment = await freshSet(net, wasms, keys)
-	await grantAndVerify(net, keys, deployment.contracts)
-	await finishVaultSetup(net, keys, deployment.contracts)
+	const server = withAccountRetry(
+		new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" }),
+	)
+	const deployment = await freshSet(net, wasms, keys, server)
+	await grantAndVerify(net, keys, deployment.contracts, server)
+	await finishVaultSetup(net, keys, deployment.contracts, server)
 	return { deployment, keys }
 }
 
@@ -383,7 +404,10 @@ async function main(): Promise<void> {
 	const wasms = Object.fromEntries(
 		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
 	) as Record<ContractName, string>
-	const record = await freshSet(net, wasms, accounts, (progress) =>
+	const server = withAccountRetry(
+		new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" }),
+	)
+	const record = await freshSet(net, wasms, accounts, server, (progress) =>
 		writeIncomplete(progress),
 	)
 	console.log(
@@ -395,8 +419,8 @@ async function main(): Promise<void> {
 	}
 	console.log("clients generated")
 
-	await grantAndVerify(net, accounts, record.contracts)
-	await finishVaultSetup(net, accounts, record.contracts)
+	await grantAndVerify(net, accounts, record.contracts, server)
+	await finishVaultSetup(net, accounts, record.contracts, server)
 
 	const kept = saveDeployment(record)
 	clearIncomplete(net.name)
