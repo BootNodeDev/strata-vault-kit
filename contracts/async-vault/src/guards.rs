@@ -7,6 +7,7 @@ use stellar_tokens::{
     fungible::FungibleTokenClient,
     rwa::{compliance::ComplianceClient as RulesClient, RWATokenClient},
 };
+use strata_bindings::{OracleFeedClient, OracleState};
 use strata_timelock::{queue, setup};
 
 use crate::epoch;
@@ -254,6 +255,13 @@ pub(crate) fn positive_amount(e: &Env, amount: i128) {
     }
 }
 
+pub(crate) fn feed_valid(e: &Env) {
+    let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
+    if feed.state() != OracleState::Valid {
+        panic_with_error!(e, VaultError::FeedNotValid);
+    }
+}
+
 pub(crate) fn within_cap(e: &Env, amount: i128) {
     let Some(cap) = state::deposit_cap(e) else {
         return;
@@ -314,6 +322,20 @@ pub(crate) fn refund_covered(e: &Env, amount: i128) {
 pub(crate) fn payout_covered(e: &Env, assets: i128) {
     if treasury::liquid_reserve(e) < assets {
         panic_with_error!(e, VaultError::ClaimNotCovered);
+    }
+}
+
+/// Against the raw balance: after a clawback, cancellations are paid in arrival order.
+pub(crate) fn cancellation_covered(e: &Env, amount: i128) {
+    if treasury::held(e) < amount {
+        panic_with_error!(e, VaultError::EscrowNotCovered);
+    }
+}
+
+/// A new deposit never pays an earlier cancellation the vault can no longer cover.
+pub(crate) fn escrow_covered(e: &Env) {
+    if treasury::liquid_reserve(e) < 0 {
+        panic_with_error!(e, VaultError::EscrowNotCovered);
     }
 }
 

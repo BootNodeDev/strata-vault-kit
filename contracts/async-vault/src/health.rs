@@ -12,7 +12,7 @@ use crate::state;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Health {
     /// False once `finish_setup` has run. While true, every admin change is
-    /// instant and deposits are refused.
+    /// instant, and the vault takes no request and seals or prices no epoch.
     pub setup_open: bool,
     pub token_bound: bool,
     pub oracle_bound: bool,

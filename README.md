@@ -14,6 +14,12 @@ Two rules the contracts enforce:
 2. **A priced claim always pays** — neither a pause, a delisting nor a stale
    valuation can block an already-priced, funded cash claim.
 
+A request can be cancelled until the vault can read its price. Once an epoch is
+sealed, a valid report accepted after the seal closes cancellation, even while
+the notice still runs; the epoch is priced once the notice ends. If that report
+expires, or the NAV or the vault is paused, cancellation opens again. New
+deposits are refused while the valuation is stale or the NAV is paused.
+
 ## Documentation
 
 - [Product and architecture](./docs/strata-product-and-architecture.md) — what
