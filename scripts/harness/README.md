@@ -13,7 +13,11 @@ npm run deploy
 
 # Unit tests of the harness itself, no network needed
 npm run test:unit
+```
 
+CI runs these in the `js` job through the root `npm run test`.
+
+```sh
 # Run test suites
 npm run test:happy-path
 npm run test:guards

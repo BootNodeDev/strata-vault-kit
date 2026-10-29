@@ -16,6 +16,16 @@ const pins = Object.fromEntries(
 )
 
 describe("the installer's pins", () => {
+	it("CI installs its tools through the checked installer", () => {
+		const workflow = read(".github/workflows/build.yml")
+
+		expect(workflow).not.toMatch(/binstall/)
+		expect(workflow).toContain(
+			"scripts/ci/install-tools.sh stellar stellar-scaffold",
+		)
+		expect(workflow).toContain("scripts/ci/install-tools.sh gitleaks")
+	})
+
 	it("the README runs the quickstart image CI runs", () => {
 		const image = read(".github/workflows/build.yml").match(
 			/IMAGE:\s*(\S+)/,

@@ -105,7 +105,8 @@ stellar contract build && cargo test
 ```
 
 Formatting and secret-scanning run on commit via a `prek` hook — see
-`.pre-commit-config.yaml` and run `prek install` once.
+`.pre-commit-config.yaml` and run `prek install` once. CI also scans every
+pull request's commits with the same gitleaks version.
 
 ### Integration & On-Chain Tests
 
