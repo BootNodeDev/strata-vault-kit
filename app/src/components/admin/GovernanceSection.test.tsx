@@ -1,7 +1,15 @@
 import { Buffer } from "buffer"
 import { type PendingTransfer } from "@stellar-scaffold/app-lib"
-import { fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import {
+	afterEach,
+	beforeEach,
+	describe,
+	expect,
+	it,
+	type Mock,
+	vi,
+} from "vitest"
 import {
 	type AdminAddresses,
 	type Grant,
@@ -20,10 +28,12 @@ const { txs, useGovernanceStateMock } = vi.hoisted(() => {
 	const tx = (): {
 		status: TransactionStatus
 		submit: Mock<() => boolean>
+		prepare: Mock
 		reset: Mock
 	} => ({
 		status: { status: "idle" },
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	})
 	return {
@@ -170,6 +180,10 @@ const renderSection = (grants: Grant[], active = true) =>
 	)
 
 describe("GovernanceSection", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
 	beforeEach(() => {
 		vi.clearAllMocks()
 		useGovernanceStateMock.mockReturnValue({
@@ -179,6 +193,7 @@ describe("GovernanceSection", () => {
 		for (const mock of Object.values(txs)) {
 			mock.status = { status: "idle" }
 			mock.submit = vi.fn(() => true)
+			mock.prepare = vi.fn()
 			mock.reset = vi.fn()
 		}
 	})
@@ -227,6 +242,53 @@ describe("GovernanceSection", () => {
 		expect(
 			screen.queryAllByRole("button", { name: "Grant a vault role" }),
 		).toEqual([])
+	})
+
+	it("prepares a filled-in grant once it settles and still submits it on click", () => {
+		vi.useFakeTimers()
+		renderSection([governance])
+		expand("Grant a vault role")
+		fireEvent.change(screen.getByRole("combobox", { name: "Role" }), {
+			target: { value: "guardian" },
+		})
+		fireEvent.change(screen.getByRole("textbox", { name: "Account" }), {
+			target: { value: ACCOUNT },
+		})
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		const grantArg = { role: "guardian", account: ACCOUNT }
+		expect(txs.useGrantVaultRole.prepare).toHaveBeenCalledWith(
+			grantArg,
+			governance,
+		)
+
+		fireEvent.click(submit("Grant a vault role"))
+
+		expect(txs.useGrantVaultRole.submit).toHaveBeenCalledWith(
+			grantArg,
+			governance,
+		)
+	})
+
+	it("prepares nothing while the governance tab is hidden", () => {
+		vi.useFakeTimers()
+		renderSection([governance], false)
+		expand("Grant a vault role")
+		fireEvent.change(screen.getByRole("combobox", { name: "Role" }), {
+			target: { value: "guardian" },
+		})
+		fireEvent.change(screen.getByRole("textbox", { name: "Account" }), {
+			target: { value: ACCOUNT },
+		})
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(txs.useGrantVaultRole.prepare).not.toHaveBeenCalled()
 	})
 
 	it("grants the chosen role to the typed account", () => {

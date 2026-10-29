@@ -373,3 +373,39 @@ fn nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included() {
         .revoke_role(&f.treasury, &symbol_short!("treasury"), &f.admin);
     assert_eq!(f.vault.treasury(), None);
 }
+
+/// Lands an `Admin` offer for `next`, then activates a wind-down.
+fn offer_admin_then_wind_down(f: &Fixture, next: &Address) {
+    let id = f.vault.propose_change(&VaultChange::Admin(next.clone()));
+    f.vault.propose_wind_down();
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_change(&id);
+    f.vault.activate_wind_down();
+}
+
+#[test]
+fn an_admin_hand_over_cannot_be_accepted_during_a_wind_down() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+    offer_admin_then_wind_down(&f, &next);
+
+    refused(
+        f.vault.try_accept_admin_transfer(),
+        VaultError::WindDownActive,
+    );
+    assert_eq!(f.vault.governance(), Some(f.admin.clone()));
+}
+
+#[test]
+fn cancelling_a_hand_over_stays_open_during_a_wind_down() {
+    let f = setup();
+    let next = Address::generate(&f.e);
+    offer_admin_then_wind_down(&f, &next);
+
+    f.vault.transfer_admin_role(&next, &0);
+
+    assert_eq!(
+        f.vault.try_transfer_admin_role(&next, &0),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
+}

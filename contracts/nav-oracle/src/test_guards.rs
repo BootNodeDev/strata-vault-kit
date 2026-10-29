@@ -11,7 +11,7 @@ use strata_timelock::{Clock, MIN_DELAY};
 use crate::guards;
 use crate::{
     NavInput, NavOracleContract, NavOracleContractClient, NavReport, OracleChange, OracleConfig,
-    OracleError, MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN,
+    OracleError, MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN, MIN_ANSWER,
 };
 
 const SCALE: i128 = 1_000_000_000_000_000_000;
@@ -146,6 +146,10 @@ fn valid_config_refuses_a_config_outside_the_bounds() {
         },
         OracleConfig {
             min_answer: 0,
+            ..config()
+        },
+        OracleConfig {
+            min_answer: MIN_ANSWER - 1,
             ..config()
         },
         OracleConfig {

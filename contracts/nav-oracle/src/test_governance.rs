@@ -795,6 +795,21 @@ fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
 }
 
 #[test]
+fn an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down() {
+    let f = setup();
+    f.finish();
+    let next = Address::generate(&f.e);
+    f.offer_admin(&next);
+    f.clock(|c| c.winding_down = true);
+
+    refused(
+        f.oracle.try_accept_admin_transfer(),
+        OracleError::WindDownActive,
+    );
+    assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
+}
+
+#[test]
 fn a_change_shorter_than_a_raised_notice_never_lands() {
     let f = setup();
     f.finish();
@@ -948,6 +963,9 @@ fn setup_grants_hand_overs_and_changes_restore_the_instance_ttl() {
     let id = f.propose(change);
     f.advance(MIN_DELAY);
     f.restores_the_instance(|| f.oracle.apply_change(&id));
+
+    f.offer_admin(&next);
+    f.restores_the_instance(|| f.oracle.accept_admin_transfer());
 }
 
 /// Mirrors OpenZeppelin's private member-list key: same variant and fields, same encoding.
