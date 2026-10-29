@@ -31,6 +31,8 @@ deposits are refused while the valuation is stale or the NAV is paused.
 - [Threat model](./docs/THREAT_MODEL.md) — what can go wrong with the oracle,
   the roles and the redemption paths, what stops it, what is left, and the
   test for each control.
+- [Monitoring plan](./docs/MONITORING_PLAN.md) — what an operator watches on
+  chain, where each signal comes from, and what to do when it fires.
 
 ## Status
 
