@@ -93,7 +93,7 @@ fn an_open_epoch_cannot_be_fulfilled() {
     let f = setup();
     f.attest(wad(2));
 
-    assert!(f.vault.try_fulfill_epoch(&1).is_err());
+    refused(f.vault.try_fulfill_epoch(&1), VaultError::EpochNotPending);
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Open);
 }
 
@@ -120,7 +120,10 @@ fn a_fulfilled_epoch_cannot_be_fulfilled_again() {
     let f = setup();
     let epoch = f.fulfill_epoch(wad(2));
 
-    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
+    refused(
+        f.vault.try_fulfill_epoch(&epoch),
+        VaultError::EpochNotPending,
+    );
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
 }
 
@@ -164,7 +167,7 @@ fn closing_needs_the_manager_authorisation() {
     let f = setup();
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_close_epoch(&f.manager).is_err());
+    missing_auth(f.vault.try_close_epoch(&f.manager));
     assert_eq!(f.vault.current_epoch(), 1);
 }
 

@@ -132,7 +132,7 @@ fn only_governance_proposes_and_cancels() {
 
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(who, "propose_change", (change.clone(),).into_val(&f.e));
-        assert!(f.vault.try_propose_change(&change).is_err());
+        missing_auth(f.vault.try_propose_change(&change));
     }
     let delay = VaultChange::UpgradeDelay(30 * DAY_DURATION);
     f.sign_only_as(
@@ -140,13 +140,13 @@ fn only_governance_proposes_and_cancels() {
         "propose_change",
         (delay.clone(),).into_val(&f.e),
     );
-    assert!(f.vault.try_propose_change(&delay).is_err());
+    missing_auth(f.vault.try_propose_change(&delay));
 
     f.e.mock_all_auths();
     let id = propose(&f, change);
     for who in [&stranger, &f.guardian] {
         f.sign_only_as(who, "cancel_change", (id,).into_val(&f.e));
-        assert!(f.vault.try_cancel_change(&id).is_err());
+        missing_auth(f.vault.try_cancel_change(&id));
     }
 }
 
@@ -230,7 +230,10 @@ fn a_pause_freezes_the_upgrade_timelock_clock() {
     f.vault.pause(&f.guardian);
     f.advance(10 * DAY_DURATION);
 
-    assert!(f.vault.try_apply_change(&id).is_err());
+    assert_eq!(
+        f.vault.try_apply_change(&id),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
 
     // Unpause: the eta has moved by the ten days spent paused.
     f.vault.unpause(&f.admin);
@@ -274,7 +277,7 @@ fn only_governance_applies() {
 
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(who, "apply_change", (id,).into_val(&f.e));
-        assert!(f.vault.try_apply_change(&id).is_err());
+        missing_auth(f.vault.try_apply_change(&id));
     }
     assert_eq!(f.vault.pending_changes().len(), 1);
 }
@@ -297,13 +300,23 @@ fn has_no_function(e: &Env, function: &str) -> bool {
         })
 }
 
+/// What a caller sees when the host refuses a call: every host error is
+/// narrowed to this one.
+fn host_refusal() -> soroban_sdk::Error {
+    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
+    soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
+}
+
 #[test]
 fn the_vault_exposes_no_immediate_upgrade() {
     let f = setup();
     let upgrader =
         stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.vault.address);
 
-    assert!(upgrader.try_upgrade(&wasm(&f, 7), &f.admin).is_err());
+    assert_eq!(
+        upgrader.try_upgrade(&wasm(&f, 7), &f.admin),
+        Err(Ok(host_refusal()))
+    );
     assert!(has_no_function(&f.e, "upgrade"));
 }
 
@@ -409,7 +422,7 @@ fn the_vault_reports_its_clock_to_the_token_and_the_oracle() {
 #[cfg(feature = "upgrade_wasm")]
 mod with_wasm {
     use share_token::TokenChange;
-    use soroban_sdk::xdr::{ContractEventBody, ScError, ScErrorCode, ScErrorType, ScSymbol, ScVal};
+    use soroban_sdk::xdr::{ContractEventBody, ScError, ScErrorCode, ScSymbol, ScVal};
 
     use super::*;
 
@@ -436,12 +449,6 @@ mod with_wasm {
         f.advance(MIN_UPGRADE_DELAY);
         f.vault.apply_change(&id);
         vault_probe::Client::new(&f.e, &f.vault.address)
-    }
-
-    /// What a caller sees when the host refuses a call: every host error is
-    /// narrowed to this one.
-    fn host_refusal() -> soroban_sdk::Error {
-        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
     }
 
     /// Whether the host refused a call to `function` because the contract
