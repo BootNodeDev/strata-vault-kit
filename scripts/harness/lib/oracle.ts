@@ -34,16 +34,29 @@ export function navInput(nav: bigint): NavInput {
 	}
 }
 
+// The local RPC occasionally loses a just-funded account for one lookup; the
+// account is real (deploy already funded it), so this is worth one retry.
+function isTransientAccountLookup(error: unknown): boolean {
+	return error instanceof Error && error.message.startsWith("Account not found")
+}
+
 // The cooldown is ledger time, so the second attestation of a run waits it out.
 export async function attest(c: Connected, nav: bigint): Promise<void> {
 	const attester = c.keys.attester
 	const client = oracle(c, attester)
 	const deadline = Date.now() + (c.net.oracle.cooldown_secs + 60) * 1_000
 	for (;;) {
-		const tx = await client.attest({
-			input: navInput(nav),
-			caller: attester.publicKey(),
-		})
+		let tx
+		try {
+			tx = await client.attest({
+				input: navInput(nav),
+				caller: attester.publicKey(),
+			})
+		} catch (error) {
+			if (!isTransientAccountLookup(error) || Date.now() > deadline) throw error
+			await sleep(2_000)
+			continue
+		}
 		const result = outcome(tx, client)
 		if (result === "accepted") {
 			await send(Promise.resolve(tx))
