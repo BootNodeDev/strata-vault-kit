@@ -94,7 +94,6 @@ jobs:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          # A cached CLI would outlive a version bump in the install steps.
           cache-bin: "false"
           workspaces: |
             . -> target
@@ -153,7 +152,6 @@ jobs:
       - run: npm ci
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          # A cached CLI would outlive a version bump in the install steps.
           cache-bin: "false"
       - run:
           sudo apt-get update && sudo apt-get install -y libudev-dev
@@ -361,6 +359,6 @@ jobs:
           echo "changes=$CHANGES js=$JS event=$EVENT secret-scan=$SECRET_SCAN rust-tests=$RUST_TESTS rust-checks=$RUST_CHECKS network=$NETWORK code=$CODE"
           [ "$CHANGES" = success ] && [ "$JS" = success ] || exit 1
           if [ "$EVENT" = pull_request ]; then [ "$SECRET_SCAN" = success ] || exit 1; fi
-          if [ "$CODE" = true ]; then
+          if [ "$CODE" != false ]; then
             [ "$RUST_TESTS" = success ] && [ "$RUST_CHECKS" = success ] && [ "$NETWORK" = success ] || exit 1
           fi
