@@ -256,6 +256,13 @@ pub(crate) fn has_entitlement(e: &Env, surrendered: i128, assets: i128) {
     }
 }
 
+/// The vault's own shares are other holders' escrow, not an entitlement.
+pub(crate) fn holder_not_the_vault(e: &Env, holder: &Address) {
+    if *holder == e.current_contract_address() {
+        panic_with_error!(e, VaultError::NoEntitlement);
+    }
+}
+
 pub(crate) fn positive_amount(e: &Env, amount: i128) {
     if amount <= 0 {
         panic_with_error!(e, VaultError::InvalidAmount);

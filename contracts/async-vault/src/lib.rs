@@ -515,7 +515,8 @@ impl AsyncVault {
     /// * `Frozen` - `holder` is frozen.
     /// * `AmountTooLarge` - A total would overflow.
     /// * `AccountingMismatch` - A payout would go below what was already paid.
-    /// * `NoEntitlement` - Nothing to surrender and nothing owed.
+    /// * `NoEntitlement` - Nothing to surrender and nothing owed, or
+    ///   `holder` is the vault.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -531,8 +532,8 @@ impl AsyncVault {
     }
 
     /// What `claim_wind_down` would pay `holder` now, in asset base units:
-    /// zero before the first round and for a frozen holder; fails where the
-    /// claim fails.
+    /// zero before the first round, for a frozen holder and for the vault;
+    /// fails where the claim fails.
     ///
     /// # Arguments
     ///

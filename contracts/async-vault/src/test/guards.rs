@@ -281,6 +281,16 @@ fn custodian_not_the_vault_refuses_the_vault_itself() {
 }
 
 #[test]
+fn holder_not_the_vault_refuses_the_vault_itself() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    holds(&f, || guards::holder_not_the_vault(&f.e, &investor));
+    refuses(&f, VaultError::NoEntitlement, || {
+        guards::holder_not_the_vault(&f.e, &f.vault.address)
+    });
+}
+
+#[test]
 fn feed_bound_here_and_answering_refuses_an_unbound_feed_or_a_contract_that_is_not_a_feed() {
     let f = setup();
     holds(&f, || {

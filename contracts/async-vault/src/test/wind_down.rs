@@ -672,12 +672,19 @@ fn a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve() {
 fn the_vault_cannot_claim_against_its_own_escrowed_shares() {
     let f = setup();
     let user = f.holder(500);
-    f.vault.request_redeem(&user, &200);
+    let epoch = f.vault.request_redeem(&user, &200);
     wind_down_now(&f);
     f.vault.finalize_wind_down_round();
+    let owed = f.vault.wind_down_owed();
 
-    f.e.set_auths(&[]);
-    assert!(f.vault.try_claim_wind_down(&f.vault.address).is_err());
+    assert_eq!(f.vault.wind_down_claimable(&f.vault.address), 0);
+    refused(
+        f.vault.try_claim_wind_down(&f.vault.address),
+        VaultError::NoEntitlement,
+    );
+    assert_eq!(f.shares(&f.vault.address), 200);
+    assert_eq!(f.vault.wind_down_owed(), owed);
+    assert_eq!(f.vault.cancel_redeem(&user, &epoch), 200);
 }
 
 #[test]

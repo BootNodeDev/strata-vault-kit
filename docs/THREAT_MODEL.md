@@ -1041,11 +1041,13 @@ others' cost.
   `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`,
   `a_round_of_one_unit_at_the_lowest_price_still_credits_it`,
   `at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`,
-  `the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge` and
-  `the_claimable_view_shows_what_the_claim_then_pays` in
+  `the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge`,
+  `the_claimable_view_shows_what_the_claim_then_pays` and
+  `the_vault_cannot_claim_against_its_own_escrowed_shares` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
   `wind_down_delay_elapsed_refuses_before_the_activation_time` (the guard
-  `activate_wind_down` runs) in
+  `activate_wind_down` runs) and
+  `holder_not_the_vault_refuses_the_vault_itself` in
   [`guards.rs`](../contracts/async-vault/src/test/guards.rs). For
   `uncovered()` with round credits, none: the limit is stated, not built.
 
