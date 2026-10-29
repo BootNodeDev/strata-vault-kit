@@ -153,7 +153,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`nav_oracle`** | `config.max_down_bps` | `u32` (basis points) | Largest downward move per attestation, 1 to 10,000; 10,000 lets a loss of any size land at once | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share, at least `MIN_ANSWER` ($`10^{12}`$, a millionth of an asset unit per share). An oracle upgraded in place with a stored `min_answer` below the floor keeps it; even its instant `set_config` (a shorter freshness window) is refused until a timelocked `Config` change raises it to the floor | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{18}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
-| **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC) | `async_vault.constructor_args` |
+| **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC). Must have the share token's 7 decimals: `finish_setup` refuses with `SetupIncomplete` otherwise (`health().decimals_match`). Every classic Stellar asset has 7; a Soroban token with other decimals needs a fork of the share token | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `oracle` | `Address` | Deployed NAV oracle contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.governance` | `Address` | Governance multisig authority | `async_vault.constructor_args` |
@@ -162,6 +162,8 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`async_vault`** | `roles.manager` | `Address` | Account that gets the vault's `manager` role (closes epochs); a role, not one of the five authorities | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.compliance` | `Address` | Compliance multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.attester` | `Address` | Attestation authority. Not read: nothing checks that it matches the oracle's attester | `async_vault.constructor_args` |
+
+The share token's decimals are fixed at 7 in its constructor; they are not a parameter.
 
 #### Role Separation Checked at Construction
 The `async_vault` constructor refuses these four pairs of equal addresses and compares no other:
@@ -221,6 +223,14 @@ The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer mo
 - `total_economic_supply()` counts share base units held outside the vault plus those priced for deposits and not yet minted: the token's `total_supply()`, less the vault's own share balance, plus `pending_mint_shares()`. It leaves out every share in the vault's escrow. That includes the shares of a redemption that is not priced yet: the next price still applies to them, and a cancellation can return them (`economic_supply_excludes_shares_locked_in_redemption_escrow`). The first wind-down round's supply snapshot counts those shares, so the two figures differ while redemptions wait to be priced.
 - Deposited capital, which the deposit cap limits, is the asset the vault holds plus `net_deployed()`, less `committed()`. It counts money in and out, not the vault's value (what the vault and the custodian hold): a deposit request adds what it brings, and a priced redemption takes off what it pays. A gain or a loss at the custodian does not move it, even once funded back. After a gain, the figure is below the vault's value. Once leavers are paid the gain, it can go negative, and the cap then admits more than its own amount (`a_gain_paid_out_to_leavers_leaves_room_above_the_cap`). After a loss, the figure stays above the vault's value, and the cap refuses deposits sooner (`a_loss_at_the_custodian_still_counts_toward_the_cap`).
 - `net_deployed()` is what `deploy_to_custodian` sent less what `fund` brought back; it goes negative once more came back than went out. The custodian repays through `fund`. A plain transfer to the vault raises the vault's balance but leaves `net_deployed` as it was, so from then on the same money counts twice in deposited capital and the cap refuses deposits sooner.
+
+### Days and Ledgers
+
+The kit measures time two ways. Durations in seconds read the ledger's close time, so they do not depend on how often ledgers close: the timelock delay, the notice, the freshness window, the cooldown, the wind-down delay and the minimum epoch duration.
+
+Figures counted in ledgers assume a ledger every 5 seconds, 17,280 a day. They are the storage lifetimes in §5 (30 days, renewed once 29 or fewer remain; 90 days for role entries, set by OpenZeppelin), the 7 days a new admin has to accept a hand-over (`ADMIN_ACCEPT_LEDGERS`), the 30 days the extend script asks for, and the 7-day window of the app's activity list.
+
+If the network makes ledgers faster, each ledger-counted figure lasts less on the clock by the same factor; the second-based ones do not change. At 2.5-second ledgers, an entry extended to 30 days lasts 15, so the extend script must run twice as often, and a hand-over must be accepted within 3.5 days.
 
 ---
 
