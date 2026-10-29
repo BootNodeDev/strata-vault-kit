@@ -35,18 +35,23 @@ impl strata_bindings::VaultBinding for FeedStub {
     }
 }
 
-/// A feed that passes the swap check, then traps on the one view a test names.
+/// A feed that passes the swap check, then traps on the view a test names or
+/// answers the share price a test sets.
 #[contract]
-struct TrappingFeed;
+struct BrokenFeed;
 
 #[contractimpl]
-impl TrappingFeed {
+impl BrokenFeed {
     pub fn __constructor(e: Env, vault: Address) {
         e.storage().instance().set(&symbol_short!("vault"), &vault);
     }
 
     pub fn trap(e: Env, view: Symbol) {
         e.storage().instance().set(&symbol_short!("trap"), &view);
+    }
+
+    pub fn answer_nav(e: Env, nav: i128) {
+        e.storage().instance().set(&symbol_short!("nav"), &nav);
     }
 
     pub fn state(e: Env) -> strata_bindings::OracleState {
@@ -65,12 +70,15 @@ impl TrappingFeed {
 
     pub fn nav_per_share(e: Env) -> i128 {
         trap_on(&e, symbol_short!("nav"));
-        WAD_SCALE
+        e.storage()
+            .instance()
+            .get(&symbol_short!("nav"))
+            .unwrap_or(WAD_SCALE)
     }
 }
 
 #[contractimpl(contracttrait)]
-impl strata_bindings::VaultBinding for TrappingFeed {
+impl strata_bindings::VaultBinding for BrokenFeed {
     fn vault(e: &Env) -> Option<Address> {
         e.storage().instance().get(&symbol_short!("vault"))
     }
@@ -87,19 +95,24 @@ fn trap_on(e: &Env, view: Symbol) {
     }
 }
 
-/// Installs the feed the way governance would (propose, wait, apply), then sets its trap.
-fn swap_to_a_feed_that_traps_on(f: &Fixture, view: Symbol) {
-    let feed = TrappingFeedClient::new(
-        &f.e,
-        &f.e.register(TrappingFeed, (f.vault.address.clone(),)),
-    );
+/// Installs the feed the way governance would: propose, wait, apply.
+fn swap_to_a_broken_feed<'a>(f: &'a Fixture) -> BrokenFeedClient<'a> {
+    let feed = BrokenFeedClient::new(&f.e, &f.e.register(BrokenFeed, (f.vault.address.clone(),)));
     let id = f
         .vault
         .propose_change(&VaultChange::Oracle(feed.address.clone()));
     f.advance(MIN_UPGRADE_DELAY);
     f.vault.apply_change(&id);
     assert_eq!(f.vault.oracle(), feed.address);
-    feed.trap(&view);
+    feed
+}
+
+fn swap_to_a_feed_that_traps_on(f: &Fixture, view: Symbol) {
+    swap_to_a_broken_feed(f).trap(&view);
+}
+
+fn swap_to_a_feed_that_prices_at(f: &Fixture, nav: i128) {
+    swap_to_a_broken_feed(f).answer_nav(&nav);
 }
 
 fn unbound_feed<'a>(f: &Fixture<'a>) -> NavOracleContractClient<'a> {
@@ -317,4 +330,50 @@ fn a_feed_that_traps_on_its_state_neither_prices_nor_blocks_a_cancel() {
 
     refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
     assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+}
+
+/// A deposit and a redemption sealed in one epoch, as `(investor, holder, epoch)`.
+fn seal_both_sides(f: &Fixture) -> (Address, Address, u64) {
+    let holder = f.holder(200);
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.vault.request_redeem(&holder, &200);
+    f.close_epoch();
+    (investor, holder, epoch)
+}
+
+#[test]
+fn both_sides_of_a_sealed_epoch_cancel_when_the_feed_traps_on_its_price() {
+    let f = setup();
+    let (investor, holder, epoch) = seal_both_sides(&f);
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("nav"));
+
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+    assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
+}
+
+#[test]
+fn both_sides_of_a_sealed_epoch_cancel_when_the_feed_prices_at_zero_or_less() {
+    for nav in [0, -WAD_SCALE] {
+        let f = setup();
+        let (investor, holder, epoch) = seal_both_sides(&f);
+        swap_to_a_feed_that_prices_at(&f, nav);
+
+        assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+        assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
+    }
+}
+
+#[test]
+fn a_feed_that_prices_at_zero_or_less_refuses_fulfilment() {
+    for nav in [0, -WAD_SCALE] {
+        let f = setup();
+        let (_, _, epoch) = seal_both_sides(&f);
+        swap_to_a_feed_that_prices_at(&f, nav);
+
+        refused(
+            f.vault.try_fulfill_epoch(&epoch),
+            VaultError::InvalidSharePrice,
+        );
+    }
 }

@@ -25,9 +25,9 @@ pub(crate) fn open(total_deposited: i128) -> EpochInfo {
     }
 }
 
-/// The feed is usable and its standing valuation is no older than the close;
-/// a feed that fails to answer counts as no readable price. Deliberately
-/// excludes the notice: see `is_priceable`.
+/// The feed is usable, its standing valuation is no older than the close, and
+/// the share price resolves; a feed that fails to answer counts as no readable
+/// price. Deliberately excludes the notice: see `is_priceable`.
 fn price_readable(e: &Env, epoch: &EpochInfo) -> Result<(), VaultError> {
     let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
     if !matches!(feed.try_state(), Ok(Ok(OracleState::Valid))) {
@@ -39,7 +39,7 @@ fn price_readable(e: &Env, epoch: &EpochInfo) -> Result<(), VaultError> {
     if !Timing::price_is_current(epoch.closed_at, attested_at) {
         return Err(VaultError::AttestationBeforeClose);
     }
-    Ok(())
+    Pricing::resolve_share_price(e).map(|_| ())
 }
 
 /// Every condition pricing an epoch requires. It answers rather than aborting,
