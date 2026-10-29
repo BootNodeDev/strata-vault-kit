@@ -1,4 +1,5 @@
 mod cancel;
+mod clawback;
 mod compliance;
 mod constructor;
 mod controls;
@@ -18,6 +19,7 @@ mod oracle_pricing;
 mod oracle_swap;
 mod pricing;
 mod redeem;
+mod sealing;
 mod settlement;
 mod setup;
 mod share_returns;
@@ -149,6 +151,11 @@ impl Fixture<'_> {
         TokenClient::new(&self.e, &self.asset).balance(who)
     }
 
+    /// The asset's issuer takes `amount` out of the vault's balance.
+    fn claw_back(&self, amount: i128) {
+        StellarAssetClient::new(&self.e, &self.asset).clawback(&self.vault.address, &amount);
+    }
+
     fn shares(&self, who: &Address) -> i128 {
         self.share.balance(who)
     }
@@ -255,7 +262,7 @@ fn setup<'a>() -> Fixture<'a> {
 }
 
 /// A vault whose wiring is complete but whose own setup is still open: admin
-/// changes are instant and deposits are refused.
+/// changes are instant and the vault takes no request.
 fn setup_unfinished<'a>() -> Fixture<'a> {
     miswired(Miswire::Nothing)
 }
@@ -285,6 +292,12 @@ enum Miswire {
     OracleNotAFeed,
     NoCustodian,
     CustodianIsVault,
+    EpochAdvanced,
+    DepositBooked,
+    RedemptionBooked,
+    Committed,
+    SharesOwed,
+    SharesToBurn,
 }
 
 /// An asset with six decimals, where the share token has seven.
@@ -340,7 +353,11 @@ fn build<'a>(
     e.ledger().set_timestamp(10_000);
 
     let issuer = Address::generate(&e);
-    let asset = e.register_stellar_asset_contract_v2(issuer).address();
+    let sac = e.register_stellar_asset_contract_v2(issuer);
+    // A balance can be clawed back only if the flag was set when it was created.
+    sac.issuer()
+        .set_flag(soroban_sdk::testutils::IssuerFlags::ClawbackEnabledFlag);
+    let asset = sac.address();
     let manager = Address::generate(&e);
     let treasury = Address::generate(&e);
     let guardian = Address::generate(&e);
@@ -477,8 +494,38 @@ fn build<'a>(
         }),
         _ => vault.set_custodian(&custodian),
     }
+    // No entrypoint books these during setup, so the test writes the vault's storage.
+    match miswire {
+        Miswire::EpochAdvanced => {
+            e.as_contract(&contract_id, || crate::state::set_current_epoch(&e, 2))
+        }
+        Miswire::DepositBooked => e.as_contract(&contract_id, || {
+            let mut epoch = crate::state::get_epoch(&e, crate::state::FIRST_EPOCH).unwrap();
+            epoch.total_deposited = 100;
+            crate::state::set_epoch(&e, crate::state::FIRST_EPOCH, &epoch);
+        }),
+        Miswire::RedemptionBooked => e.as_contract(&contract_id, || {
+            let mut epoch = crate::state::get_epoch(&e, crate::state::FIRST_EPOCH).unwrap();
+            epoch.total_shares_redeeming = 100;
+            crate::state::set_epoch(&e, crate::state::FIRST_EPOCH, &epoch);
+        }),
+        Miswire::Committed => e.as_contract(&contract_id, || crate::state::set_committed(&e, 100)),
+        Miswire::SharesOwed => e.as_contract(&contract_id, || {
+            crate::state::set_pending_mint_shares(&e, 100)
+        }),
+        Miswire::SharesToBurn => e.as_contract(&contract_id, || {
+            crate::state::set_pending_burn_shares(&e, 100)
+        }),
+        _ => {}
+    }
     if finish {
         vault.finish_setup();
+        // Deposits need a valid report; a second on, so the next sealed epoch is not priced by it.
+        oracle.attest(
+            &nav_input(&e, oracle.config().max_answer / 2, u64::MAX),
+            &attester,
+        );
+        e.ledger().set_timestamp(e.ledger().timestamp() + 1);
     }
 
     Fixture {

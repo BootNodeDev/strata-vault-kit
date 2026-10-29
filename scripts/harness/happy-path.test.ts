@@ -12,7 +12,7 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
-import { attest, navInput, SAMPLE_PROOF_URI } from "./lib/oracle.js"
+import { attest, freshFeed, navInput, SAMPLE_PROOF_URI } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -87,6 +87,7 @@ describe("subscription", () => {
 	let freeBefore = 0n
 
 	it("two holders subscribe in the same epoch and see their escrow", async () => {
+		await freshFeed(c, price(2))
 		subscriptionEpoch = (await reader.current_epoch()).result
 		escrowBefore = (await reader.cancellable_escrow()).result
 		freeBefore = (await reader.free_reserve()).result

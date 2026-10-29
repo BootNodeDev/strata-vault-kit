@@ -14,6 +14,12 @@ Two rules the contracts enforce:
 2. **A priced claim always pays** — neither a pause, a delisting nor a stale
    valuation can block an already-priced, funded cash claim.
 
+A request can be cancelled until the vault can read its price. Once an epoch is
+sealed, a valid report accepted after the seal closes cancellation, even while
+the notice still runs; the epoch is priced once the notice ends. If that report
+expires, or the NAV or the vault is paused, cancellation opens again. New
+deposits are refused while the valuation is stale or the NAV is paused.
+
 ## Documentation
 
 - [Product and architecture](./docs/strata-product-and-architecture.md) — what
@@ -25,6 +31,8 @@ Two rules the contracts enforce:
 - [Threat model](./docs/THREAT_MODEL.md) — what can go wrong with the oracle,
   the roles and the redemption paths, what stops it, what is left, and the
   test for each control.
+- [Monitoring plan](./docs/MONITORING_PLAN.md) — what an operator watches on
+  chain, where each signal comes from, and what to do when it fires.
 
 ## Status
 
@@ -59,6 +67,36 @@ above.
 | Claim shares | `claim_deposit` | [`fe59e77e…e029`](https://stellar.expert/explorer/testnet/tx/fe59e77ee68ca2849345515b5e2a8be0f80e517b49efeb22f0045a1df5a6e029) |
 | Redeem (request) | `request_redeem` | [`d6c02ee0…7524`](https://stellar.expert/explorer/testnet/tx/d6c02ee0868235fd12c280ba8c4e17fd6d63f4a117e9c48a897185c72dc97524) |
 | Withdraw (claim cash) | `claim_redeem` | [`27a81778…db64`](https://stellar.expert/explorer/testnet/tx/27a8177877ecac5a4c87c1b4bed12e5f8664ca387f13fd9c05f8062ec68bdb64) |
+
+## Vault figures
+
+The [live dApp](https://strata-vault-kit-app.vercel.app) shows Withdrawable and
+Committed in the strip at the top of the vault page, and Economic supply under
+"About this vault". Each one reads a view on `async_vault`.
+
+| Figure | What it is | View |
+| --- | --- | --- |
+| Withdrawable | The cash the vault holds now, less deposits that can still be cancelled. Priced redemptions are paid from it. | `liquid_reserve()` |
+| Committed | The cash owed to priced redemptions that are not claimed yet. When it is more than Withdrawable, the gap shows as Uncovered. | `committed()` |
+| Economic supply | The shares held outside the vault, plus the shares priced for deposits and not claimed yet. | `total_economic_supply()` |
+
+## Oracle tests
+
+These tests show the oracle's price controls and how it keeps its storage
+alive (TTL). Run them with `cargo test -p nav-oracle`.
+
+| What the tests show | File | Tests |
+| --- | --- | --- |
+| Band: a price below the minimum or above the maximum answer is refused | [`contracts/nav-oracle/src/test.rs`](./contracts/nav-oracle/src/test.rs), [`contracts/nav-oracle/src/test_guards.rs`](./contracts/nav-oracle/src/test_guards.rs) | `attest_rejects_out_of_band`, `nav_in_band_refuses_a_value_outside_the_band` |
+| Deviation cap: one report cannot move the price past the upward or downward cap | [`contracts/nav-oracle/src/test.rs`](./contracts/nav-oracle/src/test.rs), [`contracts/nav-oracle/src/test_guards.rs`](./contracts/nav-oracle/src/test_guards.rs) | `attest_enforces_cooldown_and_deviation`, `a_configured_downside_still_bounds_a_fall`, `a_full_downside_cap_still_bounds_a_rise`, `within_deviation_refuses_a_move_past_either_cap` |
+| Cooldown: a report inside the cooldown after the last one is refused | [`contracts/nav-oracle/src/test.rs`](./contracts/nav-oracle/src/test.rs), [`contracts/nav-oracle/src/test_guards.rs`](./contracts/nav-oracle/src/test_guards.rs) | `attest_enforces_cooldown_and_deviation`, `two_reports_in_one_ledger_are_refused_at_the_shortest_cooldown`, `cooldown_elapsed_refuses_a_report_inside_the_cooldown` |
+| Freshness: a report never outlives the freshness window, a report that is already expired is refused, and once a price expires the oracle reports it stale and the vault refuses to price an epoch with it | [`contracts/nav-oracle/src/test.rs`](./contracts/nav-oracle/src/test.rs), [`contracts/nav-oracle/src/test_guards.rs`](./contracts/nav-oracle/src/test_guards.rs), [`contracts/async-vault/src/test/oracle_pricing.rs`](./contracts/async-vault/src/test/oracle_pricing.rs) | `heartbeat_expiry_makes_it_stale`, `a_reporter_expiry_past_the_window_is_cut_to_the_window`, `expires_in_future_refuses_a_report_born_stale`, `fulfill_is_rejected_once_the_feed_goes_stale` |
+| TTL: the latest valuation keeps a full TTL while it is read | [`contracts/nav-oracle/src/test.rs`](./contracts/nav-oracle/src/test.rs) | `the_latest_valuation_keeps_a_full_ttl_while_it_is_read` |
+| TTL: setup, grant, hand-over and change calls extend the instance, and every role grant writes the role with its full TTL | [`contracts/nav-oracle/src/test_governance.rs`](./contracts/nav-oracle/src/test_governance.rs) | `setup_grants_hand_overs_and_changes_restore_the_instance_ttl`, `the_constructor_writes_each_role_with_the_full_ttl`, `a_grant_during_setup_writes_the_role_with_the_full_ttl`, `a_grant_through_the_timelock_writes_the_role_with_the_full_ttl` |
+
+The vault's test runs with `cargo test -p async-vault
+fulfill_is_rejected_once_the_feed_goes_stale`. [Testing](./docs/TESTING.md)
+lists the TTL tests for every contract.
 
 ## Demo deployment
 
@@ -193,6 +231,11 @@ pays, since extending needs no authority. Use `--env <name>` for another
 environment, or `--config <record>` for a deployment record. The
 [TTL policy](./docs/kit-spec.md#5-storage-lifetime-ttl-policy) says what each
 contract extends on its own.
+
+With `--config`, it uses the network the record names (`local` or `testnet`)
+unless `--env` names another environment, and it prints the network and RPC it
+uses before it sends anything. Put flags after `--`, or npm swallows them:
+`npm run extend -w scripts/harness -- --config <record>`.
 
 ## Reference base
 
