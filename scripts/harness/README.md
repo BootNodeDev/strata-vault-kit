@@ -73,6 +73,11 @@ A new deploy keeps the previous record as
 `deployed.<network>.<timestamp>.json`, named after the time of that deploy,
 instead of overwriting it. Git ignores these files too.
 
+A deploy that stops after creating a contract leaves
+`deployed.<network>.incomplete.json` with the IDs created so far. The next
+deploy stops and names it; move or delete it to deploy a new set. The last
+complete record is left alone.
+
 ### Checking a deployment against the source
 
 The record keeps the `commit` it was built from and `wasmHashes`, the SHA-256

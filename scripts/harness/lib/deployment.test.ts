@@ -14,10 +14,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { ACCOUNT_NAMES, type Accounts } from "./accounts.js"
 import {
+	clearIncomplete,
 	deploymentFile,
+	incompleteFile,
 	publicKeysOf,
+	refuseIncomplete,
 	saveDeployment,
+	writeIncomplete,
 	type Deployment,
+	type IncompleteDeployment,
 } from "./deployment.js"
 
 let dir = ""
@@ -111,6 +116,47 @@ describe("saveDeployment", () => {
 			expect(readFileSync(kept ?? "", "utf8")).toBe(content)
 		},
 	)
+})
+
+const progress = (): IncompleteDeployment => ({
+	network: "local",
+	startedAt: "2026-10-28T12:00:00.000Z",
+	complete: false,
+	asset: { code: "USDC", issuer: "G", contract: "C" },
+	contracts: { compliance: "C1", identity_verifier: "C2" },
+})
+
+describe("writeIncomplete", () => {
+	it("keeps the contracts of an unfinished deploy in their own file", () => {
+		writeIncomplete(progress(), dir)
+
+		expect(
+			JSON.parse(readFileSync(incompleteFile("local", dir), "utf8")),
+		).toEqual(progress())
+		expect(readdirSync(dir)).toEqual(["deployed.local.incomplete.json"])
+	})
+})
+
+describe("refuseIncomplete", () => {
+	it("refuses a deploy while an unfinished deploy's file is there", () => {
+		writeIncomplete(progress(), dir)
+
+		expect(() => refuseIncomplete("local", dir)).toThrow(
+			/deployed\.local\.incomplete\.json/,
+		)
+		expect(() => refuseIncomplete("local", dir)).toThrow(
+			"Move or delete that file",
+		)
+	})
+
+	it("lets a deploy run once the file is gone", () => {
+		writeIncomplete(progress(), dir)
+
+		clearIncomplete("local", dir)
+
+		expect(() => refuseIncomplete("local", dir)).not.toThrow()
+		expect(() => clearIncomplete("local", dir)).not.toThrow()
+	})
 })
 
 describe("publicKeysOf", () => {

@@ -124,8 +124,11 @@ HARNESS_NETWORK=local npm run deploy -w scripts/harness
 ```
 
 `HARNESS_NETWORK` defaults to `local`; `testnet` deploys to testnet and rewrites
-the addresses table above. The local deploy funds its accounts from the
-quickstart root key, so it needs no `stellar keys` identity.
+the addresses table above and `[staging.contracts]` in `environments.toml`.
+Commit both files after a testnet deploy: the app's build reads those IDs, so
+until the change is committed it points at the previous contracts. The local
+deploy funds its accounts from the quickstart root key, so it needs no
+`stellar keys` identity.
 
 The first deploy writes a secret key for each harness account to
 `.env.keys.<network>` at the repository root, and later deploys reuse them. Back
