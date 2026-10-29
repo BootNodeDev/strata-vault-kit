@@ -15,7 +15,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { attest, navInput } from "./lib/oracle.js"
-import { expectRefused } from "./lib/refused.js"
+import { expectRefused, outcome } from "./lib/refused.js"
 
 const c: Connected = connect()
 const holders = [
@@ -730,6 +730,20 @@ describe("the notice period and valuation age rules", () => {
 	let epochA = 0n
 	let epochB = 0n
 
+	// Ledger time, not wall-clock time, decides the notice: poll the contract
+	// itself instead of sleeping for a guessed duration.
+	const waitForNotice = async (epochId: bigint): Promise<void> => {
+		const deadline = Date.now() + (Number(noticeSecs) + 60) * 1000
+		for (;;) {
+			const tx = await reader.fulfill_epoch({ epoch_id: epochId })
+			if (outcome(tx, reader) !== "refused: NoticeNotElapsed") return
+			if (Date.now() > deadline) {
+				throw new Error(`notice never elapsed for epoch ${epochId}`)
+			}
+			await sleep(2_000)
+		}
+	}
+
 	beforeAll(async () => {
 		await send(
 			oracle(c, governance).set_nav_paused({
@@ -763,12 +777,7 @@ describe("the notice period and valuation age rules", () => {
 	})
 
 	it("refuses pricing after the notice when the valuation is before the close", async () => {
-		const info = await epochOf(epochA)
-		const now = BigInt(Math.floor(Date.now() / 1000))
-		const waitMs = Math.max(0, Number(info!.priceable_at - now + 2n) * 1000)
-		if (waitMs > 0) {
-			await sleep(waitMs)
-		}
+		await waitForNotice(epochA)
 		expectRefused(
 			await vault(c, outsider).fulfill_epoch({ epoch_id: epochA }),
 			reader,
@@ -802,12 +811,7 @@ describe("the notice period and valuation age rules", () => {
 			reader,
 			"NoticeNotElapsed",
 		)
-		const info = await epochOf(epochB)
-		const now = BigInt(Math.floor(Date.now() / 1000))
-		const waitMs = Math.max(0, Number(info!.priceable_at - now + 2n) * 1000)
-		if (waitMs > 0) {
-			await sleep(waitMs)
-		}
+		await waitForNotice(epochB)
 		expect(await fulfill(epochB)).toBe(secondPrice)
 	})
 
