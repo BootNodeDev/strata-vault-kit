@@ -1,5 +1,7 @@
 use super::*;
 
+use strata_bindings::OracleState;
+
 #[test]
 fn fulfill_is_rejected_before_the_first_attestation() {
     let f = setup_unfinished();
@@ -125,4 +127,45 @@ fn a_stale_valuation_no_longer_closes_the_cancellation_window() {
     // The feed is valid, but its valuation is before the close, so the price is
     // not readable and the escape hatch is still open.
     assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 1_000);
+}
+
+#[test]
+fn a_priced_redemption_still_pays_while_the_nav_is_paused() {
+    let f = setup();
+    let holder = f.holder(500);
+    let epoch = f.vault.request_redeem(&holder, &200);
+    f.fulfill_epoch(wad(2));
+    f.oracle.pause_nav(&f.guardian);
+    assert_eq!(f.oracle.state(), OracleState::Paused);
+    assert_eq!(f.vault.uncovered(), 0);
+
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 400);
+    assert_eq!(f.balance(&holder), 400);
+}
+
+#[test]
+fn a_priced_redemption_still_pays_once_the_feed_goes_stale() {
+    let f = setup();
+    let holder = f.holder(500);
+    let epoch = f.vault.request_redeem(&holder, &200);
+    f.fulfill_epoch(wad(2));
+    f.advance(f.oracle.config().freshness_duration + 1);
+    assert_eq!(f.oracle.state(), OracleState::Stale);
+    assert_eq!(f.vault.uncovered(), 0);
+
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 400);
+    assert_eq!(f.balance(&holder), 400);
+}
+
+#[test]
+fn a_priced_deposit_still_claims_while_the_nav_is_paused() {
+    let f = setup();
+    let investor = f.investor(400);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+    f.oracle.pause_nav(&f.guardian);
+    assert_eq!(f.oracle.state(), OracleState::Paused);
+
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 200);
+    assert_eq!(f.shares(&investor), 200);
 }

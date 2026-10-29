@@ -860,9 +860,9 @@ An administrative act stops a holder from collecting a priced, covered exit.
   `a_priced_claim_still_pays_during_a_wind_down` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs), which pays
   a week after the price, when the test feed's one-hour report has long
-  expired. A claim while the NAV is paused: none; the claim code (`claim` in
-  [`contracts/async-vault/src/redeem.rs`](../contracts/async-vault/src/redeem.rs))
-  never calls the oracle.
+  expired; `a_priced_redemption_still_pays_while_the_nav_is_paused` and
+  `a_priced_redemption_still_pays_once_the_feed_goes_stale` in
+  [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
 
 ### X3. A frozen holder
 
@@ -1257,7 +1257,6 @@ These are decided, and stated as they stand:
 
 For Tranche 3's matrix:
 
-- A covered claim while the NAV is paused (X2).
 - Each authority's signers and thresholds, read on the network (R4).
 - A privileged call sent through a relayer: dropped, since the kit runs no
   relayer (R4).
