@@ -14,11 +14,12 @@ spec" is the [Kit specification](./kit-spec.md).
 1. **Claims are priced once per epoch and paid in any order.** The proposal said
    "FIFO claim priced at claim": claims paid first in, first out, each at the
    price of the moment it is claimed. The kit batches requests into epochs. It
-   prices each epoch once, from a valid net asset value (NAV) report
-   (`fulfill_epoch`), and every request in the epoch gets that one price. A
-   priced claim pays as soon as the vault's cash covers its own amount, in any
-   order. One price per epoch treats every request in it the same, and no
-   holder waits behind another holder's unclaimed request. See design doc
+   prices each epoch once, at fulfilment, from a valid net asset value (NAV)
+   report (`fulfill_epoch`), and every request in the epoch gets that one
+   price. A priced claim pays as soon as the vault's cash covers its own
+   amount, in any order. First in, first out would let one large claim the
+   cash cannot cover yet block every smaller claim behind it. One price per
+   epoch also treats every request in it the same. See design doc
    [§6](./strata-product-and-architecture.md#6-how-it-works) and
    [§8.4](./strata-product-and-architecture.md#84-request-lifecycle).
 
@@ -52,17 +53,18 @@ spec" is the [Kit specification](./kit-spec.md).
    The delay is 7 to 90 days. See design doc
    [§9](./strata-product-and-architecture.md#9-relationship-to-existing-stellar-tooling).
 
-4. **A compliance freeze holds a priced claim.** The proposal's headline rule
-   is that a priced claim always pays. In the kit, a priced claim pays once the
-   vault's cash covers it, for every holder who is not frozen. When the
-   compliance authority freezes a holder, what the vault owes them is held
-   until the freeze is lifted: not paid, not returned, and not given to anyone
-   else. This follows how asset-freeze rules generally treat frozen property.
-   There is one more exception. A redemption so small that it rounds down to
-   zero assets pays no cash and gives the shares back, so the holder must be
-   able to receive shares. If the holder has been removed from the allowlist
-   (delisted), that claim waits until they are listed again. In a wind-down
-   the shares are burned instead. See kit spec
+4. **A compliance freeze holds a priced claim.** The proposal said exits are
+   "never gated or pausable". In the kit, a vault pause, a delisting, or a
+   stale or paused price never blocks a priced claim the vault's cash covers.
+   A compliance freeze does hold it. When the compliance authority freezes a
+   holder, what the vault owes them is held until the freeze is lifted. It is
+   not paid, not returned, and not given to anyone else. This follows how
+   asset-freeze rules generally treat frozen property. There is one more
+   exception. A redemption so small that it rounds down to zero assets pays
+   no cash and gives the shares back, so the holder must be able to receive
+   shares. If the holder has been removed from the allowlist (delisted), that
+   claim waits until they are listed again. In a wind-down the shares are
+   burned instead. See kit spec
    [Invariant 4](./kit-spec.md#invariant-4-covered-claims-always-pay-exit-guarantee)
    and the [compliance matrix](./COMPLIANCE_MATRIX.md#1-investor-states).
 
