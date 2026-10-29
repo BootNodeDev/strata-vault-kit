@@ -1074,7 +1074,7 @@ impl AsyncVault {
     /// * `EpochNotFound` - No such epoch.
     /// * `EpochNotPending` - The epoch is open or already priced.
     /// * `NoticeNotElapsed` - The notice has not run.
-    /// * `FeedNotValid` - The feed is paused or stale.
+    /// * `FeedNotValid` - The feed is paused, stale or fails to answer.
     /// * `AttestationBeforeClose` - The report predates the close.
     /// * `InvalidSharePrice` - The feed returned zero or less.
     /// * `AmountTooLarge` - A total or a conversion would overflow.

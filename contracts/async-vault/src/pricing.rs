@@ -44,7 +44,9 @@ pub(crate) type Pricing = DirectUnitPricing;
 impl PricingScheme for DirectUnitPricing {
     fn resolve_share_price(e: &Env) -> Result<i128, VaultError> {
         let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
-        let share_price = feed.nav_per_share();
+        let Ok(Ok(share_price)) = feed.try_nav_per_share() else {
+            return Err(VaultError::FeedNotValid);
+        };
         if share_price <= 0 {
             return Err(VaultError::InvalidSharePrice);
         }
