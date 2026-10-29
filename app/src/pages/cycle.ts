@@ -63,7 +63,7 @@ const GROUP_LAYOUT: {
 			"Deposits requested",
 			"Redemptions requested",
 		],
-		rows: ["Vault", "Notice period", "Sealed at", "Notice"],
+		rows: ["Vault", "Anyone can seal", "Notice period", "Sealed at", "Notice"],
 	},
 	{
 		title: "Price",
@@ -194,6 +194,14 @@ function epochGroup(state: ReadyState): CycleGroup {
 			? "Elapsed"
 			: `Elapses ${formatTimestamp(record.priceableAt)}`
 	}
+	const anyoneCanSeal = (): string | null => {
+		const { minDuration, openedAt } = epoch
+		if (minDuration?.kind === "unset") return "Manager only"
+		if (minDuration === null || openedAt === null || ledgerTime === null)
+			return null
+		const from = openedAt + minDuration.secs
+		return ledgerTime >= from ? "Now" : `From ${formatTimestamp(from)}`
+	}
 
 	return {
 		title: "Epoch",
@@ -225,6 +233,7 @@ function epochGroup(state: ReadyState): CycleGroup {
 						? "Paused"
 						: "Accepting requests",
 			),
+			row("Anyone can seal", anyoneCanSeal()),
 			row(
 				"Notice period",
 				epoch.noticeSeconds === null

@@ -34,6 +34,11 @@ describe("describeChange", () => {
 		[{ tag: "Notice", values: [DAY] }, "Notice", "1d"],
 		[{ tag: "WindDownDelay", values: [8n * DAY] }, "Wind-down delay", "8d"],
 		[
+			{ tag: "MinEpochDuration", values: [7n * DAY] },
+			"Minimum epoch duration",
+			"7d",
+		],
+		[
 			{ tag: "GrantRole", values: ["manager", ACCOUNT] },
 			"Grant role",
 			"manager to GABA...EJXA",

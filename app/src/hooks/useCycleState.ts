@@ -68,6 +68,8 @@ export type CycleOracle = {
 export type DepositCap =
 	{ kind: "uncapped" } | { kind: "capped"; amount: Amount }
 
+export type MinEpochDuration = { kind: "unset" } | { kind: "set"; secs: bigint }
+
 export type WindDownPhase = "none" | "proposed" | "active"
 
 export type CycleWindDown = {
@@ -96,6 +98,8 @@ export type CycleEpoch = {
 	awaiting: EpochRecord | null
 	awaitingKnown: boolean
 	noticeSeconds: bigint | null
+	minDuration: MinEpochDuration | null
+	openedAt: bigint | null
 }
 
 export type CycleState =
@@ -194,6 +198,15 @@ export function toWindDown(
 	}
 }
 
+const toMinEpochDuration = (
+	read: ContractRead<bigint | null>,
+): MinEpochDuration | null => {
+	if (read.kind !== "value") return null
+	return read.value === null
+		? { kind: "unset" }
+		: { kind: "set", secs: read.value }
+}
+
 const toDepositCap = (read: ContractRead<bigint | null>): DepositCap | null => {
 	if (read.kind !== "value") return null
 	return read.value === null
@@ -203,8 +216,9 @@ const toDepositCap = (read: ContractRead<bigint | null>): DepositCap | null => {
 
 export function toEpoch(
 	history: Extract<EpochHistoryRead, { status: "loaded" }>,
-	notice: ContractRead<bigint>,
+	reads: Pick<CycleReads, "notice" | "minEpochDuration" | "epochOpenedAt">,
 ): CycleEpoch {
+	const { notice } = reads
 	const sealed = history.epochs.filter((epoch) => epoch.status === "Pending")
 	return {
 		id: history.currentEpoch,
@@ -213,6 +227,8 @@ export function toEpoch(
 		awaiting: sealed.at(-1) ?? null,
 		awaitingKnown: history.unreadable.length === 0,
 		noticeSeconds: notice.kind === "value" ? notice.value : null,
+		minDuration: reads.minEpochDuration,
+		openedAt: reads.epochOpenedAt,
 	}
 }
 
@@ -221,6 +237,8 @@ export type CycleReads = {
 	notice: ContractRead<bigint>
 	freeReserve: Amount | null
 	depositCap: DepositCap | null
+	minEpochDuration: MinEpochDuration | null
+	epochOpenedAt: bigint | null
 	windDown: CycleWindDown
 	oracle: CycleOracle
 }
@@ -231,6 +249,8 @@ async function fetchCycleReads(): Promise<CycleReads> {
 		notice,
 		freeReserve,
 		depositCap,
+		minEpochDuration,
+		epochOpenedAt,
 		proposal,
 		delay,
 		owed,
@@ -243,6 +263,8 @@ async function fetchCycleReads(): Promise<CycleReads> {
 		readContract(async () => (await asyncVault()).notice()),
 		readContract(async () => (await asyncVault()).free_reserve()),
 		readContract(async () => (await asyncVault()).deposit_cap()),
+		readContract(async () => (await asyncVault()).min_epoch_duration()),
+		readContract(async () => (await asyncVault()).epoch_opened_at()),
 		readContract(async () => (await asyncVault()).wind_down()),
 		readContract(async () => (await asyncVault()).wind_down_delay()),
 		readContract(async () => (await asyncVault()).wind_down_owed()),
@@ -257,6 +279,8 @@ async function fetchCycleReads(): Promise<CycleReads> {
 		notice,
 		freeReserve: toAmount(freeReserve),
 		depositCap: toDepositCap(depositCap),
+		minEpochDuration: toMinEpochDuration(minEpochDuration),
+		epochOpenedAt: epochOpenedAt.kind === "value" ? epochOpenedAt.value : null,
 		windDown: toWindDown(proposal, delay, owed, supply),
 		oracle: toOracle(oracleState, latest, config),
 	}
@@ -315,7 +339,7 @@ export function useCycleState(): {
 		cycle: {
 			status: "ready",
 			ledgerTime: reads.ledgerTime,
-			epoch: toEpoch(history, reads.notice),
+			epoch: toEpoch(history, reads),
 			oracle: reads.oracle,
 			reserve: {
 				free: reads.freeReserve,

@@ -2281,6 +2281,11 @@ describe("TransactionModal, configuration actions", () => {
 			"Wind-down delay updated",
 		],
 		[
+			"set-min-epoch-duration",
+			"Preparing to set the minimum epoch duration",
+			"Minimum epoch duration updated",
+		],
+		[
 			"set-oracle-config",
 			"Preparing to set the oracle limits",
 			"Oracle limits updated",
@@ -2337,6 +2342,10 @@ describe("TransactionModal, configuration actions", () => {
 		["set-custodian", "Treasury deploys to the new address from now on."],
 		["set-notice", "Applies to epochs closed from now on."],
 		["set-wind-down-delay", "A proposed wind-down keeps its activation time."],
+		[
+			"set-min-epoch-duration",
+			"Anyone may seal an epoch once it has been open this long.",
+		],
 	])("names the side effect of %s once recorded", (action, effect) => {
 		renderConfigurationModal(action, { status: "confirmed" }, "3d")
 
@@ -2364,6 +2373,13 @@ describe("TransactionModal, configuration actions", () => {
 			"Preparing to propose a wind-down delay",
 			"Signing queues wind-down delay 8d.",
 			"Wind-down delay 8d applies once the upgrade delay passes.",
+		],
+		[
+			"propose-min-epoch-duration",
+			"7d",
+			"Preparing to propose a minimum epoch duration",
+			"Signing queues minimum epoch duration 7d.",
+			"Minimum epoch duration 7d applies once the upgrade delay passes.",
 		],
 		[
 			"propose-compliance",
@@ -2431,6 +2447,18 @@ describe("TransactionModal, configuration actions", () => {
 			6069,
 			"vault",
 			/The wind-down delay cannot be under 7 days/,
+		],
+		[
+			"set-min-epoch-duration",
+			6007,
+			"vault",
+			/The minimum epoch duration must be 1 to 30 days/,
+		],
+		[
+			"propose-min-epoch-duration",
+			6007,
+			"vault",
+			/The minimum epoch duration must be 1 to 30 days/,
 		],
 		["propose-custodian", 6075, "vault", /custodian cannot be the vault/],
 		["propose-notice", 6064, "vault", /Setup is still open/],

@@ -45,6 +45,7 @@ export type FieldKey =
 	| "custodian"
 	| "notice"
 	| "windDownDelay"
+	| "minEpochDuration"
 	| "freshness"
 	| "cooldown"
 	| "maxRise"
@@ -75,7 +76,9 @@ export type ConfigurationAction =
 			| "set-notice"
 			| "propose-notice"
 			| "set-wind-down-delay"
-			| "propose-wind-down-delay",
+			| "propose-wind-down-delay"
+			| "set-min-epoch-duration"
+			| "propose-min-epoch-duration",
 			bigint
 	  >
 	| Setter<"set-oracle-config", OracleConfig>
@@ -90,11 +93,14 @@ export const EFFECTS = {
 	custodian: "Treasury deploys to the new address from now on.",
 	notice: "Applies to epochs closed from now on.",
 	windDownDelay: "A proposed wind-down keeps its activation time.",
+	minEpochDuration: "Anyone may seal an epoch once it has been open this long.",
 } as const
 
 const MAX_NOTICE = 30n * DAY
 const MIN_WIND_DOWN_DELAY = 7n * DAY
 const MAX_WIND_DOWN_DELAY = 90n * DAY
+const MIN_EPOCH_DURATION = DAY
+const MAX_EPOCH_DURATION = 30n * DAY
 const MIN_SECS = 1n
 const MAX_FRESHNESS = 35n * DAY
 const MIN_BPS = 1
@@ -275,7 +281,16 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 		delay,
 		inputs,
 	)
-	const custodianRoute = routeOf(state.setupOpen, true)
+	const minEpoch = state.minEpochDuration
+	const minEpochSecs = minEpoch?.kind === "set" ? minEpoch.secs : undefined
+	const minEpochField = parsed(
+		"minEpochDuration",
+		"Minimum epoch duration",
+		DURATION,
+		minEpochSecs,
+		inputs,
+	)
+	const setupRoute = routeOf(state.setupOpen, true)
 	const noticeRoute = routeOf(
 		state.setupOpen,
 		lowering(noticeField.arg, notice),
@@ -298,11 +313,11 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 		]),
 		{
 			...single(
-				custodianRoute === "timelock" ? "propose-custodian" : "set-custodian",
+				setupRoute === "timelock" ? "propose-custodian" : "set-custodian",
 				"Set the custodian",
 				parsed("custodian", "Custodian", ANY_ADDRESS, custodian, inputs),
 				state.custodian.kind === "unset" ? UNSET : custodian,
-				[routeCondition(custodianRoute, state.upgradeDelay)],
+				[routeCondition(setupRoute, state.upgradeDelay)],
 				EFFECTS.custodian,
 			),
 			slot: "set-custodian",
@@ -350,6 +365,31 @@ function vaultSpecs(state: ConfigurationValues, inputs: ConfigurationInputs) {
 				EFFECTS.windDownDelay,
 			),
 			slot: "set-wind-down-delay",
+		},
+		{
+			...single(
+				setupRoute === "timelock"
+					? "propose-min-epoch-duration"
+					: "set-min-epoch-duration",
+				"Set the minimum epoch duration",
+				minEpochField,
+				minEpoch?.kind === "unset" ? UNSET : minEpochSecs,
+				[
+					bound(
+						`Minimum epoch duration ≥ ${formatDuration(MIN_EPOCH_DURATION)}`,
+						minEpochField.arg,
+						(value) => value >= MIN_EPOCH_DURATION,
+					),
+					bound(
+						`Minimum epoch duration ≤ ${formatDuration(MAX_EPOCH_DURATION)}`,
+						minEpochField.arg,
+						(value) => value <= MAX_EPOCH_DURATION,
+					),
+					routeCondition(setupRoute, state.upgradeDelay),
+				],
+				EFFECTS.minEpochDuration,
+			),
+			slot: "set-min-epoch-duration",
 		},
 	] as const
 }
@@ -554,12 +594,13 @@ export function toConfigurationActions(
 	const actions: ConfigurationAction[] = []
 	const governance = grantFor(grants, ROLES.governance, wallet)
 	if (governance !== undefined) {
-		const [cap, custodian, notice, delay] = vaultSpecs(state, inputs)
+		const [cap, custodian, notice, delay, minEpoch] = vaultSpecs(state, inputs)
 		actions.push(
 			build(cap, governance),
 			build(custodian, governance),
 			build(notice, governance),
 			build(delay, governance),
+			build(minEpoch, governance),
 		)
 	}
 	const oracleAdmin = grantFor(grants, ROLES.oracleAdmin, wallet)
