@@ -1,4 +1,8 @@
-import { type Amount, type Signer } from "@stellar-scaffold/app-lib"
+import {
+	type Amount,
+	type Signer,
+	type TransactionEvent,
+} from "@stellar-scaffold/app-lib"
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
@@ -7,7 +11,10 @@ import {
 	useContractTransaction,
 } from "./useContractTransaction"
 
-export type CancelRedeemStatus = TransactionStatus<{ returnedShares: Amount }>
+export type CancelRedeemStatus = TransactionStatus<{
+	returnedShares: Amount
+	surrendered: boolean
+}>
 
 export interface UseCancelRedeem {
 	status: CancelRedeemStatus
@@ -25,7 +32,12 @@ export function useCancelRedeem(): UseCancelRedeem {
 		[],
 	)
 	const toConfirmed = useCallback(
-		(returnedShares: bigint) => ({ returnedShares: returnedShares as Amount }),
+		(returnedShares: bigint, events: TransactionEvent[]) => ({
+			returnedShares: returnedShares as Amount,
+			surrendered: events.some(
+				(event) => event.name === "redemption_surrendered",
+			),
+		}),
 		[],
 	)
 	return useContractTransaction(call, toConfirmed)

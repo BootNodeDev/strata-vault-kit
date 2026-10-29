@@ -4,16 +4,22 @@ import {
 	type Price,
 } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
+import { HELD_WHILE_FROZEN } from "../components/vault/TransactionModal"
 import {
 	type ArchivedRequest,
 	type InvestorRequest,
 	type UnreadableRequest,
 } from "../hooks/useInvestorRequests"
 import { type Allowance } from "../hooks/useIsAllowed"
+import { type NavClassification } from "../hooks/useNavPrice"
+import { type PauseState } from "../hooks/useVaultPaused"
 import {
-	allowlistRefusalFor,
 	assignStage,
+	outlookFor,
+	type HolderInputs,
 	toRequestEntriesByStage,
+	toWindDownEntry,
+	type WindDownClaimInput,
 } from "./vaultRequests"
 
 const amount = (value: bigint): Amount => value as Amount
@@ -33,6 +39,7 @@ const deposit: InvestorRequest = {
 	amount: amount(100_0000000n),
 	claimed: false,
 	priceableAt: 1_700_003_600n,
+	closedAt: 1_700_000_000n,
 }
 
 const redeem: InvestorRequest = {
@@ -43,6 +50,7 @@ const redeem: InvestorRequest = {
 	amount: amount(100_0000000n),
 	claimed: false,
 	priceableAt: 1_700_003_600n,
+	closedAt: 1_700_000_000n,
 }
 
 describe("assignStage", () => {
@@ -57,17 +65,17 @@ describe("assignStage", () => {
 		expect(assignStage(deposit, undefined)).toBe("ready")
 	})
 
-	it("puts a priced, refused request in blocked", () => {
-		expect(assignStage(deposit, { reason: "The vault is paused." })).toBe(
-			"blocked",
-		)
+	it("puts a priced, held request in blocked", () => {
+		expect(
+			assignStage(deposit, { held: HELD_WHILE_FROZEN, cancellable: false }),
+		).toBe("blocked")
 	})
 
-	it("puts an unpriced epoch in waiting even when a refusal is also present", () => {
+	it("puts an unpriced, held request in blocked rather than waiting", () => {
 		const unpriced = { ...deposit, epochStatus: open }
-		expect(assignStage(unpriced, { reason: "The vault is paused." })).toBe(
-			"waiting",
-		)
+		expect(
+			assignStage(unpriced, { held: HELD_WHILE_FROZEN, cancellable: false }),
+		).toBe("blocked")
 	})
 
 	it("puts a fulfilled epoch with an invalid price in blocked", () => {
@@ -76,30 +84,108 @@ describe("assignStage", () => {
 	})
 })
 
-describe("allowlistRefusalFor", () => {
-	it("refuses a deposit request when the address is not on the allowlist", () => {
-		expect(allowlistRefusalFor("not-allowed")(deposit)).toEqual({
-			reason:
-				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
-		})
+const validNav = (attestedAt: bigint): NavClassification => ({
+	status: "valid",
+	price: price(1_000_000_000_000_000_000n),
+	attestedAt,
+})
+
+const holder = (overrides: Partial<HolderInputs> = {}): HolderInputs => ({
+	allowance: "allowed",
+	frozen: false,
+	windingDown: false,
+	pause: "open",
+	nav: validNav(1_700_000_100n),
+	...overrides,
+})
+
+describe("outlookFor", () => {
+	const sealed: InvestorRequest = { ...deposit, epochStatus: pending }
+	const sealedRedeem: InvestorRequest = { ...redeem, epochStatus: pending }
+
+	it("holds every request of a frozen holder with the frozen copy, and offers no cancel", () => {
+		for (const request of [deposit, redeem, sealed, sealedRedeem]) {
+			expect(outlookFor(holder({ frozen: true }))(request)).toEqual({
+				held: HELD_WHILE_FROZEN,
+				cancellable: false,
+			})
+		}
 	})
 
-	it("does not refuse a deposit request when the address is allowed", () => {
-		expect(allowlistRefusalFor("allowed")(deposit)).toBeUndefined()
+	it("tells a delisted holder that claiming queues the shares as a redemption", () => {
+		const outlook = outlookFor(holder({ allowance: "not-allowed" }))(deposit)
+
+		expect(outlook.held).toBeUndefined()
+		expect(outlook.claimNote).toMatch(/not allowlisted/)
+		expect(outlook.claimNote).toMatch(/queued as a redemption/)
 	})
 
-	it.each([
-		["checking", "checking" as Allowance],
-		["unreadable", "unreadable" as Allowance],
+	it("tells a delisted holder in a wind-down that claiming moves the shares into the wind-down claim", () => {
+		const outlook = outlookFor(
+			holder({ allowance: "not-allowed", windingDown: true }),
+		)(deposit)
+
+		expect(outlook.claimNote).toMatch(/wind-down claim/)
+	})
+
+	it.each<[string, Allowance]>([
+		["allowed", "allowed"],
+		["checking", "checking"],
+		["unreadable", "unreadable"],
 	])(
-		"does not refuse a deposit request while the allowlist read is %s, rather than guessing",
+		"adds no claim note while the allowlist read is %s",
 		(_label, allowance) => {
-			expect(allowlistRefusalFor(allowance)(deposit)).toBeUndefined()
+			expect(
+				outlookFor(holder({ allowance }))(deposit).claimNote,
+			).toBeUndefined()
 		},
 	)
 
-	it("never refuses a redemption request, since claim_deposit is deposit-only", () => {
-		expect(allowlistRefusalFor("not-allowed")(redeem)).toBeUndefined()
+	it("adds no claim note to a delisted holder's redemption, which pays out as usual", () => {
+		expect(
+			outlookFor(holder({ allowance: "not-allowed" }))(redeem).claimNote,
+		).toBeUndefined()
+	})
+
+	it("offers cancel on an open epoch, which has no price to read", () => {
+		expect(
+			outlookFor(holder())({ ...deposit, epochStatus: open }).cancellable,
+		).toBe(true)
+	})
+
+	it("hides cancel on a sealed epoch once a price attested after its close is readable", () => {
+		expect(outlookFor(holder())(sealed).cancellable).toBe(false)
+	})
+
+	it.each<[string, Partial<HolderInputs>]>([
+		["the vault is paused", { pause: "paused" as PauseState }],
+		["the NAV is paused", { nav: { status: "paused" } }],
+		["the feed is stale", { nav: { status: "stale", expiresAt: 1n } }],
+		["no price was ever attested", { nav: { status: "never" } }],
+		[
+			"the price was attested before the close",
+			{ nav: validNav(1_699_999_999n) },
+		],
+		["a wind-down is active", { windingDown: true }],
+		["the price cannot be read", { nav: undefined }],
+	])("offers cancel on a sealed epoch when %s", (_label, overrides) => {
+		expect(outlookFor(holder(overrides))(sealed).cancellable).toBe(true)
+	})
+
+	it("hides cancel on a delisted holder's redemption outside a wind-down, since the shares cannot come back", () => {
+		const delisted = outlookFor(holder({ allowance: "not-allowed" }))
+
+		expect(delisted({ ...redeem, epochStatus: open }).cancellable).toBe(false)
+		expect(delisted({ ...deposit, epochStatus: open }).cancellable).toBe(true)
+	})
+
+	it("offers cancel on a delisted holder's redemption in a wind-down, which moves it into the wind-down claim", () => {
+		expect(
+			outlookFor(holder({ allowance: "not-allowed", windingDown: true }))({
+				...redeem,
+				epochStatus: open,
+			}).cancellable,
+		).toBe(true)
 	})
 })
 
@@ -219,7 +305,7 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [redeem], archived: [], unreadable: [] },
 			tokens,
-			() => ({ reason: "This address is not on the vault's allowlist." }),
+			{ outlookFor: () => ({ held: HELD_WHILE_FROZEN, cancellable: false }) },
 		)
 
 		expect(result.blocked).toEqual([
@@ -230,12 +316,12 @@ describe("toRequestEntriesByStage", () => {
 				outLabel: "Owed to you",
 				outAmount: "200.00 USDC",
 				outTone: "stop",
-				state: "Blocked",
+				state: "Held",
 				tone: "blocked",
 				actions: [],
 				tooltip: {
-					label: "Why you cannot claim this yet",
-					text: "This address is not on the vault's allowlist.",
+					label: "Why this request is held",
+					text: HELD_WHILE_FROZEN,
 				},
 			},
 		])
@@ -349,8 +435,7 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [waiting], archived: [], unreadable: [] },
 			tokens,
-			undefined,
-			onCancel,
+			{ onCancel },
 		)
 
 		expect(result.waiting[0]?.actions).toEqual([
@@ -364,8 +449,7 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [waiting], archived: [], unreadable: [] },
 			tokens,
-			undefined,
-			onCancel,
+			{ onCancel },
 		)
 
 		result.waiting[0]?.actions[0]?.onPress()
@@ -379,8 +463,7 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [waiting], archived: [], unreadable: [] },
 			tokens,
-			undefined,
-			onCancel,
+			{ onCancel },
 		)
 
 		expect(result.waiting[0]?.actions).toEqual([
@@ -394,8 +477,7 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [waiting], archived: [], unreadable: [] },
 			tokens,
-			undefined,
-			onCancel,
+			{ onCancel },
 		)
 
 		result.waiting[0]?.actions[0]?.onPress()
@@ -407,8 +489,7 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [deposit], archived: [], unreadable: [] },
 			tokens,
-			undefined,
-			() => {},
+			{ onCancel: () => {} },
 		)
 
 		expect(result.ready[0]?.actions).toEqual([])
@@ -428,9 +509,7 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [deposit], archived: [], unreadable: [] },
 			tokens,
-			undefined,
-			undefined,
-			onClaim,
+			{ onClaim },
 		)
 
 		expect(result.ready[0]?.actions).toEqual([
@@ -443,9 +522,7 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [deposit], archived: [], unreadable: [] },
 			tokens,
-			undefined,
-			undefined,
-			onClaim,
+			{ onClaim },
 		)
 
 		result.ready[0]?.actions[0]?.onPress()
@@ -458,11 +535,56 @@ describe("toRequestEntriesByStage", () => {
 		const result = toRequestEntriesByStage(
 			{ requests: [redeem], archived: [], unreadable: [] },
 			tokens,
-			undefined,
-			undefined,
-			onClaim,
+			{ onClaim },
 		)
 
+		expect(result.ready[0]?.actions).toEqual([
+			{ label: "Claim", kind: "primary", onPress: expect.any(Function) },
+		])
+	})
+
+	it("moves a held, unpriced request out of waiting into blocked, with no cancel action", () => {
+		const waiting: InvestorRequest = { ...deposit, epochStatus: open }
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+			{
+				outlookFor: () => ({ held: HELD_WHILE_FROZEN, cancellable: false }),
+				onCancel: () => {},
+			},
+		)
+
+		expect(result.waiting).toEqual([])
+		expect(result.blocked[0]?.state).toBe("Held")
+		expect(result.blocked[0]?.outAmount).toBe("Not yet priced")
+		expect(result.blocked[0]?.actions).toEqual([])
+	})
+
+	it("offers no cancel action on a waiting request whose cancellation window is closed", () => {
+		const waiting: InvestorRequest = { ...deposit, epochStatus: pending }
+		const result = toRequestEntriesByStage(
+			{ requests: [waiting], archived: [], unreadable: [] },
+			tokens,
+			{ outlookFor: () => ({ cancellable: false }), onCancel: () => {} },
+		)
+
+		expect(result.waiting[0]?.actions).toEqual([])
+	})
+
+	it("shows the outlook's claim note on a ready request instead of the default note", () => {
+		const result = toRequestEntriesByStage(
+			{ requests: [deposit], archived: [], unreadable: [] },
+			tokens,
+			{
+				outlookFor: () => ({
+					claimNote: "Queued instead.",
+					cancellable: false,
+				}),
+				onClaim: () => {},
+			},
+		)
+
+		expect(result.ready[0]?.note).toBe("Queued instead.")
 		expect(result.ready[0]?.actions).toEqual([
 			{ label: "Claim", kind: "primary", onPress: expect.any(Function) },
 		])
@@ -492,5 +614,59 @@ describe("toRequestEntriesByStage", () => {
 				},
 			},
 		])
+	})
+})
+
+describe("toWindDownEntry", () => {
+	const claim: Omit<WindDownClaimInput, "tokens" | "onClaim"> = {
+		windingDown: true,
+		frozen: false,
+		claimable: amount(25_0000000n),
+		shares: amount(40_0000000n),
+	}
+
+	it("offers a ready wind-down claim with what it pays and the shares it turns in", () => {
+		const onClaim = vi.fn()
+		const placed = toWindDownEntry({ ...claim, tokens, onClaim })
+
+		expect(placed?.stage).toBe("ready")
+		expect(placed?.entry).toMatchObject({
+			inLabel: "Wind-down claim",
+			inAmount: "40.00 vUSDC",
+			outAmount: "25.00 USDC",
+			state: "Claimable",
+			actions: [{ label: "Claim", kind: "primary" }],
+		})
+		placed?.entry.actions[0]?.onPress()
+		expect(onClaim).toHaveBeenCalled()
+	})
+
+	it("shows a frozen holder's wind-down claim as held at zero, with no Claim", () => {
+		const placed = toWindDownEntry({
+			...claim,
+			frozen: true,
+			claimable: amount(0n),
+			tokens,
+			onClaim: () => {},
+		})
+
+		expect(placed?.stage).toBe("blocked")
+		expect(placed?.entry).toMatchObject({
+			outAmount: "0.00 USDC",
+			state: "Held",
+			actions: [],
+			tooltip: { label: "Why this request is held", text: HELD_WHILE_FROZEN },
+		})
+	})
+
+	it.each<[string, Partial<WindDownClaimInput>]>([
+		["no wind-down is active", { windingDown: false }],
+		["the wind-down state cannot be read", { windingDown: null }],
+		["nothing is claimable yet", { claimable: amount(0n) }],
+		["the claimable amount cannot be read", { claimable: null }],
+	])("shows no wind-down claim when %s", (_label, overrides) => {
+		expect(
+			toWindDownEntry({ ...claim, ...overrides, tokens, onClaim: () => {} }),
+		).toBeUndefined()
 	})
 })

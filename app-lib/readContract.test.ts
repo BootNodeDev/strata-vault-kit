@@ -3,6 +3,7 @@ import type { Api } from "@stellar/stellar-sdk/rpc"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { DepositRequest, EpochInfo, RedeemRequest } from "./contracts"
 import {
+	decodeTransactionEvents,
 	readContract,
 	readEpochRequests,
 	readEpochs,
@@ -986,5 +987,65 @@ describe("readContractAdmin", () => {
 		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
 			kind: "unreadable",
 		})
+	})
+})
+
+const HOLDER = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"
+
+const contractEvent = (topics: xdr.ScVal[], data: xdr.ScVal) =>
+	new xdr.ContractEvent({
+		ext: new xdr.ExtensionPoint(0),
+		contractId: null,
+		type: xdr.ContractEventType.contract(),
+		body: new xdr.ContractEventBody(
+			0,
+			new xdr.ContractEventV0({ topics, data }),
+		),
+	})
+
+describe("decodeTransactionEvents", () => {
+	it("decodes the name, topics and data of every event across operations", () => {
+		const converted = contractEvent(
+			[
+				xdr.ScVal.scvSymbol("deposit_converted_to_exit"),
+				nativeToScVal(Address.fromString(HOLDER)),
+			],
+			nativeToScVal(
+				{ epoch: 3n, into_epoch: 5n, shares: 7n },
+				{
+					type: {
+						epoch: ["symbol", "u64"],
+						into_epoch: ["symbol", "u64"],
+						shares: ["symbol", "i128"],
+					},
+				},
+			),
+		)
+		const transfer = contractEvent(
+			[xdr.ScVal.scvSymbol("transfer")],
+			nativeToScVal(1n, { type: "i128" }),
+		)
+
+		expect(decodeTransactionEvents([[converted], [transfer]])).toEqual([
+			{
+				name: "deposit_converted_to_exit",
+				topics: [HOLDER],
+				data: { epoch: 3n, into_epoch: 5n, shares: 7n },
+			},
+			{ name: "transfer", topics: [], data: 1n },
+		])
+	})
+
+	it("returns no events when the response carries none", () => {
+		expect(decodeTransactionEvents(undefined)).toEqual([])
+	})
+
+	it("skips an event whose first topic is not a name", () => {
+		const unnamed = contractEvent(
+			[nativeToScVal(1n, { type: "u64" })],
+			xdr.ScVal.scvVoid(),
+		)
+
+		expect(decodeTransactionEvents([[unnamed]])).toEqual([])
 	})
 })

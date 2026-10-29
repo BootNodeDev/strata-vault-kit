@@ -456,6 +456,36 @@ const decodeEvent = (event: Api.EventResponse): ChainEvent | null => {
 	}
 }
 
+export type TransactionEvent = {
+	name: string
+	topics: unknown[]
+	data: unknown
+}
+
+const decodeContractEvent = (
+	event: xdr.ContractEvent,
+): TransactionEvent | null => {
+	try {
+		const body = event.body().v0()
+		const [name, ...topics] = body.topics().map((topic) => scValToNative(topic))
+		if (typeof name !== "string") return null
+		return { name, topics, data: scValToNative(body.data()) }
+	} catch {
+		return null
+	}
+}
+
+export function decodeTransactionEvents(
+	events: xdr.ContractEvent[][] | undefined,
+): TransactionEvent[] {
+	const decoded: TransactionEvent[] = []
+	for (const event of events?.flat() ?? []) {
+		const next = decodeContractEvent(event)
+		if (next !== null) decoded.push(next)
+	}
+	return decoded
+}
+
 export type EventsRead =
 	| { kind: "value"; value: ChainEvent[]; partial: boolean }
 	| { kind: "unreadable" }

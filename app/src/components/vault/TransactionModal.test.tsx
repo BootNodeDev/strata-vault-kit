@@ -14,6 +14,7 @@ import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
+import { type ClaimWindDownStatus } from "../../hooks/useClaimWindDown"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
@@ -802,6 +803,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		renderCancelRedeemModal({
 			status: "confirmed",
 			returnedShares: 100_0000000n as Amount,
+			surrendered: false,
 			hash: "b".repeat(64),
 		})
 
@@ -816,6 +818,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		renderCancelRedeemModal({
 			status: "confirmed",
 			returnedShares: 952380952n as Amount,
+			surrendered: false,
 			hash: "b".repeat(64),
 		})
 
@@ -833,15 +836,36 @@ describe("TransactionModal, cancelling a redemption", () => {
 		).toBeTruthy()
 	})
 
-	it("names a delisted controller as unable to receive its shares back, distinct from the claim wording for the same code", () => {
+	it("names NotAllowlisted as a delisted holder whose shares stay queued, pointing to the cash claim instead", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6068 },
+		})
+
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
+	})
+
+	it("names HolderNotEligible as shares the address cannot receive, pointing to the cash claim instead", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6073 },
+		})
+
+		expect(
+			screen.getByText(/cannot receive these shares right now/),
+		).toBeTruthy()
+		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for 304 on a withdrawal cancellation, since the vault checks the holder itself", () => {
 		renderCancelRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/shares cannot be returned/)).toBeTruthy()
-		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
-		expect(screen.queryByText(/cannot receive shares/)).toBeNull()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("falls back to a generic refusal for a cancel-redeem error it does not recognize, without the raw code", () => {
@@ -987,13 +1011,14 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.getByText(/too large to complete/)).toBeTruthy()
 	})
 
-	it("names the identity verifier's cross-contract refusal as no longer allowlisted, distinct from every other code", () => {
+	it("falls back to a generic refusal for 304 on a share claim, since a delisted holder's shares join an exit instead", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/no longer allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("falls back to a generic refusal for a claim error it does not recognize, without the raw code", () => {
@@ -1221,6 +1246,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 150_0000000n as Amount,
+			sharesReturned: false,
 			hash: "b".repeat(64),
 		})
 
@@ -1232,6 +1258,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 952380952n as Amount,
+			sharesReturned: false,
 			hash: "b".repeat(64),
 		})
 
@@ -1242,6 +1269,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 0n as Amount,
+			sharesReturned: true,
 			hash: "b".repeat(64),
 		})
 
@@ -1274,19 +1302,27 @@ describe("TransactionModal, claiming a redemption", () => {
 		expect(screen.getByText(/enough USDC in reserve/)).toBeTruthy()
 	})
 
-	it("names a delisted controller as unable to receive the shares the zero-price branch tried to return, distinct from the claim and cancel-redeem wording for the same code", () => {
+	it("names HolderNotEligible as the zero-price return the address cannot receive, in the same words as a withdrawal cancellation", () => {
+		renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6073 },
+		})
+
+		expect(screen.getByText(/tried to return your shares/)).toBeTruthy()
+		expect(
+			screen.getByText(/cannot receive these shares right now/),
+		).toBeTruthy()
+		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
+	})
+
+	it("falls back to a generic refusal for 304 on a withdrawal claim, since the vault checks the holder itself", () => {
 		renderClaimRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/tried to return your shares instead/)).toBeTruthy()
-		expect(
-			screen.queryByText(
-				/^Your address is no longer allowlisted, so it cannot receive shares\.$/,
-			),
-		).toBeNull()
-		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("names AlreadyClaimed by delegating to the shared claim wording", () => {
@@ -2175,13 +2211,13 @@ describe("TransactionModal, emergency actions", () => {
 	it.each<[EmergencyModalAction, string, string]>([
 		[
 			"pause-token",
-			"Signing stops holder transfers and returns of escrowed shares.",
-			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
+			"Signing stops holder transfers only.",
+			"Holder transfers are stopped. Minting, burning, the vault's escrow moves and legal transfers continue.",
 		],
 		[
 			"unpause-token",
-			"Signing resumes holder transfers and returns of escrowed shares.",
-			"Holder transfers and returns of escrowed shares are open again.",
+			"Signing resumes holder transfers.",
+			"Holder transfers are open again.",
 		],
 	])(
 		"words %s after what the share token enforces",
@@ -2887,5 +2923,228 @@ describe("TransactionModal, compliance actions", () => {
 		expect(
 			screen.getByText(/check the Compliance tab before trying again/),
 		).toBeTruthy()
+	})
+})
+
+describe("TransactionModal, allowlist and freeze refusals", () => {
+	const contractError = (code: number) => ({
+		status: "failed" as const,
+		failure: { kind: "contract-error" as const, code },
+	})
+
+	it("names NotAllowlisted on a subscription as an address that cannot subscribe", () => {
+		renderModal(contractError(6068))
+
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/can subscribe/)).toBeTruthy()
+	})
+
+	it("names Frozen on a subscription as a frozen address", () => {
+		renderModal(contractError(6071))
+
+		expect(screen.getByText(/frozen/)).toBeTruthy()
+		expect(screen.getByText(/cannot subscribe/)).toBeTruthy()
+	})
+
+	it("names Frozen on a redemption request as a frozen address or frozen shares", () => {
+		renderRedeemModal(contractError(6071))
+
+		expect(screen.getByText(/shares are frozen/)).toBeTruthy()
+		expect(screen.getByText(/free shares/)).toBeTruthy()
+	})
+
+	it.each<[string, () => void]>([
+		["cancelling a subscription", () => renderCancelModal(contractError(6071))],
+		[
+			"cancelling a redemption",
+			() => renderCancelRedeemModal(contractError(6071)),
+		],
+		["claiming shares", () => renderClaimModal(contractError(6071))],
+		[
+			"claiming a redemption",
+			() => renderClaimRedeemModal(contractError(6071)),
+		],
+	])("names Frozen on %s as held until the freeze lifts", (_name, render) => {
+		render()
+
+		expect(screen.getByText(/held until the freeze is lifted/)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for NotAllowlisted on a subscription cancellation, since a delisted holder may still cancel", () => {
+		renderCancelModal(contractError(6068))
+
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
+	})
+})
+
+describe("TransactionModal, conversion and surrender outcomes", () => {
+	it("tells a delisted investor their claimed shares were queued as a redemption", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 0n as Amount,
+			queuedInto: 5n,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Queued as a redemption" }),
+		).toBeTruthy()
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/pay out in USDC at the next price/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+
+	it("tells a delisted investor in a wind-down their claimed shares joined the wind-down claim", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 0n as Amount,
+			queuedInto: 0n,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Moved to your wind-down claim" }),
+		).toBeTruthy()
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+	})
+
+	it("still reads a zero-share claim without a conversion as a returned deposit", () => {
+		renderClaimModal({ status: "confirmed", sharesMinted: 0n as Amount })
+
+		expect(
+			screen.getByRole("heading", { name: "Deposit returned" }),
+		).toBeTruthy()
+	})
+
+	it("tells the investor a cancelled redemption moved into the wind-down claim", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 100_0000000n as Amount,
+			surrendered: true,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Moved to your wind-down claim" }),
+		).toBeTruthy()
+		expect(screen.getByText(/winding down/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+
+	it("still reads a returned redemption as cancelled", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 100_0000000n as Amount,
+			surrendered: false,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Request cancelled" }),
+		).toBeTruthy()
+	})
+})
+
+describe("TransactionModal, wind-down outcomes", () => {
+	it("tells the investor a zero-price claim burned the shares during a wind-down, never that they came back", () => {
+		renderClaimRedeemModal({
+			status: "confirmed",
+			assetsClaimed: 0n as Amount,
+			sharesReturned: false,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Nothing to pay out" }),
+		).toBeTruthy()
+		expect(screen.getByText(/winding down/)).toBeTruthy()
+		expect(screen.getByText(/burned/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+})
+
+describe("TransactionModal, cancelling a redemption in a wind-down", () => {
+	it("tells the signer the shares move into the wind-down claim, never that they return", () => {
+		render(
+			<TransactionModal
+				action="cancel-redeem"
+				status={{ status: "awaiting-signature" }}
+				amount="100.00"
+				ticker="vUSDC"
+				assetTicker="USDC"
+				windingDown
+				onClose={vi.fn()}
+				onRetry={vi.fn()}
+			/>,
+		)
+
+		expect(screen.getByText(/wind-down claim/)).toBeTruthy()
+		expect(screen.queryByText(/returns/)).toBeNull()
+	})
+})
+
+const renderClaimWindDownModal = (status: ClaimWindDownStatus) =>
+	render(
+		<TransactionModal
+			action="claim-wind-down"
+			status={status}
+			amount="25.00"
+			ticker="USDC"
+			shareTicker="vUSDC"
+			onClose={vi.fn()}
+			onRetry={vi.fn()}
+		/>,
+	)
+
+describe("TransactionModal, claiming from the wind-down", () => {
+	it("tells the signer what they receive and that their shares are turned in", () => {
+		renderClaimWindDownModal({ status: "awaiting-signature" })
+
+		expect(screen.getByText(/25\.00 USDC/)).toBeTruthy()
+		expect(screen.getByText(/turns in your unfrozen vUSDC/)).toBeTruthy()
+	})
+
+	it("shows the assets paid and the shares turned in once confirmed", () => {
+		renderClaimWindDownModal({
+			status: "confirmed",
+			assetsClaimed: 25_0000000n as Amount,
+			sharesSurrendered: 40_0000000n as Amount,
+		})
+
+		expect(screen.getByRole("heading", { name: "USDC claimed" })).toBeTruthy()
+		expect(screen.getByText(/25\.00 USDC has been added/)).toBeTruthy()
+		expect(screen.getByText(/40\.00 vUSDC/)).toBeTruthy()
+	})
+
+	it("reads a claim that paid nothing as shares turned in for later rounds", () => {
+		renderClaimWindDownModal({
+			status: "confirmed",
+			assetsClaimed: 0n as Amount,
+			sharesSurrendered: 40_0000000n as Amount,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Shares turned in" }),
+		).toBeTruthy()
+		expect(screen.getByText(/later rounds/)).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6051, /first payout/],
+		[6054, /nothing to claim from the wind-down/],
+		[6071, /held until the freeze is lifted/],
+	])("names refusal %i in the dapp's words", (code, text) => {
+		renderClaimWindDownModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(screen.getByText(text)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for a wind-down claim error it does not recognize", () => {
+		renderClaimWindDownModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 })
