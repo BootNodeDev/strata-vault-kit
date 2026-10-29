@@ -46,7 +46,7 @@ fn a_conversion_that_cannot_fit_i128_is_rejected() {
 
     f.vault.request_deposit(&whale, &(i128::MAX / 2));
     let epoch = f.close_epoch();
-    f.attest(1);
+    f.attest(MIN_ANSWER);
 
     refused(
         f.vault.try_fulfill_epoch(&epoch),
@@ -190,24 +190,17 @@ fn wind_down_accumulator_never_pays_more_than_it_credits() {
     )| {
         let floor = |x: i128, y: i128, d: i128| checked_mul_div_floor(&env, &x, &y, &d).unwrap();
         let snapshot: i128 = entitlements.iter().sum();
-        let mut acc = 0i128;
+        let mut distributed = 0i128;
         let mut owed = 0i128;
         let mut paid = [0i128; 3];
 
         for (round, &pot) in pots.iter().enumerate() {
-            let delta = floor(pot, WAD_SCALE, snapshot);
-            if delta == 0 {
-                continue;
-            }
-            let acc_after = acc + delta;
-            let credited = floor(snapshot, acc_after, WAD_SCALE) - floor(snapshot, acc, WAD_SCALE);
-            prop_assert!(credited <= pot);
-            acc = acc_after;
-            owed += credited;
+            distributed += pot;
+            owed += pot;
 
             for (i, &claims_now) in claims[round].iter().enumerate() {
                 if claims_now {
-                    let earned = floor(entitlements[i], acc, WAD_SCALE);
+                    let earned = floor(entitlements[i], distributed, snapshot);
                     prop_assert!(earned >= paid[i]);
                     paid[i] = earned;
                 }
@@ -216,9 +209,10 @@ fn wind_down_accumulator_never_pays_more_than_it_credits() {
         }
 
         for i in 0..3 {
-            paid[i] = floor(entitlements[i], acc, WAD_SCALE);
+            paid[i] = floor(entitlements[i], distributed, snapshot);
         }
         prop_assert!(paid.iter().sum::<i128>() <= owed);
+        prop_assert!(owed - paid.iter().sum::<i128>() < 3);
     });
 }
 

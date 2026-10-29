@@ -60,6 +60,23 @@ describe("describeChange", () => {
 			"Identity verifier",
 			"CABQ...GCK3",
 		],
+		[
+			{
+				tag: "Config",
+				values: [
+					{
+						freshness_duration: DAY,
+						cooldown_secs: 3_600n,
+						max_up_bps: 1_000,
+						max_down_bps: 250,
+						min_answer: 500_000_000_000_000_000n,
+						max_answer: 2_000_000_000_000_000_000n,
+					},
+				],
+			},
+			"Oracle limits",
+			"freshness window 1d, cooldown 1h, largest rise 10%, largest fall 2.5%, price floor 0.5000, price ceiling 2.0000",
+		],
 	])("names %o as %s %s", (change, kind, value) => {
 		expect(describeChange(change)).toMatchObject({ kind, value })
 	})

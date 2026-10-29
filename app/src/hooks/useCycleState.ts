@@ -3,6 +3,7 @@ import {
 	type Amount,
 	type ChainEvent,
 	type ContractRead,
+	type EventSelection,
 	type NavReport,
 	type OracleState,
 	type Price,
@@ -362,18 +363,25 @@ export type CycleEventsRead =
 	| { status: "unreadable" }
 	| { status: "loaded"; events: ChainEvent[]; partial: boolean }
 
-async function fetchCycleEvents(): Promise<CycleEventsRead> {
-	const read = await readEvents(
-		[
-			{ contractId: addresses.async_vault, names: VAULT_EVENTS },
-			{ contractId: addresses.nav_oracle, names: ORACLE_EVENTS },
-		],
-		LEDGERS_IN_SEVEN_DAYS,
-	)
+async function fetchEvents(
+	selections: EventSelection[],
+): Promise<CycleEventsRead> {
+	const read = await readEvents(selections, LEDGERS_IN_SEVEN_DAYS)
 	return read.kind === "value"
 		? { status: "loaded", events: read.value, partial: read.partial }
 		: { status: "unreadable" }
 }
+
+const fetchCycleEvents = () =>
+	fetchEvents([
+		{ contractId: addresses.async_vault, names: VAULT_EVENTS },
+		{ contractId: addresses.nav_oracle, names: ORACLE_EVENTS },
+	])
+
+const fetchLegalTransfers = () =>
+	fetchEvents([
+		{ contractId: addresses.share_token, names: ["legal_transfer"], topics: 2 },
+	])
 
 export function useCycleEvents(): { cycleEvents: CycleEventsRead } {
 	const { data } = useQuery({
@@ -383,4 +391,16 @@ export function useCycleEvents(): { cycleEvents: CycleEventsRead } {
 	})
 
 	return { cycleEvents: data ?? { status: "checking" } }
+}
+
+export const legalTransfersKey = ["compliance", "legal-transfers"] as const
+
+export function useLegalTransfers(): { legalTransfers: CycleEventsRead } {
+	const { data } = useQuery({
+		queryKey: legalTransfersKey,
+		queryFn: fetchLegalTransfers,
+		staleTime: STALE_MS,
+	})
+
+	return { legalTransfers: data ?? { status: "checking" } }
 }

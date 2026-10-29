@@ -9,6 +9,7 @@ import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
 import {
+	proposeOracleChange,
 	proposeTokenChange,
 	proposeVaultChange,
 } from "./useGovernanceTransactions"
@@ -78,6 +79,10 @@ export const useSetOracleConfig = adminTransaction(
 	(signer: Signer, config: OracleConfig) =>
 		navOracleWriter(signer).then((oracle) => oracle.set_config({ config })),
 	oracleWriteKeys,
+)
+
+export const useProposeOracleConfig = proposeOracleChange(
+	(config: OracleConfig) => ({ tag: "Config", values: [config] }),
 )
 
 export const useSetCompliance = adminTransaction(

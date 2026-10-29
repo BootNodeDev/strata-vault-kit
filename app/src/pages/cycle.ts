@@ -1035,12 +1035,41 @@ function describeDepositClaimed(event: ChainEvent): Described | null {
 	}
 }
 
+function describeLegalTransfer(event: ChainEvent): Described | null {
+	const from = topicAt(event, 0)
+	const to = topicAt(event, 1)
+	const amount = field(event.data, "amount")
+	const reference =
+		typeof event.data === "object" && event.data !== null
+			? (event.data as Record<string, unknown>).reference
+			: undefined
+	if (
+		typeof from !== "string" ||
+		typeof to !== "string" ||
+		amount === null ||
+		typeof reference !== "string"
+	)
+		return null
+	return {
+		title: "Legal transfer",
+		detail: [
+			figure(amountText(amount)),
+			" shares · ",
+			figure(shortAddress(from)),
+			" → ",
+			figure(shortAddress(to)),
+			` · ${reference}`,
+		],
+	}
+}
+
 const DESCRIBERS: Record<string, (event: ChainEvent) => Described | null> = {
 	epoch_closed: describeEpochClosed,
 	epoch_fulfilled: describeEpochFulfilled,
 	nav_attested: describeNavAttested,
 	deposit_requested: describeDepositRequested,
 	deposit_claimed: describeDepositClaimed,
+	legal_transfer: describeLegalTransfer,
 }
 
 const PARTIAL_ACTIVITY_NOTE = "Only part of the last 7 days is shown."

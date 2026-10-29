@@ -702,6 +702,31 @@ describe("toActivityList", () => {
 		])
 	})
 
+	it("describes a legal transfer with its accounts and reference", () => {
+		const rows = activityOf([
+			event(
+				"legal_transfer",
+				["GFROMACCOUNT1234567890", "GTOACCOUNT1234567890"],
+				{ amount: amount(5n), reference: "COURT-ORDER-17" },
+				10,
+			),
+		])
+
+		expect(rows.map((row) => [row.title, row.detail])).toEqual([
+			[
+				"Legal transfer",
+				[
+					{ figure: "5.00" },
+					" shares · ",
+					{ figure: "GFRO...7890" },
+					" → ",
+					{ figure: "GTOA...7890" },
+					" · COURT-ORDER-17",
+				],
+			],
+		])
+	})
+
 	it("passes on events that are still being read or could not be", () => {
 		expect(toActivityList({ status: "checking" })).toEqual({
 			status: "checking",

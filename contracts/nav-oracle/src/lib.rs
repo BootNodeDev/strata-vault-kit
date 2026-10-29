@@ -65,6 +65,10 @@ pub const MAX_FRESHNESS_SECS: u64 = 35 * strata_timelock::DAY_DURATION;
 /// A million units of the asset per share. Far above any real price, and far
 /// below where the deviation arithmetic could overflow.
 pub const MAX_ANSWER: i128 = 1_000_000 * WAD;
+/// A millionth of an asset unit per share, mirroring `MAX_ANSWER`. At it, one
+/// asset base unit mints at most a million share base units, and a 1 bps
+/// move cap still allows a move.
+pub const MIN_ANSWER: i128 = WAD / 1_000_000;
 /// Longest proof URI an attestation may carry, in bytes.
 pub const MAX_PROOF_URI_LEN: u32 = 256;
 
@@ -78,8 +82,8 @@ strata_bindings::error_enum! {
     #[repr(u32)]
     pub enum OracleError {
         /// A config breaks a bound: `freshness_duration` from 1 s to 35 days,
-        /// `cooldown_secs` from 1 s to `freshness_duration`, `min_answer` above
-        /// zero and at most `max_answer`, `max_answer` at most `MAX_ANSWER`,
+        /// `cooldown_secs` from 1 s to `freshness_duration`, `min_answer` from
+        /// `MIN_ANSWER` to `max_answer`, `max_answer` at most `MAX_ANSWER`,
         /// and each move cap from 1 to 10,000 bps.
         InvalidConfig = 3001,
         /// `nav_per_share <= 0`, or outside `[min_answer, max_answer]`.
@@ -120,7 +124,8 @@ strata_bindings::error_enum! {
         SetupClosed = 3016,
         /// Setup cannot finish before the oracle is bound to its vault.
         VaultNotBound = 3017,
-        /// The vault is winding down, so no change may be proposed or applied.
+        /// The vault is winding down, so no change may be proposed or applied,
+        /// and no admin hand-over is accepted.
         WindDownActive = 3018,
         /// The vault is paused, which holds every timelocked change.
         VaultPaused = 3019,
@@ -297,6 +302,29 @@ impl AccessControl for NavOracleContract {
         guards::direct_hand_over_allowed(e, live_until_ledger);
         strata_storage::bump_instance(e);
         access_control::transfer_admin_role(e, &new_admin, live_until_ledger);
+    }
+
+    /// Makes the nominee of a pending hand-over the admin. Refused while the
+    /// vault winds down: no admin power changes hands then.
+    ///
+    /// # Errors
+    ///
+    /// * `WindDownActive` - The vault is winding down.
+    /// * `RoleTransferError::NoPendingTransfer` - No offer is pending.
+    /// * `RoleTransferError::TransferExpired` - The offer's last ledger has
+    ///   passed.
+    ///
+    /// # Events
+    ///
+    /// * `AdminTransferCompleted`
+    ///
+    /// # Authorization
+    ///
+    /// The nominee signs.
+    fn accept_admin_transfer(e: &Env) {
+        guards::vault_not_winding_down(e);
+        strata_storage::bump_instance(e);
+        access_control::accept_admin_transfer(e);
     }
 
     /// Refused. A role admin could grant that role with no delay.

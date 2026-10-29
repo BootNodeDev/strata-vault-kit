@@ -7,6 +7,7 @@ import {
 	useProposeIdentityVerifier,
 	useProposeMinEpochDuration,
 	useProposeNotice,
+	useProposeOracleConfig,
 	useProposeWindDownDelay,
 	useSetCompliance,
 	useSetCustodian,
@@ -76,6 +77,7 @@ const ConfigurationSection: React.FC<{
 		useProposeMinEpochDuration(),
 	)
 	const oracleConfig = usePendingTransaction(useSetOracleConfig())
+	const proposeOracleConfig = usePendingTransaction(useProposeOracleConfig())
 	const compliance = usePendingTransaction(useSetCompliance())
 	const identityVerifier = usePendingTransaction(useSetIdentityVerifier())
 	const proposeCompliance = usePendingTransaction(useProposeCompliance())
@@ -96,6 +98,7 @@ const ConfigurationSection: React.FC<{
 			["set-min-epoch-duration", minEpochDuration],
 			["propose-min-epoch-duration", proposeMinEpochDuration],
 			["set-oracle-config", oracleConfig],
+			["propose-oracle-config", proposeOracleConfig],
 			["set-compliance", compliance],
 			["set-identity-verifier", identityVerifier],
 			["propose-compliance", proposeCompliance],
@@ -139,6 +142,8 @@ const ConfigurationSection: React.FC<{
 				)
 			case "set-oracle-config":
 				return send(oracleConfig, action.arg, action.next, action.grant)
+			case "propose-oracle-config":
+				return send(proposeOracleConfig, action.arg, action.next, action.grant)
 			case "set-compliance":
 				return send(compliance, action.arg, action.next, action.grant)
 			case "set-identity-verifier":

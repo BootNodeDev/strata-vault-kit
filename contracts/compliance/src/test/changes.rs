@@ -597,6 +597,22 @@ fn a_hand_over_after_setup_is_cancelled_at_once() {
 }
 
 #[test]
+fn an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down() {
+    let f = finished();
+    let next = Address::generate(&f.e);
+    f.land(&ComplianceChange::Admin(next.clone()));
+    let mut winding = running();
+    winding.winding_down = true;
+    f.clock.set(&winding);
+
+    refused(
+        f.rules.try_accept_admin_transfer(),
+        ComplianceContractError::WindDownActive,
+    );
+    assert_eq!(f.rules.get_admin(), Some(f.admin.clone()));
+}
+
+#[test]
 fn the_hand_over_offer_is_open_on_its_last_ledger() {
     let f = finished();
     let next = Address::generate(&f.e);

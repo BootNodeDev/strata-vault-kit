@@ -20,7 +20,7 @@ pub(crate) enum DataKey {
     WindDownDelay,
     WindDown,
     WindDownSupply,
-    WindDownAcc,
+    WindDownDistributed,
     WindDownOwed,
     WindDownPosition(Address),
     WindDownCredited,

@@ -1,5 +1,5 @@
 use soroban_sdk::{contracttype, panic_with_error, token::TokenClient, Address, Env};
-use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
+use stellar_contract_utils::math::i128_fixed_point::checked_mul_div_floor;
 use stellar_tokens::{fungible::FungibleTokenClient, rwa::RWATokenClient};
 
 use crate::error::VaultError;
@@ -118,8 +118,8 @@ pub(crate) fn owed(e: &Env) -> i128 {
     strata_storage::get_instance(e, &DataKey::WindDownOwed).unwrap_or(0)
 }
 
-pub(crate) fn acc(e: &Env) -> i128 {
-    strata_storage::get_instance(e, &DataKey::WindDownAcc).unwrap_or(0)
+pub(crate) fn distributed(e: &Env) -> i128 {
+    strata_storage::get_instance(e, &DataKey::WindDownDistributed).unwrap_or(0)
 }
 
 pub(crate) fn supply_snapshot(e: &Env) -> i128 {
@@ -173,28 +173,15 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
     guards::something_to_distribute(e, snapshot);
 
     let pot = treasury::free_reserve(e);
-    let delta = checked_mul_div_floor(e, &pot, &WAD_SCALE, &snapshot)
+    guards::something_to_distribute(e, pot);
+
+    let distributed = distributed(e)
+        .checked_add(pot)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    guards::something_to_distribute(e, delta);
-
-    let acc_before = acc(e);
-    let acc_per_share = acc_before
-        .checked_add(delta)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-
-    // The most every holder together can ever claim is floor(supply * acc / WAD).
-    // Crediting the growth of that figure, rather than this round's own floor,
-    // keeps owed at or above every payout the accumulator can produce.
-    let promised = |acc_value: &i128| {
-        checked_mul_div_floor(e, &snapshot, acc_value, &WAD_SCALE)
-            .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
-    };
-    let credited = state::reduce(e, promised(&acc_per_share), promised(&acc_before));
-
     let owed_total = owed(e)
-        .checked_add(credited)
+        .checked_add(pot)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    strata_storage::set_instance(e, &DataKey::WindDownAcc, &acc_per_share);
+    strata_storage::set_instance(e, &DataKey::WindDownDistributed, &distributed);
     strata_storage::set_instance(e, &DataKey::WindDownOwed, &owed_total);
 
     wd.round += 1;
@@ -203,12 +190,12 @@ pub(crate) fn finalize_round(e: &Env) -> i128 {
     WindDownRoundFinalized {
         round: wd.round,
         pot,
-        credited,
-        acc_per_share,
+        credited: pot,
+        distributed,
     }
     .publish(e);
 
-    credited
+    pot
 }
 
 pub(crate) fn position(e: &Env, holder: &Address) -> WindDownPosition {
@@ -230,13 +217,24 @@ pub(crate) fn claimable(e: &Env, holder: &Address) -> i128 {
         return 0;
     }
 
-    let held = lock_policy::free_shares(e, holder);
-    let p = position(e, holder);
-    let entitlement = p.entitlement.saturating_add(held);
+    settle(e, holder, lock_policy::free_shares(e, holder)).1
+}
 
-    checked_mul_div_floor(e, &entitlement, &acc(e), &WAD_SCALE)
-        .map(|earned| earned - p.paid)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+/// The holder's position once `surrendered` joins their entitlement, and the
+/// asset base units it pays now.
+fn settle(e: &Env, holder: &Address, surrendered: i128) -> (WindDownPosition, i128) {
+    let mut p = position(e, holder);
+    p.entitlement = p
+        .entitlement
+        .checked_add(surrendered)
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+
+    let earned = checked_mul_div_floor(e, &p.entitlement, &distributed(e), &supply_snapshot(e))
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
+    let assets = state::reduce(e, earned, p.paid);
+    p.paid = earned;
+
+    (p, assets)
 }
 
 pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
@@ -250,18 +248,9 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
     // A partial freeze keeps its shares out of the surrender; they earn every
     // round regardless, and are paid once unfrozen and claimed again.
     let surrendered = lock_policy::free_shares(e, holder);
-    let mut p = position(e, holder);
-    p.entitlement = p
-        .entitlement
-        .checked_add(surrendered)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-
-    let earned = checked_mul_div_floor(e, &p.entitlement, &acc(e), &WAD_SCALE)
-        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
-    let assets = state::reduce(e, earned, p.paid);
+    let (p, assets) = settle(e, holder, surrendered);
     guards::has_entitlement(e, surrendered, assets);
 
-    p.paid = earned;
     strata_storage::set_persistent(e, &DataKey::WindDownPosition(holder.clone()), &p);
 
     if surrendered > 0 {
