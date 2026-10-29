@@ -7,13 +7,14 @@ ledger and event rules are the real ones, not mocks.
 ## Running them
 
 ```sh
-SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 nix develop -c cargo test
+nix develop -c cargo test
 ```
 
-The variable is needed whenever `cargo` runs directly (see
-[AGENTS.md](../AGENTS.md)). The tests that upgrade the vault, the share token
-and the oracle to a real WASM build run only with `--features upgrade_wasm`,
-after five builds: the fixture in
+`cargo test` and `cargo clippy` need no extra variable.
+`SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1` matters only when `cargo`
+itself builds a contract for the Wasm target (see AGENTS.md). The tests that
+upgrade the vault, the share token and the oracle to a real WASM build run only
+with `--features upgrade_wasm`, after five builds: the fixture in
 [`fixtures/upgrade-target`](../fixtures/upgrade-target), the share token, the
 oracle, and a probe build of the token and of the oracle, each a stand-in for
 its next version. Inside `nix develop`:
@@ -24,7 +25,7 @@ stellar contract build --package share-token
 stellar contract build --package nav-oracle
 CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
 CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
-SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
+cargo test -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
 ```
 
 The `short_wind_down` feature builds a vault whose wind-down minimum is zero,
