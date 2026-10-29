@@ -186,6 +186,28 @@ fn a_deposit_below_one_share_is_refunded_at_claim() {
 }
 
 #[test]
+fn a_refund_after_pricing_leaves_the_priced_total_unchanged() {
+    let f = setup();
+    let user = f.investor(1_000);
+    f.vault.request_deposit(&user, &1);
+    let epoch = f.fulfill_epoch(wad(2));
+
+    assert_eq!(f.vault.claim_deposit(&user, &epoch), 0);
+
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().total_deposited, 1);
+    assert!(f.vault.get_epoch_settlement(&epoch).unwrap().reconciled);
+}
+
+#[test]
+fn a_cancellation_takes_the_deposit_out_of_its_epoch() {
+    let f = setup();
+    let user = f.investor(1_000);
+    f.vault.request_deposit(&user, &400);
+    f.vault.cancel_deposit(&user, &1);
+    assert_eq!(f.vault.get_epoch(&1).unwrap().total_deposited, 0);
+}
+
+#[test]
 fn claiming_needs_the_investor_authorisation() {
     let f = setup();
     let user = f.investor(1_000);
@@ -235,6 +257,8 @@ fn deposits_after_fulfilling_land_in_the_new_epoch() {
 fn escrow_that_would_overflow_is_refused_by_name() {
     let f = setup();
     let investor = f.investor(1);
+    // Held in full, so only the escrow sum can refuse.
+    StellarAssetClient::new(&f.e, &f.asset).mint(&f.vault.address, &i128::MAX);
     f.e.as_contract(&f.vault.address, || {
         crate::state::set_cancellable_escrow(&f.e, i128::MAX)
     });
@@ -243,4 +267,46 @@ fn escrow_that_would_overflow_is_refused_by_name() {
         f.vault.try_request_deposit(&investor, &1),
         VaultError::AmountTooLarge,
     );
+}
+
+#[test]
+fn a_deposit_is_refused_while_the_feed_is_stale() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.advance(f.oracle.config().freshness_duration);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    assert_eq!(f.balance(&investor), 1_000);
+    assert_eq!(f.vault.cancellable_escrow(), 0);
+
+    f.attest(wad(1));
+    f.vault.request_deposit(&investor, &100);
+}
+
+#[test]
+fn a_deposit_is_refused_while_the_nav_is_paused() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.oracle.pause_nav(&f.guardian);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    f.oracle.set_nav_paused(&false);
+    f.vault.request_deposit(&investor, &100);
+}
+
+#[test]
+fn a_deposit_is_refused_before_the_first_report() {
+    let f = setup_unfinished();
+    f.vault.finish_setup();
+    let investor = f.investor(1_000);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    f.attest(wad(1));
+    f.vault.request_deposit(&investor, &100);
 }

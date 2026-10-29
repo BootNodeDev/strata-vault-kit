@@ -31,8 +31,9 @@
 //!   redemption in the open epoch, or their wind-down entitlement. The cost:
 //!   another epoch at its price, and a wait while the vault itself is delisted.
 //! - **Setup, then the timelock.** Until `finish_setup` checks the wiring,
-//!   admin changes are instant and deposits refused; after it, changes that
-//!   move value or cut a wait are timelocked. The cost: fixes take a week.
+//!   admin changes are instant and requests and epochs refused; after it,
+//!   changes that move value or cut a wait are timelocked. The cost: fixes
+//!   take a week.
 //! - **Wind-down claims run the compliance hooks:** surrendered shares burn
 //!   through the `destroyed` modules. The cost: one failing in a wind-down
 //!   blocks those claims, and no change can remove it then.
@@ -224,14 +225,15 @@ impl AsyncVault {
         state::committed(e)
     }
 
-    /// Asset base units owed to priced redemptions beyond the liquid reserve.
-    /// While it is positive, nothing can be deployed to the custodian.
+    /// Asset base units owed to priced redemptions and cancellable escrow
+    /// beyond what the vault holds. While it is positive, nothing can be
+    /// deployed to the custodian.
     pub fn uncovered(e: &Env) -> i128 {
         treasury::uncovered(e)
     }
 
     /// Asset base units the vault holds, less the escrow depositors can still
-    /// cancel.
+    /// cancel. Can turn negative after the asset's issuer takes from the vault.
     pub fn liquid_reserve(e: &Env) -> i128 {
         treasury::liquid_reserve(e)
     }
@@ -563,15 +565,17 @@ impl AsyncVault {
     }
 
     /// Ends the window in which admin changes are instant. Needs every wiring
-    /// check `health()` reports, no shares outstanding and no admin hand-over
-    /// pending. Deposits open from here on, and it never reopens.
+    /// check `health()` reports, no shares outstanding, the vault's own books
+    /// empty and no admin hand-over pending. Deposits open from here on, and
+    /// it never reopens.
     ///
     /// # Errors
     ///
     /// * `SetupClosed` - Setup has already finished.
     /// * `AdminTransferPending` - An admin hand-over offered during setup is
     ///   still open.
-    /// * `SetupIncomplete` - A wiring check fails, or shares are outstanding.
+    /// * `SetupIncomplete` - A wiring check fails, shares are outstanding, or
+    ///   the vault's own books are not empty.
     ///
     /// # Events
     ///
@@ -585,15 +589,15 @@ impl AsyncVault {
         governance::finish_setup(e);
     }
 
-    /// Whether setup is still open: admin changes are instant and deposits
-    /// are refused.
+    /// Whether setup is still open: admin changes are instant, and the vault
+    /// takes no request and seals or prices no epoch.
     pub fn setup_open(e: &Env) -> bool {
         strata_timelock::setup::is_open(e)
     }
 
     /// Whether setup is open, the wiring `finish_setup` checks except the share
-    /// supply, and the feed: whether it can price now, and whether its reports
-    /// outlive the notice.
+    /// supply and the vault's own books, and the feed: whether it can price
+    /// now, and whether its reports outlive the notice.
     pub fn health(e: &Env) -> Health {
         health::health(e)
     }
@@ -809,7 +813,7 @@ impl AsyncVault {
 
     /// Escrows `amount` of the asset into the open epoch and returns the
     /// epoch's id. The deposit can be priced once the epoch closes and its
-    /// notice has run.
+    /// notice has run. Refused while the feed cannot price.
     ///
     /// # Arguments
     ///
@@ -824,6 +828,8 @@ impl AsyncVault {
     /// * `InvalidAmount` - `amount` is zero or negative.
     /// * `NotAllowlisted` - `holder` fails the identity check.
     /// * `Frozen` - `holder` is frozen.
+    /// * `FeedNotValid` - The feed is stale or the NAV is paused.
+    /// * `EscrowNotCovered` - The vault holds less than its pending escrow.
     /// * `DepositCapExceeded` - The deposit would pass the cap.
     /// * `RequestOutstanding` - `holder` has a deposit in this epoch already.
     /// * `AmountTooLarge` - A total would overflow.
@@ -893,6 +899,7 @@ impl AsyncVault {
     ///   price is known, even while the notice runs.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `Frozen` - `holder` is frozen.
+    /// * `EscrowNotCovered` - The vault's balance cannot cover the refund yet.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -950,6 +957,7 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     /// * `InvalidAmount` - `shares` is zero or negative.
     /// * `Frozen` - `holder` is frozen, or `shares` needs frozen shares.
     /// * `RequestOutstanding` - `holder` has a redemption in this epoch
@@ -1028,6 +1036,7 @@ impl AsyncVault {
     /// * `MinEpochDurationNotElapsed` - `caller` lacks `manager` and the open
     ///   epoch has not run the minimum.
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     ///
     /// # Events
     ///
@@ -1055,6 +1064,7 @@ impl AsyncVault {
     ///
     /// * `PausableError::EnforcedPause` - The vault is paused.
     /// * `WindDownActive` - The vault is winding down.
+    /// * `SetupOpen` - Setup has not finished.
     /// * `EpochNotFound` - No such epoch.
     /// * `EpochNotPending` - The epoch is open or already priced.
     /// * `NoticeNotElapsed` - The notice has not run.

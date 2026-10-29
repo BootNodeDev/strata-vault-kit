@@ -60,6 +60,7 @@ pub(crate) fn is_priceable(e: &Env, epoch: &EpochInfo) -> bool {
 
 pub(crate) fn close(e: &Env) -> u64 {
     guards::not_winding_down(e);
+    guards::setup_finished(e);
     let current = state::current_epoch(e);
     let mut epoch = state::get_epoch(e, current)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
@@ -92,6 +93,7 @@ pub(crate) fn close(e: &Env) -> u64 {
 
 pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
     guards::not_winding_down(e);
+    guards::setup_finished(e);
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
     guards::fulfilable(e, &epoch);

@@ -58,6 +58,15 @@ const NETWORKS: Record<NetworkName, Network> = {
 	},
 }
 
+export function networkNamed(name: string): Network {
+	if (!Object.hasOwn(NETWORKS, name)) {
+		throw new Error(
+			`unknown network ${name}; expected ${Object.keys(NETWORKS).join(" or ")}`,
+		)
+	}
+	return NETWORKS[name as NetworkName]
+}
+
 export function network(): Network {
 	const argIdx = process.argv.indexOf("--network")
 	const argVal = argIdx !== -1 ? process.argv[argIdx + 1] : undefined

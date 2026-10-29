@@ -472,6 +472,21 @@ fn positive_amount_refuses_zero_and_below() {
 }
 
 #[test]
+fn feed_valid_refuses_a_stale_or_paused_feed() {
+    let f = setup();
+    f.attest(wad(1));
+    holds(&f, || guards::feed_valid(&f.e));
+
+    f.advance(f.oracle.config().freshness_duration + 1);
+    refuses(&f, VaultError::FeedNotValid, || guards::feed_valid(&f.e));
+
+    f.attest(wad(1));
+    holds(&f, || guards::feed_valid(&f.e));
+    f.oracle.pause_nav(&f.guardian);
+    refuses(&f, VaultError::FeedNotValid, || guards::feed_valid(&f.e));
+}
+
+#[test]
 fn within_cap_refuses_a_deposit_past_the_cap() {
     let f = setup();
     holds(&f, || guards::within_cap(&f.e, i128::MAX));
@@ -579,6 +594,33 @@ fn payout_covered_refuses_a_payout_beyond_the_liquid_reserve() {
 }
 
 #[test]
+fn cancellation_covered_refuses_a_cancellation_beyond_the_balance() {
+    let f = setup();
+    let investor = f.investor(100);
+    f.vault.request_deposit(&investor, &100);
+    holds(&f, || guards::cancellation_covered(&f.e, 100));
+
+    f.claw_back(1);
+    holds(&f, || guards::cancellation_covered(&f.e, 99));
+    refuses(&f, VaultError::EscrowNotCovered, || {
+        guards::cancellation_covered(&f.e, 100)
+    });
+}
+
+#[test]
+fn escrow_covered_refuses_while_the_balance_is_below_the_escrow() {
+    let f = setup();
+    let investor = f.investor(100);
+    f.vault.request_deposit(&investor, &100);
+    holds(&f, || guards::escrow_covered(&f.e));
+
+    f.claw_back(1);
+    refuses(&f, VaultError::EscrowNotCovered, || {
+        guards::escrow_covered(&f.e)
+    });
+}
+
+#[test]
 fn eligible_to_receive_refuses_a_holder_the_token_would_not_take() {
     let f = setup();
     let listed = f.investor(0);
@@ -674,6 +716,7 @@ fn fulfilable_refuses_an_epoch_the_vault_cannot_price_yet() {
         guards::fulfilable(&f.e, &open)
     });
 
+    f.advance(f.oracle.config().freshness_duration);
     let unpriced = epoch(&f, f.close_epoch());
     refuses(&f, VaultError::FeedNotValid, || {
         guards::fulfilable(&f.e, &unpriced)

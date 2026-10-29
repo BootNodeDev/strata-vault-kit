@@ -13,7 +13,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { network } from "./lib/network.js"
-import { attest } from "./lib/oracle.js"
+import { attest, freshFeed } from "./lib/oracle.js"
 import { outcome } from "./lib/refused.js"
 
 const net = network()
@@ -79,6 +79,7 @@ describe("a wind-down on a throwaway vault", () => {
 	const holder = () => c.keys["holder-1"].publicKey()
 
 	it("a holder subscribes, is priced and claims shares", async () => {
+		await freshFeed(c, 2n * 10n ** 18n)
 		expect(
 			await call(
 				"request_deposit",

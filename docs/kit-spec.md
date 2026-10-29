@@ -21,8 +21,16 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   $`\text{free\_reserve} = \max(\text{liquid\_reserve} - \text{committed} - \text{wind\_down\_owed}, 0)`$
 
   $`\text{uncovered} = \max(\text{committed} - \text{liquid\_reserve}, 0)`$
-- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $`\text{assets} > \text{free\_reserve}`$, so after every operation $`\text{held} \ge \text{cancellable\_escrow}`$. While $`\text{uncovered} > 0`$, the free reserve is zero and nothing leaves for the custodian.
+- **Testable Property**: `deploy_to_custodian(assets)` is refused with `ReserveCommittedToExits` when $`\text{assets} > \text{free\_reserve}`$, so after every operation $`\text{held} \ge \text{cancellable\_escrow}`$, unless the asset's issuer takes from the vault's balance. While $`\text{uncovered} > 0`$, the free reserve is zero and nothing leaves for the custodian.
 - **Enforcement**: `deploy_to_custodian` is the only outbound path to the custodian, and it moves at most the free reserve.
+- **When the vault holds less than it owes**: the asset's issuer can claw back part of the vault's balance. The kit cannot stop that. The vault then pays in this order and refuses the rest by name until it is funded:
+  1. Escrow a depositor can still cancel is paid first. `cancel_deposit` pays from the vault's whole balance when that balance covers the deposit's own amount, in any order; otherwise `EscrowNotCovered`. While $`\text{held} < \text{cancellable\_escrow}`$, `request_deposit` is refused with `EscrowNotCovered`, so a new deposit never pays an earlier cancellation.
+  2. Priced redemption claims come next. Each pays when the liquid reserve covers its own amount, in any order; otherwise `ClaimNotCovered`.
+  3. What wind-down rounds owe sits beside priced claims in the free reserve. A wind-down claim's own gap is described in [THREAT_MODEL X8](./THREAT_MODEL.md#x8-wind-down).
+  4. A refund of a deposit below one share and a transfer to the custodian come last, only from the free reserve (`ClaimNotCovered`, `ReserveCommittedToExits`).
+  5. `uncovered()` shows the gap, $`\text{committed} + \text{cancellable\_escrow} - \text{held}`$ when positive. Funding that gap with `fund` lifts the refusals for cancellations, priced claims and new deposits. A refund of a deposit below one share and a transfer to the custodian also need free reserve, which `uncovered()` does not show.
+  6. The vault does not decide who finally bears the loss. Until treasury funds the gap, whoever acts first within a class is paid first. Pricing does not read the balance: an epoch priced during the gap mints its deposits in full, and the loss reaches holders through the NAV.
+  7. A freeze of the vault's balance, unlike a clawback, leaves the balance readable. The vault's checks pass, and the asset refuses the transfer with its own error.
 
 ### Invariant 2: Notice Period Respected
 - **Definition**: An epoch cannot be fulfilled or priced until its standing notice period has fully elapsed.
@@ -59,10 +67,10 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 ### Invariant 6: Single-Step Atomic Cancellation
 - **Definition**: Cancellation is all-or-nothing, and it is open exactly while the vault could not price the epoch now. Three rules decide it:
   1. A readable price closes cancellation, even while the notice still runs. A price is readable when the feed is valid and its report was accepted at or after the epoch closed.
-  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — cancellation opens again. That is the way out of a stalled feed, so escrow is never stuck. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, or a paused vault can.
+  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — cancellation opens again. That is the way out, so escrow is never stuck behind a stalled feed. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, or a paused vault can.
   3. The epoch is priced at the latest valid report at fulfil time that was accepted at or after the close — not necessarily the report that first closed the window.
 - **Testable Property**:
-  - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow.
+  - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow, unless an issuer clawback leaves the balance below the deposit (`EscrowNotCovered`, see Invariant 1).
   - A readable price refuses cancellation with `PriceAvailable`, even before `priceable_at`; once that report expires, cancellation works again (`cancellation_reopens_when_the_price_that_closed_it_expires`).
   - Pausing the vault reopens cancellation; unpausing closes it again while the price is still readable (`a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price`).
   - Outside a wind-down, `cancel_redeem` refuses a delisted holder (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`); the request stays pending and the cash claim remains open. It holds a frozen holder (`Frozen`): the request stays pending, and its cash claim is held too until the freeze is lifted. Neither the share token's transfer pause nor the vault's own allowlist place stops a cancellation (`a_token_pause_stops_trading_but_not_a_share_return`, `a_delisted_vault_still_returns_escrowed_shares`).
@@ -80,7 +88,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   $`\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s`$
 - **Testable Property**: For all values of $`a, s \in [1, 10^{30}]`$ and $`\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]`$, a round-trip conversion never creates value. Remainder satisfies:
   $`(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}`$
-- **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. When the last request of a priced epoch settles, the remainder leaves `pending_mint_shares` and `committed` and the vault publishes `EpochReconciled { epoch, share_dust, cash_dust }`. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping.
+- **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. When the last request of a priced epoch settles, the remainder leaves `pending_mint_shares` and `committed` and the vault publishes `EpochReconciled { epoch, share_dust, cash_dust }`. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping. A deposit refunded after pricing (worth less than one share base unit) leaves the priced epoch's `total_deposited` as `EpochFulfilled` published it; only a cancellation still open for the epoch lowers it.
 - **A request that can never settle** keeps its epoch open, and the two cases leave different amounts behind. A zero-asset redemption whose holder may not take the shares back (`HolderNotEligible`, `a_request_that_cannot_settle_keeps_its_epoch_open`) leaves only the epoch's ordinary rounding remainder in `committed` — fewer units than the epoch had redemption requests — because that request was never owed any cash. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's own remainder, until the mint is allowed. Either way it is still owed to nobody.
 - **A deposit worth less than one share base unit** mints nothing and is refunded at claim, from the free reserve (`a_deposit_below_one_share_is_refunded_at_claim`). Pricing moves the epoch's whole deposit into the reserve and records no refund, so `deploy_to_custodian` or a wind-down round can spend that cash first; the claim then fails with `ClaimNotCovered` until the free reserve covers it again (`a_dust_refund_never_takes_committed_money`, `a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve`). This is accepted: pricing sees only the epoch's totals, so reserving these refunds would mean visiting every request, and each is worth less than one share base unit.
 
@@ -91,7 +99,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**:
   - Upgrade delay $`\in [7 \text{ days}, 90 \text{ days}]`$ and $`\text{delay} \ge \text{notice}`$, checked when a delay change is proposed and again when it applies.
   - Wind-down delay $`\in [7 \text{ days}, 90 \text{ days}]`$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
-  - The vault takes no deposit until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and a custodian other than the vault. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted. Shares minted before setup closes would redeem against depositors' money. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
+  - The vault takes no deposit, redemption, seal or pricing until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, a custodian other than the vault, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted. Shares minted before setup closes would redeem against depositors' money, and a request booked before setup would be paid from it, so both the token supply and the vault's books must be empty. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
   - After setup, the vault's custodian, role grants, revoking `manager`, admin hand-overs and lowering the notice or the wind-down delay go through the queue; a direct call is refused with `UseTimelock`. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking any other role stay instant. A `Notice` or `WindDownDelay` change is checked against its bounds when proposed and again when it applies.
   - Minimum epoch duration $`\in [1 \text{ day}, 30 \text{ days}]`$ (`InvalidAmount`); `None` until governance sets one, so only the manager seals. Set directly during setup; afterwards both raising and lowering it go through the queue, unlike the notice and wind-down delay, where raising stays instant. Once set, it stays within bounds and cannot be cleared back to `None`: manager-only sealing cannot return.
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
@@ -175,11 +183,11 @@ The `async_vault` constructor refuses these four pairs of equal addresses and co
 
 ### Health View
 
-`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out two `finish_setup` checks: that the share token has no shares outstanding, which stops being true once the vault has holders, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while every field from `token_bound` to `feed_answers` is true, shares were minted before setup; the token's `total_supply()` shows them.
+`health()` returns one flag per check. A deployment is ready when `setup_open` is false and every other flag is true. `health()` leaves out three `finish_setup` checks: that the share token has no shares outstanding, which stops being true at the vault's first claim, that the vault's own books are empty, which stops being true at its first request, and that no admin hand-over offered during setup is pending (`AdminTransferPending`). If `finish_setup` refuses with `SetupIncomplete` while every field from `token_bound` to `feed_answers` is true, there are two possible causes. Shares were minted before setup: the token's `total_supply()` shows them. Or the vault's books are not empty: `current_epoch()` is past 1, `get_epoch(1)` shows a deposit or redemption booked, or `committed()`, `pending_mint_shares()` or `pending_burn_shares()` is not zero.
 
 | Field | True when |
 |---|---|
-| `setup_open` | `finish_setup` has not run yet. While true, admin changes are instant and deposits are refused. |
+| `setup_open` | `finish_setup` has not run yet. While true, admin changes are instant and requests and epochs are refused. |
 | `token_bound` | The share token names this vault through `vault()` and its own setup is finished. |
 | `oracle_bound` | The oracle names this vault through `vault()` and its own setup is finished. |
 | `sole_token_manager` | This vault is the share token's only `manager`. |
@@ -224,18 +232,18 @@ Strata distributes control across five native Stellar multisig authorities, two 
 
 Pause first, so no report lands while the roles change, and lift the pause last:
 
-1. Pause the NAV: the oracle's guardian calls `pause_nav`, or its admin calls `set_nav_paused(true)`. The oracle refuses every report and the vault prices nothing; sealed epochs reopen to cancellation.
+1. Pause the NAV: the oracle's guardian calls `pause_nav`, or its admin calls `set_nav_paused(true)`. The oracle refuses every report and the vault prices nothing; sealed epochs reopen to cancellation. The vault also refuses deposits (`FeedNotValid`) until the new attester's first report in step 6.
 2. Revoke the compromised attester: `revoke_role(attester, "attester", admin)` on the oracle. It is instant, during setup and after it.
-3. Grant a replacement. During the oracle's setup, `grant_role` is instant. After it, propose a `GrantRole` change and apply it once the vault's delay has run, plus any time the vault spends paused. The NAV stays paused that whole time, at least seven days.
+3. Grant a replacement. During the oracle's setup, `grant_role` is instant. After it, propose a `GrantRole` change and apply it once the vault's delay has run, plus any time the vault spends paused. The NAV stays paused that whole time, at least seven days, so replacing an attester stops subscriptions for at least the timelock delay.
 4. Clear the stored report: `clear_latest` (admin; only while the NAV is paused). Left in place, it is valid again once the pause lifts, and anyone can price with it any epoch sealed before it was accepted, until it expires. Skip this only if you know the report predates the compromise. The next report then has no earlier price to cap its move: only `min_answer` and `max_answer` bound it.
 5. Lift the NAV pause: `set_nav_paused(false)` (admin).
 6. The new attester posts a report. Pricing resumes: an epoch can be priced once a report accepted after its seal is valid.
 
 ### Upgrading the Oracle from an Earlier Release
 
-Releases before the proof reference stored the report as `nav_per_share`, `expires_at` and `timestamp`. This version stores `nav_per_share`, `expires_at`, `accepted_at`, `proof_hash` and `proof_uri`, and cannot read a report of the earlier shape. After an in-place upgrade, every call that reads the old report fails: `latest`, `nav_per_share`, `attested_at`, `is_stale` and `attest`, and also `state` and `ensure_consumable` while the NAV is not paused. The vault then cannot price, and cancelling a request in a sealed epoch fails. No migration rewrites the old report. Clear it instead:
+Releases before the proof reference stored the report as `nav_per_share`, `expires_at` and `timestamp`. This version stores `nav_per_share`, `expires_at`, `accepted_at`, `proof_hash` and `proof_uri`, and cannot read a report of the earlier shape. After an in-place upgrade, every call that reads the old report fails: `latest`, `nav_per_share`, `attested_at`, `is_stale` and `attest`, and also `state` and `ensure_consumable` while the NAV is not paused. The vault then cannot price or take a deposit, and cancelling a request in a sealed epoch fails. No migration rewrites the old report. Clear it instead:
 
-1. Pause the NAV before the upgrade applies: the guardian calls `pause_nav`, or the admin calls `set_nav_paused(true)`. While the NAV is paused, `state` answers `Paused` without reading the report, so the vault prices nothing and requests in sealed epochs stay cancellable. If the upgrade applied first, pause the NAV at once: neither `pause_nav` nor `clear_latest` reads the report.
+1. Pause the NAV before the upgrade applies: the guardian calls `pause_nav`, or the admin calls `set_nav_paused(true)`. While the NAV is paused, `state` answers `Paused` without reading the report, so the vault prices nothing and requests in sealed epochs stay cancellable. Deposits are refused while the NAV is paused (`FeedNotValid`) or the feed cannot answer, so the vault takes none from here until the attester's report in step 5. If the upgrade applied first, pause the NAV at once: neither `pause_nav` nor `clear_latest` reads the report.
 2. Apply the upgrade: `apply_change` once its delay has run.
 3. Remove the old report: `clear_latest` (admin). It deletes the entry without reading it.
 4. Lift the NAV pause: `set_nav_paused(false)` (admin).
@@ -257,14 +265,14 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 
 | Contract | Entrypoint | Calling Authority | Access Control Guard | Pausable? |
 |---|---|---|---|---|
-| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
-| **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
+| **`AsyncVault`** | `request_deposit` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`), while the feed is not valid (`FeedNotValid`) and while the vault holds less than its pending escrow (`EscrowNotCovered`) | Yes (halted by pause) |
+| **`AsyncVault`** | `cancel_deposit` | Investor (Caller) | `holder.require_auth()`; refused while the vault's balance cannot cover the refund (`EscrowNotCovered`) | No (open during pause) |
 | **`AsyncVault`** | `claim_deposit` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
-| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause; refused in a wind-down) |
+| **`AsyncVault`** | `request_redeem` | Investor (Caller) | `holder.require_auth()`; refused until setup finishes (`SetupOpen`) | No (open during pause; refused in a wind-down) |
 | **`AsyncVault`** | `cancel_redeem` | Investor (Caller) | `holder.require_auth()` | No (open during pause) |
 | **`AsyncVault`** | `claim_redeem` | Investor (Caller) | `holder.require_auth()` | No (always open) |
-| **`AsyncVault`** | `close_epoch` | Manager; anyone once the open epoch has run the minimum epoch duration | `caller.require_auth()`; without `manager`, `MinEpochDurationNotElapsed` before the minimum, `AccessControlError::Unauthorized` when none is set | No |
-| **`AsyncVault`** | `fulfill_epoch` | Permissionless | None | Yes (halted by pause) |
+| **`AsyncVault`** | `close_epoch` | Manager; anyone once the open epoch has run the minimum epoch duration | `caller.require_auth()`; without `manager`, `MinEpochDurationNotElapsed` before the minimum, `AccessControlError::Unauthorized` when none is set; refused until setup finishes (`SetupOpen`) | No |
+| **`AsyncVault`** | `fulfill_epoch` | Permissionless | None; refused until setup finishes (`SetupOpen`) | Yes (halted by pause) |
 | **`AsyncVault`** | `pause` | Guardian | `#[only_role(caller, "guardian")]` | N/A |
 | **`AsyncVault`** | `unpause` | Governance | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
 | **`AsyncVault`** | `set_notice` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change` | No |
@@ -272,7 +280,7 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 | **`AsyncVault`** | `set_deposit_cap` | Governance | `#[only_admin]`; instant both ways | No |
 | **`AsyncVault`** | `set_min_epoch_duration` | Governance | `#[only_admin]`; instant during setup, then `propose_change`; 1 to 30 days | No |
 | **`AsyncVault`** | `set_wind_down_delay` | Governance | `#[only_admin]`; raising is instant, lowering is instant during setup, then `propose_change`; never below 7 days | No |
-| **`AsyncVault`** | `finish_setup` | Governance | `#[only_admin]`; needs the wiring complete and no pending admin hand-over; once | No |
+| **`AsyncVault`** | `finish_setup` | Governance | `#[only_admin]`; needs the wiring complete, the vault's own books empty, and no pending admin hand-over; once | No |
 | **`AsyncVault`** | `setup_open` | Permissionless | None (view) | No |
 | **`AsyncVault`** | `propose_wind_down` | Governance | `#[only_admin]` | No |
 | **`AsyncVault`** | `cancel_wind_down_proposal` | Governance | `#[only_admin]` | No |
@@ -349,9 +357,9 @@ A clean deployment executes in three sequenced phases:
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
    - Call `set_min_epoch_duration(secs)` on the vault while setup is open, so the protection is on from the start: anyone can then seal an epoch once it has run that long. Set it above the manager's usual epoch length, so an outsider only seals once the manager has really stopped, not while a normal epoch is still running. Left unset, only the manager seals, and once setup closes the minimum changes only through the timelock.
    - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap. The custodian is required, and the vault's own address is refused (`InvalidCustodian`).
-   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, and an oracle that answers `state()` and `freshness_duration()`. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit before it.
+   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit, redemption, seal or pricing before it.
 3. **Phase 3: Operational Parameterization**
-   - Oracle reporter submits the genesis NAV attestation (`attest`).
+   - Oracle reporter submits the genesis NAV attestation (`attest`). Deposits open only once it is valid, so post it before announcing the vault.
 
 ---
 
@@ -393,10 +401,12 @@ extended to 30 days when it is proposed. The wait itself can run up to 90 days
 (`strata_timelock::MAX_DELAY`), so a change nobody touches can archive before it is
 due. Nothing is lost: the call that applies it restores the archived entry
 itself and pays the restore fee, the same as any other archived entry.
-`npm run extend` also keeps it alive: it reads each contract's open ids from
-its `pending_changes()` view, builds each one's storage key the way the
-timelock crate does, and extends it the same 30 days as every instance and
-Wasm.
+`npm run extend` also keeps it alive. It reads each contract's open ids from
+the contract's instance, where the timelock stores them, so it never reads the
+pending entries to find them. It builds each entry's storage key the way the
+timelock crate does, and a test checks that the two agree. If the entry has
+archived, it restores it, then extends it the same 30 days as every instance
+and Wasm.
 
 **What OpenZeppelin extends, and what the kit adds.** `stellar-tokens` 0.7.2
 stores the share token's balances and freeze entries, and the compliance
@@ -490,6 +500,10 @@ it runs, and each pending timelock change. Other entries, such as balances and
 roles, are restored by the call that needs them (see **Restoring**). It reads
 the contracts in `environments.toml [staging.contracts]`; `--env <name>` picks
 another environment, and `--config <record>` reads a deployment record instead.
+With `--config` it uses the network the record names, unless `--env` names
+another, and it prints the network and RPC before it sends anything. Put flags
+after `--`, or npm swallows them:
+`npm run extend -w scripts/harness -- --config <record>`.
 Extending needs no authority, so any funded account can pay.
 
 **Restoring.** Since Protocol 23 an invocation can restore archived entries
@@ -570,7 +584,7 @@ for the same failure, so `304` says what failed, not where.
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|
 | `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
-| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6075, 6077 |
+| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6077 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7018 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
 

@@ -2,9 +2,14 @@ name: Build Project and Run Tests
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "feedback"]
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # A cancelled push run would leave a failed build check on that commit.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,43 +20,128 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The test merge commit and its parents, to diff a pull request against its base.
+          fetch-depth: 2
+      - name: Check whether anything besides docs changed
+        id: filter
+        run: |
+          code=true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            CHANGED=$(git diff --no-renames --name-only HEAD^1 HEAD)
+            printf '%s\n' "$CHANGED"
+            code=false
+            while IFS= read -r path; do
+              case "$path" in
+                "") ;;
+                # The harness hashes the sample valuation.
+                docs/evidence/*) code=true ;;
+                *.md) ;;
+                *) code=true ;;
+              esac
+            done <<< "$CHANGED"
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
+  js:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      - run: npm i -g npm@11.7.0
+      - run: npm --version
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run test
+
+  rust-tests:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          # A cached CLI would outlive a version bump in the install steps.
+          cache-bin: "false"
+          workspaces: |
+            . -> target
+            fixtures/upgrade-target -> target
+      # Before the CLI install so a broken contract test fails without
+      # waiting on it. rustup picks the toolchain from rust-toolchain.toml.
+      - name: Run the contract unit tests
+        run: cargo test --locked
+      - run:
+          sudo apt-get update && sudo apt-get install -y libudev-dev
+          libdbus-1-dev pkg-config
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@e00d2c94cc0067b77737821097a62d91c0301baa # v1.21.1
+      - name: Install stellar CLI
+        run: |
+          if ! command -v stellar &> /dev/null; then
+            cargo binstall --locked stellar-cli@27.0.0
+          fi
+      # The upgrade tests run built Wasm, so they need the fixture, both
+      # contracts and their probe builds first (docs/TESTING.md).
+      - name: Run the Wasm upgrade tests
+        run: |
+          stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
+          stellar contract build --package share-token
+          stellar contract build --package nav-oracle
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
+          SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
+
+  network:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # In the background, so the steps up to "Wait for the local network" run while it boots.
+      - name: Start Stellar local network
+        env:
+          # Pinned by digest: "latest" moves with every protocol build.
+          IMAGE: docker.io/stellar/quickstart:v687-b1580.1-latest@sha256:7711899e9942c60316ebacf8ab901be15bed7a5a31705d847b55375ff3bc8356
+          # The image's own default can be a protocol its RPC cannot simulate.
+          PROTOCOL_VERSION: "30"
+        # The exit file lets the wait step fail at once when the pull or start fails.
+        run: |
+          (
+            trap '' HUP
+            status=0
+            docker run -d --name stellar -p 8000:8000 \
+              -e ENABLE_LOGS=true -e ENABLE=core,rpc -e NETWORK=local \
+              -e PROTOCOL_VERSION="$PROTOCOL_VERSION" "$IMAGE" || status=$?
+            echo "$status" > "$RUNNER_TEMP/quickstart.exit"
+          ) > "$RUNNER_TEMP/quickstart.log" 2>&1 &
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 22
       - run: npm i -g npm@11.7.0
       - run: npm --version
-
-      # ---- Fast checks first ----
-      # Fail in seconds on lint / format before the multi-minute CLI build +
-      # Docker network below, so trivial fixes don't pay the full cost.
       - run: npm ci
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm run test
-
-      # ---- Slow path: CLI toolchain, local network, contract codegen ----
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          # NB: ~/.cargo/bin is deliberately NOT cached here. Keying the
-          # stellar-scaffold binary on this repo's Cargo.lock would restore a
-          # binary built from an unrelated CLI revision.
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      # Before the CLI install so a broken contract test fails without
-      # waiting on it. rustup picks the toolchain from rust-toolchain.toml.
-      - name: Run the contract unit tests
-        run: cargo test --locked
+          # A cached CLI would outlive a version bump in the install steps.
+          cache-bin: "false"
       - run:
           sudo apt-get update && sudo apt-get install -y libudev-dev
           libdbus-1-dev pkg-config
@@ -74,25 +164,61 @@ jobs:
           if ! command -v stellar &> /dev/null; then
             cargo binstall --locked stellar-cli@27.0.0
           fi
-      # The upgrade tests run built Wasm, so they need the fixture, both
-      # contracts and their probe builds first (docs/TESTING.md).
-      - name: Run the Wasm upgrade tests
+      # The same cargo build Scaffold runs, so its build below reuses the Wasm.
+      - name: Build the contracts
+        run: stellar contract build
+      - name: Build the vault without the wind-down minimum
+        run:
+          CARGO_TARGET_DIR=target/short-wind-down stellar contract build
+          --package async-vault --features short_wind_down
+      - name: Read the Playwright version
+        id: playwright
         run: |
-          stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
-          stellar contract build --package share-token
-          stellar contract build --package nav-oracle
-          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
-          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
-          SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
-      - name: Start Stellar local network
-        # No tagged releases upstream, so this pins main as read on 2026-08-14
-        uses: stellar/quickstart@864f91d804c0061bd11ef8872d3e318581febb55
+          VERSION=$(jq -r '.packages["node_modules/playwright-core"].version' package-lock.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Cache the Playwright browser
+        id: playwright-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          enable: "core,rpc"
-          # Pinned by digest: "latest" moves with every protocol build.
-          tag: v687-b1580.1-latest@sha256:7711899e9942c60316ebacf8ab901be15bed7a5a31705d847b55375ff3bc8356
-          # The image's own default can be a protocol its RPC cannot simulate.
-          protocol_version: "30"
+          path: ~/.cache/ms-playwright
+          key:
+            ${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright browser
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+        working-directory: e2e
+      - name: Install Playwright's system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+        working-directory: e2e
+
+      - name: Wait for the local network
+        timeout-minutes: 12
+        run: |
+          fail() {
+            echo "$1"
+            cat "$RUNNER_TEMP/quickstart.log"
+            docker logs stellar || true
+            exit 1
+          }
+          while [ "$SECONDS" -lt 600 ]; do
+            EXIT=$(cat "$RUNNER_TEMP/quickstart.exit" 2>/dev/null || true)
+            if [ -n "$EXIT" ] && [ "$EXIT" != 0 ]; then
+              fail "docker run failed with exit code $EXIT."
+            fi
+            case "$(docker inspect -f '{{.State.Status}}' stellar 2>/dev/null || true)" in
+              exited | dead) fail "The local network container stopped." ;;
+            esac
+            if curl --no-progress-meter --max-time 5 -X POST -H 'Content-Type: application/json' \
+                -d '{"jsonrpc": "2.0", "id": 1, "method": "getHealth"}' \
+                http://localhost:8000/rpc 2>/dev/null | grep -q healthy &&
+              curl --no-progress-meter --max-time 5 http://localhost:8000/friendbot 2>/dev/null |
+                grep -q '"invalid_field": "addr"'; then
+              exit 0
+            fi
+            sleep 2
+          done
+          fail "The local network did not start in 10 minutes."
       - name: Add master account as default identity
         run: |
           mkdir -p .config/stellar/identity
@@ -158,9 +284,6 @@ jobs:
         run: npm run build --workspaces --if-present
         env:
           ADDRESSES_ENV: development
-      - name: Install Playwright browser
-        run: npx playwright install --with-deps chromium
-        working-directory: e2e
       - name: Run smoke tests
         run: npx playwright test
         working-directory: e2e
@@ -178,10 +301,6 @@ jobs:
         run: npm run test:guards -w scripts/harness
         env:
           HARNESS_NETWORK: local
-      - name: Build the vault without the wind-down minimum
-        run:
-          CARGO_TARGET_DIR=target/short-wind-down stellar contract build
-          --package async-vault --features short_wind_down
       - name: Run a wind-down on a throwaway vault on the local network
         run: npm run test:wind-down -w scripts/harness
         env:
@@ -195,19 +314,16 @@ jobs:
           if-no-files-found: ignore
 
   rust-checks:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-checks-${{ hashFiles('**/Cargo.lock') }}
+          cache-bin: "false"
       # rustup reads rust-toolchain.toml, which includes clippy and rustfmt.
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -220,3 +336,23 @@ jobs:
           # same command as docs/TESTING.md.
           arguments: --locked
           command: check
+
+  # The check branch protection requires; Rust and network may skip only for docs.
+  build:
+    if: always()
+    needs: [changes, js, rust-tests, network]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the results
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          CHANGES: ${{ needs.changes.result }}
+          JS: ${{ needs.js.result }}
+          RUST_TESTS: ${{ needs.rust-tests.result }}
+          NETWORK: ${{ needs.network.result }}
+        run: |
+          echo "changes=$CHANGES js=$JS rust-tests=$RUST_TESTS network=$NETWORK code=$CODE"
+          [ "$CHANGES" = success ] && [ "$JS" = success ] || exit 1
+          if [ "$CODE" = true ]; then
+            [ "$RUST_TESTS" = success ] && [ "$NETWORK" = success ] || exit 1
+          fi
