@@ -5,7 +5,8 @@ import { join } from "node:path"
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import { sourceCommit, wasmHash } from "./provenance.js"
+import { CONTRACT_NAMES, type ContractName } from "./deployment.js"
+import { readProvenance, sourceCommit, wasmHash } from "./provenance.js"
 
 let dir = ""
 
@@ -83,5 +84,34 @@ describe("sourceCommit", () => {
 
 	it("stops outside a git checkout", () => {
 		expect(() => sourceCommit(dir)).toThrow(/git/)
+	})
+})
+
+const wasmsOf = (file: string): Record<ContractName, string> =>
+	Object.fromEntries(CONTRACT_NAMES.map((name) => [name, file])) as Record<
+		ContractName,
+		string
+	>
+
+describe("readProvenance", () => {
+	it("combines the commit and every wasm's hash", () => {
+		git("init", "-q")
+		commitFile("a.txt", "one")
+		const file = join(dir, "contract.wasm")
+		writeFileSync(file, "abc")
+
+		const result = readProvenance(dir, wasmsOf(file))
+
+		expect(result.commit).toBe(git("rev-parse", "HEAD").trim())
+		expect(result.uncommittedChanges).toBe(false)
+		for (const name of CONTRACT_NAMES) {
+			expect(result.wasmHashes[name]).toBe(wasmHash(file))
+		}
+	})
+
+	it("stops outside a git checkout before hashing any wasm", () => {
+		const missing = join(dir, "missing.wasm")
+
+		expect(() => readProvenance(dir, wasmsOf(missing))).toThrow(/git/)
 	})
 })

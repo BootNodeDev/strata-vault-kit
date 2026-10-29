@@ -17,6 +17,7 @@ import {
 	deployContract,
 	ensureAssetContract,
 	generateClient,
+	rootSdkVersion,
 } from "./lib/cli.js"
 import {
 	clearIncomplete,
@@ -32,7 +33,7 @@ import {
 } from "./lib/deployment.js"
 import { ensureKeys } from "./lib/keys.js"
 import { network, type Network } from "./lib/network.js"
-import { sourceCommit, wasmHash } from "./lib/provenance.js"
+import { readProvenance, type Provenance } from "./lib/provenance.js"
 import { withAccountRetry } from "./lib/rpc.js"
 
 const RELEASE_DIR = join(REPO_ROOT, "target", "wasm32v1-none", "release")
@@ -303,6 +304,7 @@ async function finishVaultSetup(
 async function freshSet(
 	net: Network,
 	wasms: Record<ContractName, string>,
+	provenance: Provenance,
 	accounts: Accounts,
 	server: rpc.Server,
 	onProgress?: (progress: IncompleteDeployment) => void,
@@ -360,13 +362,10 @@ async function freshSet(
 	return {
 		network: net.name,
 		deployedAt: new Date().toISOString(),
-		...sourceCommit(REPO_ROOT),
+		...provenance,
 		ledger: (await server.getLatestLedger()).sequence,
 		asset: assetInfo,
 		contracts,
-		wasmHashes: Object.fromEntries(
-			CONTRACT_NAMES.map((name) => [name, wasmHash(wasms[name])]),
-		) as Record<ContractName, string>,
 		accounts: publicKeysOf(accounts),
 	}
 }
@@ -388,11 +387,12 @@ export async function deployThrowaway(
 		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
 	) as Record<ContractName, string>
 	wasms.async_vault = vaultWasm
+	const provenance = readProvenance(REPO_ROOT, wasms)
 	const keys = throwawayAccounts()
 	const server = withAccountRetry(
 		new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" }),
 	)
-	const deployment = await freshSet(net, wasms, keys, server)
+	const deployment = await freshSet(net, wasms, provenance, keys, server)
 	await grantAndVerify(net, keys, deployment.contracts, server)
 	await finishVaultSetup(net, keys, deployment.contracts, server)
 	return { deployment, keys }
@@ -403,25 +403,32 @@ async function main(): Promise<void> {
 	const net = network()
 	refuseIncomplete(net.name)
 	console.log(`deploying to ${net.name} (${net.rpcUrl})`)
+	const wasms = Object.fromEntries(
+		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
+	) as Record<ContractName, string>
+	const provenance = readProvenance(REPO_ROOT, wasms)
+	const sdkVersion = rootSdkVersion()
 	const { file, accounts, created } = ensureKeys(net.name, REPO_ROOT)
 	console.log(
 		`account keys in ${relative(REPO_ROOT, file)} (${created.length} new)`,
 	)
-	const wasms = Object.fromEntries(
-		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
-	) as Record<ContractName, string>
 	const server = withAccountRetry(
 		new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" }),
 	)
-	const record = await freshSet(net, wasms, accounts, server, (progress) =>
-		writeIncomplete(progress),
+	const record = await freshSet(
+		net,
+		wasms,
+		provenance,
+		accounts,
+		server,
+		(progress) => writeIncomplete(progress),
 	)
 	console.log(
 		`commit ${record.commit}${record.uncommittedChanges ? " with uncommitted changes" : ""}`,
 	)
 
 	for (const name of CONTRACT_NAMES) {
-		await generateClient(wasmOf(name), clientDir(name))
+		await generateClient(wasmOf(name), clientDir(name), sdkVersion)
 	}
 	console.log("clients generated")
 

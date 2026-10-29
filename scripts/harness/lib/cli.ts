@@ -150,7 +150,7 @@ export function pinClientSdk<T extends ClientPackageJson>(
 	}
 }
 
-function rootSdkVersion(): string {
+export function rootSdkVersion(): string {
 	const rootPkg = JSON.parse(
 		readFileSync(join(REPO_ROOT, "package.json"), "utf8"),
 	) as { overrides?: Record<string, string> }
@@ -166,6 +166,7 @@ function rootSdkVersion(): string {
 export async function generateClient(
 	wasm: string,
 	outDir: string,
+	sdkVersion: string,
 ): Promise<void> {
 	await stellar([
 		"contract",
@@ -180,7 +181,7 @@ export async function generateClient(
 	const pkgPath = join(outDir, "package.json")
 	if (existsSync(pkgPath)) {
 		const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as ClientPackageJson
-		const pinned = pinClientSdk(pkg, rootSdkVersion())
+		const pinned = pinClientSdk(pkg, sdkVersion)
 		if (pinned !== pkg) {
 			writeFileSync(pkgPath, JSON.stringify(pinned, null, 2) + "\n")
 		}
