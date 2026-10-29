@@ -431,6 +431,22 @@ mod with_wasm {
         );
     }
 
+    mod vault_probe {
+        soroban_sdk::contractimport!(
+            file = "../../target/upgrade-probe/wasm32v1-none/release/async_vault.wasm"
+        );
+    }
+
+    /// Uploads the vault's probe build and applies it through the timelock,
+    /// then returns a client at the vault's address.
+    fn upgrade_to_probe<'a>(f: &'a Fixture) -> vault_probe::Client<'a> {
+        let hash = f.e.deployer().upload_contract_wasm(vault_probe::WASM);
+        let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
+        f.advance(MIN_UPGRADE_DELAY);
+        f.vault.apply_change(&id);
+        vault_probe::Client::new(&f.e, &f.vault.address)
+    }
+
     /// What a caller sees when the host refuses a call: every host error is
     /// narrowed to this one.
     fn host_refusal() -> soroban_sdk::Error {
@@ -559,5 +575,58 @@ mod with_wasm {
 
         assert!(target.try_migrate(&f.admin).is_err());
         assert_eq!(target.schema_version(), 2);
+    }
+
+    #[test]
+    fn the_vault_upgrades_under_open_requests_and_a_proposed_wind_down() {
+        let f = setup();
+        let staying = f.holder(500);
+        let exiting = f.holder(300);
+        let priced = f.vault.request_redeem(&exiting, &100);
+        f.fulfill_epoch(wad(2));
+        let depositor = f.investor(400);
+        let open = f.vault.request_deposit(&depositor, &400);
+        let successor = Address::generate(&f.e);
+        let queued = f
+            .vault
+            .propose_change(&VaultChange::Custodian(successor.clone()));
+        f.vault.propose_wind_down();
+        let kept = (
+            f.vault.get_epoch(&open),
+            f.vault.get_deposit_request(&open, &depositor),
+            f.vault.get_epoch(&priced),
+            f.vault.get_redeem_request(&priced, &exiting),
+            f.vault.committed(),
+            f.vault.wind_down(),
+            f.vault.pending_changes(),
+        );
+
+        let probe = upgrade_to_probe(&f);
+        assert!(probe.probe());
+        probe.migrate();
+        assert_eq!(probe.schema_version(), 2);
+        assert_eq!(
+            (
+                f.vault.get_epoch(&open),
+                f.vault.get_deposit_request(&open, &depositor),
+                f.vault.get_epoch(&priced),
+                f.vault.get_redeem_request(&priced, &exiting),
+                f.vault.committed(),
+                f.vault.wind_down(),
+                f.vault.pending_changes(),
+            ),
+            kept
+        );
+
+        assert_eq!(f.vault.claim_redeem(&exiting, &priced), 200);
+        f.vault.apply_change(&queued);
+        assert_eq!(f.vault.custodian(), Some(successor));
+        assert_eq!(f.close_epoch(), open);
+        f.fulfill_epoch_at(open, wad(2));
+        assert_eq!(f.vault.claim_deposit(&depositor, &open), 200);
+        f.vault.activate_wind_down();
+        assert_eq!(f.vault.finalize_wind_down_round(), 1_800);
+        assert_eq!(f.vault.wind_down_supply(), 900);
+        assert_eq!(f.vault.claim_wind_down(&staying), 1_000);
     }
 }

@@ -1302,5 +1302,31 @@ impl TimelockHost for AsyncVault {
     }
 }
 
+/// Stands in for a later vault version in the upgrade tests. Never deployed.
+#[cfg(feature = "upgrade_probe")]
+#[soroban_sdk::contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ProbeError {
+    AlreadyMigrated = 6100,
+}
+
+#[cfg(feature = "upgrade_probe")]
+#[contractimpl]
+impl AsyncVault {
+    #[only_admin]
+    pub fn migrate(e: &Env) {
+        strata_storage::bump_instance(e);
+        if upgradeable::get_schema_version(e) >= 2 {
+            panic_with_error!(e, ProbeError::AlreadyMigrated);
+        }
+        upgradeable::set_schema_version(e, 2);
+    }
+
+    pub fn probe(_e: &Env) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod test;

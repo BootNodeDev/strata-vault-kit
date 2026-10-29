@@ -1217,9 +1217,12 @@ or queued changes.
   for that release.
 - **Tests:** `applying_a_wasm_change_replaces_the_code` and
   `a_migration_refuses_a_second_run` (a stand-in contract with a test-only
-  `migrate`), and `the_token_upgrades_under_live_balances_and_open_requests`
+  `migrate`), `the_token_upgrades_under_live_balances_and_open_requests`
   (a token upgrade that keeps the storage shape, under live balances and open
-  requests), all with `--features upgrade_wasm`, in
+  requests), and `the_vault_upgrades_under_open_requests_and_a_proposed_wind_down`
+  (a vault upgrade that keeps an open epoch, a priced redemption, a queued
+  change and a proposed wind-down, and lets the new code pay, apply, price and
+  wind down from them), all with `--features upgrade_wasm`, in
   [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
   `the_oracle_upgrades_under_a_live_valuation`, also with `upgrade_wasm`, in
   [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs).
