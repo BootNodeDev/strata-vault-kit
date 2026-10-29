@@ -6,8 +6,9 @@ import {
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 import { windDownClaimableKey } from "./useWindDownClaimable"
 
@@ -19,6 +20,7 @@ export type ClaimWindDownStatus = TransactionStatus<{
 export interface UseClaimWindDown {
 	status: ClaimWindDownStatus
 	submit: (arg: undefined) => boolean
+	prepare: (arg: undefined) => Release
 	reset: () => void
 }
 
