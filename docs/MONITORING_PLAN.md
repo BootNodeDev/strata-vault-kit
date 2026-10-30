@@ -308,7 +308,9 @@ The vault's figures, all in asset base units:
   Critical after 24 hours.
 - **Told:** attester, manager.
 - **Response:** anyone can call `fulfill_epoch(id)`, and the operator runs a
-  keeper that does. If it refuses: `FeedNotValid` is V2 or P2;
+  keeper that does. If it refuses: `FeedNotValid` is V2 or P2, or, while
+  `health().feed_valid` is true, a feed that fails to answer (O9);
+  `InvalidSharePrice` is a feed that prices at zero or less (O9);
   `AttestationBeforeClose` means no report was accepted since the seal, so the
   attester posts one; `EnforcedPause` is P1.
 

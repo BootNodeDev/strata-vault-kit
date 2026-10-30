@@ -904,8 +904,9 @@ impl AsyncVault {
     /// * `EpochNotFound` - No such epoch.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
-    /// * `PriceAvailable` - A report accepted after the close is valid, so the
-    ///   price is known, even while the notice runs.
+    /// * `PriceAvailable` - A valid report accepted after the close gives a
+    ///   share price above zero, so the price is known, even while the notice
+    ///   runs.
     /// * `Frozen` - `holder` is frozen.
     /// * `EscrowNotCovered` - The vault's balance cannot cover the refund yet.
     /// * The asset's own error when `holder` cannot receive it.
@@ -936,8 +937,9 @@ impl AsyncVault {
     /// * `EpochNotFound` - No such epoch.
     /// * `RequestNotFound` - `holder` has no redemption in the epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
-    /// * `PriceAvailable` - A report accepted after the close is valid, so the
-    ///   price is known, even while the notice runs.
+    /// * `PriceAvailable` - A valid report accepted after the close gives a
+    ///   share price above zero, so the price is known, even while the notice
+    ///   runs.
     /// * `NotAllowlisted` - `holder` is delisted.
     /// * `Frozen` - `holder` is frozen.
     /// * `HolderNotEligible` - The compliance rules refuse the return.
@@ -1077,7 +1079,7 @@ impl AsyncVault {
     /// * `EpochNotFound` - No such epoch.
     /// * `EpochNotPending` - The epoch is open or already priced.
     /// * `NoticeNotElapsed` - The notice has not run.
-    /// * `FeedNotValid` - The feed is paused or stale.
+    /// * `FeedNotValid` - The feed is paused, stale or fails to answer.
     /// * `AttestationBeforeClose` - The report predates the close.
     /// * `InvalidSharePrice` - The feed returned zero or less.
     /// * `AmountTooLarge` - A total or a conversion would overflow.
