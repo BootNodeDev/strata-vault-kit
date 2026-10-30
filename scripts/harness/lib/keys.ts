@@ -11,6 +11,7 @@ import { join } from "node:path"
 import { Keypair, StrKey } from "@stellar/stellar-sdk"
 
 import { ACCOUNT_NAMES, type AccountName, type Accounts } from "./accounts.js"
+import { type Deployment } from "./deployment.js"
 import { type NetworkName } from "./network.js"
 
 export interface AccountKeys {
@@ -95,4 +96,46 @@ export function ensureKeys(network: NetworkName, dir: string): AccountKeys {
 		ACCOUNT_NAMES.map((name) => [name, Keypair.fromSecret(secretOf[name])]),
 	) as Accounts
 	return { file, accounts, created }
+}
+
+export function readKeys(network: NetworkName, dir: string): Accounts {
+	const file = keysFile(network, dir)
+	if (!existsSync(file)) {
+		throw new Error(
+			`no key file at ${file}: the harness signs with the keys in it. Restore it from your backup, deploy again to create it, or rebuild it from the \`secret\` fields of an older record.`,
+		)
+	}
+	const { secrets } = parse(readFileSync(file, "utf8"), file, headerOf(network))
+	return Object.fromEntries(
+		ACCOUNT_NAMES.map((name) => {
+			const secret = secrets.get(name)
+			if (secret === undefined) {
+				throw new Error(
+					`${file} has no ${variableOf(name)}. Restore it from your backup, or deploy again to create the key.`,
+				)
+			}
+			return [name, Keypair.fromSecret(secret)]
+		}),
+	) as Accounts
+}
+
+// An account an older record does not name is taken from the file unchecked.
+export function keysFor(
+	deployment: Pick<Deployment, "network" | "accounts">,
+	dir: string,
+): Accounts {
+	const { network } = deployment
+	const file = keysFile(network, dir)
+	const keys = readKeys(network, dir)
+	const recorded: Partial<Deployment["accounts"]> = deployment.accounts
+	for (const name of ACCOUNT_NAMES) {
+		const expected = recorded[name]?.public
+		const actual = keys[name].publicKey()
+		if (expected !== undefined && expected !== actual) {
+			throw new Error(
+				`${file}: ${variableOf(name)} is the key of ${actual}, but the deployment on ${network} was made with ${expected}`,
+			)
+		}
+	}
+	return keys
 }

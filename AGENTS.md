@@ -52,7 +52,8 @@ does not carry over. Read it for Soroban and OZ mechanics only.
   the in-memory `Env`. There is no unit-test runner for `app/` or `app-lib/`;
   `e2e/` runs Playwright separately. CI runs `cargo test --locked` on every pull
   request except one that changes only Markdown files outside `docs/evidence/`:
-  that one skips the Rust and local-network jobs.
+  that one skips the Rust and local-network jobs. The secret scan runs on
+  every pull request.
 - **Toolchain:** `nix develop` provides it, or rustup honours
   `rust-toolchain.toml`.
 
@@ -99,10 +100,13 @@ apply as the corresponding code lands here.
   A fresh clone builds `app` with no cargo, no stellar CLI and no local network,
   but needs RPC access to the selected network at build time. A local scaffold
   build writes the same directory from the WASM.
-- When a tool must drive `cargo` directly rather than the CLI, set
-  `SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1`. The build script fails
-  without it and its error names neither the variable nor this way out, so
-  coverage runs and size checks look impossible until you read the SDK source.
+- When `cargo` itself builds a contract for the Wasm target, rather than
+  `stellar contract build` (a size check with
+  `cargo build --release --target wasm32v1-none`, for example), set
+  `SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1`. soroban-sdk's build
+  script stops that build without it, and its error names neither the variable
+  nor this way out. Host builds such as `cargo test` and `cargo clippy` never
+  need it.
 - Change a contract's `__constructor` and you must change its `constructor_args`
   in `environments.toml` in the same commit. Otherwise the scaffold build still
   exits 0 and CI fails minutes later on a client count, naming neither the

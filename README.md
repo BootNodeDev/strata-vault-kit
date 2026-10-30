@@ -138,12 +138,13 @@ the shell — and your editor's language server — automatically.
 ```sh
 rustup show                                # installs the toolchain pinned in rust-toolchain.toml
 rustup target add wasm32v1-none            # Soroban's wasm target
-cargo install --locked stellar-cli@27.0.0  # or: brew install stellar-cli
+cargo install --locked stellar-cli@27.0.0
 stellar contract build && cargo test
 ```
 
 Formatting and secret-scanning run on commit via a `prek` hook — see
-`.pre-commit-config.yaml` and run `prek install` once.
+`.pre-commit-config.yaml` and run `prek install` once. CI also scans every
+pull request's commits with the same gitleaks version.
 
 ### Integration & On-Chain Tests
 
@@ -153,7 +154,8 @@ From a fresh clone to a vault set deployed on a local network. Run these inside
 ```sh
 # A local Stellar network, RPC at http://localhost:8000/rpc
 docker run --rm -d -p 8000:8000 --name stellar-local \
-  stellar/quickstart --local --enable core,rpc --protocol-version 30
+  docker.io/stellar/quickstart:v687-b1580.1-latest@sha256:7711899e9942c60316ebacf8ab901be15bed7a5a31705d847b55375ff3bc8356 \
+  --local --enable core,rpc --protocol-version 30
 
 npm ci                                         # JS dependencies, including the harness
 stellar contract build                         # contract wasms
@@ -162,8 +164,11 @@ HARNESS_NETWORK=local npm run deploy -w scripts/harness
 ```
 
 `HARNESS_NETWORK` defaults to `local`; `testnet` deploys to testnet and rewrites
-the addresses table above. The local deploy funds its accounts from the
-quickstart root key, so it needs no `stellar keys` identity.
+the addresses table above and `[staging.contracts]` in `environments.toml`.
+Commit both files after a testnet deploy: the app's build reads those IDs, so
+until the change is committed it points at the previous contracts. The local
+deploy funds its accounts from the quickstart root key, so it needs no
+`stellar keys` identity.
 
 The first deploy writes a secret key for each harness account to
 `.env.keys.<network>` at the repository root, and later deploys reuse them. Back
@@ -181,11 +186,13 @@ deploying to local (http://localhost:8000/rpc)
 account keys in .env.keys.local (13 new)
 funded 13 accounts; 0 already existed
 asset contract CCW7OKVOXBBBX3YK6O7F6TZPNIFG32OG4UY7R2K6NSWZUI4R75QCEPVT
+returned the deposit asset of 0 accounts to its issuer
 compliance CDPCD2BQQKVQBQFAFI4YBLN3TRX34J5NZUQQMUBGHPYNY64LCEM63DTL
 identity_verifier CC4SRUIMKOBZSEO2GKGVQMDWPWCBJBBIMYYE7BBCUEZE6VMD3SFQDAMW
 share_token CDC7SRTDZIMJSLC5AONUD3FIFYZGMFOHRAS7LLYV2ATJRT7RMTMQO2DG
 nav_oracle CCUUBP3RGOIZZL4DUGRL4FBOSQJZKBPNQ7VUWIN6UOOYBJYYKGNT5E52
 async_vault CB2KVM2WHLXDZRHGCYPTGE7PZM6OORXCNVBUMC3L7GY5KX4BA6NMADXE
+commit <sha>
 clients generated
 vault holds share_token manager role
 share_token bound to the vault, setup finished
@@ -193,6 +200,7 @@ vault is allowlisted
 share_token bound to compliance
 compliance bound to the vault, setup finished
 nav_oracle bound to the vault, setup finished
+vault notice set to 10 seconds
 vault setup finished
 health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
 wrote deployed.local.json
@@ -209,12 +217,16 @@ CARGO_TARGET_DIR=target/short-wind-down stellar contract build --package async-v
 npm run test:wind-down -w scripts/harness
 ```
 
-Deploy afresh before each run of the suites. The guards leave the vault's
-notice at 10 seconds, and lowering it back waits for the timelock, so a second
-run against the same deployment can fail wherever it prices an epoch right
-after closing it. `test:wind-down` ignores `deployed.local.json`: it deploys
-its own throwaway vault set, built from the `short_wind_down` wasm above, so
-it can reach an active wind-down without the real seven-day minimum.
+Deploy afresh before each run of the suites. The deploy sets the vault's
+notice to twice the oracle cooldown (10 seconds on the local network, 120 on
+testnet), and the suites wait out the notice before they price an epoch.
+`test:wind-down` ignores `deployed.local.json`: it deploys its own throwaway
+vault set, built from the `short_wind_down` wasm above, so it can reach an
+active wind-down without the real seven-day minimum.
+
+Each deploy first returns any deposit asset the harness accounts hold to its
+issuer, so every holder starts a new set at zero. Deploy again and the suites
+run again on the same network.
 
 ### Keeping a deployment alive
 
