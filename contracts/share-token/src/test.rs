@@ -16,6 +16,14 @@ use crate::{ShareToken, ShareTokenClient, ShareTokenError};
 use compliance::{Compliance, ComplianceClient};
 use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
 
+/// Asserts a call was refused with exactly this error.
+fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
+    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+    expected: ShareTokenError,
+) {
+    assert_eq!(result, Err(Ok(expected.into())));
+}
+
 #[test]
 fn manager_mints_to_allowlisted_account() {
     let e = Env::default();
@@ -133,8 +141,11 @@ fn unauthorized_caller_cannot_pause_or_unpause() {
     let stranger = Address::generate(&e);
 
     // Stranger and manager holding no admin role cannot pause.
-    assert!(f.token.try_pause(&stranger).is_err());
-    assert!(f.token.try_pause(&f.manager).is_err());
+    refused(f.token.try_pause(&stranger), ShareTokenError::AdminRequired);
+    refused(
+        f.token.try_pause(&f.manager),
+        ShareTokenError::AdminRequired,
+    );
 
     e.mock_all_auths();
     f.token.pause(&f.admin);
@@ -142,8 +153,14 @@ fn unauthorized_caller_cannot_pause_or_unpause() {
 
     // Stranger cannot unpause.
     e.set_auths(&[]);
-    assert!(f.token.try_unpause(&stranger).is_err());
-    assert!(f.token.try_unpause(&f.manager).is_err());
+    refused(
+        f.token.try_unpause(&stranger),
+        ShareTokenError::AdminRequired,
+    );
+    refused(
+        f.token.try_unpause(&f.manager),
+        ShareTokenError::AdminRequired,
+    );
 
     e.mock_all_auths();
     f.token.unpause(&f.admin);
@@ -159,8 +176,8 @@ fn unauthorized_caller_cannot_mint() {
     let receiver = Address::generate(&e);
 
     // Only manager holds the mint role; stranger and admin are refused.
-    assert!(f.token.try_mint(&receiver, &100, &stranger).is_err());
-    assert!(f.token.try_mint(&receiver, &100, &f.admin).is_err());
+    assert_unauthorized(f.token.try_mint(&receiver, &100, &stranger));
+    assert_unauthorized(f.token.try_mint(&receiver, &100, &f.admin));
 }
 
 #[test]
@@ -171,8 +188,8 @@ fn unauthorized_caller_cannot_burn() {
     let stranger = Address::generate(&e);
     let user = Address::generate(&e);
 
-    assert!(f.token.try_burn(&user, &100, &stranger).is_err());
-    assert!(f.token.try_burn(&user, &100, &f.admin).is_err());
+    assert_unauthorized(f.token.try_burn(&user, &100, &stranger));
+    assert_unauthorized(f.token.try_burn(&user, &100, &f.admin));
 }
 
 #[test]
@@ -184,14 +201,8 @@ fn unauthorized_caller_cannot_forced_transfer() {
     let from = Address::generate(&e);
     let to = Address::generate(&e);
 
-    assert!(f
-        .token
-        .try_forced_transfer(&from, &to, &100, &stranger)
-        .is_err());
-    assert!(f
-        .token
-        .try_forced_transfer(&from, &to, &100, &f.admin)
-        .is_err());
+    assert_unauthorized(f.token.try_forced_transfer(&from, &to, &100, &stranger));
+    assert_unauthorized(f.token.try_forced_transfer(&from, &to, &100, &f.admin));
 }
 
 #[test]
@@ -203,22 +214,10 @@ fn unauthorized_caller_cannot_freeze_or_recover() {
     let user = Address::generate(&e);
     let new_user = Address::generate(&e);
 
-    assert!(f
-        .token
-        .try_set_address_frozen(&user, &true, &stranger)
-        .is_err());
-    assert!(f
-        .token
-        .try_freeze_partial_tokens(&user, &100, &stranger)
-        .is_err());
-    assert!(f
-        .token
-        .try_unfreeze_partial_tokens(&user, &100, &stranger)
-        .is_err());
-    assert!(f
-        .token
-        .try_recover_balance(&user, &new_user, &stranger)
-        .is_err());
+    assert_unauthorized(f.token.try_set_address_frozen(&user, &true, &stranger));
+    assert_unauthorized(f.token.try_freeze_partial_tokens(&user, &100, &stranger));
+    assert_unauthorized(f.token.try_unfreeze_partial_tokens(&user, &100, &stranger));
+    assert_unauthorized(f.token.try_recover_balance(&user, &new_user, &stranger));
 }
 
 #[test]
@@ -230,12 +229,18 @@ fn unauthorized_caller_cannot_set_compliance_or_verifier() {
     let new_verifier = Address::generate(&e);
 
     // Without the admin's signature, nobody swaps the rules.
-    assert!(f.token.try_set_compliance(&new_comp, &stranger).is_err());
-    assert!(f
-        .token
-        .try_set_identity_verifier(&new_verifier, &stranger)
-        .is_err());
-    assert!(f.token.try_set_compliance(&new_comp, &f.manager).is_err());
+    refused(
+        f.token.try_set_compliance(&new_comp, &stranger),
+        ShareTokenError::AdminRequired,
+    );
+    refused(
+        f.token.try_set_identity_verifier(&new_verifier, &stranger),
+        ShareTokenError::AdminRequired,
+    );
+    refused(
+        f.token.try_set_compliance(&new_comp, &f.manager),
+        ShareTokenError::AdminRequired,
+    );
 }
 
 #[test]
@@ -244,7 +249,7 @@ fn the_admin_cannot_renounce_itself_out_of_the_token() {
     e.mock_all_auths();
     let f = setup_fixture(&e);
 
-    assert!(f.token.try_renounce_admin().is_err());
+    refused(f.token.try_renounce_admin(), ShareTokenError::AdminRequired);
 
     // Still governed: the admin-only paths keep working.
     f.token.pause(&f.admin);
@@ -291,7 +296,7 @@ fn admin_handover_in_two_steps_still_works() {
 
     // The old admin no longer administers; the new one does.
     e.set_auths(&[]);
-    assert!(f.token.try_pause(&f.admin).is_err());
+    refused(f.token.try_pause(&f.admin), ShareTokenError::AdminRequired);
     e.mock_all_auths();
     f.token.pause(&new_admin);
     assert!(f.token.paused());
@@ -396,15 +401,16 @@ fn the_compliance_authority_cannot_mint_burn_or_swap_the_rules() {
         }]);
     };
     signed_by_compliance("set_compliance", &other);
-    assert!(f
-        .token
-        .try_set_compliance(&other, &f.compliance_authority)
-        .is_err());
+    refused(
+        f.token.try_set_compliance(&other, &f.compliance_authority),
+        ShareTokenError::AdminRequired,
+    );
     signed_by_compliance("set_identity_verifier", &other);
-    assert!(f
-        .token
-        .try_set_identity_verifier(&other, &f.compliance_authority)
-        .is_err());
+    refused(
+        f.token
+            .try_set_identity_verifier(&other, &f.compliance_authority),
+        ShareTokenError::AdminRequired,
+    );
 }
 
 #[test]

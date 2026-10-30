@@ -1,5 +1,6 @@
 use soroban_sdk::{testutils::Events as _, Event as _, IntoVal};
-use stellar_access::role_transfer::RoleTransferError;
+use stellar_access::{access_control::AccessControlError, role_transfer::RoleTransferError};
+use stellar_contract_utils::pausable::PausableError;
 
 use super::*;
 use crate::{ChangeApplied, CustodianSet, ADMIN_ACCEPT_LEDGERS};
@@ -175,7 +176,10 @@ fn a_manager_revoke_lands_through_the_timelock() {
     );
 
     assert_eq!(f.vault.manager(), None);
-    assert!(f.vault.try_close_epoch(&f.manager).is_err());
+    assert_eq!(
+        f.vault.try_close_epoch(&f.manager),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
 }
 
 #[test]
@@ -196,14 +200,16 @@ fn only_the_admin_revokes_a_role() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    assert!(f
-        .vault
-        .try_revoke_role(&f.treasury, &symbol_short!("treasury"), &stranger)
-        .is_err());
-    assert!(f
-        .vault
-        .try_revoke_role(&f.treasury, &symbol_short!("treasury"), &f.guardian)
-        .is_err());
+    assert_eq!(
+        f.vault
+            .try_revoke_role(&f.treasury, &symbol_short!("treasury"), &stranger),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.vault
+            .try_revoke_role(&f.treasury, &symbol_short!("treasury"), &f.guardian),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
     assert_eq!(f.vault.treasury(), Some(f.treasury.clone()));
 }
 
@@ -232,7 +238,10 @@ fn an_admin_hand_over_waits_but_cancelling_one_does_not() {
     land(&f, VaultChange::Admin(next.clone()));
     f.vault.transfer_admin_role(&next, &0);
 
-    assert!(f.vault.try_accept_admin_transfer().is_err());
+    assert_eq!(
+        f.vault.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
     assert_eq!(f.vault.governance(), Some(f.admin.clone()));
 }
 
@@ -328,7 +337,10 @@ fn a_pending_role_change_lands_after_a_pause() {
     f.vault.pause(&f.guardian);
     f.advance(MIN_UPGRADE_DELAY);
 
-    assert!(f.vault.try_apply_change(&id).is_err());
+    assert_eq!(
+        f.vault.try_apply_change(&id),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
 
     f.vault.unpause(&f.admin);
     f.advance(MIN_UPGRADE_DELAY);

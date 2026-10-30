@@ -311,6 +311,22 @@ fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
     assert_eq!(result, Err(Ok(expected.into())));
 }
 
+/// Asserts a call failed for lack of a valid signature, or because the callee
+/// answers no interface the host can invoke: either way, the host's own
+/// refusal of the invocation, not one of the token's named errors.
+fn missing_auth<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
+    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+) {
+    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_type_and_code(
+            ScErrorType::Context,
+            ScErrorCode::InvalidAction
+        )))
+    );
+}
+
 fn manager() -> Symbol {
     symbol_short!("manager")
 }
@@ -352,7 +368,7 @@ fn a_second_vault_cannot_be_bound() {
 fn an_address_that_reports_no_clock_cannot_be_bound() {
     let f = setup();
 
-    assert!(f.token.try_bind_vault(&Address::generate(&f.e)).is_err());
+    missing_auth(f.token.try_bind_vault(&Address::generate(&f.e)));
     assert_eq!(f.token.vault(), None);
 }
 
@@ -366,13 +382,13 @@ fn only_the_admin_binds_and_finishes() {
         "bind_vault",
         (f.vault.address.clone(),).into_val(&f.e),
     );
-    assert!(f.token.try_bind_vault(&f.vault.address).is_err());
+    missing_auth(f.token.try_bind_vault(&f.vault.address));
     assert_eq!(f.token.vault(), None);
 
     f.e.mock_all_auths();
     f.token.bind_vault(&f.vault.address);
     f.sign_only_as(&stranger, "finish_setup", soroban_sdk::Vec::new(&f.e));
-    assert!(f.token.try_finish_setup().is_err());
+    missing_auth(f.token.try_finish_setup());
     assert!(f.token.setup_open());
 }
 
@@ -459,7 +475,10 @@ fn an_admin_hand_over_waits_but_cancelling_one_does_not() {
     f.token.apply_change(&id);
     f.token.transfer_admin_role(&next, &0);
 
-    assert!(f.token.try_accept_admin_transfer().is_err());
+    assert_eq!(
+        f.token.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
     assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
 }
 
@@ -478,7 +497,10 @@ fn setup_cannot_finish_while_a_hand_over_is_pending() {
 
     f.token.transfer_admin_role(&next, &0);
     f.token.finish_setup();
-    assert!(f.token.try_accept_admin_transfer().is_err());
+    assert_eq!(
+        f.token.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
     assert_eq!(f.token.get_admin(), Some(f.admin.clone()));
 }
 
@@ -585,6 +607,32 @@ fn a_vault_pause_moves_the_eta_and_holds_the_change() {
     );
     f.advance(3 * DAY_DURATION);
     f.token.apply_change(&id);
+}
+
+#[test]
+fn the_proposal_event_carries_the_eta_pending_changes_reports_then() {
+    let f = setup();
+    f.finish();
+    f.clock(|c| {
+        c.paused = true;
+        c.paused_secs = DAY_DURATION;
+    });
+
+    let change = TokenChange::GrantRole(manager(), Address::generate(&f.e));
+    let eta = f.e.ledger().timestamp() + MIN_DELAY;
+    let id = f.token.propose_change(&change);
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.token.address),
+        [ChangeProposed { id, change, eta }.to_xdr(&f.e, &f.token.address)]
+    );
+    assert_eq!(f.token.pending_changes().get(0).unwrap().eta, eta);
+
+    f.clock(|c| c.paused_secs = 2 * DAY_DURATION);
+    assert_eq!(
+        f.token.pending_changes().get(0).unwrap().eta,
+        eta + DAY_DURATION
+    );
 }
 
 #[test]
@@ -730,11 +778,11 @@ fn only_the_admin_proposes_cancels_and_applies() {
         "propose_change",
         (change.clone(),).into_val(&f.e),
     );
-    assert!(f.token.try_propose_change(&change).is_err());
+    missing_auth(f.token.try_propose_change(&change));
     f.sign_only_as(&stranger, "cancel_change", (id,).into_val(&f.e));
-    assert!(f.token.try_cancel_change(&id).is_err());
+    missing_auth(f.token.try_cancel_change(&id));
     f.sign_only_as(&stranger, "apply_change", (id,).into_val(&f.e));
-    assert!(f.token.try_apply_change(&id).is_err());
+    missing_auth(f.token.try_apply_change(&id));
     assert_eq!(f.token.pending_changes().len(), 1);
 }
 

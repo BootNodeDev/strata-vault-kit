@@ -74,11 +74,12 @@ use state::FIRST_EPOCH;
 
 pub use error::VaultError;
 pub use event::{
-    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
-    DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
-    EpochReconciled, Funded, MinEpochDurationSet, NoticeSet, RedeemClaimed, RedeemRequested,
-    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
-    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
+    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCancelled,
+    DepositCapUpdated, DepositClaimed, DepositConvertedToExit, DepositRefunded, DepositRequested,
+    EpochClosed, EpochFulfilled, EpochReconciled, Funded, MinEpochDurationSet, NoticeSet,
+    RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered, SetupFinished,
+    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
+    WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -515,7 +516,8 @@ impl AsyncVault {
     /// * `Frozen` - `holder` is frozen.
     /// * `AmountTooLarge` - A total would overflow.
     /// * `AccountingMismatch` - A payout would go below what was already paid.
-    /// * `NoEntitlement` - Nothing to surrender and nothing owed.
+    /// * `NoEntitlement` - Nothing to surrender and nothing owed, or
+    ///   `holder` is the vault.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -531,8 +533,8 @@ impl AsyncVault {
     }
 
     /// What `claim_wind_down` would pay `holder` now, in asset base units:
-    /// zero before the first round and for a frozen holder; fails where the
-    /// claim fails.
+    /// zero before the first round, for a frozen holder and for the vault;
+    /// fails where the claim fails.
     ///
     /// # Arguments
     ///
@@ -571,8 +573,8 @@ impl AsyncVault {
 
     /// Ends the window in which admin changes are instant. Needs every wiring
     /// check `health()` reports, no shares outstanding, the vault's own books
-    /// empty and no admin hand-over pending. Deposits open from here on, and
-    /// it never reopens.
+    /// empty and no admin hand-over pending. Deposits open once the feed
+    /// holds a valid report, and setup never reopens.
     ///
     /// # Errors
     ///
@@ -630,7 +632,8 @@ impl AsyncVault {
     ///
     /// # Events
     ///
-    /// * `ChangeProposed`, with its `eta` in seconds.
+    /// * `ChangeProposed`, with its `eta` in seconds; time the vault spends
+    ///   paused from now on moves it later.
     ///
     /// # Authorization
     ///
@@ -865,8 +868,8 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
-    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
+    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `AlreadyClaimed` - The deposit was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The free reserve cannot cover a refund yet.
@@ -878,7 +881,7 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
-    ///   `DepositCancelled`.
+    ///   `DepositRefunded`.
     /// * `EpochReconciled` once the epoch's last request settles.
     ///
     /// # Authorization
@@ -900,10 +903,11 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
-    /// * `AlreadyPriced` - The epoch is priced; claim instead.
-    /// * `PriceAvailable` - A report accepted after the close is valid, so the
-    ///   price is known, even while the notice runs.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
+    /// * `AlreadyPriced` - The epoch is priced; claim instead.
+    /// * `PriceAvailable` - A valid report accepted after the close gives a
+    ///   share price above zero, so the price is known, even while the notice
+    ///   runs.
     /// * `Frozen` - `holder` is frozen.
     /// * `EscrowNotCovered` - The vault's balance cannot cover the refund yet.
     /// * The asset's own error when `holder` cannot receive it.
@@ -932,10 +936,11 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
-    /// * `AlreadyPriced` - The epoch is priced; claim instead.
-    /// * `PriceAvailable` - A report accepted after the close is valid, so the
-    ///   price is known, even while the notice runs.
     /// * `RequestNotFound` - `holder` has no redemption in the epoch.
+    /// * `AlreadyPriced` - The epoch is priced; claim instead.
+    /// * `PriceAvailable` - A valid report accepted after the close gives a
+    ///   share price above zero, so the price is known, even while the notice
+    ///   runs.
     /// * `NotAllowlisted` - `holder` is delisted.
     /// * `Frozen` - `holder` is frozen.
     /// * `HolderNotEligible` - The compliance rules refuse the return.
@@ -1005,8 +1010,8 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
-    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `RequestNotFound` - `holder` has no redemption in the epoch.
+    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `AlreadyClaimed` - The redemption was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
@@ -1043,6 +1048,7 @@ impl AsyncVault {
     ///   epoch has not run the minimum.
     /// * `WindDownActive` - The vault is winding down.
     /// * `SetupOpen` - Setup has not finished.
+    /// * `AmountTooLarge` - The notice would end past the largest ledger time.
     ///
     /// # Events
     ///
@@ -1074,7 +1080,7 @@ impl AsyncVault {
     /// * `EpochNotFound` - No such epoch.
     /// * `EpochNotPending` - The epoch is open or already priced.
     /// * `NoticeNotElapsed` - The notice has not run.
-    /// * `FeedNotValid` - The feed is paused or stale.
+    /// * `FeedNotValid` - The feed is paused, stale or fails to answer.
     /// * `AttestationBeforeClose` - The report predates the close.
     /// * `InvalidSharePrice` - The feed returned zero or less.
     /// * `AmountTooLarge` - A total or a conversion would overflow.
@@ -1298,6 +1304,32 @@ impl ClockSource for AsyncVault {
 impl TimelockHost for AsyncVault {
     fn clock(e: &Env) -> Result<Clock, Refusal> {
         Ok(governance::clock(e))
+    }
+}
+
+/// Stands in for a later vault version in the upgrade tests. Never deployed.
+#[cfg(feature = "upgrade_probe")]
+#[soroban_sdk::contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ProbeError {
+    AlreadyMigrated = 6100,
+}
+
+#[cfg(feature = "upgrade_probe")]
+#[contractimpl]
+impl AsyncVault {
+    #[only_admin]
+    pub fn migrate(e: &Env) {
+        strata_storage::bump_instance(e);
+        if upgradeable::get_schema_version(e) >= 2 {
+            panic_with_error!(e, ProbeError::AlreadyMigrated);
+        }
+        upgradeable::set_schema_version(e, 2);
+    }
+
+    pub fn probe(_e: &Env) -> bool {
+        true
     }
 }
 

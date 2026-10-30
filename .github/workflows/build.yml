@@ -66,6 +66,24 @@ jobs:
       - run: npm run format:check
       - run: npm run test
 
+  secret-scan:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Every commit of the pull request, so each one is scanned.
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: scripts/ci/install-tools.sh gitleaks
+      # Per commit, so a key added and later removed in the same pull request still fails.
+      - name: Scan the pull request's commits for secrets
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: gitleaks git --redact --no-banner --log-opts="$BASE..$HEAD" .
+
   rust-tests:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -76,11 +94,9 @@ jobs:
           persist-credentials: false
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          # A cached CLI would outlive a version bump in the install steps.
           cache-bin: "false"
           workspaces: |
             . -> target
-            fixtures/upgrade-target -> target
       # Before the CLI install so a broken contract test fails without
       # waiting on it. rustup picks the toolchain from rust-toolchain.toml.
       - name: Run the contract unit tests
@@ -88,23 +104,21 @@ jobs:
       - run:
           sudo apt-get update && sudo apt-get install -y libudev-dev
           libdbus-1-dev pkg-config
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@e00d2c94cc0067b77737821097a62d91c0301baa # v1.21.1
-      - name: Install stellar CLI
-        run: |
-          if ! command -v stellar &> /dev/null; then
-            cargo binstall --locked stellar-cli@27.0.0
-          fi
-      # The upgrade tests run built Wasm, so they need the fixture, both
-      # contracts and their probe builds first (docs/TESTING.md).
+      - name: Install the stellar CLI
+        run: scripts/ci/install-tools.sh stellar
+      # The upgrade tests run built Wasm, so they need both contracts and
+      # their probe builds first (docs/TESTING.md).
       - name: Run the Wasm upgrade tests
         run: |
-          stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
+          # Setting pipefail so a failing test run is not hidden by `tee`
+          set -o pipefail
           stellar contract build --package share-token
           stellar contract build --package nav-oracle
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
-          SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1 cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package async-vault --features upgrade_probe
+          cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm 2>&1 | tee upgrade-tests.log
+          scripts/ci/check-tests-ran.sh upgrade-tests.log test::upgrade::with_wasm test::governance::with_wasm
 
   network:
     needs: changes
@@ -140,33 +154,23 @@ jobs:
       - run: npm ci
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          # A cached CLI would outlive a version bump in the install steps.
           cache-bin: "false"
       - run:
           sudo apt-get update && sudo apt-get install -y libudev-dev
           libdbus-1-dev pkg-config
-      # binstall fetches a prebuilt stellar-scaffold-cli instead of compiling it
-      - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@e00d2c94cc0067b77737821097a62d91c0301baa # v1.21.1
-      - name: Install stellar-scaffold
-        run: |
-          if ! command -v stellar-scaffold &> /dev/null; then
-            echo "stellar-scaffold not found, installing..."
-            # --locked so the source-build fallback uses the CLI's published
-            # Cargo.lock instead of resolving fresh soroban deps whose MSRV
-            # may outrun the pinned toolchain.
-            cargo binstall --locked stellar-scaffold-cli@0.0.27
-          else
-            echo "stellar-scaffold already installed. Clear cache to force reinstall."
-          fi
-      - name: Install stellar CLI
-        run: |
-          if ! command -v stellar &> /dev/null; then
-            cargo binstall --locked stellar-cli@27.0.0
-          fi
+      - name: Install the stellar CLI and stellar-scaffold
+        run: scripts/ci/install-tools.sh stellar stellar-scaffold
       # The same cargo build Scaffold runs, so its build below reuses the Wasm.
       - name: Build the contracts
         run: stellar contract build
+      # A build path in the Wasm would tie its hash to the checkout location.
+      - name: Print the Wasm hashes and check no build path is embedded
+        run: |
+          sha256sum target/wasm32v1-none/release/*.wasm
+          if grep -l -a -E '/home/runner|/Users/|\.cargo/registry' target/wasm32v1-none/release/*.wasm; then
+            echo "These Wasm files embed a build path, so their hashes depend on where the repository is checked out."
+            exit 1
+          fi
       - name: Build the vault without the wind-down minimum
         run:
           CARGO_TARGET_DIR=target/short-wind-down stellar contract build
@@ -337,10 +341,10 @@ jobs:
           arguments: --locked
           command: check
 
-  # The check branch protection requires; Rust and network may skip only for docs.
+  # The check branch protection requires. Rust and network skip only for docs; the secret scan runs on pull requests.
   build:
     if: always()
-    needs: [changes, js, rust-tests, network]
+    needs: [changes, js, secret-scan, rust-tests, rust-checks, network]
     runs-on: ubuntu-latest
     steps:
       - name: Check the results
@@ -348,11 +352,15 @@ jobs:
           CODE: ${{ needs.changes.outputs.code }}
           CHANGES: ${{ needs.changes.result }}
           JS: ${{ needs.js.result }}
+          EVENT: ${{ github.event_name }}
+          SECRET_SCAN: ${{ needs.secret-scan.result }}
           RUST_TESTS: ${{ needs.rust-tests.result }}
+          RUST_CHECKS: ${{ needs.rust-checks.result }}
           NETWORK: ${{ needs.network.result }}
         run: |
-          echo "changes=$CHANGES js=$JS rust-tests=$RUST_TESTS network=$NETWORK code=$CODE"
+          echo "changes=$CHANGES js=$JS event=$EVENT secret-scan=$SECRET_SCAN rust-tests=$RUST_TESTS rust-checks=$RUST_CHECKS network=$NETWORK code=$CODE"
           [ "$CHANGES" = success ] && [ "$JS" = success ] || exit 1
-          if [ "$CODE" = true ]; then
-            [ "$RUST_TESTS" = success ] && [ "$NETWORK" = success ] || exit 1
+          if [ "$EVENT" = pull_request ]; then [ "$SECRET_SCAN" = success ] || exit 1; fi
+          if [ "$CODE" != false ]; then
+            [ "$RUST_TESTS" = success ] && [ "$RUST_CHECKS" = success ] && [ "$NETWORK" = success ] || exit 1
           fi
