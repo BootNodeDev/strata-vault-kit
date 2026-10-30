@@ -1391,8 +1391,18 @@ const cancelHandoverCopy =
 		doneBody: `${value} can no longer accept.`,
 	})
 
-const acceptAdminCopy = (refuser: AdminCopy["refuser"]) => (): AdminCopy => ({
+const ACCEPT_WIND_DOWN_CODES: Record<TimelockRefuser, number> = {
+	vault: 6046,
+	oracle: 3018,
+	"share token": 7008,
+}
+
+const acceptAdminCopy = (refuser: TimelockRefuser) => (): AdminCopy => ({
 	refuser,
+	reasons: {
+		[ACCEPT_WIND_DOWN_CODES[refuser]]:
+			"The vault is winding down, so the admin role can no longer change hands.",
+	},
 	verb: "accept the admin role",
 	signing: `Signing makes this wallet the ${refuser} admin.`,
 	done: "Admin accepted",

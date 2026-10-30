@@ -132,6 +132,7 @@ const handovers = (pending: PendingTransfer | null = null): Handovers => ({
 const upgrades = (
 	pending: PendingChange[] = [],
 	setupOpen = true,
+	phase: "proposed" | "active" = "proposed",
 ): Upgrades => ({
 	status: "ready",
 	pending,
@@ -139,7 +140,7 @@ const upgrades = (
 	delay: 7n * 86_400n,
 	notice: 86_400n,
 	windDown: {
-		phase: "proposed",
+		phase,
 		activeAt: 1_700_100_000n,
 		round: 0,
 		delay: 86_400n,
@@ -461,6 +462,28 @@ describe("GovernanceSection", () => {
 		expect(useGovernanceStateMock).toHaveBeenCalledWith({
 			contracts: { vault: VAULT, oracle: "CORACLE", token: "CTOKEN" },
 		})
+	})
+
+	it("blocks accepting the admin while the vault winds down", () => {
+		const windingDown = upgrades([], true, "active")
+		useGovernanceStateMock.mockReturnValue({
+			handovers: handovers({
+				address: WALLET,
+				liveUntilLedger: 5_000,
+				expired: false,
+			}),
+			upgrades: queues(windingDown, windingDown, windingDown),
+		})
+		renderSection([grantOf("oracle pending admin")])
+
+		expand("Accept oracle admin")
+
+		expect(
+			screen
+				.getAllByRole("listitem")
+				.some((item) => item.textContent === "Fail: Wind-down not active"),
+		).toBe(true)
+		expect(submit("Accept oracle admin").disabled).toBe(true)
 	})
 
 	it("proposes a vault role grant once setup is closed", () => {
