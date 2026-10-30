@@ -219,18 +219,26 @@ it can reach an active wind-down without the real seven-day minimum.
 ### Keeping a deployment alive
 
 Every contract extends its own storage when it is called, but a deployment
-nobody calls archives after 30 days. Restore and extend all of it with:
+nobody calls archives after 30 days. Keep the contracts callable with:
 
 ```sh
 STELLAR_ACCOUNT=<identity or secret> npm run extend -w scripts/harness
 ```
 
-It reads the testnet contracts from `environments.toml`, restores any
-archived instance or Wasm, and extends each by 30 days. Any funded account
-pays, since extending needs no authority. Use `--env <name>` for another
-environment, or `--config <record>` for a deployment record. The
+It reads the testnet contracts from `environments.toml` and covers three kinds
+of entry: each contract instance, the Wasm it runs and each pending timelock
+change. It restores any of them that has archived, then extends each by 30
+days. Any funded account pays, since extending needs no authority. Use
+`--env <name>` for another environment, or `--config <record>` for a
+deployment record.
+
+It extends nothing else. Other entries, such as epochs, requests, balances and
+roles, still archive when nobody uses them. Nothing in them is lost: the next
+call that needs an archived entry restores it, and the account that sends that
+call pays the restore fee. For a holder's balance or request, that is usually
+the holder, on their next call. The
 [TTL policy](./docs/kit-spec.md#5-storage-lifetime-ttl-policy) says what each
-contract extends on its own.
+contract extends on its own and how a restore works.
 
 With `--config`, it uses the network the record names (`local` or `testnet`)
 unless `--env` names another environment, and it prints the network and RPC it
