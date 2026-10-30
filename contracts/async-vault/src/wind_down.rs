@@ -216,6 +216,9 @@ pub(crate) fn claimable(e: &Env, holder: &Address) -> i128 {
     if lock_policy::standing(e, holder) == Standing::Frozen {
         return 0;
     }
+    if *holder == e.current_contract_address() {
+        return 0;
+    }
 
     settle(e, holder, lock_policy::free_shares(e, holder)).1
 }
@@ -241,6 +244,7 @@ pub(crate) fn claim(e: &Env, holder: &Address) -> i128 {
     holder.require_auth();
     guards::distribution_started(e);
     guards::allowed_to(e, Exit::ClaimWindDown, holder);
+    guards::holder_not_the_vault(e, holder);
 
     let vault = e.current_contract_address();
     let share_token = state::get_addr(e, &DataKey::ShareToken);

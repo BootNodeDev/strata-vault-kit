@@ -57,6 +57,20 @@ describe("describePending", () => {
 		})
 	})
 
+	it("maps the minimum epoch duration setter", () => {
+		expect(
+			describePending(
+				pending(addresses.vault, "set_min_epoch_duration", [604_800n]),
+				addresses,
+			),
+		).toEqual({
+			contract: "Vault",
+			action: "set-min-epoch-duration",
+			label: "Set the minimum epoch duration",
+			args: [{ label: "Minimum epoch duration", value: "7d" }],
+		})
+	})
+
 	it("shows an absent deposit cap as no cap", () => {
 		const { args } = describePending(
 			pending(addresses.vault, "set_deposit_cap", [null]),
@@ -313,6 +327,11 @@ describe("describePending", () => {
 			["WindDownDelay", 691_200n],
 			"propose-wind-down-delay",
 			[{ label: "Wind-down delay", value: "8d" }],
+		],
+		[
+			["MinEpochDuration", 604_800n],
+			"propose-min-epoch-duration",
+			[{ label: "Minimum epoch duration", value: "7d" }],
 		],
 		[
 			["Upgrade", Buffer.from("abcd", "hex")],

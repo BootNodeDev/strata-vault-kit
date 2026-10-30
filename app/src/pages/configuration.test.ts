@@ -37,6 +37,7 @@ const ready = (
 	custodian: { kind: "set", address: CUSTODIAN },
 	notice: DAY,
 	windDownDelay: 7n * DAY,
+	minEpochDuration: { kind: "unset" },
 	upgradeDelay: 3n * DAY,
 	setupOpen: false,
 	tokenSetupOpen: true,
@@ -90,6 +91,7 @@ describe("toConfigurationActions", () => {
 				"propose-custodian",
 				"set-notice",
 				"set-wind-down-delay",
+				"propose-min-epoch-duration",
 			],
 		],
 		[oracleAdmin, ["set-oracle-config"]],
@@ -355,6 +357,73 @@ describe("toConfigurationActions", () => {
 		expect(short.enabled).toBe(false)
 		expect(raised.enabled).toBe(true)
 	})
+
+	it("sets the minimum epoch duration at once while setup is open", () => {
+		const duration = find(
+			"set-min-epoch-duration",
+			[governance],
+			{ minEpochDuration: "7d" },
+			ready({ setupOpen: true }),
+		)
+
+		expect(duration).toMatchObject({
+			slot: "set-min-epoch-duration",
+			label: "Set the minimum epoch duration",
+			arg: 7n * DAY,
+			next: "7d",
+			enabled: true,
+			outcome: "Anyone may seal an epoch once it has been open this long.",
+		})
+		expect(duration.fields?.[0]?.current).toBe("—")
+		expect(duration.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("proposes the minimum epoch duration after setup, even when lowering it", () => {
+		const state = ready({ minEpochDuration: { kind: "set", secs: 7n * DAY } })
+		const raised = find(
+			"propose-min-epoch-duration",
+			[governance],
+			{ minEpochDuration: "14d" },
+			state,
+		)
+		const lowered = find(
+			"propose-min-epoch-duration",
+			[governance],
+			{ minEpochDuration: "2d" },
+			state,
+		)
+
+		expect(raised.enabled).toBe(true)
+		expect(raised.arg).toBe(14n * DAY)
+		expect(raised.fields?.[0]?.current).toBe("7d")
+		expect(raised.conditions).toContainEqual({
+			label: "Waits for the timelock",
+			met: true,
+			detail: "3d",
+		})
+		expect(lowered.enabled).toBe(true)
+	})
+
+	it.each<[string, string, boolean]>([
+		["23h 59m 59s", "Minimum epoch duration ≥ 1d", false],
+		["1d", "Minimum epoch duration ≥ 1d", true],
+		["30d", "Minimum epoch duration ≤ 30d", true],
+		["30d 1s", "Minimum epoch duration ≤ 30d", false],
+	])(
+		"holds a minimum epoch duration of %s to its bounds",
+		(text, label, met) => {
+			const duration = find("propose-min-epoch-duration", [governance], {
+				minEpochDuration: text,
+			})
+
+			expect(condition(duration, label)).toBe(met)
+			expect(duration.enabled).toBe(met)
+		},
+	)
 
 	it("keeps the deposit cap direct after setup", () => {
 		const cap = find("set-deposit-cap", [governance], { depositCap: "5" })

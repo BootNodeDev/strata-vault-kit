@@ -141,6 +141,8 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 		awaiting: sealed,
 		awaitingKnown: true,
 		noticeSeconds: 3_600n,
+		minDuration: { kind: "unset" },
+		openedAt: 1_700_000_000n,
 	},
 	oracle: {
 		state: "valid",

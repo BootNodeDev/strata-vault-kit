@@ -5,6 +5,7 @@ import {
 	useProposeCompliance,
 	useProposeCustodian,
 	useProposeIdentityVerifier,
+	useProposeMinEpochDuration,
 	useProposeNotice,
 	useProposeOracleConfig,
 	useProposeWindDownDelay,
@@ -12,6 +13,7 @@ import {
 	useSetCustodian,
 	useSetDepositCap,
 	useSetIdentityVerifier,
+	useSetMinEpochDuration,
 	useSetNotice,
 	useSetOracleConfig,
 	useSetWindDownDelay,
@@ -70,6 +72,10 @@ const ConfigurationSection: React.FC<{
 	const proposeCustodian = usePendingTransaction(useProposeCustodian())
 	const proposeNotice = usePendingTransaction(useProposeNotice())
 	const proposeWindDownDelay = usePendingTransaction(useProposeWindDownDelay())
+	const minEpochDuration = usePendingTransaction(useSetMinEpochDuration())
+	const proposeMinEpochDuration = usePendingTransaction(
+		useProposeMinEpochDuration(),
+	)
 	const oracleConfig = usePendingTransaction(useSetOracleConfig())
 	const proposeOracleConfig = usePendingTransaction(useProposeOracleConfig())
 	const compliance = usePendingTransaction(useSetCompliance())
@@ -89,6 +95,8 @@ const ConfigurationSection: React.FC<{
 			["propose-custodian", proposeCustodian],
 			["propose-notice", proposeNotice],
 			["propose-wind-down-delay", proposeWindDownDelay],
+			["set-min-epoch-duration", minEpochDuration],
+			["propose-min-epoch-duration", proposeMinEpochDuration],
 			["set-oracle-config", oracleConfig],
 			["propose-oracle-config", proposeOracleConfig],
 			["set-compliance", compliance],
@@ -123,6 +131,15 @@ const ConfigurationSection: React.FC<{
 				return send(proposeNotice, action.arg, action.next, action.grant)
 			case "propose-wind-down-delay":
 				return send(proposeWindDownDelay, action.arg, action.next, action.grant)
+			case "set-min-epoch-duration":
+				return send(minEpochDuration, action.arg, action.next, action.grant)
+			case "propose-min-epoch-duration":
+				return send(
+					proposeMinEpochDuration,
+					action.arg,
+					action.next,
+					action.grant,
+				)
 			case "set-oracle-config":
 				return send(oracleConfig, action.arg, action.next, action.grant)
 			case "propose-oracle-config":

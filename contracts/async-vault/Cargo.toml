@@ -30,5 +30,7 @@ proptest = "=1.11.0"
 
 [features]
 upgrade_wasm = []
+# Builds a stand-in for a later vault version, used only by the upgrade tests.
+upgrade_probe = []
 # Drops the wind-down minimum to zero for the local harness. Never deployed.
 short_wind_down = []

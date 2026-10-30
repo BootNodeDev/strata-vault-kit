@@ -71,6 +71,8 @@ const epoch: CycleEpoch = {
 	awaiting: sealed,
 	awaitingKnown: true,
 	noticeSeconds: 3_600n,
+	minDuration: { kind: "set", secs: 86_400n },
+	openedAt: 1_700_000_000n,
 }
 
 const oracle: CycleOracle = {
@@ -167,7 +169,7 @@ describe("toCycleRows", () => {
 			["Status", "Round", "Owed"],
 		])
 		expect(groups.map((group) => group.rows.map((row) => row.label))).toEqual([
-			["Vault", "Notice period", "Sealed at", "Notice"],
+			["Vault", "Anyone can seal", "Notice period", "Sealed at", "Notice"],
 			["NAV paused", "Proof hash", "Proof URI"],
 			["Committed", "Liquid reserve"],
 			["Activates at", "Delay", "Supply"],
@@ -240,6 +242,24 @@ describe("toCycleRows", () => {
 
 		expect(value ?? "Unavailable").toBe(expected)
 	})
+
+	it.each<[string, Partial<CycleEpoch>, string | null]>([
+		["no minimum", { minDuration: { kind: "unset" } }, "Manager only"],
+		[
+			"a minimum still running",
+			{ openedAt: NOW - 3_600n },
+			"From 17 Nov, 01:00 UTC",
+		],
+		["a minimum that has run", { openedAt: NOW - 86_400n }, "Now"],
+		["an unreadable minimum", { minDuration: null }, null],
+	])(
+		"tells from when anyone may seal with %s",
+		(_name, overrides, expected) => {
+			const groups = toCycleRows(ready({ epoch: { ...epoch, ...overrides } }))
+
+			expect(valueOf(groups, "Epoch", "Anyone can seal")).toBe(expected)
+		},
+	)
 
 	it("shows no sealed epoch awaiting a price when none is sealed", () => {
 		const groups = toCycleRows(ready({ epoch: { ...epoch, awaiting: null } }))

@@ -9,7 +9,9 @@ use soroban_sdk::{
     },
     Address, BytesN, Env, Event as _, IntoVal, String, Symbol, Val,
 };
-use stellar_access::access_control::{AccessControlStorageKey, ROLE_EXTEND_AMOUNT};
+use stellar_access::access_control::{
+    AccessControlError, AccessControlStorageKey, ROLE_EXTEND_AMOUNT,
+};
 use stellar_access::role_transfer::RoleTransferError;
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
 use strata_timelock::{Clock, DAY_DURATION, MIN_DELAY};
@@ -20,6 +22,8 @@ use crate::{
     NavOracleContractClient, OracleChange, OracleConfig, OracleError, OracleState,
     ADMIN_ACCEPT_LEDGERS,
 };
+
+use super::{missing_auth, refused};
 
 const SCALE: i128 = 1_000_000_000_000_000_000;
 const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
@@ -211,13 +215,6 @@ fn setup_with<'a>(register: impl FnOnce(&Env, OracleArgs) -> Address) -> Fixture
 
 fn setup<'a>() -> Fixture<'a> {
     setup_with(|e, args| e.register(NavOracleContract, args))
-}
-
-fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
-    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
-    expected: OracleError,
-) {
-    assert_eq!(result, Err(Ok(expected.into())));
 }
 
 #[test]
@@ -494,7 +491,7 @@ fn a_second_vault_cannot_be_bound() {
 fn an_address_that_reports_no_clock_cannot_be_bound() {
     let f = setup();
 
-    assert!(f.oracle.try_bind_vault(&Address::generate(&f.e)).is_err());
+    missing_auth(f.oracle.try_bind_vault(&Address::generate(&f.e)));
     assert_eq!(f.oracle.vault(), None);
 }
 
@@ -508,13 +505,13 @@ fn only_the_admin_binds_and_finishes() {
         "bind_vault",
         (f.vault.address.clone(),).into_val(&f.e),
     );
-    assert!(f.oracle.try_bind_vault(&f.vault.address).is_err());
+    missing_auth(f.oracle.try_bind_vault(&f.vault.address));
     assert_eq!(f.oracle.vault(), None);
 
     f.e.mock_all_auths();
     f.oracle.bind_vault(&f.vault.address);
     f.sign_only_as(&stranger, "finish_setup", soroban_sdk::Vec::new(&f.e));
-    assert!(f.oracle.try_finish_setup().is_err());
+    missing_auth(f.oracle.try_finish_setup());
     assert!(f.oracle.setup_open());
 }
 
@@ -549,7 +546,10 @@ fn setup_cannot_finish_while_a_hand_over_is_pending() {
 
     f.oracle.transfer_admin_role(&next, &0);
     f.oracle.finish_setup();
-    assert!(f.oracle.try_accept_admin_transfer().is_err());
+    assert_eq!(
+        f.oracle.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
     assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
 }
 
@@ -611,11 +611,14 @@ fn revoking_an_attester_or_a_guardian_stays_instant_after_setup() {
 
     assert!(f.oracle.has_role(&f.attester, &ATTESTER_ROLE).is_none());
     assert!(f.oracle.has_role(&f.guardian, &GUARDIAN_ROLE).is_none());
-    assert!(f
-        .oracle
-        .try_attest(&input(&f.e, SCALE), &f.attester)
-        .is_err());
-    assert!(f.oracle.try_pause_nav(&f.guardian).is_err());
+    assert_eq!(
+        f.oracle.try_attest(&input(&f.e, SCALE), &f.attester),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.oracle.try_pause_nav(&f.guardian),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
 }
 
 #[test]
@@ -624,15 +627,16 @@ fn only_the_admin_revokes_a_role() {
     f.finish();
     let stranger = Address::generate(&f.e);
 
-    assert!(f
-        .oracle
-        .try_revoke_role(&f.attester, &ATTESTER_ROLE, &stranger)
-        .is_err());
+    assert_eq!(
+        f.oracle
+            .try_revoke_role(&f.attester, &ATTESTER_ROLE, &stranger),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
     f.e.set_auths(&[]);
-    assert!(f
-        .oracle
-        .try_revoke_role(&f.attester, &ATTESTER_ROLE, &f.admin)
-        .is_err());
+    missing_auth(
+        f.oracle
+            .try_revoke_role(&f.attester, &ATTESTER_ROLE, &f.admin),
+    );
     assert!(f.oracle.has_role(&f.attester, &ATTESTER_ROLE).is_some());
 }
 
@@ -675,7 +679,10 @@ fn an_admin_hand_over_waits_but_cancelling_one_does_not() {
     f.oracle.apply_change(&id);
     f.oracle.transfer_admin_role(&next, &0);
 
-    assert!(f.oracle.try_accept_admin_transfer().is_err());
+    assert_eq!(
+        f.oracle.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
     assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
 }
 
@@ -856,11 +863,11 @@ fn only_the_admin_proposes_cancels_and_applies() {
         "propose_change",
         (change.clone(),).into_val(&f.e),
     );
-    assert!(f.oracle.try_propose_change(&change).is_err());
+    missing_auth(f.oracle.try_propose_change(&change));
     f.sign_only_as(&stranger, "cancel_change", (id,).into_val(&f.e));
-    assert!(f.oracle.try_cancel_change(&id).is_err());
+    missing_auth(f.oracle.try_cancel_change(&id));
     f.sign_only_as(&stranger, "apply_change", (id,).into_val(&f.e));
-    assert!(f.oracle.try_apply_change(&id).is_err());
+    missing_auth(f.oracle.try_apply_change(&id));
     assert_eq!(f.oracle.pending_changes().len(), 1);
 }
 
