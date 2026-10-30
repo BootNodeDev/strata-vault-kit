@@ -2,6 +2,7 @@ import {
 	fetchBalances,
 	type MappedBalances,
 	onWalletChange,
+	signAuthEntry,
 	signTransaction,
 } from "@stellar-scaffold/app-lib"
 import { createContext, useCallback, useEffect, useMemo, useState } from "react"
@@ -34,6 +35,7 @@ export interface WalletContextType {
 	isPending: boolean
 	networkPassphrase?: string
 	signTransaction: typeof signTransaction
+	signAuthEntry: typeof signAuthEntry
 	updateBalances: () => Promise<void>
 }
 
@@ -42,6 +44,7 @@ export const WalletContext = createContext<WalletContextType>({
 	balances: {},
 	updateBalances: async () => {},
 	signTransaction,
+	signAuthEntry,
 })
 
 export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
@@ -88,6 +91,7 @@ export const WalletProvider = ({ children }: { children: React.ReactNode }) => {
 			updateBalances,
 			isPending,
 			signTransaction,
+			signAuthEntry,
 		}),
 		[address, networkPassphrase, balances, updateBalances, isPending],
 	)

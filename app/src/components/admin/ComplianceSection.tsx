@@ -5,12 +5,13 @@ import { useComplianceState } from "../../hooks/useComplianceState"
 import {
 	useAllowAddress,
 	useDisallowAddress,
-	useForceTransfer,
 	useFreezeAddress,
+	useLegalTransfer,
 	useFreezeShares,
 	useUnfreezeAddress,
 	useUnfreezeShares,
 } from "../../hooks/useComplianceTransactions"
+import { useLegalTransfers } from "../../hooks/useCycleState"
 import {
 	prepareFor,
 	type Send,
@@ -28,6 +29,7 @@ import {
 	toComplianceActions,
 	toComplianceTiles,
 } from "../../pages/compliance"
+import { toActivityList } from "../../pages/cycle"
 import typeStyles from "../../styles/type.module.css"
 import MetricsStrip from "../vault/MetricsStrip"
 import TransactionModal, {
@@ -36,6 +38,7 @@ import TransactionModal, {
 } from "../vault/TransactionModal"
 import styles from "./ComplianceSection.module.css"
 import CycleActionRail from "./CycleActionRail"
+import { ActivityTable, Section } from "./CycleSurface"
 import SurfaceLayout from "./SurfaceLayout"
 import layoutStyles from "./SurfaceLayout.module.css"
 
@@ -63,7 +66,7 @@ function useComplianceFlows() {
 		"unfreeze-address": usePendingTransaction(useUnfreezeAddress()),
 		"freeze-shares": usePendingTransaction(useFreezeShares()),
 		"unfreeze-shares": usePendingTransaction(useUnfreezeShares()),
-		"force-transfer": usePendingTransaction(useForceTransfer()),
+		"legal-transfer": usePendingTransaction(useLegalTransfer()),
 	} satisfies Record<ComplianceModalAction, Flow>
 }
 
@@ -86,7 +89,7 @@ function dispatch(flows: Flows, action: ComplianceAction, send: Send) {
 		case "freeze-shares":
 		case "unfreeze-shares":
 			return sendArg(send, flows[action.id], action)
-		case "force-transfer":
+		case "legal-transfer":
 			return sendArg(send, flows[action.id], action)
 	}
 }
@@ -119,6 +122,8 @@ const ComplianceSection: React.FC<{
 		destination: destinationOf(inputs),
 	})
 	const flows = useComplianceFlows()
+	const { legalTransfers } = useLegalTransfers()
+	const transfers = toActivityList(legalTransfers)
 
 	const modalFlows = COMPLIANCE_ACTION_IDS.map((id) => flow(id, flows[id]))
 	const recorded = modalFlows.some(
@@ -206,6 +211,16 @@ const ComplianceSection: React.FC<{
 					</div>
 					<MetricsStrip metrics={toComplianceTiles(reads)} />
 				</section>
+				<Section
+					title="Legal transfers — last 7 days"
+					state={transfers}
+					unreadable="Could not read recent legal transfers."
+					empty="No legal transfers in the last 7 days."
+				>
+					{transfers.status === "loaded" && (
+						<ActivityTable name="Legal transfers" rows={transfers.rows} />
+					)}
+				</Section>
 				{contracts}
 			</SurfaceLayout>
 			{active && activeModal !== undefined && (

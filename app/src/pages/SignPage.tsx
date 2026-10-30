@@ -1,5 +1,7 @@
 import {
 	type AccountSigners,
+	type PendingAuthorization,
+	requiredWeight,
 	shortAddress,
 	uniformWeights,
 } from "@stellar-scaffold/app-lib"
@@ -109,7 +111,7 @@ const Signatures: React.FC<SignaturesProps> = ({
 			<p className={`${typeStyles.sectionHead} ${styles.caption}`}>
 				{describeCollected(weight, signers)}
 			</p>
-			<Progress weight={weight} threshold={signers.thresholds.med} />
+			<Progress weight={weight} threshold={requiredWeight(signers)} />
 			<ul className={styles.signers} aria-label="Signers">
 				{signers.signers.map(({ key, weight: own }) => {
 					const signed = signedBy.includes(key)
@@ -141,6 +143,7 @@ type DetailsProps = {
 	contractId: string
 	expiresAt: Date | null
 	args: SignArg[]
+	authorization: PendingAuthorization | null
 }
 
 const Details: React.FC<DetailsProps> = ({
@@ -148,6 +151,7 @@ const Details: React.FC<DetailsProps> = ({
 	contractId,
 	expiresAt,
 	args,
+	authorization,
 }) => (
 	<dl className={styles.tiles}>
 		<Tile label="Account">{shortAddress(source)}</Tile>
@@ -158,6 +162,16 @@ const Details: React.FC<DetailsProps> = ({
 				{arg.value}
 			</Tile>
 		))}
+		{authorization !== null && (
+			<>
+				<Tile label="Token admin">{shortAddress(authorization.address)}</Tile>
+				<Tile label="Authorization">
+					{authorization.signed
+						? `Valid until ledger ${authorization.expirationLedger}`
+						: "Pending"}
+				</Tile>
+			</>
+		)}
 	</dl>
 )
 
@@ -214,6 +228,7 @@ const PendingSign: React.FC<{ xdr: string }> = ({ xdr }) => {
 				contractId={pending.contractId}
 				expiresAt={pending.expiresAt}
 				args={description.args}
+				authorization={pending.authorization}
 			/>
 			<div className={styles.actions}>
 				{action && (

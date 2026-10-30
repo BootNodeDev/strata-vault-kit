@@ -1,4 +1,5 @@
-use soroban_sdk::{contract, contractimpl};
+use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
+use soroban_sdk::{contract, contractimpl, Symbol};
 
 use super::*;
 
@@ -33,6 +34,86 @@ impl strata_bindings::VaultBinding for FeedStub {
     fn setup_open(_e: &Env) -> bool {
         false
     }
+}
+
+/// A feed that passes the swap check, then traps on the view a test names or
+/// answers the share price a test sets.
+#[contract]
+struct BrokenFeed;
+
+#[contractimpl]
+impl BrokenFeed {
+    pub fn __constructor(e: Env, vault: Address) {
+        e.storage().instance().set(&symbol_short!("vault"), &vault);
+    }
+
+    pub fn trap(e: Env, view: Symbol) {
+        e.storage().instance().set(&symbol_short!("trap"), &view);
+    }
+
+    pub fn answer_nav(e: Env, nav: i128) {
+        e.storage().instance().set(&symbol_short!("nav"), &nav);
+    }
+
+    pub fn state(e: Env) -> strata_bindings::OracleState {
+        trap_on(&e, symbol_short!("state"));
+        strata_bindings::OracleState::Valid
+    }
+
+    pub fn freshness_duration(_e: Env) -> u64 {
+        3_600
+    }
+
+    pub fn attested_at(e: Env) -> u64 {
+        trap_on(&e, symbol_short!("attested"));
+        e.ledger().timestamp()
+    }
+
+    pub fn nav_per_share(e: Env) -> i128 {
+        trap_on(&e, symbol_short!("nav"));
+        e.storage()
+            .instance()
+            .get(&symbol_short!("nav"))
+            .unwrap_or(WAD_SCALE)
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl strata_bindings::VaultBinding for BrokenFeed {
+    fn vault(e: &Env) -> Option<Address> {
+        e.storage().instance().get(&symbol_short!("vault"))
+    }
+
+    fn setup_open(_e: &Env) -> bool {
+        false
+    }
+}
+
+fn trap_on(e: &Env, view: Symbol) {
+    let trap: Option<Symbol> = e.storage().instance().get(&symbol_short!("trap"));
+    if trap == Some(view) {
+        panic!("the feed traps");
+    }
+}
+
+/// Installs the feed the way governance would: propose, wait, apply.
+fn swap_to_a_broken_feed<'a>(f: &'a Fixture) -> BrokenFeedClient<'a> {
+    let feed = BrokenFeedClient::new(&f.e, &f.e.register(BrokenFeed, (f.vault.address.clone(),)));
+    let id = f
+        .vault
+        .propose_change(&VaultChange::Oracle(feed.address.clone()));
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_change(&id);
+    assert_eq!(f.vault.oracle(), feed.address);
+    feed
+}
+
+fn swap_to_a_feed_that_traps_on(f: &Fixture, view: Symbol) {
+    swap_to_a_broken_feed(f).trap(&view);
+}
+
+fn swap_to_a_feed_that_prices_at(f: &Fixture, nav: i128) {
+    swap_to_a_broken_feed(f).answer_nav(&nav);
 }
 
 fn unbound_feed<'a>(f: &Fixture<'a>) -> NavOracleContractClient<'a> {
@@ -177,4 +258,130 @@ fn a_contract_that_is_not_a_feed_is_refused_when_proposed_and_when_applied() {
 
     refused(f.vault.try_apply_change(&id), VaultError::FeedNotBound);
     assert_eq!(f.vault.oracle(), f.oracle.address);
+}
+
+#[test]
+fn a_sealed_deposit_cancels_when_the_feed_traps() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.close_epoch();
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("attested"));
+
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+    assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn a_sealed_redemption_cancels_when_the_feed_traps() {
+    let f = setup();
+    let holder = f.holder(200);
+    let epoch = f.vault.request_redeem(&holder, &200);
+    f.close_epoch();
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("attested"));
+
+    assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
+    assert_eq!(f.shares(&holder), 200);
+}
+
+#[test]
+fn a_feed_that_traps_on_its_attestation_refuses_fulfilment() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.vault.request_deposit(&investor, &400);
+    let epoch = f.close_epoch();
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("attested"));
+
+    refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
+}
+
+#[test]
+fn a_feed_that_traps_on_its_price_refuses_fulfilment() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.vault.request_deposit(&investor, &400);
+    let epoch = f.close_epoch();
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("nav"));
+
+    refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
+}
+
+/// Deposits read only the feed's state, so they still land; cancelling is the way out.
+#[test]
+fn a_deposit_still_lands_and_can_leave_when_the_feed_traps() {
+    let f = setup();
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("attested"));
+    let investor = f.investor(1_000);
+
+    let epoch = f.vault.request_deposit(&investor, &400);
+    assert_eq!(f.balance(&investor), 600);
+    f.close_epoch();
+
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+    assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn a_feed_that_traps_on_its_state_neither_prices_nor_blocks_a_cancel() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.close_epoch();
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("state"));
+
+    refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+
+    let trapped =
+        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction);
+    assert_eq!(
+        f.vault.try_request_deposit(&investor, &400),
+        Err(Ok(trapped))
+    );
+}
+
+/// A deposit and a redemption sealed in one epoch, as `(investor, holder, epoch)`.
+fn seal_both_sides(f: &Fixture) -> (Address, Address, u64) {
+    let holder = f.holder(200);
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.vault.request_redeem(&holder, &200);
+    f.close_epoch();
+    (investor, holder, epoch)
+}
+
+#[test]
+fn both_sides_of_a_sealed_epoch_cancel_when_the_feed_traps_on_its_price() {
+    let f = setup();
+    let (investor, holder, epoch) = seal_both_sides(&f);
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("nav"));
+
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+    assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
+}
+
+#[test]
+fn both_sides_of_a_sealed_epoch_cancel_when_the_feed_prices_at_zero_or_less() {
+    for nav in [0, -WAD_SCALE] {
+        let f = setup();
+        let (investor, holder, epoch) = seal_both_sides(&f);
+        swap_to_a_feed_that_prices_at(&f, nav);
+
+        assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+        assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
+    }
+}
+
+#[test]
+fn a_feed_that_prices_at_zero_or_less_refuses_fulfilment() {
+    for nav in [0, -WAD_SCALE] {
+        let f = setup();
+        let (_, _, epoch) = seal_both_sides(&f);
+        swap_to_a_feed_that_prices_at(&f, nav);
+
+        refused(
+            f.vault.try_fulfill_epoch(&epoch),
+            VaultError::InvalidSharePrice,
+        );
+    }
 }

@@ -19,6 +19,7 @@ const {
 	identityVerifierMock,
 	proposeComplianceMock,
 	proposeIdentityVerifierMock,
+	proposeOracleConfigMock,
 } = vi.hoisted(() => {
 	const tx = () => ({
 		status: { status: "idle" } as { status: string },
@@ -40,6 +41,7 @@ const {
 		identityVerifierMock: tx(),
 		proposeComplianceMock: tx(),
 		proposeIdentityVerifierMock: tx(),
+		proposeOracleConfigMock: tx(),
 	}
 })
 
@@ -59,6 +61,7 @@ vi.mock("../../hooks/useConfigurationTransactions", () => ({
 	useSetIdentityVerifier: () => identityVerifierMock,
 	useProposeCompliance: () => proposeComplianceMock,
 	useProposeIdentityVerifier: () => proposeIdentityVerifierMock,
+	useProposeOracleConfig: () => proposeOracleConfigMock,
 }))
 
 const WALLET = "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H"
@@ -87,6 +90,7 @@ const READY: ConfigurationState = {
 	upgradeDelay: 3n * DAY,
 	setupOpen: false,
 	tokenSetupOpen: true,
+	oracleSetupOpen: true,
 	oracle: {
 		freshness: DAY,
 		cooldown: 3_600n,
@@ -131,6 +135,7 @@ describe("ConfigurationSection", () => {
 			identityVerifierMock,
 			proposeComplianceMock,
 			proposeIdentityVerifierMock,
+			proposeOracleConfigMock,
 		])
 			Object.assign(mock, {
 				status: { status: "idle" } as TransactionStatus,
@@ -328,6 +333,32 @@ describe("ConfigurationSection", () => {
 			},
 			oracleAdmin,
 		)
+	})
+
+	it("proposes new oracle limits once the oracle's setup closes and follows them in the modal", () => {
+		useConfigurationStateMock.mockReturnValue({
+			configuration: { ...READY, oracleSetupOpen: false },
+		})
+		const { rerender } = render(
+			<ConfigurationSection grants={[oracleAdmin]} wallet={WALLET} />,
+		)
+		expand("Set the oracle limits")
+		fireEvent.change(screen.getByRole("textbox", { name: "Largest rise" }), {
+			target: { value: "5" },
+		})
+		fireEvent.click(submit("Set the oracle limits"))
+
+		expect(proposeOracleConfigMock.submit).toHaveBeenCalledWith(
+			expect.objectContaining({ max_up_bps: 500 }),
+			oracleAdmin,
+		)
+		expect(oracleConfigMock.submit).not.toHaveBeenCalled()
+
+		proposeOracleConfigMock.status = { status: "awaiting-signature" }
+		rerender(<ConfigurationSection grants={[oracleAdmin]} wallet={WALLET} />)
+		expect(
+			screen.getByText("Signing queues every new oracle limit."),
+		).toBeTruthy()
 	})
 
 	it("returns the fields to the current values once a change is recorded", () => {

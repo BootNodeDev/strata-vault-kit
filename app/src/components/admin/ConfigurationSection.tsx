@@ -6,6 +6,7 @@ import {
 	useProposeCustodian,
 	useProposeIdentityVerifier,
 	useProposeNotice,
+	useProposeOracleConfig,
 	useProposeWindDownDelay,
 	useSetCompliance,
 	useSetCustodian,
@@ -70,6 +71,7 @@ const ConfigurationSection: React.FC<{
 	const proposeNotice = usePendingTransaction(useProposeNotice())
 	const proposeWindDownDelay = usePendingTransaction(useProposeWindDownDelay())
 	const oracleConfig = usePendingTransaction(useSetOracleConfig())
+	const proposeOracleConfig = usePendingTransaction(useProposeOracleConfig())
 	const compliance = usePendingTransaction(useSetCompliance())
 	const identityVerifier = usePendingTransaction(useSetIdentityVerifier())
 	const proposeCompliance = usePendingTransaction(useProposeCompliance())
@@ -88,6 +90,7 @@ const ConfigurationSection: React.FC<{
 			["propose-notice", proposeNotice],
 			["propose-wind-down-delay", proposeWindDownDelay],
 			["set-oracle-config", oracleConfig],
+			["propose-oracle-config", proposeOracleConfig],
 			["set-compliance", compliance],
 			["set-identity-verifier", identityVerifier],
 			["propose-compliance", proposeCompliance],
@@ -122,6 +125,8 @@ const ConfigurationSection: React.FC<{
 				return send(proposeWindDownDelay, action.arg, action.next, action.grant)
 			case "set-oracle-config":
 				return send(oracleConfig, action.arg, action.next, action.grant)
+			case "propose-oracle-config":
+				return send(proposeOracleConfig, action.arg, action.next, action.grant)
 			case "set-compliance":
 				return send(compliance, action.arg, action.next, action.grant)
 			case "set-identity-verifier":

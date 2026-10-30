@@ -1,4 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises"
 import { beforeAll, describe, expect, it } from "vitest"
 
 import { pay, trustline } from "./lib/accounts.js"
@@ -14,6 +13,7 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
+import { waitForNotice } from "./lib/notice.js"
 import { attest, freshFeed, navInput } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
@@ -47,8 +47,10 @@ const epochOf = async (id: bigint) =>
 
 const closeEpoch = () =>
 	send(vault(c, manager).close_epoch({ caller: manager.publicKey() }))
-const fulfill = (id: bigint) =>
-	send(vault(c, outsider).fulfill_epoch({ epoch_id: id }))
+const fulfill = async (id: bigint) => {
+	await waitForNotice(c, reader, id)
+	return send(vault(c, outsider).fulfill_epoch({ epoch_id: id }))
+}
 
 beforeAll(async () => {
 	decimals = (await shareToken(c, outsider).decimals()).result
@@ -683,6 +685,7 @@ describe("a sealed epoch while the feed is down", () => {
 	})
 
 	it("the guardian pauses the NAV and pricing is refused", async () => {
+		await waitForNotice(c, reader, epoch)
 		await send(oracle(c, guardian).pause_nav({ caller: guardian.publicKey() }))
 		expect((await feed.state()).result.tag).toBe("Paused")
 		expectRefused(
@@ -730,7 +733,7 @@ describe("a sealed epoch while the feed is down", () => {
 })
 
 describe("the notice period and valuation age rules", () => {
-	const noticeSecs = 10n
+	const noticeSecs = BigInt(c.net.vault.notice_secs)
 	let epochA = 0n
 	let epochB = 0n
 
@@ -768,12 +771,7 @@ describe("the notice period and valuation age rules", () => {
 	})
 
 	it("refuses pricing after the notice when the valuation is before the close", async () => {
-		const info = await epochOf(epochA)
-		const now = BigInt(Math.floor(Date.now() / 1000))
-		const waitMs = Math.max(0, Number(info!.priceable_at - now + 2n) * 1000)
-		if (waitMs > 0) {
-			await sleep(waitMs)
-		}
+		await waitForNotice(c, reader, epochA)
 		expectRefused(
 			await vault(c, outsider).fulfill_epoch({ epoch_id: epochA }),
 			reader,
@@ -808,12 +806,7 @@ describe("the notice period and valuation age rules", () => {
 			reader,
 			"NoticeNotElapsed",
 		)
-		const info = await epochOf(epochB)
-		const now = BigInt(Math.floor(Date.now() / 1000))
-		const waitMs = Math.max(0, Number(info!.priceable_at - now + 2n) * 1000)
-		if (waitMs > 0) {
-			await sleep(waitMs)
-		}
+		await waitForNotice(c, reader, epochB)
 		expect(await fulfill(epochB)).toBe(secondPrice)
 	})
 

@@ -1,10 +1,10 @@
 import { type ContractRead, readContract } from "@stellar-scaffold/app-lib"
 import { useQuery } from "@tanstack/react-query"
-import { asyncVault, shareToken } from "../config/clients"
+import { asyncVault, navOracle, shareToken } from "../config/clients"
 
 export type SetupState = "checking" | "open" | "closed" | "unreadable"
 
-export type TimelockedContract = "vault" | "token"
+export type TimelockedContract = "vault" | "token" | "oracle"
 
 export const setupOpenKey = (contract: TimelockedContract) =>
 	[contract, "setupOpen"] as const
@@ -17,6 +17,7 @@ export const classifySetup = (read: ContractRead<boolean>): SetupState => {
 const READERS = {
 	vault: async () => (await asyncVault()).setup_open(),
 	token: async () => (await shareToken()).setup_open(),
+	oracle: async () => (await navOracle()).setup_open(),
 } satisfies Record<TimelockedContract, unknown>
 
 async function fetchSetupOpen(

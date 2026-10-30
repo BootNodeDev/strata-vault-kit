@@ -8,13 +8,18 @@ import {
 import { useGovernanceState } from "../../hooks/useGovernanceState"
 import {
 	useApplyChange,
+	useApplyOracleChange,
 	useApplyTokenChange,
 	useCancelChange,
+	useCancelOracleChange,
 	useCancelTokenChange,
 	useCancelWindDown,
 	useProposeAdmin,
 	useProposeCodeUpgrade,
 	useProposeGrantRole,
+	useProposeOracleAdmin,
+	useProposeOracleGrantRole,
+	useProposeOracleUpgrade,
 	useProposeRevokeRole,
 	useProposeTokenAdmin,
 	useProposeTokenGrantRole,
@@ -49,6 +54,7 @@ import { useRailInputs } from "../../hooks/useRailInputs"
 import {
 	GOVERNANCE_ACTION_IDS,
 	type GovernanceAction,
+	type GovernanceActionId,
 	toGovernanceActions,
 	toGovernanceGroups,
 } from "../../pages/governance"
@@ -111,9 +117,16 @@ function useGovernanceFlows() {
 		"propose-token-admin": usePendingTransaction(useProposeTokenAdmin()),
 		"apply-token-change": usePendingTransaction(useApplyTokenChange()),
 		"cancel-token-change": usePendingTransaction(useCancelTokenChange()),
+		"propose-oracle-grant-role": usePendingTransaction(
+			useProposeOracleGrantRole(),
+		),
+		"propose-oracle-admin": usePendingTransaction(useProposeOracleAdmin()),
+		"propose-oracle-upgrade": usePendingTransaction(useProposeOracleUpgrade()),
+		"apply-oracle-change": usePendingTransaction(useApplyOracleChange()),
+		"cancel-oracle-change": usePendingTransaction(useCancelOracleChange()),
 		"propose-wind-down": usePendingTransaction(useProposeWindDown()),
 		"cancel-wind-down": usePendingTransaction(useCancelWindDown()),
-	} satisfies Record<GovernanceModalAction, Flow>
+	} satisfies Record<GovernanceActionId, Flow>
 }
 
 type Flows = ReturnType<typeof useGovernanceFlows>
@@ -136,6 +149,7 @@ function dispatch(flows: Flows, action: GovernanceAction, send: Send) {
 		case "propose-revoke-role":
 		case "propose-token-grant-role":
 		case "propose-token-revoke-role":
+		case "propose-oracle-grant-role":
 			return sendArg(send, flows[action.id], action)
 		case "hand-over-vault-admin":
 		case "cancel-vault-handover":
@@ -145,8 +159,10 @@ function dispatch(flows: Flows, action: GovernanceAction, send: Send) {
 		case "cancel-token-handover":
 			return sendArg(send, flows[action.id], action)
 		case "propose-code-upgrade":
+		case "propose-oracle-upgrade":
 		case "propose-admin":
 		case "propose-token-admin":
+		case "propose-oracle-admin":
 			return sendArg(send, flows[action.id], action)
 		case "propose-upgrade-delay":
 			return sendArg(send, flows[action.id], action)
@@ -154,6 +170,8 @@ function dispatch(flows: Flows, action: GovernanceAction, send: Send) {
 		case "cancel-change":
 		case "apply-token-change":
 		case "cancel-token-change":
+		case "apply-oracle-change":
+		case "cancel-oracle-change":
 			return sendArg(send, flows[action.id], action)
 		case "accept-vault-admin":
 		case "accept-oracle-admin":
