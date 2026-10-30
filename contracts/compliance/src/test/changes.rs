@@ -156,6 +156,22 @@ fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
     assert_eq!(result, Err(Ok(expected.into())));
 }
 
+/// Asserts a call failed for lack of a valid signature, or because the callee
+/// answers no interface the host can invoke: either way, the host's own
+/// refusal of the invocation, not one of the contract's named errors.
+fn missing_auth<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
+    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+) {
+    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_type_and_code(
+            ScErrorType::Context,
+            ScErrorCode::InvalidAction
+        )))
+    );
+}
+
 #[test]
 fn bindings_are_instant_during_setup() {
     let f = bound();
@@ -202,7 +218,7 @@ fn a_second_vault_or_a_late_vault_is_refused() {
 fn an_address_that_reports_no_clock_cannot_be_bound() {
     let f = unbound();
 
-    assert!(f.rules.try_bind_vault(&Address::generate(&f.e)).is_err());
+    missing_auth(f.rules.try_bind_vault(&Address::generate(&f.e)));
     assert_eq!(f.rules.vault(), None);
 }
 
@@ -232,13 +248,13 @@ fn only_the_admin_binds_and_finishes() {
         "bind_vault",
         (f.clock.address.clone(),).into_val(&f.e),
     );
-    assert!(f.rules.try_bind_vault(&f.clock.address).is_err());
+    missing_auth(f.rules.try_bind_vault(&f.clock.address));
     assert_eq!(f.rules.vault(), None);
 
     let f = bound();
     let stranger = Address::generate(&f.e);
     f.sign_only_as(&stranger, "finish_setup", Vec::new(&f.e));
-    assert!(f.rules.try_finish_setup().is_err());
+    missing_auth(f.rules.try_finish_setup());
     assert!(f.rules.setup_open());
 }
 
@@ -437,11 +453,11 @@ fn only_the_admin_proposes_cancels_and_applies() {
         "propose_change",
         (change.clone(),).into_val(&f.e),
     );
-    assert!(f.rules.try_propose_change(&change).is_err());
+    missing_auth(f.rules.try_propose_change(&change));
     f.sign_only_as(&stranger, "cancel_change", (id,).into_val(&f.e));
-    assert!(f.rules.try_cancel_change(&id).is_err());
+    missing_auth(f.rules.try_cancel_change(&id));
     f.sign_only_as(&stranger, "apply_change", (id,).into_val(&f.e));
-    assert!(f.rules.try_apply_change(&id).is_err());
+    missing_auth(f.rules.try_apply_change(&id));
     assert_eq!(f.rules.pending_changes().len(), 1);
 }
 
@@ -514,9 +530,12 @@ fn only_the_admin_offers_or_cancels_a_hand_over() {
         "transfer_admin_role",
         (next.clone(), live_until).into_val(&f.e),
     );
-    assert!(f.rules.try_transfer_admin_role(&next, &live_until).is_err());
+    missing_auth(f.rules.try_transfer_admin_role(&next, &live_until));
     f.e.mock_all_auths();
-    assert!(f.rules.try_accept_admin_transfer().is_err());
+    assert_eq!(
+        f.rules.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
 
     f.rules.transfer_admin_role(&next, &live_until);
     f.sign_only_as(
@@ -524,7 +543,7 @@ fn only_the_admin_offers_or_cancels_a_hand_over() {
         "transfer_admin_role",
         (next.clone(), 0_u32).into_val(&f.e),
     );
-    assert!(f.rules.try_transfer_admin_role(&next, &0).is_err());
+    missing_auth(f.rules.try_transfer_admin_role(&next, &0));
 
     f.e.mock_all_auths();
     f.rules.accept_admin_transfer();
@@ -540,7 +559,7 @@ fn only_the_nominee_accepts_a_hand_over() {
 
     for other in [Address::generate(&f.e), f.admin.clone()] {
         f.sign_only_as(&other, "accept_admin_transfer", Vec::new(&f.e));
-        assert!(f.rules.try_accept_admin_transfer().is_err());
+        missing_auth(f.rules.try_accept_admin_transfer());
     }
     assert_eq!(f.rules.get_admin(), Some(f.admin.clone()));
 
@@ -592,7 +611,10 @@ fn a_hand_over_after_setup_is_cancelled_at_once() {
 
     f.rules.transfer_admin_role(&next, &0);
 
-    assert!(f.rules.try_accept_admin_transfer().is_err());
+    assert_eq!(
+        f.rules.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
     assert_eq!(f.rules.get_admin(), Some(f.admin.clone()));
 }
 

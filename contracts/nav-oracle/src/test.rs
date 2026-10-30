@@ -8,11 +8,38 @@ use soroban_sdk::{
     Address, BytesN, Env, Event as _, IntoVal, String,
 };
 
+use stellar_access::access_control::AccessControlError;
+
 use crate::state::DataKey;
-use crate::{NavInput, NavOracleContract, NavOracleContractClient, OracleConfig, OracleState};
+use crate::{
+    NavInput, NavOracleContract, NavOracleContractClient, OracleConfig, OracleError, OracleState,
+};
 
 const SCALE: i128 = 1_000_000_000_000_000_000;
 const DAY_IN_LEDGERS: u32 = 17_280;
+
+/// Asserts a call was refused with exactly this error.
+fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
+    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+    expected: OracleError,
+) {
+    assert_eq!(result, Err(Ok(expected.into())));
+}
+
+/// Asserts a call failed for lack of a valid signature: the host's own
+/// refusal of the invocation, not one of the oracle's named errors.
+fn missing_auth<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
+    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+) {
+    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_type_and_code(
+            ScErrorType::Context,
+            ScErrorCode::InvalidAction
+        )))
+    );
+}
 
 struct Fixture<'a> {
     #[allow(dead_code)]
@@ -110,7 +137,7 @@ fn heartbeat_expiry_makes_it_stale() {
     // Advance past heartbeat (3600s from obs stamp 10_000).
     f.e.ledger().set_timestamp(10_000 + 3601);
     assert_eq!(f.oracle.state(), OracleState::Stale);
-    assert!(f.oracle.try_ensure_consumable().is_err());
+    refused(f.oracle.try_ensure_consumable(), OracleError::NotConsumable);
 }
 
 #[test]
@@ -122,7 +149,7 @@ fn the_nav_pause_holds_regardless_of_freshness() {
 
     f.oracle.set_nav_paused(&true);
     assert_eq!(f.oracle.state(), OracleState::Paused);
-    assert!(f.oracle.try_ensure_consumable().is_err());
+    refused(f.oracle.try_ensure_consumable(), OracleError::NotConsumable);
 
     f.oracle.set_nav_paused(&false);
     assert_eq!(f.oracle.state(), OracleState::Valid);
@@ -133,10 +160,16 @@ fn attest_rejects_out_of_band() {
     let f = setup();
     // Below min_answer.
     let r = input(&f.e, SCALE / 4, 1_000_000);
-    assert!(f.oracle.try_attest(&r, &f.attester).is_err());
+    refused(
+        f.oracle.try_attest(&r, &f.attester),
+        OracleError::NavOutOfBand,
+    );
     // Zero is out of band (min_answer > 0).
     let r0 = input(&f.e, 0, 1_000_000);
-    assert!(f.oracle.try_attest(&r0, &f.attester).is_err());
+    refused(
+        f.oracle.try_attest(&r0, &f.attester),
+        OracleError::NavOutOfBand,
+    );
 }
 
 #[test]
@@ -148,13 +181,19 @@ fn attest_enforces_cooldown_and_deviation() {
     // Cooldown: only 30s later (< 60), reject.
     f.e.ledger().set_timestamp(10_030);
     let r2 = input(&f.e, SCALE, 1_000_000);
-    assert!(f.oracle.try_attest(&r2, &f.attester).is_err());
+    refused(
+        f.oracle.try_attest(&r2, &f.attester),
+        OracleError::CooldownActive,
+    );
 
     // Past cooldown now.
     f.e.ledger().set_timestamp(10_100);
     // Deviation: +20% exceeds the 10% cap.
     let big = input(&f.e, SCALE + SCALE / 5, 1_000_000);
-    assert!(f.oracle.try_attest(&big, &f.attester).is_err());
+    refused(
+        f.oracle.try_attest(&big, &f.attester),
+        OracleError::DeviationExceeded,
+    );
 
     // Valid update: +5% within cap.
     let ok = input(&f.e, SCALE + SCALE / 20, 1_000_000);
@@ -230,9 +269,9 @@ fn set_config_takes_effect() {
 
     f.e.ledger().set_timestamp(10_100);
     let five_pct = input(&f.e, SCALE + SCALE / 20, 1_000_000);
-    assert!(
-        f.oracle.try_attest(&five_pct, &f.attester).is_err(),
-        "the tightened band rejects a +5% move"
+    refused(
+        f.oracle.try_attest(&five_pct, &f.attester),
+        OracleError::DeviationExceeded,
     );
 }
 
@@ -241,7 +280,10 @@ fn attest_is_role_gated() {
     let f = setup();
     let stranger = Address::generate(&f.e);
     let r = input(&f.e, SCALE, 1_000_000);
-    assert!(f.oracle.try_attest(&r, &stranger).is_err());
+    assert_eq!(
+        f.oracle.try_attest(&r, &stranger),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
 }
 
 #[test]
@@ -259,7 +301,7 @@ fn narrowing_the_band_demotes_a_stored_record() {
 
     assert_eq!(f.oracle.state(), OracleState::Stale);
     assert!(f.oracle.is_stale());
-    assert!(f.oracle.try_ensure_consumable().is_err());
+    refused(f.oracle.try_ensure_consumable(), OracleError::NotConsumable);
 }
 
 #[test]
@@ -302,7 +344,7 @@ fn set_config_rejects_an_unbounded_max_answer() {
         max_answer: i128::MAX,
         ..config()
     };
-    assert!(f.oracle.try_set_config(&cfg).is_err());
+    refused(f.oracle.try_set_config(&cfg), OracleError::InvalidConfig);
 }
 
 #[test]
@@ -312,7 +354,7 @@ fn set_config_rejects_a_zero_freshness_duration() {
         freshness_duration: 0,
         ..config()
     };
-    assert!(f.oracle.try_set_config(&cfg).is_err());
+    refused(f.oracle.try_set_config(&cfg), OracleError::InvalidConfig);
 }
 
 #[test]
@@ -321,7 +363,7 @@ fn only_admin_can_set_config() {
     let cfg = config();
 
     f.e.set_auths(&[]);
-    assert!(f.oracle.try_set_config(&cfg).is_err());
+    missing_auth(f.oracle.try_set_config(&cfg));
 
     f.e.mock_all_auths();
     f.oracle.set_config(&cfg);
@@ -338,9 +380,9 @@ fn the_guardian_pauses_the_nav_but_unpausing_needs_governance() {
     assert_eq!(f.oracle.state(), OracleState::Paused);
 
     f.sign_only_as(&f.guardian, "set_nav_paused", (false,).into_val(&f.e));
-    assert!(f.oracle.try_set_nav_paused(&false).is_err());
+    missing_auth(f.oracle.try_set_nav_paused(&false));
     f.e.set_auths(&[]);
-    assert!(f.oracle.try_set_nav_paused(&false).is_err());
+    missing_auth(f.oracle.try_set_nav_paused(&false));
     assert_eq!(f.oracle.state(), OracleState::Paused);
 
     f.e.mock_all_auths();
@@ -353,9 +395,12 @@ fn pausing_the_nav_is_limited_to_the_guardian() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    assert!(f.oracle.try_pause_nav(&stranger).is_err());
-    assert!(f.oracle.try_pause_nav(&f.attester).is_err());
-    assert!(f.oracle.try_pause_nav(&f.admin).is_err());
+    for who in [&stranger, &f.attester, &f.admin] {
+        assert_eq!(
+            f.oracle.try_pause_nav(who),
+            Err(Ok(AccessControlError::Unauthorized.into()))
+        );
+    }
     assert_eq!(f.oracle.state(), OracleState::Stale);
 }
 
@@ -407,7 +452,10 @@ fn a_full_downside_cap_still_bounds_a_rise() {
     f.e.ledger().set_timestamp(10_100);
 
     let spike = input(&f.e, SCALE * 140 / 100, 1_000_000);
-    assert!(f.oracle.try_attest(&spike, &f.attester).is_err());
+    refused(
+        f.oracle.try_attest(&spike, &f.attester),
+        OracleError::DeviationExceeded,
+    );
 }
 
 #[test]
@@ -418,7 +466,10 @@ fn a_configured_downside_still_bounds_a_fall() {
     f.e.ledger().set_timestamp(10_100);
 
     let crash = input(&f.e, SCALE * 60 / 100, 1_000_000);
-    assert!(f.oracle.try_attest(&crash, &f.attester).is_err());
+    refused(
+        f.oracle.try_attest(&crash, &f.attester),
+        OracleError::DeviationExceeded,
+    );
 }
 
 #[test]
@@ -441,7 +492,7 @@ fn the_record_clears_only_while_the_nav_is_paused() {
     let f = setup();
     f.oracle.attest(&input(&f.e, SCALE, 1_000_000), &f.attester);
 
-    assert!(f.oracle.try_clear_latest().is_err());
+    refused(f.oracle.try_clear_latest(), OracleError::NavNotPaused);
 
     f.oracle.pause_nav(&f.guardian);
     f.oracle.clear_latest();
@@ -464,7 +515,7 @@ fn only_admin_can_clear_latest() {
 
     for who in [&stranger, &f.attester, &f.guardian] {
         f.sign_only_as(who, "clear_latest", soroban_sdk::Vec::new(&f.e));
-        assert!(f.oracle.try_clear_latest().is_err());
+        missing_auth(f.oracle.try_clear_latest());
     }
 }
 
@@ -484,14 +535,17 @@ fn every_oracle_authority_is_readable_and_rotatable() {
     f.oracle
         .revoke_role(&f.guardian, &symbol_short!("guardian"), &f.admin);
 
-    assert!(f.oracle.try_pause_nav(&f.guardian).is_err());
+    assert_eq!(
+        f.oracle.try_pause_nav(&f.guardian),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
     f.oracle.pause_nav(&next);
 }
 
 #[test]
 fn the_oracle_admin_cannot_renounce_itself_away() {
     let f = setup();
-    assert!(f.oracle.try_renounce_admin().is_err());
+    refused(f.oracle.try_renounce_admin(), OracleError::AdminRequired);
     assert_eq!(f.oracle.get_admin(), Some(f.admin.clone()));
 }
 
@@ -512,10 +566,11 @@ fn a_full_downside_cap_leaves_min_answer_as_the_only_floor() {
 
     // Below the floor is refused, so min_answer is the only bound.
     f.e.ledger().set_timestamp(10_200);
-    assert!(f
-        .oracle
-        .try_attest(&input(&f.e, floor - 1, 1_000_000), &f.attester)
-        .is_err());
+    refused(
+        f.oracle
+            .try_attest(&input(&f.e, floor - 1, 1_000_000), &f.attester),
+        OracleError::NavOutOfBand,
+    );
 }
 
 #[test]
@@ -571,7 +626,7 @@ fn attested_at_is_when_the_contract_took_the_report() {
 fn attested_at_without_a_report_is_refused() {
     let f = setup();
 
-    assert!(f.oracle.try_attested_at().is_err());
+    refused(f.oracle.try_attested_at(), OracleError::NoRecord);
 }
 
 #[test]
