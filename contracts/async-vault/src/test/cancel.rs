@@ -68,6 +68,33 @@ fn a_priced_epoch_is_not_cancellable() {
 }
 
 #[test]
+fn cancelling_without_a_request_finds_no_request_once_a_price_is_known() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+
+    let epoch = f.close_epoch();
+    f.attest(wad(2));
+    refused(
+        f.vault.try_cancel_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+    refused(
+        f.vault.try_cancel_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.vault.fulfill_epoch(&epoch);
+    refused(
+        f.vault.try_cancel_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+    refused(
+        f.vault.try_cancel_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+}
+
+#[test]
 fn the_pause_never_blocks_a_cancellation() {
     let f = setup();
     let inv = f.investor(1_000);

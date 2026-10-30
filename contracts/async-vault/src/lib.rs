@@ -865,8 +865,8 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
-    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
+    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `AlreadyClaimed` - The deposit was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The free reserve cannot cover a refund yet.
@@ -900,10 +900,10 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
+    /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
     /// * `PriceAvailable` - A report accepted after the close is valid, so the
     ///   price is known, even while the notice runs.
-    /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `Frozen` - `holder` is frozen.
     /// * `EscrowNotCovered` - The vault's balance cannot cover the refund yet.
     /// * The asset's own error when `holder` cannot receive it.
@@ -932,10 +932,10 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
+    /// * `RequestNotFound` - `holder` has no redemption in the epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
     /// * `PriceAvailable` - A report accepted after the close is valid, so the
     ///   price is known, even while the notice runs.
-    /// * `RequestNotFound` - `holder` has no redemption in the epoch.
     /// * `NotAllowlisted` - `holder` is delisted.
     /// * `Frozen` - `holder` is frozen.
     /// * `HolderNotEligible` - The compliance rules refuse the return.
@@ -1005,8 +1005,8 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
-    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `RequestNotFound` - `holder` has no redemption in the epoch.
+    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `AlreadyClaimed` - The redemption was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
