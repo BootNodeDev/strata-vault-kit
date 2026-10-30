@@ -174,6 +174,10 @@ const VAULT_PROPOSALS: Record<string, Decoder> = {
 		action: "propose-wind-down-delay",
 		args: [duration("Wind-down delay", secs)],
 	}),
+	MinEpochDuration: ([secs]) => ({
+		action: "propose-min-epoch-duration",
+		args: [duration("Minimum epoch duration", secs)],
+	}),
 	Upgrade: ([hash]) => ({
 		action: "propose-code-upgrade",
 		args: [{ label: "Wasm hash", value: hex(hash) }],
@@ -278,6 +282,10 @@ const vaultDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	set_wind_down_delay: ([secs]) => ({
 		action: "set-wind-down-delay",
 		args: [duration("Wind-down delay", secs)],
+	}),
+	set_min_epoch_duration: ([secs]) => ({
+		action: "set-min-epoch-duration",
+		args: [duration("Minimum epoch duration", secs)],
 	}),
 	...timelockDecoders("vault", VAULT_PROPOSALS, changes),
 	propose_wind_down: only("propose-wind-down"),

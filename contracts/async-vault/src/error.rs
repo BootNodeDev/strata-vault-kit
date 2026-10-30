@@ -23,8 +23,9 @@ strata_bindings::error_enum! {
         /// most one request per holder per epoch holds by construction.
         RequestOutstanding = 6009,
         /// A sum, count or conversion would not fit its type: a running total or
-        /// a conversion of assets or shares past `i128`, or an epoch's count of
-        /// open requests past `u32`.
+        /// a conversion of assets or shares past `i128`, an epoch's count of
+        /// open requests past `u32`, or the end of an epoch's notice past
+        /// `u64`.
         AmountTooLarge = 6014,
         /// No epoch is stored under the given id.
         EpochNotFound = 6029,
@@ -75,8 +76,8 @@ strata_bindings::error_enum! {
         /// The standing valuation was accepted before the epoch closed. Pricing
         /// against it would use a number the close already outran.
         AttestationBeforeClose = 6043,
-        /// The feed is paused or stale, so no epoch can be priced from it and no
-        /// deposit is taken.
+        /// The feed is paused, stale or fails to answer, so no epoch can be
+        /// priced from it. While it is paused or stale, no deposit is taken.
         FeedNotValid = 6044,
         /// The notice exceeds the longest the vault accepts. A notice no investor
         /// could outlive would strand their exit with no way to undo it.
@@ -102,7 +103,8 @@ strata_bindings::error_enum! {
         /// The delay exceeds the longest the vault accepts. A delay nobody could
         /// outlive would mean the vault never closes.
         WindDownDelayTooLong = 6053,
-        /// Nothing to surrender and nothing owed. Claiming is idempotent by
+        /// Nothing to surrender and nothing owed, or the holder is the vault,
+        /// whose shares are other holders' escrow. Claiming is idempotent by
         /// rejection, as elsewhere in this contract.
         NoEntitlement = 6054,
         /// A code change already waits. Replacing one means cancelling it first, so

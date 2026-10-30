@@ -14,6 +14,8 @@ const {
 	proposeCustodianMock,
 	proposeNoticeMock,
 	proposeWindDownDelayMock,
+	minEpochDurationMock,
+	proposeMinEpochDurationMock,
 	oracleConfigMock,
 	complianceMock,
 	identityVerifierMock,
@@ -36,6 +38,8 @@ const {
 		proposeCustodianMock: tx(),
 		proposeNoticeMock: tx(),
 		proposeWindDownDelayMock: tx(),
+		minEpochDurationMock: tx(),
+		proposeMinEpochDurationMock: tx(),
 		oracleConfigMock: tx(),
 		complianceMock: tx(),
 		identityVerifierMock: tx(),
@@ -56,6 +60,8 @@ vi.mock("../../hooks/useConfigurationTransactions", () => ({
 	useProposeCustodian: () => proposeCustodianMock,
 	useProposeNotice: () => proposeNoticeMock,
 	useProposeWindDownDelay: () => proposeWindDownDelayMock,
+	useSetMinEpochDuration: () => minEpochDurationMock,
+	useProposeMinEpochDuration: () => proposeMinEpochDurationMock,
 	useSetOracleConfig: () => oracleConfigMock,
 	useSetCompliance: () => complianceMock,
 	useSetIdentityVerifier: () => identityVerifierMock,
@@ -87,6 +93,7 @@ const READY: ConfigurationState = {
 	custodian: { kind: "set", address: CUSTODIAN },
 	notice: DAY,
 	windDownDelay: 7n * DAY,
+	minEpochDuration: { kind: "unset" },
 	upgradeDelay: 3n * DAY,
 	setupOpen: false,
 	tokenSetupOpen: true,
@@ -130,6 +137,8 @@ describe("ConfigurationSection", () => {
 			proposeCustodianMock,
 			proposeNoticeMock,
 			proposeWindDownDelayMock,
+			minEpochDurationMock,
+			proposeMinEpochDurationMock,
 			oracleConfigMock,
 			complianceMock,
 			identityVerifierMock,
@@ -276,6 +285,39 @@ describe("ConfigurationSection", () => {
 		rerender(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
 		fireEvent.click(submit("Set the custodian"))
 		expect(custodianMock.submit).toHaveBeenCalledWith(VERIFIER, governance)
+	})
+
+	it("sets the minimum epoch duration while setup is open and proposes it after", () => {
+		useConfigurationStateMock.mockReturnValue({
+			configuration: { ...READY, setupOpen: true },
+		})
+		const { rerender } = render(
+			<ConfigurationSection grants={[governance]} wallet={WALLET} />,
+		)
+		expand("Set the minimum epoch duration")
+		fireEvent.change(
+			screen.getByRole("textbox", { name: "Minimum epoch duration" }),
+			{ target: { value: "7d" } },
+		)
+		fireEvent.click(submit("Set the minimum epoch duration"))
+		expect(minEpochDurationMock.submit).toHaveBeenCalledWith(
+			7n * DAY,
+			governance,
+		)
+
+		useConfigurationStateMock.mockReturnValue({ configuration: READY })
+		rerender(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
+		fireEvent.click(submit("Set the minimum epoch duration"))
+		expect(proposeMinEpochDurationMock.submit).toHaveBeenCalledWith(
+			7n * DAY,
+			governance,
+		)
+
+		proposeMinEpochDurationMock.status = { status: "awaiting-signature" }
+		rerender(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
+		expect(
+			screen.getByText("Signing queues minimum epoch duration 7d."),
+		).toBeTruthy()
 	})
 
 	it("proposes the token's contracts once its setup closes and sets them at once while it is open", () => {

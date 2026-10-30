@@ -50,6 +50,7 @@ const cycleReads = {
 	notice: { kind: "value", value: 3_600n },
 	depositCap: { kind: "uncapped" },
 	windDown: { delay: 172_800n },
+	minEpochDuration: { kind: "set", secs: 86_400n },
 	oracle: { limits: LIMITS },
 }
 
@@ -79,6 +80,7 @@ describe("useConfigurationState", () => {
 				custodian: { kind: "set", address: CUSTODIAN },
 				notice: 3_600n,
 				windDownDelay: 172_800n,
+				minEpochDuration: { kind: "set", secs: 86_400n },
 				upgradeDelay: 604_800n,
 				setupOpen: false,
 				tokenSetupOpen: true,

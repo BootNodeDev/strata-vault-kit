@@ -69,6 +69,11 @@ const KINDS: Record<string, Kind> = {
 		join: " ",
 		effect: becomes("Wind-down delay"),
 	},
+	MinEpochDuration: {
+		label: "Minimum epoch duration",
+		join: " ",
+		effect: becomes("Minimum epoch duration"),
+	},
 	GrantRole: {
 		label: "Grant role",
 		join: " to ",

@@ -192,7 +192,8 @@ impl Compliance {
     ///
     /// # Events
     ///
-    /// * `ChangeProposed`, with its `eta` in seconds.
+    /// * `ChangeProposed`, with its `eta` in seconds; time the vault spends
+    ///   paused from now on moves it later.
     ///
     /// # Authorization
     ///

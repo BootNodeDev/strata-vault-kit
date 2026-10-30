@@ -33,6 +33,19 @@ const transaction = (simulationError?: string) =>
 		result: 1n,
 	}) as unknown as AssembledTransaction<bigint>
 
+const surrendered = new xdr.ContractEvent({
+	ext: new xdr.ExtensionPoint(0),
+	contractId: null,
+	type: xdr.ContractEventType.contract(),
+	body: new xdr.ContractEventBody(
+		0,
+		new xdr.ContractEventV0({
+			topics: [xdr.ScVal.scvSymbol("redemption_surrendered")],
+			data: xdr.ScVal.scvVoid(),
+		}),
+	),
+})
+
 const renderTransaction = (simulationError?: string) =>
 	renderWithWallet(() =>
 		useContractTransaction(
@@ -44,18 +57,6 @@ const renderTransaction = (simulationError?: string) =>
 
 describe("useContractTransaction", () => {
 	it("hands the confirmed transaction's contract events to its confirmation", async () => {
-		const surrendered = new xdr.ContractEvent({
-			ext: new xdr.ExtensionPoint(0),
-			contractId: null,
-			type: xdr.ContractEventType.contract(),
-			body: new xdr.ContractEventBody(
-				0,
-				new xdr.ContractEventV0({
-					topics: [xdr.ScVal.scvSymbol("redemption_surrendered")],
-					data: xdr.ScVal.scvVoid(),
-				}),
-			),
-		})
 		const tx = {
 			simulation: undefined,
 			signAndSend: vi.fn().mockResolvedValue({
@@ -333,6 +334,37 @@ describe("useContractTransaction, prepared simulations", () => {
 		expect(result.current.status).toEqual({
 			status: "confirmed",
 			result: 9n,
+			hash: "h",
+		})
+	})
+
+	it("hands a reused transaction's contract events to its confirmation", async () => {
+		submitSignedMock.mockResolvedValueOnce({
+			status: "success",
+			hash: "h",
+			result: 1n,
+			events: [[surrendered]],
+		})
+		const call = vi.fn().mockResolvedValue(transaction())
+		const { result } = renderWithWallet(() =>
+			useContractTransaction(
+				call,
+				(_result: bigint, events: TransactionEvent[]) => ({
+					names: events.map((event) => event.name),
+				}),
+			),
+		)
+
+		act(() => {
+			result.current.prepare(5n)
+		})
+		await flush()
+		await act(() => result.current.submit(5n))
+		await flush()
+
+		expect(result.current.status).toEqual({
+			status: "confirmed",
+			names: ["redemption_surrendered"],
 			hash: "h",
 		})
 	})

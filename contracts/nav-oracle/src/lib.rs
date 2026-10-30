@@ -477,7 +477,8 @@ impl NavOracleContract {
     ///
     /// # Events
     ///
-    /// * `ChangeProposed`, with its `eta` in seconds.
+    /// * `ChangeProposed`, with its `eta` in seconds; time the vault spends
+    ///   paused from now on moves it later.
     ///
     /// # Authorization
     ///
@@ -811,7 +812,3 @@ impl NavOracleContract {
 
 #[cfg(test)]
 mod test;
-#[cfg(test)]
-mod test_governance;
-#[cfg(test)]
-mod test_guards;

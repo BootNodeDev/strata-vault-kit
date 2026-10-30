@@ -176,13 +176,19 @@ fn a_later_epochs_deposit_does_not_fund_an_earlier_exit() {
     f.vault.fulfill_epoch(&exits);
 
     // Nothing on hand, so the claim waits.
-    assert!(f.vault.try_claim_redeem(&a, &exits).is_err());
+    refused(
+        f.vault.try_claim_redeem(&a, &exits),
+        VaultError::ClaimNotCovered,
+    );
 
     // A deposit into the open epoch is still cancellable, so it changes nothing.
     f.vault.request_deposit(&late, &400);
     assert_eq!(f.vault.cancellable_escrow(), 400);
     assert_eq!(f.vault.uncovered(), 200);
-    assert!(f.vault.try_claim_redeem(&a, &exits).is_err());
+    refused(
+        f.vault.try_claim_redeem(&a, &exits),
+        VaultError::ClaimNotCovered,
+    );
 
     // Money the custodian returns is not cancellable, so it does fund the exit.
     f.vault.fund(&f.custodian, &200);
@@ -229,7 +235,10 @@ fn a_claim_waits_until_the_reserve_covers_it() {
     f.attest(wad(2));
     f.vault.fulfill_epoch(&epoch);
 
-    assert!(f.vault.try_claim_redeem(&a, &epoch).is_err());
+    refused(
+        f.vault.try_claim_redeem(&a, &epoch),
+        VaultError::ClaimNotCovered,
+    );
 
     f.vault.fund(&f.custodian, &200);
     assert_eq!(f.vault.claim_redeem(&a, &epoch), 200);
@@ -255,7 +264,10 @@ fn a_covered_claim_pays_while_a_larger_one_waits() {
     // 840 owed in total, only 100 on hand.
     f.vault.fund(&f.custodian, &100);
 
-    assert!(f.vault.try_claim_redeem(&big, &epoch).is_err());
+    refused(
+        f.vault.try_claim_redeem(&big, &epoch),
+        VaultError::ClaimNotCovered,
+    );
     assert_eq!(f.vault.claim_redeem(&small, &epoch), 40);
 }
 
@@ -274,5 +286,8 @@ fn the_treasury_cannot_deploy_while_anything_is_uncovered() {
     // 600 owed against 400 held.
     assert_eq!(f.vault.uncovered(), 200);
     assert_eq!(f.vault.free_reserve(), 0);
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &1).is_err());
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &1),
+        VaultError::ReserveCommittedToExits,
+    );
 }

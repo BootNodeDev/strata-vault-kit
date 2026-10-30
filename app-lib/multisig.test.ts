@@ -409,6 +409,7 @@ describe("submitSigned", () => {
 		await expect(submitSigned(tx)).resolves.toEqual({
 			status: "success",
 			hash: "abc123",
+			events: [],
 		})
 		expect(sendMock).toHaveBeenCalledWith(tx)
 		expect(pollMock).toHaveBeenCalledWith("abc123")
@@ -430,6 +431,7 @@ describe("submitSigned", () => {
 			status: "success",
 			hash: "abc123",
 			result: 5n,
+			events: [],
 		})
 	})
 
@@ -518,6 +520,7 @@ describe("submitSigned", () => {
 		await expect(submitSigned(tx)).resolves.toEqual({
 			status: "success",
 			hash: "abc123",
+			events: [],
 		})
 		expect(pollMock).toHaveBeenCalledWith("abc123")
 	})

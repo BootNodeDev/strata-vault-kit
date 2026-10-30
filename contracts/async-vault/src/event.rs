@@ -88,6 +88,14 @@ pub struct DepositCancelled {
 }
 
 #[contractevent]
+pub struct DepositRefunded {
+    #[topic]
+    pub holder: Address,
+    pub epoch: u64,
+    pub amount: i128,
+}
+
+#[contractevent]
 pub struct RedeemCancelled {
     #[topic]
     pub holder: Address,

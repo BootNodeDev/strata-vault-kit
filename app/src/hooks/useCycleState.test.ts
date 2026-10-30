@@ -29,6 +29,8 @@ const { vaultMock, oracleMock, assetMock, readEpochsMock, readEventsMock } =
 			notice: vi.fn(),
 			free_reserve: vi.fn(),
 			deposit_cap: vi.fn(),
+			min_epoch_duration: vi.fn(),
+			epoch_opened_at: vi.fn(),
 			wind_down: vi.fn(),
 			wind_down_delay: vi.fn(),
 			wind_down_owed: vi.fn(),
@@ -231,7 +233,11 @@ describe("toEpoch", () => {
 				record(2n, "Pending"),
 				record(1n, "Fulfilled"),
 			]),
-			value(3_600n),
+			{
+				notice: value(3_600n),
+				minEpochDuration: null,
+				epochOpenedAt: null,
+			},
 		)
 
 		expect(epoch.id).toBe(4n)
@@ -244,7 +250,7 @@ describe("toEpoch", () => {
 	it("has nothing awaiting when every sealed epoch is priced", () => {
 		const epoch = toEpoch(
 			loaded([record(4n, "Open"), record(3n, "Fulfilled")]),
-			unreadable,
+			{ notice: unreadable, minEpochDuration: null, epochOpenedAt: null },
 		)
 
 		expect(epoch.awaiting).toBeNull()
@@ -253,7 +259,11 @@ describe("toEpoch", () => {
 
 	it("cannot rule out a sealed epoch when one was unreadable", () => {
 		expect(
-			toEpoch(loaded([record(4n, "Open")], [3n]), value(0n)).awaitingKnown,
+			toEpoch(loaded([record(4n, "Open")], [3n]), {
+				notice: value(0n),
+				minEpochDuration: null,
+				epochOpenedAt: null,
+			}).awaitingKnown,
 		).toBe(false)
 	})
 })
@@ -272,6 +282,8 @@ const resolveVault = () => {
 	vaultMock.notice.mockResolvedValue({ result: 3_600n })
 	vaultMock.free_reserve.mockResolvedValue({ result: 900n })
 	vaultMock.deposit_cap.mockResolvedValue({ result: null })
+	vaultMock.min_epoch_duration.mockResolvedValue({ result: null })
+	vaultMock.epoch_opened_at.mockResolvedValue({ result: 1_700_000_000n })
 	vaultMock.wind_down.mockResolvedValue({ result: null })
 	vaultMock.wind_down_delay.mockResolvedValue({ result: 60n })
 	vaultMock.wind_down_owed.mockResolvedValue({ result: 0n })
@@ -320,6 +332,38 @@ describe("deposit cap", () => {
 		await waitFor(() => expect(hook.current.cycle.status).toBe("ready"))
 
 		expect(hook.current.cycle).toMatchObject({ reserve: { depositCap: null } })
+	})
+})
+
+describe("minimum epoch duration", () => {
+	beforeEach(() => {
+		resolveVault()
+	})
+
+	it.each<[string, bigint | null, object]>([
+		["null as no minimum", null, { kind: "unset" }],
+		["a duration as the minimum", 86_400n, { kind: "set", secs: 86_400n }],
+	])(
+		"reads %s, with when the open epoch opened",
+		async (_name, result, expected) => {
+			vaultMock.min_epoch_duration.mockResolvedValue({ result })
+
+			const { result: hook } = renderWithWallet(useCycleState)
+			await waitFor(() => expect(hook.current.cycle.status).toBe("ready"))
+
+			expect(hook.current.cycle).toMatchObject({
+				epoch: { minDuration: expected, openedAt: 1_700_000_000n },
+			})
+		},
+	)
+
+	it("leaves a failed read as unavailable", async () => {
+		vaultMock.min_epoch_duration.mockRejectedValue(new Error("network down"))
+
+		const { result: hook } = renderWithWallet(useCycleState)
+		await waitFor(() => expect(hook.current.cycle.status).toBe("ready"))
+
+		expect(hook.current.cycle).toMatchObject({ epoch: { minDuration: null } })
 	})
 })
 

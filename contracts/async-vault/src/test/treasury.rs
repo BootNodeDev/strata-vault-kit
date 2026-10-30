@@ -1,4 +1,5 @@
 use soroban_sdk::IntoVal;
+use stellar_access::access_control::AccessControlError;
 
 use super::*;
 
@@ -53,7 +54,10 @@ fn assets_owed_to_a_priced_redemption_cannot_be_deployed() {
 
     assert_eq!(f.balance(&f.vault.address), 1_000);
     assert_eq!(f.vault.free_reserve(), 0);
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &1).is_err());
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &1),
+        VaultError::ReserveCommittedToExits,
+    );
 
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 1_000);
 }
@@ -81,11 +85,22 @@ fn a_claim_waits_while_the_capital_is_deployed() {
     // Pricing does not need the cash back; the claim does.
     assert_eq!(f.vault.fulfill_epoch(&epoch), wad(2));
     assert_eq!(f.vault.uncovered(), 1_000);
-    assert!(f.vault.try_claim_redeem(&holder, &epoch).is_err());
+    refused(
+        f.vault.try_claim_redeem(&holder, &epoch),
+        VaultError::ClaimNotCovered,
+    );
 
     f.vault.fund(&f.custodian, &1_000);
     assert_eq!(f.vault.uncovered(), 0);
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 1_000);
+}
+
+#[test]
+fn funding_a_zero_amount_is_rejected() {
+    let f = setup();
+    let investor = f.investor(1_000);
+
+    refused(f.vault.try_fund(&investor, &0), VaultError::InvalidAmount);
 }
 
 #[test]
@@ -94,8 +109,14 @@ fn deploying_needs_the_treasury_role() {
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &1_000);
 
-    assert!(f.vault.try_deploy_to_custodian(&f.manager, &100).is_err());
-    assert!(f.vault.try_deploy_to_custodian(&f.admin, &100).is_err());
+    assert_eq!(
+        f.vault.try_deploy_to_custodian(&f.manager, &100),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.vault.try_deploy_to_custodian(&f.admin, &100),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
     assert_eq!(f.balance(&f.custodian), 0);
 }
 
@@ -117,13 +138,13 @@ fn setting_the_custodian_needs_the_admin_signature() {
     let f = miswired(Miswire::NoCustodian);
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_set_custodian(&f.custodian).is_err());
+    missing_auth(f.vault.try_set_custodian(&f.custodian));
     f.sign_only_as(
         &f.treasury,
         "set_custodian",
         (f.custodian.clone(),).into_val(&f.e),
     );
-    assert!(f.vault.try_set_custodian(&f.custodian).is_err());
+    missing_auth(f.vault.try_set_custodian(&f.custodian));
     assert_eq!(f.vault.custodian(), None);
 }
 
@@ -145,8 +166,14 @@ fn deploying_a_non_positive_amount_is_rejected() {
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &1_000);
 
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &0).is_err());
-    assert!(f.vault.try_deploy_to_custodian(&f.treasury, &-1).is_err());
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &0),
+        VaultError::InvalidAmount,
+    );
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &-1),
+        VaultError::InvalidAmount,
+    );
 }
 
 /// Exits priced after a gain can owe more than the capital the vault counts,

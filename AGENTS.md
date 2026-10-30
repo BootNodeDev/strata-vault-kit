@@ -25,16 +25,18 @@ What the contracts enforce:
    every share transfer.
 2. **A covered claim always pays.** Once priced and covered, a cash claim cannot
    be blocked by a pause, a stale valuation, or the investor losing their
-   allowlist place. Priced claims are never re-priced and never identity-gated;
-   a delisted, non-frozen investor leaves through the exit-only cash path,
-   including a deposit that was priced before the delisting.
+   allowlist place. Priced claims are never re-priced, and a cash payout never
+   needs the identity check; a delisted, non-frozen investor leaves through
+   the exit-only cash path, including a deposit that was priced before the
+   delisting. A compliance freeze holds the claim until it is lifted.
 3. **Cancellation is atomic and single-step**, open only while the vault cannot
    price the request: the attestation that prices it closes cancellation, and
    cancellation reopens if that report expires, the NAV is paused or the vault
    is paused. There is no instant exit.
 
-Five authorities, each a native Stellar multisig: governance, compliance,
-attestation, treasury, guardian. Testnet only. Not audited.
+Five authorities, each meant to be a native Stellar multisig: governance,
+compliance, attestation, treasury, guardian. The deploy script gives each one
+key for now. Testnet only. Not audited.
 
 ## Reference base
 
@@ -52,7 +54,8 @@ does not carry over. Read it for Soroban and OZ mechanics only.
   the in-memory `Env`. There is no unit-test runner for `app/` or `app-lib/`;
   `e2e/` runs Playwright separately. CI runs `cargo test --locked` on every pull
   request except one that changes only Markdown files outside `docs/evidence/`:
-  that one skips the Rust and local-network jobs.
+  that one skips the Rust and local-network jobs. The secret scan runs on
+  every pull request.
 - **Toolchain:** `nix develop` provides it, or rustup honours
   `rust-toolchain.toml`.
 
@@ -99,10 +102,13 @@ apply as the corresponding code lands here.
   A fresh clone builds `app` with no cargo, no stellar CLI and no local network,
   but needs RPC access to the selected network at build time. A local scaffold
   build writes the same directory from the WASM.
-- When a tool must drive `cargo` directly rather than the CLI, set
-  `SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1`. The build script fails
-  without it and its error names neither the variable nor this way out, so
-  coverage runs and size checks look impossible until you read the SDK source.
+- When `cargo` itself builds a contract for the Wasm target, rather than
+  `stellar contract build` (a size check with
+  `cargo build --release --target wasm32v1-none`, for example), set
+  `SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1`. soroban-sdk's build
+  script stops that build without it, and its error names neither the variable
+  nor this way out. Host builds such as `cargo test` and `cargo clippy` never
+  need it.
 - Change a contract's `__constructor` and you must change its `constructor_args`
   in `environments.toml` in the same commit. Otherwise the scaffold build still
   exits 0 and CI fails minutes later on a client count, naming neither the

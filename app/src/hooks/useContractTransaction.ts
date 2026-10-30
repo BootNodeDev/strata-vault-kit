@@ -384,7 +384,7 @@ export function useContractTransaction<
 					invalidateRequestData()
 					return
 				}
-				confirm(sent.result as TResult)
+				confirm(sent.result as TResult, decodeTransactionEvents(sent.events))
 			}
 			const signAndSend = async (tx: AssembledTransaction<TResult>) => {
 				const sent = await tx.signAndSend({
