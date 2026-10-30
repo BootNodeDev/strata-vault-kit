@@ -5,7 +5,7 @@ import {
 	readContract,
 } from "@stellar-scaffold/app-lib"
 import { useQuery } from "@tanstack/react-query"
-import { asyncVault, shareToken } from "../config/clients"
+import { asyncVault, navOracle, shareToken } from "../config/clients"
 import { type PendingChange } from "../pages/pendingChanges"
 import { type GovernedContract, pendingAdminsQuery } from "./pendingAdmins"
 import { useConfigurationState } from "./useConfigurationState"
@@ -19,6 +19,7 @@ const REFRESH_MS = 15_000
 const PENDING_CHANGES_KEYS = {
 	vault: ["governance", "pendingChanges"],
 	token: ["governance", "tokenPendingChanges"],
+	oracle: ["governance", "oraclePendingChanges"],
 } as const
 
 export const pendingChangesKey = <C extends TimelockedContract>(contract: C) =>
@@ -51,6 +52,7 @@ type PendingRead = { pending: PendingChange[] | undefined }
 const PENDING_READERS = {
 	vault: async () => (await asyncVault()).pending_changes(),
 	token: async () => (await shareToken()).pending_changes(),
+	oracle: async () => (await navOracle()).pending_changes(),
 } satisfies Record<TimelockedContract, unknown>
 
 async function fetchPendingChanges(
@@ -68,6 +70,7 @@ export const pendingChangesQuery = (contract: TimelockedContract) => ({
 const SETUP_FLAGS = {
 	vault: "setupOpen",
 	token: "tokenSetupOpen",
+	oracle: "oracleSetupOpen",
 } as const satisfies Record<TimelockedContract, string>
 
 const usePendingChanges = (contract: TimelockedContract) =>
@@ -84,6 +87,7 @@ function useUpgrades(): Record<TimelockedContract, Upgrades> {
 	const reads = {
 		vault: usePendingChanges("vault"),
 		token: usePendingChanges("token"),
+		oracle: usePendingChanges("oracle"),
 	}
 	const upgradesOf = (contract: TimelockedContract): Upgrades => {
 		const data = reads[contract]
@@ -104,7 +108,11 @@ function useUpgrades(): Record<TimelockedContract, Upgrades> {
 			paused: pause,
 		}
 	}
-	return { vault: upgradesOf("vault"), token: upgradesOf("token") }
+	return {
+		vault: upgradesOf("vault"),
+		token: upgradesOf("token"),
+		oracle: upgradesOf("oracle"),
+	}
 }
 
 function toHandovers(

@@ -610,6 +610,32 @@ fn a_vault_pause_moves_the_eta_and_holds_the_change() {
 }
 
 #[test]
+fn the_proposal_event_carries_the_eta_pending_changes_reports_then() {
+    let f = setup();
+    f.finish();
+    f.clock(|c| {
+        c.paused = true;
+        c.paused_secs = DAY_DURATION;
+    });
+
+    let change = TokenChange::GrantRole(manager(), Address::generate(&f.e));
+    let eta = f.e.ledger().timestamp() + MIN_DELAY;
+    let id = f.token.propose_change(&change);
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.token.address),
+        [ChangeProposed { id, change, eta }.to_xdr(&f.e, &f.token.address)]
+    );
+    assert_eq!(f.token.pending_changes().get(0).unwrap().eta, eta);
+
+    f.clock(|c| c.paused_secs = 2 * DAY_DURATION);
+    assert_eq!(
+        f.token.pending_changes().get(0).unwrap().eta,
+        eta + DAY_DURATION
+    );
+}
+
+#[test]
 fn nothing_is_proposed_or_applied_while_the_vault_winds_down() {
     let f = setup();
     f.finish();

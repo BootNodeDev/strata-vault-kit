@@ -68,6 +68,33 @@ fn a_priced_epoch_is_not_cancellable() {
 }
 
 #[test]
+fn cancelling_without_a_request_finds_no_request_once_a_price_is_known() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+
+    let epoch = f.close_epoch();
+    f.attest(wad(2));
+    refused(
+        f.vault.try_cancel_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+    refused(
+        f.vault.try_cancel_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.vault.fulfill_epoch(&epoch);
+    refused(
+        f.vault.try_cancel_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+    refused(
+        f.vault.try_cancel_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+}
+
+#[test]
 fn the_pause_never_blocks_a_cancellation() {
     let f = setup();
     let inv = f.investor(1_000);
@@ -167,6 +194,29 @@ fn a_redemption_that_pays_nothing_returns_the_shares_at_claim() {
     f.vault.fulfill_epoch(&epoch);
 
     // 1 share at 0.4 pays zero assets.
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
+    assert_eq!(f.shares(&holder), 1);
+}
+
+#[test]
+fn a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted() {
+    let f = setup();
+    let holder = f.holder(1);
+
+    let epoch = f.vault.request_redeem(&holder, &1);
+    f.close_epoch();
+    f.attest(wad(4) / 10);
+    f.vault.fulfill_epoch(&epoch);
+
+    // 1 share at 0.4 pays zero assets.
+    f.identity.allow(&holder, &false);
+    refused(
+        f.vault.try_claim_redeem(&holder, &epoch),
+        VaultError::HolderNotEligible,
+    );
+    assert_eq!(f.shares(&holder), 0);
+
+    f.identity.allow(&holder, &true);
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
     assert_eq!(f.shares(&holder), 1);
 }

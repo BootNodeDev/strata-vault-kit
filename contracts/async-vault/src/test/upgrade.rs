@@ -250,6 +250,26 @@ fn a_pause_freezes_the_upgrade_timelock_clock() {
 }
 
 #[test]
+fn a_proposals_eta_matches_the_pending_change_until_a_pause_moves_it() {
+    let f = setup();
+    f.vault.pause(&f.guardian);
+    f.advance(DAY_DURATION);
+
+    let change = VaultChange::Upgrade(wasm(&f, 7));
+    let eta = f.e.ledger().timestamp() + MIN_UPGRADE_DELAY;
+    let id = f.vault.propose_change(&change);
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.vault.address),
+        [ChangeProposed { id, change, eta }.to_xdr(&f.e, &f.vault.address)]
+    );
+    assert_eq!(only_pending(&f).eta, eta);
+
+    f.advance(DAY_DURATION);
+    assert_eq!(only_pending(&f).eta, eta + DAY_DURATION);
+}
+
+#[test]
 fn applying_while_paused_is_refused() {
     let f = setup();
     let id = propose(&f, VaultChange::UpgradeDelay(30 * DAY_DURATION));

@@ -10,6 +10,7 @@ const {
 	readPendingAdminsMock,
 	vaultMock,
 	tokenMock,
+	oracleMock,
 	useCycleReadsMock,
 	useConfigurationStateMock,
 	useVaultPausedMock,
@@ -17,6 +18,7 @@ const {
 	readPendingAdminsMock: vi.fn(),
 	vaultMock: { pending_changes: vi.fn() },
 	tokenMock: { pending_changes: vi.fn() },
+	oracleMock: { pending_changes: vi.fn() },
 	useCycleReadsMock: vi.fn(),
 	useConfigurationStateMock: vi.fn(),
 	useVaultPausedMock: vi.fn(),
@@ -25,6 +27,7 @@ const {
 vi.mock("../config/clients", () => ({
 	asyncVault: async () => vaultMock,
 	shareToken: async () => tokenMock,
+	navOracle: async () => oracleMock,
 }))
 vi.mock("./useCycleState", async (importOriginal) => ({
 	...(await importOriginal<object>()),
@@ -77,6 +80,7 @@ describe("useGovernanceState", () => {
 		readPendingAdminsMock.mockResolvedValue({ kind: "unreadable" })
 		vaultMock.pending_changes.mockResolvedValue({ result: [] })
 		tokenMock.pending_changes.mockResolvedValue({ result: [] })
+		oracleMock.pending_changes.mockResolvedValue({ result: [] })
 		useCycleReadsMock.mockReturnValue({
 			ledgerTime: 1_800_000_000n,
 			windDown: WIND_DOWN,
@@ -88,6 +92,7 @@ describe("useGovernanceState", () => {
 				notice: DAY,
 				setupOpen: false,
 				tokenSetupOpen: true,
+				oracleSetupOpen: false,
 			},
 		})
 		useVaultPausedMock.mockReturnValue({ pause: "open" })
@@ -237,5 +242,28 @@ describe("useGovernanceState", () => {
 			pending: [],
 			setupOpen: false,
 		})
+	})
+
+	it("reads the oracle's own queue and setup state on the vault's clock", async () => {
+		const pending = [
+			{ id: 1, change: { tag: "Admin", values: ["GNEXT"] }, eta: 8n },
+		]
+		oracleMock.pending_changes.mockResolvedValue({ result: pending })
+		const { result } = render()
+
+		await waitFor(() =>
+			expect(result.current.upgrades.oracle.status).toBe("ready"),
+		)
+		expect(result.current.upgrades.oracle).toEqual({
+			status: "ready",
+			pending,
+			setupOpen: false,
+			delay: 7n * DAY,
+			notice: DAY,
+			windDown: WIND_DOWN,
+			now: 1_800_000_000n,
+			paused: "open",
+		})
+		expect(result.current.upgrades.token).toMatchObject({ pending: [] })
 	})
 })

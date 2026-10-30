@@ -190,6 +190,24 @@ fn claiming_without_a_request_is_rejected() {
 }
 
 #[test]
+fn claiming_without_a_request_finds_no_request_before_pricing() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    let epoch = f.vault.current_epoch();
+
+    refused(
+        f.vault.try_claim_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.close_epoch();
+    refused(
+        f.vault.try_claim_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+}
+
+#[test]
 fn a_deposit_below_one_share_is_refunded_at_claim() {
     let f = setup();
     let user = f.investor(1_000);

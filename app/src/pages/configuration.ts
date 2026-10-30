@@ -78,7 +78,7 @@ export type ConfigurationAction =
 			| "propose-wind-down-delay",
 			bigint
 	  >
-	| Setter<"set-oracle-config", OracleConfig>
+	| Setter<"set-oracle-config" | "propose-oracle-config", OracleConfig>
 
 export type ConfigurationGroup = {
 	title: string
@@ -409,6 +409,15 @@ const toConfig = (limits: OracleLimits): OracleConfig => ({
 const sameConfig = (a: OracleConfig, b: OracleConfig): boolean =>
 	(Object.keys(a) as (keyof OracleConfig)[]).every((key) => a[key] === b[key])
 
+const shortensFreshnessOnly = (
+	current: OracleConfig,
+	next: OracleConfig,
+): boolean =>
+	sameConfig(
+		{ ...next, freshness_duration: current.freshness_duration },
+		current,
+	) && next.freshness_duration <= current.freshness_duration
+
 type ParsedConfig = { [K in keyof OracleConfig]: Parsed<OracleConfig[K]> }
 
 function oracleFields(
@@ -518,17 +527,31 @@ const oracleBounds = (fields: ParsedConfig): Condition[] => {
 function oracleSpec(
 	state: ConfigurationValues,
 	inputs: ConfigurationInputs,
-): Spec<"set-oracle-config"> & { arg: OracleConfig | undefined; next: string } {
+): Spec<"set-oracle-config" | "propose-oracle-config"> & {
+	arg: OracleConfig | undefined
+	next: string
+} {
 	const current = state.oracle === null ? undefined : toConfig(state.oracle)
 	const fields = oracleFields(current, inputs)
 	const arg = configOf(fields)
-	const changed =
-		arg === undefined || current === undefined
-			? undefined
-			: !sameConfig(arg, current)
-	const conditions = [...oracleBounds(fields), differs(changed)]
+	const unread = arg === undefined || current === undefined
+	const changed = unread ? undefined : !sameConfig(arg, current)
+	const waits = unread ? undefined : !shortensFreshnessOnly(current, arg)
+	const route = routeOf(state.oracleSetupOpen, waits)
+	const conditions = [
+		...oracleBounds(fields),
+		routeCondition(
+			route,
+			state.upgradeDelay,
+			state.oracleSetupOpen === true
+				? undefined
+				: "Shortening the freshness window is instant",
+		),
+		differs(changed),
+	]
 	return {
-		id: "set-oracle-config",
+		id: route === "timelock" ? "propose-oracle-config" : "set-oracle-config",
+		slot: "set-oracle-config",
 		label: "Set the oracle limits",
 		conditions,
 		outcome: null,

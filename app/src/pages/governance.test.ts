@@ -13,6 +13,7 @@ import {
 	toGovernanceActions,
 	toGovernanceGroups,
 } from "./governance"
+import { type PendingChange } from "./pendingChanges"
 
 const WALLET = "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H"
 const ACCOUNT = "GABAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEJXA"
@@ -54,20 +55,22 @@ const DAY = 86_400n
 
 type ReadyUpgrades = Extract<Upgrades, { status: "ready" }>
 
+const upgradesWindDown: ReadyUpgrades["windDown"] = {
+	phase: "none",
+	activeAt: null,
+	round: null,
+	delay: 3n * DAY,
+	owed: null,
+	supply: null,
+}
+
 const upgrades = (overrides: Partial<ReadyUpgrades> = {}): Upgrades => ({
 	status: "ready",
 	pending: [],
 	setupOpen: true,
 	delay: 7n * DAY,
 	notice: DAY,
-	windDown: {
-		phase: "none",
-		activeAt: null,
-		round: null,
-		delay: 3n * DAY,
-		owed: null,
-		supply: null,
-	},
+	windDown: upgradesWindDown,
 	now: CLOSE_TIME,
 	paused: "open",
 	...overrides,
@@ -89,7 +92,7 @@ const state = (
 			token: pending.token ?? null,
 		},
 	},
-	upgrades: { vault: upgrades(), token: upgrades() },
+	upgrades: { vault: upgrades(), token: upgrades(), oracle: upgrades() },
 })
 
 const find = <Id extends GovernanceAction["id"]>(
@@ -131,7 +134,12 @@ describe("toGovernanceActions", () => {
 		],
 		[
 			oracleAdmin,
-			["grant-oracle-role", "revoke-oracle-role", "hand-over-oracle-admin"],
+			[
+				"grant-oracle-role",
+				"revoke-oracle-role",
+				"hand-over-oracle-admin",
+				"propose-oracle-upgrade",
+			],
 		],
 		[
 			tokenAdmin,
@@ -517,7 +525,11 @@ describe("vault timelock", () => {
 	const HASH = "ab".repeat(32)
 	const withUpgrades = (overrides: Partial<ReadyUpgrades>) => ({
 		...state(),
-		upgrades: { vault: upgrades(overrides), token: upgrades() },
+		upgrades: {
+			vault: upgrades(overrides),
+			token: upgrades(),
+			oracle: upgrades(),
+		},
 	})
 	const afterSetup = (overrides: Partial<ReadyUpgrades> = {}) =>
 		withUpgrades({ setupOpen: false, ...overrides })
@@ -598,6 +610,7 @@ describe("vault timelock", () => {
 			"grant-oracle-role",
 			"revoke-oracle-role",
 			"hand-over-oracle-admin",
+			"propose-oracle-upgrade",
 		])
 		expect(ids(closed, tokenAdmin)).toEqual([
 			"grant-token-role",
@@ -638,7 +651,11 @@ describe("vault timelock", () => {
 				{},
 				{ vault: { address: ACCOUNT, liveUntilLedger: 5_000, expired: false } },
 			),
-			upgrades: { vault: upgrades({ setupOpen: false }), token: upgrades() },
+			upgrades: {
+				vault: upgrades({ setupOpen: false }),
+				token: upgrades(),
+				oracle: upgrades(),
+			},
 		}
 
 		expect(ids(current)).toContain("cancel-vault-handover")
@@ -915,7 +932,11 @@ describe("share-token timelock", () => {
 		vault: Partial<ReadyUpgrades> = {},
 	): GovernanceState => ({
 		...state(),
-		upgrades: { vault: upgrades(vault), token: upgrades(token) },
+		upgrades: {
+			vault: upgrades(vault),
+			token: upgrades(token),
+			oracle: upgrades(),
+		},
 	})
 	const tokenClosed = (overrides: Partial<ReadyUpgrades> = {}) =>
 		tokenUpgrades({ setupOpen: false, ...overrides })
@@ -1129,6 +1150,250 @@ describe("share-token timelock", () => {
 		expect(groups.map(({ title }) => title)).not.toContain(
 			"Vault pending changes",
 		)
+	})
+})
+
+describe("oracle timelock", () => {
+	const HASH = "cd".repeat(32)
+	const oracleUpgrades = (
+		oracle: Partial<ReadyUpgrades>,
+		vault: Partial<ReadyUpgrades> = {},
+	): GovernanceState => ({
+		...state(),
+		upgrades: {
+			vault: upgrades(vault),
+			token: upgrades(),
+			oracle: upgrades(oracle),
+		},
+	})
+	const oracleClosed = (overrides: Partial<ReadyUpgrades> = {}) =>
+		oracleUpgrades({ setupOpen: false, ...overrides })
+	const adminChange = {
+		id: 3,
+		change: { tag: "Admin", values: [ACCOUNT] },
+		eta: CLOSE_TIME + DAY,
+	}
+	const configChange = {
+		id: 4,
+		change: {
+			tag: "Config",
+			values: [
+				{
+					freshness_duration: DAY,
+					cooldown_secs: 3_600n,
+					max_up_bps: 1_000,
+					max_down_bps: 500,
+					min_answer: 900_000_000_000_000_000n,
+					max_answer: 1_100_000_000_000_000_000n,
+				},
+			],
+		},
+		eta: CLOSE_TIME + DAY,
+	}
+	const upgradeChange = {
+		id: 5,
+		change: { tag: "Upgrade", values: [Buffer.from(HASH, "hex")] },
+		eta: CLOSE_TIME + DAY,
+	}
+	const waits = { label: "Waits for the timelock", met: true, detail: "7d" }
+	const actions = (current: GovernanceState, grant = oracleAdmin) =>
+		toGovernanceActions(current, [grant], WALLET, {})
+
+	it("grants an oracle role through the timelock once the oracle's own setup closes", () => {
+		const inputs = {
+			"grant-oracle-role-role": "attester",
+			"grant-oracle-role-account": ACCOUNT,
+		}
+		const proposed = find(
+			"propose-oracle-grant-role",
+			[oracleAdmin],
+			inputs,
+			oracleUpgrades({ setupOpen: false }, { setupOpen: true }),
+		)
+		const direct = find(
+			"grant-oracle-role",
+			[oracleAdmin],
+			inputs,
+			oracleUpgrades({ setupOpen: true }, { setupOpen: false }),
+		)
+
+		expect(proposed.slot).toBe("grant-oracle-role")
+		expect(proposed.label).toBe("Grant an oracle role")
+		expect(proposed.arg).toEqual({ role: "attester", account: ACCOUNT })
+		expect(proposed.conditions).toContainEqual(waits)
+		expect(proposed.enabled).toBe(true)
+		expect(direct.conditions).toContainEqual({
+			label: "Applies at once",
+			met: true,
+			detail: "Setup is open",
+		})
+	})
+
+	it("revokes every oracle role at once after setup", () => {
+		const revoke = (role: string) =>
+			toGovernanceActions(
+				{
+					...oracleClosed(),
+					holders: holders({ [`oracle ${role}`]: [ACCOUNT] }),
+				},
+				[oracleAdmin],
+				WALLET,
+				{
+					"revoke-oracle-role-role": role,
+					"revoke-oracle-role-account": ACCOUNT,
+				},
+			).find(({ slot }) => slot === "revoke-oracle-role")
+
+		for (const role of ["attester", "guardian"]) {
+			expect(revoke(role)?.id).toBe("revoke-oracle-role")
+			expect(revoke(role)?.conditions).toContainEqual({
+				label: "Applies at once",
+				met: true,
+				detail: "Revoking this role is instant",
+			})
+			expect(revoke(role)?.enabled).toBe(true)
+		}
+	})
+
+	it("hands the oracle admin over through the timelock, once confirmed, and cancels an offer at once", () => {
+		const inputs = { "hand-over-oracle-admin-account": ACCOUNT }
+		const draft = find(
+			"propose-oracle-admin",
+			[oracleAdmin],
+			inputs,
+			oracleClosed(),
+		)
+		const confirm = fieldOf(draft, "confirm")
+		const confirmed = find(
+			"propose-oracle-admin",
+			[oracleAdmin],
+			{ ...inputs, [confirm?.key ?? ""]: confirm?.value },
+			oracleClosed(),
+		)
+		const offered = {
+			...state(
+				{},
+				{
+					oracle: { address: ACCOUNT, liveUntilLedger: 5_000, expired: false },
+				},
+			),
+			upgrades: oracleClosed().upgrades,
+		}
+
+		expect(draft.slot).toBe("hand-over-oracle-admin")
+		expect(draft.label).toBe("Hand over oracle admin")
+		expect(confirm?.label).toBe("Hands control of the oracle to GABA...EJXA.")
+		expect(draft.enabled).toBe(false)
+		expect(confirmed.conditions).toContainEqual(waits)
+		expect(confirmed.enabled).toBe(true)
+		expect(confirmed.arg).toBe(ACCOUNT)
+		expect(actions(offered).map(({ id }) => id)).toContain(
+			"cancel-oracle-handover",
+		)
+	})
+
+	it("holds a timelocked oracle action while the oracle's setup state is unknown", () => {
+		const grant = find(
+			"grant-oracle-role",
+			[oracleAdmin],
+			{ "grant-oracle-role-account": ACCOUNT },
+			oracleUpgrades({ setupOpen: null }),
+		)
+
+		expect(condition(grant, "Setup state read")).toBeNull()
+		expect(grant.enabled).toBe(false)
+	})
+
+	it("offers the oracle code upgrade only as a proposed change after setup, one at a time", () => {
+		const input = { "propose-oracle-upgrade-hash": HASH }
+		const open = find("propose-oracle-upgrade", [oracleAdmin], input)
+		const closed = find(
+			"propose-oracle-upgrade",
+			[oracleAdmin],
+			input,
+			oracleClosed(),
+		)
+		const busy = find(
+			"propose-oracle-upgrade",
+			[oracleAdmin],
+			input,
+			oracleClosed({ pending: [upgradeChange] }),
+		)
+
+		expect(open.label).toBe("Propose an oracle code upgrade")
+		expect(condition(open, "Setup closed")).toBe(false)
+		expect(open.enabled).toBe(false)
+		expect(closed.enabled).toBe(true)
+		expect(closed.arg).toBe(HASH)
+		expect(closed.conditions).toContainEqual(waits)
+		expect(condition(busy, "No pending code change")).toBe(false)
+		expect(
+			find("propose-code-upgrade", [governance], {}, oracleClosed()).label,
+		).toBe("Propose a code upgrade")
+	})
+
+	it("offers Apply and Cancel for every pending oracle change under the oracle's ids", () => {
+		const current = oracleClosed({ pending: [adminChange] })
+
+		expect(
+			actions(current)
+				.filter(({ id }) => id.endsWith("oracle-change"))
+				.map(({ id, slot, arg }) => [id, slot, arg]),
+		).toEqual([
+			["apply-oracle-change", "apply-oracle-change-3", 3],
+			["cancel-oracle-change", "cancel-oracle-change-3", 3],
+		])
+		expect(actions(current, governance).map(({ id }) => id)).not.toContain(
+			"apply-oracle-change",
+		)
+	})
+
+	it("applies an oracle change after its ETA while the vault is unpaused and not winding down", () => {
+		const apply = (
+			overrides: Partial<ReadyUpgrades>,
+			change: PendingChange = adminChange,
+		) =>
+			actions(oracleClosed({ pending: [change], ...overrides })).find(
+				({ id }) => id === "apply-oracle-change",
+			)!
+		const due = { now: CLOSE_TIME + DAY }
+
+		expect(condition(apply({}), "ETA reached")).toBe(false)
+		expect(apply(due).enabled).toBe(true)
+		expect(apply(due).outcome).toBe("Offers the admin to GABA...EJXA.")
+		expect(apply(due).conditions.map(({ label }) => label)).toEqual([
+			"ETA reached",
+			"Vault not paused",
+			"Wind-down not active",
+		])
+		expect(
+			condition(apply({ ...due, paused: "paused" }), "Vault not paused"),
+		).toBe(false)
+		expect(
+			condition(
+				apply({ ...due, windDown: { ...upgradesWindDown, phase: "active" } }),
+				"Wind-down not active",
+			),
+		).toBe(false)
+		expect(apply(due, upgradeChange).tone).toBe("danger")
+		expect(fieldOf(apply(due, upgradeChange), "confirm")?.label).toBe(
+			`Replaces the oracle's code with ${HASH}.`,
+		)
+	})
+
+	it("lists the oracle's pending changes in their own group, limits included", () => {
+		const groups = toGovernanceGroups(oracleClosed({ pending: [configChange] }))
+
+		expect(
+			groups.find(({ title }) => title === "Oracle pending changes")?.metrics,
+		).toEqual([
+			{
+				label: "#4 Oracle limits",
+				value:
+					"freshness window 1d, cooldown 1h, largest rise 10%, largest fall 5%, price floor 0.9000, price ceiling 1.1000",
+				note: `ETA ${formatTimestamp(CLOSE_TIME + DAY)}`,
+			},
+		])
 	})
 })
 

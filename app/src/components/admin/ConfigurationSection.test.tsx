@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { type ConfigurationState } from "../../hooks/useConfigurationState"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
@@ -19,10 +19,12 @@ const {
 	identityVerifierMock,
 	proposeComplianceMock,
 	proposeIdentityVerifierMock,
+	proposeOracleConfigMock,
 } = vi.hoisted(() => {
 	const tx = () => ({
 		status: { status: "idle" } as { status: string },
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	})
 	return {
@@ -39,6 +41,7 @@ const {
 		identityVerifierMock: tx(),
 		proposeComplianceMock: tx(),
 		proposeIdentityVerifierMock: tx(),
+		proposeOracleConfigMock: tx(),
 	}
 })
 
@@ -58,6 +61,7 @@ vi.mock("../../hooks/useConfigurationTransactions", () => ({
 	useSetIdentityVerifier: () => identityVerifierMock,
 	useProposeCompliance: () => proposeComplianceMock,
 	useProposeIdentityVerifier: () => proposeIdentityVerifierMock,
+	useProposeOracleConfig: () => proposeOracleConfigMock,
 }))
 
 const WALLET = "GAAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQDZ7H"
@@ -86,6 +90,7 @@ const READY: ConfigurationState = {
 	upgradeDelay: 3n * DAY,
 	setupOpen: false,
 	tokenSetupOpen: true,
+	oracleSetupOpen: true,
 	oracle: {
 		freshness: DAY,
 		cooldown: 3_600n,
@@ -111,6 +116,10 @@ const submit = (name: string) =>
 		.find((candidate) => !candidate.hasAttribute("aria-expanded"))!
 
 describe("ConfigurationSection", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
 	beforeEach(() => {
 		vi.clearAllMocks()
 		for (const mock of [
@@ -126,6 +135,7 @@ describe("ConfigurationSection", () => {
 			identityVerifierMock,
 			proposeComplianceMock,
 			proposeIdentityVerifierMock,
+			proposeOracleConfigMock,
 		])
 			Object.assign(mock, {
 				status: { status: "idle" } as TransactionStatus,
@@ -146,6 +156,69 @@ describe("ConfigurationSection", () => {
 		expect(within(oracle).getByText("10%")).toBeTruthy()
 		const token = screen.getByRole("region", { name: "Share token" })
 		expect(within(token).getByText("Identity verifier")).toBeTruthy()
+	})
+
+	it("prepares a typed notice once it settles and still submits it on click", () => {
+		vi.useFakeTimers()
+		render(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
+		expand("Set the notice")
+
+		fireEvent.change(screen.getByRole("textbox", { name: "Notice" }), {
+			target: { value: "2d" },
+		})
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(noticeMock.prepare).toHaveBeenCalledWith(2n * DAY, governance)
+
+		fireEvent.click(submit("Set the notice"))
+
+		expect(noticeMock.submit).toHaveBeenCalledWith(2n * DAY, governance)
+	})
+
+	it("prepares the proposal once a lower notice switches the row to its timelocked form", () => {
+		vi.useFakeTimers()
+		render(<ConfigurationSection grants={[governance]} wallet={WALLET} />)
+		expand("Set the notice")
+		const field = screen.getByRole("textbox", { name: "Notice" })
+
+		fireEvent.change(field, { target: { value: "2d" } })
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+		fireEvent.change(field, { target: { value: "12h" } })
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(noticeMock.prepare).toHaveBeenCalledWith(2n * DAY, governance)
+		expect(proposeNoticeMock.prepare).toHaveBeenCalledWith(43_200n, governance)
+
+		fireEvent.click(submit("Set the notice"))
+
+		expect(proposeNoticeMock.submit).toHaveBeenCalledWith(43_200n, governance)
+	})
+
+	it("prepares nothing while the configuration tab is hidden", () => {
+		vi.useFakeTimers()
+		render(
+			<ConfigurationSection
+				grants={[governance]}
+				wallet={WALLET}
+				active={false}
+			/>,
+		)
+		expand("Set the notice")
+		fireEvent.change(screen.getByRole("textbox", { name: "Notice" }), {
+			target: { value: "2d" },
+		})
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(noticeMock.prepare).not.toHaveBeenCalled()
 	})
 
 	it("submits a new notice once typed, and follows it in the modal", () => {
@@ -260,6 +333,32 @@ describe("ConfigurationSection", () => {
 			},
 			oracleAdmin,
 		)
+	})
+
+	it("proposes new oracle limits once the oracle's setup closes and follows them in the modal", () => {
+		useConfigurationStateMock.mockReturnValue({
+			configuration: { ...READY, oracleSetupOpen: false },
+		})
+		const { rerender } = render(
+			<ConfigurationSection grants={[oracleAdmin]} wallet={WALLET} />,
+		)
+		expand("Set the oracle limits")
+		fireEvent.change(screen.getByRole("textbox", { name: "Largest rise" }), {
+			target: { value: "5" },
+		})
+		fireEvent.click(submit("Set the oracle limits"))
+
+		expect(proposeOracleConfigMock.submit).toHaveBeenCalledWith(
+			expect.objectContaining({ max_up_bps: 500 }),
+			oracleAdmin,
+		)
+		expect(oracleConfigMock.submit).not.toHaveBeenCalled()
+
+		proposeOracleConfigMock.status = { status: "awaiting-signature" }
+		rerender(<ConfigurationSection grants={[oracleAdmin]} wallet={WALLET} />)
+		expect(
+			screen.getByText("Signing queues every new oracle limit."),
+		).toBeTruthy()
 	})
 
 	it("returns the fields to the current values once a change is recorded", () => {

@@ -84,18 +84,19 @@ or legal solution, and not a vault for on-chain RWA tokens.
 | Governance | governance | Parameters, roles, custodian rotation, upgrades, wind-down proposal and proposal cancellation; once each contract's one-time setup closes, the changes that can move value or shorten an exit wait for the timelock |
 | Custodian | Not an authority | Off-chain party holding the real-world structure; a genesis-configured slot rotatable only by governance |
 
-The authorities are native Stellar multisig accounts assigned at deploy, and
-each contract grants its own roles to them. The vault makes governance its admin
-and grants the manager, treasury and guardian roles. At construction it refuses a
-treasury equal to guardian or governance, and a compliance equal to governance or
-treasury; governance and guardian may be the same account, and the manager is
-unconstrained. The oracle, the share token and the identity verifier each take
-their admin as a constructor parameter, and the oracle its attester and guardian
-too. The attestation authority holds the attester role. The deploy scripts give
-the oracle's and the share token's admin to governance, the oracle's guardian to
-the guardian account and the verifier's admin to the compliance account, but no
-code ties those roles to the vault's; this document marks those equalities "by
-deploy".
+The authorities are meant to be native Stellar multisig accounts, assigned at
+deploy, and each contract grants its own roles to them. The deploy script does
+not create multisig accounts yet: it gives each authority one key (§8.10). The
+vault makes governance its admin and grants the manager, treasury and guardian
+roles. At construction it refuses a treasury equal to guardian or governance,
+and a compliance equal to governance or treasury; governance and guardian may be
+the same account, and the manager is unconstrained. The oracle, the share token
+and the identity verifier each take their admin as a constructor parameter, and
+the oracle its attester and guardian too. The attestation authority holds the
+attester role. The deploy scripts give the oracle's and the share token's admin
+to governance, the oracle's guardian to the guardian account and the verifier's
+admin to the compliance account, but no code ties those roles to the vault's;
+this document marks those equalities "by deploy".
 
 For the exhaustive access control matrix, dual `manager` role distinction, and entrypoint-level test mapping, see [`docs/AUTHORIZATION_MATRIX.md`](./AUTHORIZATION_MATRIX.md).
 
@@ -137,12 +138,15 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
 
 2. **Built on OpenZeppelin, differentiated above it.** The share token is OZ's
    SEP-41 token with the SEP-57 RWA extensions (freeze, forced transfer,
-   recovery); access control, pausable and upgradeable come from OZ crates.
-   Dependencies are pinned to exact versions and audit inheritance is evaluated
-   component by component; what Strata adds stays within its own audit scope.
-   What OZ does not cover is the layer Strata adds: the attested valuation
-   oracle, request-based flows priced against attestations, split reserve
-   accounting, and the operational surface.
+   recovery); access control, pausable and upgradeable come from OZ crates. It
+   follows SEP-41 for balances, allowances and transfers. Its `burn` is the
+   RWA extension's manager-only `burn(user, amount, operator)`, and it has no
+   `burn_from`: a holder cannot burn their own shares, and a generic SEP-41
+   client's burn call fails. Dependencies are pinned to exact versions
+   and audit inheritance is evaluated component by component; what Strata adds
+   stays within its own audit scope. What OZ does not cover is the layer Strata
+   adds: the attested valuation oracle, request-based flows priced against
+   attestations, split reserve accounting, and the operational surface.
 
 3. **Request-based entry and exit.** The exact price of a share does not exist
    when an investor acts; it is attested afterwards. Entry and exit are
@@ -165,13 +169,18 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
 
 5. **Payable claims always pay.** Neither the guardian pause, a delisting, nor a
    stale valuation can block the payment of an already-priced, funded cash
-   claim. A pause can delay unpriced requests. Priced claims are never re-priced
-   and never identity-gated. A delisted, non-frozen investor exits through the
-   exit-only cash path. A frozen investor's claims are held, not paid, until
-   the freeze is lifted ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1).
-   A legal-order transfer moves only shares in the investor's wallet, never
-   value the vault holds. Outside this guarantee, disclosed as trust
-   assumptions: deposit-asset issuer controls and reserve liquidity.
+   claim. A pause can delay unpriced requests. Priced claims are never
+   re-priced, and a cash payout never needs the identity check. A delisted,
+   non-frozen investor exits through the exit-only cash path. One case differs:
+   a redemption priced at zero assets pays no cash and gives the shares back,
+   so a delisted holder's claim waits until they are listed again; if they
+   claim during a wind-down, the shares are burned instead
+   ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §2). A frozen investor's
+   claims are held, not paid, until the freeze is lifted
+   ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1). A legal-order transfer
+   moves only shares in the investor's wallet, never value the vault holds.
+   Outside this guarantee, disclosed as trust assumptions: deposit-asset issuer
+   controls and reserve liquidity.
 
 6. **Split accounting, with priced and payable as separate states.** The vault
    exposes committed (priced redemption liabilities), cancellable escrow
@@ -289,15 +298,17 @@ attested number with a hash of its evidence and, optionally, where to read it.
 | Component             | Role                                                                                                                                                                                                      | Controls                                                                                                                                                                      |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Vault**             | Request lifecycle, epoch sealing by its manager role, or by anyone once the minimum epoch duration has run, pricing, split reserve accounting, custodian transfers, upgrade control                                                                             | One authority per privileged entrypoint; upgrades behind a governance timelock no shorter than the notice, bounded between 7 and 90 days. The share token and the oracle upgrade under the same timelock. Administrative handover follows a strict two-step transfer pattern; renouncing admin is permanently refused (`AdminRequired`)                                                                                                                                                                                    |
-| **Share token**       | OZ SEP-41 + SEP-57 RWA extensions: freeze, forced transfer, recovery, identity and compliance checks on every transfer, independent transfer pause (set only by the admin; governance by deploy)          | Manager role held only by the vault, for mint, burn and escrow; compliance role held by the compliance authority, for freezes, plus legal transfers and recovery co-signed by the token admin; swapping the compliance or identity-verifier contract needs the admin and, after a one-time setup, waits for the vault's timelock, as do the token's upgrades, role grants and admin hand-overs. New rules must list the token and, if they answer `VaultBinding`, run on the vault's clock; as at setup, an external module that does not answer is accepted on trust. A new verifier must accept the vault. Both are checked when the swap is proposed and when it applies |
+| **Share token**       | OZ SEP-41 + SEP-57 RWA extensions: freeze, forced transfer, recovery, identity and compliance checks on every transfer, independent transfer pause (set only by the admin; governance by deploy)          | Manager role held only by the vault, for mint, burn (per the RWA extension, §8.1) and escrow; compliance role held by the compliance authority, for freezes, plus legal transfers and recovery co-signed by the token admin; swapping the compliance or identity-verifier contract needs the admin and, after a one-time setup, waits for the vault's timelock, as do the token's upgrades, role grants and admin hand-overs. New rules must list the token and, if they answer `VaultBinding`, run on the vault's clock; as at setup, an external module that does not answer is accepted on trust. A new verifier must accept the vault. Both are checked when the swap is proposed and when it applies |
 | **Token roles**       | Access-control roles on the share token, checked directly via native access control: `manager` mints, burns and escrows; `compliance` freezes, and makes legal transfers and recoveries co-signed by the token admin                              | Granted and revoked by the token admin (governance by deploy). After a one-time setup, a grant, revoking `manager` and an admin handover wait for the vault's timelock; revoking `compliance` stays instant                                                                                                                                                                                                                                                                                                                                                                                              |
 | **Compliance module** | Implements the SEP-57 identity and rules interfaces the share token consults, with the allowlist as its only rule                                                                                         | The compliance authority writes the allowlist on the identity verifier. Governance runs the compliance contract as its admin: adding or removing a module and binding or unbinding a token are instant only during its one-time setup, and after it wait for the vault's timelock, cannot land while the vault is paused and never land during a wind-down. Replaceable by OZ's identity verifier and compliance contracts (with RWA Wizard modules). After setup, the token's swap waits for the vault's timelock, and new rules must list the token. OZ's compliance contract does not answer `VaultBinding`, so the swap, like the vault's setup, accepts it as an external module whose own governance is a trust assumption |
 | **Authorities**       | governance (parameters, roles, timelocked upgrades), compliance (allowlist, token interventions), attestation (valuation only), treasury (reserve movements only), guardian (pause; never payable claims) | Each contract grants its own roles; the oracle's, share token's and verifier's admins and the oracle's attester and guardian are constructor parameters independent of the vault's roles, equal to governance, compliance and guardian by deploy only; treasury and guardian distinct, treasury and governance distinct, compliance distinct from governance and treasury; governance and guardian may coincide; the vault's manager role is unconstrained |
 | **Custodian**         | Off-chain party holding the real-world structure; a genesis-configured slot rotatable only by governance                                                                                                  | Not an on-chain authority                                                                                                                                                     |
 
-Each authority's threshold is sized to the quorum that authority requires.
-Signing of privileged operations through a coordinator is verified end to end,
-not assumed.
+Each authority's threshold is meant to match the quorum that authority
+requires. The console collects the signatures for a privileged call and
+compares their weight with the account's threshold. No test signs through
+multisig authorities on the network yet, because the deploy script does not
+create them (§8.10).
 
 ### 8.4 Request lifecycle
 
@@ -402,8 +413,9 @@ the custodian does not move it. Once leavers are paid a gain, the figure can go
 negative, and the cap then admits more than its own amount. After a loss it
 stays above the vault's value, and the cap refuses deposits sooner.
 
-**Attestation guardrails:** the reporter is a multisig, never a single key.
-Attestations are ordered by their acceptance time on the ledger. The price must
+**Attestation guardrails:** the reporter is meant to be a multisig, never a
+single key; the deploy script does not create one yet (§8.10). Attestations
+are ordered by their acceptance time on the ledger. The price must
 stay within configured bounds, a minimum cooldown bounds frequency, and the
 deviation cap is directional: the upward bound is mandatory and non-zero, the
 downward bound is required too, and setting it to 100% lets a loss of any size
@@ -511,11 +523,15 @@ interface today.
   round and credited to holders, and no entrypoint returns it. Treasury sends
   only what it intends to distribute.
 - A wind-down never declares itself finished, because no holder can be made to
-  claim. It is finished when three exposed figures read zero together: what the
-  rounds still owe holders (zero up to rounding dust), the share supply, and the
-  free reserve. The owed figure counts holders who have not claimed yet and falls
-  only when one is paid, so its reaching zero up to rounding dust means every credit
-  has been collected rather than merely offered.
+  claim. It is finished when six exposed figures read zero together: what the
+  rounds still owe holders (`wind_down_owed()`, zero up to rounding dust), the
+  share supply (the share token's `total_supply()`), the free reserve
+  (`free_reserve()`), the escrow depositors can still cancel
+  (`cancellable_escrow()`), the cash owed to priced redemptions (`committed()`),
+  and the shares priced for deposits but not yet minted
+  (`pending_mint_shares()`). The owed figure counts holders who have not claimed
+  yet and falls only when one is paid, so its reaching zero up to rounding dust
+  means every credit has been collected rather than merely offered.
 
 ### 8.8 Reference interfaces
 
@@ -644,7 +660,7 @@ public surface given the vault address.
 
 | Boundary               | Risk                                           | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Attestation authority  | Wrong or compromised reports misprice requests | Multisig reporter; the deviation cap bounds a single report in both directions, and a downward cap of 100% leaves `min_answer` as the only floor; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts. A compromised attester is replaced in this order: pause the NAV, revoke the attester (instant), grant a replacement (through the timelock after setup, so the NAV stays paused that long), clear the stored report, which would otherwise price epochs again once the pause lifts, then lift the pause ([`kit-spec.md`](./kit-spec.md) §3) |
+| Attestation authority  | Wrong or compromised reports misprice requests | The reporter is meant to be a multisig, never a single key; the deploy script does not create one yet (§8.10). The deviation cap bounds a single report in both directions, and a downward cap of 100% leaves `min_answer` as the only floor; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts. A compromised attester is replaced in this order: pause the NAV, revoke the attester (instant), grant a replacement (through the timelock after setup, so the NAV stays paused that long), clear the stored report, which would otherwise price epochs again once the pause lifts, then lift the pause ([`kit-spec.md`](./kit-spec.md) §3) |
 | Governance keys        | Malicious upgrade                              | Timelock on every code change and on the delay itself: at least seven days, never shorter than the standing notice, at most 90 days. The delay is an announcement period. A pause freezes the timelock clock and pushes the ETA back by the time paused, so the whole delay runs unpaused, and applying while paused is refused. The delay does not guarantee an exit before a change lands: an exit also needs a sealed epoch, a valid price accepted after the seal, and cash in the reserve to pay the claim. Nothing but a grant of the share token's `compliance` role is proposed or applied while the vault winds down, and no admin hand-over is accepted then. The vault's own custodian, role grants, `manager` revocations, admin handovers, lowering of the notice or the wind-down delay, and the minimum epoch duration in either direction wait on that clock once its one-time setup closes, and before then it takes no request and seals or prices no epoch; revoking its treasury or guardian stays instant. Setup closes only once the token and the oracle run on the vault's clock with their own setup closed, the vault is the token's only minter, no shares exist yet (shares minted earlier would redeem against depositors' money), the vault passes the identity check, its address is not frozen on the token, the token is bound to its compliance contract, the asset has the token's decimals, the asset, the token, the oracle and the vault are four different addresses, the oracle answers the feed interface, a custodian other than the vault is set, and the vault's own books are empty, with nothing requested, committed or owed in shares (a request booked earlier would be paid from depositors' money); the kit's own compliance contract must also run on the vault's clock with its setup closed. The share token's upgrades, grants, `manager` revocations, admin handovers and compliance or verifier swaps wait on the same clock once its setup closes; new rules must also list the token and, if they answer `VaultBinding`, run on that clock (an external module that does not answer is taken on trust, as at setup), and a new verifier must accept the vault. So do the oracle's upgrades, grants, admin handovers and every guardrail change except a shorter freshness window; its NAV pause, `clear_latest` and revoking its attester or guardian stay instant. On the kit's compliance contract, adding or removing a module, binding or unbinding a token and handing over the admin wait on the same clock once its setup closes. |
 | Mis-wired deployment   | A vault goes live without every binding wired  | `health()` reports each wiring step; `finish_setup` refuses until all hold and its own books are empty, and the vault takes no request and moves no epoch before that                                                                                                                                                                                                                                                                                              |
 | Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while anything is uncovered, and escrowed subscriptions never leave the vault                                                                                                                                                                                                                                                          |
@@ -653,7 +669,7 @@ public surface given the vault address.
 | Compliance keys        | Wrongful delisting, freeze or transfer         | Delisted investors keep the exit-only cash path; freezes require the share token's compliance role and are auditable per operation; moving a holder's shares also needs governance's signature in the same call, lands only on an allowlisted account and never moves shares out of or into the vault's address, which cannot be frozen once the token knows its vault |
 | Vault's own listing    | Compliance delists the vault's address         | Share returns do not depend on it: the vault checks the holder itself and moves the shares as the token's manager. A delisted holder's conversion, which mints into the vault's escrow, waits until the vault is allowlisted again; nothing is lost, and `health().allowlisted` turns false |
 | Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics. Governance, the compliance contract's admin, adds and removes modules: instantly during its one-time setup, and after it only through the vault's timelock, so a change cannot land while the vault is paused and never lands during a wind-down. Removing a faulty module waits the same way, and during a wind-down it cannot be removed at all (§8.7) |
-| Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; declared risk of the chosen asset, verified and reported at genesis (auth flags). After a clawback the vault pays pending escrow first, then priced claims, and refuses the rest by name, new deposits included, until treasury funds the gap; the loss reaches holders through the NAV ([THREAT_MODEL X10](./THREAT_MODEL.md#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash)) |
+| Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; a declared risk of the chosen asset, whose auth flags the deploy is meant to check and report at genesis (not built yet, §8.10). After a clawback the vault pays pending escrow first, then priced claims, and refuses the rest by name, new deposits included, until treasury funds the gap; the loss reaches holders through the NAV ([THREAT_MODEL X10](./THREAT_MODEL.md#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash)) |
 | Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                                                          |
 | Wind-down distribution | Unfinalized rounds stall distribution          | Finalizing a round is permissionless: once treasury returns capital, anyone can finalize the round to credit holders; the operator cannot stall payouts after funding                                                                                                                                                                                                                                                                                           |
 
@@ -668,11 +684,19 @@ quality of the data behind each attestation, and the operator's key ceremony.
 
 ### 8.10 Deployment
 
-Deployment is scripted and ends with no human key holding governance. It is
-complete only when the final state is verified on-chain: every authority is the
-intended multisig, the share token's `compliance` role has a second, cold
-holder, no bootstrap key retains any role, the configuration matches the
-request, and the deposit asset's auth flags are checked and reported.
+Deployment is scripted. The target is a deployment that ends with no human key
+holding governance, verified on chain: every authority is the intended
+multisig, the share token's `compliance` role has a second, cold holder, no
+bootstrap key keeps any role, the configuration matches the request, and the
+deposit asset's auth flags are checked and reported.
+
+The deploy script builds part of that today. It gives each authority one key,
+not a multisig. It checks that the vault's setup has closed and every wiring
+flag of `health()` is true, that the vault holds the share token's `manager`
+role, and that the token's `compliance` role has two holders. It does not yet
+create multisig accounts or set their thresholds, check that each authority is
+the intended multisig, check that no bootstrap key keeps a role, or read the
+asset's auth flags. Those steps are planned before a mainnet deployment.
 
 ## 9. Relationship to existing Stellar tooling
 
@@ -682,9 +706,10 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 
 | Component                                                                | Already exists                                                             | Strata                                                                                                                                                                                 |
 | ------------------------------------------------------------------------ | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SEP-41 token + SEP-57 RWA extensions (freeze, forced transfer, recovery) | OpenZeppelin stellar-tokens; the RWA Wizard scaffolds the regulated token  | Consumed and extended; the kit's compliance module implements the SEP-57 interfaces the token expects                                                                                  |
+| SEP-41 token + SEP-57 RWA extensions (freeze, forced transfer, recovery) | OpenZeppelin stellar-tokens; the RWA Wizard scaffolds the regulated token  | Consumed and extended; the kit's compliance module implements the SEP-57 interfaces the token expects. Burn follows the RWA extension, not SEP-41 (§8.1)                               |
 | Synchronous tokenized vault                                              | SEP-56 / OZ Token Vault                                                    | Not a base for Strata: SEP-56 assumes the price exists at call time, so its interface cannot express a request lifecycle. Only OZ conversion and rounding math reused, as library code |
-| Access control, pausable, upgradeable, timelock                          | OZ crates                                                                  | Consumed; pinned by exact version, audit coverage and gaps documented per component                                                                                                    |
+| Access control, pausable, upgradeable                                    | OZ crates                                                                  | Consumed; pinned by exact version, audit coverage and gaps documented per component                                                                                                    |
+| Timelock for admin changes                                               | OZ `stellar-governance` timelock                                           | Not used. The kit's own `strata-timelock` crate: one clock for the four contracts, an ETA that a vault pause pushes back, a setup window, 7 to 90 day bounds, and no change but a share-token `compliance` grant lands during a wind-down |
 | Multisig and signing coordination                                        | Native Stellar + existing coordinators, OZ Role Manager                    | Integrated                                                                                                                                                                             |
 | Request lifecycle priced against attestations                            | Not provided (ERC-7540 on EVM, where OpenZeppelin ships an implementation) | Core of the kit                                                                                                                                                                        |
 | Guarded valuation oracle with freshness and pause                        | Not provided                                                               | Core of the kit                                                                                                                                                                        |

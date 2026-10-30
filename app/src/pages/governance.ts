@@ -45,18 +45,23 @@ type OfferActionId =
 	`hand-over-${GovernedContract}-admin` | `cancel-${GovernedContract}-handover`
 type AcceptActionId = `accept-${GovernedContract}-admin`
 
-type ProposalActionId = "propose-code-upgrade" | "propose-upgrade-delay"
+type CodeUpgradeActionId = "propose-code-upgrade" | "propose-oracle-upgrade"
+type ProposalActionId = CodeUpgradeActionId | "propose-upgrade-delay"
 type ProposedRoleActionId =
 	| "propose-grant-role"
 	| "propose-revoke-role"
 	| "propose-token-grant-role"
 	| "propose-token-revoke-role"
-type ProposedAdminActionId = "propose-admin" | "propose-token-admin"
+	| "propose-oracle-grant-role"
+type ProposedAdminActionId =
+	"propose-admin" | "propose-token-admin" | "propose-oracle-admin"
 type ChangeActionId =
 	| "apply-change"
 	| "cancel-change"
 	| "apply-token-change"
 	| "cancel-token-change"
+	| "apply-oracle-change"
+	| "cancel-oracle-change"
 type VaultActionId = "propose-wind-down" | "cancel-wind-down"
 
 export type GovernanceActionId =
@@ -89,6 +94,14 @@ const TOKEN_ACTION_IDS: GovernanceActionId[] = [
 	"cancel-token-change",
 ]
 
+const ORACLE_ACTION_IDS: GovernanceActionId[] = [
+	"propose-oracle-grant-role",
+	"propose-oracle-admin",
+	"propose-oracle-upgrade",
+	"apply-oracle-change",
+	"cancel-oracle-change",
+]
+
 export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
 	...GOVERNED_CONTRACTS.flatMap((contract) => [
 		`grant-${contract}-role` as const,
@@ -99,6 +112,7 @@ export const GOVERNANCE_ACTION_IDS: GovernanceActionId[] = [
 	]),
 	...VAULT_ACTION_IDS,
 	...TOKEN_ACTION_IDS,
+	...ORACLE_ACTION_IDS,
 ]
 
 export type GovernanceAction =
@@ -107,7 +121,7 @@ export type GovernanceAction =
 	| Built<ProposedAdminActionId, string | undefined>
 	| Built<ChangeActionId, number>
 	| Built<AcceptActionId, undefined>
-	| Built<"propose-code-upgrade", string | undefined>
+	| Built<CodeUpgradeActionId, string | undefined>
 	| Built<"propose-upgrade-delay", bigint | undefined>
 	| Built<VaultActionId, undefined>
 
@@ -286,10 +300,6 @@ const readyUpgrades = (
 	return upgrades.status === "ready" ? upgrades : undefined
 }
 
-const isTimelocked = (
-	contract: GovernedContract,
-): contract is TimelockedContract => contract !== "oracle"
-
 const MAX_PENDING = 16
 
 const underCapacity = (upgrades?: ReadyUpgrades): Condition => ({
@@ -329,18 +339,20 @@ const routeConditions = (
 
 const PROPOSED_ROLES: Record<
 	TimelockedContract,
-	Record<Operation, ProposedRoleActionId>
+	{ grant: ProposedRoleActionId; revoke?: ProposedRoleActionId }
 > = {
 	vault: { grant: "propose-grant-role", revoke: "propose-revoke-role" },
 	token: {
 		grant: "propose-token-grant-role",
 		revoke: "propose-token-revoke-role",
 	},
+	oracle: { grant: "propose-oracle-grant-role" },
 }
 
 const PROPOSED_ADMINS: Record<TimelockedContract, ProposedAdminActionId> = {
 	vault: "propose-admin",
 	token: "propose-token-admin",
+	oracle: "propose-oracle-admin",
 }
 
 function roleSpec(
@@ -392,19 +404,17 @@ function roleSpec(
 		conditions.push(confirm.condition)
 	}
 	const waits = operation === "grant" || entry.role === "manager"
-	let proposed: ProposedRoleActionId | undefined
-	if (isTimelocked(contract)) {
-		const route = routeFor(state, contract, waits)
-		conditions.push(
-			...routeConditions(
-				state,
-				contract,
-				route,
-				waits ? undefined : "Revoking this role is instant",
-			),
-		)
-		if (route === "timelock") proposed = PROPOSED_ROLES[contract][operation]
-	}
+	const route = routeFor(state, contract, waits)
+	conditions.push(
+		...routeConditions(
+			state,
+			contract,
+			route,
+			waits ? undefined : "Revoking this role is instant",
+		),
+	)
+	const proposed =
+		route === "timelock" ? PROPOSED_ROLES[contract][operation] : undefined
 	const changes = holds === (operation === "revoke")
 	return {
 		id: proposed ?? id,
@@ -493,9 +503,7 @@ function handOverSpec(
 			met: secs === undefined ? null : secs >= MIN_EXPIRY,
 		},
 		limitCondition(ledger, liveUntil),
-		...(isTimelocked(contract)
-			? routeConditions(state, contract, routeFor(state, contract, true))
-			: []),
+		...routeConditions(state, contract, routeFor(state, contract, true)),
 	]
 	if (account !== undefined) {
 		const confirm = confirmation(
@@ -643,11 +651,13 @@ const aboveNotice = (
 	met: secs === undefined || notice == null ? null : secs >= notice,
 })
 
-function codeUpgradeSpec(
+function codeUpgradeSpec<Id extends CodeUpgradeActionId>(
+	id: Id,
+	label: string,
 	inputs: Inputs,
 	upgrades?: ReadyUpgrades,
-): BuiltSpec<"propose-code-upgrade", string | undefined> {
-	const key = "propose-code-upgrade-hash"
+): BuiltSpec<Id, string | undefined> {
+	const key = `${id}-hash`
 	const text = inputs[key] ?? ""
 	const hash = parseHash(text)
 	const conditions = [
@@ -658,8 +668,8 @@ function codeUpgradeSpec(
 		...proposalChecks(upgrades),
 	]
 	return {
-		id: "propose-code-upgrade",
-		label: "Propose a code upgrade",
+		id,
+		label,
 		conditions,
 		outcome: hash === undefined ? null : applyAfter(upgrades),
 		fields: [
@@ -818,7 +828,7 @@ function adminActions(
 			? state.handovers.pending[contract]
 			: null
 	const offer =
-		isTimelocked(contract) && routeFor(state, contract, true) === "timelock"
+		routeFor(state, contract, true) === "timelock"
 			? build(proposeAdminSpec(contract, state, inputs), grant)
 			: build(handOverSpec(contract, state, inputs), grant)
 	return [
@@ -830,6 +840,27 @@ function adminActions(
 		...(contract === "token"
 			? changeActions("token", state, grant, inputs)
 			: []),
+		...(contract === "oracle" ? oracleActions(state, grant, inputs) : []),
+	]
+}
+
+function oracleActions(
+	state: GovernanceState,
+	grant: Grant,
+	inputs: Inputs,
+): GovernanceAction[] {
+	const upgrades = readyUpgrades(state, "oracle")
+	return [
+		build(
+			codeUpgradeSpec(
+				"propose-oracle-upgrade",
+				"Propose an oracle code upgrade",
+				inputs,
+				upgrades,
+			),
+			grant,
+		),
+		...changeActions("oracle", state, grant, inputs),
 	]
 }
 
@@ -864,7 +895,15 @@ function vaultActions(
 ): GovernanceAction[] {
 	const upgrades = readyUpgrades(state, "vault")
 	return [
-		build(codeUpgradeSpec(inputs, upgrades), grant),
+		build(
+			codeUpgradeSpec(
+				"propose-code-upgrade",
+				"Propose a code upgrade",
+				inputs,
+				upgrades,
+			),
+			grant,
+		),
 		build(delayUpgradeSpec(inputs, upgrades), grant),
 		...changeActions("vault", state, grant, inputs),
 		build(windDownSpec(inputs, upgrades), grant),
@@ -982,6 +1021,7 @@ export const toGovernanceGroups = ({
 			],
 		}
 	}),
-	...pendingChangesGroup("vault", upgrades.vault),
-	...pendingChangesGroup("token", upgrades.token),
+	...GOVERNED_CONTRACTS.flatMap((contract) =>
+		pendingChangesGroup(contract, upgrades[contract]),
+	),
 ]

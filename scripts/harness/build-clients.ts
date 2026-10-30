@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs"
 import { join } from "node:path"
-import { generateClient } from "./lib/cli.js"
+import { generateClient, rootSdkVersion } from "./lib/cli.js"
 import {
 	CONTRACT_NAMES,
 	REPO_ROOT,
@@ -21,8 +21,9 @@ async function main(): Promise<void> {
 		)
 	}
 
+	const sdkVersion = rootSdkVersion()
 	for (const name of CONTRACT_NAMES) {
-		await generateClient(wasmOf(name), clientDir(name))
+		await generateClient(wasmOf(name), clientDir(name), sdkVersion)
 	}
 	console.log("clients generated")
 }
