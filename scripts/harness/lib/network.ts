@@ -13,6 +13,10 @@ export interface OracleConfig {
 	max_answer: string
 }
 
+export interface VaultConfig {
+	notice_secs: number
+}
+
 export type Funding =
 	{ kind: "root"; secret: string } | { kind: "friendbot"; url: string }
 
@@ -22,6 +26,7 @@ export interface Network {
 	passphrase: string
 	funding: Funding
 	oracle: OracleConfig
+	vault: VaultConfig
 }
 
 // The band is the protocol's; only the two waits are the fixture's choice.
@@ -37,6 +42,14 @@ const band = {
 const QUICKSTART_ROOT =
 	"SC5O7VZUXDJ6JBDSZ74DSERXL7W3Y5LTOAMRF7RQRL3TAGAPS7LUVG3L"
 
+const LOCAL_COOLDOWN_SECS = 5
+const TESTNET_COOLDOWN_SECS = 60
+
+// Twice the cooldown, so a valuation attested after the close lands before the notice ends.
+const noticeFor = (cooldownSecs: number): VaultConfig => ({
+	notice_secs: 2 * cooldownSecs,
+})
+
 const NETWORKS: Record<NetworkName, Network> = {
 	local: {
 		name: "local",
@@ -46,7 +59,12 @@ const NETWORKS: Record<NetworkName, Network> = {
 			kind: "root",
 			secret: process.env["HARNESS_ROOT_SECRET"] ?? QUICKSTART_ROOT,
 		},
-		oracle: { freshness_duration: 300, cooldown_secs: 5, ...band },
+		oracle: {
+			freshness_duration: 300,
+			cooldown_secs: LOCAL_COOLDOWN_SECS,
+			...band,
+		},
+		vault: noticeFor(LOCAL_COOLDOWN_SECS),
 	},
 	testnet: {
 		name: "testnet",
@@ -54,7 +72,12 @@ const NETWORKS: Record<NetworkName, Network> = {
 			process.env["HARNESS_RPC_URL"] ?? "https://soroban-testnet.stellar.org",
 		passphrase: Networks.TESTNET,
 		funding: { kind: "friendbot", url: "https://friendbot.stellar.org" },
-		oracle: { freshness_duration: 3600, cooldown_secs: 60, ...band },
+		oracle: {
+			freshness_duration: 3600,
+			cooldown_secs: TESTNET_COOLDOWN_SECS,
+			...band,
+		},
+		vault: noticeFor(TESTNET_COOLDOWN_SECS),
 	},
 }
 

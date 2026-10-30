@@ -13,6 +13,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { network } from "./lib/network.js"
+import { waitForNotice } from "./lib/notice.js"
 import { attest, freshFeed } from "./lib/oracle.js"
 import { outcome } from "./lib/refused.js"
 
@@ -57,11 +58,11 @@ async function call(
 }
 
 beforeAll(async () => {
-	const deployment = await deployThrowaway(
+	const { deployment, keys } = await deployThrowaway(
 		net,
 		wasmOf("async_vault", SHORT_WIND_DOWN_DIR),
 	)
-	c = connectTo(net, deployment)
+	c = connectTo(net, deployment, keys)
 	decimals = (await shareToken(c, c.keys.outsider).decimals()).result
 	const holder = c.keys["holder-1"]
 	await trustline(c.net, c.server, holder, c.asset)
@@ -97,6 +98,7 @@ describe("a wind-down on a throwaway vault", () => {
 			),
 		).toBe("accepted")
 		await attest(c, 2n * 10n ** 18n)
+		await waitForNotice(c, vault(c, c.keys.outsider), 1n)
 		expect(
 			await call("fulfill_epoch", "outsider", { epoch_id: 1n }, true),
 		).toBe("accepted")
@@ -240,7 +242,7 @@ describe("a wind-down on a throwaway vault", () => {
 				{},
 				"refused: WindDownActive",
 			],
-			["set_notice", "governance", { secs: 1n }, "accepted"],
+			["set_notice", "governance", { secs: 1n }, "refused: UseTimelock"],
 			[
 				"set_min_epoch_duration",
 				"governance",

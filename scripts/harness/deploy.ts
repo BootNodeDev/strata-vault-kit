@@ -11,21 +11,30 @@ import type * as IdentityVerifierModule from "../../app-lib/clients/identity_ver
 import type * as NavOracleModule from "../../app-lib/clients/nav_oracle/dist/index.js"
 import type * as ShareTokenModule from "../../app-lib/clients/share_token/dist/index.js"
 
-import { ACCOUNT_NAMES, fund, type Accounts } from "./lib/accounts.js"
+import { ACCOUNT_NAMES, fund, pay, type Accounts } from "./lib/accounts.js"
+import { returnToIssuer } from "./lib/balances.js"
 import {
 	deployContract,
 	ensureAssetContract,
 	generateClient,
+	rootSdkVersion,
 } from "./lib/cli.js"
 import {
+	clearIncomplete,
 	CONTRACT_NAMES,
+	publicKeysOf,
+	refuseIncomplete,
 	REPO_ROOT,
 	saveDeployment,
+	writeIncomplete,
 	type ContractName,
 	type Deployment,
+	type IncompleteDeployment,
 } from "./lib/deployment.js"
 import { ensureKeys } from "./lib/keys.js"
 import { network, type Network } from "./lib/network.js"
+import { readProvenance, type Provenance } from "./lib/provenance.js"
+import { withAccountRetry } from "./lib/rpc.js"
 
 const RELEASE_DIR = join(REPO_ROOT, "target", "wasm32v1-none", "release")
 export const SHORT_WIND_DOWN_DIR = join(
@@ -56,13 +65,19 @@ function requireWasm(vaultWasm: string = wasmOf("async_vault")): void {
 	}
 }
 
-function clientOptions(net: Network, contractId: string, signer: Keypair) {
+function clientOptions(
+	net: Network,
+	contractId: string,
+	signer: Keypair,
+	server: rpc.Server,
+) {
 	return {
 		contractId,
 		rpcUrl: net.rpcUrl,
 		networkPassphrase: net.passphrase,
 		allowHttp: net.name === "local",
 		publicKey: signer.publicKey(),
+		server,
 		...basicNodeSigner(signer, net.passphrase),
 	}
 }
@@ -72,6 +87,7 @@ async function deployContracts(
 	accounts: Accounts,
 	assetContract: string,
 	wasms: Record<ContractName, string>,
+	onDeployed?: (name: ContractName, id: string) => void,
 ): Promise<Record<ContractName, string>> {
 	const pk = (name: keyof Accounts): string => accounts[name].publicKey()
 	const deployer = accounts.deployer
@@ -81,6 +97,7 @@ async function deployContracts(
 		admin: governance,
 	})
 	console.log("compliance", compliance)
+	onDeployed?.("compliance", compliance)
 
 	const identityVerifier = await deployContract(
 		net,
@@ -89,6 +106,7 @@ async function deployContracts(
 		{ admin: pk("compliance") },
 	)
 	console.log("identity_verifier", identityVerifier)
+	onDeployed?.("identity_verifier", identityVerifier)
 
 	const shareToken = await deployContract(net, wasms.share_token, deployer, {
 		name: "Strata Vault USDC",
@@ -99,6 +117,7 @@ async function deployContracts(
 		identity_verifier: identityVerifier,
 	})
 	console.log("share_token", shareToken)
+	onDeployed?.("share_token", shareToken)
 
 	const navOracle = await deployContract(net, wasms.nav_oracle, deployer, {
 		admin: governance,
@@ -107,6 +126,7 @@ async function deployContracts(
 		config: JSON.stringify(net.oracle),
 	})
 	console.log("nav_oracle", navOracle)
+	onDeployed?.("nav_oracle", navOracle)
 
 	const asyncVault = await deployContract(net, wasms.async_vault, deployer, {
 		asset: assetContract,
@@ -122,6 +142,7 @@ async function deployContracts(
 		}),
 	})
 	console.log("async_vault", asyncVault)
+	onDeployed?.("async_vault", asyncVault)
 
 	return {
 		compliance,
@@ -140,6 +161,7 @@ async function grantAndVerify(
 	net: Network,
 	accounts: Accounts,
 	contracts: Record<ContractName, string>,
+	server: rpc.Server,
 ): Promise<void> {
 	const governance = accounts.governance
 	const caller = governance.publicKey()
@@ -149,7 +171,7 @@ async function grantAndVerify(
 		clientEntry("share_token")
 	)) as typeof ShareTokenModule
 	const token = new ShareToken(
-		clientOptions(net, contracts.share_token, governance),
+		clientOptions(net, contracts.share_token, governance, server),
 	)
 	await (
 		await token.grant_role({ account: vault, role: "manager", caller })
@@ -182,7 +204,12 @@ async function grantAndVerify(
 		clientEntry("identity_verifier")
 	)) as typeof IdentityVerifierModule
 	const verifier = new IdentityVerifier(
-		clientOptions(net, contracts.identity_verifier, accounts.compliance),
+		clientOptions(
+			net,
+			contracts.identity_verifier,
+			accounts.compliance,
+			server,
+		),
 	)
 	await (
 		await verifier.allow({
@@ -199,7 +226,7 @@ async function grantAndVerify(
 		clientEntry("compliance")
 	)) as typeof ComplianceModule
 	const compliance = new Compliance(
-		clientOptions(net, contracts.compliance, governance),
+		clientOptions(net, contracts.compliance, governance, server),
 	)
 	await (
 		await compliance.bind_token({
@@ -224,7 +251,7 @@ async function grantAndVerify(
 		clientEntry("nav_oracle")
 	)) as typeof NavOracleModule
 	const feed = new NavOracle(
-		clientOptions(net, contracts.nav_oracle, governance),
+		clientOptions(net, contracts.nav_oracle, governance, server),
 	)
 	await (await feed.bind_vault({ vault })).signAndSend()
 	await (await feed.finish_setup()).signAndSend()
@@ -240,19 +267,26 @@ async function finishVaultSetup(
 	net: Network,
 	accounts: Accounts,
 	contracts: Record<ContractName, string>,
+	server: rpc.Server,
 ): Promise<void> {
 	const governance = accounts.governance
 	const { Client: AsyncVault } = (await import(
 		clientEntry("async_vault")
 	)) as typeof AsyncVaultModule
 	const vault = new AsyncVault(
-		clientOptions(net, contracts.async_vault, governance),
+		clientOptions(net, contracts.async_vault, governance, server),
 	)
 	await (
 		await vault.set_custodian({
 			custodian: accounts.custodian.publicKey(),
 		})
 	).signAndSend()
+	const noticeSecs = BigInt(net.vault.notice_secs)
+	await (await vault.set_notice({ secs: noticeSecs })).signAndSend()
+	const notice = (await vault.notice()).result
+	if (notice !== noticeSecs)
+		throw new Error(`vault notice is ${notice}, expected ${noticeSecs}`)
+	console.log(`vault notice set to ${noticeSecs} seconds`)
 	await (await vault.finish_setup()).signAndSend()
 	if ((await vault.setup_open()).result)
 		throw new Error("the vault's setup did not finish")
@@ -280,11 +314,17 @@ async function finishVaultSetup(
 async function freshSet(
 	net: Network,
 	wasms: Record<ContractName, string>,
+	provenance: Provenance,
 	accounts: Accounts,
+	server: rpc.Server,
+	onProgress?: (progress: IncompleteDeployment) => void,
 ): Promise<Deployment> {
-	const server = new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" })
+	// fund() reads "not found" as "not yet created"; it needs the plain server.
+	const fundingServer = new rpc.Server(net.rpcUrl, {
+		allowHttp: net.name === "local",
+	})
 	const keys = Object.values(accounts)
-	const funded = await fund(net, server, keys)
+	const funded = await fund(net, fundingServer, keys)
 	console.log(
 		`funded ${funded} accounts; ${keys.length - funded} already existed`,
 	)
@@ -298,24 +338,45 @@ async function freshSet(
 	)
 	console.log("asset contract", assetContract)
 
-	const contracts = await deployContracts(net, accounts, assetContract, wasms)
+	const issuer = asset.getIssuer() ?? accounts.issuer.publicKey()
+	const returned = await returnToIssuer(server, keys, asset, (from, amount) =>
+		pay(net, server, from, issuer, asset, amount),
+	)
+	console.log(
+		`returned the deposit asset of ${returned} accounts to its issuer`,
+	)
+
+	const assetInfo = { code: asset.getCode(), issuer, contract: assetContract }
+	const startedAt = new Date().toISOString()
+	const progress: Partial<Record<ContractName, string>> = {}
+	const onDeployed = onProgress
+		? (name: ContractName, id: string): void => {
+				progress[name] = id
+				onProgress({
+					network: net.name,
+					startedAt,
+					complete: false,
+					asset: assetInfo,
+					contracts: { ...progress },
+				})
+			}
+		: undefined
+	const contracts = await deployContracts(
+		net,
+		accounts,
+		assetContract,
+		wasms,
+		onDeployed,
+	)
 
 	return {
 		network: net.name,
 		deployedAt: new Date().toISOString(),
+		...provenance,
 		ledger: (await server.getLatestLedger()).sequence,
-		asset: {
-			code: asset.getCode(),
-			issuer: asset.getIssuer() ?? accounts.issuer.publicKey(),
-			contract: assetContract,
-		},
+		asset: assetInfo,
 		contracts,
-		accounts: Object.fromEntries(
-			Object.entries(accounts).map(([name, key]) => [
-				name,
-				{ public: key.publicKey(), secret: key.secret() },
-			]),
-		) as Deployment["accounts"],
+		accounts: publicKeysOf(accounts),
 	}
 }
 
@@ -325,59 +386,74 @@ const throwawayAccounts = (): Accounts =>
 		ACCOUNT_NAMES.map((name) => [name, Keypair.random()]),
 	) as Accounts
 
-const keysOf = (record: Deployment): Accounts =>
-	Object.fromEntries(
-		Object.entries(record.accounts).map(([name, key]) => [
-			name,
-			Keypair.fromSecret(key.secret),
-		]),
-	) as Accounts
-
 // A full, wired vault set built from a different vault Wasm. It reuses the
 // clients the main deploy generated, and nothing is written to disk.
 export async function deployThrowaway(
 	net: Network,
 	vaultWasm: string,
-): Promise<Deployment> {
+): Promise<{ deployment: Deployment; keys: Accounts }> {
 	requireWasm(vaultWasm)
 	const wasms = Object.fromEntries(
 		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
 	) as Record<ContractName, string>
 	wasms.async_vault = vaultWasm
-	const record = await freshSet(net, wasms, throwawayAccounts())
-	const accounts = keysOf(record)
-	await grantAndVerify(net, accounts, record.contracts)
-	await finishVaultSetup(net, accounts, record.contracts)
-	return record
+	const provenance = readProvenance(REPO_ROOT, wasms)
+	const keys = throwawayAccounts()
+	const server = withAccountRetry(
+		new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" }),
+	)
+	const deployment = await freshSet(net, wasms, provenance, keys, server)
+	await grantAndVerify(net, keys, deployment.contracts, server)
+	await finishVaultSetup(net, keys, deployment.contracts, server)
+	return { deployment, keys }
 }
 
 async function main(): Promise<void> {
 	requireWasm()
 	const net = network()
+	refuseIncomplete(net.name)
 	console.log(`deploying to ${net.name} (${net.rpcUrl})`)
+	const wasms = Object.fromEntries(
+		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
+	) as Record<ContractName, string>
+	const provenance = readProvenance(REPO_ROOT, wasms)
+	const sdkVersion = rootSdkVersion()
 	const { file, accounts, created } = ensureKeys(net.name, REPO_ROOT)
 	console.log(
 		`account keys in ${relative(REPO_ROOT, file)} (${created.length} new)`,
 	)
-	const wasms = Object.fromEntries(
-		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
-	) as Record<ContractName, string>
-	const record = await freshSet(net, wasms, accounts)
+	const server = withAccountRetry(
+		new rpc.Server(net.rpcUrl, { allowHttp: net.name === "local" }),
+	)
+	const record = await freshSet(
+		net,
+		wasms,
+		provenance,
+		accounts,
+		server,
+		(progress) => writeIncomplete(progress),
+	)
+	console.log(
+		`commit ${record.commit}${record.uncommittedChanges ? " with uncommitted changes" : ""}`,
+	)
 
 	for (const name of CONTRACT_NAMES) {
-		await generateClient(wasmOf(name), clientDir(name))
+		await generateClient(wasmOf(name), clientDir(name), sdkVersion)
 	}
 	console.log("clients generated")
 
-	await grantAndVerify(net, accounts, record.contracts)
-	await finishVaultSetup(net, accounts, record.contracts)
+	await grantAndVerify(net, accounts, record.contracts, server)
+	await finishVaultSetup(net, accounts, record.contracts, server)
 
 	const kept = saveDeployment(record)
+	clearIncomplete(net.name)
 	if (kept !== undefined)
 		console.log(`kept the previous record as ${basename(kept)}`)
 	console.log(`wrote deployed.${net.name}.json`)
 	if (net.name === "testnet") {
-		console.log("updated environments.toml [staging.contracts]")
+		console.log(
+			"updated environments.toml [staging.contracts] and the README addresses: commit both, or the app keeps building against the previous contracts",
+		)
 	}
 }
 

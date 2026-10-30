@@ -74,11 +74,12 @@ use state::FIRST_EPOCH;
 
 pub use error::VaultError;
 pub use event::{
-    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
-    DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
-    EpochReconciled, Funded, MinEpochDurationSet, NoticeSet, RedeemClaimed, RedeemRequested,
-    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
-    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
+    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCancelled,
+    DepositCapUpdated, DepositClaimed, DepositConvertedToExit, DepositRefunded, DepositRequested,
+    EpochClosed, EpochFulfilled, EpochReconciled, Funded, MinEpochDurationSet, NoticeSet,
+    RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered, SetupFinished,
+    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
+    WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -571,8 +572,8 @@ impl AsyncVault {
 
     /// Ends the window in which admin changes are instant. Needs every wiring
     /// check `health()` reports, no shares outstanding, the vault's own books
-    /// empty and no admin hand-over pending. Deposits open from here on, and
-    /// it never reopens.
+    /// empty and no admin hand-over pending. Deposits open once the feed
+    /// holds a valid report, and setup never reopens.
     ///
     /// # Errors
     ///
@@ -630,7 +631,8 @@ impl AsyncVault {
     ///
     /// # Events
     ///
-    /// * `ChangeProposed`, with its `eta` in seconds.
+    /// * `ChangeProposed`, with its `eta` in seconds; time the vault spends
+    ///   paused from now on moves it later.
     ///
     /// # Authorization
     ///
@@ -865,8 +867,8 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
-    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `RequestNotFound` - `holder` has no deposit in the epoch.
+    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `AlreadyClaimed` - The deposit was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The free reserve cannot cover a refund yet.
@@ -878,7 +880,7 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
-    ///   `DepositCancelled`.
+    ///   `DepositRefunded`.
     /// * `EpochReconciled` once the epoch's last request settles.
     ///
     /// # Authorization
@@ -900,11 +902,11 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
+    /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
     /// * `PriceAvailable` - A valid report accepted after the close gives a
     ///   share price above zero, so the price is known, even while the notice
     ///   runs.
-    /// * `RequestNotFound` - `holder` has no deposit in the epoch.
     /// * `Frozen` - `holder` is frozen.
     /// * `EscrowNotCovered` - The vault's balance cannot cover the refund yet.
     /// * The asset's own error when `holder` cannot receive it.
@@ -933,11 +935,11 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
+    /// * `RequestNotFound` - `holder` has no redemption in the epoch.
     /// * `AlreadyPriced` - The epoch is priced; claim instead.
     /// * `PriceAvailable` - A valid report accepted after the close gives a
     ///   share price above zero, so the price is known, even while the notice
     ///   runs.
-    /// * `RequestNotFound` - `holder` has no redemption in the epoch.
     /// * `NotAllowlisted` - `holder` is delisted.
     /// * `Frozen` - `holder` is frozen.
     /// * `HolderNotEligible` - The compliance rules refuse the return.
@@ -1007,8 +1009,8 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `EpochNotFound` - No such epoch.
-    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `RequestNotFound` - `holder` has no redemption in the epoch.
+    /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `AlreadyClaimed` - The redemption was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
@@ -1045,6 +1047,7 @@ impl AsyncVault {
     ///   epoch has not run the minimum.
     /// * `WindDownActive` - The vault is winding down.
     /// * `SetupOpen` - Setup has not finished.
+    /// * `AmountTooLarge` - The notice would end past the largest ledger time.
     ///
     /// # Events
     ///

@@ -14,6 +14,7 @@ import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
+import { type ClaimWindDownStatus } from "../../hooks/useClaimWindDown"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import { type DeployToCustodianStatus } from "../../hooks/useDeployToCustodian"
@@ -498,6 +499,30 @@ describe("TransactionModal", () => {
 		expect(screen.getByText(/once it closes/)).toBeTruthy()
 	})
 
+	it("names FeedNotValid as subscriptions paused until the price feed is valid again", () => {
+		renderModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6044 },
+		})
+
+		expect(screen.getByText(/price feed is not valid right now/)).toBeTruthy()
+		expect(screen.getByText(/subscriptions are paused/)).toBeTruthy()
+	})
+
+	it("names EscrowNotCovered as subscriptions refused until the vault is funded again", () => {
+		renderModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6076 },
+		})
+
+		expect(
+			screen.getByText(/enough to cover its pending deposits/),
+		).toBeTruthy()
+		expect(
+			screen.getByText(/not taking new subscriptions until it is funded again/),
+		).toBeTruthy()
+	})
+
 	it("falls back to a generic refusal for a contract error it does not recognize, without the raw code", () => {
 		renderModal({
 			status: "failed",
@@ -723,6 +748,20 @@ describe("TransactionModal, cancelling", () => {
 		expect(screen.getByText(/This request could not be found/)).toBeTruthy()
 	})
 
+	it("names EscrowNotCovered as a deposit the vault cannot return until it is funded again", () => {
+		renderCancelModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6076 },
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "The vault refused this request" }),
+		).toBeTruthy()
+		expect(
+			screen.getByText(/You can cancel once it is funded again/),
+		).toBeTruthy()
+	})
+
 	it("falls back to a generic refusal for a cancel error it does not recognize, without the raw code", () => {
 		renderCancelModal({
 			status: "failed",
@@ -802,6 +841,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		renderCancelRedeemModal({
 			status: "confirmed",
 			returnedShares: 100_0000000n as Amount,
+			surrendered: false,
 			hash: "b".repeat(64),
 		})
 
@@ -816,6 +856,7 @@ describe("TransactionModal, cancelling a redemption", () => {
 		renderCancelRedeemModal({
 			status: "confirmed",
 			returnedShares: 952380952n as Amount,
+			surrendered: false,
 			hash: "b".repeat(64),
 		})
 
@@ -833,15 +874,36 @@ describe("TransactionModal, cancelling a redemption", () => {
 		).toBeTruthy()
 	})
 
-	it("names a delisted controller as unable to receive its shares back, distinct from the claim wording for the same code", () => {
+	it("names NotAllowlisted as a delisted holder whose shares stay queued, pointing to the cash claim instead", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6068 },
+		})
+
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
+	})
+
+	it("names HolderNotEligible as shares the address cannot receive, pointing to the cash claim instead", () => {
+		renderCancelRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6073 },
+		})
+
+		expect(
+			screen.getByText(/cannot receive these shares right now/),
+		).toBeTruthy()
+		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for 304 on a withdrawal cancellation, since the vault checks the holder itself", () => {
 		renderCancelRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/shares cannot be returned/)).toBeTruthy()
-		expect(screen.getByText(/claim the USDC/i)).toBeTruthy()
-		expect(screen.queryByText(/cannot receive shares/)).toBeNull()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("falls back to a generic refusal for a cancel-redeem error it does not recognize, without the raw code", () => {
@@ -987,13 +1049,14 @@ describe("TransactionModal, claiming", () => {
 		expect(screen.getByText(/too large to complete/)).toBeTruthy()
 	})
 
-	it("names the identity verifier's cross-contract refusal as no longer allowlisted, distinct from every other code", () => {
+	it("falls back to a generic refusal for 304 on a share claim, since a delisted holder's shares join an exit instead", () => {
 		renderClaimModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/no longer allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("falls back to a generic refusal for a claim error it does not recognize, without the raw code", () => {
@@ -1141,6 +1204,16 @@ describe("TransactionModal, redeeming", () => {
 		expect(screen.getByText(/not accepting new redemptions/)).toBeTruthy()
 	})
 
+	it("names SetupOpen as redemptions starting once setup closes", () => {
+		renderRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6064 },
+		})
+
+		expect(screen.getByText(/setup is still open/)).toBeTruthy()
+		expect(screen.getByText(/Redemptions start once it closes/)).toBeTruthy()
+	})
+
 	it("falls back to a generic refusal for a redeem error it does not recognize, without the raw code", () => {
 		renderRedeemModal({
 			status: "failed",
@@ -1221,6 +1294,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 150_0000000n as Amount,
+			sharesReturned: false,
 			hash: "b".repeat(64),
 		})
 
@@ -1232,6 +1306,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 952380952n as Amount,
+			sharesReturned: false,
 			hash: "b".repeat(64),
 		})
 
@@ -1242,6 +1317,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 0n as Amount,
+			sharesReturned: true,
 			hash: "b".repeat(64),
 		})
 
@@ -1274,19 +1350,27 @@ describe("TransactionModal, claiming a redemption", () => {
 		expect(screen.getByText(/enough USDC in reserve/)).toBeTruthy()
 	})
 
-	it("names a delisted controller as unable to receive the shares the zero-price branch tried to return, distinct from the claim and cancel-redeem wording for the same code", () => {
+	it("names HolderNotEligible as the zero-price return the address cannot receive, in the same words as a withdrawal cancellation", () => {
+		renderClaimRedeemModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6073 },
+		})
+
+		expect(screen.getByText(/tried to return your shares/)).toBeTruthy()
+		expect(
+			screen.getByText(/cannot receive these shares right now/),
+		).toBeTruthy()
+		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
+	})
+
+	it("falls back to a generic refusal for 304 on a withdrawal claim, since the vault checks the holder itself", () => {
 		renderClaimRedeemModal({
 			status: "failed",
 			failure: { kind: "contract-error", code: 304 },
 		})
 
-		expect(screen.getByText(/tried to return your shares instead/)).toBeTruthy()
-		expect(
-			screen.queryByText(
-				/^Your address is no longer allowlisted, so it cannot receive shares\.$/,
-			),
-		).toBeNull()
-		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
 	})
 
 	it("names AlreadyClaimed by delegating to the shared claim wording", () => {
@@ -1407,6 +1491,8 @@ describe("TransactionModal, closing an epoch", () => {
 		[6032, /not open/],
 		[2000, /not authorized to close/],
 		[2007, /does not hold the manager role/],
+		[6077, /Only the manager can seal this epoch/],
+		[6064, /setup is still open, so no epoch can be sealed/],
 	])("names the vault's reason for code %i", (code, sentence) => {
 		renderCloseEpochModal({
 			status: "failed",
@@ -1516,6 +1602,7 @@ describe("TransactionModal, pricing an epoch", () => {
 		[6031, /could not resolve a valid share price/],
 		[6014, /too large/],
 		[1000, /paused/],
+		[6064, /setup is still open, so no epoch can be priced/],
 	])("names the vault's reason for code %i", (code, sentence) => {
 		renderFulfillEpochModal({
 			status: "failed",
@@ -2175,13 +2262,13 @@ describe("TransactionModal, emergency actions", () => {
 	it.each<[EmergencyModalAction, string, string]>([
 		[
 			"pause-token",
-			"Signing stops holder transfers and returns of escrowed shares.",
-			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
+			"Signing stops holder transfers only.",
+			"Holder transfers are stopped. Minting, burning, the vault's escrow moves and legal transfers continue.",
 		],
 		[
 			"unpause-token",
-			"Signing resumes holder transfers and returns of escrowed shares.",
-			"Holder transfers and returns of escrowed shares are open again.",
+			"Signing resumes holder transfers.",
+			"Holder transfers are open again.",
 		],
 	])(
 		"words %s after what the share token enforces",
@@ -2379,6 +2466,13 @@ describe("TransactionModal, configuration actions", () => {
 			"Signing queues identity verifier CABC...WXYZ.",
 			"Identity verifier CABC...WXYZ applies once the vault's upgrade delay passes.",
 		],
+		[
+			"propose-oracle-config",
+			"",
+			"Preparing to propose oracle limits",
+			"Signing queues every new oracle limit.",
+			"The new oracle limits apply once the vault's upgrade delay passes.",
+		],
 	])(
 		"walks %s from preparing to proposed",
 		(action, value, preparing, signing, doneBody) => {
@@ -2571,6 +2665,17 @@ describe("TransactionModal, governance actions", () => {
 			"share token",
 			/hand-over is still pending/,
 		],
+		["cancel-oracle-change", 3011, "oracle", /no pending change with that id/],
+		["apply-oracle-change", 3012, "oracle", /delay has not passed yet/],
+		["propose-oracle-grant-role", 3013, "oracle", /16 pending changes/],
+		["propose-oracle-admin", 3014, "oracle", /Setup is still open/],
+		["grant-oracle-role", 3015, "oracle", /goes through the timelock/],
+		["apply-oracle-change", 3016, "oracle", /setup has already finished/],
+		["apply-oracle-change", 3017, "oracle", /not bound to a vault/],
+		["apply-oracle-change", 3018, "oracle", /vault is winding down/],
+		["apply-oracle-change", 3019, "oracle", /holds every oracle change/],
+		["apply-oracle-change", 3020, "oracle", /shorter than the vault's notice/],
+		["propose-oracle-upgrade", 3021, "oracle", /upgrade is already pending/],
 	])(
 		"names the reason %s was refused with code %i",
 		(action, code, refuser, sentence) => {
@@ -2706,6 +2811,41 @@ describe("TransactionModal, governance actions", () => {
 			"Withdrew share token change #1: Compliance contract CABC...WXYZ.",
 		],
 		[
+			"propose-oracle-grant-role",
+			"Attester to GABC...WXYZ",
+			"Signing queues the grant of Attester to GABC...WXYZ.",
+			"Change proposed",
+			"The grant of Attester to GABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
+		[
+			"propose-oracle-admin",
+			"GABC...WXYZ",
+			"Signing queues the hand-over to GABC...WXYZ.",
+			"Change proposed",
+			"The hand-over to GABC...WXYZ applies once the vault's upgrade delay passes.",
+		],
+		[
+			"propose-oracle-upgrade",
+			"Code abab...abab",
+			"Signing queues Code abab...abab.",
+			"Upgrade proposed",
+			"Code abab...abab can apply once the vault's upgrade delay passes.",
+		],
+		[
+			"apply-oracle-change",
+			"oracle change #1: Admin hand-over GABC...WXYZ",
+			"Signing applies oracle change #1: Admin hand-over GABC...WXYZ.",
+			"Change applied",
+			"Applied oracle change #1: Admin hand-over GABC...WXYZ.",
+		],
+		[
+			"cancel-oracle-change",
+			"oracle change #1: Admin hand-over GABC...WXYZ",
+			"Signing withdraws oracle change #1: Admin hand-over GABC...WXYZ.",
+			"Change cancelled",
+			"Withdrew oracle change #1: Admin hand-over GABC...WXYZ.",
+		],
+		[
 			"propose-wind-down",
 			"Activates 21 Nov, 22:13 UTC.",
 			"Signing starts the wind-down countdown.",
@@ -2780,11 +2920,11 @@ describe("TransactionModal, compliance actions", () => {
 			"Froze 5.00 shares of GABC...WXYZ.",
 		],
 		[
-			"force-transfer",
-			"5.00 shares from GABC...WXYZ to CVAU...LTID",
-			"Signing moves 5.00 shares from GABC...WXYZ to CVAU...LTID.",
-			"Transfer forced",
-			"Moved 5.00 shares from GABC...WXYZ to CVAU...LTID.",
+			"legal-transfer",
+			"5.00 shares from GABC...WXYZ to GDEF...UVWX",
+			"Signing approves moving 5.00 shares from GABC...WXYZ to GDEF...UVWX.",
+			"Legal transfer made",
+			"Moved 5.00 shares from GABC...WXYZ to GDEF...UVWX.",
 		],
 	])("names what %s changes", (action, value, signing, done, doneBody) => {
 		const { unmount } = renderComplianceModal(
@@ -2807,6 +2947,21 @@ describe("TransactionModal, compliance actions", () => {
 		["freeze-address", 2000, "share token", /does not hold the role/],
 		["allow-address", 2000, "identity verifier", /does not hold the role/],
 		["disallow-address", 2001, "identity verifier", /verifier has no admin/],
+		[
+			"legal-transfer",
+			7013,
+			"share token",
+			/compliance account and the token admin must be two different accounts/,
+		],
+		["legal-transfer", 7015, "share token", /reference of 1 to 128 bytes/],
+		[
+			"legal-transfer",
+			7012,
+			"share token",
+			/never moves shares into or out of the vault/,
+		],
+		["legal-transfer", 304, "share token", /destination is not allowlisted/],
+		["legal-transfer", 300, "share token", /does not hold enough shares/],
 	])(
 		"names the reason %s was refused with code %i",
 		(action, code, refuser, sentence) => {
@@ -2824,6 +2979,45 @@ describe("TransactionModal, compliance actions", () => {
 		},
 	)
 
+	it("asks for the token admin's authorization before compliance signs", () => {
+		renderComplianceModal("legal-transfer", {
+			status: "shared",
+			xdr: "AAAAXDR",
+			standing: "admin-authorization",
+			expiresAt: null,
+		})
+
+		expect(
+			screen.getByRole("heading", {
+				name: "Needs the token admin's authorization",
+			}),
+		).toBeTruthy()
+		expect(
+			screen.getByText(
+				"Share the link with the token admin. Once they authorize it, compliance's signers sign it.",
+			),
+		).toBeTruthy()
+		expect(
+			screen.getByRole<HTMLInputElement>("textbox", { name: "Signing link" })
+				.value,
+		).toBe(`${window.location.origin}/sign#AAAAXDR`)
+	})
+
+	it("names the wallets that can sign an authorization", () => {
+		renderComplianceModal("legal-transfer", {
+			status: "failed",
+			failure: { kind: "cannot-authorize" },
+		})
+
+		expect(
+			screen.getByText(
+				"This wallet cannot sign authorizations. Use Freighter, Hana or WalletConnect.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByText("You declined the request")).toBeNull()
+		expect(screen.queryByRole("button", { name: "Try again" })).toBeNull()
+	})
+
 	it("sends an unknown outcome to the Compliance tab", () => {
 		renderComplianceModal("unfreeze-address", {
 			status: "failed",
@@ -2833,5 +3027,228 @@ describe("TransactionModal, compliance actions", () => {
 		expect(
 			screen.getByText(/check the Compliance tab before trying again/),
 		).toBeTruthy()
+	})
+})
+
+describe("TransactionModal, allowlist and freeze refusals", () => {
+	const contractError = (code: number) => ({
+		status: "failed" as const,
+		failure: { kind: "contract-error" as const, code },
+	})
+
+	it("names NotAllowlisted on a subscription as an address that cannot subscribe", () => {
+		renderModal(contractError(6068))
+
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/can subscribe/)).toBeTruthy()
+	})
+
+	it("names Frozen on a subscription as a frozen address", () => {
+		renderModal(contractError(6071))
+
+		expect(screen.getByText(/frozen/)).toBeTruthy()
+		expect(screen.getByText(/cannot subscribe/)).toBeTruthy()
+	})
+
+	it("names Frozen on a redemption request as a frozen address or frozen shares", () => {
+		renderRedeemModal(contractError(6071))
+
+		expect(screen.getByText(/shares are frozen/)).toBeTruthy()
+		expect(screen.getByText(/free shares/)).toBeTruthy()
+	})
+
+	it.each<[string, () => void]>([
+		["cancelling a subscription", () => renderCancelModal(contractError(6071))],
+		[
+			"cancelling a redemption",
+			() => renderCancelRedeemModal(contractError(6071)),
+		],
+		["claiming shares", () => renderClaimModal(contractError(6071))],
+		[
+			"claiming a redemption",
+			() => renderClaimRedeemModal(contractError(6071)),
+		],
+	])("names Frozen on %s as held until the freeze lifts", (_name, render) => {
+		render()
+
+		expect(screen.getByText(/held until the freeze is lifted/)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for NotAllowlisted on a subscription cancellation, since a delisted holder may still cancel", () => {
+		renderCancelModal(contractError(6068))
+
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/allowlisted/)).toBeNull()
+	})
+})
+
+describe("TransactionModal, conversion and surrender outcomes", () => {
+	it("tells a delisted investor their claimed shares were queued as a redemption", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 0n as Amount,
+			queuedInto: 5n,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Queued as a redemption" }),
+		).toBeTruthy()
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+		expect(screen.getByText(/pay out in USDC at the next price/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+
+	it("tells a delisted investor in a wind-down their claimed shares joined the wind-down claim", () => {
+		renderClaimModal({
+			status: "confirmed",
+			sharesMinted: 0n as Amount,
+			queuedInto: 0n,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Moved to your wind-down claim" }),
+		).toBeTruthy()
+		expect(screen.getByText(/not allowlisted/)).toBeTruthy()
+	})
+
+	it("still reads a zero-share claim without a conversion as a returned deposit", () => {
+		renderClaimModal({ status: "confirmed", sharesMinted: 0n as Amount })
+
+		expect(
+			screen.getByRole("heading", { name: "Deposit returned" }),
+		).toBeTruthy()
+	})
+
+	it("tells the investor a cancelled redemption moved into the wind-down claim", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 100_0000000n as Amount,
+			surrendered: true,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Moved to your wind-down claim" }),
+		).toBeTruthy()
+		expect(screen.getByText(/winding down/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+
+	it("still reads a returned redemption as cancelled", () => {
+		renderCancelRedeemModal({
+			status: "confirmed",
+			returnedShares: 100_0000000n as Amount,
+			surrendered: false,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Request cancelled" }),
+		).toBeTruthy()
+	})
+})
+
+describe("TransactionModal, wind-down outcomes", () => {
+	it("tells the investor a zero-price claim burned the shares during a wind-down, never that they came back", () => {
+		renderClaimRedeemModal({
+			status: "confirmed",
+			assetsClaimed: 0n as Amount,
+			sharesReturned: false,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Nothing to pay out" }),
+		).toBeTruthy()
+		expect(screen.getByText(/winding down/)).toBeTruthy()
+		expect(screen.getByText(/burned/)).toBeTruthy()
+		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
+	})
+})
+
+describe("TransactionModal, cancelling a redemption in a wind-down", () => {
+	it("tells the signer the shares move into the wind-down claim, never that they return", () => {
+		render(
+			<TransactionModal
+				action="cancel-redeem"
+				status={{ status: "awaiting-signature" }}
+				amount="100.00"
+				ticker="vUSDC"
+				assetTicker="USDC"
+				windingDown
+				onClose={vi.fn()}
+				onRetry={vi.fn()}
+			/>,
+		)
+
+		expect(screen.getByText(/wind-down claim/)).toBeTruthy()
+		expect(screen.queryByText(/returns/)).toBeNull()
+	})
+})
+
+const renderClaimWindDownModal = (status: ClaimWindDownStatus) =>
+	render(
+		<TransactionModal
+			action="claim-wind-down"
+			status={status}
+			amount="25.00"
+			ticker="USDC"
+			shareTicker="vUSDC"
+			onClose={vi.fn()}
+			onRetry={vi.fn()}
+		/>,
+	)
+
+describe("TransactionModal, claiming from the wind-down", () => {
+	it("tells the signer what they receive and that their shares are turned in", () => {
+		renderClaimWindDownModal({ status: "awaiting-signature" })
+
+		expect(screen.getByText(/25\.00 USDC/)).toBeTruthy()
+		expect(screen.getByText(/turns in your unfrozen vUSDC/)).toBeTruthy()
+	})
+
+	it("shows the assets paid and the shares turned in once confirmed", () => {
+		renderClaimWindDownModal({
+			status: "confirmed",
+			assetsClaimed: 25_0000000n as Amount,
+			sharesSurrendered: 40_0000000n as Amount,
+		})
+
+		expect(screen.getByRole("heading", { name: "USDC claimed" })).toBeTruthy()
+		expect(screen.getByText(/25\.00 USDC has been added/)).toBeTruthy()
+		expect(screen.getByText(/40\.00 vUSDC/)).toBeTruthy()
+	})
+
+	it("reads a claim that paid nothing as shares turned in for later rounds", () => {
+		renderClaimWindDownModal({
+			status: "confirmed",
+			assetsClaimed: 0n as Amount,
+			sharesSurrendered: 40_0000000n as Amount,
+		})
+
+		expect(
+			screen.getByRole("heading", { name: "Shares turned in" }),
+		).toBeTruthy()
+		expect(screen.getByText(/later rounds/)).toBeTruthy()
+	})
+
+	it.each<[number, RegExp]>([
+		[6051, /first payout/],
+		[6054, /nothing to claim from the wind-down/],
+		[6071, /held until the freeze is lifted/],
+	])("names refusal %i in the dapp's words", (code, text) => {
+		renderClaimWindDownModal({
+			status: "failed",
+			failure: { kind: "contract-error", code },
+		})
+
+		expect(screen.getByText(text)).toBeTruthy()
+	})
+
+	it("falls back to a generic refusal for a wind-down claim error it does not recognize", () => {
+		renderClaimWindDownModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 9999 },
+		})
+
+		expect(screen.getByText(/contact support/)).toBeTruthy()
+		expect(screen.queryByText(/9999/)).toBeNull()
 	})
 })

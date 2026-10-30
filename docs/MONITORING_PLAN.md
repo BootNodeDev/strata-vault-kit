@@ -30,10 +30,6 @@ actions, T for storage lifetime. Under it:
 - **Response:** what they do, with a link to the runbook or the threat where one
   exists.
 
-Lines marked **With #380** describe refusals that arrive with
-[pull request #380](https://github.com/BootNodeDev/strata-vault-kit/pull/380).
-A vault built without that change does not refuse that way.
-
 | Severity | Meaning |
 | --- | --- |
 | Critical | Act now, at any hour. Value can move, or pricing or exits have stopped. |
@@ -150,9 +146,8 @@ Prices are in WAD: `10^18` is one asset base unit per share base unit.
 - **Severity:** Critical. **Told:** attester, governance.
 - **Effect:** `fulfill_epoch` refuses with `FeedNotValid` (6044), so nothing is
   priced. Requests in sealed epochs can be cancelled again. Priced claims still
-  pay. **With #380:** `request_deposit` also refuses with `FeedNotValid` while
-  the feed is stale or the NAV is paused, so no new deposit waits on a stalled
-  feed.
+  pay. `request_deposit` also refuses with `FeedNotValid` while the feed is
+  stale or the NAV is paused, so no new deposit waits on a stalled feed.
 - **Response:** the attester posts a report. If the attester is gone, follow
   [When the Manager or the Attester Stops](./kit-spec.md#when-the-manager-or-the-attester-stops).
   If the report fell out of a band governance changed, see
@@ -282,11 +277,11 @@ The vault's figures, all in asset base units:
   (C4).
 - **Threshold:** below zero.
 - **Severity:** Critical. **Told:** treasury, governance.
-- **Effect:** the escrow depositors can cancel is not all there.
-  `uncovered()` counts the gap. **With #380:** `request_deposit` refuses with
-  `EscrowNotCovered` (6076) while `liquid_reserve()` is below zero, so a new
-  deposit never pays an earlier cancellation, and `cancel_deposit` refuses with
-  `EscrowNotCovered` when the vault's balance cannot cover that deposit.
+- **Effect:** the escrow depositors can cancel is not all there. `uncovered()`
+  counts the gap. `request_deposit` refuses with `EscrowNotCovered` (6076) while
+  `liquid_reserve()` is below zero, so a new deposit never pays an earlier
+  cancellation, and `cancel_deposit` refuses with `EscrowNotCovered` when the
+  vault's balance cannot cover that deposit.
 - **Response:** treasury calls `fund` with at least `-liquid_reserve()`, plus
   `committed()` to pay priced exits too. The refusals lift once the vault is
   funded. Threat:
@@ -325,7 +320,9 @@ The vault's figures, all in asset base units:
   `closed_at` from `get_epoch` for the epoch before `current_epoch()`.
 - **Threshold:** one and a half times the epoch length the operator runs.
 - **Severity:** Warning. **Told:** manager, governance.
-- **Response:** the manager calls `close_epoch`. If the manager is gone, follow
+- **Response:** the manager calls `close_epoch`. Once the open epoch has run
+  the minimum epoch duration (`min_epoch_duration()`), anyone may call it
+  instead. If the manager is gone and no minimum is set, follow
   [When the Manager or the Attester Stops](./kit-spec.md#when-the-manager-or-the-attester-stops).
   Threat:
   [R8](./THREAT_MODEL.md#r8-the-manager-stops-sealing-or-picks-the-moment).
@@ -375,8 +372,7 @@ lists the powers that act at once.
 - **Severity:** Critical for a pause; Warning for a lift. **Told:** governance,
   guardian, attester.
 - **Effect:** while paused, no report lands and nothing is priced, and sealed
-  epochs reopen to cancellation. **With #380:** `request_deposit` refuses with
-  `FeedNotValid`.
+  epochs reopen to cancellation. `request_deposit` refuses with `FeedNotValid`.
 - **Response:** confirm a runbook is in progress (see V6). Only governance lifts
   the pause (`set_nav_paused(false)`). For a pause nobody planned, governance
   revokes the oracle's guardian (instant) and lifts the pause
@@ -427,8 +423,11 @@ lists the powers that act at once.
 ### P6. Change proposed to the timelock
 
 - **Source:** `ChangeProposed`, with the change and its `eta`, on the vault,
-  the share token, the oracle and the compliance contract. `pending_changes()`
-  on each lists what waits.
+  the share token, the oracle and the compliance contract. The event's `eta`
+  is the one `pending_changes()` reports at that moment. Every second the
+  vault spends paused afterwards, a pause already running included, moves the
+  real one later, so P7 reads the `eta` from `pending_changes()`, which lists
+  what waits on each contract.
 - **Threshold:** every one.
 - **Severity:** Critical for `Upgrade`, `Admin`, `GrantRole`, `RevokeRole`,
   the vault's `Oracle` and `Custodian`, the token's `Compliance` and
@@ -475,6 +474,9 @@ lists the powers that act at once.
 - **Threshold:** every one.
 - **Severity:** Critical when proposed or activated; Info otherwise. **Told:**
   governance, treasury, holders.
+- **Effect:** while the wind-down is proposed, `request_deposit` refuses with
+  `WindDownAlreadyProposed` (6048); once it is active, with `WindDownActive`
+  (6046).
 - **Response:** once `active_at` passes, anyone can activate it; until then
   governance can cancel it. Once active it cannot be undone, nothing is priced,
   and holders exit through rounds paid from the free reserve. Treasury brings

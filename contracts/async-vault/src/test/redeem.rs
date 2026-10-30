@@ -102,8 +102,29 @@ fn claiming_a_redeem_before_the_epoch_is_fulfilled_is_rejected() {
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
 
-    assert!(f.vault.try_claim_redeem(&user, &epoch).is_err());
+    refused(
+        f.vault.try_claim_redeem(&user, &epoch),
+        VaultError::EpochNotFulfilled,
+    );
     assert_eq!(f.shares(&f.vault.address), 200);
+}
+
+#[test]
+fn claiming_a_redeem_without_a_request_finds_no_request_before_pricing() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    let epoch = f.vault.current_epoch();
+
+    refused(
+        f.vault.try_claim_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.close_epoch();
+    refused(
+        f.vault.try_claim_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
 }
 
 #[test]

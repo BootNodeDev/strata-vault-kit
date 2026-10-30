@@ -12,16 +12,40 @@ import {
 	type RequestTone,
 } from "../components/vault/RequestCard"
 import {
+	HELD_WHILE_FROZEN,
+	NOT_ALLOWLISTED,
+} from "../components/vault/TransactionModal"
+import {
 	type ArchivedRequest,
 	type InvestorRequest,
 	type RequestSide,
 	type UnreadableRequest,
 } from "../hooks/useInvestorRequests"
 import { type Allowance } from "../hooks/useIsAllowed"
+import { type NavClassification } from "../hooks/useNavPrice"
+import { type PauseState } from "../hooks/useVaultPaused"
 
 export type RequestTokens = { token: string; shareToken: string }
 
-export type ClaimRefusal = { reason: string }
+export type RequestOutlook = {
+	held?: string
+	claimNote?: string
+	cancellable: boolean
+}
+
+export type HolderInputs = {
+	allowance: Allowance
+	frozen: boolean | null
+	windingDown: boolean | null
+	pause: PauseState
+	nav: NavClassification | undefined
+}
+
+export type RequestHandlers = {
+	outlookFor?: (request: InvestorRequest) => RequestOutlook
+	onCancel?: (request: InvestorRequest) => void
+	onClaim?: (request: InvestorRequest) => void
+}
 
 export type LoadedRequests = {
 	requests: InvestorRequest[]
@@ -69,26 +93,59 @@ const readyNote = (side: RequestSide): string =>
 		? "Claiming is not guaranteed to succeed. Compliance is checked when you sign."
 		: "Claiming is not guaranteed to succeed. The reserve is checked when you sign."
 
-export function allowlistRefusalFor(
-	allowance: Allowance,
-): (request: InvestorRequest) => ClaimRefusal | undefined {
+const isPriced = (request: InvestorRequest): boolean =>
+	request.epochStatus.tag === "Fulfilled"
+
+const priceReadable = (
+	request: InvestorRequest,
+	{ pause, nav }: HolderInputs,
+): boolean =>
+	request.epochStatus.tag === "Pending" &&
+	pause === "open" &&
+	nav?.status === "valid" &&
+	nav.attestedAt >= request.closedAt
+
+const cancellable = (
+	request: InvestorRequest,
+	inputs: HolderInputs,
+): boolean => {
+	const windingDown = inputs.windingDown === true
+	if (isPriced(request)) return false
+	if (!windingDown && priceReadable(request, inputs)) return false
+	return !(
+		request.side === "redeem" &&
+		inputs.allowance === "not-allowed" &&
+		!windingDown
+	)
+}
+
+const delistedClaimNote = (windingDown: boolean): string =>
+	windingDown
+		? `${NOT_ALLOWLISTED} Claiming does not send you shares. They move into your wind-down claim instead.`
+		: `${NOT_ALLOWLISTED} Claiming does not send you shares. They are queued as a redemption that pays out at the next price.`
+
+export function outlookFor(
+	inputs: HolderInputs,
+): (request: InvestorRequest) => RequestOutlook {
 	return (request) => {
-		if (request.side !== "deposit") return undefined
-		if (allowance !== "not-allowed") return undefined
-		return {
-			reason:
-				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
+		if (inputs.frozen === true)
+			return { held: HELD_WHILE_FROZEN, cancellable: false }
+		const outlook: RequestOutlook = {
+			cancellable: cancellable(request, inputs),
 		}
+		if (request.side === "deposit" && inputs.allowance === "not-allowed")
+			outlook.claimNote = delistedClaimNote(inputs.windingDown === true)
+		return outlook
 	}
 }
 
 export function assignStage(
 	request: InvestorRequest,
-	refusal: ClaimRefusal | undefined,
+	outlook: RequestOutlook | undefined,
 ): RequestStage {
-	if (request.epochStatus.tag !== "Fulfilled") return "waiting"
-	if (!hasValidPrice(request.sharePrice)) return "blocked"
-	return refusal === undefined ? "ready" : "blocked"
+	if (outlook?.held !== undefined) return "blocked"
+	if (!isPriced(request)) return "waiting"
+	return hasValidPrice(request.sharePrice) ? "ready" : "blocked"
 }
 
 const baseEntry = (
@@ -144,6 +201,7 @@ function readyEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
 	onClaim: ((request: InvestorRequest) => void) | undefined,
+	claimNote: string | undefined,
 ): RequestEntry {
 	const owed = owedAmount(request.side, request.amount, request.sharePrice)
 	const actions = onClaim !== undefined ? [claimAction(request, onClaim)] : []
@@ -154,23 +212,29 @@ function readyEntry(
 		outTone: "ok",
 		state: "Priced",
 		tone: stageTone.ready,
-		note: readyNote(request.side),
+		note: claimNote ?? readyNote(request.side),
 	}
 }
 
-function blockedEntry(
+function heldEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
-	refusal: ClaimRefusal,
+	reason: string,
 ): RequestEntry {
-	const owed = owedAmount(request.side, request.amount, request.sharePrice)
+	const owed =
+		isPriced(request) && hasValidPrice(request.sharePrice)
+			? owedAmount(request.side, request.amount, request.sharePrice)
+			: null
 	return {
 		...baseEntry(request, tokens),
-		outAmount: `${formatExact(owed, AMOUNT_DECIMALS)} ${outTicker(request.side, tokens)}`,
-		outTone: "stop",
-		state: "Blocked",
+		outAmount:
+			owed === null
+				? "Not yet priced"
+				: `${formatExact(owed, AMOUNT_DECIMALS)} ${outTicker(request.side, tokens)}`,
+		outTone: owed === null ? "word" : "stop",
+		state: "Held",
 		tone: stageTone.blocked,
-		tooltip: { label: "Why you cannot claim this yet", text: refusal.reason },
+		tooltip: { label: "Why this request is held", text: reason },
 	}
 }
 
@@ -191,20 +255,23 @@ function invalidPriceEntry(
 	}
 }
 
-export function toPresentEntry(
+function toPresentEntry(
 	request: InvestorRequest,
 	tokens: RequestTokens,
-	refusal: ClaimRefusal | undefined,
-	onCancel?: (request: InvestorRequest) => void,
-	onClaim?: (request: InvestorRequest) => void,
+	outlook: RequestOutlook,
+	{ onCancel, onClaim }: RequestHandlers,
 ): RequestEntry {
-	const stage = assignStage(request, refusal)
-	if (stage === "waiting") return waitingEntry(request, tokens, onCancel)
+	if (outlook.held !== undefined)
+		return heldEntry(request, tokens, outlook.held)
+	if (!isPriced(request))
+		return waitingEntry(
+			request,
+			tokens,
+			outlook.cancellable ? onCancel : undefined,
+		)
 	if (!hasValidPrice(request.sharePrice))
 		return invalidPriceEntry(request, tokens)
-	if (stage === "blocked" && refusal !== undefined)
-		return blockedEntry(request, tokens, refusal)
-	return readyEntry(request, tokens, onClaim)
+	return readyEntry(request, tokens, onClaim, outlook.claimNote)
 }
 
 function archivedEntry(request: ArchivedRequest): RequestEntry {
@@ -243,21 +310,20 @@ function unreadableEntry(request: UnreadableRequest): RequestEntry {
 	}
 }
 
+const OPEN_OUTLOOK: RequestOutlook = { cancellable: true }
+
 export function toRequestEntriesByStage(
 	loaded: LoadedRequests,
 	tokens: RequestTokens,
-	refusalFor: (request: InvestorRequest) => ClaimRefusal | undefined = () =>
-		undefined,
-	onCancel?: (request: InvestorRequest) => void,
-	onClaim?: (request: InvestorRequest) => void,
+	handlers: RequestHandlers = {},
 ): EntriesByStage {
 	const entries: EntriesByStage = { ready: [], blocked: [], waiting: [] }
 
 	for (const request of loaded.requests) {
 		if (request.claimed) continue
-		const refusal = refusalFor(request)
-		entries[assignStage(request, refusal)].push(
-			toPresentEntry(request, tokens, refusal, onCancel, onClaim),
+		const outlook = handlers.outlookFor?.(request) ?? OPEN_OUTLOOK
+		entries[assignStage(request, outlook)].push(
+			toPresentEntry(request, tokens, outlook, handlers),
 		)
 	}
 	for (const request of loaded.archived) {
@@ -268,4 +334,65 @@ export function toRequestEntriesByStage(
 	}
 
 	return entries
+}
+
+export type WindDownClaimInput = {
+	windingDown: boolean | null
+	frozen: boolean | null
+	claimable: Amount | null
+	shares: Amount | null
+	tokens: RequestTokens
+	onClaim?: () => void
+}
+
+const assetAmount = (value: Amount, tokens: RequestTokens): string =>
+	`${formatExact(value, AMOUNT_DECIMALS)} ${tokens.token}`
+
+export function toWindDownEntry({
+	windingDown,
+	frozen,
+	claimable,
+	shares,
+	tokens,
+	onClaim,
+}: WindDownClaimInput):
+	{ stage: RequestStage; entry: RequestEntry } | undefined {
+	if (windingDown !== true || claimable === null) return undefined
+	const base = {
+		id: "wind-down",
+		inLabel: "Wind-down claim",
+		inAmount:
+			shares === null
+				? "Unknown amount"
+				: `${formatExact(shares, AMOUNT_DECIMALS)} ${tokens.shareToken}`,
+		outLabel: "Owed to you",
+		outAmount: assetAmount(claimable, tokens),
+	}
+	if (frozen === true)
+		return {
+			stage: "blocked",
+			entry: {
+				...base,
+				outTone: "stop",
+				state: "Held",
+				tone: stageTone.blocked,
+				actions: [],
+				tooltip: { label: "Why this request is held", text: HELD_WHILE_FROZEN },
+			},
+		}
+	if (claimable === 0n) return undefined
+	return {
+		stage: "ready",
+		entry: {
+			...base,
+			outTone: "ok",
+			state: "Claimable",
+			tone: stageTone.ready,
+			actions:
+				onClaim === undefined
+					? []
+					: [{ label: "Claim", kind: "primary", onPress: onClaim }],
+			note: "Claiming turns in your unfrozen shares, and later rounds pay you for them.",
+		},
+	}
 }
