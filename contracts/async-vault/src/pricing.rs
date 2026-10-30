@@ -9,8 +9,9 @@ use crate::state;
 /// Defines the pricing interface for epoch share price resolution and conversions.
 /// A deployment or vault variant selects or implements a scheme conforming to this trait.
 pub trait PricingScheme {
-    /// Resolves the share price for an epoch being fulfilled.
-    /// Returns the share price in WAD scale (18 decimals), or a VaultError if invalid.
+    /// Resolves the share price an epoch would take now, in WAD scale (18
+    /// decimals), or a VaultError if invalid. Cancellation calls it too, to
+    /// decide whether a price is readable, so it must not write state.
     fn resolve_share_price(e: &Env) -> Result<i128, VaultError>;
 
     /// Converts asset amount to share amount at `share_price`, rounding down
@@ -44,7 +45,9 @@ pub(crate) type Pricing = DirectUnitPricing;
 impl PricingScheme for DirectUnitPricing {
     fn resolve_share_price(e: &Env) -> Result<i128, VaultError> {
         let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
-        let share_price = feed.nav_per_share();
+        let Ok(Ok(share_price)) = feed.try_nav_per_share() else {
+            return Err(VaultError::FeedNotValid);
+        };
         if share_price <= 0 {
             return Err(VaultError::InvalidSharePrice);
         }

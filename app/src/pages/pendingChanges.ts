@@ -1,5 +1,5 @@
 import { Buffer } from "buffer"
-import { shortAddress } from "@stellar-scaffold/app-lib"
+import { type OracleChange, shortAddress } from "@stellar-scaffold/app-lib"
 import { type Metric } from "../components/vault/MetricsStrip"
 import { type TimelockedContract } from "../hooks/useSetupOpen"
 import {
@@ -12,7 +12,7 @@ import {
 	parseAccount,
 	type RailField,
 } from "./actions"
-import { formatDuration, formatTimestamp } from "./cycle"
+import { formatDuration, formatTimestamp, oracleLimitRows } from "./cycle"
 
 export type PendingChange = {
 	id: number
@@ -22,7 +22,35 @@ export type PendingChange = {
 
 export type ChangeName = { kind: string; value: string; full: string }
 
-type Kind = { label: string; join: string; effect?: (value: string) => string }
+type Kind = {
+	label: string
+	join: string
+	effect?: (value: string) => string
+	format?: (values: readonly unknown[]) => string
+}
+
+type OracleConfig = Extract<OracleChange, { tag: "Config" }>["values"][0]
+
+const limitsText = ([config]: readonly unknown[]): string => {
+	const {
+		freshness_duration: freshness,
+		cooldown_secs: cooldown,
+		max_up_bps: maxUpBps,
+		max_down_bps: maxDownBps,
+		min_answer: min,
+		max_answer: max,
+	} = config as OracleConfig
+	return oracleLimitRows({
+		freshness,
+		cooldown,
+		maxUpBps,
+		maxDownBps,
+		min,
+		max,
+	})
+		.map(({ label, value }) => `${label.toLowerCase()} ${value ?? "—"}`)
+		.join(", ")
+}
 
 const becomes = (label: string) => (value: string) =>
 	`${label} becomes ${value}.`
@@ -67,6 +95,12 @@ const KINDS: Record<string, Kind> = {
 		join: " ",
 		effect: becomes("Identity verifier"),
 	},
+	Config: {
+		label: "Oracle limits",
+		join: " ",
+		format: limitsText,
+		effect: (value) => `Sets the oracle limits: ${value}.`,
+	},
 }
 
 export const QUEUES = {
@@ -75,6 +109,11 @@ export const QUEUES = {
 		name: "share token",
 		apply: "apply-token-change",
 		cancel: "cancel-token-change",
+	},
+	oracle: {
+		name: "oracle",
+		apply: "apply-oracle-change",
+		cancel: "cancel-oracle-change",
 	},
 } as const satisfies Record<
 	TimelockedContract,
@@ -100,7 +139,11 @@ export const describeChange = ({
 	tag,
 	values,
 }: PendingChange["change"]): ChangeName => {
-	const { label, join } = kindOf(tag)
+	const { label, join, format } = kindOf(tag)
+	if (format !== undefined) {
+		const text = format(values)
+		return { kind: label, value: text, full: text }
+	}
 	return {
 		kind: label,
 		value: values.map((value) => shown(value, false)).join(join),

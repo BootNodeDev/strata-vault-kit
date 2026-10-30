@@ -1,7 +1,9 @@
 import { type Keypair } from "@stellar/stellar-sdk"
 
+import { accountRow } from "./lib/account-table.js"
 import { pay, trustline } from "./lib/accounts.js"
 import { price, units } from "./lib/amounts.js"
+import { trustlineBalance } from "./lib/balances.js"
 import {
 	connect,
 	identityVerifier,
@@ -12,6 +14,7 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
+import { waitForNotice } from "./lib/notice.js"
 import { attest, freshFeed } from "./lib/oracle.js"
 
 function formatAmount(amount: bigint, decimals: number): string {
@@ -29,18 +32,7 @@ function formatWad(wad: bigint): string {
 }
 
 async function hasTrustline(c: Connected, address: string): Promise<boolean> {
-	try {
-		await c.server.getAssetBalance(address, c.asset, c.net.passphrase)
-		return true
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			/Trustline for .* not found for/.test(error.message)
-		) {
-			return false
-		}
-		throw error
-	}
+	return (await trustlineBalance(c.server, address, c.asset)) !== undefined
 }
 
 async function ensureTrustline(
@@ -207,6 +199,7 @@ async function main(): Promise<void> {
 			console.log("  ✓ NAV attested on oracle")
 
 			console.log("  + fulfilling Epoch 1...")
+			await waitForNotice(c, reader, 1n)
 			await send(vault(c, outsider).fulfill_epoch({ epoch_id: 1n }))
 			console.log("  ✓ Epoch 1 fulfilled")
 
@@ -347,20 +340,16 @@ async function main(): Promise<void> {
 		const pub = keypair.publicKey()
 		const usdcBal = await usdcBalance(c, pub)
 		const shares = (await tokenReader.balance({ account: pub })).result
-		accountsSummary.push({
-			Role: role,
-			PublicKey: pub,
-			SecretKey: keypair.secret(),
-			"USDC Balance": formatAmount(usdcBal, decimals),
-			"Shares Balance": formatAmount(shares, decimals),
-		})
+		accountsSummary.push(
+			accountRow(
+				role,
+				keypair,
+				formatAmount(usdcBal, decimals),
+				formatAmount(shares, decimals),
+			),
+		)
 	}
-	console.table(accountsSummary, [
-		"Role",
-		"PublicKey",
-		"USDC Balance",
-		"Shares Balance",
-	])
+	console.table(accountsSummary)
 
 	console.log("\n--- ACTIVE REQUESTS IN EPOCH #" + finalEpoch + " ---")
 	const activeRequests = []

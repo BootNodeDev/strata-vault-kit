@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { type TransactionStatus } from "../../hooks/useContractTransaction"
 import EmergencySection from "./EmergencySection"
@@ -7,6 +7,7 @@ import EmergencySection from "./EmergencySection"
 const transaction = () => ({
 	status: { status: "idle" } as TransactionStatus,
 	submit: vi.fn(() => true),
+	prepare: vi.fn(),
 	reset: vi.fn(),
 })
 
@@ -26,6 +27,7 @@ const {
 	const tx = () => ({
 		status: { status: "idle" } as { status: string },
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	})
 	return {
@@ -118,6 +120,38 @@ describe("EmergencySection", () => {
 			Object.assign(mock, transaction())
 		}
 		setState("open", "open", "valid")
+	})
+
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
+	it("prepares the open ready action and still submits it on click", () => {
+		vi.useFakeTimers()
+		render(<EmergencySection grants={[guardian]} wallet={WALLET} />)
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(pauseVaultMock.prepare).toHaveBeenCalledWith(undefined, guardian)
+
+		fireEvent.click(button("Pause the vault"))
+
+		expect(pauseVaultMock.submit).toHaveBeenCalledWith(undefined, guardian)
+	})
+
+	it("prepares nothing while the emergency tab is hidden", () => {
+		vi.useFakeTimers()
+		render(
+			<EmergencySection grants={[guardian]} wallet={WALLET} active={false} />,
+		)
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(pauseVaultMock.prepare).not.toHaveBeenCalled()
 	})
 
 	it("shows the vault, share token and oracle state first", () => {

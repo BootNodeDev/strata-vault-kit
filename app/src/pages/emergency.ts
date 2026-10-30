@@ -99,14 +99,14 @@ const tokenSpecs = (token: PauseState): [Spec<PlainId>, Spec<PlainId>] => [
 		label: "Pause the share token",
 		conditions: [pauseIs("Share token is open", token, "open")],
 		outcome:
-			"Stops holder transfers and returns of escrowed shares. Minting, burning and forced transfers stay open.",
+			"Stops holder transfers only. Minting, burning, the vault's escrow moves and legal transfers continue.",
 		danger: true,
 	},
 	{
 		id: "unpause-token",
 		label: "Unpause the share token",
 		conditions: [pauseIs("Share token is paused", token, "paused")],
-		outcome: "Resumes holder transfers and returns of escrowed shares.",
+		outcome: "Resumes holder transfers.",
 	},
 ]
 
@@ -124,7 +124,7 @@ const pauseSpec = (oracle: OracleStatus): Spec<"pause-nav"> => ({
 	label: "Pause the NAV",
 	conditions: [],
 	outcome:
-		"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open.",
+		"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open. Revoking an attester is instant; granting a replacement waits for the timelock once the oracle's setup is closed.",
 	...(oracle === "paused" ? { note: "NAV already paused." } : {}),
 	danger: true,
 })

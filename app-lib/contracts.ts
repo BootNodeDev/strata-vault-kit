@@ -14,11 +14,14 @@ import {
 	type RedeemRequest,
 	type VaultChange,
 	type VaultPendingChange,
+	type WindDownInfo,
 } from "./clients/async_vault/src/index"
 import { Client as IdentityVerifierApi } from "./clients/identity_verifier/src/index"
 import {
 	Client as NavOracleApi,
 	type NavReport,
+	type OracleChange,
+	type OraclePendingChange,
 	type OracleState,
 } from "./clients/nav_oracle/src/index"
 import {
@@ -36,6 +39,8 @@ export type {
 	IdentityVerifierApi,
 	NavOracleApi,
 	NavReport,
+	OracleChange,
+	OraclePendingChange,
 	OracleState,
 	RedeemRequest,
 	ShareTokenApi,
@@ -43,6 +48,7 @@ export type {
 	TokenPendingChange,
 	VaultChange,
 	VaultPendingChange,
+	WindDownInfo,
 }
 
 export interface Signer {

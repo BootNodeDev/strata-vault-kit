@@ -52,8 +52,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**: If `liquid_reserve >= assets_owed`, `claim_redeem` succeeds when:
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
-  3. The caller has been de-listed in the `IdentityVerifier`.
-  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`.
+  3. The caller has been de-listed in the `IdentityVerifier`, unless the claim pays zero assets outside a wind-down (see below).
+  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back, so the holder must be able to receive them. Outside a wind-down, a delisted holder's such claim is refused with `HolderNotEligible` and the request stays until the holder is listed again; in a wind-down the claim burns the shares instead (`a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`).
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
 - **Definition**: Investors cannot be trapped in the vault by a vault pause.
@@ -66,8 +66,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 
 ### Invariant 6: Single-Step Atomic Cancellation
 - **Definition**: Cancellation is all-or-nothing, and it is open exactly while the vault could not price the epoch now. Three rules decide it:
-  1. A readable price closes cancellation, even while the notice still runs. A price is readable when the feed is valid and its report was accepted at or after the epoch closed.
-  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, or the vault is paused — cancellation opens again. That is the way out, so escrow is never stuck behind a stalled feed. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, or a paused vault can.
+  1. A readable price closes cancellation, even while the notice still runs. A price is readable when the feed answers that it is valid, its report was accepted at or after the epoch closed, and it answers a share price above zero. A feed that fails to answer any of these has no readable price.
+  2. If the vault can no longer price the epoch — the report expires, the NAV is paused, the vault is paused, or the feed fails to answer or prices at zero or less — cancellation opens again. That is the way out, so escrow is never stuck behind a stalled feed. An investor cannot cause the reopening; only a lapsed attester, a raised NAV pause, a paused vault or a broken feed installed by governance can.
   3. The epoch is priced at the latest valid report at fulfil time that was accepted at or after the close — not necessarily the report that first closed the window.
 - **Testable Property**:
   - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow, unless an issuer clawback leaves the balance below the deposit (`EscrowNotCovered`, see Invariant 1).
@@ -154,7 +154,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`nav_oracle`** | `config.max_down_bps` | `u32` (basis points) | Largest downward move per attestation, 1 to 10,000; 10,000 lets a loss of any size land at once | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share, at least `MIN_ANSWER` ($`10^{12}`$, a millionth of an asset unit per share). An oracle upgraded in place with a stored `min_answer` below the floor keeps it; even its instant `set_config` (a shorter freshness window) is refused until a timelocked `Config` change raises it to the floor | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{18}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
-| **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC) | `async_vault.constructor_args` |
+| **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC). Must have the share token's 7 decimals: `finish_setup` refuses with `SetupIncomplete` otherwise (`health().decimals_match`). Every classic Stellar asset has 7; a Soroban token with other decimals needs a fork of the share token | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `oracle` | `Address` | Deployed NAV oracle contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.governance` | `Address` | Governance multisig authority | `async_vault.constructor_args` |
@@ -163,6 +163,8 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`async_vault`** | `roles.manager` | `Address` | Account that gets the vault's `manager` role (closes epochs); a role, not one of the five authorities | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.compliance` | `Address` | Compliance multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.attester` | `Address` | Attestation authority. Not read: nothing checks that it matches the oracle's attester | `async_vault.constructor_args` |
+
+The share token's decimals are fixed at 7 in its constructor; they are not a parameter.
 
 #### Role Separation Checked at Construction
 The `async_vault` constructor refuses these four pairs of equal addresses and compares no other:
@@ -223,6 +225,14 @@ The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer mo
 - Deposited capital, which the deposit cap limits, is the asset the vault holds plus `net_deployed()`, less `committed()`. It counts money in and out, not the vault's value (what the vault and the custodian hold): a deposit request adds what it brings, and a priced redemption takes off what it pays. A gain or a loss at the custodian does not move it, even once funded back. After a gain, the figure is below the vault's value. Once leavers are paid the gain, it can go negative, and the cap then admits more than its own amount (`a_gain_paid_out_to_leavers_leaves_room_above_the_cap`). After a loss, the figure stays above the vault's value, and the cap refuses deposits sooner (`a_loss_at_the_custodian_still_counts_toward_the_cap`).
 - `net_deployed()` is what `deploy_to_custodian` sent less what `fund` brought back; it goes negative once more came back than went out. The custodian repays through `fund`. A plain transfer to the vault raises the vault's balance but leaves `net_deployed` as it was, so from then on the same money counts twice in deposited capital and the cap refuses deposits sooner.
 
+### Days and Ledgers
+
+The kit measures time two ways. Durations in seconds read the ledger's close time, so they do not depend on how often ledgers close: the timelock delay, the notice, the freshness window, the cooldown, the wind-down delay and the minimum epoch duration.
+
+Figures counted in ledgers assume a ledger every 5 seconds, 17,280 a day. They are the storage lifetimes in §5 (30 days, renewed once 29 or fewer remain; 90 days for role entries, set by OpenZeppelin), the 7 days a new admin has to accept a hand-over (`ADMIN_ACCEPT_LEDGERS`), the 30 days the extend script asks for, and the 7-day window of the app's activity list.
+
+If the network makes ledgers faster, each ledger-counted figure lasts less on the clock by the same factor; the second-based ones do not change. At 2.5-second ledgers, an entry extended to 30 days lasts 15, so the extend script must run twice as often, and a hand-over must be accepted within 3.5 days.
+
 ---
 
 ## 3. Role & Authority Matrix
@@ -270,7 +280,7 @@ The test `a_report_of_the_earlier_shape_is_cleared_and_replaced` stores a report
 Pricing needs both roles. Once governance has set a minimum epoch duration, anyone can seal in the manager's place; nothing on chain replaces the attester. The kit assumes both keep working; until then, holders keep these ways out:
 
 - **The manager stops sealing.** Requests in the open epoch stay pending, and each holder can still cancel: a deposit comes back as cash, a redemption as shares. Once governance has set a minimum epoch duration, anyone may seal the open epoch once it has been open that long; the earliest a holder then sees a price is the minimum plus the standing notice, counted from when the epoch opened. Without a minimum set, the way out is the same as today: governance grants a new manager, which after setup waits for the vault's timelock, at least seven days, plus any time the vault spends paused.
-- **The attester stops reporting.** An epoch sealed after the last report has no readable price, so its requests stay cancellable, and claims already priced still pay. Governance revokes the attester on the oracle at once and grants a replacement, which waits for the timelock after setup, as in steps 2 and 3 above.
+- **The attester stops reporting.** Once the last report expires, new deposits are refused (`FeedNotValid`). An epoch sealed after the last report has no readable price, so its requests stay cancellable, and claims already priced still pay. Governance revokes the attester on the oracle at once and grants a replacement, which waits for the timelock after setup, as in steps 2 and 3 above.
 - **Neither comes back.** No holder can exit at a price. Governance can propose a wind-down; once its delay has run, anyone activates it, and its rounds pay every holder pro rata from the cash the vault holds and whatever the custodian returns through `fund`, with no price needed.
 
 ---
@@ -366,6 +376,7 @@ A clean deployment executes in three sequenced phases:
 
 1. **Phase 1: Contract Deployment**
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
+   - The harness deploy script (`scripts/harness/deploy.ts`) gives each authority one key. It does not create multisig accounts or check the deposit asset's auth flags yet; see the design doc's [§8.10](./strata-product-and-architecture.md#810-deployment).
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role(vault_address, "manager", governance)` to authorize lazy share minting and burning.
    - Call `ShareToken::grant_role(backup, "compliance", governance)` for a second compliance account kept cold, before the token's `finish_setup`. Required: lifting a freeze needs a `compliance` holder, and after setup a new one waits one timelock delay.

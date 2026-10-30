@@ -1,7 +1,10 @@
 use soroban_sdk::{testutils::Events as _, Event as _};
 
 use super::*;
-use crate::{DepositClaimed, DepositRequested, EpochClosed, EpochFulfilled, EpochReconciled};
+use crate::{
+    DepositCancelled, DepositClaimed, DepositRefunded, DepositRequested, EpochClosed,
+    EpochFulfilled, EpochReconciled, RedeemCancelled,
+};
 
 #[test]
 fn requesting_a_deposit_publishes_the_request() {
@@ -87,6 +90,76 @@ fn claiming_the_last_deposit_publishes_the_shares_paid_and_the_settlement() {
             }
             .to_xdr(&f.e, &f.vault.address),
         ]
+    );
+}
+
+#[test]
+fn cancelling_a_deposit_publishes_the_cancellation() {
+    let f = setup();
+    let user = f.investor(1_000);
+    f.vault.request_deposit(&user, &400);
+
+    f.vault.cancel_deposit(&user, &1);
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.vault.address),
+        [DepositCancelled {
+            holder: user,
+            epoch: 1,
+            amount: 400,
+        }
+        .to_xdr(&f.e, &f.vault.address)]
+    );
+}
+
+#[test]
+fn a_deposit_priced_at_zero_shares_publishes_a_refund_not_a_cancellation() {
+    let f = setup();
+    let inv = f.investor(10);
+
+    let epoch = f.vault.request_deposit(&inv, &1);
+    f.close_epoch();
+    f.attest(wad(4));
+    f.vault.fulfill_epoch(&epoch);
+
+    assert_eq!(f.vault.claim_deposit(&inv, &epoch), 0);
+
+    let events = f.e.events().all().filter_by_contract(&f.vault.address);
+    assert_eq!(
+        events.events()[0],
+        DepositRefunded {
+            holder: inv.clone(),
+            epoch: 1,
+            amount: 1,
+        }
+        .to_xdr(&f.e, &f.vault.address)
+    );
+    assert!(!events.events().contains(
+        &DepositCancelled {
+            holder: inv,
+            epoch: 1,
+            amount: 1,
+        }
+        .to_xdr(&f.e, &f.vault.address)
+    ));
+}
+
+#[test]
+fn cancelling_a_redemption_publishes_the_cancellation() {
+    let f = setup();
+    let holder = f.holder(1_000);
+
+    let epoch = f.vault.request_redeem(&holder, &100);
+    f.vault.cancel_redeem(&holder, &epoch);
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.vault.address),
+        [RedeemCancelled {
+            holder,
+            epoch,
+            shares: 100,
+        }
+        .to_xdr(&f.e, &f.vault.address)]
     );
 }
 

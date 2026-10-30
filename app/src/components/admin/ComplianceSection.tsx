@@ -5,13 +5,18 @@ import { useComplianceState } from "../../hooks/useComplianceState"
 import {
 	useAllowAddress,
 	useDisallowAddress,
-	useForceTransfer,
 	useFreezeAddress,
+	useLegalTransfer,
 	useFreezeShares,
 	useUnfreezeAddress,
 	useUnfreezeShares,
 } from "../../hooks/useComplianceTransactions"
+import { useLegalTransfers } from "../../hooks/useCycleState"
 import {
+	prepareFor,
+	type Send,
+	type Sendable,
+	submitTo,
 	usePendingTransaction,
 	type UsePendingTransaction,
 } from "../../hooks/usePendingTransaction"
@@ -24,6 +29,7 @@ import {
 	toComplianceActions,
 	toComplianceTiles,
 } from "../../pages/compliance"
+import { toActivityList } from "../../pages/cycle"
 import typeStyles from "../../styles/type.module.css"
 import MetricsStrip from "../vault/MetricsStrip"
 import TransactionModal, {
@@ -32,6 +38,7 @@ import TransactionModal, {
 } from "../vault/TransactionModal"
 import styles from "./ComplianceSection.module.css"
 import CycleActionRail from "./CycleActionRail"
+import { ActivityTable, Section } from "./CycleSurface"
 import SurfaceLayout from "./SurfaceLayout"
 import layoutStyles from "./SurfaceLayout.module.css"
 
@@ -59,30 +66,31 @@ function useComplianceFlows() {
 		"unfreeze-address": usePendingTransaction(useUnfreezeAddress()),
 		"freeze-shares": usePendingTransaction(useFreezeShares()),
 		"unfreeze-shares": usePendingTransaction(useUnfreezeShares()),
-		"force-transfer": usePendingTransaction(useForceTransfer()),
+		"legal-transfer": usePendingTransaction(useLegalTransfer()),
 	} satisfies Record<ComplianceModalAction, Flow>
 }
 
 type Flows = ReturnType<typeof useComplianceFlows>
 
-const submitArg = <Arg,>(
-	{ submit }: { submit: (arg: Arg, label: string, grant?: Grant) => boolean },
+const sendArg = <Arg,>(
+	send: Send,
+	flow: Sendable<Arg>,
 	{ arg, next, grant }: { arg: Arg | undefined; next: string; grant?: Grant },
-) => arg !== undefined && submit(arg, next, grant)
+) => (arg === undefined ? undefined : send(flow, arg, next, grant))
 
-function submit(flows: Flows, action: ComplianceAction) {
+function dispatch(flows: Flows, action: ComplianceAction, send: Send) {
 	switch (action.id) {
 		case "allow-address":
 		case "disallow-address":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "freeze-address":
 		case "unfreeze-address":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
 		case "freeze-shares":
 		case "unfreeze-shares":
-			return submitArg(flows[action.id], action)
-		case "force-transfer":
-			return submitArg(flows[action.id], action)
+			return sendArg(send, flows[action.id], action)
+		case "legal-transfer":
+			return sendArg(send, flows[action.id], action)
 	}
 }
 
@@ -114,6 +122,8 @@ const ComplianceSection: React.FC<{
 		destination: destinationOf(inputs),
 	})
 	const flows = useComplianceFlows()
+	const { legalTransfers } = useLegalTransfers()
+	const transfers = toActivityList(legalTransfers)
 
 	const modalFlows = COMPLIANCE_ACTION_IDS.map((id) => flow(id, flows[id]))
 	const recorded = modalFlows.some(
@@ -150,7 +160,12 @@ const ComplianceSection: React.FC<{
 						actions={actions}
 						pending={false}
 						unreadable={false}
-						onRun={(action) => submit(flows, action)}
+						onRun={(action) => dispatch(flows, action, submitTo)}
+						onReady={
+							active
+								? (action) => dispatch(flows, action, prepareFor)
+								: undefined
+						}
 						onInput={onInput}
 					/>
 				}
@@ -196,6 +211,16 @@ const ComplianceSection: React.FC<{
 					</div>
 					<MetricsStrip metrics={toComplianceTiles(reads)} />
 				</section>
+				<Section
+					title="Legal transfers — last 7 days"
+					state={transfers}
+					unreadable="Could not read recent legal transfers."
+					empty="No legal transfers in the last 7 days."
+				>
+					{transfers.status === "loaded" && (
+						<ActivityTable name="Legal transfers" rows={transfers.rows} />
+					)}
+				</Section>
 				{contracts}
 			</SurfaceLayout>
 			{active && activeModal !== undefined && (

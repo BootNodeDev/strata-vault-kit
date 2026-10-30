@@ -1,4 +1,4 @@
-import { expect } from "vitest"
+import assert from "node:assert/strict"
 
 interface ErrorCase {
 	name(): { toString(): string }
@@ -39,5 +39,5 @@ export function expectRefused(tx: Tx, client: HasSpec, name: string): void {
 		.errorCases()
 		.some((c) => c.name().toString() === name)
 	if (!known) throw new Error(`the contract spec has no error named ${name}`)
-	expect(outcome(tx, client)).toBe(`refused: ${name}`)
+	assert.equal(outcome(tx, client), `refused: ${name}`)
 }

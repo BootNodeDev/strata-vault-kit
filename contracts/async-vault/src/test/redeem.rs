@@ -122,6 +122,24 @@ fn claiming_a_redeem_before_the_epoch_is_fulfilled_is_rejected() {
 }
 
 #[test]
+fn claiming_a_redeem_without_a_request_finds_no_request_before_pricing() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    let epoch = f.vault.current_epoch();
+
+    refused(
+        f.vault.try_claim_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.close_epoch();
+    refused(
+        f.vault.try_claim_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+}
+
+#[test]
 fn the_epoch_prices_but_the_claim_waits_for_the_cash() {
     let f = setup();
     let user = f.holder(500);

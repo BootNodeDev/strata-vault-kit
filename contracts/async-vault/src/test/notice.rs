@@ -167,6 +167,25 @@ fn a_notice_above_the_upgrade_delay_is_refused() {
 }
 
 #[test]
+fn an_epoch_whose_notice_would_end_past_the_clock_stays_open() {
+    let f = setup();
+    f.vault.set_notice(&3_600);
+    f.e.ledger().set_timestamp(u64::MAX - 1_000);
+    let before = f.vault.current_epoch();
+
+    refused(
+        f.vault.try_close_epoch(&f.manager),
+        VaultError::AmountTooLarge,
+    );
+
+    assert_eq!(f.vault.current_epoch(), before);
+    assert_eq!(
+        f.vault.get_epoch(&before).unwrap().status,
+        EpochStatus::Open
+    );
+}
+
+#[test]
 fn a_notice_at_the_maximum_is_accepted() {
     let f = setup();
 

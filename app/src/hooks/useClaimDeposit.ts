@@ -1,16 +1,32 @@
-import { type Amount, type Signer } from "@stellar-scaffold/app-lib"
+import {
+	type Amount,
+	type Signer,
+	type TransactionEvent,
+} from "@stellar-scaffold/app-lib"
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 
-export type ClaimDepositStatus = TransactionStatus<{ sharesMinted: Amount }>
+export type ClaimDepositOutcome = { sharesMinted: Amount; queuedInto?: bigint }
+
+export type ClaimDepositStatus = TransactionStatus<ClaimDepositOutcome>
+
+const queuedIntoOf = (events: TransactionEvent[]): bigint | undefined => {
+	const converted = events.find(
+		(event) => event.name === "deposit_converted_to_exit",
+	)
+	const data = converted?.data as { into_epoch?: unknown } | undefined
+	return typeof data?.into_epoch === "bigint" ? data.into_epoch : undefined
+}
 
 export interface UseClaimDeposit {
 	status: ClaimDepositStatus
 	submit: (epochId: bigint) => boolean
+	prepare: (epochId: bigint) => Release
 	reset: () => void
 }
 
@@ -23,7 +39,11 @@ export function useClaimDeposit(): UseClaimDeposit {
 		[],
 	)
 	const toConfirmed = useCallback(
-		(sharesMinted: bigint) => ({ sharesMinted: sharesMinted as Amount }),
+		(sharesMinted: bigint, events: TransactionEvent[]): ClaimDepositOutcome => {
+			const queuedInto = queuedIntoOf(events)
+			const outcome = { sharesMinted: sharesMinted as Amount }
+			return queuedInto === undefined ? outcome : { ...outcome, queuedInto }
+		},
 		[],
 	)
 	return useContractTransaction(call, toConfirmed)
