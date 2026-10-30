@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { asyncVault, shareToken } from "../config/clients"
 import {
 	type DepositCap,
+	type MinEpochDuration,
 	type OracleLimits,
 	useCycleReads,
 } from "./useCycleState"
@@ -19,6 +20,7 @@ export type ConfigurationValues = {
 	custodian: Custodian
 	notice: bigint | null
 	windDownDelay: bigint | null
+	minEpochDuration: MinEpochDuration | null
 	upgradeDelay: bigint | null
 	setupOpen: boolean | null
 	tokenSetupOpen: boolean | null
@@ -82,6 +84,7 @@ export function useConfigurationState(): {
 			custodian: authorities?.custodian ?? { kind: "unreadable" },
 			notice: valueOf(cycle.notice),
 			windDownDelay: cycle.windDown.delay,
+			minEpochDuration: cycle.minEpochDuration,
 			setupOpen: openOf(setup),
 			tokenSetupOpen: openOf(tokenSetup),
 			oracleSetupOpen: openOf(oracleSetup),

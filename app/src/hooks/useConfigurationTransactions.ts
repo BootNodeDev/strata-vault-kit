@@ -47,6 +47,14 @@ export const useSetWindDownDelay = adminTransaction(
 	[cycleReadsKey],
 )
 
+export const useSetMinEpochDuration = adminTransaction(
+	(signer: Signer, secs: bigint) =>
+		asyncVaultWriter(signer).then((vault) =>
+			vault.set_min_epoch_duration({ secs }),
+		),
+	[cycleReadsKey],
+)
+
 export const useProposeCustodian = proposeVaultChange(
 	(custodian: string) => ({ tag: "Custodian", values: [custodian] }),
 	[vaultAuthoritiesKey],
@@ -59,6 +67,11 @@ export const useProposeNotice = proposeVaultChange(
 
 export const useProposeWindDownDelay = proposeVaultChange(
 	(secs: bigint) => ({ tag: "WindDownDelay", values: [secs] }),
+	[cycleReadsKey],
+)
+
+export const useProposeMinEpochDuration = proposeVaultChange(
+	(secs: bigint) => ({ tag: "MinEpochDuration", values: [secs] }),
 	[cycleReadsKey],
 )
 

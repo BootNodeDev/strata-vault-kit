@@ -50,9 +50,11 @@ export type ConfigurationModalAction =
 	| "set-custodian"
 	| "set-notice"
 	| "set-wind-down-delay"
+	| "set-min-epoch-duration"
 	| "propose-custodian"
 	| "propose-notice"
 	| "propose-wind-down-delay"
+	| "propose-min-epoch-duration"
 	| "set-oracle-config"
 	| "propose-oracle-config"
 	| "set-compliance"
@@ -1282,6 +1284,10 @@ const proposeCopy =
 		doneBody: `${capitalize(subject)} ${value} applies once ${WAITS[refuser]} passes.`,
 	})
 
+const MIN_EPOCH_DURATION_REASONS = {
+	6007: "The minimum epoch duration must be 1 to 30 days.",
+}
+
 const CONFIGURATION_COPY: Record<
 	ConfigurationModalAction,
 	(value: string) => AdminCopy
@@ -1294,6 +1300,14 @@ const CONFIGURATION_COPY: Record<
 		"Wind-down delay",
 		EFFECTS.windDownDelay,
 	),
+	"set-min-epoch-duration": (value) => ({
+		...setterCopy(
+			"vault",
+			"Minimum epoch duration",
+			EFFECTS.minEpochDuration,
+		)(value),
+		reasons: MIN_EPOCH_DURATION_REASONS,
+	}),
 	"propose-custodian": proposeCopy("vault", "propose a custodian", "custodian"),
 	"propose-notice": proposeCopy("vault", "propose a notice", "notice"),
 	"propose-wind-down-delay": proposeCopy(
@@ -1301,6 +1315,14 @@ const CONFIGURATION_COPY: Record<
 		"propose a wind-down delay",
 		"wind-down delay",
 	),
+	"propose-min-epoch-duration": (value) => ({
+		...proposeCopy(
+			"vault",
+			"propose a minimum epoch duration",
+			"minimum epoch duration",
+		)(value),
+		reasons: MIN_EPOCH_DURATION_REASONS,
+	}),
 	"set-oracle-config": () => ({
 		refuser: "oracle",
 		verb: "set the oracle limits",
@@ -1819,9 +1841,11 @@ const describeStatus = (
 		case "set-custodian":
 		case "set-notice":
 		case "set-wind-down-delay":
+		case "set-min-epoch-duration":
 		case "propose-custodian":
 		case "propose-notice":
 		case "propose-wind-down-delay":
+		case "propose-min-epoch-duration":
 		case "set-oracle-config":
 		case "propose-oracle-config":
 		case "set-compliance":
