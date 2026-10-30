@@ -2,7 +2,9 @@ use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 use stellar_tokens::rwa::RWATokenClient;
 
 use crate::error::VaultError;
-use crate::event::{DepositCancelled, DepositClaimed, DepositConvertedToExit, DepositRequested};
+use crate::event::{
+    DepositCancelled, DepositClaimed, DepositConvertedToExit, DepositRefunded, DepositRequested,
+};
 use crate::guards;
 use crate::keys::DataKey;
 use crate::lock_policy::{self, Decision, Exit, Standing};
@@ -79,7 +81,13 @@ pub(crate) fn claim(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
 
     if shares == 0 {
         guards::refund_covered(e, request.amount);
-        refund_deposit(e, holder, epoch_id, request.amount);
+        return_escrow(e, holder, epoch_id, request.amount);
+        DepositRefunded {
+            holder: holder.clone(),
+            epoch: epoch_id,
+            amount: request.amount,
+        }
+        .publish(e);
         settlement::on_deposit_claimed(e, epoch_id, 0);
         return 0;
     }
@@ -145,18 +153,12 @@ fn convert_to_exit(
 
 /// Returns the settlement asset and clears the request. Used by cancellation and
 /// by a claim whose conversion floors to zero; leaves a priced epoch's total alone.
-fn refund_deposit(e: &Env, holder: &Address, epoch_id: u64, amount: i128) {
+/// Publishes nothing; the caller publishes the event that fits its own reason.
+fn return_escrow(e: &Env, holder: &Address, epoch_id: u64, amount: i128) {
     state::remove_deposit_request(e, epoch_id, holder);
 
     let asset = state::get_addr(e, &DataKey::Asset);
     TokenClient::new(e, &asset).transfer(&e.current_contract_address(), holder, &amount);
-
-    DepositCancelled {
-        holder: holder.clone(),
-        epoch: epoch_id,
-        amount,
-    }
-    .publish(e);
 }
 
 /// Lowers an epoch's deposit total; only a cancellation still open for the epoch does this.
@@ -184,6 +186,12 @@ pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
     );
     remove_from_epoch_total(e, epoch_id, request.amount);
     settlement::on_deposit_cancelled(e, epoch_id);
-    refund_deposit(e, holder, epoch_id, request.amount);
+    return_escrow(e, holder, epoch_id, request.amount);
+    DepositCancelled {
+        holder: holder.clone(),
+        epoch: epoch_id,
+        amount: request.amount,
+    }
+    .publish(e);
     request.amount
 }

@@ -12,13 +12,16 @@ Two rules the contracts enforce:
 
 1. **Only approved addresses can enter** — an allowlist maintained post-KYC.
 2. **A priced claim always pays** — neither a pause, a delisting nor a stale
-   valuation can block an already-priced, funded cash claim.
+   valuation can block an already-priced, funded cash claim. A compliance
+   freeze holds it until the freeze is lifted.
 
 A request can be cancelled until the vault can read its price. Once an epoch is
 sealed, a valid report accepted after the seal closes cancellation, even while
 the notice still runs; the epoch is priced once the notice ends. If that report
 expires, or the NAV or the vault is paused, cancellation opens again. New
-deposits are refused while the valuation is stale or the NAV is paused.
+deposits are refused while the vault is paused, while the valuation is stale
+or the NAV is paused, while an issuer clawback leaves the vault holding less
+than its pending deposits, and once a wind-down is proposed.
 
 ## Documentation
 
@@ -33,6 +36,9 @@ deposits are refused while the valuation is stale or the NAV is paused.
   test for each control.
 - [Monitoring plan](./docs/MONITORING_PLAN.md) — what an operator watches on
   chain, where each signal comes from, and what to do when it fires.
+- [Grant differences](./docs/GRANT_DIFFERENCES.md) — where the built kit
+  differs from the SCF grant proposal, what is not built yet, and the limits an
+  adopter should know.
 
 ## Status
 

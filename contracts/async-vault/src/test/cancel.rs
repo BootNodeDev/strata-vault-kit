@@ -198,6 +198,29 @@ fn a_redemption_that_pays_nothing_returns_the_shares_at_claim() {
     assert_eq!(f.shares(&holder), 1);
 }
 
+#[test]
+fn a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted() {
+    let f = setup();
+    let holder = f.holder(1);
+
+    let epoch = f.vault.request_redeem(&holder, &1);
+    f.close_epoch();
+    f.attest(wad(4) / 10);
+    f.vault.fulfill_epoch(&epoch);
+
+    // 1 share at 0.4 pays zero assets.
+    f.identity.allow(&holder, &false);
+    refused(
+        f.vault.try_claim_redeem(&holder, &epoch),
+        VaultError::HolderNotEligible,
+    );
+    assert_eq!(f.shares(&holder), 0);
+
+    f.identity.allow(&holder, &true);
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
+    assert_eq!(f.shares(&holder), 1);
+}
+
 /// A refund after pricing is an extra payout, so it waits for free reserve
 /// rather than taking money owed to a priced exit.
 #[test]

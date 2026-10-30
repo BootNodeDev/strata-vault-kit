@@ -23,8 +23,9 @@ strata_bindings::error_enum! {
         /// most one request per holder per epoch holds by construction.
         RequestOutstanding = 6009,
         /// A sum, count or conversion would not fit its type: a running total or
-        /// a conversion of assets or shares past `i128`, or an epoch's count of
-        /// open requests past `u32`.
+        /// a conversion of assets or shares past `i128`, an epoch's count of
+        /// open requests past `u32`, or the end of an epoch's notice past
+        /// `u64`.
         AmountTooLarge = 6014,
         /// No epoch is stored under the given id.
         EpochNotFound = 6029,

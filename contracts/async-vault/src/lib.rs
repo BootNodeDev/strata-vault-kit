@@ -74,11 +74,12 @@ use state::FIRST_EPOCH;
 
 pub use error::VaultError;
 pub use event::{
-    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCapUpdated,
-    DepositClaimed, DepositConvertedToExit, DepositRequested, EpochClosed, EpochFulfilled,
-    EpochReconciled, Funded, MinEpochDurationSet, NoticeSet, RedeemClaimed, RedeemRequested,
-    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
-    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
+    ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCancelled,
+    DepositCapUpdated, DepositClaimed, DepositConvertedToExit, DepositRefunded, DepositRequested,
+    EpochClosed, EpochFulfilled, EpochReconciled, Funded, MinEpochDurationSet, NoticeSet,
+    RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered, SetupFinished,
+    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
+    WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -571,8 +572,8 @@ impl AsyncVault {
 
     /// Ends the window in which admin changes are instant. Needs every wiring
     /// check `health()` reports, no shares outstanding, the vault's own books
-    /// empty and no admin hand-over pending. Deposits open from here on, and
-    /// it never reopens.
+    /// empty and no admin hand-over pending. Deposits open once the feed
+    /// holds a valid report, and setup never reopens.
     ///
     /// # Errors
     ///
@@ -630,7 +631,8 @@ impl AsyncVault {
     ///
     /// # Events
     ///
-    /// * `ChangeProposed`, with its `eta` in seconds.
+    /// * `ChangeProposed`, with its `eta` in seconds; time the vault spends
+    ///   paused from now on moves it later.
     ///
     /// # Authorization
     ///
@@ -878,7 +880,7 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
-    ///   `DepositCancelled`.
+    ///   `DepositRefunded`.
     /// * `EpochReconciled` once the epoch's last request settles.
     ///
     /// # Authorization
@@ -1043,6 +1045,7 @@ impl AsyncVault {
     ///   epoch has not run the minimum.
     /// * `WindDownActive` - The vault is winding down.
     /// * `SetupOpen` - Setup has not finished.
+    /// * `AmountTooLarge` - The notice would end past the largest ledger time.
     ///
     /// # Events
     ///
