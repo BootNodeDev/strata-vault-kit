@@ -20,17 +20,36 @@ const {
 	accountSignersMock,
 	submitSignedMock,
 	transactionStatusMock,
+	authorizePendingMock,
+	prepareCoSignedMock,
+	latestLedgerMock,
 	tokenMock,
+	vaultMock,
+	oracleMock,
 	linkTarget,
 } = vi.hoisted(() => ({
 	accountSignersMock: vi.fn(),
 	submitSignedMock: vi.fn(),
 	transactionStatusMock: vi.fn(),
-	tokenMock: { identity_verifier: vi.fn() },
+	authorizePendingMock: vi.fn(),
+	prepareCoSignedMock: vi.fn(),
+	latestLedgerMock: vi.fn(),
+	tokenMock: {
+		identity_verifier: vi.fn(),
+		pending_changes: vi.fn(),
+		get_admin: vi.fn(),
+		txFromXDR: vi.fn(),
+	},
+	vaultMock: { pending_changes: vi.fn() },
+	oracleMock: { pending_changes: vi.fn() },
 	linkTarget: { contractId: "", expiresAt: new Date(0) },
 }))
 
-vi.mock("../config/clients", () => ({ shareToken: async () => tokenMock }))
+vi.mock("../config/clients", () => ({
+	shareToken: async () => tokenMock,
+	asyncVault: async () => vaultMock,
+	navOracle: async () => oracleMock,
+}))
 
 type Marker = { signedBy: string[] }
 
@@ -41,12 +60,15 @@ const authority = "GAUTHORITY"
 const first = "GFIRST"
 const wallet = "GWALLET"
 const third = "GTHIRD"
+const admin = "GTOKENADMIN"
+const EXPIRATION_LEDGER = 5_000
 
 const pendingOf = (
 	fn: string,
 	args: unknown[],
 	signedBy: string[],
 	hash = "abc123",
+	authorization: PendingTransaction["authorization"] = null,
 ): PendingTransaction => ({
 	transaction: { signedBy } as unknown as Transaction,
 	source: authority,
@@ -56,7 +78,14 @@ const pendingOf = (
 	fn,
 	args,
 	hash,
+	authorization,
 })
+
+const TRANSFER_MARKERS: Record<string, { signed: boolean; hash: string }> = {
+	legal_transfer: { signed: false, hash: "abc123" },
+	legal_transfer_authorized: { signed: true, hash: "abc123" },
+	legal_transfer_retimed: { signed: true, hash: "retimed" },
+}
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 	const actual = await importOriginal<typeof AppLib>()
@@ -65,18 +94,39 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 		accountSigners: accountSignersMock,
 		submitSigned: submitSignedMock,
 		transactionStatus: transactionStatusMock,
+		authorizePending: authorizePendingMock,
+		prepareCoSigned: prepareCoSignedMock,
+		latestLedger: latestLedgerMock,
 		decodePending: (xdr: string) => {
 			const match = /^xdr:([a-z_]+):(.*)$/.exec(xdr)
 			if (match === null) {
 				throw new actual.InvalidPendingTransaction("not a transaction envelope")
 			}
-			const [, fn = "", signed = ""] = match
+			const [, marker = "", signed = ""] = match
+			const transfer = TRANSFER_MARKERS[marker]
+			if (transfer !== undefined) {
+				const keys = signed === "" ? [] : signed.split(",")
+				return pendingOf(
+					"legal_transfer",
+					["GFROM", "GTO", 25_000_000n, "ORDER-1", authority],
+					keys,
+					keys.includes("GTAMPERED") ? "tampered" : transfer.hash,
+					{
+						address: admin,
+						signed: transfer.signed,
+						expirationLedger: EXPIRATION_LEDGER,
+					},
+				)
+			}
+			const fn = marker
 			const args =
 				fn === "set_custodian"
 					? ["GCUSTODIAN", "GAUTHORITY"]
 					: fn === "allow"
 						? ["GACCOUNT", true]
-						: []
+						: fn === "apply_change"
+							? [3]
+							: []
 			const keys = signed === "" ? [] : signed.split(",")
 			const hash = keys.includes("GTAMPERED") ? "tampered" : "abc123"
 			return pendingOf(fn, args, keys, hash)
@@ -111,6 +161,11 @@ const walletSigns = vi.fn(async (xdr: string) => ({
 	signedTxXdr: `${xdr},${wallet}`,
 }))
 
+const walletAuthorizes = vi.fn(async () => ({
+	signedAuthEntry: "SIGNATURE",
+	signerAddress: admin,
+}))
+
 const renderSign = (xdr: string, address: string | undefined) => {
 	const context: WalletContextType = {
 		address,
@@ -120,6 +175,8 @@ const renderSign = (xdr: string, address: string | undefined) => {
 		updateBalances: async () => {},
 		signTransaction:
 			walletSigns as unknown as WalletContextType["signTransaction"],
+		signAuthEntry:
+			walletAuthorizes as unknown as WalletContextType["signAuthEntry"],
 	}
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
@@ -137,6 +194,12 @@ describe("useSignPending", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		tokenMock.identity_verifier.mockResolvedValue({ result: "CLIVEVERIFIER" })
+		tokenMock.get_admin.mockResolvedValue({ result: admin })
+		tokenMock.txFromXDR.mockImplementation((xdr: string) => ({ xdr }))
+		latestLedgerMock.mockResolvedValue(EXPIRATION_LEDGER - 1)
+		vaultMock.pending_changes.mockResolvedValue({ result: [] })
+		tokenMock.pending_changes.mockResolvedValue({ result: [] })
+		oracleMock.pending_changes.mockResolvedValue({ result: [] })
 		linkTarget.contractId = addresses.async_vault
 		linkTarget.expiresAt = new Date("2027-01-15T08:00:00Z")
 		window.history.replaceState(null, "", "/sign")
@@ -467,10 +530,353 @@ describe("useSignPending", () => {
 		expect(accountSignersMock).not.toHaveBeenCalled()
 	})
 
+	it("names the pending change an apply link acts on once the vault lists it", async () => {
+		vaultMock.pending_changes.mockResolvedValue({
+			result: [
+				{ id: 3, change: { tag: "Notice", values: [43_200n] }, eta: 1n },
+			],
+		})
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:apply_change:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description?.args).toEqual([
+				{ label: "Change", value: "vault change #3: Notice 12h" },
+			]),
+		)
+	})
+
+	it("names the share-token change an apply link acts on from the token's list", async () => {
+		linkTarget.contractId = addresses.share_token
+		vaultMock.pending_changes.mockResolvedValue({
+			result: [
+				{ id: 3, change: { tag: "Notice", values: [43_200n] }, eta: 1n },
+			],
+		})
+		tokenMock.pending_changes.mockResolvedValue({
+			result: [
+				{
+					id: 3,
+					change: { tag: "RevokeRole", values: ["manager", "GHOLDER"] },
+					eta: 1n,
+				},
+			],
+		})
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:apply_change:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description).toMatchObject({
+				contract: "Share token",
+				action: "apply-token-change",
+				args: [
+					{
+						label: "Change",
+						value: "share token change #3: Revoke role manager from GHOLDER",
+					},
+				],
+			}),
+		)
+	})
+
+	it("names the oracle change an apply link acts on from the oracle's list", async () => {
+		linkTarget.contractId = addresses.nav_oracle
+		oracleMock.pending_changes.mockResolvedValue({
+			result: [{ id: 3, change: { tag: "Admin", values: ["GNEXT"] }, eta: 1n }],
+		})
+		accountSignersMock.mockResolvedValue(signers(2))
+		const { result } = renderSign("xdr:apply_change:", wallet)
+
+		await waitFor(() =>
+			expect(result.current.description).toMatchObject({
+				contract: "Oracle",
+				action: "apply-oracle-change",
+				args: [
+					{ label: "Change", value: "oracle change #3: Admin hand-over GNEXT" },
+				],
+			}),
+		)
+	})
+
 	it("refuses an operation the console does not propose", async () => {
 		const { result } = renderSign("xdr:request_deposit:", wallet)
 		await waitFor(() => expect(result.current.loading).toBe(false))
 
 		expect(result.current.pending).toBeNull()
+	})
+
+	describe("a legal transfer the token admin co-signs", () => {
+		const unauthorized = "xdr:legal_transfer:"
+		const authorized = (...keys: string[]) =>
+			`xdr:legal_transfer_authorized:${keys.join(",")}`
+		const retimed = "xdr:legal_transfer_retimed:"
+
+		beforeEach(() => {
+			linkTarget.contractId = addresses.share_token
+			accountSignersMock.mockResolvedValue(signers(2))
+		})
+
+		it("lets the token admin authorize and writes the re-simulated envelope", async () => {
+			authorizePendingMock.mockImplementation(
+				async (_assembled, _pending, signAuthEntry) => {
+					await signAuthEntry("PREIMAGE", { address: admin })
+					return { kind: "ready", xdr: authorized(), pending: {} }
+				},
+			)
+			const { result } = renderSign(unauthorized, admin)
+			await waitFor(() =>
+				expect(result.current.state).toBe("awaiting-authorization"),
+			)
+			expect(result.current.canSign).toBe(true)
+
+			act(() => result.current.sign())
+
+			await waitFor(() => expect(result.current.xdr).toBe(authorized()))
+			expect(tokenMock.txFromXDR).toHaveBeenCalledWith(unauthorized)
+			expect(authorizePendingMock).toHaveBeenCalledWith(
+				{ xdr: unauthorized },
+				expect.objectContaining({ fn: "legal_transfer" }),
+				expect.any(Function),
+			)
+			expect(walletAuthorizes).toHaveBeenCalledWith("PREIMAGE", {
+				address: admin,
+				networkPassphrase,
+			})
+			expect(walletSigns).not.toHaveBeenCalled()
+			expect(window.location.hash).toBe(`#${authorized()}`)
+			expect(result.current.status).toEqual({ status: "idle" })
+			await waitFor(() => expect(result.current.state).toBe("not-signer"))
+		})
+
+		it("keeps every wallet but the token admin's from authorizing", async () => {
+			const { result } = renderSign(unauthorized, wallet)
+			await waitFor(() =>
+				expect(result.current.state).toBe("awaiting-authorization"),
+			)
+
+			act(() => result.current.sign())
+
+			expect(result.current.canSign).toBe(false)
+			expect(authorizePendingMock).not.toHaveBeenCalled()
+			expect(walletSigns).not.toHaveBeenCalled()
+		})
+
+		it("refuses a link whose authorization is not the token admin's", async () => {
+			tokenMock.get_admin.mockResolvedValue({ result: "GSOMEONEELSE" })
+			const { result } = renderSign(unauthorized, admin)
+
+			await waitFor(() => expect(result.current.loading).toBe(false))
+			expect(result.current.pending).toBeNull()
+			expect(result.current.description).toBeNull()
+		})
+
+		it("refuses a link while the token admin cannot be read", async () => {
+			tokenMock.get_admin.mockRejectedValue(new Error("rpc down"))
+			const { result } = renderSign(unauthorized, admin)
+
+			expect(result.current.loading).toBe(true)
+			await waitFor(() => expect(result.current.loading).toBe(false))
+			expect(result.current.pending).toBeNull()
+		})
+
+		it.each([
+			[-3, { kind: "cannot-authorize" }],
+			[-4, { kind: "declined" }],
+		])(
+			"tells a wallet that rejects with code %i apart",
+			async (code, failure) => {
+				authorizePendingMock.mockRejectedValue({ code, message: "no" })
+				const { result } = renderSign(unauthorized, admin)
+				await waitFor(() => expect(result.current.canSign).toBe(true))
+
+				act(() => result.current.sign())
+
+				await waitFor(() =>
+					expect(result.current.status).toEqual({ status: "failed", failure }),
+				)
+				expect(result.current.xdr).toBe(unauthorized)
+			},
+		)
+
+		it("reports the contract's refusal after the admin signs", async () => {
+			authorizePendingMock.mockResolvedValue({ kind: "refused", code: 300 })
+			const { result } = renderSign(unauthorized, admin)
+			await waitFor(() => expect(result.current.canSign).toBe(true))
+
+			act(() => result.current.sign())
+
+			await waitFor(() =>
+				expect(result.current.status).toEqual({
+					status: "failed",
+					failure: { kind: "contract-error", code: 300 },
+				}),
+			)
+			expect(result.current.xdr).toBe(unauthorized)
+		})
+
+		it("keeps an authorization valid while the next ledger is within its expiration", async () => {
+			latestLedgerMock.mockResolvedValue(EXPIRATION_LEDGER - 1)
+			accountSignersMock.mockResolvedValue(signers(3))
+			const { result } = renderSign(authorized(), wallet)
+
+			await waitFor(() => expect(latestLedgerMock).toHaveBeenCalled())
+			await waitFor(() => expect(result.current.canSign).toBe(true))
+			expect(result.current.state).toBe("valid")
+		})
+
+		it("marks an authorization expired once its expiration ledger has closed", async () => {
+			latestLedgerMock.mockResolvedValue(EXPIRATION_LEDGER)
+			const { result } = renderSign(authorized(), wallet)
+
+			await waitFor(() =>
+				expect(result.current.state).toBe("authorization-expired"),
+			)
+			expect(result.current.canSign).toBe(false)
+			expect(result.current.canSubmit).toBe(false)
+		})
+
+		it("has the first signer re-simulate, restart the timeout and sign that envelope", async () => {
+			prepareCoSignedMock.mockResolvedValue({
+				kind: "ready",
+				xdr: retimed,
+				pending: {
+					...pendingOf("legal_transfer", [], [], "retimed"),
+					authorization: {
+						address: admin,
+						signed: true,
+						expirationLedger: EXPIRATION_LEDGER,
+					},
+				},
+			})
+			accountSignersMock.mockResolvedValue(signers(3))
+			const { result } = renderSign(authorized(), wallet)
+			await waitFor(() => expect(result.current.canSign).toBe(true))
+
+			act(() => result.current.sign())
+
+			await waitFor(() =>
+				expect(result.current.xdr).toBe(`${retimed},${wallet}`),
+			)
+			expect(prepareCoSignedMock).toHaveBeenCalledWith(
+				{ xdr: authorized() },
+				expect.objectContaining({ hash: "abc123" }),
+			)
+			expect(walletSigns).toHaveBeenCalledWith(retimed, {
+				networkPassphrase,
+				address: wallet,
+			})
+			expect(result.current.status).toEqual({ status: "idle" })
+		})
+
+		it("refuses a signature over anything but the re-simulated envelope", async () => {
+			prepareCoSignedMock.mockResolvedValue({
+				kind: "ready",
+				xdr: retimed,
+				pending: pendingOf("legal_transfer", [], [], "retimed"),
+			})
+			walletSigns.mockResolvedValueOnce({
+				signedTxXdr: authorized(wallet),
+			})
+			const { result } = renderSign(authorized(), wallet)
+			await waitFor(() => expect(result.current.canSign).toBe(true))
+
+			act(() => result.current.sign())
+
+			await waitFor(() =>
+				expect(result.current.status).toEqual({
+					status: "failed",
+					failure: { kind: "unsigned" },
+				}),
+			)
+			expect(result.current.xdr).toBe(authorized())
+			expect(submitSignedMock).not.toHaveBeenCalled()
+		})
+
+		it("reports the contract's refusal from the first signer's simulation", async () => {
+			prepareCoSignedMock.mockResolvedValue({ kind: "refused", code: 304 })
+			const { result } = renderSign(authorized(), wallet)
+			await waitFor(() => expect(result.current.canSign).toBe(true))
+
+			act(() => result.current.sign())
+
+			await waitFor(() =>
+				expect(result.current.status).toEqual({
+					status: "failed",
+					failure: { kind: "contract-error", code: 304 },
+				}),
+			)
+			expect(walletSigns).not.toHaveBeenCalled()
+		})
+
+		const singleKey: AccountSigners = {
+			signers: [{ key: authority, weight: 1 }],
+			thresholds: { low: 0, med: 0, high: 0 },
+			sequence: "41",
+		}
+
+		it("waits for the single key of a zero-threshold source after the admin authorizes", async () => {
+			accountSignersMock.mockResolvedValue(singleKey)
+			const { result } = renderSign(authorized(), authority)
+
+			await waitFor(() => expect(result.current.canSign).toBe(true))
+			expect(result.current.state).toBe("valid")
+			expect(result.current.canSubmit).toBe(false)
+		})
+
+		it("is ready once the single key of a zero-threshold source signs", async () => {
+			accountSignersMock.mockResolvedValue(singleKey)
+			const { result } = renderSign(authorized(authority), wallet)
+
+			await waitFor(() => expect(result.current.state).toBe("ready"))
+			expect(result.current.canSubmit).toBe(true)
+		})
+
+		it("submits as soon as the single key of a zero-threshold source signs", async () => {
+			accountSignersMock.mockResolvedValue(singleKey)
+			prepareCoSignedMock.mockResolvedValue({
+				kind: "ready",
+				xdr: retimed,
+				pending: pendingOf("legal_transfer", [], [], "retimed"),
+			})
+			walletSigns.mockResolvedValueOnce({
+				signedTxXdr: `${retimed}${authority}`,
+			})
+			submitSignedMock.mockResolvedValue({
+				status: "success",
+				hash: "retimed",
+				result: undefined,
+			})
+			const { result } = renderSign(authorized(), authority)
+			await waitFor(() => expect(result.current.canSign).toBe(true))
+
+			act(() => result.current.sign())
+
+			await waitFor(() =>
+				expect(result.current.status).toEqual({
+					status: "confirmed",
+					hash: "retimed",
+					result: undefined,
+				}),
+			)
+			const submitted = submitSignedMock.mock.calls[0]?.[0] as Transaction
+			expect(marked(submitted).signedBy).toEqual([authority])
+		})
+
+		it("lets a later signer sign the envelope as it is", async () => {
+			accountSignersMock.mockResolvedValue(signers(3))
+			const { result } = renderSign(authorized(first), wallet)
+			await waitFor(() => expect(result.current.canSign).toBe(true))
+
+			act(() => result.current.sign())
+
+			await waitFor(() =>
+				expect(result.current.xdr).toBe(authorized(first, wallet)),
+			)
+			expect(prepareCoSignedMock).not.toHaveBeenCalled()
+			expect(walletSigns).toHaveBeenCalledWith(authorized(first), {
+				networkPassphrase,
+				address: wallet,
+			})
+		})
 	})
 })

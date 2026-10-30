@@ -10,7 +10,12 @@ import { useEpochHistory } from "../../hooks/useEpochHistory"
 import { useFinalizeWindDownRound } from "../../hooks/useFinalizeWindDownRound"
 import { useFulfillEpoch } from "../../hooks/useFulfillEpoch"
 import { useFund } from "../../hooks/useFund"
-import { usePendingTransaction } from "../../hooks/usePendingTransaction"
+import {
+	prepareFor,
+	type Send,
+	submitTo,
+	usePendingTransaction,
+} from "../../hooks/usePendingTransaction"
 import {
 	type CycleAction,
 	exactAmount,
@@ -27,7 +32,7 @@ import TransactionModal, {
 import CycleActionRail from "./CycleActionRail"
 import CycleSurface from "./CycleSurface"
 
-const useAmountInput = (confirmed: boolean) => {
+const useClearedInput = (confirmed: boolean) => {
 	const [input, setInput] = useState("")
 	useEffect(() => {
 		if (confirmed) setInput("")
@@ -52,55 +57,78 @@ const CycleSection: React.FC<{
 	const fund = usePendingTransaction(useFund())
 	const activateWindDown = usePendingTransaction(useActivateWindDown())
 	const finalizeRound = usePendingTransaction(useFinalizeWindDownRound())
-	const [priceInput, setPriceInput] = useAmountInput(
-		attest.status.status === "confirmed",
-	)
-	const [deployInput, setDeployInput] = useAmountInput(
+	const attested = attest.status.status === "confirmed"
+	const [priceInput, setPriceInput] = useClearedInput(attested)
+	const [proofHashInput, setProofHashInput] = useClearedInput(attested)
+	const [proofUriInput, setProofUriInput] = useClearedInput(attested)
+	const [deployInput, setDeployInput] = useClearedInput(
 		deploy.status.status === "confirmed",
 	)
-	const [fundInput, setFundInput] = useAmountInput(
+	const [fundInput, setFundInput] = useClearedInput(
 		fund.status.status === "confirmed",
 	)
 
-	const run = (action: CycleAction) => {
+	const dispatch = (action: CycleAction, send: Send) => {
 		switch (action.id) {
 			case "close-epoch":
 				if (action.epochId !== null)
-					closeEpoch.submit(undefined, String(action.epochId), action.grant)
-				return
+					return send(
+						closeEpoch,
+						undefined,
+						String(action.epochId),
+						action.grant,
+					)
+				return undefined
 			case "fulfill-epoch":
 				if (action.epochId !== null)
-					fulfillEpoch.submit(action.epochId, String(action.epochId))
-				return
+					return send(fulfillEpoch, action.epochId, String(action.epochId))
+				return undefined
 			case "attest":
-				if (action.price !== null && action.freshness !== null)
-					attest.submit(
-						{ price: action.price, freshness: action.freshness },
+				if (
+					action.price !== null &&
+					action.freshness !== null &&
+					action.proofHash !== null
+				)
+					return send(
+						attest,
+						{
+							price: action.price,
+							freshness: action.freshness,
+							proofHash: action.proofHash,
+							proofUri: action.proofUri,
+						},
 						formatSignedPrice(action.price),
 						action.grant,
 					)
-				return
+				return undefined
 			case "deploy":
 				if (action.amount !== null)
-					deploy.submit(action.amount, exactAmount(action.amount), action.grant)
-				return
+					return send(
+						deploy,
+						action.amount,
+						exactAmount(action.amount),
+						action.grant,
+					)
+				return undefined
 			case "fund":
 				if (action.amount !== null)
-					fund.submit(action.amount, exactAmount(action.amount))
-				return
+					return send(fund, action.amount, exactAmount(action.amount))
+				return undefined
 			case "activate-wind-down":
-				activateWindDown.submit(undefined, "")
-				return
+				return send(activateWindDown, undefined, "")
 			case "finalize-round":
 				if (action.round !== null)
-					finalizeRound.submit(undefined, String(action.round))
+					return send(finalizeRound, undefined, String(action.round))
+				return undefined
 		}
 	}
 
-	const onInput = (action: CycleAction, value: string) => {
+	const onInput = (action: CycleAction, value: string, key?: string) => {
 		switch (action.id) {
 			case "attest":
-				setPriceInput(value)
+				if (key === "proof-hash") setProofHashInput(value)
+				else if (key === "proof-uri") setProofUriInput(value)
+				else setPriceInput(value)
 				return
 			case "deploy":
 				setDeployInput(value)
@@ -118,6 +146,8 @@ const CycleSection: React.FC<{
 
 	const actions = toCycleActions(cycle, grants, wallet, {
 		price: priceInput,
+		proofHash: proofHashInput,
+		proofUri: proofUriInput,
 		deploy: deployInput,
 		fund: fundInput,
 		walletBalance: balance.status === "held" ? balance.amount : null,
@@ -192,7 +222,10 @@ const CycleSection: React.FC<{
 						actions={actions}
 						pending={cycle.status === "checking"}
 						unreadable={cycle.status === "unreadable"}
-						onRun={run}
+						onRun={(action) => dispatch(action, submitTo)}
+						onReady={
+							active ? (action) => dispatch(action, prepareFor) : undefined
+						}
 						onInput={onInput}
 					/>
 				}

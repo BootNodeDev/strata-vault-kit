@@ -1,13 +1,15 @@
-use bindings::{OracleFeedClient, OracleState};
 use soroban_sdk::{panic_with_error, Env};
+use stellar_contract_utils::pausable;
+use strata_bindings::{OracleFeedClient, OracleState};
 
 use crate::error::VaultError;
 use crate::event::{EpochClosed, EpochFulfilled};
+use crate::guards;
 use crate::keys::DataKey;
 use crate::pricing::{Pricing, PricingScheme};
+use crate::settlement;
 use crate::state::{self, EpochInfo, EpochStatus};
 use crate::timing::{FulfilmentTiming, StandardTiming};
-use crate::wind_down;
 
 /// The schedule this vault fulfils on.
 type Timing = StandardTiming;
@@ -23,17 +25,21 @@ pub(crate) fn open(total_deposited: i128) -> EpochInfo {
     }
 }
 
-/// The feed is usable and its standing valuation is no older than the close.
-/// Deliberately excludes the notice: see `is_priceable`.
+/// The feed is usable, its standing valuation is no older than the close, and
+/// the share price resolves; a feed that fails to answer counts as no readable
+/// price. Deliberately excludes the notice: see `is_priceable`.
 fn price_readable(e: &Env, epoch: &EpochInfo) -> Result<(), VaultError> {
     let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
-    if feed.state() != OracleState::Valid {
+    if !matches!(feed.try_state(), Ok(Ok(OracleState::Valid))) {
         return Err(VaultError::FeedNotValid);
     }
-    if !Timing::price_is_current(epoch.closed_at, feed.attested_at()) {
+    let Ok(Ok(attested_at)) = feed.try_attested_at() else {
+        return Err(VaultError::FeedNotValid);
+    };
+    if !Timing::price_is_current(epoch.closed_at, attested_at) {
         return Err(VaultError::AttestationBeforeClose);
     }
-    Ok(())
+    Pricing::resolve_share_price(e).map(|_| ())
 }
 
 /// Every condition pricing an epoch requires. It answers rather than aborting,
@@ -48,22 +54,21 @@ pub(crate) fn fulfilable(e: &Env, epoch: &EpochInfo) -> Result<(), VaultError> {
     price_readable(e, epoch)
 }
 
-/// True when the epoch's price can already be read, which is what closes the
-/// cancellation window: cancelling after this would be declining a price the
-/// investor has seen.
+/// True when the epoch's price can already be read and the vault could take
+/// it, which is what closes the cancellation window: cancelling after this
+/// would be declining a price the investor has seen. A paused vault cannot
+/// price, so its sealed epochs stay cancellable until the pause lifts.
 pub(crate) fn is_priceable(e: &Env, epoch: &EpochInfo) -> bool {
-    epoch.status == EpochStatus::Pending && price_readable(e, epoch).is_ok()
+    epoch.status == EpochStatus::Pending && !pausable::paused(e) && price_readable(e, epoch).is_ok()
 }
 
 pub(crate) fn close(e: &Env) -> u64 {
-    wind_down::refuse_if_active(e);
+    guards::not_winding_down(e);
+    guards::setup_finished(e);
     let current = state::current_epoch(e);
     let mut epoch = state::get_epoch(e, current)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-
-    if epoch.status != EpochStatus::Open {
-        panic_with_error!(e, VaultError::EpochNotOpen);
-    }
+    guards::epoch_open(e, &epoch);
 
     let next = current
         .checked_add(1)
@@ -73,11 +78,13 @@ pub(crate) fn close(e: &Env) -> u64 {
 
     epoch.status = EpochStatus::Pending;
     epoch.closed_at = closed_at;
-    epoch.priceable_at = Timing::priceable_at(closed_at, state::notice(e));
+    epoch.priceable_at = Timing::priceable_at(closed_at, state::notice(e))
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
     state::set_epoch(e, current, &epoch);
 
     state::set_epoch(e, next, &open(0));
     state::set_current_epoch(e, next);
+    state::set_epoch_opened_at(e, closed_at);
 
     EpochClosed {
         epoch: current,
@@ -90,13 +97,11 @@ pub(crate) fn close(e: &Env) -> u64 {
 }
 
 pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
-    wind_down::refuse_if_active(e);
+    guards::not_winding_down(e);
+    guards::setup_finished(e);
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
-
-    if let Err(refusal) = fulfilable(e, &epoch) {
-        panic_with_error!(e, refusal);
-    }
+    guards::fulfilable(e, &epoch);
 
     let share_price =
         Pricing::resolve_share_price(e).unwrap_or_else(|err| panic_with_error!(e, err));
@@ -108,8 +113,9 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge));
     state::set_committed(e, committed);
 
+    let mut shares_owed = 0;
     if epoch.total_deposited > 0 {
-        let shares_owed = Pricing::deposit_shares(e, epoch.total_deposited, share_price)
+        shares_owed = Pricing::deposit_shares(e, epoch.total_deposited, share_price)
             .unwrap_or_else(|err| panic_with_error!(e, err));
         let updated_pending_mint = state::pending_mint_shares(e)
             .checked_add(shares_owed)
@@ -124,7 +130,10 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         state::set_pending_burn_shares(e, updated_pending_burn);
     }
 
-    state::set_cancellable_escrow(e, state::cancellable_escrow(e) - epoch.total_deposited);
+    state::set_cancellable_escrow(
+        e,
+        state::reduce(e, state::cancellable_escrow(e), epoch.total_deposited),
+    );
 
     epoch.status = EpochStatus::Fulfilled;
     epoch.share_price = share_price;
@@ -136,6 +145,7 @@ pub(crate) fn fulfill(e: &Env, epoch_id: u64) -> i128 {
         total_deposited: epoch.total_deposited,
     }
     .publish(e);
+    settlement::on_priced(e, epoch_id, shares_owed, owed);
 
     share_price
 }

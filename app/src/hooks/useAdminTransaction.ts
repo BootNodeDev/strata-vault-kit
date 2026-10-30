@@ -11,9 +11,9 @@ type NoResult = Record<never, never>
 const toConfirmed = () => ({})
 
 export const adminTransaction =
-	<TArg = void>(
-		call: (signer: Signer, arg: TArg) => Promise<AssembledTransaction<void>>,
+	<TArg = void, TResult = void>(
+		call: (signer: Signer, arg: TArg) => Promise<AssembledTransaction<TResult>>,
 		keys: readonly QueryKey[],
 	) =>
 	(): UseContractTransaction<TArg, NoResult> =>
-		useContractTransaction<TArg, void, NoResult>(call, toConfirmed, keys)
+		useContractTransaction<TArg, TResult, NoResult>(call, toConfirmed, keys)

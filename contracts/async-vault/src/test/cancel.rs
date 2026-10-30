@@ -68,6 +68,33 @@ fn a_priced_epoch_is_not_cancellable() {
 }
 
 #[test]
+fn cancelling_without_a_request_finds_no_request_once_a_price_is_known() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+
+    let epoch = f.close_epoch();
+    f.attest(wad(2));
+    refused(
+        f.vault.try_cancel_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+    refused(
+        f.vault.try_cancel_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.vault.fulfill_epoch(&epoch);
+    refused(
+        f.vault.try_cancel_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+    refused(
+        f.vault.try_cancel_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+}
+
+#[test]
 fn the_pause_never_blocks_a_cancellation() {
     let f = setup();
     let inv = f.investor(1_000);
@@ -100,7 +127,6 @@ fn the_same_investor_can_request_again_after_cancelling() {
 fn refundable_escrow_is_not_free_reserve() {
     let f = setup();
     let inv = f.investor(1_000);
-    f.vault.set_custodian(&f.custodian, &f.admin);
 
     let before = f.vault.free_reserve();
     f.vault.request_deposit(&inv, &400);
@@ -172,6 +198,29 @@ fn a_redemption_that_pays_nothing_returns_the_shares_at_claim() {
     assert_eq!(f.shares(&holder), 1);
 }
 
+#[test]
+fn a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted() {
+    let f = setup();
+    let holder = f.holder(1);
+
+    let epoch = f.vault.request_redeem(&holder, &1);
+    f.close_epoch();
+    f.attest(wad(4) / 10);
+    f.vault.fulfill_epoch(&epoch);
+
+    // 1 share at 0.4 pays zero assets.
+    f.identity.allow(&holder, &false);
+    refused(
+        f.vault.try_claim_redeem(&holder, &epoch),
+        VaultError::HolderNotEligible,
+    );
+    assert_eq!(f.shares(&holder), 0);
+
+    f.identity.allow(&holder, &true);
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
+    assert_eq!(f.shares(&holder), 1);
+}
+
 /// A refund after pricing is an extra payout, so it waits for free reserve
 /// rather than taking money owed to a priced exit.
 #[test]
@@ -187,7 +236,6 @@ fn a_dust_refund_never_takes_committed_money() {
     f.vault.fulfill_epoch(&epoch);
 
     // Move every free unit out, leaving only what the redeemer is owed.
-    f.vault.set_custodian(&f.custodian, &f.admin);
     let free = f.vault.free_reserve();
     if free > 0 {
         f.vault.deploy_to_custodian(&f.treasury, &free);
@@ -282,14 +330,59 @@ fn a_sealed_epoch_cancels_once_the_feed_goes_stale() {
 }
 
 #[test]
-fn a_sealed_epoch_cancels_while_the_ripcord_is_raised() {
+fn a_sealed_epoch_cancels_while_the_nav_is_paused() {
     let f = setup();
     let holder = f.holder(200);
 
     let epoch = f.vault.request_redeem(&holder, &200);
     f.close_epoch();
-    f.oracle.raise_ripcord(&f.guardian);
+    f.oracle.pause_nav(&f.guardian);
 
     assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
     assert_eq!(f.shares(&holder), 200);
+}
+
+/// A paused vault cannot price, so a readable price no longer closes the
+/// window: the investor may leave while the pause lasts, and the window closes
+/// again once governance lifts it.
+#[test]
+fn a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price() {
+    let f = setup();
+    let first = f.investor(1_000);
+    let second = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&first, &400);
+    f.vault.request_deposit(&second, &400);
+    f.close_epoch();
+    f.attest(wad(2));
+    refused(
+        f.vault.try_cancel_deposit(&first, &epoch),
+        VaultError::PriceAvailable,
+    );
+
+    f.vault.pause(&f.guardian);
+    assert_eq!(f.vault.cancel_deposit(&first, &epoch), 400);
+
+    f.vault.unpause(&f.admin);
+    refused(
+        f.vault.try_cancel_deposit(&second, &epoch),
+        VaultError::PriceAvailable,
+    );
+}
+
+/// The window closes on the first readable price after the close and reopens
+/// if that price lapses before the epoch is priced.
+#[test]
+fn cancellation_reopens_when_the_price_that_closed_it_expires() {
+    let f = setup();
+    let inv = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&inv, &400);
+    f.close_epoch();
+    f.attest(wad(2));
+    refused(
+        f.vault.try_cancel_deposit(&inv, &epoch),
+        VaultError::PriceAvailable,
+    );
+
+    f.advance(3_601); // past the freshness window
+    assert_eq!(f.vault.cancel_deposit(&inv, &epoch), 400);
 }

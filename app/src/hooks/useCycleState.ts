@@ -1,7 +1,9 @@
+import { Buffer } from "buffer"
 import {
 	type Amount,
 	type ChainEvent,
 	type ContractRead,
+	type EventSelection,
 	type NavReport,
 	type OracleState,
 	type Price,
@@ -48,7 +50,7 @@ export type OracleLimits = {
 	freshness: bigint
 	cooldown: bigint
 	maxUpBps: number
-	maxDownBps: number | null
+	maxDownBps: number
 	min: bigint
 	max: bigint
 }
@@ -58,13 +60,16 @@ export type CycleOracle = {
 	price: Price | null
 	attestedAt: bigint | null
 	expiresAt: bigint | null
-	ripcord: boolean | null
+	proof: { hash: string; uri: string } | null
+	navPaused: boolean | null
 	recorded: boolean | null
 	limits: OracleLimits | null
 }
 
 export type DepositCap =
 	{ kind: "uncapped" } | { kind: "capped"; amount: Amount }
+
+export type MinEpochDuration = { kind: "unset" } | { kind: "set"; secs: bigint }
 
 export type WindDownPhase = "none" | "proposed" | "active"
 
@@ -94,6 +99,8 @@ export type CycleEpoch = {
 	awaiting: EpochRecord | null
 	awaitingKnown: boolean
 	noticeSeconds: bigint | null
+	minDuration: MinEpochDuration | null
+	openedAt: bigint | null
 }
 
 export type CycleState =
@@ -128,7 +135,7 @@ export function toOracle(
 		freshness_duration: bigint
 		cooldown_secs: bigint
 		max_up_bps: number
-		max_down_bps: number | null
+		max_down_bps: number
 		min_answer: bigint
 		max_answer: bigint
 	}>,
@@ -139,9 +146,16 @@ export function toOracle(
 	return {
 		state: nav.status,
 		price: report === null ? null : (report.nav_per_share as Price),
-		attestedAt: report?.timestamp ?? null,
+		attestedAt: report?.accepted_at ?? null,
 		expiresAt: report?.expires_at ?? null,
-		ripcord: nav.status === "unreadable" ? null : nav.status === "paused",
+		proof:
+			report === null
+				? null
+				: {
+						hash: Buffer.from(report.proof_hash).toString("hex"),
+						uri: report.proof_uri,
+					},
+		navPaused: nav.status === "unreadable" ? null : nav.status === "paused",
 		recorded: recordedOf(latest),
 		limits:
 			config.kind === "value"
@@ -185,6 +199,15 @@ export function toWindDown(
 	}
 }
 
+const toMinEpochDuration = (
+	read: ContractRead<bigint | null>,
+): MinEpochDuration | null => {
+	if (read.kind !== "value") return null
+	return read.value === null
+		? { kind: "unset" }
+		: { kind: "set", secs: read.value }
+}
+
 const toDepositCap = (read: ContractRead<bigint | null>): DepositCap | null => {
 	if (read.kind !== "value") return null
 	return read.value === null
@@ -194,8 +217,9 @@ const toDepositCap = (read: ContractRead<bigint | null>): DepositCap | null => {
 
 export function toEpoch(
 	history: Extract<EpochHistoryRead, { status: "loaded" }>,
-	notice: ContractRead<bigint>,
+	reads: Pick<CycleReads, "notice" | "minEpochDuration" | "epochOpenedAt">,
 ): CycleEpoch {
+	const { notice } = reads
 	const sealed = history.epochs.filter((epoch) => epoch.status === "Pending")
 	return {
 		id: history.currentEpoch,
@@ -204,6 +228,8 @@ export function toEpoch(
 		awaiting: sealed.at(-1) ?? null,
 		awaitingKnown: history.unreadable.length === 0,
 		noticeSeconds: notice.kind === "value" ? notice.value : null,
+		minDuration: reads.minEpochDuration,
+		openedAt: reads.epochOpenedAt,
 	}
 }
 
@@ -212,6 +238,8 @@ export type CycleReads = {
 	notice: ContractRead<bigint>
 	freeReserve: Amount | null
 	depositCap: DepositCap | null
+	minEpochDuration: MinEpochDuration | null
+	epochOpenedAt: bigint | null
 	windDown: CycleWindDown
 	oracle: CycleOracle
 }
@@ -222,6 +250,8 @@ async function fetchCycleReads(): Promise<CycleReads> {
 		notice,
 		freeReserve,
 		depositCap,
+		minEpochDuration,
+		epochOpenedAt,
 		proposal,
 		delay,
 		owed,
@@ -234,6 +264,8 @@ async function fetchCycleReads(): Promise<CycleReads> {
 		readContract(async () => (await asyncVault()).notice()),
 		readContract(async () => (await asyncVault()).free_reserve()),
 		readContract(async () => (await asyncVault()).deposit_cap()),
+		readContract(async () => (await asyncVault()).min_epoch_duration()),
+		readContract(async () => (await asyncVault()).epoch_opened_at()),
 		readContract(async () => (await asyncVault()).wind_down()),
 		readContract(async () => (await asyncVault()).wind_down_delay()),
 		readContract(async () => (await asyncVault()).wind_down_owed()),
@@ -248,6 +280,8 @@ async function fetchCycleReads(): Promise<CycleReads> {
 		notice,
 		freeReserve: toAmount(freeReserve),
 		depositCap: toDepositCap(depositCap),
+		minEpochDuration: toMinEpochDuration(minEpochDuration),
+		epochOpenedAt: epochOpenedAt.kind === "value" ? epochOpenedAt.value : null,
 		windDown: toWindDown(proposal, delay, owed, supply),
 		oracle: toOracle(oracleState, latest, config),
 	}
@@ -306,7 +340,7 @@ export function useCycleState(): {
 		cycle: {
 			status: "ready",
 			ledgerTime: reads.ledgerTime,
-			epoch: toEpoch(history, reads.notice),
+			epoch: toEpoch(history, reads),
 			oracle: reads.oracle,
 			reserve: {
 				free: reads.freeReserve,
@@ -329,18 +363,25 @@ export type CycleEventsRead =
 	| { status: "unreadable" }
 	| { status: "loaded"; events: ChainEvent[]; partial: boolean }
 
-async function fetchCycleEvents(): Promise<CycleEventsRead> {
-	const read = await readEvents(
-		[
-			{ contractId: addresses.async_vault, names: VAULT_EVENTS },
-			{ contractId: addresses.nav_oracle, names: ORACLE_EVENTS },
-		],
-		LEDGERS_IN_SEVEN_DAYS,
-	)
+async function fetchEvents(
+	selections: EventSelection[],
+): Promise<CycleEventsRead> {
+	const read = await readEvents(selections, LEDGERS_IN_SEVEN_DAYS)
 	return read.kind === "value"
 		? { status: "loaded", events: read.value, partial: read.partial }
 		: { status: "unreadable" }
 }
+
+const fetchCycleEvents = () =>
+	fetchEvents([
+		{ contractId: addresses.async_vault, names: VAULT_EVENTS },
+		{ contractId: addresses.nav_oracle, names: ORACLE_EVENTS },
+	])
+
+const fetchLegalTransfers = () =>
+	fetchEvents([
+		{ contractId: addresses.share_token, names: ["legal_transfer"], topics: 2 },
+	])
 
 export function useCycleEvents(): { cycleEvents: CycleEventsRead } {
 	const { data } = useQuery({
@@ -350,4 +391,16 @@ export function useCycleEvents(): { cycleEvents: CycleEventsRead } {
 	})
 
 	return { cycleEvents: data ?? { status: "checking" } }
+}
+
+export const legalTransfersKey = ["compliance", "legal-transfers"] as const
+
+export function useLegalTransfers(): { legalTransfers: CycleEventsRead } {
+	const { data } = useQuery({
+		queryKey: legalTransfersKey,
+		queryFn: fetchLegalTransfers,
+		staleTime: STALE_MS,
+	})
+
+	return { legalTransfers: data ?? { status: "checking" } }
 }

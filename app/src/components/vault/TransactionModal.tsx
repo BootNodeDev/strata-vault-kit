@@ -15,6 +15,7 @@ import { type CancelDepositStatus } from "../../hooks/useCancelDeposit"
 import { type CancelRedeemStatus } from "../../hooks/useCancelRedeem"
 import { type ClaimDepositStatus } from "../../hooks/useClaimDeposit"
 import { type ClaimRedeemStatus } from "../../hooks/useClaimRedeem"
+import { type ClaimWindDownStatus } from "../../hooks/useClaimWindDown"
 import { type CloseEpochStatus } from "../../hooks/useCloseEpoch"
 import {
 	type TransactionFailure,
@@ -38,8 +39,8 @@ import styles from "./TransactionModal.module.css"
 export type EmergencyModalAction =
 	| "pause-vault"
 	| "unpause-vault"
-	| "raise-ripcord"
-	| "lower-ripcord"
+	| "pause-nav"
+	| "unpause-nav"
 	| "clear-latest"
 	| "pause-token"
 	| "unpause-token"
@@ -49,11 +50,20 @@ export type ConfigurationModalAction =
 	| "set-custodian"
 	| "set-notice"
 	| "set-wind-down-delay"
+	| "set-min-epoch-duration"
+	| "propose-custodian"
+	| "propose-notice"
+	| "propose-wind-down-delay"
+	| "propose-min-epoch-duration"
 	| "set-oracle-config"
+	| "propose-oracle-config"
 	| "set-compliance"
+	| "propose-compliance"
 	| "set-identity-verifier"
+	| "propose-identity-verifier"
 
-export type GovernanceModalAction = GovernanceActionId
+export type GovernanceModalAction =
+	GovernanceActionId | "propose-oracle-revoke-role"
 
 export type ComplianceModalAction = ComplianceActionId
 
@@ -100,6 +110,7 @@ export type TransactionModalProps =
 			amount: string
 			ticker: string
 			assetTicker: string
+			windingDown?: boolean
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -126,6 +137,15 @@ export type TransactionModalProps =
 			amount: string
 			ticker: string
 			uncovered?: string
+			onClose: () => void
+			onRetry: () => void
+	  }
+	| {
+			action: "claim-wind-down"
+			status: ClaimWindDownStatus
+			amount: string
+			ticker: string
+			shareTicker: string
 			onClose: () => void
 			onRetry: () => void
 	  }
@@ -182,6 +202,15 @@ export type TransactionModalProps =
 const GENERIC_REFUSAL =
 	"The vault refused this request. Try again, and contact support if it keeps happening."
 
+export const NOT_ALLOWLISTED = "Your address is not allowlisted."
+
+const SHARES_NOT_RETURNABLE =
+	"Your address cannot receive these shares right now, so they stay with the vault."
+
+const FROZEN = "Your address is frozen."
+
+export const HELD_WHILE_FROZEN = `${FROZEN} This request is held until the freeze is lifted.`
+
 const subscribeContractErrorReason = (code: number): string => {
 	switch (code) {
 		case 6007:
@@ -192,6 +221,16 @@ const subscribeContractErrorReason = (code: number): string => {
 			return "That amount is too large for the vault to accept."
 		case 6046:
 			return "The vault is winding down and is not accepting new subscriptions."
+		case 6064:
+			return "The vault's setup is still open. Subscriptions start once it closes."
+		case 6044:
+			return "The vault's price feed is not valid right now, so subscriptions are paused until it is."
+		case 6076:
+			return "The vault does not hold enough to cover its pending deposits right now, so it is not taking new subscriptions until it is funded again."
+		case 6068:
+			return `${NOT_ALLOWLISTED} Only allowlisted addresses can subscribe.`
+		case 6071:
+			return `${FROZEN} It cannot subscribe until the freeze is lifted.`
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -207,6 +246,10 @@ const cancelContractErrorReason = (code: number): string => {
 			return "This request has already been priced. Claim your shares instead of cancelling."
 		case 6041:
 			return "A price is available, so this request can no longer be cancelled. It will be priced shortly, and your shares are claimable once it is."
+		case 6076:
+			return "The vault does not hold enough to return this deposit right now. You can cancel once it is funded again."
+		case 6071:
+			return HELD_WHILE_FROZEN
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -216,10 +259,15 @@ const cancelRedeemContractErrorReason = (
 	code: number,
 	assetTicker: string,
 ): string => {
-	if (code === 304) {
-		return `Your address is no longer allowlisted, so these shares cannot be returned to you. Once priced, claim the ${assetTicker} it owes you instead.`
+	const claimInstead = `Once priced, claim the ${assetTicker} it owes you instead.`
+	switch (code) {
+		case 6068:
+			return `${NOT_ALLOWLISTED} These shares cannot come back to you. ${claimInstead}`
+		case 6073:
+			return `${SHARES_NOT_RETURNABLE} ${claimInstead}`
+		default:
+			return cancelContractErrorReason(code)
 	}
-	return cancelContractErrorReason(code)
 }
 
 const claimContractErrorReason = (code: number): string => {
@@ -236,8 +284,8 @@ const claimContractErrorReason = (code: number): string => {
 			return "This request has already been claimed."
 		case 6037:
 			return "The vault does not yet hold enough in reserve to cover this claim. Try again shortly."
-		case 304:
-			return "Your address is no longer allowlisted, so it cannot receive shares."
+		case 6071:
+			return HELD_WHILE_FROZEN
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -255,6 +303,10 @@ const redeemContractErrorReason = (code: number): string => {
 			return "This request could not be found."
 		case 6046:
 			return "The vault is winding down and is not accepting new redemptions."
+		case 6064:
+			return "The vault's setup is still open. Redemptions start once it closes."
+		case 6071:
+			return "Your address or some of these shares are frozen. Redeem only your free shares, or wait until the freeze is lifted."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -272,10 +324,23 @@ const claimRedeemContractErrorReason = (
 			return uncovered !== undefined
 				? `The vault is ${uncovered} short of covering every priced claim. Try again once the reserve catches up.`
 				: `The vault does not yet hold enough ${ticker} in reserve to cover this claim. Try again shortly.`
-		case 304:
-			return "The price left nothing to claim, so the vault tried to return your shares instead. Your address is no longer allowlisted to receive them."
+		case 6073:
+			return `The price left nothing to pay out, so the vault tried to return your shares. ${SHARES_NOT_RETURNABLE}`
 		default:
 			return claimContractErrorReason(code)
+	}
+}
+
+const windDownClaimContractErrorReason = (code: number): string => {
+	switch (code) {
+		case 6051:
+			return "The wind-down has not made its first payout yet. Check back once it does."
+		case 6054:
+			return "You have nothing to claim from the wind-down right now."
+		case 6071:
+			return HELD_WHILE_FROZEN
+		default:
+			return GENERIC_REFUSAL
 	}
 }
 
@@ -291,6 +356,10 @@ const closeEpochContractErrorReason = (code: number): string => {
 			return "This wallet is not authorized to close epochs."
 		case 2007:
 			return "This wallet does not hold the manager role."
+		case 6077:
+			return "Only the manager can seal this epoch until it has been open for the minimum duration."
+		case 6064:
+			return "The vault's setup is still open, so no epoch can be sealed yet."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -316,6 +385,8 @@ const fulfillEpochContractErrorReason = (code: number): string => {
 			return "The settlement total is too large for the vault to record."
 		case 1000:
 			return "The vault is paused, so epochs cannot be priced."
+		case 6064:
+			return "The vault's setup is still open, so no epoch can be priced yet."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -331,6 +402,12 @@ const attestContractErrorReason = (code: number): string => {
 			return "The cooldown since the last attestation has not elapsed yet."
 		case 3004:
 			return "That price moves further from the last attested price than the oracle allows."
+		case 3010:
+			return "Unpause the NAV first."
+		case 3023:
+			return "The proof hash cannot be all zeros."
+		case 3024:
+			return "The proof URI is longer than 256 bytes."
 		default:
 			return GENERIC_REFUSAL
 	}
@@ -442,6 +519,11 @@ const describeFailure = (
 				heading: "The wallet did not sign",
 				body: "Nothing was sent. Try again when you're ready.",
 			}
+		case "cannot-authorize":
+			return {
+				heading: "This wallet cannot authorize",
+				body: "This wallet cannot sign authorizations. Use Freighter, Hana or WalletConnect.",
+			}
 		case "contract-error":
 			return {
 				heading: `The ${refuser} refused this request`,
@@ -451,6 +533,11 @@ const describeFailure = (
 			return {
 				heading: "We couldn't reach the vault",
 				body: "Nothing was requested from your wallet. Try again when you're ready.",
+			}
+		case "stale":
+			return {
+				heading: "The transaction went stale",
+				body: "The account moved on since it was prepared, so nothing was sent. Try again.",
 			}
 		case "unknown":
 			return unknownOutcome(followUp)
@@ -545,6 +632,7 @@ const describeCancelRedeemStatus = (
 	amount: string,
 	ticker: string,
 	assetTicker: string,
+	windingDown: boolean,
 ): { heading: string; body: string; hash?: string } | undefined => {
 	switch (status.status) {
 		case "idle":
@@ -557,7 +645,9 @@ const describeCancelRedeemStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `Your request is withdrawn, not priced. Signing returns ${amount} ${ticker} from escrow to your wallet.`,
+				body: windingDown
+					? `Your request is withdrawn, not priced. The vault is winding down, so signing moves ${amount} ${ticker} into your wind-down claim instead of your wallet.`
+					: `Your request is withdrawn, not priced. Signing returns ${amount} ${ticker} from escrow to your wallet.`,
 			}
 		case "submitted":
 			return {
@@ -566,11 +656,17 @@ const describeCancelRedeemStatus = (
 				hash: status.hash,
 			}
 		case "confirmed":
-			return {
-				heading: "Request cancelled",
-				body: `${formatExact(status.returnedShares, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
-				hash: status.hash,
-			}
+			return status.surrendered
+				? {
+						heading: MOVED_TO_WIND_DOWN,
+						body: "The vault is winding down, so these shares were added to your wind-down claim instead of coming back to your wallet.",
+						hash: status.hash,
+					}
+				: {
+						heading: "Request cancelled",
+						body: `${formatExact(status.returnedShares, AMOUNT_DECIMALS)} ${ticker} has been returned to your wallet.`,
+						hash: status.hash,
+					}
 		case "failed":
 			return {
 				...describeFailure(status.failure, (code) =>
@@ -580,6 +676,22 @@ const describeCancelRedeemStatus = (
 			}
 	}
 }
+
+const MOVED_TO_WIND_DOWN = "Moved to your wind-down claim"
+
+const convertedOutcome = (
+	queuedInto: bigint,
+	ticker: string,
+): { heading: string; body: string } =>
+	queuedInto === 0n
+		? {
+				heading: MOVED_TO_WIND_DOWN,
+				body: `${NOT_ALLOWLISTED} Your shares were added to your wind-down claim instead.`,
+			}
+		: {
+				heading: "Queued as a redemption",
+				body: `${NOT_ALLOWLISTED} Your shares were queued as a redemption instead, and pay out in ${ticker} at the next price.`,
+			}
 
 const describeClaimStatus = (
 	status: ClaimDepositStatus,
@@ -607,6 +719,11 @@ const describeClaimStatus = (
 				hash: status.hash,
 			}
 		case "confirmed":
+			if (status.queuedInto !== undefined)
+				return {
+					...convertedOutcome(status.queuedInto, ticker),
+					hash: status.hash,
+				}
 			return status.sharesMinted > 0n
 				? {
 						heading: "Shares claimed",
@@ -624,6 +741,67 @@ const describeClaimStatus = (
 				hash: status.hash,
 			}
 	}
+}
+
+const describeClaimWindDownStatus = (
+	status: ClaimWindDownStatus,
+	amount: string,
+	ticker: string,
+	shareTicker: string,
+): { heading: string; body: string; hash?: string } | undefined => {
+	switch (status.status) {
+		case "idle":
+			return undefined
+		case "preparing":
+			return {
+				heading: "Preparing your claim",
+				body: "We are getting your claim ready. Your wallet will ask you to approve it next.",
+			}
+		case "awaiting-signature":
+			return {
+				heading: "Confirm in your wallet",
+				body: `You receive ${amount} ${ticker}, your share of the wind-down so far. Signing also turns in your unfrozen ${shareTicker}, so later rounds pay you for them.`,
+			}
+		case "submitted":
+			return {
+				heading: "Sending your claim",
+				body: "Your claim is on its way to the network. This should only take a moment. Closing this window will not stop it.",
+				hash: status.hash,
+			}
+		case "confirmed":
+			return {
+				...windDownClaimOutcome(status, ticker, shareTicker),
+				hash: status.hash,
+			}
+		case "failed":
+			return {
+				...describeFailure(status.failure, windDownClaimContractErrorReason),
+				hash: status.hash,
+			}
+	}
+}
+
+const windDownClaimOutcome = (
+	{
+		assetsClaimed,
+		sharesSurrendered,
+	}: Extract<ClaimWindDownStatus, { status: "confirmed" }>,
+	ticker: string,
+	shareTicker: string,
+): { heading: string; body: string } => {
+	const turnedIn =
+		sharesSurrendered > 0n
+			? `${formatExact(sharesSurrendered, AMOUNT_DECIMALS)} ${shareTicker} were turned in, and later rounds pay you for them.`
+			: "Later rounds pay what you are owed."
+	return assetsClaimed > 0n
+		? {
+				heading: `${ticker} claimed`,
+				body: `${formatExact(assetsClaimed, AMOUNT_DECIMALS)} ${ticker} has been added to your wallet. ${turnedIn}`,
+			}
+		: {
+				heading: "Shares turned in",
+				body: `Nothing was paid this time. ${turnedIn}`,
+			}
 }
 
 const describeRedeemStatus = (
@@ -696,11 +874,17 @@ const describeClaimRedeemStatus = (
 						body: `${formatExact(status.assetsClaimed, AMOUNT_DECIMALS)} ${ticker} has been added to your wallet.`,
 						hash: status.hash,
 					}
-				: {
-						heading: "Shares returned",
-						body: "The price left nothing to claim, so your shares have been returned to your wallet instead.",
-						hash: status.hash,
-					}
+				: status.sharesReturned
+					? {
+							heading: "Shares returned",
+							body: "The price left nothing to claim, so your shares have been returned to your wallet instead.",
+							hash: status.hash,
+						}
+					: {
+							heading: "Nothing to pay out",
+							body: "The price left nothing to pay out, and the vault is winding down, so these shares were burned.",
+							hash: status.hash,
+						}
 		case "failed":
 			return {
 				...describeFailure(status.failure, (code) =>
@@ -809,7 +993,7 @@ const describeAttestStatus = (
 		case "awaiting-signature":
 			return {
 				heading: "Confirm in your wallet",
-				body: `Signing records ${price} as the share price. Sealed epochs settle at it once their notice elapses.`,
+				body: `Signing records ${price} as the share price, with its proof. Sealed epochs settle at it once their notice elapses.`,
 			}
 		case "submitted":
 			return {
@@ -1026,19 +1210,19 @@ const EMERGENCY_COPY: Record<EmergencyModalAction, AdminCopy> = {
 		done: "Vault unpaused",
 		doneBody: "Deposits, pricing and upgrades are open again.",
 	},
-	"raise-ripcord": {
+	"pause-nav": {
 		refuser: "oracle",
-		verb: "raise the ripcord",
-		signing: "Signing stops pricing until the ripcord is lowered.",
-		done: "Ripcord raised",
+		verb: "pause the NAV",
+		signing: "Signing stops pricing until the NAV is unpaused.",
+		done: "NAV paused",
 		doneBody:
-			"Pricing is stopped. No epoch can be fulfilled until the ripcord is lowered.",
+			"Pricing is stopped. No epoch can be fulfilled until the NAV is unpaused.",
 	},
-	"lower-ripcord": {
+	"unpause-nav": {
 		refuser: "oracle",
-		verb: "lower the ripcord",
+		verb: "unpause the NAV",
 		signing: "Signing resumes pricing.",
-		done: "Ripcord lowered",
+		done: "NAV unpaused",
 		doneBody: "Epochs can be fulfilled again while the price is valid.",
 	},
 	"clear-latest": {
@@ -1047,22 +1231,22 @@ const EMERGENCY_COPY: Record<EmergencyModalAction, AdminCopy> = {
 		signing: "Signing removes the recorded price.",
 		done: "Latest price cleared",
 		doneBody:
-			"The next attestation is not limited by its distance from the last. Pricing stays stopped until the ripcord is lowered.",
+			"The next attestation is not limited by its distance from the last. Pricing stays stopped until the NAV is unpaused.",
 	},
 	"pause-token": {
 		refuser: "share token",
 		verb: "pause the share token",
-		signing: "Signing stops holder transfers and returns of escrowed shares.",
+		signing: "Signing stops holder transfers only.",
 		done: "Share token paused",
 		doneBody:
-			"Holder transfers and returns of escrowed shares are stopped. Minting, burning and forced transfers stay open.",
+			"Holder transfers are stopped. Minting, burning, the vault's escrow moves and legal transfers continue.",
 	},
 	"unpause-token": {
 		refuser: "share token",
 		verb: "unpause the share token",
-		signing: "Signing resumes holder transfers and returns of escrowed shares.",
+		signing: "Signing resumes holder transfers.",
 		done: "Share token unpaused",
-		doneBody: "Holder transfers and returns of escrowed shares are open again.",
+		doneBody: "Holder transfers are open again.",
 	},
 }
 
@@ -1076,6 +1260,34 @@ const setterCopy =
 		doneBody: effect ?? `${subject}: ${value}.`,
 	})
 
+const capitalize = (text: string): string =>
+	`${text.charAt(0).toUpperCase()}${text.slice(1)}`
+
+type TimelockRefuser = Extract<
+	AdminCopy["refuser"],
+	"vault" | "share token" | "oracle"
+>
+
+const WAITS: Record<TimelockRefuser, string> = {
+	vault: "the upgrade delay",
+	"share token": "the vault's upgrade delay",
+	oracle: "the vault's upgrade delay",
+}
+
+const proposeCopy =
+	(refuser: TimelockRefuser, verb: string, subject: string) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		verb,
+		signing: `Signing queues ${subject} ${value}.`,
+		done: "Change proposed",
+		doneBody: `${capitalize(subject)} ${value} applies once ${WAITS[refuser]} passes.`,
+	})
+
+const MIN_EPOCH_DURATION_REASONS = {
+	6007: "The minimum epoch duration must be 1 to 30 days.",
+}
+
 const CONFIGURATION_COPY: Record<
 	ConfigurationModalAction,
 	(value: string) => AdminCopy
@@ -1088,6 +1300,29 @@ const CONFIGURATION_COPY: Record<
 		"Wind-down delay",
 		EFFECTS.windDownDelay,
 	),
+	"set-min-epoch-duration": (value) => ({
+		...setterCopy(
+			"vault",
+			"Minimum epoch duration",
+			EFFECTS.minEpochDuration,
+		)(value),
+		reasons: MIN_EPOCH_DURATION_REASONS,
+	}),
+	"propose-custodian": proposeCopy("vault", "propose a custodian", "custodian"),
+	"propose-notice": proposeCopy("vault", "propose a notice", "notice"),
+	"propose-wind-down-delay": proposeCopy(
+		"vault",
+		"propose a wind-down delay",
+		"wind-down delay",
+	),
+	"propose-min-epoch-duration": (value) => ({
+		...proposeCopy(
+			"vault",
+			"propose a minimum epoch duration",
+			"minimum epoch duration",
+		)(value),
+		reasons: MIN_EPOCH_DURATION_REASONS,
+	}),
 	"set-oracle-config": () => ({
 		refuser: "oracle",
 		verb: "set the oracle limits",
@@ -1095,8 +1330,25 @@ const CONFIGURATION_COPY: Record<
 		done: "Oracle limits updated",
 		doneBody: "The new limits are recorded.",
 	}),
+	"propose-oracle-config": () => ({
+		refuser: "oracle",
+		verb: "propose oracle limits",
+		signing: "Signing queues every new oracle limit.",
+		done: "Change proposed",
+		doneBody: `The new oracle limits apply once ${WAITS.oracle} passes.`,
+	}),
 	"set-compliance": setterCopy("share token", "Compliance contract"),
+	"propose-compliance": proposeCopy(
+		"share token",
+		"propose a compliance contract",
+		"compliance contract",
+	),
 	"set-identity-verifier": setterCopy("share token", "Identity verifier"),
+	"propose-identity-verifier": proposeCopy(
+		"share token",
+		"propose an identity verifier",
+		"identity verifier",
+	),
 }
 
 const grantCopy =
@@ -1139,38 +1391,59 @@ const cancelHandoverCopy =
 		doneBody: `${value} can no longer accept.`,
 	})
 
-const acceptAdminCopy = (refuser: AdminCopy["refuser"]) => (): AdminCopy => ({
+const ACCEPT_WIND_DOWN_CODES: Record<TimelockRefuser, number> = {
+	vault: 6046,
+	oracle: 3018,
+	"share token": 7008,
+}
+
+const acceptAdminCopy = (refuser: TimelockRefuser) => (): AdminCopy => ({
 	refuser,
+	reasons: {
+		[ACCEPT_WIND_DOWN_CODES[refuser]]:
+			"The vault is winding down, so the admin role can no longer change hands.",
+	},
 	verb: "accept the admin role",
 	signing: `Signing makes this wallet the ${refuser} admin.`,
 	done: "Admin accepted",
 	doneBody: `This wallet is now the ${refuser} admin.`,
 })
 
-const proposalCopy = (value: string): AdminCopy => ({
-	refuser: "vault",
-	verb: "propose an upgrade",
-	signing: `Signing queues ${value}.`,
-	done: "Upgrade proposed",
-	doneBody: `${value} can apply once the upgrade delay passes.`,
-})
+const proposalCopy =
+	(refuser: TimelockRefuser) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		verb: "propose an upgrade",
+		signing: `Signing queues ${value}.`,
+		done: "Upgrade proposed",
+		doneBody: `${value} can apply once ${WAITS[refuser]} passes.`,
+	})
 
-const applyUpgradeCopy = (value: string): AdminCopy => ({
-	refuser: "vault",
-	reasons: { 1000: "The vault is paused; unpause it first." },
-	verb: "apply the upgrade",
-	signing: `Signing applies ${value}.`,
-	done: "Upgrade applied",
-	doneBody: `${value} is in effect.`,
-})
+const VAULT_APPLY_REASONS = {
+	1000: "The vault is paused; unpause it first.",
+	6046: "The vault is winding down, so no change can apply.",
+}
 
-const cancelUpgradeCopy = (value: string): AdminCopy => ({
-	refuser: "vault",
-	verb: "cancel the upgrade",
-	signing: `Signing withdraws ${value}.`,
-	done: "Upgrade cancelled",
-	doneBody: `${value} is withdrawn.`,
-})
+const applyChangeCopy =
+	(refuser: TimelockRefuser) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		...(refuser === "vault" ? { reasons: VAULT_APPLY_REASONS } : {}),
+		verb: "apply the change",
+		signing: `Signing applies ${value}.`,
+		done: "Change applied",
+		doneBody: `Applied ${value}.`,
+	})
+
+const cancelChangeCopy =
+	(refuser: TimelockRefuser) =>
+	(value: string): AdminCopy => ({
+		refuser,
+		verb: "cancel the change",
+		signing: `Signing withdraws ${value}.`,
+		done: "Change cancelled",
+		doneBody: `Withdrew ${value}.`,
+	})
 
 const proposeWindDownCopy = (value: string): AdminCopy => ({
 	refuser: "vault",
@@ -1207,12 +1480,69 @@ const GOVERNANCE_COPY: Record<
 	"hand-over-token-admin": handOverCopy("share token"),
 	"cancel-token-handover": cancelHandoverCopy("share token"),
 	"accept-token-admin": acceptAdminCopy("share token"),
-	"propose-code-upgrade": proposalCopy,
-	"propose-upgrade-delay": proposalCopy,
-	"apply-upgrade": applyUpgradeCopy,
-	"cancel-upgrade": cancelUpgradeCopy,
+	"propose-grant-role": proposeCopy(
+		"vault",
+		"propose a role grant",
+		"the grant of",
+	),
+	"propose-revoke-role": proposeCopy(
+		"vault",
+		"propose a role revoke",
+		"the revoke of",
+	),
+	"propose-admin": proposeCopy(
+		"vault",
+		"propose the hand-over",
+		"the hand-over to",
+	),
+	"propose-token-grant-role": proposeCopy(
+		"share token",
+		"propose a role grant",
+		"the grant of",
+	),
+	"propose-token-revoke-role": proposeCopy(
+		"share token",
+		"propose a role revoke",
+		"the revoke of",
+	),
+	"propose-token-admin": proposeCopy(
+		"share token",
+		"propose the hand-over",
+		"the hand-over to",
+	),
+	"propose-oracle-grant-role": proposeCopy(
+		"oracle",
+		"propose a role grant",
+		"the grant of",
+	),
+	"propose-oracle-revoke-role": proposeCopy(
+		"oracle",
+		"propose a role revoke",
+		"the revoke of",
+	),
+	"propose-oracle-admin": proposeCopy(
+		"oracle",
+		"propose the hand-over",
+		"the hand-over to",
+	),
+	"propose-code-upgrade": proposalCopy("vault"),
+	"propose-upgrade-delay": proposalCopy("vault"),
+	"propose-oracle-upgrade": proposalCopy("oracle"),
+	"apply-change": applyChangeCopy("vault"),
+	"cancel-change": cancelChangeCopy("vault"),
+	"apply-token-change": applyChangeCopy("share token"),
+	"cancel-token-change": cancelChangeCopy("share token"),
+	"apply-oracle-change": applyChangeCopy("oracle"),
+	"cancel-oracle-change": cancelChangeCopy("oracle"),
 	"propose-wind-down": proposeWindDownCopy,
 	"cancel-wind-down": cancelWindDownCopy,
+}
+
+const LEGAL_TRANSFER_REASONS: Partial<Record<number, string>> = {
+	7012: "A legal transfer never moves shares into or out of the vault: they are other investors' escrow.",
+	7013: "The compliance account and the token admin must be two different accounts.",
+	7015: "Enter a reference of 1 to 128 bytes.",
+	304: "The destination is not allowlisted, so it cannot receive shares.",
 }
 
 const COMPLIANCE_COPY: Record<
@@ -1261,11 +1591,12 @@ const COMPLIANCE_COPY: Record<
 		done: "Shares unfrozen",
 		doneBody: `Unfroze ${value}.`,
 	}),
-	"force-transfer": (value) => ({
+	"legal-transfer": (value) => ({
 		refuser: "share token",
-		verb: "force a transfer",
-		signing: `Signing moves ${value}.`,
-		done: "Transfer forced",
+		reasons: LEGAL_TRANSFER_REASONS,
+		verb: "make a legal transfer",
+		signing: `Signing approves moving ${value}.`,
+		done: "Legal transfer made",
 		doneBody: `Moved ${value}.`,
 	}),
 }
@@ -1325,21 +1656,53 @@ const adminContractErrorReason =
 			case 6048:
 				return "A wind-down is already proposed."
 			case 6055:
-				return "An upgrade is already pending."
+				return "A code change is already pending; one at a time."
 			case 6056:
-				return "No upgrade is pending."
+				return "There is no pending change with that id."
 			case 6057:
-				return "The upgrade delay has not passed yet."
+				return "The change's delay has not passed yet."
 			case 6058:
 				return "The upgrade delay cannot be under 7 days."
 			case 6059:
 				return "The upgrade delay cannot be under the notice."
 			case 6060:
 				return "The upgrade delay cannot exceed 90 days."
+			case 6063:
+				return "There are already 16 pending changes; apply or cancel one first."
+			case 6064:
+				return "Setup is still open, so no change can be proposed yet."
+			case 6065:
+				return "After setup this change goes through the timelock."
+			case 6069:
+				return "The wind-down delay cannot be under 7 days."
+			case 6075:
+				return "The custodian cannot be the vault itself."
 			case 3001:
 				return "One of the oracle limits is out of range."
 			case 3008:
-				return "The ripcord is not raised, so the latest price cannot be cleared."
+				return "The NAV is not paused, so the latest price cannot be cleared."
+			case 3011:
+				return "There is no pending change with that id."
+			case 3012:
+				return "The change's delay has not passed yet."
+			case 3013:
+				return "There are already 16 pending changes; apply or cancel one first."
+			case 3014:
+				return "Setup is still open, so no change can be proposed yet."
+			case 3015:
+				return "After setup this change goes through the timelock."
+			case 3016:
+				return "The oracle's setup has already finished."
+			case 3017:
+				return "The oracle is not bound to a vault yet."
+			case 3018:
+				return "The vault is winding down, so no change can be proposed or applied."
+			case 3019:
+				return "The vault is paused, which holds every oracle change; unpause it first."
+			case 3020:
+				return "The change's delay is shorter than the vault's notice now, so it cannot apply."
+			case 3021:
+				return "A code upgrade is already pending; cancel it first."
 			case 6007:
 				return "The deposit cap cannot be negative."
 			case 6045:
@@ -1348,6 +1711,24 @@ const adminContractErrorReason =
 				return "The wind-down delay cannot exceed 90 days."
 			case 6061:
 				return "The notice cannot exceed the upgrade delay."
+			case 7001:
+				return "There is no pending change with that id."
+			case 7002:
+				return "The change's delay has not passed yet."
+			case 7003:
+				return "There are already 16 pending changes; apply or cancel one first."
+			case 7004:
+				return "Setup is still open, so no change can be proposed yet."
+			case 7005:
+				return "After setup this change goes through the timelock."
+			case 7008:
+				return "The vault is winding down, so no change can be proposed or applied."
+			case 7009:
+				return "The vault is paused, which holds every share-token change; unpause it first."
+			case 7011:
+				return "A code upgrade is already pending; cancel it first."
+			case 7016:
+				return "An admin hand-over is still pending; cancel it first."
 			default:
 				return `The ${refuser} refused this request. Try again, and contact support if it keeps happening.`
 		}
@@ -1375,6 +1756,11 @@ const describeAdminStatus = (
 				hash: status.hash,
 			}
 		case "shared":
+			if (status.standing === "admin-authorization")
+				return {
+					heading: "Needs the token admin's authorization",
+					body: "Share the link with the token admin. Once they authorize it, compliance's signers sign it.",
+				}
 			return {
 				heading: describeStanding(status.standing),
 				body: describeShared(status.expiresAt),
@@ -1410,6 +1796,7 @@ const describeStatus = (
 				props.amount,
 				props.ticker,
 				props.assetTicker,
+				props.windingDown === true,
 			)
 		case "claim":
 			return describeClaimStatus(
@@ -1427,6 +1814,13 @@ const describeStatus = (
 				props.ticker,
 				props.uncovered,
 			)
+		case "claim-wind-down":
+			return describeClaimWindDownStatus(
+				props.status,
+				props.amount,
+				props.ticker,
+				props.shareTicker,
+			)
 		case "close-epoch":
 			return describeCloseEpochStatus(props.status, props.epoch)
 		case "fulfill-epoch":
@@ -1443,8 +1837,8 @@ const describeStatus = (
 			return describeFinalizeRoundStatus(props.status, props.round)
 		case "pause-vault":
 		case "unpause-vault":
-		case "raise-ripcord":
-		case "lower-ripcord":
+		case "pause-nav":
+		case "unpause-nav":
 		case "clear-latest":
 		case "pause-token":
 		case "unpause-token":
@@ -1457,9 +1851,17 @@ const describeStatus = (
 		case "set-custodian":
 		case "set-notice":
 		case "set-wind-down-delay":
+		case "set-min-epoch-duration":
+		case "propose-custodian":
+		case "propose-notice":
+		case "propose-wind-down-delay":
+		case "propose-min-epoch-duration":
 		case "set-oracle-config":
+		case "propose-oracle-config":
 		case "set-compliance":
+		case "propose-compliance":
 		case "set-identity-verifier":
+		case "propose-identity-verifier":
 			return describeAdminStatus(
 				CONFIGURATION_COPY[props.action](props.value),
 				props.status,
@@ -1480,10 +1882,24 @@ const describeStatus = (
 		case "hand-over-token-admin":
 		case "cancel-token-handover":
 		case "accept-token-admin":
+		case "propose-grant-role":
+		case "propose-revoke-role":
+		case "propose-admin":
+		case "propose-token-grant-role":
+		case "propose-token-revoke-role":
+		case "propose-token-admin":
 		case "propose-code-upgrade":
 		case "propose-upgrade-delay":
-		case "apply-upgrade":
-		case "cancel-upgrade":
+		case "apply-change":
+		case "cancel-change":
+		case "apply-token-change":
+		case "cancel-token-change":
+		case "propose-oracle-grant-role":
+		case "propose-oracle-revoke-role":
+		case "propose-oracle-admin":
+		case "propose-oracle-upgrade":
+		case "apply-oracle-change":
+		case "cancel-oracle-change":
 		case "propose-wind-down":
 		case "cancel-wind-down":
 			return describeAdminStatus(
@@ -1497,7 +1913,7 @@ const describeStatus = (
 		case "unfreeze-address":
 		case "freeze-shares":
 		case "unfreeze-shares":
-		case "force-transfer":
+		case "legal-transfer":
 			return describeAdminStatus(
 				COMPLIANCE_COPY[props.action](props.value),
 				props.status,
@@ -1557,7 +1973,8 @@ const computeSteps = (
 			}
 			if (
 				status.failure.kind === "unknown" ||
-				status.failure.kind === "network"
+				status.failure.kind === "network" ||
+				status.failure.kind === "stale"
 			) {
 				return { signature: "done", network: "failed", recorded: "upcoming" }
 			}
@@ -1644,7 +2061,9 @@ const TransactionModal: React.FC<TransactionModalProps> = (props) => {
 		content.hash === undefined ? null : explorerTransaction(content.hash)
 	const offersRetry =
 		status.status === "failed" &&
-		(status.failure.kind === "declined" || status.failure.kind === "unsigned")
+		(status.failure.kind === "declined" ||
+			status.failure.kind === "unsigned" ||
+			status.failure.kind === "stale")
 	const headingId = "transaction-modal-heading"
 
 	const headingClassName = isConfirmed

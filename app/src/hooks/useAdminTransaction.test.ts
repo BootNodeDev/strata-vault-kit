@@ -11,14 +11,19 @@ import { complianceReadsKey } from "./useComplianceState"
 import {
 	useAllowAddress,
 	useDisallowAddress,
-	useForceTransfer,
 	useFreezeAddress,
+	useLegalTransfer,
 	useFreezeShares,
 	useUnfreezeAddress,
 	useUnfreezeShares,
 } from "./useComplianceTransactions"
 import { configurationReadsKey } from "./useConfigurationState"
 import {
+	useProposeCompliance,
+	useProposeCustodian,
+	useProposeIdentityVerifier,
+	useProposeNotice,
+	useProposeWindDownDelay,
 	useSetCompliance,
 	useSetCustodian,
 	useSetDepositCap,
@@ -27,25 +32,27 @@ import {
 	useSetOracleConfig,
 	useSetWindDownDelay,
 } from "./useConfigurationTransactions"
-import { cycleReadsKey } from "./useCycleState"
+import { cycleReadsKey, legalTransfersKey } from "./useCycleState"
 import {
 	useClearLatest,
 	usePauseToken,
 	usePauseVault,
-	useRaiseRipcord,
-	useSetRipcord,
+	usePauseNav,
+	useSetNavPaused,
 	useUnpauseToken,
 	useUnpauseVault,
 } from "./useEmergencyTransactions"
-import { upgradeProposalKey } from "./useGovernanceState"
+import { pendingChangesKey } from "./useGovernanceState"
 import {
 	useAcceptOracleAdmin,
 	useAcceptTokenAdmin,
 	useAcceptVaultAdmin,
-	useApplyUpgrade,
+	useApplyChange,
+	useApplyTokenChange,
 	useCancelOracleHandover,
 	useCancelTokenHandover,
-	useCancelUpgrade,
+	useCancelChange,
+	useCancelTokenChange,
 	useCancelVaultHandover,
 	useCancelWindDown,
 	useGrantOracleRole,
@@ -54,7 +61,13 @@ import {
 	useHandOverOracleAdmin,
 	useHandOverTokenAdmin,
 	useHandOverVaultAdmin,
+	useProposeAdmin,
 	useProposeCodeUpgrade,
+	useProposeGrantRole,
+	useProposeRevokeRole,
+	useProposeTokenAdmin,
+	useProposeTokenGrantRole,
+	useProposeTokenRevokeRole,
 	useProposeUpgradeDelay,
 	useProposeWindDown,
 	useRevokeOracleRole,
@@ -91,10 +104,9 @@ const {
 		revoke_role: vi.fn(),
 		transfer_admin_role: vi.fn(),
 		accept_admin_transfer: vi.fn(),
-		propose_upgrade: vi.fn(),
-		propose_upgrade_delay: vi.fn(),
-		apply_upgrade: vi.fn(),
-		cancel_upgrade: vi.fn(),
+		propose_change: vi.fn(),
+		apply_change: vi.fn(),
+		cancel_change: vi.fn(),
 		propose_wind_down: vi.fn(),
 		cancel_wind_down_proposal: vi.fn(),
 	},
@@ -110,13 +122,16 @@ const {
 		set_address_frozen: vi.fn(),
 		freeze_partial_tokens: vi.fn(),
 		unfreeze_partial_tokens: vi.fn(),
-		forced_transfer: vi.fn(),
+		legal_transfer: vi.fn(),
+		propose_change: vi.fn(),
+		apply_change: vi.fn(),
+		cancel_change: vi.fn(),
 	},
 	verifier: { allow: vi.fn() },
 	verifierWriterMock: vi.fn(),
 	oracle: {
-		raise_ripcord: vi.fn(),
-		set_ripcord: vi.fn(),
+		pause_nav: vi.fn(),
+		set_nav_paused: vi.fn(),
 		clear_latest: vi.fn(),
 		set_config: vi.fn(),
 		grant_role: vi.fn(),
@@ -144,7 +159,7 @@ const ORACLE_CONFIG = {
 	freshness_duration: 86_400n,
 	cooldown_secs: 3_600n,
 	max_up_bps: 1_000,
-	max_down_bps: null,
+	max_down_bps: 500,
 	min_answer: 1n,
 	max_answer: 10n,
 }
@@ -200,9 +215,9 @@ const cases: Case[] = [
 		refusal: 1001,
 	},
 	{
-		name: "useRaiseRipcord",
-		useHook: useRaiseRipcord,
-		method: oracle.raise_ripcord,
+		name: "usePauseNav",
+		useHook: usePauseNav,
+		method: oracle.pause_nav,
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: oracleWriteKeys,
@@ -213,16 +228,15 @@ const cases: Case[] = [
 		useHook: useClearLatest,
 		method: oracle.clear_latest,
 		arg: undefined,
-		args: { caller: investorAddress },
 		keys: oracleWriteKeys,
 		refusal: 3008,
 	},
 	{
-		name: "useSetRipcord",
-		useHook: useSetRipcord,
-		method: oracle.set_ripcord,
+		name: "useSetNavPaused",
+		useHook: useSetNavPaused,
+		method: oracle.set_nav_paused,
 		arg: false,
-		args: { paused: false, caller: investorAddress },
+		args: { paused: false },
 		keys: oracleWriteKeys,
 		refusal: 2000,
 	},
@@ -231,7 +245,7 @@ const cases: Case[] = [
 		useHook: useSetDepositCap,
 		method: vault.set_deposit_cap,
 		arg: null,
-		args: { cap: null, caller: investorAddress },
+		args: { cap: null },
 		keys: [cycleReadsKey],
 		refusal: 6007,
 	},
@@ -240,7 +254,7 @@ const cases: Case[] = [
 		useHook: useSetCustodian,
 		method: vault.set_custodian,
 		arg: CONTRACT,
-		args: { custodian: CONTRACT, caller: investorAddress },
+		args: { custodian: CONTRACT },
 		keys: [vaultAuthoritiesKey],
 		refusal: 2000,
 	},
@@ -249,7 +263,7 @@ const cases: Case[] = [
 		useHook: useSetNotice,
 		method: vault.set_notice,
 		arg: 86_400n,
-		args: { secs: 86_400n, caller: investorAddress },
+		args: { secs: 86_400n },
 		keys: [cycleReadsKey],
 		refusal: 6061,
 	},
@@ -258,9 +272,36 @@ const cases: Case[] = [
 		useHook: useSetWindDownDelay,
 		method: vault.set_wind_down_delay,
 		arg: 86_400n,
-		args: { secs: 86_400n, caller: investorAddress },
+		args: { secs: 86_400n },
 		keys: [cycleReadsKey],
 		refusal: 6053,
+	},
+	{
+		name: "useProposeCustodian",
+		useHook: useProposeCustodian,
+		method: vault.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "Custodian", values: [CONTRACT] } },
+		keys: [pendingChangesKey("vault"), vaultAuthoritiesKey],
+		refusal: 6075,
+	},
+	{
+		name: "useProposeNotice",
+		useHook: useProposeNotice,
+		method: vault.propose_change,
+		arg: 43_200n,
+		args: { change: { tag: "Notice", values: [43_200n] } },
+		keys: [pendingChangesKey("vault"), cycleReadsKey],
+		refusal: 6061,
+	},
+	{
+		name: "useProposeWindDownDelay",
+		useHook: useProposeWindDownDelay,
+		method: vault.propose_change,
+		arg: 691_200n,
+		args: { change: { tag: "WindDownDelay", values: [691_200n] } },
+		keys: [pendingChangesKey("vault"), cycleReadsKey],
+		refusal: 6069,
 	},
 	{
 		name: "useSetOracleConfig",
@@ -288,6 +329,24 @@ const cases: Case[] = [
 		args: { identity_verifier: CONTRACT, operator: investorAddress },
 		keys: [configurationReadsKey, adminAuthorityKey, isAllowedKey],
 		refusal: 2000,
+	},
+	{
+		name: "useProposeCompliance",
+		useHook: useProposeCompliance,
+		method: token.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "Compliance", values: [CONTRACT] } },
+		keys: [pendingChangesKey("token"), configurationReadsKey],
+		refusal: 7004,
+	},
+	{
+		name: "useProposeIdentityVerifier",
+		useHook: useProposeIdentityVerifier,
+		method: token.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "IdentityVerifier", values: [CONTRACT] } },
+		keys: [pendingChangesKey("token"), configurationReadsKey],
+		refusal: 7003,
 	},
 ]
 
@@ -403,45 +462,129 @@ const governanceCases: Case[] = [
 	{
 		name: "useProposeCodeUpgrade",
 		useHook: useProposeCodeUpgrade,
-		method: vault.propose_upgrade,
+		method: vault.propose_change,
 		arg: WASM_HASH,
-		args: { wasm_hash: Buffer.alloc(32, 0xab), caller: investorAddress },
-		keys: [upgradeProposalKey, configurationReadsKey],
+		args: { change: { tag: "Upgrade", values: [Buffer.alloc(32, 0xab)] } },
+		keys: [pendingChangesKey("vault"), configurationReadsKey],
 		refusal: 6055,
 	},
 	{
 		name: "useProposeUpgradeDelay",
 		useHook: useProposeUpgradeDelay,
-		method: vault.propose_upgrade_delay,
+		method: vault.propose_change,
 		arg: 604_800n,
-		args: { secs: 604_800n, caller: investorAddress },
-		keys: [upgradeProposalKey, configurationReadsKey],
+		args: { change: { tag: "UpgradeDelay", values: [604_800n] } },
+		keys: [pendingChangesKey("vault"), configurationReadsKey],
 		refusal: 6058,
 	},
 	{
-		name: "useApplyUpgrade",
-		useHook: useApplyUpgrade,
-		method: vault.apply_upgrade,
-		arg: undefined,
-		args: { caller: investorAddress },
-		keys: [upgradeProposalKey, configurationReadsKey],
+		name: "useProposeGrantRole",
+		useHook: useProposeGrantRole,
+		method: vault.propose_change,
+		arg: ROLE_CHANGE,
+		args: { change: { tag: "GrantRole", values: ["guardian", CONTRACT] } },
+		keys: [pendingChangesKey("vault")],
+		refusal: 6063,
+	},
+	{
+		name: "useProposeRevokeRole",
+		useHook: useProposeRevokeRole,
+		method: vault.propose_change,
+		arg: ROLE_CHANGE,
+		args: { change: { tag: "RevokeRole", values: ["guardian", CONTRACT] } },
+		keys: [pendingChangesKey("vault")],
+		refusal: 6064,
+	},
+	{
+		name: "useProposeAdmin",
+		useHook: useProposeAdmin,
+		method: vault.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "Admin", values: [CONTRACT] } },
+		keys: [pendingChangesKey("vault")],
+		refusal: 6046,
+	},
+	{
+		name: "useApplyChange",
+		useHook: useApplyChange,
+		method: vault.apply_change,
+		arg: 3,
+		args: { id: 3 },
+		keys: [
+			pendingChangesKey("vault"),
+			configurationReadsKey,
+			cycleReadsKey,
+			governanceReadsKey,
+			adminAuthorityKey,
+			vaultAuthoritiesKey,
+		],
 		refusal: 6057,
 	},
 	{
-		name: "useCancelUpgrade",
-		useHook: useCancelUpgrade,
-		method: vault.cancel_upgrade,
-		arg: undefined,
-		args: { caller: investorAddress },
-		keys: [upgradeProposalKey, configurationReadsKey],
+		name: "useCancelChange",
+		useHook: useCancelChange,
+		method: vault.cancel_change,
+		arg: 3,
+		args: { id: 3 },
+		keys: [pendingChangesKey("vault")],
 		refusal: 6056,
+	},
+	{
+		name: "useProposeTokenGrantRole",
+		useHook: useProposeTokenGrantRole,
+		method: token.propose_change,
+		arg: ROLE_CHANGE,
+		args: { change: { tag: "GrantRole", values: ["guardian", CONTRACT] } },
+		keys: [pendingChangesKey("token")],
+		refusal: 7003,
+	},
+	{
+		name: "useProposeTokenRevokeRole",
+		useHook: useProposeTokenRevokeRole,
+		method: token.propose_change,
+		arg: ROLE_CHANGE,
+		args: { change: { tag: "RevokeRole", values: ["guardian", CONTRACT] } },
+		keys: [pendingChangesKey("token")],
+		refusal: 7008,
+	},
+	{
+		name: "useProposeTokenAdmin",
+		useHook: useProposeTokenAdmin,
+		method: token.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "Admin", values: [CONTRACT] } },
+		keys: [pendingChangesKey("token")],
+		refusal: 7004,
+	},
+	{
+		name: "useApplyTokenChange",
+		useHook: useApplyTokenChange,
+		method: token.apply_change,
+		arg: 3,
+		args: { id: 3 },
+		keys: [
+			pendingChangesKey("token"),
+			configurationReadsKey,
+			governanceReadsKey,
+			adminAuthorityKey,
+			isAllowedKey,
+		],
+		refusal: 7009,
+	},
+	{
+		name: "useCancelTokenChange",
+		useHook: useCancelTokenChange,
+		method: token.cancel_change,
+		arg: 3,
+		args: { id: 3 },
+		keys: [pendingChangesKey("token")],
+		refusal: 7001,
 	},
 	{
 		name: "useProposeWindDown",
 		useHook: useProposeWindDown,
 		method: vault.propose_wind_down,
 		arg: undefined,
-		args: { caller: investorAddress },
 		keys: [cycleReadsKey],
 		refusal: 6046,
 	},
@@ -450,7 +593,6 @@ const governanceCases: Case[] = [
 		useHook: useCancelWindDown,
 		method: vault.cancel_wind_down_proposal,
 		arg: undefined,
-		args: { caller: investorAddress },
 		keys: [cycleReadsKey],
 		refusal: 6047,
 	},
@@ -474,7 +616,7 @@ const complianceCases: Case[] = [
 		useHook: useAllowAddress,
 		method: verifier.allow,
 		arg: { verifier: VERIFIER, account: TARGET },
-		args: { account: TARGET, allowed: true, caller: investorAddress },
+		args: { account: TARGET, allowed: true },
 		keys: [complianceReadsKey, isAllowedKey],
 		refusal: 2000,
 	},
@@ -483,7 +625,7 @@ const complianceCases: Case[] = [
 		useHook: useDisallowAddress,
 		method: verifier.allow,
 		arg: { verifier: VERIFIER, account: TARGET },
-		args: { account: TARGET, allowed: false, caller: investorAddress },
+		args: { account: TARGET, allowed: false },
 		keys: [complianceReadsKey, isAllowedKey],
 		refusal: 2001,
 	},
@@ -524,17 +666,18 @@ const complianceCases: Case[] = [
 		refusal: 303,
 	},
 	{
-		name: "useForceTransfer",
-		useHook: useForceTransfer,
-		method: token.forced_transfer,
-		arg: { from: TARGET, to: DESTINATION, amount: 5n },
+		name: "useLegalTransfer",
+		useHook: useLegalTransfer,
+		method: token.legal_transfer,
+		arg: { from: TARGET, to: DESTINATION, amount: 5n, reference: "ORDER-1" },
 		args: {
 			from: TARGET,
 			to: DESTINATION,
 			amount: 5n,
-			operator: investorAddress,
+			reference: "ORDER-1",
+			caller: investorAddress,
 		},
-		keys: [complianceReadsKey, ["share", "balance"]],
+		keys: [complianceReadsKey, ["share", "balance"], legalTransfersKey],
 		refusal: 300,
 	},
 ]
@@ -647,11 +790,13 @@ describe("usePauseVault with a grant", () => {
 	const signable = () => {
 		const signed = {
 			toEnvelope: () => ({ toXDR: () => "SIGNEDXDR" }),
+			hash: () => ({ toString: () => "abcd" }),
 		}
 		const tx = {
 			simulation: undefined,
 			result: undefined,
 			signed: undefined as typeof signed | undefined,
+			needsNonInvokerSigningBy: vi.fn((): string[] => []),
 			sign: vi.fn(async () => {
 				tx.signed = signed
 			}),
@@ -747,5 +892,55 @@ describe("usePauseVault with a grant", () => {
 		expect(tx.sign).not.toHaveBeenCalled()
 		expect(submitSignedMock).not.toHaveBeenCalled()
 		expect(result.current.status).toEqual({ status: "confirmed" })
+	})
+})
+
+describe("useLegalTransfer with a grant", () => {
+	const AUTHORITY = "GAUTHORITYACCOUNT0987654321"
+	const ADMIN = "GTOKENADMINACCOUNT12345678"
+	const order = {
+		from: "GFROMACCOUNT",
+		to: "GTOACCOUNT",
+		amount: 5n,
+		reference: "ORDER-1",
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("shares the simulated transaction unsigned while the token admin must authorize it", async () => {
+		const tx = {
+			simulation: undefined,
+			result: undefined,
+			built: { toEnvelope: () => ({ toXDR: () => "UNSIGNEDXDR" }) },
+			needsNonInvokerSigningBy: vi.fn(() => [ADMIN]),
+			sign: vi.fn(),
+			signAndSend: vi.fn(),
+		}
+		token.legal_transfer.mockResolvedValue(tx)
+		const { result } = renderWithWallet(useLegalTransfer)
+
+		await act(() =>
+			result.current.submit(order, {
+				role: "share-token compliance",
+				authority: AUTHORITY,
+				standing: "signs-alone",
+			}),
+		)
+
+		expect(token.legal_transfer).toHaveBeenCalledWith({
+			...order,
+			caller: AUTHORITY,
+		})
+		expect(tx.sign).not.toHaveBeenCalled()
+		expect(tx.signAndSend).not.toHaveBeenCalled()
+		expect(submitSignedMock).not.toHaveBeenCalled()
+		expect(result.current.status).toEqual({
+			status: "shared",
+			xdr: "UNSIGNEDXDR",
+			standing: "admin-authorization",
+			expiresAt: null,
+		})
 	})
 })

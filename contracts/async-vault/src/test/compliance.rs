@@ -1,32 +1,159 @@
+use soroban_sdk::{contract, contractimpl};
+use stellar_tokens::rwa::{compliance::ComplianceHook, RWAError, RWA};
+
 use super::*;
 
 #[test]
-fn a_non_allowlisted_investor_cannot_claim_shares() {
+fn an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves() {
     let f = setup();
     let stranger = f.unverified_investor(1_000);
 
-    f.vault.request_deposit(&stranger, &400);
-    f.fulfill_epoch(wad(2));
+    refused(
+        f.vault.try_request_deposit(&stranger, &400),
+        VaultError::NotAllowlisted,
+    );
 
-    assert!(f.vault.try_claim_deposit(&stranger, &1).is_err());
-    assert_eq!(f.shares(&stranger), 0);
-    assert!(!f.vault.get_deposit_request(&1, &stranger).unwrap().claimed);
+    assert_eq!(f.balance(&stranger), 1_000);
+    assert_eq!(f.balance(&f.vault.address), 0);
+    assert_eq!(f.vault.cancellable_escrow(), 0);
+    assert_eq!(f.vault.get_epoch(&1).unwrap().total_deposited, 0);
+    assert_eq!(f.vault.get_deposit_request(&1, &stranger), None);
+}
+
+#[test]
+fn a_delisted_investor_cannot_request_a_deposit() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.identity.allow(&investor, &false);
+
+    refused(
+        f.vault.try_request_deposit(&investor, &400),
+        VaultError::NotAllowlisted,
+    );
+    assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn an_allowlisted_investor_still_requests_a_deposit() {
+    let f = setup();
+    let investor = f.investor(1_000);
+
+    assert_eq!(f.vault.request_deposit(&investor, &400), 1);
     assert_eq!(f.balance(&f.vault.address), 400);
 }
 
 #[test]
-fn allowlisting_after_the_fact_lets_the_claim_through() {
+fn relisting_after_pricing_lets_the_claim_through() {
     let f = setup();
-    let investor = f.unverified_investor(1_000);
-
+    let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
-    assert!(f.vault.try_claim_deposit(&investor, &1).is_err());
+    f.identity.allow(&investor, &false);
 
-    f.identity.allow(&investor, &true, &f.compliance);
+    f.identity.allow(&investor, &true);
 
     assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
     assert_eq!(f.shares(&investor), 200);
+}
+
+/// Delisted after pricing, she cannot cancel, and a wind-down still pays her slice.
+#[test]
+fn a_holder_delisted_after_pricing_is_paid_through_a_wind_down() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+    assert_eq!(f.vault.cancellable_escrow(), 0);
+    assert_eq!(f.vault.pending_mint_shares(), 200);
+    f.identity.allow(&investor, &false);
+
+    refused(
+        f.vault.try_cancel_deposit(&investor, &epoch),
+        VaultError::AlreadyPriced,
+    );
+
+    f.vault.propose_wind_down();
+    f.advance(MIN_WIND_DOWN_DELAY);
+    f.vault.activate_wind_down();
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+    assert_eq!(f.vault.finalize_wind_down_round(), 400);
+    assert_eq!(f.vault.claim_wind_down(&investor), 400);
+    assert_eq!(f.vault.wind_down_owed(), 0);
+}
+
+#[contract]
+pub(super) struct RefusesEveryMint;
+
+#[contractimpl]
+impl RefusesEveryMint {
+    pub fn can_create(_e: Env, _to: Address, _amount: i128, _token: Address) -> bool {
+        false
+    }
+}
+
+/// A compliance module can refuse the mint of a priced deposit even for an
+/// allowlisted holder. The kit cannot stop it; it is a trust assumption.
+#[test]
+fn a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+
+    let module = f.e.register(RefusesEveryMint, ());
+    f.add_compliance_module(ComplianceHook::CanCreate, &module);
+
+    assert_eq!(
+        f.vault.try_claim_deposit(&investor, &epoch).err(),
+        Some(Ok(soroban_sdk::Error::from_contract_error(306)))
+    );
+    refused(
+        f.vault.try_cancel_deposit(&investor, &epoch),
+        VaultError::AlreadyPriced,
+    );
+}
+
+#[test]
+fn an_unbound_compliance_swap_is_refused_and_every_move_goes_on() {
+    let f = setup();
+    let holder = f.holder(10);
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &100);
+    f.vault.request_redeem(&holder, &4);
+    f.fulfill_epoch(wad(2));
+
+    let unbound = ComplianceClient::new(&f.e, &f.e.register(Compliance, (f.admin.clone(),)));
+    unbound.bind_vault(&f.vault.address);
+    unbound.finish_setup();
+    assert_eq!(
+        f.share
+            .try_propose_change(&share_token::TokenChange::Compliance(unbound.address))
+            .err(),
+        Some(Ok(share_token::ShareTokenError::ComplianceNotBound.into()))
+    );
+
+    f.share.transfer(&holder, &investor, &1);
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 50);
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 8);
+    assert!(f.vault.health().compliance_bound);
+}
+
+#[test]
+fn a_verifier_that_cannot_answer_counts_as_a_failed_check() {
+    let f = setup();
+    let investor = f.investor(1_000);
+
+    // A swap refuses it; this stands in for a verifier that stops answering later.
+    let silent = Address::generate(&f.e);
+    f.e.as_contract(&f.share.address, || {
+        RWA::set_identity_verifier(&f.e, &silent)
+    });
+    assert_eq!(f.share.identity_verifier(), silent);
+
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::NotAllowlisted,
+    );
 }
 
 #[test]
@@ -35,7 +162,7 @@ fn a_delisted_holder_can_still_queue_an_exit() {
     let user = f.holder(500);
     let epoch = f.vault.current_epoch();
 
-    f.identity.allow(&user, &false, &f.compliance);
+    f.identity.allow(&user, &false);
 
     assert_eq!(f.vault.request_redeem(&user, &200), epoch);
     assert_eq!(f.shares(&f.vault.address), 200);
@@ -48,7 +175,7 @@ fn a_delisted_holder_can_still_claim_their_exit() {
     let epoch = f.vault.request_redeem(&user, &200);
     f.fulfill_epoch(wad(2));
 
-    f.identity.allow(&user, &false, &f.compliance);
+    f.identity.allow(&user, &false);
 
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
     assert_eq!(f.balance(&user), 400);
@@ -61,7 +188,7 @@ fn a_delisted_investor_can_cancel_deposit_and_receive_asset() {
     let epoch = f.vault.request_deposit(&investor, &400);
 
     // Investor gets delisted
-    f.identity.allow(&investor, &false, &f.compliance);
+    f.identity.allow(&investor, &false);
 
     // Delisted investor can still cancel deposit and receive settlement asset
     assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
@@ -75,10 +202,12 @@ fn a_delisted_holder_cannot_cancel_redemption_back_to_shares() {
     let epoch = f.vault.request_redeem(&user, &200);
 
     // Delisted before pricing
-    f.identity.allow(&user, &false, &f.compliance);
+    f.identity.allow(&user, &false);
 
-    // Cannot return shares to a delisted account (refused by share transfer compliance)
-    assert!(f.vault.try_cancel_redeem(&user, &epoch).is_err());
+    refused(
+        f.vault.try_cancel_redeem(&user, &epoch),
+        VaultError::NotAllowlisted,
+    );
     assert_eq!(f.shares(&user), 300);
 
     // Exit proceeds through cash claim once fulfilled
@@ -88,23 +217,21 @@ fn a_delisted_holder_cannot_cancel_redemption_back_to_shares() {
 }
 
 #[test]
-fn a_frozen_holder_cannot_cancel_redemption_back_to_shares() {
+fn a_frozen_holder_is_paid_only_after_the_freeze_lifts() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-
-    // Freeze address
     f.share.set_address_frozen(&user, &true, &f.compliance);
-    assert!(f.share.is_frozen(&user));
 
-    // Cannot return shares to a frozen account
-    assert!(f.vault.try_cancel_redeem(&user, &epoch).is_err());
+    refused(f.vault.try_cancel_redeem(&user, &epoch), VaultError::Frozen);
+    f.fulfill_epoch(wad(2));
+    refused(f.vault.try_claim_redeem(&user, &epoch), VaultError::Frozen);
+    assert_eq!(f.vault.committed(), 400);
     assert_eq!(f.shares(&user), 300);
 
-    // Exit proceeds through cash claim once fulfilled
-    f.fulfill_epoch(wad(2));
+    f.share.set_address_frozen(&user, &false, &f.compliance);
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
-    assert_eq!(f.balance(&user), 400);
+    assert_eq!(f.vault.committed(), 0);
 }
 
 #[test]
@@ -118,48 +245,174 @@ fn a_frozen_or_delisted_holder_cannot_transfer_shares() {
     assert_eq!(f.shares(&recipient), 100);
 
     // Delisted sender cannot transfer
-    f.identity.allow(&user, &false, &f.compliance);
+    f.identity.allow(&user, &false);
     assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
 
     // Restore allowlist, then freeze sender
-    f.identity.allow(&user, &true, &f.compliance);
+    f.identity.allow(&user, &true);
     f.share.set_address_frozen(&user, &true, &f.compliance);
     assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
 }
 
 #[test]
-fn a_frozen_investor_on_the_allowlist_is_still_minted() {
+fn rules_with_no_modules_accept_any_pair_yet_the_token_still_checks_both_sides() {
+    let f = setup();
+    let rules = ComplianceClient::new(&f.e, &f.share.compliance());
+    let holder = f.holder(500);
+    let listed = f.investor(0);
+    let unlisted = f.unverified_investor(0);
+    let frozen = f.investor(0);
+    f.share.set_address_frozen(&frozen, &true, &f.compliance);
+    let delisted_sender = f.holder(500);
+    f.identity.allow(&delisted_sender, &false);
+    let frozen_sender = f.holder(500);
+    f.share
+        .set_address_frozen(&frozen_sender, &true, &f.compliance);
+    let spender = Address::generate(&f.e);
+    let live_until = f.e.ledger().sequence() + 1_000;
+
+    for (from, to, error) in [
+        (&holder, &unlisted, RWAError::IdentityVerificationFailed),
+        (&holder, &frozen, RWAError::AddressFrozen),
+        (
+            &delisted_sender,
+            &listed,
+            RWAError::IdentityVerificationFailed,
+        ),
+        (&frozen_sender, &listed, RWAError::AddressFrozen),
+    ] {
+        assert!(rules.can_transfer(from, to, &1, &f.share.address));
+        assert_eq!(f.share.try_transfer(from, to, &1), Err(Ok(error.into())));
+        f.share.approve(from, &spender, &1, &live_until);
+        assert_eq!(
+            f.share.try_transfer_from(&spender, from, to, &1),
+            Err(Ok(error.into()))
+        );
+    }
+
+    f.share.transfer(&holder, &listed, &1);
+    assert_eq!(f.shares(&listed), 1);
+}
+
+#[test]
+fn a_frozen_investor_cannot_request_a_deposit() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
+
+    refused(
+        f.vault.try_request_deposit(&investor, &400),
+        VaultError::Frozen,
+    );
+    assert_eq!(f.balance(&investor), 1_000);
+}
+
+#[test]
+fn a_frozen_investor_is_not_minted_until_unfrozen() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
-
     f.share.set_address_frozen(&investor, &true, &f.compliance);
 
+    refused(f.vault.try_claim_deposit(&investor, &1), VaultError::Frozen);
+    assert_eq!(f.shares(&investor), 0);
+    assert!(!f.vault.get_deposit_request(&1, &investor).unwrap().claimed);
+
+    f.share.set_address_frozen(&investor, &false, &f.compliance);
     assert_eq!(f.vault.claim_deposit(&investor, &1), 200);
     assert_eq!(f.shares(&investor), 200);
 }
 
 #[test]
-fn a_frozen_holder_can_still_queue_an_exit() {
+fn a_frozen_investors_zero_share_refund_is_held() {
     let f = setup();
-    let user = f.holder(500);
-    let epoch = f.vault.current_epoch();
+    let investor = f.investor(10);
+    let epoch = f.vault.request_deposit(&investor, &1);
+    f.fulfill_epoch(wad(2));
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
 
-    f.share.set_address_frozen(&user, &true, &f.compliance);
+    refused(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        VaultError::Frozen,
+    );
+    assert_eq!(f.balance(&investor), 9);
+    assert!(f.vault.get_deposit_request(&epoch, &investor).is_some());
 
-    assert_eq!(f.vault.request_redeem(&user, &200), epoch);
-    assert_eq!(f.shares(&f.vault.address), 200);
+    f.share.set_address_frozen(&investor, &false, &f.compliance);
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+    assert_eq!(f.balance(&investor), 10);
 }
 
 #[test]
-fn queueing_an_exit_releases_a_partial_freeze() {
+fn a_frozen_holder_cannot_queue_an_exit() {
+    let f = setup();
+    let user = f.holder(500);
+    f.share.set_address_frozen(&user, &true, &f.compliance);
+
+    refused(f.vault.try_request_redeem(&user, &200), VaultError::Frozen);
+    assert_eq!(f.shares(&user), 500);
+    assert_eq!(f.shares(&f.vault.address), 0);
+}
+
+#[test]
+fn a_partial_freeze_limits_an_exit_to_the_free_shares() {
     let f = setup();
     let user = f.holder(500);
     f.share.freeze_partial_tokens(&user, &400, &f.compliance);
 
-    f.vault.request_redeem(&user, &300);
+    refused(f.vault.try_request_redeem(&user, &101), VaultError::Frozen);
+    f.vault.request_redeem(&user, &100);
 
-    assert_eq!(f.shares(&user), 200);
-    assert_eq!(f.share.get_frozen_tokens(&user), 200);
+    assert_eq!(f.shares(&user), 400);
+    assert_eq!(f.share.get_frozen_tokens(&user), 400);
+}
+
+#[test]
+fn a_frozen_investors_escrow_stays_until_the_freeze_lifts() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
+
+    refused(
+        f.vault.try_cancel_deposit(&investor, &epoch),
+        VaultError::Frozen,
+    );
+    assert_eq!(f.vault.cancellable_escrow(), 400);
+
+    f.share.set_address_frozen(&investor, &false, &f.compliance);
+    assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+}
+
+#[test]
+fn a_frozen_holder_does_not_get_a_worthless_exit_back() {
+    let f = setup();
+    let user = f.holder(1);
+    let epoch = f.vault.request_redeem(&user, &1);
+    f.fulfill_epoch(WAD_SCALE / 2);
+    f.share.set_address_frozen(&user, &true, &f.compliance);
+
+    refused(f.vault.try_claim_redeem(&user, &epoch), VaultError::Frozen);
+    assert_eq!(f.vault.pending_burn_shares(), 1);
+    assert!(f.vault.get_redeem_request(&epoch, &user).is_some());
+}
+
+#[test]
+fn a_frozen_holder_is_not_moved_into_the_exit_queue() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+    f.identity.allow(&investor, &false);
+    f.share.set_address_frozen(&investor, &true, &f.compliance);
+
+    refused(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        VaultError::Frozen,
+    );
+    assert!(f
+        .vault
+        .get_redeem_request(&f.vault.current_epoch(), &investor)
+        .is_none());
 }

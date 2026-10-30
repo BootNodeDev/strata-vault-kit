@@ -5,6 +5,15 @@ use crate::keys::DataKey;
 
 pub(crate) const FIRST_EPOCH: u64 = 1;
 
+/// Takes `amount` off a running total that can never be negative. A result
+/// below zero means the books disagree, so it fails loudly.
+pub(crate) fn reduce(e: &Env, total: i128, amount: i128) -> i128 {
+    match total.checked_sub(amount) {
+        Some(left) if left >= 0 => left,
+        _ => panic_with_error!(e, VaultError::AccountingMismatch),
+    }
+}
+
 #[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EpochStatus {
@@ -43,141 +52,141 @@ pub struct RedeemRequest {
 }
 
 pub(crate) fn set_addr(e: &Env, key: &DataKey, addr: &Address) {
-    storage::set_instance(e, key, addr);
+    strata_storage::set_instance(e, key, addr);
 }
 
 pub(crate) fn get_addr(e: &Env, key: &DataKey) -> Address {
-    storage::get_instance(e, key)
+    strata_storage::get_instance(e, key)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::NotInitialized))
 }
 
 pub(crate) fn get_addr_opt(e: &Env, key: &DataKey) -> Option<Address> {
-    storage::get_instance(e, key)
+    strata_storage::get_instance(e, key)
 }
 
 pub(crate) fn set_net_deployed(e: &Env, assets: i128) {
-    storage::set_instance(e, &DataKey::NetDeployed, &assets);
+    strata_storage::set_instance(e, &DataKey::NetDeployed, &assets);
 }
 
 pub(crate) fn net_deployed(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::NetDeployed).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::NetDeployed).unwrap_or(0)
 }
 
 pub(crate) fn set_current_epoch(e: &Env, id: u64) {
-    storage::set_instance(e, &DataKey::CurrentEpoch, &id);
+    strata_storage::set_instance(e, &DataKey::CurrentEpoch, &id);
 }
 
 pub(crate) fn current_epoch(e: &Env) -> u64 {
-    storage::get_instance(e, &DataKey::CurrentEpoch)
+    strata_storage::get_instance(e, &DataKey::CurrentEpoch)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::NotInitialized))
 }
 
 pub(crate) fn set_notice(e: &Env, secs: u64) {
-    storage::set_instance(e, &DataKey::Notice, &secs);
+    strata_storage::set_instance(e, &DataKey::Notice, &secs);
 }
 
 /// Seconds an epoch waits after closing before it can be priced. Absent means
 /// none, so a vault deployed without one behaves as it always did.
 pub(crate) fn notice(e: &Env) -> u64 {
-    storage::get_instance(e, &DataKey::Notice).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::Notice).unwrap_or(0)
+}
+
+pub(crate) fn set_epoch_opened_at(e: &Env, at: u64) {
+    strata_storage::set_instance(e, &DataKey::EpochOpenedAt, &at);
+}
+
+/// Ledger time the open epoch started. Absent before setup finishes, and on a
+/// vault upgraded from a release that did not record it.
+pub(crate) fn epoch_opened_at(e: &Env) -> Option<u64> {
+    strata_storage::get_instance(e, &DataKey::EpochOpenedAt)
+}
+
+pub(crate) fn set_min_epoch_duration(e: &Env, secs: u64) {
+    strata_storage::set_instance(e, &DataKey::MinEpochDuration, &secs);
+}
+
+pub(crate) fn min_epoch_duration(e: &Env) -> Option<u64> {
+    strata_storage::get_instance(e, &DataKey::MinEpochDuration)
 }
 
 pub(crate) fn set_epoch(e: &Env, id: u64, epoch: &EpochInfo) {
-    storage::set_persistent(e, &DataKey::Epoch(id), epoch);
+    strata_storage::set_persistent(e, &DataKey::Epoch(id), epoch);
 }
 
 pub(crate) fn get_epoch(e: &Env, id: u64) -> Option<EpochInfo> {
-    storage::get_persistent(e, &DataKey::Epoch(id))
+    strata_storage::get_persistent(e, &DataKey::Epoch(id))
 }
 
-pub(crate) fn set_deposit_request(
-    e: &Env,
-    epoch: u64,
-    controller: &Address,
-    request: &DepositRequest,
-) {
-    storage::set_persistent(e, &DataKey::UserDeposit(epoch, controller.clone()), request);
+pub(crate) fn set_deposit_request(e: &Env, epoch: u64, holder: &Address, request: &DepositRequest) {
+    strata_storage::set_persistent(e, &DataKey::UserDeposit(epoch, holder.clone()), request);
 }
 
-pub(crate) fn get_deposit_request(
-    e: &Env,
-    epoch: u64,
-    controller: &Address,
-) -> Option<DepositRequest> {
-    storage::get_persistent(e, &DataKey::UserDeposit(epoch, controller.clone()))
+pub(crate) fn get_deposit_request(e: &Env, epoch: u64, holder: &Address) -> Option<DepositRequest> {
+    strata_storage::get_persistent(e, &DataKey::UserDeposit(epoch, holder.clone()))
 }
 
-pub(crate) fn set_redeem_request(
-    e: &Env,
-    epoch: u64,
-    controller: &Address,
-    request: &RedeemRequest,
-) {
-    storage::set_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()), request);
+pub(crate) fn set_redeem_request(e: &Env, epoch: u64, holder: &Address, request: &RedeemRequest) {
+    strata_storage::set_persistent(e, &DataKey::UserRedeem(epoch, holder.clone()), request);
 }
 
-pub(crate) fn get_redeem_request(
-    e: &Env,
-    epoch: u64,
-    controller: &Address,
-) -> Option<RedeemRequest> {
-    storage::get_persistent(e, &DataKey::UserRedeem(epoch, controller.clone()))
+pub(crate) fn get_redeem_request(e: &Env, epoch: u64, holder: &Address) -> Option<RedeemRequest> {
+    strata_storage::get_persistent(e, &DataKey::UserRedeem(epoch, holder.clone()))
 }
 
 /// Cash owed to holders whose exit is priced but not yet claimed.
 pub(crate) fn set_committed(e: &Env, assets: i128) {
-    storage::set_instance(e, &DataKey::Committed, &assets);
+    strata_storage::set_instance(e, &DataKey::Committed, &assets);
 }
 
 pub(crate) fn committed(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::Committed).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::Committed).unwrap_or(0)
 }
 
 /// Deposit escrow across every unpriced epoch, still cancellable by the
 /// investor. Pricing an epoch moves its share of this into the reserve.
 pub(crate) fn set_cancellable_escrow(e: &Env, assets: i128) {
-    storage::set_instance(e, &DataKey::CancellableEscrow, &assets);
+    strata_storage::set_instance(e, &DataKey::CancellableEscrow, &assets);
 }
 
 pub(crate) fn cancellable_escrow(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::CancellableEscrow).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::CancellableEscrow).unwrap_or(0)
 }
 
-pub(crate) fn remove_deposit_request(e: &Env, epoch: u64, controller: &Address) {
+pub(crate) fn remove_deposit_request(e: &Env, epoch: u64, holder: &Address) {
     e.storage()
         .persistent()
-        .remove(&DataKey::UserDeposit(epoch, controller.clone()));
+        .remove(&DataKey::UserDeposit(epoch, holder.clone()));
 }
 
-pub(crate) fn remove_redeem_request(e: &Env, epoch: u64, controller: &Address) {
+pub(crate) fn remove_redeem_request(e: &Env, epoch: u64, holder: &Address) {
     e.storage()
         .persistent()
-        .remove(&DataKey::UserRedeem(epoch, controller.clone()));
+        .remove(&DataKey::UserRedeem(epoch, holder.clone()));
 }
 
 pub(crate) fn set_pending_mint_shares(e: &Env, shares: i128) {
-    storage::set_instance(e, &DataKey::PendingMintShares, &shares);
+    strata_storage::set_instance(e, &DataKey::PendingMintShares, &shares);
 }
 
 pub(crate) fn pending_mint_shares(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::PendingMintShares).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::PendingMintShares).unwrap_or(0)
 }
 
 pub(crate) fn set_pending_burn_shares(e: &Env, shares: i128) {
-    storage::set_instance(e, &DataKey::PendingBurnShares, &shares);
+    strata_storage::set_instance(e, &DataKey::PendingBurnShares, &shares);
 }
 
 pub(crate) fn pending_burn_shares(e: &Env) -> i128 {
-    storage::get_instance(e, &DataKey::PendingBurnShares).unwrap_or(0)
+    strata_storage::get_instance(e, &DataKey::PendingBurnShares).unwrap_or(0)
 }
 
 pub(crate) fn deposit_cap(e: &Env) -> Option<i128> {
-    storage::get_instance(e, &DataKey::DepositCap)
+    strata_storage::get_instance(e, &DataKey::DepositCap)
 }
 
 pub(crate) fn set_deposit_cap(e: &Env, cap: Option<i128>) {
     match cap {
-        Some(val) => storage::set_instance(e, &DataKey::DepositCap, &val),
+        Some(val) => strata_storage::set_instance(e, &DataKey::DepositCap, &val),
         None => e.storage().instance().remove(&DataKey::DepositCap),
     }
 }

@@ -45,7 +45,10 @@ fn a_second_request_from_the_same_investor_is_rejected() {
     let investor = f.investor(1_000);
 
     f.vault.request_deposit(&investor, &400);
-    assert!(f.vault.try_request_deposit(&investor, &100).is_err());
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::RequestOutstanding,
+    );
 
     assert_eq!(f.vault.get_epoch(&1).unwrap().total_deposited, 400);
     assert_eq!(f.balance(&investor), 600);
@@ -56,8 +59,14 @@ fn request_deposit_rejects_a_non_positive_amount() {
     let f = setup();
     let investor = f.investor(1_000);
 
-    assert!(f.vault.try_request_deposit(&investor, &0).is_err());
-    assert!(f.vault.try_request_deposit(&investor, &-1).is_err());
+    refused(
+        f.vault.try_request_deposit(&investor, &0),
+        VaultError::InvalidAmount,
+    );
+    refused(
+        f.vault.try_request_deposit(&investor, &-1),
+        VaultError::InvalidAmount,
+    );
     assert_eq!(f.balance(&investor), 1_000);
 }
 
@@ -68,7 +77,10 @@ fn request_deposit_rejects_a_total_that_would_overflow() {
     let other = f.investor(1_000);
 
     f.vault.request_deposit(&whale, &(i128::MAX - 10));
-    assert!(f.vault.try_request_deposit(&other, &11).is_err());
+    refused(
+        f.vault.try_request_deposit(&other, &11),
+        VaultError::AmountTooLarge,
+    );
 
     assert_eq!(
         f.vault.get_epoch(&1).unwrap().total_deposited,
@@ -82,7 +94,7 @@ fn request_deposit_needs_the_investor_authorisation() {
     let investor = f.investor(1_000);
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_request_deposit(&investor, &100).is_err());
+    missing_auth(f.vault.try_request_deposit(&investor, &100));
     assert_eq!(f.balance(&investor), 1_000);
 }
 
@@ -158,7 +170,10 @@ fn claiming_an_unfulfilled_epoch_is_rejected() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &400);
-    assert!(f.vault.try_claim_deposit(&user, &1).is_err());
+    refused(
+        f.vault.try_claim_deposit(&user, &1),
+        VaultError::EpochNotFulfilled,
+    );
     assert_eq!(f.shares(&user), 0);
 }
 
@@ -168,7 +183,28 @@ fn claiming_without_a_request_is_rejected() {
     let stranger = Address::generate(&f.e);
 
     f.fulfill_epoch(wad(2));
-    assert!(f.vault.try_claim_deposit(&stranger, &1).is_err());
+    refused(
+        f.vault.try_claim_deposit(&stranger, &1),
+        VaultError::RequestNotFound,
+    );
+}
+
+#[test]
+fn claiming_without_a_request_finds_no_request_before_pricing() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    let epoch = f.vault.current_epoch();
+
+    refused(
+        f.vault.try_claim_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.close_epoch();
+    refused(
+        f.vault.try_claim_deposit(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
 }
 
 #[test]
@@ -186,6 +222,28 @@ fn a_deposit_below_one_share_is_refunded_at_claim() {
 }
 
 #[test]
+fn a_refund_after_pricing_leaves_the_priced_total_unchanged() {
+    let f = setup();
+    let user = f.investor(1_000);
+    f.vault.request_deposit(&user, &1);
+    let epoch = f.fulfill_epoch(wad(2));
+
+    assert_eq!(f.vault.claim_deposit(&user, &epoch), 0);
+
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().total_deposited, 1);
+    assert!(f.vault.get_epoch_settlement(&epoch).unwrap().reconciled);
+}
+
+#[test]
+fn a_cancellation_takes_the_deposit_out_of_its_epoch() {
+    let f = setup();
+    let user = f.investor(1_000);
+    f.vault.request_deposit(&user, &400);
+    f.vault.cancel_deposit(&user, &1);
+    assert_eq!(f.vault.get_epoch(&1).unwrap().total_deposited, 0);
+}
+
+#[test]
 fn claiming_needs_the_investor_authorisation() {
     let f = setup();
     let user = f.investor(1_000);
@@ -194,7 +252,7 @@ fn claiming_needs_the_investor_authorisation() {
     f.fulfill_epoch(wad(2));
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_claim_deposit(&user, &1).is_err());
+    missing_auth(f.vault.try_claim_deposit(&user, &1));
 }
 
 #[test]
@@ -229,4 +287,62 @@ fn deposits_after_fulfilling_land_in_the_new_epoch() {
         300
     );
     assert_eq!(f.balance(&f.vault.address), 700);
+}
+
+#[test]
+fn escrow_that_would_overflow_is_refused_by_name() {
+    let f = setup();
+    let investor = f.investor(1);
+    // Held in full, so only the escrow sum can refuse.
+    StellarAssetClient::new(&f.e, &f.asset).mint(&f.vault.address, &i128::MAX);
+    f.e.as_contract(&f.vault.address, || {
+        crate::state::set_cancellable_escrow(&f.e, i128::MAX)
+    });
+
+    refused(
+        f.vault.try_request_deposit(&investor, &1),
+        VaultError::AmountTooLarge,
+    );
+}
+
+#[test]
+fn a_deposit_is_refused_while_the_feed_is_stale() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.advance(f.oracle.config().freshness_duration);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    assert_eq!(f.balance(&investor), 1_000);
+    assert_eq!(f.vault.cancellable_escrow(), 0);
+
+    f.attest(wad(1));
+    f.vault.request_deposit(&investor, &100);
+}
+
+#[test]
+fn a_deposit_is_refused_while_the_nav_is_paused() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.oracle.pause_nav(&f.guardian);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    f.oracle.set_nav_paused(&false);
+    f.vault.request_deposit(&investor, &100);
+}
+
+#[test]
+fn a_deposit_is_refused_before_the_first_report() {
+    let f = setup_unfinished();
+    f.vault.finish_setup();
+    let investor = f.investor(1_000);
+    refused(
+        f.vault.try_request_deposit(&investor, &100),
+        VaultError::FeedNotValid,
+    );
+    f.attest(wad(1));
+    f.vault.request_deposit(&investor, &100);
 }

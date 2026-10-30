@@ -12,14 +12,23 @@ import {
 	type EpochInfo,
 	type EpochStatus,
 	type RedeemRequest,
+	type VaultChange,
+	type VaultPendingChange,
+	type WindDownInfo,
 } from "./clients/async_vault/src/index"
 import { Client as IdentityVerifierApi } from "./clients/identity_verifier/src/index"
 import {
 	Client as NavOracleApi,
 	type NavReport,
+	type OracleChange,
+	type OraclePendingChange,
 	type OracleState,
 } from "./clients/nav_oracle/src/index"
-import { Client as ShareTokenApi } from "./clients/share_token/src/index"
+import {
+	Client as ShareTokenApi,
+	type TokenChange,
+	type TokenPendingChange,
+} from "./clients/share_token/src/index"
 
 export type {
 	AssetApi,
@@ -30,9 +39,16 @@ export type {
 	IdentityVerifierApi,
 	NavOracleApi,
 	NavReport,
+	OracleChange,
+	OraclePendingChange,
 	OracleState,
 	RedeemRequest,
 	ShareTokenApi,
+	TokenChange,
+	TokenPendingChange,
+	VaultChange,
+	VaultPendingChange,
+	WindDownInfo,
 }
 
 export interface Signer {

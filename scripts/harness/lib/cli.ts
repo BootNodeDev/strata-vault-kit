@@ -12,6 +12,7 @@ import {
 	type rpc,
 } from "@stellar/stellar-sdk"
 
+import { REPO_ROOT } from "./deployment.js"
 import { type Network } from "./network.js"
 
 const run = promisify(execFile)
@@ -42,14 +43,17 @@ async function exec(
 	}
 }
 
-async function stellar(
+export async function stellar(
 	args: readonly string[],
 	options: Record<string, unknown> = {},
 ): Promise<string> {
 	return exec("stellar", args, options)
 }
 
-function rpcArgs(net: Network): string[] {
+/** The two settings every network command needs. */
+export type Rpc = Pick<Network, "rpcUrl" | "passphrase">
+
+export function rpcArgs(net: Rpc): string[] {
 	return ["--rpc-url", net.rpcUrl, "--network-passphrase", net.passphrase]
 }
 
@@ -130,9 +134,39 @@ export async function ensureAssetContract(
 	return deployAssetContract(net, asset, source)
 }
 
+export type ClientPackageJson = Record<string, unknown> & {
+	dependencies?: Record<string, string>
+}
+
+/** Pins a generated client's stellar-sdk dependency, leaving other packages untouched. */
+export function pinClientSdk<T extends ClientPackageJson>(
+	pkg: T,
+	version: string,
+): T {
+	if (pkg.dependencies?.["@stellar/stellar-sdk"] === undefined) return pkg
+	return {
+		...pkg,
+		dependencies: { ...pkg.dependencies, "@stellar/stellar-sdk": version },
+	}
+}
+
+export function rootSdkVersion(): string {
+	const rootPkg = JSON.parse(
+		readFileSync(join(REPO_ROOT, "package.json"), "utf8"),
+	) as { overrides?: Record<string, string> }
+	const version = rootPkg.overrides?.["@stellar/stellar-sdk"]
+	if (version === undefined) {
+		throw new Error(
+			'root package.json is missing overrides["@stellar/stellar-sdk"]',
+		)
+	}
+	return version
+}
+
 export async function generateClient(
 	wasm: string,
 	outDir: string,
+	sdkVersion: string,
 ): Promise<void> {
 	await stellar([
 		"contract",
@@ -146,12 +180,10 @@ export async function generateClient(
 	])
 	const pkgPath = join(outDir, "package.json")
 	if (existsSync(pkgPath)) {
-		const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
-			dependencies?: Record<string, string>
-		}
-		if (pkg.dependencies?.["@stellar/stellar-sdk"]) {
-			pkg.dependencies["@stellar/stellar-sdk"] = "16.1.0"
-			writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n")
+		const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as ClientPackageJson
+		const pinned = pinClientSdk(pkg, sdkVersion)
+		if (pinned !== pkg) {
+			writeFileSync(pkgPath, JSON.stringify(pinned, null, 2) + "\n")
 		}
 	}
 	// TypeScript 6 rejects the CLI-generated tsconfig without an explicit rootDir.

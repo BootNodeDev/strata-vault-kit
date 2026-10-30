@@ -1,7 +1,9 @@
 import { type Keypair } from "@stellar/stellar-sdk"
 
+import { accountRow } from "./lib/account-table.js"
 import { pay, trustline } from "./lib/accounts.js"
 import { price, units } from "./lib/amounts.js"
+import { trustlineBalance } from "./lib/balances.js"
 import {
 	connect,
 	identityVerifier,
@@ -12,7 +14,8 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
-import { attest } from "./lib/oracle.js"
+import { waitForNotice } from "./lib/notice.js"
+import { attest, freshFeed } from "./lib/oracle.js"
 
 function formatAmount(amount: bigint, decimals: number): string {
 	const factor = 10n ** BigInt(decimals)
@@ -29,18 +32,7 @@ function formatWad(wad: bigint): string {
 }
 
 async function hasTrustline(c: Connected, address: string): Promise<boolean> {
-	try {
-		await c.server.getAssetBalance(address, c.asset, c.net.passphrase)
-		return true
-	} catch (error) {
-		if (
-			error instanceof Error &&
-			/Trustline for .* not found for/.test(error.message)
-		) {
-			return false
-		}
-		throw error
-	}
+	return (await trustlineBalance(c.server, address, c.asset)) !== undefined
 }
 
 async function ensureTrustline(
@@ -105,7 +97,6 @@ async function ensureAllowlist(
 			verifier.allow({
 				account: holder.publicKey(),
 				allowed: true,
-				caller: c.keys.compliance.publicKey(),
 			}),
 		)
 		console.log(`  ✓ ${name} allowlisted`)
@@ -121,7 +112,6 @@ async function main(): Promise<void> {
 
 	const c: Connected = connect()
 	const {
-		governance,
 		manager,
 		treasury,
 		custodian,
@@ -162,20 +152,13 @@ async function main(): Promise<void> {
 		await ensureAllowlist(c, key, name)
 	}
 
-	// Ensure vault custodian is configured
 	const currentCustodian = (await reader.custodian()).result
 	if (!currentCustodian) {
-		console.log("  + setting vault custodian...")
-		await send(
-			vault(c, governance).set_custodian({
-				custodian: custodian.publicKey(),
-				caller: governance.publicKey(),
-			}),
+		throw new Error(
+			"the vault has no custodian; the deploy sets it before setup closes",
 		)
-		console.log(`  ✓ custodian configured: ${custodian.publicKey()}`)
-	} else {
-		console.log(`  • vault custodian already configured: ${currentCustodian}`)
 	}
+	console.log(`  • vault custodian configured: ${currentCustodian}`)
 
 	// 2. Lifecycle Seeding
 	console.log("\nStep 2: Processing Vault Lifecycle...")
@@ -191,15 +174,16 @@ async function main(): Promise<void> {
 			console.log(
 				"  + requesting deposits in Epoch 1 (holder-1: 5,000 USDC, holder-2: 3,000 USDC)...",
 			)
+			await freshFeed(c, price(1))
 			await send(
 				vault(c, holder1).request_deposit({
-					from: holder1.publicKey(),
+					holder: holder1.publicKey(),
 					amount: usdc(5_000),
 				}),
 			)
 			await send(
 				vault(c, holder2).request_deposit({
-					from: holder2.publicKey(),
+					holder: holder2.publicKey(),
 					amount: usdc(3_000),
 				}),
 			)
@@ -215,19 +199,20 @@ async function main(): Promise<void> {
 			console.log("  ✓ NAV attested on oracle")
 
 			console.log("  + fulfilling Epoch 1...")
+			await waitForNotice(c, reader, 1n)
 			await send(vault(c, outsider).fulfill_epoch({ epoch_id: 1n }))
 			console.log("  ✓ Epoch 1 fulfilled")
 
 			console.log("  + claiming shares for holder-1 and holder-2...")
 			await send(
 				vault(c, holder1).claim_deposit({
-					caller: holder1.publicKey(),
+					holder: holder1.publicKey(),
 					epoch_id: 1n,
 				}),
 			)
 			await send(
 				vault(c, holder2).claim_deposit({
-					caller: holder2.publicKey(),
+					holder: holder2.publicKey(),
 					epoch_id: 1n,
 				}),
 			)
@@ -274,14 +259,14 @@ async function main(): Promise<void> {
 		const h1RedeemReq = (
 			await reader.get_redeem_request({
 				epoch_id: currentEpoch,
-				controller: holder1.publicKey(),
+				holder: holder1.publicKey(),
 			})
 		).result
 		if (!h1RedeemReq && h1Shares >= usdc(1_000)) {
 			console.log("  + holder-1 requesting redemption of 1,000 shares...")
 			await send(
 				vault(c, holder1).request_redeem({
-					from: holder1.publicKey(),
+					holder: holder1.publicKey(),
 					shares: usdc(1_000),
 				}),
 			)
@@ -295,14 +280,15 @@ async function main(): Promise<void> {
 		const h3DepositReq = (
 			await reader.get_deposit_request({
 				epoch_id: currentEpoch,
-				controller: holder3.publicKey(),
+				holder: holder3.publicKey(),
 			})
 		).result
 		if (!h3DepositReq) {
 			console.log("  + holder-3 requesting deposit of 2,500 USDC...")
+			await freshFeed(c, price(1))
 			await send(
 				vault(c, holder3).request_deposit({
-					from: holder3.publicKey(),
+					holder: holder3.publicKey(),
 					amount: usdc(2_500),
 				}),
 			)
@@ -354,20 +340,16 @@ async function main(): Promise<void> {
 		const pub = keypair.publicKey()
 		const usdcBal = await usdcBalance(c, pub)
 		const shares = (await tokenReader.balance({ account: pub })).result
-		accountsSummary.push({
-			Role: role,
-			PublicKey: pub,
-			SecretKey: keypair.secret(),
-			"USDC Balance": formatAmount(usdcBal, decimals),
-			"Shares Balance": formatAmount(shares, decimals),
-		})
+		accountsSummary.push(
+			accountRow(
+				role,
+				keypair,
+				formatAmount(usdcBal, decimals),
+				formatAmount(shares, decimals),
+			),
+		)
 	}
-	console.table(accountsSummary, [
-		"Role",
-		"PublicKey",
-		"USDC Balance",
-		"Shares Balance",
-	])
+	console.table(accountsSummary)
 
 	console.log("\n--- ACTIVE REQUESTS IN EPOCH #" + finalEpoch + " ---")
 	const activeRequests = []
@@ -379,13 +361,13 @@ async function main(): Promise<void> {
 		const depReq = (
 			await reader.get_deposit_request({
 				epoch_id: finalEpoch,
-				controller: key.publicKey(),
+				holder: key.publicKey(),
 			})
 		).result
 		const redReq = (
 			await reader.get_redeem_request({
 				epoch_id: finalEpoch,
-				controller: key.publicKey(),
+				holder: key.publicKey(),
 			})
 		).result
 		if (depReq) {

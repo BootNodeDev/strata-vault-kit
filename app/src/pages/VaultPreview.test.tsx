@@ -1,3 +1,4 @@
+import { Buffer } from "buffer"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import {
 	formatDate,
@@ -9,7 +10,7 @@ import {
 } from "@stellar-scaffold/app-lib"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
-import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type AddressRow } from "../components/vault/AboutVault"
@@ -36,14 +37,19 @@ const {
 	cancelRedeemMock,
 	claimRedeemMock,
 	readEpochRequestsMock,
+	claimWindDownMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
 	mockShares: { balance: 500_0000000n },
 	mockDeposit: { balance: 3200_0000000n },
-	mockVault: { paused: false },
+	mockVault: {
+		paused: false,
+		windingDown: false,
+		windDownClaimable: 0n,
+	},
 	mockFigures: { uncovered: 0n as bigint | null },
-	mockIdentity: { allowed: true },
+	mockIdentity: { allowed: true, frozen: false },
 	mockSymbols: {
 		token: "USDC",
 		shareToken: "vUSDC",
@@ -54,7 +60,12 @@ const {
 		currentEpoch: 2n,
 		epochs: new Map<
 			bigint,
-			{ status: { tag: string }; share_price: bigint; priceable_at: bigint }
+			{
+				status: { tag: string }
+				share_price: bigint
+				priceable_at: bigint
+				closed_at?: bigint
+			}
 		>([
 			[
 				1n,
@@ -82,6 +93,7 @@ const {
 	cancelRedeemMock: vi.fn(),
 	claimRedeemMock: vi.fn(),
 	readEpochRequestsMock: vi.fn(),
+	claimWindDownMock: vi.fn(),
 }))
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
@@ -92,7 +104,7 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 const defaultCancelDepositImpl = async ({
 	epoch_id,
 }: {
-	from: string
+	holder: string
 	epoch_id: bigint
 }) => {
 	const request = mockRequests.deposits.get(epoch_id)
@@ -117,7 +129,7 @@ const defaultCancelDepositImpl = async ({
 const defaultRequestDepositImpl = async ({
 	amount,
 }: {
-	from: string
+	holder: string
 	amount: bigint
 }) => {
 	const epochId = mockRequests.currentEpoch
@@ -138,7 +150,7 @@ const defaultRequestDepositImpl = async ({
 const defaultRequestRedeemImpl = async ({
 	shares,
 }: {
-	from: string
+	holder: string
 	shares: bigint
 }) => {
 	const epochId = mockRequests.currentEpoch
@@ -159,7 +171,7 @@ const defaultRequestRedeemImpl = async ({
 const defaultCancelRedeemImpl = async ({
 	epoch_id,
 }: {
-	from: string
+	holder: string
 	epoch_id: bigint
 }) => {
 	const request = mockRequests.redeems.get(epoch_id)
@@ -186,7 +198,7 @@ const WAD_SCALE = 1_000000000000000000n
 const defaultClaimDepositImpl = async ({
 	epoch_id,
 }: {
-	caller: string
+	holder: string
 	epoch_id: bigint
 }) => {
 	const request = mockRequests.deposits.get(epoch_id)
@@ -215,7 +227,7 @@ const defaultClaimDepositImpl = async ({
 const defaultClaimRedeemImpl = async ({
 	epoch_id,
 }: {
-	caller: string
+	holder: string
 	epoch_id: bigint
 }) => {
 	const request = mockRequests.redeems.get(epoch_id)
@@ -286,8 +298,11 @@ beforeEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
+	mockVault.windingDown = false
+	mockVault.windDownClaimable = 0n
 	mockFigures.uncovered = 0n
 	mockIdentity.allowed = true
+	mockIdentity.frozen = false
 	resetMockRequests()
 })
 
@@ -295,8 +310,11 @@ afterEach(() => {
 	mockShares.balance = 500_0000000n
 	mockDeposit.balance = 3200_0000000n
 	mockVault.paused = false
+	mockVault.windingDown = false
+	mockVault.windDownClaimable = 0n
 	mockFigures.uncovered = 0n
 	mockIdentity.allowed = true
+	mockIdentity.frozen = false
 	resetMockRequests()
 })
 
@@ -332,6 +350,19 @@ vi.mock("../config/clients", () => {
 			return { result: mockRequests.currentEpoch }
 		},
 		paused: async () => ({ result: mockVault.paused }),
+		wind_down: async () => ({
+			result: mockVault.windingDown
+				? {
+						active_at: 1_700_000_000n,
+						round: 0,
+						status: { tag: "Active", values: undefined },
+					}
+				: null,
+		}),
+		wind_down_claimable: async () => ({
+			result: mockVault.windDownClaimable,
+		}),
+		claim_wind_down: claimWindDownMock,
 		request_deposit: requestDepositMock,
 		cancel_deposit: cancelDepositMock,
 		claim_deposit: claimDepositMock,
@@ -345,7 +376,9 @@ vi.mock("../config/clients", () => {
 			result: {
 				nav_per_share: 1500000000000000000n,
 				expires_at: 1800000000n,
-				timestamp: 1757900000n,
+				accepted_at: 1757900000n,
+				proof_hash: Buffer.alloc(32, 0xab),
+				proof_uri: "",
 			},
 		}),
 	}
@@ -357,6 +390,7 @@ vi.mock("../config/clients", () => {
 		symbol: async () => ({ result: mockSymbols.shareToken }),
 		name: async () => ({ result: mockSymbols.vaultName }),
 		identity_verifier: async () => ({ result: "CVERIFIER" }),
+		is_frozen: async () => ({ result: mockIdentity.frozen }),
 	}
 	const depositAsset = {
 		symbol: async () => ({ result: mockSymbols.token }),
@@ -382,6 +416,7 @@ const connectedWallet: WalletContextType = {
 	isPending: false,
 	updateBalances: async () => {},
 	signTransaction: vi.fn() as WalletContextType["signTransaction"],
+	signAuthEntry: vi.fn() as WalletContextType["signAuthEntry"],
 }
 
 const wrongNetworkWallet: WalletContextType = {
@@ -405,6 +440,9 @@ const renderVaultPreview = (
 		)
 	return render(<VaultPreview />, { wrapper })
 }
+
+const settlePreparation = () =>
+	act(() => new Promise<void>((resolve) => setTimeout(resolve, 700)))
 
 describe("VaultPreview", () => {
 	it("renders the action panel in the side column", () => {
@@ -443,7 +481,7 @@ describe("VaultPreview", () => {
 
 		expect(
 			await screen.findByText(
-				"A share claim is ready the moment it prices. A USDC claim waits until the vault's reserve can cover it in full. You may hold one open request per side, and only share claims need an allowlisted address.",
+				"A share claim is ready the moment it prices. A USDC claim waits until the vault's reserve can cover it in full. You may hold one open request per side, and subscribing needs an allowlisted address.",
 			),
 		).toBeTruthy()
 	})
@@ -675,9 +713,71 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestRedeemMock).toHaveBeenCalledTimes(1))
 		expect(requestRedeemMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			shares: 150_0000000n,
 		})
+	})
+
+	it("prepares the subscription only once the amount fits the balance", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+
+		fireEvent.change(input, { target: { value: "5000" } })
+		await settlePreparation()
+
+		expect(requestDepositMock).not.toHaveBeenCalled()
+
+		fireEvent.change(input, { target: { value: "100" } })
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1), {
+			timeout: 2000,
+		})
+		expect(requestDepositMock).toHaveBeenCalledWith({
+			holder: investorAddress,
+			amount: 100_0000000n,
+		})
+	})
+
+	it("does not prepare while the wallet is on the wrong network", async () => {
+		renderVaultPreview(wrongNetworkWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+
+		fireEvent.change(input, { target: { value: "100" } })
+		await settlePreparation()
+
+		expect(requestDepositMock).not.toHaveBeenCalled()
+	})
+
+	it("prepares the hook of whichever side the investor switches to", async () => {
+		renderVaultPreview(connectedWallet)
+		const subscribe = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(subscribe, { target: { value: "100" } })
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1), {
+			timeout: 2000,
+		})
+		expect(requestRedeemMock).not.toHaveBeenCalled()
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Redeem" }))
+		const redeem = await screen.findByRole("textbox", {
+			name: "Amount to redeem",
+		})
+		fireEvent.change(redeem, { target: { value: "100" } })
+
+		await waitFor(() => expect(requestRedeemMock).toHaveBeenCalledTimes(1), {
+			timeout: 2000,
+		})
+		expect(requestRedeemMock).toHaveBeenCalledWith({
+			holder: investorAddress,
+			shares: 100_0000000n,
+		})
+		expect(requestDepositMock).toHaveBeenCalledTimes(1)
 	})
 
 	it("reflects a confirmed redemption request in the request list without a manual refresh", async () => {
@@ -803,9 +903,37 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1))
 		expect(requestDepositMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			amount: 150_0000000n,
 		})
+	})
+
+	it("simulates the subscription in the background once a valid amount settles", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "1" } })
+		fireEvent.change(input, { target: { value: "15" } })
+		fireEvent.change(input, { target: { value: "150" } })
+
+		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(1))
+		expect(requestDepositMock).toHaveBeenCalledWith({
+			holder: investorAddress,
+			amount: 150_0000000n,
+		})
+	})
+
+	it("does not simulate an amount that cannot be submitted", async () => {
+		renderVaultPreview(connectedWallet)
+		const input = await screen.findByRole("textbox", {
+			name: "Amount to subscribe",
+		})
+		fireEvent.change(input, { target: { value: "0" } })
+
+		await new Promise((resolve) => setTimeout(resolve, 600))
+
+		expect(requestDepositMock).not.toHaveBeenCalled()
 	})
 
 	it("reflects a confirmed subscription in the request list without a manual refresh", async () => {
@@ -848,7 +976,7 @@ describe("VaultPreview", () => {
 			resolveSend = resolve
 		})
 		requestDepositMock.mockImplementationOnce(
-			async ({ amount }: { from: string; amount: bigint }) => ({
+			async ({ amount }: { holder: string; amount: bigint }) => ({
 				simulation: undefined,
 				signAndSend: async ({
 					watcher,
@@ -897,7 +1025,7 @@ describe("VaultPreview", () => {
 			resolveSend = resolve
 		})
 		requestDepositMock.mockImplementationOnce(
-			async ({ amount }: { from: string; amount: bigint }) => ({
+			async ({ amount }: { holder: string; amount: bigint }) => ({
 				simulation: undefined,
 				signAndSend: async ({
 					watcher,
@@ -969,7 +1097,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestDepositMock).toHaveBeenCalledTimes(2))
 		expect(requestDepositMock).toHaveBeenLastCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			amount: 150_0000000n,
 		})
 	})
@@ -1000,7 +1128,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(requestRedeemMock).toHaveBeenCalledTimes(2))
 		expect(requestRedeemMock).toHaveBeenLastCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			shares: 150_0000000n,
 		})
 	})
@@ -1097,7 +1225,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(cancelDepositMock).toHaveBeenCalledTimes(1))
 		expect(cancelDepositMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: mockRequests.currentEpoch,
 		})
 	})
@@ -1188,6 +1316,84 @@ describe("VaultPreview", () => {
 		expect(await screen.findByRole("tab", { name: "Waiting 0" })).toBeTruthy()
 	})
 
+	const sealedEpoch = 9n
+
+	const setSealedSubscription = (closedAt: bigint) => {
+		mockRequests.currentEpoch = sealedEpoch + 1n
+		mockRequests.epochs.set(sealedEpoch, {
+			status: { tag: "Pending" },
+			share_price: 0n,
+			priceable_at: closedAt + 3600n,
+			closed_at: closedAt,
+		})
+		mockRequests.epochs.set(sealedEpoch + 1n, {
+			status: { tag: "Open" },
+			share_price: 0n,
+			priceable_at: 0n,
+		})
+		mockRequests.deposits.set(sealedEpoch, {
+			amount: 150_0000000n,
+			claimed: false,
+		})
+	}
+
+	it("hides Cancel on a sealed subscription once a price attested after its close is readable", async () => {
+		setSealedSubscription(attestedAt - 60n)
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Waiting 1" }))
+
+		expect(await screen.findByText("Pending")).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull()
+	})
+
+	it("offers Cancel on a sealed subscription while the vault is paused, since no price is readable", async () => {
+		setSealedSubscription(attestedAt - 60n)
+		mockVault.paused = true
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Waiting 1" }))
+
+		expect(await screen.findByRole("button", { name: "Cancel" })).toBeTruthy()
+	})
+
+	it("offers Cancel on a sealed subscription priced only before its close", async () => {
+		setSealedSubscription(attestedAt + 60n)
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Waiting 1" }))
+
+		expect(await screen.findByRole("button", { name: "Cancel" })).toBeTruthy()
+	})
+
+	it("offers Cancel on a sealed subscription during a wind-down, even with a readable price", async () => {
+		setSealedSubscription(attestedAt - 60n)
+		mockVault.windingDown = true
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Waiting 1" }))
+
+		expect(await screen.findByRole("button", { name: "Cancel" })).toBeTruthy()
+	})
+
+	it("shows a frozen holder's open subscription as held, with no Cancel", async () => {
+		mockRequests.deposits.set(mockRequests.currentEpoch, {
+			amount: 150_0000000n,
+			claimed: false,
+		})
+		mockIdentity.frozen = true
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Blocked 1" }))
+
+		expect(await screen.findByText("Held")).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull()
+		fireEvent.click(
+			screen.getByRole("button", { name: "Why this request is held" }),
+		)
+		expect(screen.getByText(/held until the freeze is lifted/)).toBeTruthy()
+	})
+
 	it("offers a Cancel action on a waiting redemption", async () => {
 		mockRequests.redeems.set(mockRequests.currentEpoch, {
 			shares: 150_0000000n,
@@ -1212,7 +1418,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(cancelRedeemMock).toHaveBeenCalledTimes(1))
 		expect(cancelRedeemMock).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: mockRequests.currentEpoch,
 		})
 	})
@@ -1304,7 +1510,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(claimDepositMock).toHaveBeenCalledTimes(1))
 		expect(claimDepositMock).toHaveBeenCalledWith({
-			caller: investorAddress,
+			holder: investorAddress,
 			epoch_id: readyDepositEpoch,
 		})
 	})
@@ -1412,26 +1618,96 @@ describe("VaultPreview", () => {
 		expect(screen.getByText(/150\.00 USDC/)).toBeTruthy()
 	})
 
-	it("blocks claiming a ready deposit when the investor is no longer allowlisted", async () => {
+	it("lets a delisted investor claim a ready deposit, saying the shares queue as a redemption", async () => {
 		setReadyDeposit()
 		mockIdentity.allowed = false
 		renderVaultPreview(connectedWallet)
 
-		fireEvent.click(await screen.findByRole("tab", { name: "Blocked 1" }))
-
-		expect(screen.queryByRole("button", { name: "Claim" })).toBeNull()
-
 		fireEvent.click(
-			await screen.findByRole("button", {
-				name: "Why you cannot claim this yet",
-			}),
+			await screen.findByRole("tab", { name: "Ready to claim 1" }),
 		)
 
+		expect(await screen.findByRole("button", { name: "Claim" })).toBeTruthy()
+		expect(screen.getByText(/queued as a redemption/)).toBeTruthy()
+	})
+
+	it("shows a frozen investor's ready deposit as held, with no Claim", async () => {
+		setReadyDeposit()
+		mockIdentity.frozen = true
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Blocked 1" }))
+
+		expect(await screen.findByText("Held")).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Claim" })).toBeNull()
+	})
+
+	it("offers a wind-down claim under Ready to claim and pays it through claim_wind_down", async () => {
+		mockVault.windingDown = true
+		mockVault.windDownClaimable = 25_0000000n
+		claimWindDownMock.mockImplementation(async () => ({
+			simulation: undefined,
+			signAndSend: async ({
+				watcher,
+			}: {
+				watcher: { onSubmitted: () => void }
+			}) => {
+				watcher.onSubmitted()
+				mockVault.windDownClaimable = 0n
+				return {
+					getTransactionResponse: { status: "SUCCESS" },
+					result: 25_0000000n,
+				}
+			},
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(
+			await screen.findByRole("tab", { name: "Ready to claim 1" }),
+		)
+		expect(screen.getByText("Wind-down claim")).toBeTruthy()
+		fireEvent.click(screen.getByRole("button", { name: "Claim" }))
+
 		expect(
-			screen.getByText(
-				"This address is not on the vault's allowlist, so it cannot receive shares right now.",
-			),
+			await screen.findByRole("heading", { name: "USDC claimed" }),
 		).toBeTruthy()
+		expect(claimWindDownMock).toHaveBeenCalledWith({
+			holder: investorAddress,
+		})
+		expect(
+			await screen.findByRole("tab", { name: "Ready to claim 0" }),
+		).toBeTruthy()
+	})
+
+	it("shows a frozen holder's wind-down claim as held at zero", async () => {
+		mockVault.windingDown = true
+		mockIdentity.frozen = true
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Blocked 1" }))
+
+		expect(await screen.findByText("Wind-down claim")).toBeTruthy()
+		expect(screen.getByText("Held")).toBeTruthy()
+		expect(screen.getByText("0.00 USDC")).toBeTruthy()
+		expect(screen.queryByRole("button", { name: "Claim" })).toBeNull()
+	})
+
+	it("tells an investor cancelling a redemption in a wind-down that the shares move into the wind-down claim", async () => {
+		mockVault.windingDown = true
+		mockRequests.redeems.set(mockRequests.currentEpoch, {
+			shares: 150_0000000n,
+			claimed: false,
+		})
+		cancelRedeemMock.mockImplementation(async () => ({
+			simulation: undefined,
+			signAndSend: () => new Promise(() => {}),
+		}))
+		renderVaultPreview(connectedWallet)
+
+		fireEvent.click(await screen.findByRole("tab", { name: "Waiting 1" }))
+		fireEvent.click(await screen.findByRole("button", { name: "Cancel" }))
+
+		expect(await screen.findByText(/into your wind-down claim/)).toBeTruthy()
 	})
 
 	const readyRedeemEpoch = 7n
@@ -1464,7 +1740,7 @@ describe("VaultPreview", () => {
 
 		await waitFor(() => expect(claimRedeemMock).toHaveBeenCalledTimes(1))
 		expect(claimRedeemMock).toHaveBeenCalledWith({
-			caller: investorAddress,
+			holder: investorAddress,
 			epoch_id: readyRedeemEpoch,
 		})
 	})

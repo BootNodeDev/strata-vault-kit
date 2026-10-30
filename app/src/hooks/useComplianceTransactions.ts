@@ -2,11 +2,17 @@ import { type Signer } from "@stellar-scaffold/app-lib"
 import { identityVerifierWriter, shareTokenWriter } from "../config/clients"
 import { adminTransaction } from "./useAdminTransaction"
 import { complianceReadsKey } from "./useComplianceState"
+import { legalTransfersKey } from "./useCycleState"
 import { isAllowedKey } from "./useIsAllowed"
 
 export type AllowanceChange = { verifier: string; account: string }
 export type SharesChange = { account: string; amount: bigint }
-export type ForcedTransfer = { from: string; to: string; amount: bigint }
+export type LegalTransferOrder = {
+	from: string
+	to: string
+	amount: bigint
+	reference: string
+}
 
 const SHARE_BALANCES_KEY = ["share", "balance"] as const
 
@@ -14,7 +20,7 @@ const allowCall =
 	(allowed: boolean) =>
 	(signer: Signer, { verifier, account }: AllowanceChange) =>
 		identityVerifierWriter(verifier)(signer).then((client) =>
-			client.allow({ account, allowed, caller: signer.publicKey }),
+			client.allow({ account, allowed }),
 		)
 
 const freezeAddressCall =
@@ -38,9 +44,9 @@ const sharesCall =
 			}),
 		)
 
-const forcedTransferCall = (signer: Signer, transfer: ForcedTransfer) =>
+const legalTransferCall = (signer: Signer, order: LegalTransferOrder) =>
 	shareTokenWriter(signer).then((token) =>
-		token.forced_transfer({ ...transfer, operator: signer.publicKey }),
+		token.legal_transfer({ ...order, caller: signer.publicKey }),
 	)
 
 const allowKeys = [complianceReadsKey, isAllowedKey]
@@ -61,7 +67,8 @@ export const useUnfreezeShares = adminTransaction(
 	sharesCall("unfreeze_partial_tokens"),
 	[complianceReadsKey],
 )
-export const useForceTransfer = adminTransaction(forcedTransferCall, [
+export const useLegalTransfer = adminTransaction(legalTransferCall, [
 	complianceReadsKey,
 	SHARE_BALANCES_KEY,
+	legalTransfersKey,
 ])

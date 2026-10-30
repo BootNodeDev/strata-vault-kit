@@ -20,10 +20,11 @@ const networkWith = (funding: Funding): Network => ({
 		freshness_duration: 300,
 		cooldown_secs: 5,
 		max_up_bps: 1000,
-		max_down_bps: null,
+		max_down_bps: 10_000,
 		min_answer: "1",
 		max_answer: "2",
 	},
+	vault: { notice_secs: 10 },
 })
 
 // Knows which accounts exist, and creates the ones a transaction creates.

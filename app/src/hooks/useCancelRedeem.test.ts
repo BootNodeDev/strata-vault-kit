@@ -1,7 +1,14 @@
+import { nativeToScVal } from "@stellar/stellar-sdk"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { deferred, investorAddress, renderWithWallet } from "./testSupport"
+import {
+	contractEvent,
+	deferred,
+	investorAddress,
+	renderWithWallet,
+	succeededWith,
+} from "./testSupport"
 import { useCancelRedeem } from "./useCancelRedeem"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { sharePositionKey } from "./useSharePosition"
@@ -25,6 +32,55 @@ describe("useCancelRedeem", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		asyncVaultWriterMock.mockResolvedValue(vaultMock)
+	})
+
+	it("reports a redemption surrendered into the wind-down claim instead of returned", async () => {
+		const surrendered = contractEvent(
+			"redemption_surrendered",
+			nativeToScVal(
+				{ epoch: epochId, shares: 100_0000000n },
+				{ type: { epoch: ["symbol", "u64"], shares: ["symbol", "i128"] } },
+			),
+		)
+		vaultMock.cancel_redeem.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi
+				.fn()
+				.mockResolvedValue(succeededWith(100_0000000n, [surrendered])),
+		})
+		const { result } = renderCancelRedeem()
+
+		await act(async () => {
+			result.current.submit(epochId)
+		})
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "confirmed",
+				returnedShares: 100_0000000n,
+				surrendered: true,
+			}),
+		)
+	})
+
+	it("reports a returned redemption as not surrendered", async () => {
+		vaultMock.cancel_redeem.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi.fn().mockResolvedValue(succeededWith(100_0000000n, [])),
+		})
+		const { result } = renderCancelRedeem()
+
+		await act(async () => {
+			result.current.submit(epochId)
+		})
+
+		await waitFor(() =>
+			expect(result.current.status).toEqual({
+				status: "confirmed",
+				returnedShares: 100_0000000n,
+				surrendered: false,
+			}),
+		)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed with the returned shares, in order", async () => {
@@ -63,11 +119,12 @@ describe("useCancelRedeem", () => {
 			expect(result.current.status).toEqual({
 				status: "confirmed",
 				returnedShares: 100_0000000n,
+				surrendered: false,
 			}),
 		)
 
 		expect(vaultMock.cancel_redeem).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 	})
@@ -286,7 +343,7 @@ describe("useCancelRedeem", () => {
 		)
 		expect(vaultMock.cancel_redeem).toHaveBeenCalledTimes(1)
 		expect(vaultMock.cancel_redeem).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 
@@ -330,6 +387,7 @@ describe("useCancelRedeem", () => {
 			expect(result.current.status).toEqual({
 				status: "confirmed",
 				returnedShares: 100_0000000n,
+				surrendered: false,
 				hash: "a".repeat(64),
 			}),
 		)

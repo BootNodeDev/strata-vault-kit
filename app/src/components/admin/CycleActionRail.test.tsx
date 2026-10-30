@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { type RailAction, type RailField } from "../../pages/actions"
 import { type CycleAction } from "../../pages/cycle"
 import CycleActionRail from "./CycleActionRail"
@@ -52,6 +52,8 @@ const attestAction: CycleAction = {
 	},
 	price: null,
 	freshness: null,
+	proofHash: null,
+	proofUri: "",
 	enabled: false,
 }
 
@@ -422,15 +424,15 @@ describe("CycleActionRail", () => {
 
 	it("states an action's note outside the conditions", () => {
 		renderRail([
-			{ ...attestAction, note: "Ripcord raised — attesting does not lift it." },
+			{ ...attestAction, note: "NAV paused — attesting does not unpause it." },
 		])
 		expand("Attest price")
 
 		const list = screen.getByRole("list", { name: "Attest price conditions" })
 		expect(
-			screen.getByText("Ripcord raised — attesting does not lift it."),
+			screen.getByText("NAV paused — attesting does not unpause it."),
 		).toBeTruthy()
-		expect(within(list).queryByText(/Ripcord/)).toBeNull()
+		expect(within(list).queryByText(/NAV paused/)).toBeNull()
 	})
 })
 
@@ -489,6 +491,27 @@ describe("CycleActionRail with keyed fields", () => {
 
 		expect(onInput).toHaveBeenNthCalledWith(1, setLimits, "3d", "freshness")
 		expect(onInput).toHaveBeenNthCalledWith(2, setLimits, "0.6", "floor")
+	})
+
+	it("keeps an action open and its field focused when its route changes id", () => {
+		const setNotice: RailAction = { ...setLimits, slot: "set-limits" }
+		const rail = (action: RailAction) => (
+			<CycleActionRail
+				scope="configuration"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+			/>
+		)
+		const { rerender } = render(rail(setNotice))
+		const field = screen.getByRole("textbox", { name: "Freshness window" })
+		field.focus()
+
+		rerender(rail({ ...setNotice, id: "propose-oracle-config" }))
+
+		expect(expanded("Set the oracle limits")).toBe(true)
+		expect(document.activeElement).toBe(field)
 	})
 
 	it("shows the current value next to the field and the new one once it reads", () => {
@@ -605,4 +628,171 @@ describe("CycleActionRail choice fields", () => {
 			expect(onInput).toHaveBeenCalledWith(action, reported, "confirm")
 		},
 	)
+})
+
+describe("CycleActionRail readiness", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
+	const renderWithReady = (actions: CycleAction[]) => {
+		const onReady = vi.fn()
+		render(
+			<CycleActionRail
+				scope="cycle"
+				actions={actions}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={onReady}
+			/>,
+		)
+		return onReady
+	}
+
+	it("reports the open action once it settles as ready", () => {
+		vi.useFakeTimers()
+		const onReady = renderWithReady([closeAction, fulfillAction])
+
+		expect(onReady).not.toHaveBeenCalled()
+		vi.advanceTimersByTime(400)
+
+		expect(onReady).toHaveBeenCalledWith(closeAction)
+	})
+
+	it("releases the reported action once it is collapsed", () => {
+		vi.useFakeTimers()
+		const release = vi.fn()
+		render(
+			<CycleActionRail
+				scope="cycle"
+				actions={[closeAction]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={() => release}
+			/>,
+		)
+		vi.advanceTimersByTime(400)
+
+		expect(release).not.toHaveBeenCalled()
+
+		fireEvent.click(rowToggle("Close epoch"))
+
+		expect(release).toHaveBeenCalledTimes(1)
+	})
+
+	it("releases the reported action once it is no longer ready", () => {
+		vi.useFakeTimers()
+		const release = vi.fn()
+		const rail = (action: CycleAction) => (
+			<CycleActionRail
+				scope="cycle"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={() => release}
+			/>
+		)
+		const { rerender } = render(rail(closeAction))
+		vi.advanceTimersByTime(400)
+
+		rerender(rail({ ...closeAction, enabled: false }))
+		vi.advanceTimersByTime(400)
+
+		expect(release).toHaveBeenCalledTimes(1)
+	})
+
+	it("reports an equal action once when the parent rerenders inside the delay", () => {
+		vi.useFakeTimers()
+		const onReady = vi.fn()
+		const rail = () => (
+			<CycleActionRail
+				scope="cycle"
+				actions={[{ ...closeAction }]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={(action) => onReady(action)}
+			/>
+		)
+		const { rerender } = render(rail())
+		vi.advanceTimersByTime(300)
+		rerender(rail())
+		vi.advanceTimersByTime(150)
+
+		expect(onReady).toHaveBeenCalledTimes(1)
+
+		rerender(rail())
+		vi.advanceTimersByTime(1000)
+
+		expect(onReady).toHaveBeenCalledTimes(1)
+	})
+
+	it("releases and re-arms when the action's argument changes", () => {
+		vi.useFakeTimers()
+		const release = vi.fn()
+		const onReady = vi.fn(() => release)
+		const rail = (epochId: bigint) => (
+			<CycleActionRail
+				scope="cycle"
+				actions={[{ ...closeAction, epochId }]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={onReady}
+			/>
+		)
+		const { rerender } = render(rail(5n))
+		vi.advanceTimersByTime(400)
+		rerender(rail(6n))
+
+		expect(release).toHaveBeenCalledTimes(1)
+
+		vi.advanceTimersByTime(400)
+
+		expect(onReady).toHaveBeenCalledTimes(2)
+		expect(onReady).toHaveBeenLastCalledWith(
+			expect.objectContaining({ epochId: 6n }),
+		)
+	})
+
+	it("reports the new route of an open action whose id changes within its slot", () => {
+		vi.useFakeTimers()
+		const release = vi.fn()
+		const onReady = vi.fn(() => release)
+		const direct: RailAction = { ...closeAction, slot: "close" }
+		const proposed: RailAction = { ...direct, id: "propose-close" }
+		const rail = (action: RailAction) => (
+			<CycleActionRail
+				scope="cycle"
+				actions={[action]}
+				pending={false}
+				unreadable={false}
+				onRun={vi.fn()}
+				onReady={onReady}
+			/>
+		)
+		const { rerender } = render(rail(direct))
+		vi.advanceTimersByTime(400)
+
+		rerender(rail(proposed))
+		vi.advanceTimersByTime(400)
+
+		expect(release).toHaveBeenCalledTimes(1)
+		expect(onReady).toHaveBeenNthCalledWith(1, direct)
+		expect(onReady).toHaveBeenNthCalledWith(2, proposed)
+	})
+
+	it("does not report an open action that is blocked", () => {
+		vi.useFakeTimers()
+		const onReady = renderWithReady([closeAction, fulfillAction])
+
+		fireEvent.click(rowToggle("Close epoch"))
+		fireEvent.click(rowToggle("Fulfill epoch"))
+		vi.advanceTimersByTime(400)
+
+		expect(onReady).not.toHaveBeenCalled()
+	})
 })

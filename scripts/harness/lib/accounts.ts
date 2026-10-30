@@ -19,6 +19,7 @@ export const ACCOUNT_NAMES = [
 	"treasury",
 	"guardian",
 	"compliance",
+	"compliance-backup",
 	"attester",
 	"custodian",
 	"issuer",

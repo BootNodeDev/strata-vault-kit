@@ -39,13 +39,14 @@ const pending = (
 	fn,
 	args,
 	hash: "abc123",
+	authorization: null,
 })
 
 describe("describePending", () => {
 	it("maps a vault setter with an amount argument", () => {
 		expect(
 			describePending(
-				pending(addresses.vault, "set_deposit_cap", [1_500_000_000n, account]),
+				pending(addresses.vault, "set_deposit_cap", [1_500_000_000n]),
 				addresses,
 			),
 		).toEqual({
@@ -56,9 +57,23 @@ describe("describePending", () => {
 		})
 	})
 
+	it("maps the minimum epoch duration setter", () => {
+		expect(
+			describePending(
+				pending(addresses.vault, "set_min_epoch_duration", [604_800n]),
+				addresses,
+			),
+		).toEqual({
+			contract: "Vault",
+			action: "set-min-epoch-duration",
+			label: "Set the minimum epoch duration",
+			args: [{ label: "Minimum epoch duration", value: "7d" }],
+		})
+	})
+
 	it("shows an absent deposit cap as no cap", () => {
 		const { args } = describePending(
-			pending(addresses.vault, "set_deposit_cap", [null, account]),
+			pending(addresses.vault, "set_deposit_cap", [null]),
 			addresses,
 		)
 
@@ -96,29 +111,66 @@ describe("describePending", () => {
 		})
 	})
 
-	it("maps the ripcord flag to raise or lower", () => {
-		const raise = describePending(
-			pending(addresses.oracle, "set_ripcord", [true, account]),
+	it("maps the paused flag to pause or unpause", () => {
+		const pause = describePending(
+			pending(addresses.oracle, "set_nav_paused", [true, account]),
 			addresses,
 		)
-		const lower = describePending(
-			pending(addresses.oracle, "set_ripcord", [false, account]),
+		const unpause = describePending(
+			pending(addresses.oracle, "set_nav_paused", [false, account]),
 			addresses,
 		)
 
-		expect(raise.action).toBe("raise-ripcord")
-		expect(lower.action).toBe("lower-ripcord")
-		expect(lower.label).toBe("Lower the ripcord")
+		expect(pause.action).toBe("pause-nav")
+		expect(pause.label).toBe("Pause the NAV")
+		expect(unpause.action).toBe("unpause-nav")
+		expect(unpause.label).toBe("Unpause the NAV")
 	})
 
-	it("formats an attestation price and expiry", () => {
+	it("describes the guardian's pause_nav as pausing the NAV", () => {
+		expect(
+			describePending(
+				pending(addresses.oracle, "pause_nav", [account]),
+				addresses,
+			),
+		).toMatchObject({ action: "pause-nav", label: "Pause the NAV", args: [] })
+	})
+
+	it("shows every oracle limit of set_config, the largest fall as a percent", () => {
+		const { args } = describePending(
+			pending(addresses.oracle, "set_config", [
+				{
+					freshness_duration: 86_400n,
+					cooldown_secs: 3_600n,
+					max_up_bps: 500,
+					max_down_bps: 250,
+					min_answer: 500_000_000_000_000_000n,
+					max_answer: 2_000_000_000_000_000_000n,
+				},
+				account,
+			]),
+			addresses,
+		)
+
+		expect(args).toEqual([
+			{ label: "Freshness window", value: "1d" },
+			{ label: "Cooldown", value: "1h" },
+			{ label: "Largest rise", value: "5%" },
+			{ label: "Largest fall", value: "2.5%" },
+			{ label: "Price floor", value: "0.50" },
+			{ label: "Price ceiling", value: "2.00" },
+		])
+	})
+
+	it("formats an attestation price, expiry and proof", () => {
 		expect(
 			describePending(
 				pending(addresses.oracle, "attest", [
 					{
 						nav_per_share: 1_050_000_000_000_000_000n,
 						expires_at: 1_800_000_000n,
-						timestamp: 0n,
+						proof_hash: Buffer.alloc(32, 0xab),
+						proof_uri: "https://example.com/nav.pdf",
 					},
 					account,
 				]),
@@ -131,12 +183,57 @@ describe("describePending", () => {
 			args: [
 				{ label: "Price", value: "1.0500" },
 				{ label: "Expires", value: "15 Jan 2027" },
+				{ label: "Proof hash", value: "ab".repeat(32) },
+				{ label: "Proof URI", value: "https://example.com/nav.pdf" },
 			],
 		})
 	})
 
-	it("maps a forced transfer with shortened addresses and an amount", () => {
+	it("shows an attestation without a proof URI as none", () => {
+		const { args } = describePending(
+			pending(addresses.oracle, "attest", [
+				{
+					nav_per_share: 1_050_000_000_000_000_000n,
+					expires_at: 1_800_000_000n,
+					proof_hash: Buffer.alloc(32, 0xab),
+					proof_uri: "",
+				},
+				account,
+			]),
+			addresses,
+		)
+
+		expect(args.at(-1)).toEqual({ label: "Proof URI", value: "None" })
+	})
+
+	it("maps a legal transfer with its reference and the compliance caller", () => {
 		expect(
+			describePending(
+				pending(addresses.shareToken, "legal_transfer", [
+					account,
+					other,
+					25_000_000n,
+					"COURT-ORDER-2026/17",
+					other,
+				]),
+				addresses,
+			),
+		).toEqual({
+			contract: "Share token",
+			action: "legal-transfer",
+			label: "Make a legal transfer",
+			args: [
+				{ label: "From", value: "GBRP...OX2H" },
+				{ label: "To", value: "GDQN...KTL3" },
+				{ label: "Amount", value: "2.50" },
+				{ label: "Reference", value: "COURT-ORDER-2026/17" },
+				{ label: "Caller", value: "GDQN...KTL3" },
+			],
+		})
+	})
+
+	it("no longer describes a forced transfer", () => {
+		expect(() =>
 			describePending(
 				pending(addresses.shareToken, "forced_transfer", [
 					account,
@@ -146,16 +243,7 @@ describe("describePending", () => {
 				]),
 				addresses,
 			),
-		).toEqual({
-			contract: "Share token",
-			action: "force-transfer",
-			label: "Force a transfer",
-			args: [
-				{ label: "From", value: "GBRP...OX2H" },
-				{ label: "To", value: "GDQN...KTL3" },
-				{ label: "Amount", value: "2.50" },
-			],
-		})
+		).toThrow(InvalidPendingTransaction)
 	})
 
 	it("maps a role grant on the share token", () => {
@@ -182,7 +270,7 @@ describe("describePending", () => {
 	it("maps the configured identity verifier", () => {
 		expect(
 			describePending(
-				pending(addresses.identityVerifier, "allow", [other, false, account]),
+				pending(addresses.identityVerifier, "allow", [other, false]),
 				addresses,
 			),
 		).toEqual({
@@ -224,16 +312,338 @@ describe("describePending", () => {
 		})
 	})
 
-	it("shows a code upgrade hash in hex", () => {
-		const { args } = describePending(
-			pending(addresses.vault, "propose_upgrade", [
-				Buffer.from("abcd", "hex"),
-				account,
-			]),
-			addresses,
-		)
+	it.each<[unknown[], string, { label: string; value: string }[]]>([
+		[
+			["Custodian", account],
+			"propose-custodian",
+			[{ label: "Custodian", value: "GBRP...OX2H" }],
+		],
+		[
+			["Notice", 43_200n],
+			"propose-notice",
+			[{ label: "Notice", value: "12h" }],
+		],
+		[
+			["WindDownDelay", 691_200n],
+			"propose-wind-down-delay",
+			[{ label: "Wind-down delay", value: "8d" }],
+		],
+		[
+			["MinEpochDuration", 604_800n],
+			"propose-min-epoch-duration",
+			[{ label: "Minimum epoch duration", value: "7d" }],
+		],
+		[
+			["Upgrade", Buffer.from("abcd", "hex")],
+			"propose-code-upgrade",
+			[{ label: "Wasm hash", value: "abcd" }],
+		],
+		[
+			["UpgradeDelay", 1_209_600n],
+			"propose-upgrade-delay",
+			[{ label: "Upgrade delay", value: "14d" }],
+		],
+		[
+			["GrantRole", "manager", account],
+			"propose-grant-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["RevokeRole", "manager", account],
+			"propose-revoke-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["Admin", account],
+			"propose-admin",
+			[{ label: "New admin", value: "GBRP...OX2H" }],
+		],
+	])("describes propose_change %o by its kind", (change, action, args) => {
+		expect(
+			describePending(
+				pending(addresses.vault, "propose_change", [change]),
+				addresses,
+			),
+		).toMatchObject({ contract: "Vault", action, args })
+	})
 
-		expect(args).toEqual([{ label: "Wasm hash", value: "abcd" }])
+	it("refuses a proposed change the console does not propose", () => {
+		expect(() =>
+			describePending(
+				pending(addresses.vault, "propose_change", [["Oracle", other]]),
+				addresses,
+			),
+		).toThrow(new InvalidPendingTransaction("unknown operation"))
+	})
+
+	it("names the pending change an apply or cancel acts on, or its id when gone", () => {
+		const changes = [
+			{ id: 3, change: { tag: "Custodian", values: [account] }, eta: 1n },
+		]
+
+		expect(
+			describePending(
+				pending(addresses.vault, "apply_change", [3]),
+				addresses,
+				{ vault: changes },
+			),
+		).toMatchObject({
+			action: "apply-change",
+			label: "Apply the change",
+			args: [
+				{ label: "Change", value: "vault change #3: Custodian GBRP...OX2H" },
+			],
+		})
+		expect(
+			describePending(
+				pending(addresses.vault, "cancel_change", [4]),
+				addresses,
+				{ vault: changes },
+			),
+		).toMatchObject({
+			action: "cancel-change",
+			label: "Cancel the change",
+			args: [{ label: "Change", value: "vault change #4" }],
+		})
+		expect(
+			describePending(pending(addresses.vault, "apply_change", [3]), addresses)
+				.args,
+		).toEqual([{ label: "Change", value: "vault change #3" }])
+	})
+
+	it.each<[unknown[], string, { label: string; value: string }[]]>([
+		[
+			["GrantRole", "manager", account],
+			"propose-token-grant-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["RevokeRole", "manager", account],
+			"propose-token-revoke-role",
+			[
+				{ label: "Role", value: "manager" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["Admin", account],
+			"propose-token-admin",
+			[{ label: "New admin", value: "GBRP...OX2H" }],
+		],
+		[
+			["Compliance", other],
+			"propose-compliance",
+			[{ label: "Compliance contract", value: "GDQN...KTL3" }],
+		],
+		[
+			["IdentityVerifier", other],
+			"propose-identity-verifier",
+			[{ label: "Identity verifier", value: "GDQN...KTL3" }],
+		],
+	])(
+		"describes the share token's propose_change %o by its kind",
+		(change, action, args) => {
+			expect(
+				describePending(
+					pending(addresses.shareToken, "propose_change", [change]),
+					addresses,
+				),
+			).toMatchObject({ contract: "Share token", action, args })
+		},
+	)
+
+	it.each<[unknown[], string, string, { label: string; value: string }[]]>([
+		[
+			["GrantRole", "attester", account],
+			"propose-oracle-grant-role",
+			"Propose a role grant",
+			[
+				{ label: "Role", value: "attester" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["RevokeRole", "guardian", account],
+			"propose-oracle-revoke-role",
+			"Propose a role revoke",
+			[
+				{ label: "Role", value: "guardian" },
+				{ label: "Account", value: "GBRP...OX2H" },
+			],
+		],
+		[
+			["Admin", account],
+			"propose-oracle-admin",
+			"Propose the hand-over",
+			[{ label: "New admin", value: "GBRP...OX2H" }],
+		],
+		[
+			["Upgrade", Buffer.from("ab".repeat(32), "hex")],
+			"propose-oracle-upgrade",
+			"Propose an upgrade",
+			[{ label: "Wasm hash", value: "ab".repeat(32) }],
+		],
+		[
+			[
+				"Config",
+				{
+					freshness_duration: 86_400n,
+					cooldown_secs: 3_600n,
+					max_up_bps: 500,
+					max_down_bps: 250,
+					min_answer: 500_000_000_000_000_000n,
+					max_answer: 2_000_000_000_000_000_000n,
+				},
+			],
+			"propose-oracle-config",
+			"Propose oracle limits",
+			[
+				{ label: "Freshness window", value: "1d" },
+				{ label: "Cooldown", value: "1h" },
+				{ label: "Largest rise", value: "5%" },
+				{ label: "Largest fall", value: "2.5%" },
+				{ label: "Price floor", value: "0.50" },
+				{ label: "Price ceiling", value: "2.00" },
+			],
+		],
+	])(
+		"describes the oracle's propose_change %o by its kind",
+		(change, action, label, args) => {
+			expect(
+				describePending(
+					pending(addresses.oracle, "propose_change", [change]),
+					addresses,
+				),
+			).toEqual({ contract: "Oracle", action, label, args })
+		},
+	)
+
+	it("names an oracle change from the oracle's own pending list", () => {
+		const changes = {
+			vault: [
+				{ id: 1, change: { tag: "Custodian", values: [account] }, eta: 1n },
+			],
+			oracle: [{ id: 1, change: { tag: "Admin", values: [other] }, eta: 1n }],
+		}
+
+		expect(
+			describePending(
+				pending(addresses.oracle, "apply_change", [1]),
+				addresses,
+				changes,
+			),
+		).toEqual({
+			contract: "Oracle",
+			action: "apply-oracle-change",
+			label: "Apply the change",
+			args: [
+				{
+					label: "Change",
+					value: "oracle change #1: Admin hand-over GDQN...KTL3",
+				},
+			],
+		})
+		expect(
+			describePending(
+				pending(addresses.oracle, "cancel_change", [4]),
+				addresses,
+				changes,
+			),
+		).toEqual({
+			contract: "Oracle",
+			action: "cancel-oracle-change",
+			label: "Cancel the change",
+			args: [{ label: "Change", value: "oracle change #4" }],
+		})
+	})
+
+	it("refuses a proposed change the other contract owns", () => {
+		for (const change of [
+			["Custodian", account],
+			["Upgrade", Buffer.from("abcd", "hex")],
+		])
+			expect(() =>
+				describePending(
+					pending(addresses.shareToken, "propose_change", [change]),
+					addresses,
+				),
+			).toThrow(new InvalidPendingTransaction("unknown operation"))
+		expect(() =>
+			describePending(
+				pending(addresses.vault, "propose_change", [["Compliance", other]]),
+				addresses,
+			),
+		).toThrow(new InvalidPendingTransaction("unknown operation"))
+	})
+
+	it("names a share-token change from the token's own pending list", () => {
+		const changes = {
+			vault: [
+				{ id: 1, change: { tag: "Custodian", values: [account] }, eta: 1n },
+			],
+			token: [
+				{ id: 1, change: { tag: "Compliance", values: [other] }, eta: 1n },
+			],
+		}
+
+		expect(
+			describePending(
+				pending(addresses.shareToken, "apply_change", [1]),
+				addresses,
+				changes,
+			),
+		).toMatchObject({
+			contract: "Share token",
+			action: "apply-token-change",
+			label: "Apply the change",
+			args: [
+				{
+					label: "Change",
+					value: "share token change #1: Compliance contract GDQN...KTL3",
+				},
+			],
+		})
+		expect(
+			describePending(
+				pending(addresses.shareToken, "cancel_change", [4]),
+				addresses,
+				changes,
+			),
+		).toMatchObject({
+			action: "cancel-token-change",
+			label: "Cancel the change",
+			args: [{ label: "Change", value: "share token change #4" }],
+		})
+		expect(
+			describePending(
+				pending(addresses.vault, "apply_change", [1]),
+				addresses,
+				changes,
+			).args,
+		).toEqual([
+			{ label: "Change", value: "vault change #1: Custodian GBRP...OX2H" },
+		])
+	})
+
+	it("no longer decodes the removed upgrade entrypoints", () => {
+		for (const fn of [
+			"propose_upgrade",
+			"propose_upgrade_delay",
+			"apply_upgrade",
+			"cancel_upgrade",
+		])
+			expect(() =>
+				describePending(pending(addresses.vault, fn, [account]), addresses),
+			).toThrow(new InvalidPendingTransaction("unknown operation"))
 	})
 
 	it("refuses an operation the console does not propose", () => {
@@ -251,7 +661,7 @@ describe("describePending", () => {
 	it("refuses arguments of the wrong shape", () => {
 		expect(() =>
 			describePending(
-				pending(addresses.vault, "set_custodian", [12n, account]),
+				pending(addresses.vault, "set_custodian", [12n]),
 				addresses,
 			),
 		).toThrow(InvalidPendingTransaction)
@@ -269,6 +679,7 @@ const base: PendingStateInput = {
 	threshold: 2,
 	walletIsSigner: true,
 	walletHasSigned: false,
+	authorization: "none",
 }
 
 describe("pendingState", () => {
@@ -279,6 +690,9 @@ describe("pendingState", () => {
 		["not-signer", { walletIsSigner: false }],
 		["already-signed", { walletHasSigned: true }],
 		["ready", { weight: 2 }],
+		["awaiting-authorization", { authorization: "awaiting" }],
+		["authorization-expired", { authorization: "expired" }],
+		["valid", { authorization: "authorized" }],
 	] as const)("is %s", (state, overrides) => {
 		expect(pendingState({ ...base, ...overrides })).toBe(state)
 	})
@@ -292,6 +706,25 @@ describe("pendingState", () => {
 				walletIsSigner: null,
 			}),
 		).toBe("valid")
+	})
+
+	it("waits for the admin's authorization before any envelope signature counts", () => {
+		expect(
+			pendingState({ ...base, weight: 2, authorization: "awaiting" }),
+		).toBe("awaiting-authorization")
+		expect(
+			pendingState({
+				...base,
+				walletIsSigner: false,
+				authorization: "awaiting",
+			}),
+		).toBe("awaiting-authorization")
+	})
+
+	it("ranks an expired authorization over a complete signature set", () => {
+		expect(pendingState({ ...base, weight: 2, authorization: "expired" })).toBe(
+			"authorization-expired",
+		)
 	})
 
 	it("ranks expiry over a complete signature set", () => {
@@ -317,6 +750,16 @@ const signers: AccountSigners = {
 describe("describeCollected", () => {
 	it("counts signatures when every signer weighs one", () => {
 		expect(describeCollected(1, signers)).toBe("1 of 2 signatures")
+	})
+
+	it("counts one required signature for a single-key account", () => {
+		expect(
+			describeCollected(0, {
+				...signers,
+				signers: [{ key: account, weight: 1 }],
+				thresholds: { low: 0, med: 0, high: 0 },
+			}),
+		).toBe("0 of 1 signatures")
 	})
 
 	it("reports weight against the threshold otherwise", () => {
@@ -371,6 +814,21 @@ describe("primaryAction", () => {
 		})
 	})
 
+	it("offers Authorize while the token admin's authorization is missing", () => {
+		expect(primaryAction("awaiting-authorization", true, true)).toEqual({
+			label: "Authorize",
+			enabled: true,
+		})
+		expect(primaryAction("awaiting-authorization", true, false)).toEqual({
+			label: "Authorize",
+			enabled: false,
+		})
+		expect(primaryAction("awaiting-authorization", false, false)).toEqual({
+			label: "Connect a wallet to authorize",
+			enabled: false,
+		})
+	})
+
 	it("offers nothing in every other state", () => {
 		for (const state of [
 			"expired",
@@ -378,6 +836,7 @@ describe("primaryAction", () => {
 			"executed",
 			"not-signer",
 			"already-signed",
+			"authorization-expired",
 		] as const) {
 			expect(primaryAction(state, true, false)).toBeNull()
 		}
@@ -423,13 +882,34 @@ describe("toModalProps", () => {
 		})
 	})
 
+	it("names the shares, sender and receiver of a legal transfer", () => {
+		const description = describePending(
+			pending(addresses.shareToken, "legal_transfer", [
+				account,
+				other,
+				25_000_000n,
+				"ORDER-1",
+				other,
+			]),
+			addresses,
+		)
+
+		expect(
+			toModalProps(description, { status: "submitted" }, handlers),
+		).toMatchObject({
+			action: "legal-transfer",
+			value: "2.50 shares from GBRP...OX2H to GDQN...KTL3",
+		})
+	})
+
 	it("hands the attestation price to the attest modal", () => {
 		const description = describePending(
 			pending(addresses.oracle, "attest", [
 				{
 					nav_per_share: 1_050_000_000_000_000_000n,
 					expires_at: 1_800_000_000n,
-					timestamp: 0n,
+					proof_hash: Buffer.alloc(32, 0xab),
+					proof_uri: "",
 				},
 				account,
 			]),

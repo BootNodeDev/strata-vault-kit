@@ -1,5 +1,12 @@
 import { Buffer } from "buffer"
-import { type AsyncVaultApi, type Signer } from "@stellar-scaffold/app-lib"
+import { type AssembledTransaction } from "@stellar/stellar-sdk/contract"
+import {
+	type AsyncVaultApi,
+	type OracleChange,
+	type Signer,
+	type TokenChange,
+	type VaultChange,
+} from "@stellar-scaffold/app-lib"
 import { type QueryKey } from "@tanstack/react-query"
 import {
 	asyncVaultWriter,
@@ -11,10 +18,58 @@ import { adminAuthorityKey } from "./useAdminAuthority"
 import { adminTransaction } from "./useAdminTransaction"
 import { configurationReadsKey } from "./useConfigurationState"
 import { cycleReadsKey } from "./useCycleState"
-import { upgradeProposalKey } from "./useGovernanceState"
+import { pendingChangesKey } from "./useGovernanceState"
+import { isAllowedKey } from "./useIsAllowed"
+import { oracleWriteKeys } from "./useOracleState"
+import { type TimelockedContract } from "./useSetupOpen"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 
 export type RoleChange = { role: string; account: string }
+
+type ChangeClient<Change> = Pick<
+	AsyncVaultApi,
+	"apply_change" | "cancel_change"
+> & {
+	propose_change: (args: {
+		change: Change
+	}) => Promise<AssembledTransaction<number>>
+}
+
+const timelock = <Change>(
+	contract: TimelockedContract,
+	connect: (signer: Signer) => Promise<ChangeClient<Change>>,
+) => ({
+	propose: <TArg>(
+		toChange: (arg: TArg) => Change,
+		keys: readonly QueryKey[] = [],
+	) =>
+		adminTransaction(
+			(signer: Signer, arg: TArg) =>
+				connect(signer).then((client) =>
+					client.propose_change({ change: toChange(arg) }),
+				),
+			[pendingChangesKey(contract), ...keys],
+		),
+	apply: (keys: readonly QueryKey[]) =>
+		adminTransaction(
+			(signer: Signer, id: number) =>
+				connect(signer).then((client) => client.apply_change({ id })),
+			[pendingChangesKey(contract), ...keys],
+		),
+	cancel: adminTransaction(
+		(signer: Signer, id: number) =>
+			connect(signer).then((client) => client.cancel_change({ id })),
+		[pendingChangesKey(contract)],
+	),
+})
+
+const vaultTimelock = timelock<VaultChange>("vault", asyncVaultWriter)
+const tokenTimelock = timelock<TokenChange>("token", shareTokenWriter)
+const oracleTimelock = timelock<OracleChange>("oracle", navOracleWriter)
+
+export const proposeVaultChange = vaultTimelock.propose
+export const proposeTokenChange = tokenTimelock.propose
+export const proposeOracleChange = oracleTimelock.propose
 
 type RoleClient = Pick<AsyncVaultApi, "grant_role" | "revoke_role">
 
@@ -112,55 +167,73 @@ export const useCancelTokenHandover = offerAdmin(
 )
 export const useAcceptTokenAdmin = acceptAdmin(shareTokenWriter, HANDOVER_KEYS)
 
-const UPGRADE_KEYS = [upgradeProposalKey, configurationReadsKey]
+const upgrade = (hash: string) => ({
+	tag: "Upgrade" as const,
+	values: [Buffer.from(hash, "hex")] as const,
+})
 
-export const useProposeCodeUpgrade = adminTransaction(
-	(signer: Signer, hash: string) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.propose_upgrade({
-				wasm_hash: Buffer.from(hash, "hex"),
-				caller: signer.publicKey,
-			}),
-		),
-	UPGRADE_KEYS,
+export const useProposeCodeUpgrade = proposeVaultChange(upgrade, [
+	configurationReadsKey,
+])
+
+export const useProposeUpgradeDelay = proposeVaultChange(
+	(secs: bigint) => ({ tag: "UpgradeDelay", values: [secs] }),
+	[configurationReadsKey],
 )
 
-export const useProposeUpgradeDelay = adminTransaction(
-	(signer: Signer, secs: bigint) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.propose_upgrade_delay({ secs, caller: signer.publicKey }),
-		),
-	UPGRADE_KEYS,
-)
+const grantRole = ({ role, account }: RoleChange) => ({
+	tag: "GrantRole" as const,
+	values: [role, account] as const,
+})
 
-export const useApplyUpgrade = adminTransaction(
-	(signer: Signer) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.apply_upgrade({ caller: signer.publicKey }),
-		),
-	UPGRADE_KEYS,
-)
+const revokeRole = ({ role, account }: RoleChange) => ({
+	tag: "RevokeRole" as const,
+	values: [role, account] as const,
+})
 
-export const useCancelUpgrade = adminTransaction(
-	(signer: Signer) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.cancel_upgrade({ caller: signer.publicKey }),
-		),
-	UPGRADE_KEYS,
-)
+const admin = (account: string) => ({
+	tag: "Admin" as const,
+	values: [account] as const,
+})
+
+export const useProposeGrantRole = proposeVaultChange(grantRole)
+export const useProposeRevokeRole = proposeVaultChange(revokeRole)
+export const useProposeAdmin = proposeVaultChange(admin)
+export const useProposeTokenGrantRole = proposeTokenChange(grantRole)
+export const useProposeTokenRevokeRole = proposeTokenChange(revokeRole)
+export const useProposeTokenAdmin = proposeTokenChange(admin)
+export const useProposeOracleGrantRole = proposeOracleChange(grantRole)
+export const useProposeOracleAdmin = proposeOracleChange(admin)
+export const useProposeOracleUpgrade = proposeOracleChange(upgrade)
+
+export const useApplyChange = vaultTimelock.apply([
+	configurationReadsKey,
+	cycleReadsKey,
+	...VAULT_HANDOVER_KEYS,
+])
+export const useCancelChange = vaultTimelock.cancel
+
+export const useApplyTokenChange = tokenTimelock.apply([
+	configurationReadsKey,
+	...HANDOVER_KEYS,
+	isAllowedKey,
+])
+export const useCancelTokenChange = tokenTimelock.cancel
+
+export const useApplyOracleChange = oracleTimelock.apply([
+	...HANDOVER_KEYS,
+	...oracleWriteKeys,
+])
+export const useCancelOracleChange = oracleTimelock.cancel
 
 export const useProposeWindDown = adminTransaction(
 	(signer: Signer) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.propose_wind_down({ caller: signer.publicKey }),
-		),
+		asyncVaultWriter(signer).then((vault) => vault.propose_wind_down()),
 	[cycleReadsKey],
 )
 
 export const useCancelWindDown = adminTransaction(
 	(signer: Signer) =>
-		asyncVaultWriter(signer).then((vault) =>
-			vault.cancel_wind_down_proposal({ caller: signer.publicKey }),
-		),
+		asyncVaultWriter(signer).then((vault) => vault.cancel_wind_down_proposal()),
 	[cycleReadsKey],
 )

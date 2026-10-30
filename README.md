@@ -12,7 +12,16 @@ Two rules the contracts enforce:
 
 1. **Only approved addresses can enter** — an allowlist maintained post-KYC.
 2. **A priced claim always pays** — neither a pause, a delisting nor a stale
-   valuation can block an already-priced, funded cash claim.
+   valuation can block an already-priced, funded cash claim. A compliance
+   freeze holds it until the freeze is lifted.
+
+A request can be cancelled until the vault can read its price. Once an epoch is
+sealed, a valid report accepted after the seal closes cancellation, even while
+the notice still runs; the epoch is priced once the notice ends. If that report
+expires, or the NAV or the vault is paused, cancellation opens again. New
+deposits are refused while the vault is paused, while the valuation is stale
+or the NAV is paused, while an issuer clawback leaves the vault holding less
+than its pending deposits, and once a wind-down is proposed.
 
 ## Documentation
 
@@ -22,6 +31,14 @@ Two rules the contracts enforce:
   parameters, and complete role matrix.
 - [Testing](./docs/TESTING.md) — which tests cover storage and TTL, auth,
   ledger time, events and calls between contracts.
+- [Threat model](./docs/THREAT_MODEL.md) — what can go wrong with the oracle,
+  the roles and the redemption paths, what stops it, what is left, and the
+  test for each control.
+- [Monitoring plan](./docs/MONITORING_PLAN.md) — what an operator watches on
+  chain, where each signal comes from, and what to do when it fires.
+- [Grant differences](./docs/GRANT_DIFFERENCES.md) — where the built kit
+  differs from the SCF grant proposal, what is not built yet, and the limits an
+  adopter should know.
 
 ## Status
 
@@ -35,11 +52,11 @@ deploy from `environments.toml` → `[staging.contracts]`, which is the record.
 <!-- deployed-addresses:start -->
 | Contract | Address |
 | --- | --- |
-| `async_vault` | `CD5LYYXGOJ7R23P6D7YUN6DUJQYMI23KEUEOIFKXOSWOX3KHKTXRITED` |
-| `nav_oracle` | `CBKVMUMIX7MXYHX5K34N5HYZOP6S2VGWF7MN27RIWBV3A3WD3X3L63CO` |
-| `share_token` | `CDOISQTQRCYOTH6S3DFQ6UKJ2TEXLNO7NFIGOZS4RZL63IRCVXXCGP5N` |
-| `identity_verifier` | `CCTCCY7AVFAIRGEWWJZT2UDMBHS3NGNKVUWLY43CHDNN75AQEV6P3EOY` |
-| `compliance` | `CDEH6FJBK7NDFLALO3X3GDXZUREYHUSNC7ODPM64RBG3BBXW2USMW7OO` |
+| `async_vault` | `CDJHQ2R5XUJGP6WUKCW4VBEVGWFAZ5TZLEONBITKITNXFDLWNNK7WVYO` |
+| `nav_oracle` | `CCZ4X25GLMYRQ33PM4ZYDMGKAJJKPUG2ABUZ4NIGUSA7W4RUTBOEEDYI` |
+| `share_token` | `CDOZT5VNIKSLQSFELF4PHVZRZA3GCJYJEHVDZTUB7O2QMBHBKKOYORQI` |
+| `identity_verifier` | `CCGHNGPI66WGVSLLALQVCIRIOZKX73QW23UDZLZ3LMXLGEG7SLVUOULD` |
+| `compliance` | `CCQI5NFRWBOO77LYSFY54D6PSU4TVWD5A3CFX2A5AWLEURVR35XISMKG` |
 | `asset` | `CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E` |
 <!-- deployed-addresses:end -->
 
@@ -56,6 +73,36 @@ above.
 | Claim shares | `claim_deposit` | [`fe59e77e…e029`](https://stellar.expert/explorer/testnet/tx/fe59e77ee68ca2849345515b5e2a8be0f80e517b49efeb22f0045a1df5a6e029) |
 | Redeem (request) | `request_redeem` | [`d6c02ee0…7524`](https://stellar.expert/explorer/testnet/tx/d6c02ee0868235fd12c280ba8c4e17fd6d63f4a117e9c48a897185c72dc97524) |
 | Withdraw (claim cash) | `claim_redeem` | [`27a81778…db64`](https://stellar.expert/explorer/testnet/tx/27a8177877ecac5a4c87c1b4bed12e5f8664ca387f13fd9c05f8062ec68bdb64) |
+
+## Vault figures
+
+The [live dApp](https://strata-vault-kit-app.vercel.app) shows Withdrawable and
+Committed in the strip at the top of the vault page, and Economic supply under
+"About this vault". Each one reads a view on `async_vault`.
+
+| Figure | What it is | View |
+| --- | --- | --- |
+| Withdrawable | The cash the vault holds now, less deposits that can still be cancelled. Priced redemptions are paid from it. | `liquid_reserve()` |
+| Committed | The cash owed to priced redemptions that are not claimed yet. When it is more than Withdrawable, the gap shows as Uncovered. | `committed()` |
+| Economic supply | The shares held outside the vault, plus the shares priced for deposits and not claimed yet. | `total_economic_supply()` |
+
+## Oracle tests
+
+These tests show the oracle's price controls and how it keeps its storage
+alive (TTL). Run them with `cargo test -p nav-oracle`.
+
+| What the tests show | File | Tests |
+| --- | --- | --- |
+| Band: a price below the minimum or above the maximum answer is refused | [`contracts/nav-oracle/src/test/oracle.rs`](./contracts/nav-oracle/src/test/oracle.rs), [`contracts/nav-oracle/src/test/guards.rs`](./contracts/nav-oracle/src/test/guards.rs) | `attest_rejects_out_of_band`, `nav_in_band_refuses_a_value_outside_the_band` |
+| Deviation cap: one report cannot move the price past the upward or downward cap | [`contracts/nav-oracle/src/test/oracle.rs`](./contracts/nav-oracle/src/test/oracle.rs), [`contracts/nav-oracle/src/test/guards.rs`](./contracts/nav-oracle/src/test/guards.rs) | `attest_enforces_cooldown_and_deviation`, `a_configured_downside_still_bounds_a_fall`, `a_full_downside_cap_still_bounds_a_rise`, `within_deviation_refuses_a_move_past_either_cap` |
+| Cooldown: a report inside the cooldown after the last one is refused | [`contracts/nav-oracle/src/test/oracle.rs`](./contracts/nav-oracle/src/test/oracle.rs), [`contracts/nav-oracle/src/test/guards.rs`](./contracts/nav-oracle/src/test/guards.rs) | `attest_enforces_cooldown_and_deviation`, `two_reports_in_one_ledger_are_refused_at_the_shortest_cooldown`, `cooldown_elapsed_refuses_a_report_inside_the_cooldown` |
+| Freshness: a report never outlives the freshness window, a report that is already expired is refused, and once a price expires the oracle reports it stale and the vault refuses to price an epoch with it | [`contracts/nav-oracle/src/test/oracle.rs`](./contracts/nav-oracle/src/test/oracle.rs), [`contracts/nav-oracle/src/test/guards.rs`](./contracts/nav-oracle/src/test/guards.rs), [`contracts/async-vault/src/test/oracle_pricing.rs`](./contracts/async-vault/src/test/oracle_pricing.rs) | `heartbeat_expiry_makes_it_stale`, `a_reporter_expiry_past_the_window_is_cut_to_the_window`, `expires_in_future_refuses_a_report_born_stale`, `fulfill_is_rejected_once_the_feed_goes_stale` |
+| TTL: the latest valuation keeps a full TTL while it is read | [`contracts/nav-oracle/src/test/oracle.rs`](./contracts/nav-oracle/src/test/oracle.rs) | `the_latest_valuation_keeps_a_full_ttl_while_it_is_read` |
+| TTL: setup, grant, hand-over and change calls extend the instance, and every role grant writes the role with its full TTL | [`contracts/nav-oracle/src/test/governance.rs`](./contracts/nav-oracle/src/test/governance.rs) | `setup_grants_hand_overs_and_changes_restore_the_instance_ttl`, `the_constructor_writes_each_role_with_the_full_ttl`, `a_grant_during_setup_writes_the_role_with_the_full_ttl`, `a_grant_through_the_timelock_writes_the_role_with_the_full_ttl` |
+
+The vault's test runs with `cargo test -p async-vault
+fulfill_is_rejected_once_the_feed_goes_stale`. [Testing](./docs/TESTING.md)
+lists the TTL tests for every contract.
 
 ## Demo deployment
 
@@ -97,12 +144,13 @@ the shell — and your editor's language server — automatically.
 ```sh
 rustup show                                # installs the toolchain pinned in rust-toolchain.toml
 rustup target add wasm32v1-none            # Soroban's wasm target
-cargo install --locked stellar-cli@27.0.0  # or: brew install stellar-cli
+cargo install --locked stellar-cli@27.0.0
 stellar contract build && cargo test
 ```
 
 Formatting and secret-scanning run on commit via a `prek` hook — see
-`.pre-commit-config.yaml` and run `prek install` once.
+`.pre-commit-config.yaml` and run `prek install` once. CI also scans every
+pull request's commits with the same gitleaks version.
 
 ### Integration & On-Chain Tests
 
@@ -112,7 +160,8 @@ From a fresh clone to a vault set deployed on a local network. Run these inside
 ```sh
 # A local Stellar network, RPC at http://localhost:8000/rpc
 docker run --rm -d -p 8000:8000 --name stellar-local \
-  stellar/quickstart --local --enable core,rpc
+  docker.io/stellar/quickstart:v687-b1580.1-latest@sha256:7711899e9942c60316ebacf8ab901be15bed7a5a31705d847b55375ff3bc8356 \
+  --local --enable core,rpc --protocol-version 30
 
 npm ci                                         # JS dependencies, including the harness
 stellar contract build                         # contract wasms
@@ -121,8 +170,11 @@ HARNESS_NETWORK=local npm run deploy -w scripts/harness
 ```
 
 `HARNESS_NETWORK` defaults to `local`; `testnet` deploys to testnet and rewrites
-the addresses table above. The local deploy funds its accounts from the
-quickstart root key, so it needs no `stellar keys` identity.
+the addresses table above and `[staging.contracts]` in `environments.toml`.
+Commit both files after a testnet deploy: the app's build reads those IDs, so
+until the change is committed it points at the previous contracts. The local
+deploy funds its accounts from the quickstart root key, so it needs no
+`stellar keys` identity.
 
 The first deploy writes a secret key for each harness account to
 `.env.keys.<network>` at the repository root, and later deploys reuse them. Back
@@ -139,16 +191,24 @@ Output of a real run from a fresh clone. Contract IDs differ on every run.
 deploying to local (http://localhost:8000/rpc)
 account keys in .env.keys.local (13 new)
 funded 13 accounts; 0 already existed
-asset contract CDKWXRAHPQVFOAEBOOWWR62ZXAE2IV4V47PATFN7IX4XDW5QIUUL7D2B
-compliance CDGKQCYSMTDRBO7SYV3V72H6AMCQ3UNQFKUU4AD5GSU2I32XDYFS6F3U
-identity_verifier CCZE76VWEWJ47NSFMIXCKU3L55CZZTI5JJY4CSYAWPO3WXPDFXUCA5G6
-share_token CD6IA3BOPFX7VNADJ3GFK7IZGPVPNZA6HBCF425CNPSQ2GN7QZ3UUCP2
-nav_oracle CAHD5ZKMIDD67ZEJUB5ACR62FMAYMQJ2KCRV2MBDNXWT7WEZ2VV3MRDD
-async_vault CDQNMAZP7D5IA7AXZGK3XWYPFD2LDR6V5HQD2OLXZJYNQN4BMNN6SXWJ
+asset contract CCW7OKVOXBBBX3YK6O7F6TZPNIFG32OG4UY7R2K6NSWZUI4R75QCEPVT
+returned the deposit asset of 0 accounts to its issuer
+compliance CDPCD2BQQKVQBQFAFI4YBLN3TRX34J5NZUQQMUBGHPYNY64LCEM63DTL
+identity_verifier CC4SRUIMKOBZSEO2GKGVQMDWPWCBJBBIMYYE7BBCUEZE6VMD3SFQDAMW
+share_token CDC7SRTDZIMJSLC5AONUD3FIFYZGMFOHRAS7LLYV2ATJRT7RMTMQO2DG
+nav_oracle CCUUBP3RGOIZZL4DUGRL4FBOSQJZKBPNQ7VUWIN6UOOYBJYYKGNT5E52
+async_vault CB2KVM2WHLXDZRHGCYPTGE7PZM6OORXCNVBUMC3L7GY5KX4BA6NMADXE
+commit <sha>
 clients generated
 vault holds share_token manager role
+share_token bound to the vault, setup finished
 vault is allowlisted
 share_token bound to compliance
+compliance bound to the vault, setup finished
+nav_oracle bound to the vault, setup finished
+vault notice set to 10 seconds
+vault setup finished
+health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
 wrote deployed.local.json
 ```
 
@@ -159,8 +219,49 @@ integration suites against that deployment:
 ```sh
 npm run test:happy-path -w scripts/harness
 npm run test:guards -w scripts/harness
+CARGO_TARGET_DIR=target/short-wind-down stellar contract build --package async-vault --features short_wind_down
+npm run test:wind-down -w scripts/harness
 ```
 
+Deploy afresh before each run of the suites. The deploy sets the vault's
+notice to twice the oracle cooldown (10 seconds on the local network, 120 on
+testnet), and the suites wait out the notice before they price an epoch.
+`test:wind-down` ignores `deployed.local.json`: it deploys its own throwaway
+vault set, built from the `short_wind_down` wasm above, so it can reach an
+active wind-down without the real seven-day minimum.
+
+Each deploy first returns any deposit asset the harness accounts hold to its
+issuer, so every holder starts a new set at zero. Deploy again and the suites
+run again on the same network.
+
+### Keeping a deployment alive
+
+Every contract extends its own storage when it is called, but a deployment
+nobody calls archives after 30 days. Keep the contracts callable with:
+
+```sh
+STELLAR_ACCOUNT=<identity or secret> npm run extend -w scripts/harness
+```
+
+It reads the testnet contracts from `environments.toml` and covers three kinds
+of entry: each contract instance, the Wasm it runs and each pending timelock
+change. It restores any of them that has archived, then extends each by 30
+days. Any funded account pays, since extending needs no authority. Use
+`--env <name>` for another environment, or `--config <record>` for a
+deployment record.
+
+It extends nothing else. Other entries, such as epochs, requests, balances and
+roles, still archive when nobody uses them. Nothing in them is lost: the next
+call that needs an archived entry restores it, and the account that sends that
+call pays the restore fee. For a holder's balance or request, that is usually
+the holder, on their next call. The
+[TTL policy](./docs/kit-spec.md#5-storage-lifetime-ttl-policy) says what each
+contract extends on its own and how a restore works.
+
+With `--config`, it uses the network the record names (`local` or `testnet`)
+unless `--env` names another environment, and it prints the network and RPC it
+uses before it sends anything. Put flags after `--`, or npm swallows them:
+`npm run extend -w scripts/harness -- --config <record>`.
 
 ## Reference base
 

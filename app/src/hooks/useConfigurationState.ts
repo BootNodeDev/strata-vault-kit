@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/react-query"
 import { asyncVault, shareToken } from "../config/clients"
 import {
 	type DepositCap,
+	type MinEpochDuration,
 	type OracleLimits,
 	useCycleReads,
 } from "./useCycleState"
+import { type SetupState, useSetupOpen } from "./useSetupOpen"
 import { type Custodian, useVaultAuthorities } from "./useVaultAuthorities"
 
 const STALE_MS = 30_000
@@ -18,7 +20,11 @@ export type ConfigurationValues = {
 	custodian: Custodian
 	notice: bigint | null
 	windDownDelay: bigint | null
+	minEpochDuration: MinEpochDuration | null
 	upgradeDelay: bigint | null
+	setupOpen: boolean | null
+	tokenSetupOpen: boolean | null
+	oracleSetupOpen: boolean | null
 	oracle: OracleLimits | null
 	compliance: string | null
 	identityVerifier: string | null
@@ -26,6 +32,9 @@ export type ConfigurationValues = {
 
 export type ConfigurationState =
 	{ status: "checking" } | ({ status: "ready" } & ConfigurationValues)
+
+const openOf = (setup: SetupState): boolean | null =>
+	setup === "unreadable" ? null : setup === "open"
 
 const valueOf = <T>(read: ContractRead<T>): T | null =>
 	read.kind === "value" ? read.value : null
@@ -48,6 +57,9 @@ export function useConfigurationState(): {
 } {
 	const cycle = useCycleReads()
 	const { authorities, isPending } = useVaultAuthorities()
+	const { setup } = useSetupOpen("vault")
+	const { setup: tokenSetup } = useSetupOpen("token")
+	const { setup: oracleSetup } = useSetupOpen("oracle")
 	const { data: reads } = useQuery({
 		queryKey: configurationReadsKey,
 		queryFn: fetchConfigurationReads,
@@ -55,7 +67,14 @@ export function useConfigurationState(): {
 		refetchInterval: REFRESH_MS,
 	})
 
-	if (cycle === undefined || reads === undefined || isPending)
+	if (
+		cycle === undefined ||
+		reads === undefined ||
+		isPending ||
+		setup === "checking" ||
+		tokenSetup === "checking" ||
+		oracleSetup === "checking"
+	)
 		return { configuration: { status: "checking" } }
 
 	return {
@@ -65,6 +84,10 @@ export function useConfigurationState(): {
 			custodian: authorities?.custodian ?? { kind: "unreadable" },
 			notice: valueOf(cycle.notice),
 			windDownDelay: cycle.windDown.delay,
+			minEpochDuration: cycle.minEpochDuration,
+			setupOpen: openOf(setup),
+			tokenSetupOpen: openOf(tokenSetup),
+			oracleSetupOpen: openOf(oracleSetup),
 			oracle: cycle.oracle.limits,
 			...reads,
 		},
