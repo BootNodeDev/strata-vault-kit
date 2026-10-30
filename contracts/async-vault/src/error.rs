@@ -103,7 +103,8 @@ strata_bindings::error_enum! {
         /// The delay exceeds the longest the vault accepts. A delay nobody could
         /// outlive would mean the vault never closes.
         WindDownDelayTooLong = 6053,
-        /// Nothing to surrender and nothing owed. Claiming is idempotent by
+        /// Nothing to surrender and nothing owed, or the holder is the vault,
+        /// whose shares are other holders' escrow. Claiming is idempotent by
         /// rejection, as elsewhere in this contract.
         NoEntitlement = 6054,
         /// A code change already waits. Replacing one means cancelling it first, so

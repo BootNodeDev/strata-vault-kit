@@ -97,7 +97,6 @@ jobs:
           cache-bin: "false"
           workspaces: |
             . -> target
-            fixtures/upgrade-target -> target
       # Before the CLI install so a broken contract test fails without
       # waiting on it. rustup picks the toolchain from rust-toolchain.toml.
       - name: Run the contract unit tests
@@ -107,16 +106,19 @@ jobs:
           libdbus-1-dev pkg-config
       - name: Install the stellar CLI
         run: scripts/ci/install-tools.sh stellar
-      # The upgrade tests run built Wasm, so they need the fixture, both
-      # contracts and their probe builds first (docs/TESTING.md).
+      # The upgrade tests run built Wasm, so they need both contracts and
+      # their probe builds first (docs/TESTING.md).
       - name: Run the Wasm upgrade tests
         run: |
-          stellar contract build --manifest-path fixtures/upgrade-target/Cargo.toml
+          # Setting pipefail so a failing test run is not hidden by `tee`
+          set -o pipefail
           stellar contract build --package share-token
           stellar contract build --package nav-oracle
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
-          cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package async-vault --features upgrade_probe
+          cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm 2>&1 | tee upgrade-tests.log
+          scripts/ci/check-tests-ran.sh upgrade-tests.log test::upgrade::with_wasm test_governance::with_wasm
 
   network:
     needs: changes

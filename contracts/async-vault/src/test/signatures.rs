@@ -122,3 +122,72 @@ fn each_role_call_asks_its_holder_for_one_signature() {
         (guardian, f.guardian.clone()).into_val(&f.e),
     );
 }
+
+#[test]
+fn cancel_deposit_asks_the_holder_for_one_signature() {
+    let f = setup();
+    let holder = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&holder, &400);
+
+    f.e.set_auths(&[]);
+    missing_auth(f.vault.try_cancel_deposit(&holder, &epoch));
+
+    f.e.mock_all_auths();
+    assert_eq!(f.vault.cancel_deposit(&holder, &epoch), 400);
+    f.signed_once_by(
+        &holder,
+        "cancel_deposit",
+        (holder.clone(), epoch).into_val(&f.e),
+    );
+}
+
+#[test]
+fn cancel_redeem_asks_the_holder_for_one_signature() {
+    let f = setup();
+    let holder = f.holder(500);
+    let epoch = f.vault.request_redeem(&holder, &200);
+
+    f.e.set_auths(&[]);
+    missing_auth(f.vault.try_cancel_redeem(&holder, &epoch));
+
+    f.e.mock_all_auths();
+    assert_eq!(f.vault.cancel_redeem(&holder, &epoch), 200);
+    f.signed_once_by(
+        &holder,
+        "cancel_redeem",
+        (holder.clone(), epoch).into_val(&f.e),
+    );
+}
+
+#[test]
+fn claim_redeem_asks_the_holder_for_one_signature() {
+    let f = setup();
+    let holder = f.holder(500);
+    let epoch = f.vault.request_redeem(&holder, &200);
+    f.fulfill_epoch(wad(2));
+
+    f.e.set_auths(&[]);
+    missing_auth(f.vault.try_claim_redeem(&holder, &epoch));
+
+    f.e.mock_all_auths();
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 400);
+    f.signed_once_by(
+        &holder,
+        "claim_redeem",
+        (holder.clone(), epoch).into_val(&f.e),
+    );
+}
+
+#[test]
+fn claim_wind_down_asks_the_holder_for_one_signature() {
+    let f = setup();
+    let holder = f.holder(500);
+    let pot = super::wind_down::first_round_now(&f);
+
+    f.e.set_auths(&[]);
+    missing_auth(f.vault.try_claim_wind_down(&holder));
+
+    f.e.mock_all_auths();
+    assert_eq!(f.vault.claim_wind_down(&holder), pot);
+    f.signed_once_by(&holder, "claim_wind_down", (holder.clone(),).into_val(&f.e));
+}

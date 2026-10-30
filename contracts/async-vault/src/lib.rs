@@ -516,7 +516,8 @@ impl AsyncVault {
     /// * `Frozen` - `holder` is frozen.
     /// * `AmountTooLarge` - A total would overflow.
     /// * `AccountingMismatch` - A payout would go below what was already paid.
-    /// * `NoEntitlement` - Nothing to surrender and nothing owed.
+    /// * `NoEntitlement` - Nothing to surrender and nothing owed, or
+    ///   `holder` is the vault.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -532,8 +533,8 @@ impl AsyncVault {
     }
 
     /// What `claim_wind_down` would pay `holder` now, in asset base units:
-    /// zero before the first round and for a frozen holder; fails where the
-    /// claim fails.
+    /// zero before the first round, for a frozen holder and for the vault;
+    /// fails where the claim fails.
     ///
     /// # Arguments
     ///
@@ -1303,6 +1304,32 @@ impl ClockSource for AsyncVault {
 impl TimelockHost for AsyncVault {
     fn clock(e: &Env) -> Result<Clock, Refusal> {
         Ok(governance::clock(e))
+    }
+}
+
+/// Stands in for a later vault version in the upgrade tests. Never deployed.
+#[cfg(feature = "upgrade_probe")]
+#[soroban_sdk::contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ProbeError {
+    AlreadyMigrated = 6100,
+}
+
+#[cfg(feature = "upgrade_probe")]
+#[contractimpl]
+impl AsyncVault {
+    #[only_admin]
+    pub fn migrate(e: &Env) {
+        strata_storage::bump_instance(e);
+        if upgradeable::get_schema_version(e) >= 2 {
+            panic_with_error!(e, ProbeError::AlreadyMigrated);
+        }
+        upgradeable::set_schema_version(e, 2);
+    }
+
+    pub fn probe(_e: &Env) -> bool {
+        true
     }
 }
 

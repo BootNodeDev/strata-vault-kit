@@ -132,7 +132,7 @@ fn only_governance_proposes_and_cancels() {
 
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(who, "propose_change", (change.clone(),).into_val(&f.e));
-        assert!(f.vault.try_propose_change(&change).is_err());
+        missing_auth(f.vault.try_propose_change(&change));
     }
     let delay = VaultChange::UpgradeDelay(30 * DAY_DURATION);
     f.sign_only_as(
@@ -140,13 +140,13 @@ fn only_governance_proposes_and_cancels() {
         "propose_change",
         (delay.clone(),).into_val(&f.e),
     );
-    assert!(f.vault.try_propose_change(&delay).is_err());
+    missing_auth(f.vault.try_propose_change(&delay));
 
     f.e.mock_all_auths();
     let id = propose(&f, change);
     for who in [&stranger, &f.guardian] {
         f.sign_only_as(who, "cancel_change", (id,).into_val(&f.e));
-        assert!(f.vault.try_cancel_change(&id).is_err());
+        missing_auth(f.vault.try_cancel_change(&id));
     }
 }
 
@@ -230,7 +230,10 @@ fn a_pause_freezes_the_upgrade_timelock_clock() {
     f.vault.pause(&f.guardian);
     f.advance(10 * DAY_DURATION);
 
-    assert!(f.vault.try_apply_change(&id).is_err());
+    assert_eq!(
+        f.vault.try_apply_change(&id),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
 
     // Unpause: the eta has moved by the ten days spent paused.
     f.vault.unpause(&f.admin);
@@ -294,7 +297,7 @@ fn only_governance_applies() {
 
     for who in [&stranger, &f.manager, &f.guardian] {
         f.sign_only_as(who, "apply_change", (id,).into_val(&f.e));
-        assert!(f.vault.try_apply_change(&id).is_err());
+        missing_auth(f.vault.try_apply_change(&id));
     }
     assert_eq!(f.vault.pending_changes().len(), 1);
 }
@@ -317,22 +320,30 @@ fn has_no_function(e: &Env, function: &str) -> bool {
         })
 }
 
+/// What a caller sees when the host refuses a call: every host error is
+/// narrowed to this one.
+fn host_refusal() -> soroban_sdk::Error {
+    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
+    soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
+}
+
 #[test]
 fn the_vault_exposes_no_immediate_upgrade() {
     let f = setup();
     let upgrader =
         stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.vault.address);
 
-    assert!(upgrader.try_upgrade(&wasm(&f, 7), &f.admin).is_err());
+    assert_eq!(
+        upgrader.try_upgrade(&wasm(&f, 7), &f.admin),
+        Err(Ok(host_refusal()))
+    );
     assert!(has_no_function(&f.e, "upgrade"));
 }
 
 #[test]
 fn nothing_is_proposed_during_a_wind_down() {
     let f = setup();
-    f.vault.propose_wind_down();
-    f.advance(MIN_WIND_DOWN_DELAY);
-    f.vault.activate_wind_down();
+    super::wind_down::wind_down_now(&f);
 
     refused(
         f.vault
@@ -345,9 +356,7 @@ fn nothing_is_proposed_during_a_wind_down() {
 fn a_change_standing_when_the_wind_down_starts_never_applies() {
     let f = setup();
     let id = propose(&f, VaultChange::Upgrade(wasm(&f, 7)));
-    f.vault.propose_wind_down();
-    f.advance(MIN_WIND_DOWN_DELAY);
-    f.vault.activate_wind_down();
+    super::wind_down::wind_down_now(&f);
     f.advance(MAX_UPGRADE_DELAY);
 
     refused(f.vault.try_apply_change(&id), VaultError::WindDownActive);
@@ -433,13 +442,9 @@ fn the_vault_reports_its_clock_to_the_token_and_the_oracle() {
 #[cfg(feature = "upgrade_wasm")]
 mod with_wasm {
     use share_token::TokenChange;
-    use soroban_sdk::xdr::{ContractEventBody, ScError, ScErrorCode, ScErrorType, ScSymbol, ScVal};
+    use soroban_sdk::xdr::{ContractEventBody, ScError, ScErrorCode, ScSymbol, ScVal};
 
     use super::*;
-
-    soroban_sdk::contractimport!(
-        file = "../../fixtures/upgrade-target/target/wasm32v1-none/release/upgrade_target.wasm"
-    );
 
     mod token_v1 {
         soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/share_token.wasm");
@@ -451,10 +456,19 @@ mod with_wasm {
         );
     }
 
-    /// What a caller sees when the host refuses a call: every host error is
-    /// narrowed to this one.
-    fn host_refusal() -> soroban_sdk::Error {
-        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
+    mod vault_probe {
+        soroban_sdk::contractimport!(
+            file = "../../target/upgrade-probe/wasm32v1-none/release/async_vault.wasm"
+        );
+    }
+
+    /// Upgrades the vault to its probe build.
+    fn upgrade_to_probe<'a>(f: &'a Fixture) -> vault_probe::Client<'a> {
+        let hash = f.e.deployer().upload_contract_wasm(vault_probe::WASM);
+        let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
+        f.advance(MIN_UPGRADE_DELAY);
+        f.vault.apply_change(&id);
+        vault_probe::Client::new(&f.e, &f.vault.address)
     }
 
     /// Whether the host refused a call to `function` because the contract
@@ -537,47 +551,73 @@ mod with_wasm {
     }
 
     #[test]
-    fn immediate_upgrade_with_valid_wasm_does_not_replace_code() {
-        let f = setup();
-        let hash = f.e.deployer().upload_contract_wasm(WASM);
-
-        let client =
-            stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.vault.address);
-        assert!(client.try_upgrade(&hash, &f.admin).is_err());
-        assert_eq!(f.vault.schema_version(), 1);
-        let target = Client::new(&f.e, &f.vault.address);
-        assert!(target.try_migrate(&f.admin).is_err());
-    }
-
-    #[test]
     fn applying_a_wasm_change_replaces_the_code() {
         let f = setup();
-        let hash = f.e.deployer().upload_contract_wasm(WASM);
-        assert_eq!(f.vault.schema_version(), 1);
 
-        let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
-        f.advance(MIN_UPGRADE_DELAY);
-        f.vault.apply_change(&id);
+        let probe = upgrade_to_probe(&f);
+        assert!(probe.probe());
+        assert_eq!(probe.schema_version(), 1);
 
-        let target = Client::new(&f.e, &f.vault.address);
-        assert_eq!(target.schema_version(), 1);
+        probe.migrate();
+        assert_eq!(probe.schema_version(), 2);
 
-        target.migrate(&f.admin);
-        assert_eq!(target.schema_version(), 2);
+        assert_eq!(
+            probe.try_migrate(),
+            Err(Ok(vault_probe::ProbeError::AlreadyMigrated.into()))
+        );
+        assert_eq!(probe.schema_version(), 2);
     }
 
     #[test]
-    fn a_migration_refuses_a_second_run() {
+    fn the_vault_upgrades_under_open_requests_and_a_proposed_wind_down() {
         let f = setup();
-        let hash = f.e.deployer().upload_contract_wasm(WASM);
-        let id = f.vault.propose_change(&VaultChange::Upgrade(hash));
-        f.advance(MIN_UPGRADE_DELAY);
-        f.vault.apply_change(&id);
+        let staying = f.holder(500);
+        let exiting = f.holder(300);
+        let priced = f.vault.request_redeem(&exiting, &100);
+        f.fulfill_epoch(wad(2));
+        let depositor = f.investor(400);
+        let open = f.vault.request_deposit(&depositor, &400);
+        let successor = Address::generate(&f.e);
+        let queued = f
+            .vault
+            .propose_change(&VaultChange::Custodian(successor.clone()));
+        f.vault.propose_wind_down();
+        let kept = (
+            f.vault.get_epoch(&open),
+            f.vault.get_deposit_request(&open, &depositor),
+            f.vault.get_epoch(&priced),
+            f.vault.get_redeem_request(&priced, &exiting),
+            f.vault.committed(),
+            f.vault.wind_down(),
+            f.vault.pending_changes(),
+        );
 
-        let target = Client::new(&f.e, &f.vault.address);
-        target.migrate(&f.admin);
+        let probe = upgrade_to_probe(&f);
+        assert!(probe.probe());
+        probe.migrate();
+        assert_eq!(probe.schema_version(), 2);
+        assert_eq!(
+            (
+                f.vault.get_epoch(&open),
+                f.vault.get_deposit_request(&open, &depositor),
+                f.vault.get_epoch(&priced),
+                f.vault.get_redeem_request(&priced, &exiting),
+                f.vault.committed(),
+                f.vault.wind_down(),
+                f.vault.pending_changes(),
+            ),
+            kept
+        );
 
-        assert!(target.try_migrate(&f.admin).is_err());
-        assert_eq!(target.schema_version(), 2);
+        assert_eq!(f.vault.claim_redeem(&exiting, &priced), 200);
+        f.vault.apply_change(&queued);
+        assert_eq!(f.vault.custodian(), Some(successor));
+        assert_eq!(f.close_epoch(), open);
+        f.fulfill_epoch_at(open, wad(2));
+        assert_eq!(f.vault.claim_deposit(&depositor, &open), 200);
+        f.vault.activate_wind_down();
+        assert_eq!(f.vault.finalize_wind_down_round(), 1_800);
+        assert_eq!(f.vault.wind_down_supply(), 900);
+        assert_eq!(f.vault.claim_wind_down(&staying), 1_000);
     }
 }

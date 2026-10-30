@@ -385,7 +385,7 @@ without checking the feed's state.
 - **Tests:** `the_nav_pause_holds_regardless_of_freshness` and
   `heartbeat_expiry_makes_it_stale` in
   [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
-  `a_paused_feed_is_refused_by_the_vault_not_the_oracle` in
+  `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
 
 ## Roles
@@ -881,9 +881,9 @@ An administrative act stops a holder from collecting a priced, covered exit.
   `a_priced_claim_still_pays_during_a_wind_down` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs), which pays
   a week after the price, when the test feed's one-hour report has long
-  expired. A claim while the NAV is paused: none; the claim code (`claim` in
-  [`contracts/async-vault/src/redeem.rs`](../contracts/async-vault/src/redeem.rs))
-  never calls the oracle.
+  expired; `a_priced_redemption_still_pays_while_the_nav_is_paused` and
+  `a_priced_redemption_still_pays_once_the_feed_goes_stale` in
+  [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
 
 ### X3. A frozen holder
 
@@ -1060,19 +1060,22 @@ others' cost.
     lifts it.
   - Shares sent to a vault before its token was upgraded stay in the snapshot,
     and no one can claim their slice.
-- **Tests:** `only_governance_proposes`, `activation_is_open_to_a_stranger`,
+- **Tests:** `only_governance_proposes`,
+  `governance_proposes_and_anyone_activates_after_the_delay`,
   `governance_cancels_a_proposal_before_activation`,
   `an_active_wind_down_cannot_be_cancelled`, `anyone_may_finalise_a_round`,
   `a_round_leaves_priced_liabilities_alone`,
   `the_payouts_never_exceed_what_the_rounds_credited`,
-  `after_every_holder_claims_owed_keeps_at_most_one_unit_per_holder`,
+  `multiple_rounds_with_floor_dust_remain_solvent_for_last_claimant`,
   `a_round_of_one_unit_at_the_lowest_price_still_credits_it`,
   `at_the_lowest_price_holders_collect_the_reserve_less_a_unit_each`,
-  `the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge` and
-  `the_claimable_view_shows_what_the_claim_then_pays` in
+  `the_claimable_view_and_the_claim_fail_alike_at_the_overflow_edge`,
+  `the_claimable_view_shows_what_the_claim_then_pays` and
+  `the_vault_cannot_claim_against_its_own_escrowed_shares` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
   `wind_down_delay_elapsed_refuses_before_the_activation_time` (the guard
-  `activate_wind_down` runs) in
+  `activate_wind_down` runs) and
+  `holder_not_the_vault_refuses_the_vault_itself` in
   [`guards.rs`](../contracts/async-vault/src/test/guards.rs). For
   `uncovered()` with round credits, none: the limit is stated, not built.
 
@@ -1238,11 +1241,14 @@ or queued changes.
   the vault also an upgrade-delay change). Cancelling such a change still
   works, since cancelling does not read it. Recovery needs a migration written
   for that release.
-- **Tests:** `applying_a_wasm_change_replaces_the_code` and
-  `a_migration_refuses_a_second_run` (a stand-in contract with a test-only
-  `migrate`), and `the_token_upgrades_under_live_balances_and_open_requests`
+- **Tests:** `applying_a_wasm_change_replaces_the_code` (a probe build of the
+  vault with a test-only `migrate`),
+  `the_token_upgrades_under_live_balances_and_open_requests`
   (a token upgrade that keeps the storage shape, under live balances and open
-  requests), all with `--features upgrade_wasm`, in
+  requests), and `the_vault_upgrades_under_open_requests_and_a_proposed_wind_down`
+  (a vault upgrade that keeps an open epoch, a priced redemption, a queued
+  change and a proposed wind-down, and lets the new code pay, apply, price and
+  wind down from them), all with `--features upgrade_wasm`, in
   [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
   `the_oracle_upgrades_under_a_live_valuation`, also with `upgrade_wasm`, in
   [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs).
@@ -1284,7 +1290,6 @@ These are decided, and stated as they stand:
 
 For Tranche 3's matrix:
 
-- A covered claim while the NAV is paused (X2).
 - Each authority's signers and thresholds, read on the network (R4).
 - A privileged call sent through a relayer: dropped, since the kit runs no
   relayer (R4).

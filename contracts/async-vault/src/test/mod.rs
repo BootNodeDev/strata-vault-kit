@@ -241,6 +241,21 @@ pub(crate) fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + Par
     assert_eq!(result, Err(Ok(expected.into())));
 }
 
+/// Asserts a call failed for lack of a valid signature: the host's own
+/// refusal of the invocation, not one of the vault's named errors.
+pub(crate) fn missing_auth<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
+    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+) {
+    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_type_and_code(
+            ScErrorType::Context,
+            ScErrorCode::InvalidAction
+        )))
+    );
+}
+
 pub(crate) fn register_with(e: &Env, roles: VaultRoles) -> Address {
     let issuer = Address::generate(e);
     let asset = e.register_stellar_asset_contract_v2(issuer).address();
