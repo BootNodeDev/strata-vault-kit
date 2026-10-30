@@ -107,9 +107,9 @@ The attester, compromised or careless, posts a price that passes every check.
   `attest_rejects_out_of_band` (only the floor and zero, through `attest`),
   `attest_enforces_cooldown_and_deviation` and
   `a_configured_downside_still_bounds_a_fall` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `nav_in_band_refuses_a_value_outside_the_band` (both ends of the band) in
-  [`nav-oracle/src/test_guards.rs`](../contracts/nav-oracle/src/test_guards.rs);
+  [`nav-oracle/src/test/guards.rs`](../contracts/nav-oracle/src/test/guards.rs);
   `an_epoch_is_not_priced_against_a_valuation_older_than_its_close` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
   `an_epoch_cannot_be_priced_inside_its_notice` in
@@ -129,7 +129,7 @@ A compromised attester moves the price in many steps, each inside the caps.
   [monitoring plan](./MONITORING_PLAN.md#v5-a-run-of-reports-one-way).
 - **Tests:** `two_reports_in_one_ledger_are_refused_at_the_shortest_cooldown`
   and `attest_enforces_cooldown_and_deviation` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs).
 
 ### O3. A real move larger than a cap
 
@@ -148,9 +148,9 @@ The asset really loses, or gains, more than one report may show.
 - **Tests:** `a_full_downside_cap_lets_a_large_loss_land_at_once`,
   `a_full_downside_cap_leaves_min_answer_as_the_only_floor` and
   `a_configured_downside_still_bounds_a_fall` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `a_tighter_cap_or_band_waits_after_setup` in
-  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs).
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs).
 
 ### O4. The feed goes stale
 
@@ -169,7 +169,7 @@ The attester stops reporting, or the last report expires.
   waits for the timelock: at least seven days, plus any time the vault spends
   paused.
 - **Tests:** `heartbeat_expiry_makes_it_stale` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `fulfill_is_rejected_once_the_feed_goes_stale` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
   `a_sealed_epoch_cancels_once_the_feed_goes_stale` in
@@ -195,9 +195,9 @@ valuation made before the seal.
   made before it.
 - **Tests:** `a_reporter_expiry_past_the_window_is_cut_to_the_window` and
   `attested_at_is_when_the_contract_took_the_report` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `expires_in_future_refuses_a_report_born_stale` in
-  [`nav-oracle/src/test_guards.rs`](../contracts/nav-oracle/src/test_guards.rs);
+  [`nav-oracle/src/test/guards.rs`](../contracts/nav-oracle/src/test/guards.rs);
   `an_attestation_before_the_close_does_not` in
   [`timing.rs`](../contracts/async-vault/src/test/timing.rs).
 
@@ -244,9 +244,9 @@ A compromised guardian pauses the NAV, again and again.
   guardian is the vault's guardian by deploy only.
 - **Tests:** `pausing_the_nav_is_limited_to_the_guardian` and
   `the_guardian_pauses_the_nav_but_unpausing_needs_governance` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `revoking_an_attester_or_a_guardian_stays_instant_after_setup` in
-  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs);
   `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
   `a_sealed_epoch_cancels_while_the_nav_is_paused` in
@@ -270,9 +270,9 @@ cap it.
   [monitoring plan](./MONITORING_PLAN.md#v6-the-stored-report-is-cleared).
 - **Tests:** `the_record_clears_only_while_the_nav_is_paused` and
   `only_admin_can_clear_latest` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `the_nav_pause_and_clearing_stay_instant_after_setup` in
-  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs).
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs).
 
 ### O9. Governance changes the limits or the feed
 
@@ -306,10 +306,10 @@ controls.
 - **Tests:** `a_tighter_cap_or_band_waits_after_setup`,
   `a_shorter_freshness_window_stays_instant_after_setup` and
   `a_config_outside_the_bounds_is_refused_when_it_applies` in
-  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs);
   `a_floor_below_a_millionth_of_an_asset_unit_per_share_is_refused` and
   `a_stored_floor_below_the_minimum_stays_until_a_config_change_raises_it` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `the_oracle_changes_only_through_the_timelock`,
   `a_feed_outside_this_vault_is_never_proposed`,
   `a_feed_that_stops_naming_this_vault_is_never_installed`,
@@ -344,7 +344,7 @@ A report's evidence is missing, wrong, or has nothing to do with the price.
   `attesting_publishes_the_stored_valuation` and
   `a_proof_uri_at_the_limit_is_stored_and_published` (both check that
   `NavAttested` carries the proof) in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs).
 
 ### O11. An oracle upgraded in place cannot read its old report
 
@@ -368,7 +368,7 @@ vault or during a wind-down still works: the vault does not ask the feed then.
   That report has no earlier price to cap it (O8). A fresh deployment has no
   old report.
 - **Tests:** `a_report_of_the_earlier_shape_is_cleared_and_replaced` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs).
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs).
 
 ### O12. An integrator reads a price the vault would refuse
 
@@ -384,7 +384,7 @@ without checking the feed's state.
   reads a price the vault would refuse. The SEP-40 adapter is not built yet.
 - **Tests:** `the_nav_pause_holds_regardless_of_freshness` and
   `heartbeat_expiry_makes_it_stale` in
-  [`nav-oracle/src/test.rs`](../contracts/nav-oracle/src/test.rs);
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
 
@@ -447,7 +447,7 @@ Someone takes governance's keys and changes code, roles or wiring.
   `grants_wait_after_setup_and_land_through_the_timelock`,
   `an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down` and, with
   `upgrade_wasm`, `the_oracle_exposes_no_immediate_upgrade` in
-  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs);
   `after_setup_rule_changes_wait_for_the_timelock` and
   `an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down` in
   [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs);
@@ -484,7 +484,7 @@ Someone takes governance's keys and uses the powers that need no delay.
   [`governance.rs`](../contracts/async-vault/src/test/governance.rs);
   `the_nav_pause_and_clearing_stay_instant_after_setup` and
   `revoking_an_attester_or_a_guardian_stays_instant_after_setup` in
-  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs);
   `revoking_compliance_stays_instant_after_setup` in
   [`share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs);
   `governance_cancels_a_proposal_before_activation` in
@@ -575,7 +575,7 @@ than it shows.
   roles, `set_config`, the NAV pause, `clear_latest`) and
   `each_role_call_asks_its_holder_for_one_signature` (`attest`, `pause_nav`,
   `renounce_role`, accepting a hand-over) in
-  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs);
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs);
   `each_admin_call_asks_the_admin_for_one_signature` (setup, bindings, modules,
   the change queue) in
   [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs);
@@ -1251,7 +1251,7 @@ or queued changes.
   wind down from them), all with `--features upgrade_wasm`, in
   [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
   `the_oracle_upgrades_under_a_live_valuation`, also with `upgrade_wasm`, in
-  [`nav-oracle/src/test_governance.rs`](../contracts/nav-oracle/src/test_governance.rs).
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs).
   A vault upgrade over stored entries of another shape: none, because no
   release changes a stored type yet. The failures above are read from the
   code, and a test belongs with the first release that changes one.

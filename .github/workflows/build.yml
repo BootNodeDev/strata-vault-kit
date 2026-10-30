@@ -118,7 +118,7 @@ jobs:
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package async-vault --features upgrade_probe
           cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm 2>&1 | tee upgrade-tests.log
-          scripts/ci/check-tests-ran.sh upgrade-tests.log test::upgrade::with_wasm test_governance::with_wasm
+          scripts/ci/check-tests-ran.sh upgrade-tests.log test::upgrade::with_wasm test::governance::with_wasm
 
   network:
     needs: changes

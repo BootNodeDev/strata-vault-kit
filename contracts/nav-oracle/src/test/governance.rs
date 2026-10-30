@@ -23,6 +23,8 @@ use crate::{
     ADMIN_ACCEPT_LEDGERS,
 };
 
+use super::{missing_auth, refused};
+
 const SCALE: i128 = 1_000_000_000_000_000_000;
 const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
 /// Testnet's minimum lifetime of a new persistent entry, in ledgers.
@@ -213,29 +215,6 @@ fn setup_with<'a>(register: impl FnOnce(&Env, OracleArgs) -> Address) -> Fixture
 
 fn setup<'a>() -> Fixture<'a> {
     setup_with(|e, args| e.register(NavOracleContract, args))
-}
-
-fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
-    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
-    expected: OracleError,
-) {
-    assert_eq!(result, Err(Ok(expected.into())));
-}
-
-/// Asserts a call failed for lack of a valid signature, or because the callee
-/// answers no interface the host can invoke: either way, the host's own
-/// refusal of the invocation, not one of the oracle's named errors.
-fn missing_auth<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
-    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
-) {
-    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
-    assert_eq!(
-        result,
-        Err(Ok(soroban_sdk::Error::from_type_and_code(
-            ScErrorType::Context,
-            ScErrorCode::InvalidAction
-        )))
-    );
 }
 
 #[test]

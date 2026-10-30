@@ -15,31 +15,10 @@ use crate::{
     NavInput, NavOracleContract, NavOracleContractClient, OracleConfig, OracleError, OracleState,
 };
 
+use super::{missing_auth, refused};
+
 const SCALE: i128 = 1_000_000_000_000_000_000;
 const DAY_IN_LEDGERS: u32 = 17_280;
-
-/// Asserts a call was refused with exactly this error.
-fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
-    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
-    expected: OracleError,
-) {
-    assert_eq!(result, Err(Ok(expected.into())));
-}
-
-/// Asserts a call failed for lack of a valid signature: the host's own
-/// refusal of the invocation, not one of the oracle's named errors.
-fn missing_auth<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
-    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
-) {
-    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
-    assert_eq!(
-        result,
-        Err(Ok(soroban_sdk::Error::from_type_and_code(
-            ScErrorType::Context,
-            ScErrorCode::InvalidAction
-        )))
-    );
-}
 
 struct Fixture<'a> {
     #[allow(dead_code)]
