@@ -74,6 +74,38 @@ above.
 | Redeem (request) | `request_redeem` | [`d6c02ee0…7524`](https://stellar.expert/explorer/testnet/tx/d6c02ee0868235fd12c280ba8c4e17fd6d63f4a117e9c48a897185c72dc97524) |
 | Withdraw (claim cash) | `claim_redeem` | [`27a81778…db64`](https://stellar.expert/explorer/testnet/tx/27a8177877ecac5a4c87c1b4bed12e5f8664ca387f13fd9c05f8062ec68bdb64) |
 
+## Redemption queue
+
+The notice-period queue on testnet, against the contract IDs above, run by the
+harness scenario [`redemption-queue.test.ts`](./scripts/harness/redemption-queue.test.ts)
+on 2026-11-02. Repeat it on a seeded deployment:
+
+```sh
+HARNESS_NETWORK=testnet npm run seed                            # once: holders hold shares
+HARNESS_NETWORK=testnet npm run test:queue -w scripts/harness   # prints `tx <label> <hash>`
+```
+
+The treasury deploys the free reserve first, so the redemption that follows is
+larger than the cash left in the vault. All steps are in epoch 3.
+
+| Step | Account | Entrypoint | Transaction |
+| --- | --- | --- | --- |
+| Deploy the free reserve to the custodian (5,499 USDC) | treasury | `deploy_to_custodian` | [`93f5fad4…3c59`](https://stellar.expert/explorer/testnet/tx/93f5fad45b33751197ee31de6062a70dbff058d69a98fc176aa8f193a5c93c59) |
+| Request a redemption (10 shares) | holder-2 | `request_redeem` | [`3c507d84…ee38`](https://stellar.expert/explorer/testnet/tx/3c507d84b1b5bc40d1fd4fc231731f28ccef7aaaaa126a3ec07e16a9315aee38) |
+| Cancel it before the epoch closes | holder-2 | `cancel_redeem` | [`bd35fdcd…15c6`](https://stellar.expert/explorer/testnet/tx/bd35fdcd76cae0938b753926c1b2094a660c49b0199cbccab4479678ef6d15c6) |
+| Request again (1,001 shares) | holder-2 | `request_redeem` | [`0b72ab37…4681`](https://stellar.expert/explorer/testnet/tx/0b72ab37c7057aae3fe5466d4dc906a14bf54db20a900535d7a3be24066e4681) |
+| Seal the epoch | manager | `close_epoch` | [`d1f52849…7ec3`](https://stellar.expert/explorer/testnet/tx/d1f528498e377777bf3dc941c137dbaf6653cc0ff4821b9563fffa7797a77ec3) |
+| Attest the NAV | attester | `attest` | [`14daff3d…3543`](https://stellar.expert/explorer/testnet/tx/14daff3d640ebb5b84ca71cc2ba9326b43a57d3f50855adb70bf657b710e3543) |
+| Price the epoch | any account | `fulfill_epoch` | [`2f3b4564…9902`](https://stellar.expert/explorer/testnet/tx/2f3b4564afd92014d0db369a707e9f82eb0d16cd107e7c41a0b1afea9c689902) |
+| Return the capital | custodian | `fund` | [`074cc4be…24fd`](https://stellar.expert/explorer/testnet/tx/074cc4be2972a3ff27f3ea6ea332fa3a97da04bd460ef39eaf8c12abb71924fd) |
+| Claim the cash (1,001 USDC) | holder-2 | `claim_redeem` | [`8d169333…0eee`](https://stellar.expert/explorer/testnet/tx/8d169333d36a929616df933d64aa67b8e075a886d07b40d007b0d8696a180eee) |
+
+Once the epoch is priced the vault owes 1,001 USDC more against 1,000 USDC of
+liquid reserve, so `uncovered()` is above zero. The claim at that point is
+refused with `ClaimNotCovered`. It fails at simulation and leaves no
+transaction, so the evidence of the short reserve is the pricing transaction
+before it and the `fund` that clears it.
+
 ## Vault figures
 
 The [live dApp](https://strata-vault-kit-app.vercel.app) shows Withdrawable and

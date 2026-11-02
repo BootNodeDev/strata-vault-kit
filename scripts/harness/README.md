@@ -23,6 +23,10 @@ CI runs these in the `js` job through the root `npm run test`.
 # Run test suites
 npm run test:happy-path
 npm run test:guards
+
+# The redemption queue on a seeded deployment (`npm run seed`); prints each
+# transaction as `tx <label> <hash>`
+npm run test:queue
 ```
 
 `HARNESS_NETWORK` picks the network: `local` (the default) or `testnet`.
