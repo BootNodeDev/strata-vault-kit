@@ -72,9 +72,13 @@ beforeAll(async () => {
 describe("an account with no role", () => {
 	const who = outsider.publicKey()
 
-	it("cannot close the epoch", async () => {
+	it("cannot close the epoch before the minimum epoch duration elapses", async () => {
 		const v = vault(c, outsider)
-		expectRefused(await v.close_epoch({ caller: who }), v, "Unauthorized")
+		expectRefused(
+			await v.close_epoch({ caller: who }),
+			v,
+			"MinEpochDurationNotElapsed",
+		)
 	})
 
 	it("cannot deploy the reserve", async () => {
