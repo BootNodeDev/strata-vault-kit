@@ -19,23 +19,24 @@ import {
 	type WalletContextType,
 } from "../providers/WalletProvider"
 import {
-	asyncVault as asyncVaultMock,
-	fakeAsyncVault,
-} from "../test/fakeClients"
-import {
 	classifyRequest,
 	fetchInvestorRequests,
 	investorRequestsKey,
 	useInvestorRequests,
 } from "./useInvestorRequests"
 
-const { readEpochRequestsMock } = vi.hoisted(() => ({
+const { vaultMock, asyncVaultMock, readEpochRequestsMock } = vi.hoisted(() => ({
+	vaultMock: {
+		current_epoch: vi.fn(),
+	},
+	asyncVaultMock: vi.fn(),
 	readEpochRequestsMock: vi.fn(),
 }))
+asyncVaultMock.mockResolvedValue(vaultMock)
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
-
-const vaultMock = fakeAsyncVault("current_epoch")
+vi.mock("../config/clients", () => ({
+	asyncVault: asyncVaultMock,
+}))
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),

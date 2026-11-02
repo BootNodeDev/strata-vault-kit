@@ -1,17 +1,22 @@
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	fakeIdentityVerifier,
-	fakeShareToken,
-	identityVerifierAt as identityVerifierAtMock,
-} from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import { useComplianceState } from "./useComplianceState"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { tokenMock, verifierMock, identityVerifierAtMock } = vi.hoisted(() => ({
+	tokenMock: {
+		is_frozen: vi.fn(),
+		balance: vi.fn(),
+		get_frozen_tokens: vi.fn(),
+	},
+	verifierMock: { is_allowed: vi.fn() },
+	identityVerifierAtMock: vi.fn(),
+}))
 
-const tokenMock = fakeShareToken("is_frozen", "balance", "get_frozen_tokens")
-const verifierMock = fakeIdentityVerifier("is_allowed")
+vi.mock("../config/clients", () => ({
+	shareToken: async () => tokenMock,
+	identityVerifierAt: identityVerifierAtMock,
+}))
 
 const VERIFIER = "CVERIFIERADDRESS"
 const TARGET = "GTARGETADDRESS1234"
@@ -21,9 +26,11 @@ describe("useComplianceState", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		identityVerifierAtMock.mockImplementation(async () => verifierMock)
-		verifierMock.is_allowed.mockImplementation(async ({ account }) => ({
-			result: account === TARGET,
-		}))
+		verifierMock.is_allowed.mockImplementation(
+			async ({ account }: { account: string }) => ({
+				result: account === TARGET,
+			}),
+		)
 		tokenMock.is_frozen.mockResolvedValue({ result: true })
 		tokenMock.balance.mockResolvedValue({ result: 100n })
 		tokenMock.get_frozen_tokens.mockResolvedValue({ result: 40n })

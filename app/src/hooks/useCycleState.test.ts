@@ -11,7 +11,6 @@ import {
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { addresses } from "../config/addresses"
-import { fakeAsset, fakeAsyncVault, fakeNavOracle } from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import {
 	toEpoch,
@@ -23,38 +22,42 @@ import {
 } from "./useCycleState"
 import { type EpochHistoryRead, type EpochRecord } from "./useEpochHistory"
 
-const { readEpochsMock, readEventsMock } = vi.hoisted(() => ({
-	readEpochsMock: vi.fn(),
-	readEventsMock: vi.fn(),
+const { vaultMock, oracleMock, assetMock, readEpochsMock, readEventsMock } =
+	vi.hoisted(() => ({
+		vaultMock: {
+			current_epoch: vi.fn(),
+			notice: vi.fn(),
+			free_reserve: vi.fn(),
+			deposit_cap: vi.fn(),
+			min_epoch_duration: vi.fn(),
+			epoch_opened_at: vi.fn(),
+			wind_down: vi.fn(),
+			wind_down_delay: vi.fn(),
+			wind_down_owed: vi.fn(),
+			wind_down_supply: vi.fn(),
+			liquid_reserve: vi.fn(),
+			committed: vi.fn(),
+			uncovered: vi.fn(),
+			total_economic_supply: vi.fn(),
+			net_deployed: vi.fn(),
+			paused: vi.fn(),
+			governance: vi.fn(),
+			manager: vi.fn(),
+			treasury: vi.fn(),
+			guardian: vi.fn(),
+			custodian: vi.fn(),
+		},
+		oracleMock: { state: vi.fn(), latest: vi.fn(), config: vi.fn() },
+		assetMock: { balance: vi.fn() },
+		readEpochsMock: vi.fn(),
+		readEventsMock: vi.fn(),
+	}))
+
+vi.mock("../config/clients", () => ({
+	asyncVault: async () => vaultMock,
+	navOracle: async () => oracleMock,
+	asset: async () => assetMock,
 }))
-
-vi.mock("../config/clients", () => import("../test/fakeClients"))
-
-const vaultMock = fakeAsyncVault(
-	"current_epoch",
-	"notice",
-	"free_reserve",
-	"deposit_cap",
-	"min_epoch_duration",
-	"epoch_opened_at",
-	"wind_down",
-	"wind_down_delay",
-	"wind_down_owed",
-	"wind_down_supply",
-	"liquid_reserve",
-	"committed",
-	"uncovered",
-	"total_economic_supply",
-	"net_deployed",
-	"paused",
-	"governance",
-	"manager",
-	"treasury",
-	"guardian",
-	"custodian",
-)
-const oracleMock = fakeNavOracle("state", "latest", "config")
-const assetMock = fakeAsset("balance")
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),
@@ -296,9 +299,7 @@ const resolveVault = () => {
 	vaultMock.treasury.mockResolvedValue({ result: "GTREASURY" })
 	vaultMock.guardian.mockResolvedValue({ result: "GGUARDIAN" })
 	vaultMock.custodian.mockResolvedValue({ result: "GCUSTODIAN" })
-	oracleMock.state.mockResolvedValue({
-		result: { tag: "Valid", values: undefined },
-	})
+	oracleMock.state.mockResolvedValue({ result: { tag: "Valid" } })
 	oracleMock.latest.mockResolvedValue({ result: report })
 	oracleMock.config.mockResolvedValue({ result: config })
 	assetMock.balance.mockResolvedValue({ result: 150n })

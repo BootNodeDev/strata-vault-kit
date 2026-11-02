@@ -3,10 +3,6 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
-	asyncVaultWriter as asyncVaultWriterMock,
-	fakeAsyncVault,
-} from "../test/fakeClients"
-import {
 	contractEvent,
 	deferred,
 	investorAddress,
@@ -17,9 +13,15 @@ import { useCancelRedeem } from "./useCancelRedeem"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { sharePositionKey } from "./useSharePosition"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
+	vaultMock: { cancel_redeem: vi.fn() },
+	asyncVaultWriterMock: vi.fn(),
+}))
+asyncVaultWriterMock.mockResolvedValue(vaultMock)
 
-const vaultMock = fakeAsyncVault("cancel_redeem")
+vi.mock("../config/clients", () => ({
+	asyncVaultWriter: asyncVaultWriterMock,
+}))
 
 const epochId = 3n
 const otherEpochId = 4n

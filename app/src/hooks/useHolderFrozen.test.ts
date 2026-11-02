@@ -1,13 +1,17 @@
 import { waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { fakeShareToken } from "../test/fakeClients"
 import { investorAddress, renderWithWallet } from "./testSupport"
 import { useHolderFrozen } from "./useHolderFrozen"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { isFrozenMock } = vi.hoisted(() => ({
+	isFrozenMock: vi.fn(async (_args: { user_address: string }) => ({
+		result: true,
+	})),
+}))
 
-const { is_frozen: isFrozenMock } = fakeShareToken("is_frozen")
-isFrozenMock.mockResolvedValue({ result: true })
+vi.mock("../config/clients", () => ({
+	shareToken: async () => ({ is_frozen: isFrozenMock }),
+}))
 
 describe("useHolderFrozen", () => {
 	it("asks the share token whether the connected wallet is frozen", async () => {

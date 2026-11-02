@@ -2,17 +2,18 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { type Amount } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	asyncVaultWriter as asyncVaultWriterMock,
-	fakeAsyncVault,
-} from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { cycleWriteKeys } from "./useCycleState"
 import { useDeployToCustodian } from "./useDeployToCustodian"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
+	vaultMock: { deploy_to_custodian: vi.fn() },
+	asyncVaultWriterMock: vi.fn(),
+}))
 
-const vaultMock = fakeAsyncVault("deploy_to_custodian")
+vi.mock("../config/clients", () => ({
+	asyncVaultWriter: asyncVaultWriterMock,
+}))
 
 const assets = 2_500_000_000n as Amount
 

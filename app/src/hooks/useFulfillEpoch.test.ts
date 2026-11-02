@@ -1,17 +1,18 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	asyncVaultWriter as asyncVaultWriterMock,
-	fakeAsyncVault,
-} from "../test/fakeClients"
 import { deferred, renderWithWallet } from "./testSupport"
 import { cycleWriteKeys } from "./useCycleState"
 import { useFulfillEpoch } from "./useFulfillEpoch"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
+	vaultMock: { fulfill_epoch: vi.fn() },
+	asyncVaultWriterMock: vi.fn(),
+}))
 
-const vaultMock = fakeAsyncVault("fulfill_epoch")
+vi.mock("../config/clients", () => ({
+	asyncVaultWriter: asyncVaultWriterMock,
+}))
 
 const epochId = 4n
 const sharePrice = 1_250_000_000_000_000_000n

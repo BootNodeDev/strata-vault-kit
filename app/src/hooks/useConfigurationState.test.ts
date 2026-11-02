@@ -1,27 +1,31 @@
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	fakeAsyncVault,
-	fakeNavOracle,
-	fakeShareToken,
-} from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import { useConfigurationState } from "./useConfigurationState"
 
-const { useCycleReadsMock, useVaultAuthoritiesMock } = vi.hoisted(() => ({
+const {
+	vaultMock,
+	tokenMock,
+	oracleMock,
+	useCycleReadsMock,
+	useVaultAuthoritiesMock,
+} = vi.hoisted(() => ({
+	vaultMock: { upgrade_delay: vi.fn(), setup_open: vi.fn() },
+	tokenMock: {
+		compliance: vi.fn(),
+		identity_verifier: vi.fn(),
+		setup_open: vi.fn(),
+	},
+	oracleMock: { setup_open: vi.fn() },
 	useCycleReadsMock: vi.fn(),
 	useVaultAuthoritiesMock: vi.fn(),
 }))
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
-
-const vaultMock = fakeAsyncVault("upgrade_delay", "setup_open")
-const tokenMock = fakeShareToken(
-	"compliance",
-	"identity_verifier",
-	"setup_open",
-)
-const oracleMock = fakeNavOracle("setup_open")
+vi.mock("../config/clients", () => ({
+	asyncVault: async () => vaultMock,
+	shareToken: async () => tokenMock,
+	navOracle: async () => oracleMock,
+}))
 vi.mock("./useCycleState", async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	useCycleReads: useCycleReadsMock,

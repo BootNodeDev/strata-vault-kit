@@ -2,7 +2,11 @@ import { type Amount, type ContractRead } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
 import { classifyDepositBalance, depositBalanceKey } from "./useDepositBalance"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+vi.mock("../config/clients", () => ({
+	asset: async () => ({
+		balance: async () => ({}),
+	}),
+}))
 
 const zero: ContractRead<bigint> = { kind: "value", value: 0n }
 const held: ContractRead<bigint> = { kind: "value", value: 500_0000000n }

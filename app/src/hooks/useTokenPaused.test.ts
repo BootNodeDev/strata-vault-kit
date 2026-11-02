@@ -1,12 +1,15 @@
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fakeShareToken } from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import { useTokenPaused } from "./useTokenPaused"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { tokenMock } = vi.hoisted(() => ({
+	tokenMock: { paused: vi.fn() },
+}))
 
-const tokenMock = fakeShareToken("paused")
+vi.mock("../config/clients", () => ({
+	shareToken: async () => tokenMock,
+}))
 
 describe("useTokenPaused", () => {
 	beforeEach(() => {

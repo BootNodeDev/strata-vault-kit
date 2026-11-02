@@ -3,13 +3,6 @@ import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { addresses } from "../config/addresses"
 import { vaultContractId } from "../config/contracts"
-import {
-	fakeAsyncVault,
-	fakeNavOracle,
-	fakeShareToken,
-	navOracle as navOracleMock,
-	shareToken as shareTokenMock,
-} from "../test/fakeClients"
 import { pendingAdminsQuery } from "./pendingAdmins"
 import { deferred, renderWithWallet, investorAddress } from "./testSupport"
 import {
@@ -306,39 +299,49 @@ describe("toSurfaces", () => {
 })
 
 const {
+	vaultMock,
+	oracleMock,
+	tokenMock,
 	connectNavOracleMock,
 	connectShareTokenMock,
+	navOracleMock,
+	shareTokenMock,
 	accountSignersMock,
 	readPendingAdminsMock,
 	readContractAdminMock,
 } = vi.hoisted(() => ({
+	vaultMock: {
+		governance: vi.fn(),
+		get_role_member_count: vi.fn(),
+		get_role_member: vi.fn(),
+		oracle: vi.fn(),
+		share_token: vi.fn(),
+	},
+	oracleMock: {
+		get_role_member_count: vi.fn(),
+		get_role_member: vi.fn(),
+		get_admin: vi.fn(),
+	},
+	tokenMock: {
+		get_role_member_count: vi.fn(),
+		get_role_member: vi.fn(),
+		get_admin: vi.fn(),
+		identity_verifier: vi.fn(),
+	},
 	connectNavOracleMock: vi.fn(),
 	connectShareTokenMock: vi.fn(),
+	navOracleMock: vi.fn(),
+	shareTokenMock: vi.fn(),
 	accountSignersMock: vi.fn(),
 	readPendingAdminsMock: vi.fn(),
 	readContractAdminMock: vi.fn(),
 }))
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
-
-const vaultMock = fakeAsyncVault(
-	"governance",
-	"get_role_member_count",
-	"get_role_member",
-	"oracle",
-	"share_token",
-)
-const oracleMock = fakeNavOracle(
-	"get_role_member_count",
-	"get_role_member",
-	"get_admin",
-)
-const tokenMock = fakeShareToken(
-	"get_role_member_count",
-	"get_role_member",
-	"get_admin",
-	"identity_verifier",
-)
+vi.mock("../config/clients", () => ({
+	asyncVault: async () => vaultMock,
+	navOracle: navOracleMock,
+	shareToken: shareTokenMock,
+}))
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 	const actual = await importOriginal<typeof AppLib>()

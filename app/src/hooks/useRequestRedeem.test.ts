@@ -2,18 +2,20 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { AMOUNT_DECIMALS, type Amount } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	asyncVaultWriter as asyncVaultWriterMock,
-	fakeAsyncVault,
-} from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { useRequestRedeem } from "./useRequestRedeem"
 import { sharePositionKey } from "./useSharePosition"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
+	vaultMock: { request_redeem: vi.fn() },
+	asyncVaultWriterMock: vi.fn(),
+}))
+asyncVaultWriterMock.mockResolvedValue(vaultMock)
 
-const vaultMock = fakeAsyncVault("request_redeem")
+vi.mock("../config/clients", () => ({
+	asyncVaultWriter: asyncVaultWriterMock,
+}))
 
 const shares = (100n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount
 

@@ -20,7 +20,6 @@ import {
 	WalletContext,
 	type WalletContextType,
 } from "../providers/WalletProvider"
-import { fakeShareToken } from "../test/fakeClients"
 import SignPage from "./SignPage"
 
 const { accountSignersMock, submitSignedMock, transactionStatusMock } =
@@ -32,11 +31,12 @@ const { accountSignersMock, submitSignedMock, transactionStatusMock } =
 
 const tokenAdmin = "GTOKENADMINACCOUNT"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
-
-const token = fakeShareToken("identity_verifier", "get_admin")
-token.identity_verifier.mockResolvedValue({ result: "CLIVEVERIFIER" })
-token.get_admin.mockResolvedValue({ result: tokenAdmin })
+vi.mock("../config/clients", () => ({
+	shareToken: async () => ({
+		identity_verifier: async () => ({ result: "CLIVEVERIFIER" }),
+		get_admin: async () => ({ result: tokenAdmin }),
+	}),
+}))
 
 type Marker = { signedBy: string[] }
 

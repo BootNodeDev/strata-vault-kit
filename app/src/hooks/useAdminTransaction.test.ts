@@ -4,14 +4,6 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { OPERATOR_TIMEOUT_SECONDS } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	asyncVaultWriter as asyncVaultWriterMock,
-	fakeAsyncVault,
-	fakeIdentityVerifier,
-	fakeNavOracle,
-	fakeShareToken,
-	identityVerifierWriter as verifierWriterMock,
-} from "../test/fakeClients"
 import { governanceReadsKey } from "./pendingAdmins"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { adminAuthorityKey, type Grant } from "./useAdminAuthority"
@@ -88,9 +80,65 @@ import { tokenPausedKey } from "./useTokenPaused"
 import { vaultAuthoritiesKey } from "./useVaultAuthorities"
 import { vaultPausedKey } from "./useVaultPaused"
 
-const { submitSignedMock, decodePendingMock } = vi.hoisted(() => ({
+const {
+	vault,
+	token,
+	oracle,
+	verifier,
+	verifierWriterMock,
+	asyncVaultWriterMock,
+	submitSignedMock,
+	decodePendingMock,
+} = vi.hoisted(() => ({
+	asyncVaultWriterMock: vi.fn(),
 	submitSignedMock: vi.fn(),
 	decodePendingMock: vi.fn(),
+	vault: {
+		pause: vi.fn(),
+		unpause: vi.fn(),
+		set_deposit_cap: vi.fn(),
+		set_custodian: vi.fn(),
+		set_notice: vi.fn(),
+		set_wind_down_delay: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
+		propose_change: vi.fn(),
+		apply_change: vi.fn(),
+		cancel_change: vi.fn(),
+		propose_wind_down: vi.fn(),
+		cancel_wind_down_proposal: vi.fn(),
+	},
+	token: {
+		pause: vi.fn(),
+		unpause: vi.fn(),
+		set_compliance: vi.fn(),
+		set_identity_verifier: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
+		set_address_frozen: vi.fn(),
+		freeze_partial_tokens: vi.fn(),
+		unfreeze_partial_tokens: vi.fn(),
+		legal_transfer: vi.fn(),
+		propose_change: vi.fn(),
+		apply_change: vi.fn(),
+		cancel_change: vi.fn(),
+	},
+	verifier: { allow: vi.fn() },
+	verifierWriterMock: vi.fn(),
+	oracle: {
+		pause_nav: vi.fn(),
+		set_nav_paused: vi.fn(),
+		clear_latest: vi.fn(),
+		set_config: vi.fn(),
+		grant_role: vi.fn(),
+		revoke_role: vi.fn(),
+		transfer_admin_role: vi.fn(),
+		accept_admin_transfer: vi.fn(),
+	},
 }))
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
@@ -99,53 +147,12 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	decodePending: decodePendingMock,
 }))
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
-
-const vault = fakeAsyncVault(
-	"pause",
-	"unpause",
-	"set_deposit_cap",
-	"set_custodian",
-	"set_notice",
-	"set_wind_down_delay",
-	"grant_role",
-	"revoke_role",
-	"transfer_admin_role",
-	"accept_admin_transfer",
-	"propose_change",
-	"apply_change",
-	"cancel_change",
-	"propose_wind_down",
-	"cancel_wind_down_proposal",
-)
-const token = fakeShareToken(
-	"pause",
-	"unpause",
-	"set_compliance",
-	"set_identity_verifier",
-	"grant_role",
-	"revoke_role",
-	"transfer_admin_role",
-	"accept_admin_transfer",
-	"set_address_frozen",
-	"freeze_partial_tokens",
-	"unfreeze_partial_tokens",
-	"legal_transfer",
-	"propose_change",
-	"apply_change",
-	"cancel_change",
-)
-const verifier = fakeIdentityVerifier("allow")
-const oracle = fakeNavOracle(
-	"pause_nav",
-	"set_nav_paused",
-	"clear_latest",
-	"set_config",
-	"grant_role",
-	"revoke_role",
-	"transfer_admin_role",
-	"accept_admin_transfer",
-)
+vi.mock("../config/clients", () => ({
+	asyncVaultWriter: asyncVaultWriterMock,
+	shareTokenWriter: async () => token,
+	navOracleWriter: async () => oracle,
+	identityVerifierWriter: verifierWriterMock,
+}))
 
 const CONTRACT = "CCONTRACTADDRESS1234567890"
 const ORACLE_CONFIG = {

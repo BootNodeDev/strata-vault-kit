@@ -14,11 +14,6 @@ import {
 	WalletContext,
 	type WalletContextType,
 } from "../providers/WalletProvider"
-import {
-	fakeAsyncVault,
-	fakeNavOracle,
-	fakeShareToken,
-} from "../test/fakeClients"
 import { useSignPending } from "./useSignPending"
 
 const {
@@ -28,6 +23,9 @@ const {
 	authorizePendingMock,
 	prepareCoSignedMock,
 	latestLedgerMock,
+	tokenMock,
+	vaultMock,
+	oracleMock,
 	linkTarget,
 } = vi.hoisted(() => ({
 	accountSignersMock: vi.fn(),
@@ -36,17 +34,22 @@ const {
 	authorizePendingMock: vi.fn(),
 	prepareCoSignedMock: vi.fn(),
 	latestLedgerMock: vi.fn(),
+	tokenMock: {
+		identity_verifier: vi.fn(),
+		pending_changes: vi.fn(),
+		get_admin: vi.fn(),
+		txFromXDR: vi.fn(),
+	},
+	vaultMock: { pending_changes: vi.fn() },
+	oracleMock: { pending_changes: vi.fn() },
 	linkTarget: { contractId: "", expiresAt: new Date(0) },
 }))
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
-
-const tokenMock = Object.assign(
-	fakeShareToken("identity_verifier", "pending_changes", "get_admin"),
-	{ txFromXDR: vi.fn() },
-)
-const vaultMock = fakeAsyncVault("pending_changes")
-const oracleMock = fakeNavOracle("pending_changes")
+vi.mock("../config/clients", () => ({
+	shareToken: async () => tokenMock,
+	asyncVault: async () => vaultMock,
+	navOracle: async () => oracleMock,
+}))
 
 type Marker = { signedBy: string[] }
 

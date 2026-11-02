@@ -1,7 +1,6 @@
 import { nativeToScVal } from "@stellar/stellar-sdk"
 import { act } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { fakeAsyncVault } from "../test/fakeClients"
 import {
 	contractEvent,
 	investorAddress,
@@ -11,9 +10,13 @@ import {
 import { useClaimWindDown } from "./useClaimWindDown"
 import { windDownClaimableKey } from "./useWindDownClaimable"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { vaultMock } = vi.hoisted(() => ({
+	vaultMock: { claim_wind_down: vi.fn() },
+}))
 
-const vaultMock = fakeAsyncVault("claim_wind_down")
+vi.mock("../config/clients", () => ({
+	asyncVaultWriter: async () => vaultMock,
+}))
 
 const claimed = (surrendered: bigint, assets: bigint) =>
 	contractEvent(

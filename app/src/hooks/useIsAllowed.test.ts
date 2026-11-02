@@ -3,11 +3,6 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query"
 import { renderHook, waitFor } from "@testing-library/react"
 import { createElement, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import {
-	fakeIdentityVerifier,
-	fakeShareToken,
-	identityVerifierAt as identityVerifierAtMock,
-} from "../test/fakeClients"
 import { investorAddress, renderWithWallet } from "./testSupport"
 import {
 	classifyAllowance,
@@ -15,10 +10,16 @@ import {
 	useIsAllowed,
 } from "./useIsAllowed"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { tokenMock, verifierMock, identityVerifierAtMock } = vi.hoisted(() => ({
+	tokenMock: { identity_verifier: vi.fn() },
+	verifierMock: { is_allowed: vi.fn() },
+	identityVerifierAtMock: vi.fn(),
+}))
 
-const tokenMock = fakeShareToken("identity_verifier")
-const verifierMock = fakeIdentityVerifier("is_allowed")
+vi.mock("../config/clients", () => ({
+	shareToken: async () => tokenMock,
+	identityVerifierAt: identityVerifierAtMock,
+}))
 
 const allowed: ContractRead<boolean> = { kind: "value", value: true }
 const notAllowed: ContractRead<boolean> = { kind: "value", value: false }

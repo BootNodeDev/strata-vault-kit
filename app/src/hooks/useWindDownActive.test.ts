@@ -1,14 +1,18 @@
 import { type WindDownInfo } from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
-import { fakeAsyncVault } from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import { useWindDownActive } from "./useWindDownActive"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
+const { windDownMock } = vi.hoisted(() => ({
+	windDownMock: vi.fn(async (): Promise<{ result: WindDownInfo | null }> => ({
+		result: null,
+	})),
+}))
 
-const { wind_down: windDownMock } = fakeAsyncVault("wind_down")
-windDownMock.mockResolvedValue({ result: null })
+vi.mock("../config/clients", () => ({
+	asyncVault: async () => ({ wind_down: windDownMock }),
+}))
 
 const info = (tag: "Proposed" | "Active"): WindDownInfo => ({
 	active_at: 1_700_000_000n,
