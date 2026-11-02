@@ -11,7 +11,22 @@ use soroban_sdk::{
 use strata_storage::{INSTANCE_EXTEND_AMOUNT, PERSISTENT_EXTEND_AMOUNT};
 
 const DAY_IN_LEDGERS: u32 = 17_280;
-use stellar_tokens::rwa::identity_verification::IdentityVerifierClient as IdClient;
+use stellar_tokens::rwa::{identity_verification::IdentityVerifierClient as IdClient, RWAError};
+
+/// Asserts a call failed for lack of a valid signature: the host's own
+/// refusal of the invocation, not one of the stub's own errors.
+fn missing_auth<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
+    result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
+) {
+    use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
+    assert_eq!(
+        result,
+        Err(Ok(soroban_sdk::Error::from_type_and_code(
+            ScErrorType::Context,
+            ScErrorCode::InvalidAction
+        )))
+    );
+}
 
 /// Signs one `allow` call as `who` and nothing else.
 fn sign_only_as(e: &Env, verifier: &Address, who: &Address, args: Vec<Val>) {
@@ -87,7 +102,7 @@ fn only_admin_can_allow() {
 
     // Stranger cannot allow.
     sign_only_as(&e, &id, &stranger, (investor.clone(), true).into_val(&e));
-    assert!(client.try_allow(&investor, &true).is_err());
+    missing_auth(client.try_allow(&investor, &true));
     assert!(!client.is_allowed(&investor));
 
     // Admin allows.
@@ -97,7 +112,7 @@ fn only_admin_can_allow() {
 
     // Stranger cannot disallow.
     sign_only_as(&e, &id, &stranger, (investor.clone(), false).into_val(&e));
-    assert!(client.try_allow(&investor, &false).is_err());
+    missing_auth(client.try_allow(&investor, &false));
     assert!(client.is_allowed(&investor));
 
     // Admin disallows.
@@ -118,7 +133,10 @@ fn verify_identity_checks_allowlist() {
     let id_client = IdClient::new(&e, &id);
 
     // Unallowed investor fails identity verification.
-    assert!(id_client.try_verify_identity(&investor).is_err());
+    assert_eq!(
+        id_client.try_verify_identity(&investor),
+        Err(Ok(RWAError::IdentityVerificationFailed.into()))
+    );
 
     // Once allowed, verification succeeds.
     client.allow(&investor, &true);

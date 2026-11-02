@@ -168,7 +168,10 @@ fn a_refused_call_publishes_nothing() {
     let f = setup();
     let user = f.investor(1_000);
 
-    assert!(f.vault.try_request_deposit(&user, &0).is_err());
+    refused(
+        f.vault.try_request_deposit(&user, &0),
+        VaultError::InvalidAmount,
+    );
 
     assert_eq!(
         f.e.events()

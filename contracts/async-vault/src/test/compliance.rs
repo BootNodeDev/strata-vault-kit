@@ -246,12 +246,18 @@ fn a_frozen_or_delisted_holder_cannot_transfer_shares() {
 
     // Delisted sender cannot transfer
     f.identity.allow(&user, &false);
-    assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
+    assert_eq!(
+        f.share.try_transfer(&user, &recipient, &100),
+        Err(Ok(RWAError::IdentityVerificationFailed.into()))
+    );
 
     // Restore allowlist, then freeze sender
     f.identity.allow(&user, &true);
     f.share.set_address_frozen(&user, &true, &f.compliance);
-    assert!(f.share.try_transfer(&user, &recipient, &100).is_err());
+    assert_eq!(
+        f.share.try_transfer(&user, &recipient, &100),
+        Err(Ok(RWAError::AddressFrozen.into()))
+    );
 }
 
 #[test]

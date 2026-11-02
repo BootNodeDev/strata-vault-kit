@@ -89,7 +89,7 @@ fn the_minimum_stays_between_one_and_thirty_days() {
 fn setting_the_minimum_needs_the_admin() {
     let f = setup_unfinished();
     f.e.set_auths(&[]);
-    assert!(f.vault.try_set_min_epoch_duration(&DAY_DURATION).is_err());
+    missing_auth(f.vault.try_set_min_epoch_duration(&DAY_DURATION));
     assert_eq!(f.vault.min_epoch_duration(), None);
 }
 
@@ -334,7 +334,7 @@ fn an_outsider_seal_needs_the_outsiders_signature() {
     advance_to(&f, opened_at(&f) + DAY_DURATION);
     f.e.set_auths(&[]);
 
-    assert!(f.vault.try_close_epoch(&outsider).is_err());
+    missing_auth(f.vault.try_close_epoch(&outsider));
     assert_eq!(f.vault.current_epoch(), open);
 }
 

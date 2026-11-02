@@ -133,10 +133,10 @@ fn refundable_escrow_is_not_free_reserve() {
 
     assert_eq!(f.vault.cancellable_escrow(), 400);
     assert_eq!(f.vault.free_reserve(), before);
-    assert!(f
-        .vault
-        .try_deploy_to_custodian(&f.treasury, &(before + 1))
-        .is_err());
+    refused(
+        f.vault.try_deploy_to_custodian(&f.treasury, &(before + 1)),
+        VaultError::ReserveCommittedToExits,
+    );
 }
 
 #[test]
