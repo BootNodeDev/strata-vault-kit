@@ -35,7 +35,11 @@ export function navInput(nav: bigint): NavInput {
 }
 
 // The cooldown is ledger time, so the second attestation of a run waits it out.
-export async function attest(c: Connected, nav: bigint): Promise<void> {
+export async function attest(
+	c: Connected,
+	nav: bigint,
+	label?: string,
+): Promise<void> {
 	const attester = c.keys.attester
 	const client = oracle(c, attester)
 	const deadline = Date.now() + (c.net.oracle.cooldown_secs + 60) * 1_000
@@ -46,7 +50,7 @@ export async function attest(c: Connected, nav: bigint): Promise<void> {
 		})
 		const result = outcome(tx, client)
 		if (result === "accepted") {
-			await send(Promise.resolve(tx))
+			await send(Promise.resolve(tx), label)
 			return
 		}
 		if (result !== "refused: CooldownActive") throw new Error(result)
