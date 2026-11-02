@@ -1,25 +1,24 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 
-const clientDir = (root, name) => join(root, "app-lib", "clients", name)
-
-// One client per contract crate, plus the Stellar Asset Contract the vault holds.
-const expectedClients = (root) => [
-	...readdirSync(join(root, "contracts"), { withFileTypes: true })
+const crateClients = (root) =>
+	readdirSync(join(root, "contracts"), { withFileTypes: true })
 		.filter((entry) => entry.isDirectory())
 		.map((entry) => entry.name.replaceAll("-", "_"))
-		.sort(),
-	"asset",
-]
+		.sort()
 
+// The app imports each client's `src/`, the harness a contract client's `dist/`.
 export const missingClients = (root) =>
-	expectedClients(root).filter(
-		(name) => !existsSync(join(clientDir(root, name), "src", "index.ts")),
-	)
+	[
+		...crateClients(root).flatMap((name) => [
+			`app-lib/clients/${name}/src/index.ts`,
+			`app-lib/clients/${name}/dist/index.js`,
+		]),
+		"app-lib/clients/asset/src/index.ts",
+	].filter((path) => !existsSync(join(root, path)))
 
-// Writes the SDK generator's bindings where `app-lib/contracts.ts` imports them.
-export const writeClient = (root, name, files) => {
-	const dir = clientDir(root, name)
+export const writeClient = (dir, files) => {
+	const name = basename(dir)
 	mkdirSync(join(dir, "src"), { recursive: true })
 	const sources = {
 		"src/index.ts": files.index,

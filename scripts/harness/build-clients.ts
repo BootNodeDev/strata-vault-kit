@@ -1,11 +1,8 @@
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync } from "node:fs"
 import { join } from "node:path"
 
-import { BindingGenerator } from "@stellar/stellar-sdk"
-
-import { writeClient } from "../lib/clients.mjs"
 import { stellarAssetGenerator } from "./lib/asset-client.js"
-import { generateClient, rootSdkVersion } from "./lib/cli.js"
+import { generateClient, rootSdkVersion, wasmGenerator } from "./lib/cli.js"
 import {
 	CONTRACT_NAMES,
 	REPO_ROOT,
@@ -15,7 +12,7 @@ import {
 const wasmOf = (name: ContractName): string =>
 	join(REPO_ROOT, "target", "wasm32v1-none", "release", `${name}.wasm`)
 
-const clientDir = (name: ContractName): string =>
+const clientDir = (name: ContractName | "asset"): string =>
 	join(REPO_ROOT, "app-lib", "clients", name)
 
 async function main(): Promise<void> {
@@ -26,17 +23,19 @@ async function main(): Promise<void> {
 		)
 	}
 
-	// The harness imports each client's `dist/`, compiled from the CLI's
-	// bindings. The app imports `src/`, written by the SDK's generator as the
-	// app's own build does; the two type an empty `Option` differently.
 	const sdkVersion = rootSdkVersion()
 	for (const name of CONTRACT_NAMES) {
-		await generateClient(wasmOf(name), clientDir(name), sdkVersion)
-		const generator = BindingGenerator.fromWasm(readFileSync(wasmOf(name)))
-		writeClient(REPO_ROOT, name, generator.generate({ contractName: name }))
+		await generateClient(
+			clientDir(name),
+			wasmGenerator(wasmOf(name)),
+			sdkVersion,
+		)
 	}
-	const asset = await stellarAssetGenerator()
-	writeClient(REPO_ROOT, "asset", asset.generate({ contractName: "asset" }))
+	await generateClient(
+		clientDir("asset"),
+		await stellarAssetGenerator(),
+		sdkVersion,
+	)
 	console.log("clients generated")
 }
 

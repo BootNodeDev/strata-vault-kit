@@ -1,7 +1,6 @@
 import { BindingGenerator, StrKey, xdr, type rpc } from "@stellar/stellar-sdk"
 
-// The SDK carries the Stellar Asset Contract's spec but hands it out only for a
-// contract it looks up, so this answers that one lookup as a Stellar asset.
+// The SDK gives out its Stellar Asset Contract spec only after a lookup, which this answers.
 const stellarAssetLookup = {
 	getLedgerEntries(key: xdr.LedgerKey) {
 		const instance = new xdr.ScContractInstance({

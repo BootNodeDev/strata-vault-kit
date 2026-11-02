@@ -27,7 +27,7 @@ const generate = async ({ name, id }) => {
 		rpcUrl,
 		networkPassphrase,
 	})
-	writeClient(repoRoot, name, files)
+	writeClient(resolve(repoRoot, "app-lib/clients", name), files)
 }
 
 await Promise.all(contracts.map(generate))

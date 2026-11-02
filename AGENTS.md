@@ -104,14 +104,14 @@ apply as the corresponding code lands here.
   A fresh clone builds `app` with no cargo, no stellar CLI and no local network,
   but needs RPC access to the selected network at build time. A local scaffold
   build writes the same directory from the WASM.
-- Two generators write `app-lib/clients/`, and they type an empty `Option`
-  differently: the SDK's as `null`, the stellar CLI's as `undefined`. The app
-  is written against the SDK's, which its build uses. `npm run build:clients`
-  writes both from the local Wasm, with no network: `src/` from the SDK's
-  generator for the app and its tests, and `dist/` compiled from the CLI's
-  bindings for the harness. The scaffold's `--build-clients` writes the CLI's
-  in both places, so run `npm run build:clients` again before type-checking the
-  app.
+- The clients come from one generator, the SDK's `BindingGenerator`, which
+  types an empty `Option` as `null`. `npm run build:clients` and the harness
+  deploy write each client's `src/` from the local Wasm, with no network, and
+  compile it to the `dist/` the harness imports. A workspace build
+  (`npm run build --workspaces`) recompiles `dist/` from `src/`. The scaffold's
+  `--build-clients` writes the stellar CLI's bindings instead, which type an
+  empty `Option` as `undefined`, so run `npm run build:clients` again after it
+  before type-checking.
 - When `cargo` itself builds a contract for the Wasm target, rather than
   `stellar contract build` (a size check with
   `cargo build --release --target wasm32v1-none`, for example), set

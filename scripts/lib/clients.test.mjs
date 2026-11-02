@@ -5,18 +5,24 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { missingClients, writeClient } from "./clients.mjs"
 
-const repo = (contracts, clients) => {
+const repo = (contracts, clients, { unbuilt = [] } = {}) => {
 	const root = mkdtempSync(join(tmpdir(), "clients-"))
 	for (const name of contracts) {
 		mkdirSync(join(root, "contracts", name), { recursive: true })
 	}
 	for (const name of clients) {
-		const src = join(root, "app-lib", "clients", name, "src")
-		mkdirSync(src, { recursive: true })
-		writeFileSync(join(src, "index.ts"), "export {}\n")
+		const client = join(root, "app-lib", "clients", name)
+		mkdirSync(join(client, "src"), { recursive: true })
+		writeFileSync(join(client, "src", "index.ts"), "export {}\n")
+		if (unbuilt.includes(name)) continue
+		mkdirSync(join(client, "dist"), { recursive: true })
+		writeFileSync(join(client, "dist", "index.js"), "export {}\n")
 	}
 	return root
 }
+
+const source = (name) => `app-lib/clients/${name}/src/index.ts`
+const compiled = (name) => `app-lib/clients/${name}/dist/index.js`
 
 describe("missingClients", () => {
 	it("finds none when every contract and the asset have a client", () => {
@@ -31,13 +37,24 @@ describe("missingClients", () => {
 	it("names each contract without a client, in its underscored form", () => {
 		const root = repo(["async-vault", "nav-oracle"], ["async_vault", "asset"])
 
-		expect(missingClients(root)).toEqual(["nav_oracle"])
+		expect(missingClients(root)).toEqual([
+			source("nav_oracle"),
+			compiled("nav_oracle"),
+		])
 	})
 
 	it("needs a client for the asset, which has no crate", () => {
 		const root = repo(["async-vault"], ["async_vault"])
 
-		expect(missingClients(root)).toEqual(["asset"])
+		expect(missingClients(root)).toEqual([source("asset")])
+	})
+
+	it("needs each contract client compiled, since the harness imports its dist", () => {
+		const root = repo(["async-vault"], ["async_vault", "asset"], {
+			unbuilt: ["async_vault", "asset"],
+		})
+
+		expect(missingClients(root)).toEqual([compiled("async_vault")])
 	})
 
 	it("names them all when the clients folder is empty", () => {
@@ -45,9 +62,11 @@ describe("missingClients", () => {
 		mkdirSync(join(root, "app-lib", "clients"), { recursive: true })
 
 		expect(missingClients(root)).toEqual([
-			"async_vault",
-			"share_token",
-			"asset",
+			source("async_vault"),
+			compiled("async_vault"),
+			source("share_token"),
+			compiled("share_token"),
+			source("asset"),
 		])
 	})
 })
@@ -64,19 +83,18 @@ describe("writeClient", () => {
 	it("writes the generated sources where the app imports them", () => {
 		const root = repo(["async-vault"], [])
 
-		writeClient(root, "async_vault", files)
+		writeClient(join(root, "app-lib", "clients", "async_vault"), files)
 
 		const src = join(root, "app-lib", "clients", "async_vault", "src")
 		expect(readFileSync(join(src, "index.ts"), "utf8")).toBe(files.index)
 		expect(readFileSync(join(src, "types.ts"), "utf8")).toBe(files.types)
 		expect(readFileSync(join(src, "client.ts"), "utf8")).toBe(files.client)
-		expect(missingClients(root)).toEqual(["asset"])
 	})
 
 	it("names the package after the client", () => {
 		const root = repo([], [])
 
-		writeClient(root, "nav_oracle", files)
+		writeClient(join(root, "app-lib", "clients", "nav_oracle"), files)
 
 		const pkg = JSON.parse(
 			readFileSync(
