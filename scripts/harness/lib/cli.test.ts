@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 
 import {
@@ -11,7 +12,13 @@ import {
 } from "@stellar/stellar-sdk"
 import { describe, expect, it } from "vitest"
 
-import { ensureAssetContract, pinClientSdk, rootSdkVersion } from "./cli.js"
+import { stellarAssetGenerator } from "./asset-client.js"
+import {
+	ensureAssetContract,
+	pinClientSdk,
+	rootSdkVersion,
+	writeClientSources,
+} from "./cli.js"
 import { REPO_ROOT } from "./deployment.js"
 import { type Network } from "./network.js"
 
@@ -73,5 +80,22 @@ describe("rootSdkVersion", () => {
 		) as { overrides?: Record<string, string> }
 
 		expect(rootSdkVersion()).toBe(rootPkg.overrides?.["@stellar/stellar-sdk"])
+	})
+})
+
+describe("writeClientSources", () => {
+	it("writes the SDK's bindings named after the client, with its stellar-sdk pinned", async () => {
+		const outDir = join(mkdtempSync(join(tmpdir(), "client-")), "asset")
+
+		writeClientSources(outDir, await stellarAssetGenerator(), "16.4.1")
+
+		const pkg = JSON.parse(
+			readFileSync(join(outDir, "package.json"), "utf8"),
+		) as { name: string; dependencies: Record<string, string> }
+		expect(pkg.name).toBe("asset")
+		expect(pkg.dependencies["@stellar/stellar-sdk"]).toBe("16.4.1")
+		for (const file of ["index.ts", "types.ts", "client.ts"]) {
+			expect(existsSync(join(outDir, "src", file))).toBe(true)
+		}
 	})
 })

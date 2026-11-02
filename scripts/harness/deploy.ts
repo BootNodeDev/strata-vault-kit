@@ -18,6 +18,7 @@ import {
 	ensureAssetContract,
 	generateClient,
 	rootSdkVersion,
+	wasmGenerator,
 } from "./lib/cli.js"
 import {
 	clearIncomplete,
@@ -454,7 +455,11 @@ async function main(): Promise<void> {
 	)
 
 	for (const name of CONTRACT_NAMES) {
-		await generateClient(wasmOf(name), clientDir(name), sdkVersion)
+		await generateClient(
+			clientDir(name),
+			wasmGenerator(wasmOf(name)),
+			sdkVersion,
+		)
 	}
 	console.log("clients generated")
 

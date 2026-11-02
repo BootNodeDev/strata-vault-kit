@@ -51,11 +51,14 @@ does not carry over. Read it for Soroban and OZ mechanics only.
   enable an experimental `soroban-sdk` feature (`spec_shaking_v2`) that only
   works through the CLI wrapper. The devshell pins the Stellar CLI it expects.
 - **Tests:** `cargo test` from the repo root runs every workspace member against
-  the in-memory `Env`. There is no unit-test runner for `app/` or `app-lib/`;
-  `e2e/` runs Playwright separately. CI runs `cargo test --locked` on every pull
-  request except one that changes only Markdown files outside `docs/evidence/`:
-  that one skips the Rust and local-network jobs. The secret scan runs on
-  every pull request.
+  the in-memory `Env`. `npm run test` runs vitest over `app/`, `app-lib/` and
+  `scripts/`, and `npm run typecheck` checks `app/`, `app-lib/` and the
+  harness. Both use the generated contract clients, so run
+  `stellar contract build && npm run build:clients` first. `e2e/` runs
+  Playwright separately. CI runs `cargo test --locked` on every pull request
+  except one that changes only Markdown files outside `docs/evidence/`: that
+  one skips the Rust and local-network jobs. The secret scan runs on every pull
+  request.
 - **Toolchain:** `nix develop` provides it, or rustup honours
   `rust-toolchain.toml`.
 
@@ -97,11 +100,18 @@ apply as the corresponding code lands here.
   re-exports them and builds each runtime client with `new Client(...)` from its
   generated `src/index`, whose embedded spec means no page fetches a contract's
   instance or Wasm. Vite dedupes `@stellar/stellar-sdk` so a client's nested copy
-  never reaches the bundle, and vitest aliases the generated modules to
-  `vitest.clients.ts`, since tests run without them.
+  never reaches the bundle.
   A fresh clone builds `app` with no cargo, no stellar CLI and no local network,
   but needs RPC access to the selected network at build time. A local scaffold
   build writes the same directory from the WASM.
+- The clients come from one generator, the SDK's `BindingGenerator`, which
+  types an empty `Option` as `null`. `npm run build:clients` and the harness
+  deploy write each client's `src/` from the local Wasm, with no network, and
+  compile it to the `dist/` the harness imports. A workspace build
+  (`npm run build --workspaces`) recompiles `dist/` from `src/`. The scaffold's
+  `--build-clients` writes the stellar CLI's bindings instead, which type an
+  empty `Option` as `undefined`, so run `npm run build:clients` again after it
+  before type-checking.
 - When `cargo` itself builds a contract for the Wasm target, rather than
   `stellar contract build` (a size check with
   `cargo build --release --target wasm32v1-none`, for example), set

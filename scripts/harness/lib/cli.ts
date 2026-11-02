@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process"
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, join } from "node:path"
 import { promisify } from "node:util"
 
 import {
+	BindingGenerator,
 	Contract,
 	StrKey,
 	type Asset,
@@ -12,6 +13,7 @@ import {
 	type rpc,
 } from "@stellar/stellar-sdk"
 
+import { writeClient } from "../../lib/clients.mjs"
 import { REPO_ROOT } from "./deployment.js"
 import { type Network } from "./network.js"
 
@@ -163,35 +165,39 @@ export function rootSdkVersion(): string {
 	return version
 }
 
-export async function generateClient(
-	wasm: string,
+export const wasmGenerator = (wasm: string): BindingGenerator =>
+	BindingGenerator.fromWasm(readFileSync(wasm))
+
+/** Writes a client's SDK bindings to `outDir`, named after it, with its stellar-sdk pinned. */
+export function writeClientSources(
 	outDir: string,
+	generator: BindingGenerator,
+	sdkVersion: string,
+): void {
+	writeClient(outDir, generator.generate({ contractName: basename(outDir) }))
+	const pkgPath = join(outDir, "package.json")
+	const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as ClientPackageJson
+	const pinned = pinClientSdk(pkg, sdkVersion)
+	if (pinned !== pkg) {
+		writeFileSync(pkgPath, JSON.stringify(pinned, null, 2) + "\n")
+	}
+}
+
+/** Writes a client's sources and compiles its `dist/`, which the harness imports. */
+export async function generateClient(
+	outDir: string,
+	generator: BindingGenerator,
 	sdkVersion: string,
 ): Promise<void> {
-	await stellar([
-		"contract",
-		"bindings",
-		"typescript",
-		"--wasm",
-		wasm,
-		"--output-dir",
-		outDir,
-		"--overwrite",
-	])
-	const pkgPath = join(outDir, "package.json")
-	if (existsSync(pkgPath)) {
-		const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as ClientPackageJson
-		const pinned = pinClientSdk(pkg, sdkVersion)
-		if (pinned !== pkg) {
-			writeFileSync(pkgPath, JSON.stringify(pinned, null, 2) + "\n")
-		}
-	}
-	// TypeScript 6 rejects the CLI-generated tsconfig without an explicit rootDir.
+	writeClientSources(outDir, generator, sdkVersion)
+	// TypeScript 6 needs the rootDir and the node types the generated tsconfig leaves to defaults.
 	await exec(process.execPath, [
 		tsc,
 		"-p",
 		outDir,
 		"--rootDir",
 		join(outDir, "src"),
+		"--types",
+		"node",
 	])
 }
