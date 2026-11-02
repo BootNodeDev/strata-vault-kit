@@ -10,7 +10,7 @@ import {
 	renderFundModal,
 	renderActivateModal,
 	renderFinalizeModal,
-} from "../../../test/renderTransactionModal"
+} from "./renderModal"
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),
