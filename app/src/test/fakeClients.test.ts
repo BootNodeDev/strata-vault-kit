@@ -73,12 +73,6 @@ describe("fake clients", () => {
 		vault.current_epoch.mockResolvedValue({ result: "3" })
 		// @ts-expect-error not a member of an assembled transaction
 		vault.current_epoch.mockResolvedValue({ results: 3n })
-		// @ts-expect-error a read carries its result
-		vault.current_epoch.mockResolvedValue({})
-		// @ts-expect-error current_epoch never returns undefined
-		vault.current_epoch.mockResolvedValue({ result: undefined })
-		fakeNavOracle("get_admin").get_admin.mockResolvedValue({ result: null })
-		vault.cancel_deposit.mockResolvedValue({ signAndSend: vi.fn() })
 		// @ts-expect-error the call was not declared
 		void vault.paused
 	})

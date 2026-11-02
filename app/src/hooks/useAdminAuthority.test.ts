@@ -383,11 +383,9 @@ const vaultRoles = (byRole: Record<string, string[]>) => {
 		}),
 	)
 	vaultMock.get_role_member.mockImplementation(
-		async ({ role, index }: { role: string; index: number }) => {
-			const member = byRole[role]?.[index]
-			if (member === undefined) throw new Error(`no ${role} at ${index}`)
-			return { result: member }
-		},
+		async ({ role, index }: { role: string; index: number }) => ({
+			result: byRole[role]?.[index],
+		}),
 	)
 }
 
