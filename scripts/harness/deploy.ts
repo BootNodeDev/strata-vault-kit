@@ -287,6 +287,22 @@ async function finishVaultSetup(
 	if (notice !== noticeSecs)
 		throw new Error(`vault notice is ${notice}, expected ${noticeSecs}`)
 	console.log(`vault notice set to ${noticeSecs} seconds`)
+
+	// Set while setup is open, so a silent manager never leaves only they able
+	// to seal an epoch: afterwards this changes only through the timelock.
+	const minEpochDurationSecs = BigInt(net.vault.min_epoch_duration_secs)
+	await (
+		await vault.set_min_epoch_duration({ secs: minEpochDurationSecs })
+	).signAndSend()
+	const minEpochDuration = (await vault.min_epoch_duration()).result
+	if (minEpochDuration !== minEpochDurationSecs)
+		throw new Error(
+			`vault minimum epoch duration is ${minEpochDuration}, expected ${minEpochDurationSecs}`,
+		)
+	console.log(
+		`vault minimum epoch duration set to ${minEpochDurationSecs} seconds`,
+	)
+
 	await (await vault.finish_setup()).signAndSend()
 	if ((await vault.setup_open()).result)
 		throw new Error("the vault's setup did not finish")

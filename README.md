@@ -207,6 +207,7 @@ share_token bound to compliance
 compliance bound to the vault, setup finished
 nav_oracle bound to the vault, setup finished
 vault notice set to 10 seconds
+vault minimum epoch duration set to 86400 seconds
 vault setup finished
 health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
 wrote deployed.local.json
@@ -225,7 +226,11 @@ npm run test:wind-down -w scripts/harness
 
 Deploy afresh before each run of the suites. The deploy sets the vault's
 notice to twice the oracle cooldown (10 seconds on the local network, 120 on
-testnet), and the suites wait out the notice before they price an epoch.
+testnet), and the suites wait out the notice before they price an epoch. It
+also sets a minimum epoch duration of one day on every network, so an
+outsider can eventually seal an epoch the manager leaves open; the guards
+suite checks the refusal before that minimum elapses, since waiting a real
+day is not practical for a test run.
 `test:wind-down` ignores `deployed.local.json`: it deploys its own throwaway
 vault set, built from the `short_wind_down` wasm above, so it can reach an
 active wind-down without the real seven-day minimum.

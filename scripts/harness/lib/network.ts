@@ -15,6 +15,7 @@ export interface OracleConfig {
 
 export interface VaultConfig {
 	notice_secs: number
+	min_epoch_duration_secs: number
 }
 
 export type Funding =
@@ -45,9 +46,15 @@ const QUICKSTART_ROOT =
 const LOCAL_COOLDOWN_SECS = 5
 const TESTNET_COOLDOWN_SECS = 60
 
+// The contract's own floor (MIN_EPOCH_DURATION_FLOOR): one day, so outsiders
+// cannot seal a stream of tiny epochs. Every network deploys with the floor
+// itself, the simplest minimum that is always in bounds.
+const MIN_EPOCH_DURATION_SECS = 24 * 60 * 60
+
 // Twice the cooldown, so a valuation attested after the close lands before the notice ends.
-const noticeFor = (cooldownSecs: number): VaultConfig => ({
+const vaultConfigFor = (cooldownSecs: number): VaultConfig => ({
 	notice_secs: 2 * cooldownSecs,
+	min_epoch_duration_secs: MIN_EPOCH_DURATION_SECS,
 })
 
 const NETWORKS: Record<NetworkName, Network> = {
@@ -64,7 +71,7 @@ const NETWORKS: Record<NetworkName, Network> = {
 			cooldown_secs: LOCAL_COOLDOWN_SECS,
 			...band,
 		},
-		vault: noticeFor(LOCAL_COOLDOWN_SECS),
+		vault: vaultConfigFor(LOCAL_COOLDOWN_SECS),
 	},
 	testnet: {
 		name: "testnet",
@@ -77,7 +84,7 @@ const NETWORKS: Record<NetworkName, Network> = {
 			cooldown_secs: TESTNET_COOLDOWN_SECS,
 			...band,
 		},
-		vault: noticeFor(TESTNET_COOLDOWN_SECS),
+		vault: vaultConfigFor(TESTNET_COOLDOWN_SECS),
 	},
 }
 

@@ -1,8 +1,9 @@
 # Test & deploy harness
 
 Deploys the vault contracts to a network and runs integration tests. Before it
-closes setup, the deploy sets the vault's custodian and its notice to twice
-the network's oracle cooldown.
+closes setup, the deploy sets the vault's custodian, its notice to twice the
+network's oracle cooldown, and a minimum epoch duration of one day, so an
+outsider can seal an abandoned epoch even if the manager goes silent.
 
 ## Usage
 
