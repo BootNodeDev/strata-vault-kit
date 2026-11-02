@@ -152,6 +152,18 @@ Formatting and secret-scanning run on commit via a `prek` hook — see
 `.pre-commit-config.yaml` and run `prek install` once. CI also scans every
 pull request's commits with the same gitleaks version.
 
+### Console and script tests
+
+The tests for `app/`, `app-lib/` and `scripts/` run against the TypeScript
+clients generated from the contracts. Generate them once, and again after a
+contract's interface changes:
+
+```sh
+npm ci
+stellar contract build && npm run build:clients
+npm run test        # stops and names any client that is missing
+```
+
 ### Integration & On-Chain Tests
 
 From a fresh clone to a vault set deployed on a local network. Run these inside

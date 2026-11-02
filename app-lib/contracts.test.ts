@@ -1,6 +1,8 @@
-import type { ClientOptions } from "@stellar/stellar-sdk/contract"
+import {
+	Client as ContractClient,
+	type ClientOptions,
+} from "@stellar/stellar-sdk/contract"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { Client as GeneratedClient } from "../vitest.clients"
 import {
 	connectAsset,
 	connectAsyncVault,
@@ -12,7 +14,7 @@ import {
 import { server } from "./rpc"
 
 const optionsOf = (client: unknown): ClientOptions => {
-	if (!(client instanceof GeneratedClient))
+	if (!(client instanceof ContractClient))
 		throw new Error("not built from the generated bindings")
 	return client.options
 }

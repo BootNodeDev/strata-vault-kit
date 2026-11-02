@@ -16,12 +16,12 @@ import {
 } from "@stellar/stellar-sdk"
 import {
 	AssembledTransaction,
+	Client as ContractClient,
 	Spec,
 	type ClientOptions,
 } from "@stellar/stellar-sdk/contract"
 import { Api } from "@stellar/stellar-sdk/rpc"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { Client as GeneratedClient } from "../vitest.clients"
 import { connectAsyncVault } from "./contracts"
 import { networkPassphrase } from "./env"
 import {
@@ -552,7 +552,7 @@ describe("transactionStatus", () => {
 })
 
 const timeoutOf = (client: unknown): number | undefined => {
-	if (!(client instanceof GeneratedClient))
+	if (!(client instanceof ContractClient))
 		throw new Error("not the generated vault client")
 	return client.options.timeoutInSeconds
 }

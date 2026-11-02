@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Generates a typed client per deployed contract from its on-chain spec, so a
 // build needs Node and RPC access only, with no cargo or Stellar CLI.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { BindingGenerator, rpc } from "@stellar/stellar-sdk"
+import { writeClient } from "./lib/clients.mjs"
 import {
 	contractIds,
 	networkOf,
@@ -26,21 +27,7 @@ const generate = async ({ name, id }) => {
 		rpcUrl,
 		networkPassphrase,
 	})
-	const dir = resolve(repoRoot, "app-lib/clients", name)
-	mkdirSync(resolve(dir, "src"), { recursive: true })
-	const sources = {
-		"src/index.ts": files.index,
-		"src/types.ts": files.types,
-		"src/client.ts": files.client,
-		"package.json": files.packageJson.replace(
-			/"name": "[^"]+"/,
-			`"name": "${name}"`,
-		),
-		"tsconfig.json": files.tsConfig,
-	}
-	for (const [path, content] of Object.entries(sources)) {
-		writeFileSync(resolve(dir, path), content)
-	}
+	writeClient(repoRoot, name, files)
 }
 
 await Promise.all(contracts.map(generate))
