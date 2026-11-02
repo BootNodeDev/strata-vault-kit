@@ -76,16 +76,29 @@ export const complianceContract = (c: Connected, as: Keypair) =>
 
 interface Sendable<T> {
 	simulation?: unknown
-	signAndSend(): Promise<{ result: T }>
+	signAndSend(): Promise<{
+		result: T
+		sendTransactionResponse?: { hash: string }
+	}>
 }
 
-export async function send<T>(tx: Promise<Sendable<T>>): Promise<T> {
+// A label makes the run print `tx <label> <hash>`, so a scenario can be
+// linked to an explorer afterwards.
+export async function send<T>(
+	tx: Promise<Sendable<T>>,
+	label?: string,
+): Promise<T> {
 	const awaited = await tx
 	const simulation = awaited.simulation as { error?: string } | undefined
 	if (simulation?.error !== undefined) {
 		throw new Error(`simulation failed: ${simulation.error}`)
 	}
-	return (await awaited.signAndSend()).result
+	const sent = await awaited.signAndSend()
+	const hash = sent.sendTransactionResponse?.hash
+	if (label !== undefined && hash !== undefined) {
+		console.log(`tx ${label} ${hash}`)
+	}
+	return sent.result
 }
 
 export function usdcBalance(c: Connected, address: string): Promise<bigint> {

@@ -15,6 +15,7 @@
     "test:happy-path": "vitest run happy-path.test.ts",
     "test:guards": "vitest run guards.test.ts",
     "test:wind-down": "vitest run wind-down.test.ts",
+    "test:queue": "vitest run redemption-queue.test.ts",
     "seed": "tsx seed.ts"
   },
   "dependencies": {
