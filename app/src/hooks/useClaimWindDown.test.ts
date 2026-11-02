@@ -89,6 +89,7 @@ describe("useClaimWindDown", () => {
 	it("maps a refusal at simulation to its contract code", async () => {
 		vaultMock.claim_wind_down.mockResolvedValue({
 			simulation: { error: "HostError: Error(Contract, #6071)" },
+			signAndSend: vi.fn(),
 		})
 		const { result } = renderWithWallet(useClaimWindDown)
 

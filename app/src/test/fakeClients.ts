@@ -17,11 +17,15 @@ type CallName<Client> = {
 		: never
 }[keyof Client]
 
-// What a faked call resolves to. Only `result` takes its type from the
-// contract; the other members are SDK internals that tests stand in for loosely.
-export type FakeTransaction<Result> = { result?: Result } & {
+type SdkMembers<Result> = {
 	[Member in Exclude<keyof AssembledTransaction<Result>, "result">]?: unknown
 }
+
+// A faked read carries its result, typed by the contract; a faked write carries
+// what the signing path calls. Other SDK members stay loose.
+export type FakeTransaction<Result> =
+	| ({ result: Result } & SdkMembers<Result>)
+	| ({ signAndSend: unknown } & SdkMembers<Result>)
 
 type FakeCall<Call> = Call extends (
 	...args: infer Args

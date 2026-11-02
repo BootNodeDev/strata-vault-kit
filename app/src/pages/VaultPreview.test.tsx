@@ -323,7 +323,7 @@ vi.mock("../config/contracts", () => {
 vi.mock("../config/clients", () => import("../test/fakeClients"))
 
 const figure = (result: bigint) => async () => ({ result })
-const address = (result: string | null | undefined) => async () => ({
+const address = (result: string | null) => async () => ({
 	result,
 })
 const vault = fakeAsyncVault(
@@ -358,9 +358,9 @@ vault.uncovered.mockImplementation(async () => {
 vault.total_economic_supply.mockImplementation(figure(100000000000000n))
 vault.net_deployed.mockImplementation(figure(50000000000n))
 vault.governance.mockImplementation(address(mockGovernanceAddress))
-vault.manager.mockImplementation(address(undefined))
-vault.treasury.mockImplementation(address(undefined))
-vault.guardian.mockImplementation(address(undefined))
+vault.manager.mockImplementation(address(null))
+vault.treasury.mockImplementation(address(null))
+vault.guardian.mockImplementation(address(null))
 vault.custodian.mockImplementation(address(null))
 vault.current_epoch.mockImplementation(async () => {
 	if (!mockRequests.readable) throw new Error("boom")
@@ -901,7 +901,7 @@ describe("VaultPreview", () => {
 		expect(screen.getByText("5,000.00")).toBeTruthy()
 	})
 
-	it("renders the authority addresses the vault reports, unavailable when unreadable and the custodian as not set", async () => {
+	it("renders the authority addresses the vault reports, unavailable for a role with no holder and the custodian as not set", async () => {
 		renderVaultPreview()
 
 		expect(
