@@ -1,18 +1,17 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+	asyncVaultWriter as asyncVaultWriterMock,
+	fakeAsyncVault,
+} from "../test/fakeClients"
 import { deferred, renderWithWallet } from "./testSupport"
 import { useActivateWindDown } from "./useActivateWindDown"
 import { cycleWriteKeys } from "./useCycleState"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { activate_wind_down: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("activate_wind_down")
 
 const renderActivateWindDown = () => renderWithWallet(useActivateWindDown)
 

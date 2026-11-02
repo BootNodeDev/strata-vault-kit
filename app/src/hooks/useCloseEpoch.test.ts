@@ -1,19 +1,18 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+	asyncVaultWriter as asyncVaultWriterMock,
+	fakeAsyncVault,
+} from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { useCloseEpoch } from "./useCloseEpoch"
 import { cycleWriteKeys } from "./useCycleState"
 import { investorRequestsKey } from "./useInvestorRequests"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { close_epoch: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("close_epoch")
 
 const renderCloseEpoch = () => renderWithWallet(useCloseEpoch)
 

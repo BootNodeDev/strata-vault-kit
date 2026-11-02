@@ -3,19 +3,18 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { type Price } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+	navOracleWriter as navOracleWriterMock,
+	fakeNavOracle,
+} from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { attestWriteKeys, useAttest } from "./useAttest"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { navLatestKey } from "./useNavPrice"
 
-const { oracleMock, navOracleWriterMock } = vi.hoisted(() => ({
-	oracleMock: { attest: vi.fn() },
-	navOracleWriterMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	navOracleWriter: navOracleWriterMock,
-}))
+const oracleMock = fakeNavOracle("attest")
 
 const attestation = {
 	price: 1_040_000_000_000_000_000n as Price,

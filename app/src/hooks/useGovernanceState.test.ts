@@ -2,33 +2,33 @@ import { Buffer } from "buffer"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+	fakeAsyncVault,
+	fakeNavOracle,
+	fakeShareToken,
+} from "../test/fakeClients"
 import { governanceReadsKey } from "./pendingAdmins"
 import { renderWithWallet } from "./testSupport"
 import { useGovernanceState } from "./useGovernanceState"
 
 const {
 	readPendingAdminsMock,
-	vaultMock,
-	tokenMock,
-	oracleMock,
 	useCycleReadsMock,
 	useConfigurationStateMock,
 	useVaultPausedMock,
 } = vi.hoisted(() => ({
 	readPendingAdminsMock: vi.fn(),
-	vaultMock: { pending_changes: vi.fn() },
-	tokenMock: { pending_changes: vi.fn() },
-	oracleMock: { pending_changes: vi.fn() },
 	useCycleReadsMock: vi.fn(),
 	useConfigurationStateMock: vi.fn(),
 	useVaultPausedMock: vi.fn(),
 }))
 
-vi.mock("../config/clients", () => ({
-	asyncVault: async () => vaultMock,
-	shareToken: async () => tokenMock,
-	navOracle: async () => oracleMock,
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
+
+const vaultMock = fakeAsyncVault("pending_changes")
+const tokenMock = fakeShareToken("pending_changes")
+const oracleMock = fakeNavOracle("pending_changes")
+
 vi.mock("./useCycleState", async (importOriginal) => ({
 	...(await importOriginal<object>()),
 	useCycleReads: useCycleReadsMock,
@@ -176,7 +176,7 @@ describe("useGovernanceState", () => {
 	})
 
 	it("reads every pending change as the vault reports it", async () => {
-		const pending = [
+		const pending: AppLib.VaultPendingChange[] = [
 			{
 				id: 2,
 				change: { tag: "Upgrade", values: [Buffer.alloc(32, 0xab)] },
@@ -215,7 +215,7 @@ describe("useGovernanceState", () => {
 	})
 
 	it("reads the share token's own queue and setup state on the vault's clock", async () => {
-		const pending = [
+		const pending: AppLib.TokenPendingChange[] = [
 			{
 				id: 1,
 				change: { tag: "Compliance", values: ["CCOMPLIANCE"] },
@@ -245,7 +245,7 @@ describe("useGovernanceState", () => {
 	})
 
 	it("reads the oracle's own queue and setup state on the vault's clock", async () => {
-		const pending = [
+		const pending: AppLib.OraclePendingChange[] = [
 			{ id: 1, change: { tag: "Admin", values: ["GNEXT"] }, eta: 8n },
 		]
 		oracleMock.pending_changes.mockResolvedValue({ result: pending })

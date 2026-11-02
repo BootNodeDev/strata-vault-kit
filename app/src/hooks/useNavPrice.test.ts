@@ -7,12 +7,7 @@ import {
 import { describe, expect, it, vi } from "vitest"
 import { classifyNav, type NavClassification } from "./useNavPrice"
 
-vi.mock("../config/clients", () => ({
-	navOracle: async () => ({
-		state: async () => ({}),
-		latest: async () => ({}),
-	}),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
 const valid: ContractRead<OracleState> = {
 	kind: "value",
