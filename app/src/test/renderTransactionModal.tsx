@@ -1,26 +1,26 @@
 import { render } from "@testing-library/react"
 import { vi } from "vitest"
-import { type ActivateWindDownStatus } from "../../../hooks/useActivateWindDown"
-import { type AttestStatus } from "../../../hooks/useAttest"
-import { type CancelDepositStatus } from "../../../hooks/useCancelDeposit"
-import { type CancelRedeemStatus } from "../../../hooks/useCancelRedeem"
-import { type ClaimDepositStatus } from "../../../hooks/useClaimDeposit"
-import { type ClaimRedeemStatus } from "../../../hooks/useClaimRedeem"
-import { type ClaimWindDownStatus } from "../../../hooks/useClaimWindDown"
-import { type CloseEpochStatus } from "../../../hooks/useCloseEpoch"
-import { type TransactionStatus } from "../../../hooks/useContractTransaction"
-import { type DeployToCustodianStatus } from "../../../hooks/useDeployToCustodian"
-import { type FinalizeWindDownRoundStatus } from "../../../hooks/useFinalizeWindDownRound"
-import { type FulfillEpochStatus } from "../../../hooks/useFulfillEpoch"
-import { type FundStatus } from "../../../hooks/useFund"
-import { type RequestDepositStatus } from "../../../hooks/useRequestDeposit"
-import { type RequestRedeemStatus } from "../../../hooks/useRequestRedeem"
 import TransactionModal, {
 	type ComplianceModalAction,
 	type ConfigurationModalAction,
 	type EmergencyModalAction,
 	type GovernanceModalAction,
-} from "../TransactionModal"
+} from "../components/vault/TransactionModal"
+import { type ActivateWindDownStatus } from "../hooks/useActivateWindDown"
+import { type AttestStatus } from "../hooks/useAttest"
+import { type CancelDepositStatus } from "../hooks/useCancelDeposit"
+import { type CancelRedeemStatus } from "../hooks/useCancelRedeem"
+import { type ClaimDepositStatus } from "../hooks/useClaimDeposit"
+import { type ClaimRedeemStatus } from "../hooks/useClaimRedeem"
+import { type ClaimWindDownStatus } from "../hooks/useClaimWindDown"
+import { type CloseEpochStatus } from "../hooks/useCloseEpoch"
+import { type TransactionStatus } from "../hooks/useContractTransaction"
+import { type DeployToCustodianStatus } from "../hooks/useDeployToCustodian"
+import { type FinalizeWindDownRoundStatus } from "../hooks/useFinalizeWindDownRound"
+import { type FulfillEpochStatus } from "../hooks/useFulfillEpoch"
+import { type FundStatus } from "../hooks/useFund"
+import { type RequestDepositStatus } from "../hooks/useRequestDeposit"
+import { type RequestRedeemStatus } from "../hooks/useRequestRedeem"
 
 export const renderModal = (status: RequestDepositStatus) => {
 	const onClose = vi.fn()

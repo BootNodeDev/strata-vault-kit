@@ -2,10 +2,13 @@ import { formatDate, type SubmitFailure } from "@stellar-scaffold/app-lib"
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { act, fireEvent, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+import {
+	renderModal,
+	renderEmergencyModal,
+} from "../../../test/renderTransactionModal"
 import TransactionModal, {
 	type EmergencyModalAction,
 } from "../TransactionModal"
-import { renderModal, renderEmergencyModal } from "./renderModal"
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),

@@ -8,7 +8,7 @@ import {
 	renderClaimModal,
 	renderRedeemModal,
 	renderClaimRedeemModal,
-} from "./renderModal"
+} from "../../../test/renderTransactionModal"
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),

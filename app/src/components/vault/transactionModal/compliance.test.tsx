@@ -1,8 +1,8 @@
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
+import { renderComplianceModal } from "../../../test/renderTransactionModal"
 import { type ComplianceModalAction } from "../TransactionModal"
-import { renderComplianceModal } from "./renderModal"
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),

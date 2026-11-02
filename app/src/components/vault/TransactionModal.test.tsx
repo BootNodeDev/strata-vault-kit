@@ -3,8 +3,8 @@ import { fireEvent, render, screen, within } from "@testing-library/react"
 import { StrictMode } from "react"
 import { describe, expect, it, vi } from "vitest"
 import { type RequestDepositStatus } from "../../hooks/useRequestDeposit"
+import { renderModal } from "../../test/renderTransactionModal"
 import TransactionModal from "./TransactionModal"
-import { renderModal } from "./transactionModal/renderModal"
 
 const { explorerTransactionMock } = vi.hoisted(() => ({
 	explorerTransactionMock: vi.fn(() => null as string | null),
