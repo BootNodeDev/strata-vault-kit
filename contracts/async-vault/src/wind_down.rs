@@ -79,6 +79,7 @@ pub(crate) fn is_active(e: &Env) -> bool {
 
 pub(crate) fn propose(e: &Env) {
     guards::not_winding_down(e);
+    guards::setup_finished(e);
     guards::no_wind_down_proposed(e);
 
     let active_at = e.ledger().timestamp().saturating_add(delay(e));

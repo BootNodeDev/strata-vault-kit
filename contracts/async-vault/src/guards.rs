@@ -271,7 +271,7 @@ pub(crate) fn positive_amount(e: &Env, amount: i128) {
 
 pub(crate) fn feed_valid(e: &Env) {
     let feed = OracleFeedClient::new(e, &state::get_addr(e, &DataKey::Oracle));
-    if feed.state() != OracleState::Valid {
+    if !matches!(feed.try_state(), Ok(Ok(OracleState::Valid))) {
         panic_with_error!(e, VaultError::FeedNotValid);
     }
 }

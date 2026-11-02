@@ -1,4 +1,3 @@
-use soroban_sdk::xdr::{ScErrorCode, ScErrorType};
 use soroban_sdk::{contract, contractimpl, Symbol};
 
 use super::*;
@@ -331,12 +330,20 @@ fn a_feed_that_traps_on_its_state_neither_prices_nor_blocks_a_cancel() {
 
     refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
     assert_eq!(f.vault.cancel_deposit(&investor, &epoch), 400);
+}
 
-    let trapped =
-        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction);
-    assert_eq!(
+/// A feed that traps on `state()` answers no better than one that reports
+/// `Stale`: the vault refuses the deposit request with its own error instead
+/// of aborting on the feed's host error.
+#[test]
+fn a_feed_that_traps_on_its_state_refuses_a_deposit_request() {
+    let f = setup();
+    swap_to_a_feed_that_traps_on(&f, symbol_short!("state"));
+    let investor = f.investor(1_000);
+
+    refused(
         f.vault.try_request_deposit(&investor, &400),
-        Err(Ok(trapped))
+        VaultError::FeedNotValid,
     );
 }
 

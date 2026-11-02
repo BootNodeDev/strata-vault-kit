@@ -2,14 +2,18 @@ use soroban_sdk::{contracttype, panic_with_error, symbol_short, BytesN, Env, Str
 
 use crate::OracleError;
 
-/// The three-state feed health
+/// The three-state feed health.
 //
-// - `Valid`:  the NAV is not paused AND now ≤ expires_at
-//             AND min_answer ≤ nav_per_share ≤ max_answer. Mint AND redeem.
-// - `Stale`:  the NAV is not paused but past heartbeat/expires_at (or no record yet).
-//             Value untrusted; BOTH mint and redeem halt.
-// - `Paused`: the NAV is paused (issuer freeze). Value ignored entirely, both
-//             directions, until the issuer clears the NAV pause.
+// - `Valid`:  the NAV is not paused AND now ≤ expires_at AND min_answer ≤
+//             nav_per_share ≤ max_answer.
+// - `Stale`:  the NAV is not paused but past heartbeat/expires_at (or no
+//             record yet). Value untrusted.
+// - `Paused`: the guardian or the admin paused the NAV; only the admin lifts
+//             it. Value ignored entirely.
+//
+// On `Stale` or `Paused` the vault refuses a new deposit request and prices
+// no epoch; a redemption request, a cancellation and a claim already owed
+// stay open.
 pub use strata_bindings::OracleState;
 
 pub const ATTESTER_ROLE: Symbol = symbol_short!("attester");
