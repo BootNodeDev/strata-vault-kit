@@ -14,7 +14,7 @@ import {
 import {
 	HELD_WHILE_FROZEN,
 	NOT_ALLOWLISTED,
-} from "../components/vault/TransactionModal"
+} from "../components/vault/transactionCopy/investor"
 import {
 	type ArchivedRequest,
 	type InvestorRequest,

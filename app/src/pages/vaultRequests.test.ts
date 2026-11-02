@@ -4,7 +4,7 @@ import {
 	type Price,
 } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
-import { HELD_WHILE_FROZEN } from "../components/vault/TransactionModal"
+import { HELD_WHILE_FROZEN } from "../components/vault/transactionCopy/investor"
 import {
 	type ArchivedRequest,
 	type InvestorRequest,
