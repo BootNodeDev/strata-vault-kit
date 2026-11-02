@@ -154,14 +154,15 @@ pull request's commits with the same gitleaks version.
 
 ### Console and script tests
 
-The tests for `app/`, `app-lib/` and `scripts/` run against the TypeScript
-clients generated from the contracts. Generate them once, and again after a
-contract's interface changes:
+The tests and the type check for `app/`, `app-lib/` and `scripts/` run against
+the TypeScript clients generated from the contracts. Generate them once, and
+again after a contract's interface changes:
 
 ```sh
 npm ci
 stellar contract build && npm run build:clients
 npm run test        # stops and names any client that is missing
+npm run typecheck   # app, app-lib and the harness
 ```
 
 ### Integration & On-Chain Tests

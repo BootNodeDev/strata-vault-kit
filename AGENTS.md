@@ -52,7 +52,8 @@ does not carry over. Read it for Soroban and OZ mechanics only.
   works through the CLI wrapper. The devshell pins the Stellar CLI it expects.
 - **Tests:** `cargo test` from the repo root runs every workspace member against
   the in-memory `Env`. `npm run test` runs vitest over `app/`, `app-lib/` and
-  `scripts/` against the generated contract clients, so run
+  `scripts/`, and `npm run typecheck` checks `app/`, `app-lib/` and the
+  harness. Both use the generated contract clients, so run
   `stellar contract build && npm run build:clients` first. `e2e/` runs
   Playwright separately. CI runs `cargo test --locked` on every pull request
   except one that changes only Markdown files outside `docs/evidence/`: that
