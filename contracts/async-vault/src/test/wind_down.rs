@@ -81,6 +81,20 @@ fn only_governance_proposes() {
 }
 
 #[test]
+fn a_wind_down_cannot_be_proposed_while_setup_is_open() {
+    let f = setup_unfinished();
+
+    refused(f.vault.try_propose_wind_down(), VaultError::SetupOpen);
+
+    f.vault.finish_setup();
+    f.vault.propose_wind_down();
+    assert_eq!(
+        f.vault.wind_down().unwrap().status,
+        WindDownStatus::Proposed
+    );
+}
+
+#[test]
 fn a_second_proposal_cannot_push_the_date_back() {
     let f = setup();
     f.vault.propose_wind_down();

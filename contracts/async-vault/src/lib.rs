@@ -408,6 +408,7 @@ impl AsyncVault {
     /// # Errors
     ///
     /// * `WindDownActive` - The vault is already winding down.
+    /// * `SetupOpen` - Setup has not finished.
     /// * `WindDownAlreadyProposed` - A proposal already stands.
     ///
     /// # Events
