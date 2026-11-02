@@ -4,6 +4,11 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { OPERATOR_TIMEOUT_SECONDS } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import * as VaultClient from "../../../app-lib/clients/async_vault/src/index"
+import * as VerifierClient from "../../../app-lib/clients/identity_verifier/src/index"
+import * as OracleClient from "../../../app-lib/clients/nav_oracle/src/index"
+import * as ShareTokenClient from "../../../app-lib/clients/share_token/src/index"
+import { contractErrorCode, type ErrorTable } from "../test/contractErrorCode"
 import { governanceReadsKey } from "./pendingAdmins"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { adminAuthorityKey, type Grant } from "./useAdminAuthority"
@@ -174,8 +179,13 @@ type Case = {
 	arg: unknown
 	args?: object
 	keys: readonly (readonly string[])[]
-	refusal: number
+	refusal: { code: number; name: string }
 }
+
+const refused = (errors: ErrorTable, name: string) => ({
+	code: contractErrorCode(errors, name),
+	name,
+})
 
 const cases: Case[] = [
 	{
@@ -185,7 +195,7 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: [vaultPausedKey],
-		refusal: 1000,
+		refusal: refused(VaultClient.PausableError, "EnforcedPause"),
 	},
 	{
 		name: "useUnpauseVault",
@@ -194,7 +204,7 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: [vaultPausedKey],
-		refusal: 1001,
+		refusal: refused(VaultClient.PausableError, "ExpectedPause"),
 	},
 	{
 		name: "usePauseToken",
@@ -203,7 +213,7 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: [tokenPausedKey],
-		refusal: 1000,
+		refusal: refused(ShareTokenClient.PausableError, "EnforcedPause"),
 	},
 	{
 		name: "useUnpauseToken",
@@ -212,7 +222,7 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: [tokenPausedKey],
-		refusal: 1001,
+		refusal: refused(ShareTokenClient.PausableError, "ExpectedPause"),
 	},
 	{
 		name: "usePauseNav",
@@ -221,7 +231,7 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: oracleWriteKeys,
-		refusal: 2000,
+		refusal: refused(OracleClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useClearLatest",
@@ -229,7 +239,7 @@ const cases: Case[] = [
 		method: oracle.clear_latest,
 		arg: undefined,
 		keys: oracleWriteKeys,
-		refusal: 3008,
+		refusal: refused(OracleClient.OracleError, "NavNotPaused"),
 	},
 	{
 		name: "useSetNavPaused",
@@ -238,7 +248,7 @@ const cases: Case[] = [
 		arg: false,
 		args: { paused: false },
 		keys: oracleWriteKeys,
-		refusal: 2000,
+		refusal: refused(OracleClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useSetDepositCap",
@@ -247,7 +257,7 @@ const cases: Case[] = [
 		arg: null,
 		args: { cap: null },
 		keys: [cycleReadsKey],
-		refusal: 6007,
+		refusal: refused(VaultClient.VaultError, "InvalidAmount"),
 	},
 	{
 		name: "useSetCustodian",
@@ -256,7 +266,7 @@ const cases: Case[] = [
 		arg: CONTRACT,
 		args: { custodian: CONTRACT },
 		keys: [vaultAuthoritiesKey],
-		refusal: 2000,
+		refusal: refused(VaultClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useSetNotice",
@@ -265,7 +275,7 @@ const cases: Case[] = [
 		arg: 86_400n,
 		args: { secs: 86_400n },
 		keys: [cycleReadsKey],
-		refusal: 6061,
+		refusal: refused(VaultClient.VaultError, "NoticeAboveUpgradeDelay"),
 	},
 	{
 		name: "useSetWindDownDelay",
@@ -274,7 +284,7 @@ const cases: Case[] = [
 		arg: 86_400n,
 		args: { secs: 86_400n },
 		keys: [cycleReadsKey],
-		refusal: 6053,
+		refusal: refused(VaultClient.VaultError, "WindDownDelayTooLong"),
 	},
 	{
 		name: "useProposeCustodian",
@@ -283,7 +293,7 @@ const cases: Case[] = [
 		arg: CONTRACT,
 		args: { change: { tag: "Custodian", values: [CONTRACT] } },
 		keys: [pendingChangesKey("vault"), vaultAuthoritiesKey],
-		refusal: 6075,
+		refusal: refused(VaultClient.VaultError, "InvalidCustodian"),
 	},
 	{
 		name: "useProposeNotice",
@@ -292,7 +302,7 @@ const cases: Case[] = [
 		arg: 43_200n,
 		args: { change: { tag: "Notice", values: [43_200n] } },
 		keys: [pendingChangesKey("vault"), cycleReadsKey],
-		refusal: 6061,
+		refusal: refused(VaultClient.VaultError, "NoticeAboveUpgradeDelay"),
 	},
 	{
 		name: "useProposeWindDownDelay",
@@ -301,7 +311,7 @@ const cases: Case[] = [
 		arg: 691_200n,
 		args: { change: { tag: "WindDownDelay", values: [691_200n] } },
 		keys: [pendingChangesKey("vault"), cycleReadsKey],
-		refusal: 6069,
+		refusal: refused(VaultClient.VaultError, "WindDownDelayTooShort"),
 	},
 	{
 		name: "useSetOracleConfig",
@@ -310,7 +320,7 @@ const cases: Case[] = [
 		arg: ORACLE_CONFIG,
 		args: { config: ORACLE_CONFIG },
 		keys: oracleWriteKeys,
-		refusal: 3001,
+		refusal: refused(OracleClient.OracleError, "InvalidConfig"),
 	},
 	{
 		name: "useSetCompliance",
@@ -319,7 +329,7 @@ const cases: Case[] = [
 		arg: CONTRACT,
 		args: { compliance: CONTRACT, operator: investorAddress },
 		keys: [configurationReadsKey, isAllowedKey],
-		refusal: 2000,
+		refusal: refused(ShareTokenClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useSetIdentityVerifier",
@@ -328,7 +338,7 @@ const cases: Case[] = [
 		arg: CONTRACT,
 		args: { identity_verifier: CONTRACT, operator: investorAddress },
 		keys: [configurationReadsKey, adminAuthorityKey, isAllowedKey],
-		refusal: 2000,
+		refusal: refused(ShareTokenClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useProposeCompliance",
@@ -337,7 +347,7 @@ const cases: Case[] = [
 		arg: CONTRACT,
 		args: { change: { tag: "Compliance", values: [CONTRACT] } },
 		keys: [pendingChangesKey("token"), configurationReadsKey],
-		refusal: 7004,
+		refusal: refused(ShareTokenClient.ShareTokenError, "SetupOpen"),
 	},
 	{
 		name: "useProposeIdentityVerifier",
@@ -346,7 +356,7 @@ const cases: Case[] = [
 		arg: CONTRACT,
 		args: { change: { tag: "IdentityVerifier", values: [CONTRACT] } },
 		keys: [pendingChangesKey("token"), configurationReadsKey],
-		refusal: 7003,
+		refusal: refused(ShareTokenClient.ShareTokenError, "TooManyPendingChanges"),
 	},
 ]
 
@@ -362,6 +372,7 @@ const governedContracts: {
 	hooks: Record<"grant" | "revoke" | "handOver" | "cancel" | "accept", Hook>
 	roleKeys: Case["keys"]
 	handoverKeys: Case["keys"]
+	errors: Record<"AccessControlError" | "RoleTransferError", ErrorTable>
 }[] = [
 	{
 		name: "Vault",
@@ -375,6 +386,7 @@ const governedContracts: {
 		},
 		roleKeys: [adminAuthorityKey, vaultAuthoritiesKey],
 		handoverKeys: [governanceReadsKey, adminAuthorityKey, vaultAuthoritiesKey],
+		errors: VaultClient,
 	},
 	{
 		name: "Oracle",
@@ -388,6 +400,7 @@ const governedContracts: {
 		},
 		roleKeys: [adminAuthorityKey],
 		handoverKeys: [governanceReadsKey, adminAuthorityKey],
+		errors: OracleClient,
 	},
 	{
 		name: "Token",
@@ -401,6 +414,7 @@ const governedContracts: {
 		},
 		roleKeys: [adminAuthorityKey],
 		handoverKeys: [governanceReadsKey, adminAuthorityKey],
+		errors: ShareTokenClient,
 	},
 ]
 
@@ -412,7 +426,7 @@ const roleArgs = {
 
 const governanceCases: Case[] = [
 	...governedContracts.flatMap(
-		({ name, client, hooks, roleKeys, handoverKeys }): Case[] => [
+		({ name, client, hooks, roleKeys, handoverKeys, errors }): Case[] => [
 			{
 				name: `useGrant${name}Role`,
 				useHook: hooks.grant,
@@ -420,7 +434,7 @@ const governanceCases: Case[] = [
 				arg: ROLE_CHANGE,
 				args: roleArgs,
 				keys: roleKeys,
-				refusal: 2000,
+				refusal: refused(errors.AccessControlError, "Unauthorized"),
 			},
 			{
 				name: `useRevoke${name}Role`,
@@ -429,7 +443,7 @@ const governanceCases: Case[] = [
 				arg: ROLE_CHANGE,
 				args: roleArgs,
 				keys: roleKeys,
-				refusal: 2007,
+				refusal: refused(errors.AccessControlError, "RoleNotHeld"),
 			},
 			{
 				name: `useHandOver${name}Admin`,
@@ -438,7 +452,7 @@ const governanceCases: Case[] = [
 				arg: OFFER,
 				args: { new_admin: CONTRACT, live_until_ledger: 1_234 },
 				keys: handoverKeys,
-				refusal: 2201,
+				refusal: refused(errors.RoleTransferError, "InvalidLiveUntilLedger"),
 			},
 			{
 				name: `useCancel${name}Handover`,
@@ -447,7 +461,7 @@ const governanceCases: Case[] = [
 				arg: { ...OFFER, liveUntilLedger: 0 },
 				args: { new_admin: CONTRACT, live_until_ledger: 0 },
 				keys: handoverKeys,
-				refusal: 2200,
+				refusal: refused(errors.RoleTransferError, "NoPendingTransfer"),
 			},
 			{
 				name: `useAccept${name}Admin`,
@@ -455,7 +469,7 @@ const governanceCases: Case[] = [
 				method: client.accept_admin_transfer,
 				arg: undefined,
 				keys: handoverKeys,
-				refusal: 2202,
+				refusal: refused(errors.RoleTransferError, "InvalidPendingAccount"),
 			},
 		],
 	),
@@ -466,7 +480,7 @@ const governanceCases: Case[] = [
 		arg: WASM_HASH,
 		args: { change: { tag: "Upgrade", values: [Buffer.alloc(32, 0xab)] } },
 		keys: [pendingChangesKey("vault"), configurationReadsKey],
-		refusal: 6055,
+		refusal: refused(VaultClient.VaultError, "UpgradeProposalExists"),
 	},
 	{
 		name: "useProposeUpgradeDelay",
@@ -475,7 +489,7 @@ const governanceCases: Case[] = [
 		arg: 604_800n,
 		args: { change: { tag: "UpgradeDelay", values: [604_800n] } },
 		keys: [pendingChangesKey("vault"), configurationReadsKey],
-		refusal: 6058,
+		refusal: refused(VaultClient.VaultError, "UpgradeDelayTooShort"),
 	},
 	{
 		name: "useProposeGrantRole",
@@ -484,7 +498,7 @@ const governanceCases: Case[] = [
 		arg: ROLE_CHANGE,
 		args: { change: { tag: "GrantRole", values: ["guardian", CONTRACT] } },
 		keys: [pendingChangesKey("vault")],
-		refusal: 6063,
+		refusal: refused(VaultClient.VaultError, "TooManyPendingChanges"),
 	},
 	{
 		name: "useProposeRevokeRole",
@@ -493,7 +507,7 @@ const governanceCases: Case[] = [
 		arg: ROLE_CHANGE,
 		args: { change: { tag: "RevokeRole", values: ["guardian", CONTRACT] } },
 		keys: [pendingChangesKey("vault")],
-		refusal: 6064,
+		refusal: refused(VaultClient.VaultError, "SetupOpen"),
 	},
 	{
 		name: "useProposeAdmin",
@@ -502,7 +516,7 @@ const governanceCases: Case[] = [
 		arg: CONTRACT,
 		args: { change: { tag: "Admin", values: [CONTRACT] } },
 		keys: [pendingChangesKey("vault")],
-		refusal: 6046,
+		refusal: refused(VaultClient.VaultError, "WindDownActive"),
 	},
 	{
 		name: "useApplyChange",
@@ -518,7 +532,7 @@ const governanceCases: Case[] = [
 			adminAuthorityKey,
 			vaultAuthoritiesKey,
 		],
-		refusal: 6057,
+		refusal: refused(VaultClient.VaultError, "ChangeNotReady"),
 	},
 	{
 		name: "useCancelChange",
@@ -527,7 +541,7 @@ const governanceCases: Case[] = [
 		arg: 3,
 		args: { id: 3 },
 		keys: [pendingChangesKey("vault")],
-		refusal: 6056,
+		refusal: refused(VaultClient.VaultError, "ChangeNotFound"),
 	},
 	{
 		name: "useProposeTokenGrantRole",
@@ -536,7 +550,7 @@ const governanceCases: Case[] = [
 		arg: ROLE_CHANGE,
 		args: { change: { tag: "GrantRole", values: ["guardian", CONTRACT] } },
 		keys: [pendingChangesKey("token")],
-		refusal: 7003,
+		refusal: refused(ShareTokenClient.ShareTokenError, "TooManyPendingChanges"),
 	},
 	{
 		name: "useProposeTokenRevokeRole",
@@ -545,7 +559,7 @@ const governanceCases: Case[] = [
 		arg: ROLE_CHANGE,
 		args: { change: { tag: "RevokeRole", values: ["guardian", CONTRACT] } },
 		keys: [pendingChangesKey("token")],
-		refusal: 7008,
+		refusal: refused(ShareTokenClient.ShareTokenError, "WindDownActive"),
 	},
 	{
 		name: "useProposeTokenAdmin",
@@ -554,7 +568,7 @@ const governanceCases: Case[] = [
 		arg: CONTRACT,
 		args: { change: { tag: "Admin", values: [CONTRACT] } },
 		keys: [pendingChangesKey("token")],
-		refusal: 7004,
+		refusal: refused(ShareTokenClient.ShareTokenError, "SetupOpen"),
 	},
 	{
 		name: "useApplyTokenChange",
@@ -569,7 +583,7 @@ const governanceCases: Case[] = [
 			adminAuthorityKey,
 			isAllowedKey,
 		],
-		refusal: 7009,
+		refusal: refused(ShareTokenClient.ShareTokenError, "VaultPaused"),
 	},
 	{
 		name: "useCancelTokenChange",
@@ -578,7 +592,7 @@ const governanceCases: Case[] = [
 		arg: 3,
 		args: { id: 3 },
 		keys: [pendingChangesKey("token")],
-		refusal: 7001,
+		refusal: refused(ShareTokenClient.ShareTokenError, "ChangeNotFound"),
 	},
 	{
 		name: "useProposeWindDown",
@@ -586,7 +600,7 @@ const governanceCases: Case[] = [
 		method: vault.propose_wind_down,
 		arg: undefined,
 		keys: [cycleReadsKey],
-		refusal: 6046,
+		refusal: refused(VaultClient.VaultError, "WindDownActive"),
 	},
 	{
 		name: "useCancelWindDown",
@@ -594,7 +608,7 @@ const governanceCases: Case[] = [
 		method: vault.cancel_wind_down_proposal,
 		arg: undefined,
 		keys: [cycleReadsKey],
-		refusal: 6047,
+		refusal: refused(VaultClient.VaultError, "WindDownNotProposed"),
 	},
 ]
 
@@ -618,7 +632,7 @@ const complianceCases: Case[] = [
 		arg: { verifier: VERIFIER, account: TARGET },
 		args: { account: TARGET, allowed: true },
 		keys: [complianceReadsKey, isAllowedKey],
-		refusal: 2000,
+		refusal: refused(VerifierClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useDisallowAddress",
@@ -627,7 +641,7 @@ const complianceCases: Case[] = [
 		arg: { verifier: VERIFIER, account: TARGET },
 		args: { account: TARGET, allowed: false },
 		keys: [complianceReadsKey, isAllowedKey],
-		refusal: 2001,
+		refusal: refused(VerifierClient.AccessControlError, "AdminNotSet"),
 	},
 	{
 		name: "useFreezeAddress",
@@ -636,7 +650,7 @@ const complianceCases: Case[] = [
 		arg: TARGET,
 		args: { user_address: TARGET, freeze: true, operator: investorAddress },
 		keys: [complianceReadsKey],
-		refusal: 2000,
+		refusal: refused(ShareTokenClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useUnfreezeAddress",
@@ -645,7 +659,7 @@ const complianceCases: Case[] = [
 		arg: TARGET,
 		args: { user_address: TARGET, freeze: false, operator: investorAddress },
 		keys: [complianceReadsKey],
-		refusal: 2000,
+		refusal: refused(ShareTokenClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useFreezeShares",
@@ -654,7 +668,7 @@ const complianceCases: Case[] = [
 		arg: { account: TARGET, amount: 5n },
 		args: { user_address: TARGET, amount: 5n, operator: investorAddress },
 		keys: [complianceReadsKey],
-		refusal: 300,
+		refusal: refused(ShareTokenClient.RWAError, "InsufficientBalance"),
 	},
 	{
 		name: "useUnfreezeShares",
@@ -663,7 +677,7 @@ const complianceCases: Case[] = [
 		arg: { account: TARGET, amount: 5n },
 		args: { user_address: TARGET, amount: 5n, operator: investorAddress },
 		keys: [complianceReadsKey],
-		refusal: 303,
+		refusal: refused(ShareTokenClient.RWAError, "InsufficientFreeTokens"),
 	},
 	{
 		name: "useLegalTransfer",
@@ -678,7 +692,7 @@ const complianceCases: Case[] = [
 			caller: investorAddress,
 		},
 		keys: [complianceReadsKey, ["share", "balance"], legalTransfersKey],
-		refusal: 300,
+		refusal: refused(ShareTokenClient.RWAError, "InsufficientBalance"),
 	},
 ]
 
@@ -728,7 +742,9 @@ describe.each([...cases, ...governanceCases, ...complianceCases])(
 		it("refuses before asking for a signature and refreshes the state it read", async () => {
 			const signAndSend = vi.fn()
 			method.mockResolvedValue({
-				simulation: { error: `HostError: Error(Contract, #${refusal})` },
+				simulation: {
+					error: `HostError: Error(Contract, #${refusal.code})`,
+				},
 				signAndSend,
 			})
 			const { result, queryClient } = renderWithWallet(useHook)
@@ -738,7 +754,7 @@ describe.each([...cases, ...governanceCases, ...complianceCases])(
 
 			expect(result.current.status).toEqual({
 				status: "failed",
-				failure: { kind: "contract-error", code: refusal },
+				failure: { kind: "contract-error", ...refusal },
 			})
 			expect(signAndSend).not.toHaveBeenCalled()
 			for (const queryKey of keys)

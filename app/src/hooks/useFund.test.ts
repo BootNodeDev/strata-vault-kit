@@ -2,6 +2,8 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { type Amount } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import type * as ContractTransactionModule from "./useContractTransaction"
 import { useContractTransaction } from "./useContractTransaction"
@@ -86,7 +88,7 @@ describe("useFund", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.fund.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6007)" },
+			simulation: { error: simulationError(VaultError, "InvalidAmount") },
 			signAndSend,
 		})
 		const { result } = renderFund()
@@ -95,7 +97,11 @@ describe("useFund", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6007 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "InvalidAmount"),
+				name: "InvalidAmount",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -184,7 +190,7 @@ describe("useFund", () => {
 
 	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.fund.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6014)" },
+			simulation: { error: simulationError(VaultError, "AmountTooLarge") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderFund()

@@ -1,6 +1,11 @@
 import { Address, nativeToScVal, xdr } from "@stellar/stellar-sdk"
 import type { Api } from "@stellar/stellar-sdk/rpc"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+	contractErrorCode,
+	simulationError,
+} from "../app/src/test/contractErrorCode"
+import { OracleError } from "./clients/nav_oracle/src/index"
 import type { DepositRequest, EpochInfo, RedeemRequest } from "./contracts"
 import {
 	decodeTransactionEvents,
@@ -45,7 +50,7 @@ const errorSimulation: Api.SimulateTransactionErrorResponse = {
 	latestLedger: 100,
 	events: [],
 	_parsed: true,
-	error: "HostError: Error(Contract, #3006)",
+	error: simulationError(OracleError, "NoRecord"),
 }
 
 describe("readContract", () => {
@@ -55,7 +60,7 @@ describe("readContract", () => {
 		expect(read).toEqual({ kind: "value", value: 42n })
 	})
 
-	it("parses the error code out of the simulation, never touching result", async () => {
+	it("parses the error code out of the simulation and names it, never touching result", async () => {
 		const read = await readContract(() =>
 			Promise.resolve({
 				simulation: errorSimulation,
@@ -65,7 +70,11 @@ describe("readContract", () => {
 			}),
 		)
 
-		expect(read).toEqual({ kind: "contract-error", code: 3006 })
+		expect(read).toEqual({
+			kind: "contract-error",
+			code: contractErrorCode(OracleError, "NoRecord"),
+			name: "NoRecord",
+		})
 	})
 
 	it("is unreadable when the call itself rejects", async () => {

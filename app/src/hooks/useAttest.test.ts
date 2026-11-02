@@ -3,6 +3,8 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { type Price } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { OracleError } from "../../../app-lib/clients/nav_oracle/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { attestWriteKeys, useAttest } from "./useAttest"
 import { investorRequestsKey } from "./useInvestorRequests"
@@ -105,7 +107,7 @@ describe("useAttest", () => {
 	it("refuses before ever asking for a signature when the simulation carries the oracle's reason", async () => {
 		const signAndSend = vi.fn()
 		oracleMock.attest.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #3004)" },
+			simulation: { error: simulationError(OracleError, "DeviationExceeded") },
 			signAndSend,
 		})
 		const { result } = renderAttest()
@@ -114,7 +116,11 @@ describe("useAttest", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 3004 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(OracleError, "DeviationExceeded"),
+				name: "DeviationExceeded",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -183,7 +189,7 @@ describe("useAttest", () => {
 
 	it("refreshes the cached cycle when the oracle refuses at simulation", async () => {
 		oracleMock.attest.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #3002)" },
+			simulation: { error: simulationError(OracleError, "NavOutOfBand") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderAttest()

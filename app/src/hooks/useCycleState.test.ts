@@ -10,7 +10,9 @@ import {
 } from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { OracleError } from "../../../app-lib/clients/nav_oracle/src/index"
 import { addresses } from "../config/addresses"
+import { contractErrorCode } from "../test/contractErrorCode"
 import { renderWithWallet } from "./testSupport"
 import {
 	toEpoch,
@@ -129,7 +131,11 @@ describe("toOracle", () => {
 	it("has no price when nothing was ever attested", () => {
 		const oracle = toOracle(
 			state("Stale"),
-			{ kind: "contract-error", code: 3006 },
+			{
+				kind: "contract-error",
+				code: contractErrorCode(OracleError, "NoRecord"),
+				name: "NoRecord",
+			},
 			value(config),
 		)
 
@@ -145,7 +151,11 @@ describe("toOracle", () => {
 	it("knows there is no record even while the NAV is paused", () => {
 		const oracle = toOracle(
 			state("Paused"),
-			{ kind: "contract-error", code: 3006 },
+			{
+				kind: "contract-error",
+				code: contractErrorCode(OracleError, "NoRecord"),
+				name: "NoRecord",
+			},
 			value(config),
 		)
 

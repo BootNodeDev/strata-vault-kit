@@ -15,7 +15,11 @@ const value = (result: string): ContractRead<string> => ({
 	value: result,
 })
 const unreadable: ContractRead<string> = { kind: "unreadable" }
-const contractError: ContractRead<string> = { kind: "contract-error", code: 1 }
+const contractError: ContractRead<string> = {
+	kind: "contract-error",
+	code: 1,
+	name: undefined,
+}
 
 describe("toSymbols", () => {
 	it("uses both reported symbols and the reported vault name when every read succeeds", () => {

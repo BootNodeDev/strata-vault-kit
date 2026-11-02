@@ -5,6 +5,8 @@ import {
 	type OracleState,
 } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
+import { OracleError } from "../../../app-lib/clients/nav_oracle/src/index"
+import { contractErrorCode } from "../test/contractErrorCode"
 import { classifyNav, type NavClassification } from "./useNavPrice"
 
 vi.mock("../config/clients", () => ({
@@ -38,7 +40,8 @@ const report: NavReport = {
 const value: ContractRead<NavReport> = { kind: "value", value: report }
 const notAttested: ContractRead<NavReport> = {
 	kind: "contract-error",
-	code: 3006,
+	code: contractErrorCode(OracleError, "NoRecord"),
+	name: "NoRecord",
 }
 const unreadableLatest: ContractRead<NavReport> = { kind: "unreadable" }
 

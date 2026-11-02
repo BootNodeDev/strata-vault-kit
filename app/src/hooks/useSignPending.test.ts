@@ -9,11 +9,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, renderHook, waitFor } from "@testing-library/react"
 import { createElement, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { RWAError } from "../../../app-lib/clients/share_token/src/index"
 import { addresses } from "../config/addresses"
 import {
 	WalletContext,
 	type WalletContextType,
 } from "../providers/WalletProvider"
+import { contractErrorCode } from "../test/contractErrorCode"
 import { useSignPending } from "./useSignPending"
 
 const {
@@ -699,7 +701,11 @@ describe("useSignPending", () => {
 		)
 
 		it("reports the contract's refusal after the admin signs", async () => {
-			authorizePendingMock.mockResolvedValue({ kind: "refused", code: 300 })
+			authorizePendingMock.mockResolvedValue({
+				kind: "refused",
+				code: contractErrorCode(RWAError, "InsufficientBalance"),
+				name: "InsufficientBalance",
+			})
 			const { result } = renderSign(unauthorized, admin)
 			await waitFor(() => expect(result.current.canSign).toBe(true))
 
@@ -708,7 +714,11 @@ describe("useSignPending", () => {
 			await waitFor(() =>
 				expect(result.current.status).toEqual({
 					status: "failed",
-					failure: { kind: "contract-error", code: 300 },
+					failure: {
+						kind: "contract-error",
+						code: contractErrorCode(RWAError, "InsufficientBalance"),
+						name: "InsufficientBalance",
+					},
 				}),
 			)
 			expect(result.current.xdr).toBe(unauthorized)
@@ -793,7 +803,11 @@ describe("useSignPending", () => {
 		})
 
 		it("reports the contract's refusal from the first signer's simulation", async () => {
-			prepareCoSignedMock.mockResolvedValue({ kind: "refused", code: 304 })
+			prepareCoSignedMock.mockResolvedValue({
+				kind: "refused",
+				code: contractErrorCode(RWAError, "IdentityVerificationFailed"),
+				name: "IdentityVerificationFailed",
+			})
 			const { result } = renderSign(authorized(), wallet)
 			await waitFor(() => expect(result.current.canSign).toBe(true))
 
@@ -802,7 +816,11 @@ describe("useSignPending", () => {
 			await waitFor(() =>
 				expect(result.current.status).toEqual({
 					status: "failed",
-					failure: { kind: "contract-error", code: 304 },
+					failure: {
+						kind: "contract-error",
+						code: contractErrorCode(RWAError, "IdentityVerificationFailed"),
+						name: "IdentityVerificationFailed",
+					},
 				}),
 			)
 			expect(walletSigns).not.toHaveBeenCalled()

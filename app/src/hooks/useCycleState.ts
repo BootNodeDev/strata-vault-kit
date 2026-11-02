@@ -119,11 +119,9 @@ export type CycleState =
 const toAmount = (read: ContractRead<bigint>): Amount | null =>
 	read.kind === "value" ? (read.value as Amount) : null
 
-const NO_RECORD_ERROR = 3006
-
 const recordedOf = (latest: ContractRead<NavReport>): boolean | null => {
 	if (latest.kind === "value") return true
-	return latest.kind === "contract-error" && latest.code === NO_RECORD_ERROR
+	return latest.kind === "contract-error" && latest.name === "NoRecord"
 		? false
 		: null
 }
