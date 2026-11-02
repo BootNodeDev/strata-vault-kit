@@ -13,7 +13,7 @@
     "seed": "npm run seed -w scripts/harness --",
     "pretest": "node scripts/clients-guard.mjs && node scripts/generate-addresses.mjs",
     "test": "vitest run",
-    "pretypecheck": "node scripts/clients-guard.mjs && node scripts/generate-addresses.mjs",
+    "pretypecheck": "node scripts/clients-guard.mjs --compiled && node scripts/generate-addresses.mjs",
     "typecheck": "npm run typecheck -w app -w scripts/harness"
   },
   "workspaces": [

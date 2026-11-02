@@ -7,15 +7,28 @@ const crateClients = (root) =>
 		.map((entry) => entry.name.replaceAll("-", "_"))
 		.sort()
 
-// The app imports each client's `src/`, the harness a contract client's `dist/`.
-export const missingClients = (root) =>
+// Tests import `src/`; the type check also needs each contract client's `dist/`.
+export const missingClients = (root, { compiled = false } = {}) =>
 	[
 		...crateClients(root).flatMap((name) => [
 			`app-lib/clients/${name}/src/index.ts`,
-			`app-lib/clients/${name}/dist/index.js`,
+			...(compiled ? [`app-lib/clients/${name}/dist/index.js`] : []),
 		]),
 		"app-lib/clients/asset/src/index.ts",
 	].filter((path) => !existsSync(join(root, path)))
+
+export const missingClientsMessage = (missing) =>
+	[
+		"",
+		"The generated contract clients are missing:",
+		"",
+		...missing.map((path) => `  - ${path}`),
+		"",
+		"Build the contracts and generate the clients first:",
+		"",
+		"  stellar contract build && npm run build:clients",
+		"",
+	].join("\n")
 
 export const writeClient = (dir, files) => {
 	const name = basename(dir)
