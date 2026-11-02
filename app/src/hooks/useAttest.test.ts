@@ -1,16 +1,26 @@
 import { Buffer } from "buffer"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
+import type * as AppLib from "@stellar-scaffold/app-lib"
 import { type Price } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { attestWriteKeys, useAttest } from "./useAttest"
+import { cycleReadsKey } from "./useCycleState"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { navLatestKey } from "./useNavPrice"
 
-const { oracleMock, navOracleWriterMock } = vi.hoisted(() => ({
-	oracleMock: { attest: vi.fn() },
-	navOracleWriterMock: vi.fn(),
+const { oracleMock, navOracleWriterMock, readLedgerTimeMock } = vi.hoisted(
+	() => ({
+		oracleMock: { attest: vi.fn() },
+		navOracleWriterMock: vi.fn(),
+		readLedgerTimeMock: vi.fn(),
+	}),
+)
+
+vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
+	...(await importOriginal<typeof AppLib>()),
+	readLedgerTime: readLedgerTimeMock,
 }))
 
 vi.mock("../config/clients", () => ({
@@ -40,6 +50,7 @@ describe("useAttest", () => {
 		vi.clearAllMocks()
 		vi.spyOn(Date, "now").mockReturnValue(wallClock * 1000 + 999)
 		navOracleWriterMock.mockResolvedValue(oracleMock)
+		readLedgerTimeMock.mockResolvedValue(null)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed, in order, expiring the report a freshness window after the wall clock", async () => {
@@ -84,6 +95,61 @@ describe("useAttest", () => {
 			},
 			caller: investorAddress,
 		})
+	})
+
+	it("expires the report a freshness window after the cached ledger time when the wall clock is behind it", async () => {
+		const ledgerTime = BigInt(wallClock) + 3_600n
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result, queryClient } = renderAttest()
+		queryClient.setQueryData(cycleReadsKey, { ledgerTime })
+
+		await act(() => result.current.submit(attestation))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				expires_at: ledgerTime + attestation.freshness,
+			}),
+			caller: investorAddress,
+		})
+		expect(readLedgerTimeMock).not.toHaveBeenCalled()
+	})
+
+	it("advances a cached ledger time by the time elapsed since it was read", async () => {
+		const ledgerTime = BigInt(wallClock) + 3_600n
+		const elapsed = 600
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result, queryClient } = renderAttest()
+		queryClient.setQueryData(
+			cycleReadsKey,
+			{ ledgerTime },
+			{ updatedAt: Date.now() - elapsed * 1000 },
+		)
+
+		await act(() => result.current.submit(attestation))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				expires_at: ledgerTime + BigInt(elapsed) + attestation.freshness,
+			}),
+			caller: investorAddress,
+		})
+	})
+
+	it("reads ledger time once when none is cached", async () => {
+		const ledgerTime = BigInt(wallClock) + 3_600n
+		readLedgerTimeMock.mockResolvedValue(ledgerTime)
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result } = renderAttest()
+
+		await act(() => result.current.submit(attestation))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				expires_at: ledgerTime + attestation.freshness,
+			}),
+			caller: investorAddress,
+		})
+		expect(readLedgerTimeMock).toHaveBeenCalledTimes(1)
 	})
 
 	it("sends an empty proof URI when the attester gives none", async () => {
