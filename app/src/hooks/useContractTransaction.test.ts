@@ -4,6 +4,8 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { type TransactionEvent } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { simulationError } from "../test/contractErrorCode"
 import { investorAddress, renderWithWallet } from "./testSupport"
 import { useContractTransaction } from "./useContractTransaction"
 import { investorRequestsKey } from "./useInvestorRequests"
@@ -104,7 +106,7 @@ describe("useContractTransaction", () => {
 
 	it("refreshes only the extra query keys when the contract refuses at simulation", async () => {
 		const { result, queryClient } = renderTransaction(
-			"HostError: Error(Contract, #6046)",
+			simulationError(VaultError, "WindDownActive"),
 		)
 		const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries")
 
@@ -399,7 +401,9 @@ describe("useContractTransaction, prepared simulations", () => {
 	it("does not keep a background simulation the contract refused", async () => {
 		const call = vi
 			.fn()
-			.mockResolvedValueOnce(transaction("HostError: Error(Contract, #6046)"))
+			.mockResolvedValueOnce(
+				transaction(simulationError(VaultError, "WindDownActive")),
+			)
 			.mockResolvedValueOnce(transaction())
 		const { result } = renderPrepared(call)
 

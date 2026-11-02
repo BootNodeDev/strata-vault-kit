@@ -2,6 +2,8 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { AMOUNT_DECIMALS, type Amount } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { useRequestRedeem } from "./useRequestRedeem"
@@ -121,7 +123,7 @@ describe("useRequestRedeem", () => {
 
 	it("does not touch the investor's cached requests on a failed redemption request", async () => {
 		vaultMock.request_redeem.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6009)" },
+			simulation: { error: simulationError(VaultError, "RequestOutstanding") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderRequestRedeem()
@@ -135,7 +137,7 @@ describe("useRequestRedeem", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.request_redeem.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6009)" },
+			simulation: { error: simulationError(VaultError, "RequestOutstanding") },
 			signAndSend,
 		})
 		const { result } = renderRequestRedeem()
@@ -144,7 +146,11 @@ describe("useRequestRedeem", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6009 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "RequestOutstanding"),
+				name: "RequestOutstanding",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})

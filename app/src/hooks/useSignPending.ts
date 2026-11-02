@@ -337,7 +337,11 @@ export function useSignPending(initialXdr: string): UseSignPending {
 			if (step.kind === "refused") {
 				apply({
 					status: "failed",
-					failure: { kind: "contract-error", code: step.code },
+					failure: {
+						kind: "contract-error",
+						code: step.code,
+						name: step.name,
+					},
 				})
 			} else if (step.kind === "ready") {
 				replaceXdr(step.xdr)
@@ -370,7 +374,11 @@ export function useSignPending(initialXdr: string): UseSignPending {
 			if (prepared.kind === "refused") {
 				apply({
 					status: "failed",
-					failure: { kind: "contract-error", code: prepared.code },
+					failure: {
+						kind: "contract-error",
+						code: prepared.code,
+						name: prepared.name,
+					},
 				})
 				return
 			}

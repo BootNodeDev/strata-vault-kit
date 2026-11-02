@@ -1,6 +1,8 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, renderWithWallet } from "./testSupport"
 import { cycleWriteKeys } from "./useCycleState"
 import { useFinalizeWindDownRound } from "./useFinalizeWindDownRound"
@@ -78,7 +80,7 @@ describe("useFinalizeWindDownRound", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.finalize_wind_down_round.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6052)" },
+			simulation: { error: simulationError(VaultError, "NothingToDistribute") },
 			signAndSend,
 		})
 		const { result } = renderFinalizeWindDownRound()
@@ -87,7 +89,11 @@ describe("useFinalizeWindDownRound", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6052 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "NothingToDistribute"),
+				name: "NothingToDistribute",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -153,7 +159,7 @@ describe("useFinalizeWindDownRound", () => {
 
 	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.finalize_wind_down_round.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6050)" },
+			simulation: { error: simulationError(VaultError, "WindDownNotActive") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderFinalizeWindDownRound()

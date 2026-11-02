@@ -13,11 +13,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { type AddressRow } from "../components/vault/AboutVault"
 import {
 	WalletContext,
 	type WalletContextType,
 } from "../providers/WalletProvider"
+import { simulationError } from "../test/contractErrorCode"
 import VaultPreview from "./VaultPreview"
 
 const {
@@ -1790,11 +1792,11 @@ describe("VaultPreview", () => {
 		).toBeTruthy()
 	})
 
-	it("names the vault's own shortfall on a 6037 refusal when it can read it", async () => {
+	it("names the vault's own shortfall on a ClaimNotCovered refusal when it can read it", async () => {
 		setReadyRedeem()
 		mockFigures.uncovered = 5000_0000000n
 		claimRedeemMock.mockImplementationOnce(async () => ({
-			simulation: { error: "HostError: Error(Contract, #6037)" },
+			simulation: { error: simulationError(VaultError, "ClaimNotCovered") },
 			signAndSend: async () => {
 				throw new Error("should not sign a refused simulation")
 			},
@@ -1810,11 +1812,11 @@ describe("VaultPreview", () => {
 		).toBeTruthy()
 	})
 
-	it("keeps the untickered 6037 refusal when the vault's shortfall cannot be read", async () => {
+	it("keeps the untickered ClaimNotCovered refusal when the vault's shortfall cannot be read", async () => {
 		setReadyRedeem()
 		mockFigures.uncovered = null
 		claimRedeemMock.mockImplementationOnce(async () => ({
-			simulation: { error: "HostError: Error(Contract, #6037)" },
+			simulation: { error: simulationError(VaultError, "ClaimNotCovered") },
 			signAndSend: async () => {
 				throw new Error("should not sign a refused simulation")
 			},

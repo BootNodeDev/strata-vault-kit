@@ -5,7 +5,8 @@ import {
 	decodeTransactionEvents,
 	isUserRejection,
 	OPERATOR_TIMEOUT_SECONDS,
-	parseErrorCode,
+	type ContractError,
+	parseContractError,
 	type SubmitFailure,
 	submitSigned,
 	type TransactionEvent,
@@ -34,7 +35,7 @@ export type TransactionFailure =
 	| { kind: "declined" }
 	| { kind: "unsigned" }
 	| { kind: "cannot-authorize" }
-	| { kind: "contract-error"; code: number }
+	| ({ kind: "contract-error" } & ContractError)
 	| { kind: "interrupted" }
 	| { kind: "network"; reason: SubmitFailure }
 	| { kind: "stale" }
@@ -203,7 +204,7 @@ function usePrepared<TArg, TResult>(
 				(tx) => {
 					if (!latest()) return
 					simulating.current = null
-					if (parseErrorCode(tx.simulation) !== null) return
+					if (parseContractError(tx.simulation) !== null) return
 					simulated.current = { key, tx, at }
 					expiry.current = setTimeout(
 						() => refresh.current(),
@@ -413,11 +414,11 @@ export function useContractTransaction<
 			try {
 				const tx =
 					reused ?? (await call(signerFor(owner, grant, signTransaction), arg))
-				const code = parseErrorCode(tx.simulation)
-				if (code !== null) {
+				const error = parseContractError(tx.simulation)
+				if (error !== null) {
 					applyStatus({
 						status: "failed",
-						failure: { kind: "contract-error", code },
+						failure: { kind: "contract-error", ...error },
 					})
 					invalidate(extraKeys)
 					return

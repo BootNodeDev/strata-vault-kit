@@ -26,6 +26,7 @@ const notAllowed: ContractRead<boolean> = { kind: "value", value: false }
 const contractError: ContractRead<boolean> = {
 	kind: "contract-error",
 	code: 1,
+	name: undefined,
 }
 const unreadable: ContractRead<boolean> = { kind: "unreadable" }
 

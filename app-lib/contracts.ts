@@ -16,6 +16,7 @@ import {
 	type VaultPendingChange,
 	type WindDownInfo,
 } from "./clients/async_vault/src/index"
+import { Client as ComplianceApi } from "./clients/compliance/src/index"
 import { Client as IdentityVerifierApi } from "./clients/identity_verifier/src/index"
 import {
 	Client as NavOracleApi,
@@ -79,6 +80,19 @@ export const connectAsyncVault = async (
 	options?: ConnectOptions,
 ): Promise<AsyncVaultApi> =>
 	new AsyncVaultApi(clientOptions(contractId, signer, options))
+
+// The spec is embedded in the generated client; building one calls no contract.
+export const generatedSpecs = () => {
+	const options = clientOptions("")
+	return [
+		new AssetApi(options).spec,
+		new AsyncVaultApi(options).spec,
+		new ComplianceApi(options).spec,
+		new IdentityVerifierApi(options).spec,
+		new NavOracleApi(options).spec,
+		new ShareTokenApi(options).spec,
+	]
+}
 
 export const isUserRejection = (error: unknown): boolean =>
 	error instanceof AssembledTransaction.Errors.UserRejected

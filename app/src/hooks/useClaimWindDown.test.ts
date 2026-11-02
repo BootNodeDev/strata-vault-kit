@@ -1,6 +1,8 @@
 import { nativeToScVal } from "@stellar/stellar-sdk"
 import { act } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import {
 	contractEvent,
 	investorAddress,
@@ -91,7 +93,7 @@ describe("useClaimWindDown", () => {
 
 	it("maps a refusal at simulation to its contract code", async () => {
 		vaultMock.claim_wind_down.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6071)" },
+			simulation: { error: simulationError(VaultError, "Frozen") },
 		})
 		const { result } = renderWithWallet(useClaimWindDown)
 
@@ -99,7 +101,11 @@ describe("useClaimWindDown", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6071 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "Frozen"),
+				name: "Frozen",
+			},
 		})
 	})
 })

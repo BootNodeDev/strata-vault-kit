@@ -23,7 +23,12 @@ import {
 } from "@stellar/stellar-sdk/contract"
 import { Api } from "@stellar/stellar-sdk/rpc"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+	contractErrorCode,
+	simulationError,
+} from "../app/src/test/contractErrorCode"
 import type { AccountSigners } from "./accounts"
+import { RWAError } from "./clients/share_token/src/index"
 import { connectAsyncVault } from "./contracts"
 import { networkPassphrase } from "./env"
 import {
@@ -766,12 +771,12 @@ const simulated = (): Api.SimulateTransactionSuccessResponse => ({
 	result: { auth: [], retval: xdr.ScVal.scvVoid() },
 })
 
-const refused = (code: number): Api.SimulateTransactionErrorResponse => ({
+const refused = (name: string): Api.SimulateTransactionErrorResponse => ({
 	id: "1",
 	latestLedger: 1_000,
 	events: [],
 	_parsed: true,
-	error: `HostError: Error(Contract, #${code})`,
+	error: simulationError(RWAError, name),
 })
 
 const adminWallet = vi.fn(async (preimage: string) => ({
@@ -815,12 +820,16 @@ describe("authorizePending", () => {
 	})
 
 	it("reports the contract's refusal from the re-simulation", async () => {
-		simulateMock.mockResolvedValue(refused(300))
+		simulateMock.mockResolvedValue(refused("InsufficientBalance"))
 		const encoded = legalTransfer()
 
 		await expect(
 			authorizePending(assembled(encoded), decodePending(encoded), adminWallet),
-		).resolves.toEqual({ kind: "refused", code: 300 })
+		).resolves.toEqual({
+			kind: "refused",
+			code: contractErrorCode(RWAError, "InsufficientBalance"),
+			name: "InsufficientBalance",
+		})
 	})
 
 	it("refuses a transaction whose authorization is already signed", async () => {
@@ -875,14 +884,18 @@ describe("prepareCoSigned", () => {
 
 	it("reports the contract's refusal from the simulation", async () => {
 		const pending = await authorizedTransfer()
-		simulateMock.mockResolvedValue(refused(304))
+		simulateMock.mockResolvedValue(refused("IdentityVerificationFailed"))
 
 		await expect(
 			prepareCoSigned(
 				assembled(pending.transaction.toEnvelope().toXDR("base64")),
 				pending,
 			),
-		).resolves.toEqual({ kind: "refused", code: 304 })
+		).resolves.toEqual({
+			kind: "refused",
+			code: contractErrorCode(RWAError, "IdentityVerificationFailed"),
+			name: "IdentityVerificationFailed",
+		})
 	})
 
 	it("refuses a transaction the admin has not authorized", async () => {

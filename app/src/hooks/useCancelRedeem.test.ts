@@ -2,6 +2,9 @@ import { nativeToScVal } from "@stellar/stellar-sdk"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { RWAError } from "../../../app-lib/clients/identity_verifier/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import {
 	contractEvent,
 	deferred,
@@ -165,7 +168,7 @@ describe("useCancelRedeem", () => {
 
 	it("does not touch cached requests or share position when the vault refuses at simulation", async () => {
 		vaultMock.cancel_redeem.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6039)" },
+			simulation: { error: simulationError(VaultError, "AlreadyPriced") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderCancelRedeem()
@@ -179,7 +182,7 @@ describe("useCancelRedeem", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.cancel_redeem.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6039)" },
+			simulation: { error: simulationError(VaultError, "AlreadyPriced") },
 			signAndSend,
 		})
 		const { result } = renderCancelRedeem()
@@ -188,7 +191,11 @@ describe("useCancelRedeem", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6039 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "AlreadyPriced"),
+				name: "AlreadyPriced",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -196,7 +203,9 @@ describe("useCancelRedeem", () => {
 	it("refuses at simulation when a delisted controller cannot receive its shares back", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.cancel_redeem.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #304)" },
+			simulation: {
+				error: simulationError(RWAError, "IdentityVerificationFailed"),
+			},
 			signAndSend,
 		})
 		const { result } = renderCancelRedeem()
@@ -205,7 +214,11 @@ describe("useCancelRedeem", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 304 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(RWAError, "IdentityVerificationFailed"),
+				name: "IdentityVerificationFailed",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})

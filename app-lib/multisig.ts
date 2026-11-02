@@ -16,7 +16,7 @@ import {
 import { Api } from "@stellar/stellar-sdk/rpc"
 import type { AccountSigners } from "./accounts"
 import { networkPassphrase } from "./env"
-import { parseErrorCode } from "./readContract"
+import { type ContractError, parseContractError } from "./readContract"
 import { server } from "./rpc"
 
 export const OPERATOR_TIMEOUT_SECONDS = 7 * 24 * 60 * 60
@@ -56,7 +56,7 @@ export type SignAuthEntry = NonNullable<ClientOptions["signAuthEntry"]>
 
 export type CoSignStep =
 	| { kind: "ready"; xdr: string; pending: PendingTransaction }
-	| { kind: "refused"; code: number }
+	| ({ kind: "refused" } & ContractError)
 
 export type SubmitFailure =
 	| "sequence-consumed"
@@ -218,10 +218,10 @@ const sameTimeBounds = (a: Transaction, b: Transaction): boolean =>
 
 const simulated = async (
 	assembled: AssembledTransaction<unknown>,
-): Promise<Transaction | number> => {
+): Promise<Transaction | ContractError> => {
 	await assembled.simulate()
-	const code = parseErrorCode(assembled.simulation)
-	if (code !== null) return code
+	const error = parseContractError(assembled.simulation)
+	if (error !== null) return error
 	if (
 		assembled.simulation === undefined ||
 		!Api.isSimulationSuccess(assembled.simulation) ||
@@ -253,7 +253,7 @@ export async function authorizePending(
 		expiration,
 	})
 	const built = await simulated(assembled)
-	if (typeof built === "number") return { kind: "refused", code: built }
+	if ("code" in built) return { kind: "refused", ...built }
 	const xdr = encodeEnvelope(built)
 	const next = decodePending(xdr)
 	if (
@@ -276,7 +276,7 @@ export async function prepareCoSigned(
 		throw new InvalidPendingTransaction("authorization missing")
 	}
 	const built = await simulated(assembled)
-	if (typeof built === "number") return { kind: "refused", code: built }
+	if ("code" in built) return { kind: "refused", ...built }
 	const retimed = TransactionBuilder.cloneFrom(built, {
 		timebounds: undefined,
 		sorobanData: assembled.simulationData.transactionData,

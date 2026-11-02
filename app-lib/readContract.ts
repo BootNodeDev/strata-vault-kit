@@ -1,5 +1,6 @@
 import { Address, scValToNative, xdr } from "@stellar/stellar-sdk"
 import { Api } from "@stellar/stellar-sdk/rpc"
+import { errorName } from "./contractErrors"
 import type {
 	DepositRequest,
 	EpochInfo,
@@ -8,21 +9,25 @@ import type {
 } from "./contracts"
 import { server } from "./rpc"
 
+export type ContractError = { code: number; name: string | undefined }
+
 export type ContractRead<T> =
 	| { kind: "value"; value: T }
-	| { kind: "contract-error"; code: number }
+	| ({ kind: "contract-error" } & ContractError)
 	| { kind: "archived" }
 	| { kind: "unreadable" }
 
 const CONTRACT_ERROR = /Error\(Contract, #(\d+)\)/
 
-export function parseErrorCode(
+export function parseContractError(
 	simulation: Api.SimulateTransactionResponse | undefined,
-): number | null {
+): ContractError | null {
 	if (simulation === undefined || !Api.isSimulationError(simulation))
 		return null
 	const match = simulation.error.match(CONTRACT_ERROR)
-	return match ? Number(match[1]) : null
+	if (!match) return null
+	const code = Number(match[1])
+	return { code, name: errorName(code) }
 }
 
 export async function readContract<T>(
@@ -36,9 +41,9 @@ export async function readContract<T>(
 		if (tx.simulation !== undefined && Api.isSimulationRestore(tx.simulation)) {
 			return { kind: "archived" }
 		}
-		const code = parseErrorCode(tx.simulation)
-		return code !== null
-			? { kind: "contract-error", code }
+		const error = parseContractError(tx.simulation)
+		return error !== null
+			? { kind: "contract-error", ...error }
 			: { kind: "value", value: tx.result }
 	} catch {
 		return { kind: "unreadable" }
