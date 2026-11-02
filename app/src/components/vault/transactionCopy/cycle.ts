@@ -184,9 +184,10 @@ export const deployCopy = (amount: string): StatusCopy => ({
 export const fundCopy = (amount: string): StatusCopy => ({
 	...OPERATOR,
 	reasons: FUND_REASONS,
-	// the asset's transfer errors are the only ones no generated client names
-	unnamedFallback:
-		"Your wallet could not cover the transfer. Check the balance and the trustline.",
+	fallbackFor: (code) =>
+		code < 6000
+			? "Your wallet could not cover the transfer. Check the balance and the trustline."
+			: undefined,
 	preparing: {
 		heading: `Preparing to fund ${amount}`,
 		body: "We are getting the funding ready. Your wallet will ask you to approve it next.",

@@ -1,4 +1,7 @@
-import { type SubmitFailure } from "@stellar-scaffold/app-lib"
+import {
+	type ContractError,
+	type SubmitFailure,
+} from "@stellar-scaffold/app-lib"
 import {
 	type TransactionFailure,
 	type TransactionStatus,
@@ -24,21 +27,20 @@ const unknownOutcome = (followUp: string) => ({
 })
 
 const contractErrorReason = (
-	copy: Pick<StatusCopy, "reasons" | "fallback" | "unnamedFallback">,
-	name: string | undefined,
-): string => {
-	if (name === undefined) return copy.unnamedFallback ?? copy.fallback
-	return (
-		(Object.hasOwn(copy.reasons, name) ? copy.reasons[name] : undefined) ??
-		copy.fallback
-	)
-}
+	copy: Pick<StatusCopy, "reasons" | "fallback" | "fallbackFor">,
+	{ code, name }: ContractError,
+): string =>
+	(name !== undefined && Object.hasOwn(copy.reasons, name)
+		? copy.reasons[name]
+		: undefined) ??
+	copy.fallbackFor?.(code) ??
+	copy.fallback
 
 const describeFailure = (
 	failure: TransactionFailure,
 	copy: Pick<
 		StatusCopy,
-		"reasons" | "fallback" | "unnamedFallback" | "followUp" | "refuser"
+		"reasons" | "fallback" | "fallbackFor" | "followUp" | "refuser"
 	>,
 ): Copy => {
 	switch (failure.kind) {
@@ -66,7 +68,7 @@ const describeFailure = (
 		case "contract-error":
 			return {
 				heading: `The ${copy.refuser} refused this request`,
-				body: contractErrorReason(copy, failure.name),
+				body: contractErrorReason(copy, failure),
 			}
 		case "interrupted":
 			return {

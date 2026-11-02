@@ -198,7 +198,7 @@ export type StatusCopy<TConfirmed extends object = Record<never, never>> = {
 	shared?: (status: SharedTransaction) => Copy
 	reasons: Reasons
 	fallback: string
-	unnamedFallback?: string
+	fallbackFor?: (code: number) => string | undefined
 	followUp: string
 	refuser: string
 }

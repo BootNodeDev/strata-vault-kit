@@ -3,6 +3,7 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { fireEvent, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../../../app-lib/clients/async_vault/src/index"
+import { FungibleTokenError } from "../../../../../app-lib/clients/share_token/src/index"
 import { contractErrorCode } from "../../../test/contractErrorCode"
 import {
 	renderCloseEpochModal,
@@ -510,6 +511,37 @@ describe("TransactionModal, funding the reserve", () => {
 			),
 		).toBeTruthy()
 		expect(screen.queryByText(/\b10\b/)).toBeNull()
+	})
+
+	it("points the funder at their wallet when the asset refuses with a named token error", () => {
+		renderFundModal({
+			status: "failed",
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(FungibleTokenError, "InsufficientBalance"),
+				name: "InsufficientBalance",
+			},
+		})
+
+		expect(
+			screen.getByText(
+				"Your wallet could not cover the transfer. Check the balance and the trustline.",
+			),
+		).toBeTruthy()
+	})
+
+	it("falls back to the vault's generic refusal for an unnamed vault code", () => {
+		renderFundModal({
+			status: "failed",
+			failure: { kind: "contract-error", code: 6999, name: undefined },
+		})
+
+		expect(
+			screen.getByText(
+				"The vault refused this request. Try again, and contact support if it keeps happening.",
+			),
+		).toBeTruthy()
+		expect(screen.queryByText(/wallet could not cover/)).toBeNull()
 	})
 
 	it("sends an unknown outcome to the Cycle card, not to the investor's requests", () => {
