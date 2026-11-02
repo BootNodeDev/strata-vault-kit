@@ -1,6 +1,6 @@
 use proptest::prelude::*;
 use soroban_sdk::{testutils::Events as _, Event as _};
-use stellar_tokens::rwa::compliance::ComplianceHook;
+use stellar_tokens::rwa::{compliance::ComplianceHook, RWAError};
 
 use super::*;
 use crate::{EpochFulfilled, EpochReconciled, RedeemClaimed};
@@ -222,7 +222,10 @@ fn a_refused_mint_keeps_a_priced_deposit_epoch_open() {
     let module = f.e.register(super::compliance::RefusesEveryMint, ());
     f.add_compliance_module(ComplianceHook::CanCreate, &module);
 
-    assert!(f.vault.try_claim_deposit(&investor, &epoch).is_err());
+    assert_eq!(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        Err(Ok(RWAError::MintNotCompliant.into()))
+    );
 
     assert_eq!(f.vault.pending_mint_shares(), 200);
     let s = f.vault.get_epoch_settlement(&epoch).unwrap();

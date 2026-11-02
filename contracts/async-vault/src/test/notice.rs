@@ -21,7 +21,7 @@ fn setting_the_notice_needs_governance_authorisation() {
     let f = setup();
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_set_notice(&3_600).is_err());
+    missing_auth(f.vault.try_set_notice(&3_600));
     assert_eq!(f.vault.notice(), 0);
 
     f.e.mock_all_auths();

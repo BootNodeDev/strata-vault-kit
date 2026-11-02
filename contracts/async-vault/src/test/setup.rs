@@ -258,7 +258,10 @@ fn setup_cannot_finish_while_a_hand_over_is_pending() {
 
     f.vault.transfer_admin_role(&next, &0);
     f.vault.finish_setup();
-    assert!(f.vault.try_accept_admin_transfer().is_err());
+    assert_eq!(
+        f.vault.try_accept_admin_transfer(),
+        Err(Ok(RoleTransferError::NoPendingTransfer.into()))
+    );
     assert_eq!(f.vault.governance(), Some(f.admin.clone()));
 }
 
@@ -286,7 +289,7 @@ fn only_governance_finishes_setup() {
 
     for who in [&stranger, &f.manager] {
         f.sign_only_as(who, "finish_setup", Vec::new(&f.e));
-        assert!(f.vault.try_finish_setup().is_err());
+        missing_auth(f.vault.try_finish_setup());
     }
     assert!(f.vault.setup_open());
 }

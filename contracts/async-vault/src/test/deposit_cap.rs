@@ -45,7 +45,7 @@ fn unauthorized_caller_rejected() {
 
     for who in [&rando, &f.manager, &f.guardian, &f.treasury] {
         f.sign_only_as(who, "set_deposit_cap", (Some(1_000_i128),).into_val(&f.e));
-        assert!(f.vault.try_set_deposit_cap(&Some(1_000)).is_err());
+        missing_auth(f.vault.try_set_deposit_cap(&Some(1_000)));
     }
     assert_eq!(f.vault.deposit_cap(), None);
 }
