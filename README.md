@@ -104,6 +104,66 @@ The vault's test runs with `cargo test -p async-vault
 fulfill_is_rejected_once_the_feed_goes_stale`. [Testing](./docs/TESTING.md)
 lists the TTL tests for every contract.
 
+## Admin panel
+
+The operations console is at
+[strata-vault-kit-app.vercel.app/admin](https://strata-vault-kit-app.vercel.app/admin).
+It reads the contracts the console and the transactions below ran against, not
+the set under [Deployed addresses](#deployed-addresses):
+
+| Contract | Address |
+| --- | --- |
+| `async_vault` | `CD5LYYXGOJ7R23P6D7YUN6DUJQYMI23KEUEOIFKXOSWOX3KHKTXRITED` |
+| `nav_oracle` | `CBKVMUMIX7MXYHX5K34N5HYZOP6S2VGWF7MN27RIWBV3A3WD3X3L63CO` |
+| `share_token` | `CDOISQTQRCYOTH6S3DFQ6UKJ2TEXLNO7NFIGOZS4RZL63IRCVXXCGP5N` |
+| `identity_verifier` | `CCTCCY7AVFAIRGEWWJZT2UDMBHS3NGNKVUWLY43CHDNN75AQEV6P3EOY` |
+| `compliance` | `CDEH6FJBK7NDFLALO3X3GDXZUREYHUSNC7ODPM64RBG3BBXW2USMW7OO` |
+
+One testnet transaction per privileged operation, each made through the console
+(not by script) and signed by the account that holds that authority, against
+those contracts. Every authority account has a single signer (weight 1) and the
+default thresholds, so each transaction carries one signature. Multisig is left
+to deployers. The transactions ran on 2026-11-02.
+
+| Authority | Account | Signers | Threshold |
+| --- | --- | --- | --- |
+| Governance | `GAM3QHYPTTVFOHS2JPCRXL2X2JSH44P4NKKSPR75G47LOOXVR7OGX5AP` | 1 | 1 |
+| Manager | `GBFFWDAHPSD7H4BQQCC6FMPKW5S6KZL25WCYJRRNGXS7IB7X75N3VXR4` | 1 | 1 |
+| Treasury | `GA6UJXW73VJVKLU3ACZPZLPAVH5UTIIGIFGVOKQTF52AIPFXRTQ7U6CN` | 1 | 1 |
+| Guardian | `GDKSNPH4PBAYAHMBLWMESCS2AWRUGCXB3Z3AQKG5TKQF7A3GAROWZPPX` | 1 | 1 |
+| Attester | `GD4RCWJADWPH5UMT4QJ2GSVSTS4PNQ3L36OW2HEDRCNRWKZPFQV2NGHI` | 1 | 1 |
+| Compliance | `GBYDLIMNUC5RTDMQHZKIRHL5ALCF3PLJAPCMHOHEJ2C6GPUBCW3GSM4A` | 1 | 1 |
+
+| Authority | Operation | Entrypoint | Transaction |
+| --- | --- | --- | --- |
+| Manager | Close an epoch | `close_epoch` | [`b245b6b7…ebb4`](https://stellar.expert/explorer/testnet/tx/b245b6b7e43a483397d76ac761ccc8c51dc2c6e0dfcbc92a3fec5ddc5ddfebb4) |
+| Attester | Attest the NAV | `attest` | [`2a5b9065…d2b3`](https://stellar.expert/explorer/testnet/tx/2a5b90652691e98ddb8e56900bf78409dcbe72b4e1d10b4cb595043e8a22d2b3) |
+| Treasury | Deploy to the custodian | `deploy_to_custodian` | [`42805dc6…f835`](https://stellar.expert/explorer/testnet/tx/42805dc6546c6d4fd9d63e19e92219007500c4850b8a0b9ff3f1dc56826ef835) |
+| Guardian | Pause the vault | `pause` | [`0ca2701c…0267`](https://stellar.expert/explorer/testnet/tx/0ca2701c9e33f9a7e6d015c716678fb78adb7166cf4c4efa6482849dc8850267) |
+| Guardian | Pause the NAV (raise the ripcord) | `raise_ripcord` | [`1c2a59e6…6152`](https://stellar.expert/explorer/testnet/tx/1c2a59e6eb9af567eeb012fc8470f101bab03776136a337f3c83d87906cb6152) |
+| Governance | Unpause the vault | `unpause` | [`2163860b…0292`](https://stellar.expert/explorer/testnet/tx/2163860bdd2988ad3110f399d5a465cd30c819158d7461263f0db2a44cdf0292) |
+| Governance | Lower the ripcord | `set_ripcord` | [`38fab33d…44f4`](https://stellar.expert/explorer/testnet/tx/38fab33dca6981b3889bcd5409cab29480364c56cbcd9d7177bcdb58a86f44f4) |
+| Governance | Pause the share token | `pause` | [`a0585500…1391`](https://stellar.expert/explorer/testnet/tx/a05855005867f9ea24af68bc5b06838f87ad3fdfef9d1b565dd646e01b241391) |
+| Governance | Unpause the share token | `unpause` | [`d16400cf…f07c`](https://stellar.expert/explorer/testnet/tx/d16400cf5125e3a147b0f985f474c0daf57a2966b8a54369d9c7e16a3d0df07c) |
+| Compliance | Allow an investor | `allow` | [`5671fb19…ea35`](https://stellar.expert/explorer/testnet/tx/5671fb19436534260fba1ec3f9be6a0d25e12ea93e3b7601ea60f802e011ea35) |
+| Compliance | Freeze an address | `set_address_frozen` | [`8e6556db…48fb`](https://stellar.expert/explorer/testnet/tx/8e6556dbf0d3a56efce4f115a34f70acdf048addba3c9592b579dd19377148fb) |
+| Compliance | Unfreeze an address | `set_address_frozen` | [`d4ee95a6…1469`](https://stellar.expert/explorer/testnet/tx/d4ee95a617d5a10e564e08e3f29dab56cbb06e4506b7a19aae512dbdb5a71469) |
+| Compliance | Remove an investor (Disallow in the console) | `allow` with `false` | [`d8154ca3…ab36`](https://stellar.expert/explorer/testnet/tx/d8154ca32e99304728a14f6edefdfa053b7ba542e84b77cdb21246b56855ab36) |
+
+Not recorded:
+
+- **A timelocked change, proposed and applied** (`propose_upgrade`,
+  `apply_upgrade`): the vault's upgrade delay is seven days, its minimum, longer
+  than this verification.
+- **A wind-down proposal** (`propose_wind_down`): the deployment's
+  `wind_down_delay` is zero, so anyone could activate the wind-down in the next
+  ledger, and activation cannot be undone.
+- **`legal_transfer`, co-signed by governance:** the contracts above predate
+  it. Their console offers `forced_transfer`.
+
+The share token is paused by governance, not the guardian: the guardian holds no
+role on the token.
+
 ## Demo deployment
 
 The Tranche 1 demo video was recorded on testnet against the team's E2E
