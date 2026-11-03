@@ -30,7 +30,8 @@ export function parseNetworkEnv(
 ): NetworkEnv {
 	const parsed = envSchema.safeParse(env)
 	if (parsed.success) return parsed.data
-	if (localNetworks.includes(env.PUBLIC_STELLAR_NETWORK)) return localEnv
+	if (localNetworks.includes(env.PUBLIC_STELLAR_NETWORK?.toUpperCase()))
+		return localEnv
 	const invalid = parsed.error.issues.map(({ path }) => String(path[0]))
 	throw new Error(
 		`Invalid Stellar network configuration: ${invalid.join(", ")}`,

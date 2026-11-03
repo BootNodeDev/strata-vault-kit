@@ -14,6 +14,10 @@ describe("parseNetworkEnv", () => {
 		expect(parseNetworkEnv({})).toEqual(local)
 	})
 
+	it("falls back to localhost when the local network is named in lowercase", () => {
+		expect(parseNetworkEnv({ PUBLIC_STELLAR_NETWORK: "local" })).toEqual(local)
+	})
+
 	it("refuses a non-local network naming each missing or invalid variable", () => {
 		expect(() =>
 			parseNetworkEnv({
