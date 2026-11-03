@@ -46,7 +46,9 @@ export function useAttest(): UseAttest {
 			const ledgerTime =
 				cached && cachedLedgerTime != null
 					? cachedLedgerTime +
-						BigInt(Math.floor((Date.now() - cached.dataUpdatedAt) / 1000))
+						BigInt(
+							Math.floor(Math.max(0, Date.now() - cached.dataUpdatedAt) / 1000),
+						)
 					: await readLedgerTime()
 			const oracle = await navOracleWriter(signer)
 			return oracle.attest({

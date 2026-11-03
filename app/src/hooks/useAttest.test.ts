@@ -135,6 +135,26 @@ describe("useAttest", () => {
 		})
 	})
 
+	it("does not age a cached ledger time backwards when the clock moved back since it was read", async () => {
+		const ledgerTime = BigInt(wallClock) + 3_600n
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result, queryClient } = renderAttest()
+		queryClient.setQueryData(
+			cycleReadsKey,
+			{ ledgerTime },
+			{ updatedAt: Date.now() + 600_000 },
+		)
+
+		await act(() => result.current.submit(attestation))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				expires_at: ledgerTime + attestation.freshness,
+			}),
+			caller: investorAddress,
+		})
+	})
+
 	it("reads ledger time once when none is cached", async () => {
 		const ledgerTime = BigInt(wallClock) + 3_600n
 		readLedgerTimeMock.mockResolvedValue(ledgerTime)
