@@ -1,5 +1,4 @@
-import { Networks } from "@creit.tech/stellar-wallets-kit"
-import { z } from "zod"
+import { parseNetworkEnv } from "./networkEnv"
 
 type NetworkType = "mainnet" | "testnet" | "futurenet" | "local"
 
@@ -11,29 +10,7 @@ interface Network {
 	horizonUrl: string
 }
 
-const envSchema = z.object({
-	PUBLIC_STELLAR_NETWORK: z.enum([
-		"PUBLIC",
-		"FUTURENET",
-		"TESTNET",
-		"LOCAL",
-		"STANDALONE", // deprecated in favor of LOCAL
-	] as const),
-	PUBLIC_STELLAR_NETWORK_PASSPHRASE: z.enum(Networks),
-	PUBLIC_STELLAR_RPC_URL: z.string(),
-	PUBLIC_STELLAR_HORIZON_URL: z.string(),
-})
-
-const parsed = envSchema.safeParse(import.meta.env)
-
-const env: z.infer<typeof envSchema> = parsed.success
-	? parsed.data
-	: {
-			PUBLIC_STELLAR_NETWORK: "LOCAL",
-			PUBLIC_STELLAR_NETWORK_PASSPHRASE: Networks.STANDALONE,
-			PUBLIC_STELLAR_RPC_URL: "http://localhost:8000/rpc",
-			PUBLIC_STELLAR_HORIZON_URL: "http://localhost:8000",
-		}
+const env = parseNetworkEnv(import.meta.env)
 
 export const stellarNetwork =
 	env.PUBLIC_STELLAR_NETWORK === "STANDALONE"

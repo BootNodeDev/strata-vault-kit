@@ -192,16 +192,11 @@ export async function readEpochRequests(
 		EPOCHS_PER_LEDGER_ENTRIES_REQUEST,
 	)
 
-	const resolvedChunks = await Promise.all(
-		chunks.map(async (keySetChunk) => ({
-			keySetChunk,
-			chunkResult: await fetchChunk(
-				keySetChunk.flatMap((set) => [set.epoch, set.deposit, set.redeem]),
-			),
-		})),
-	)
-
-	for (const { keySetChunk, chunkResult } of resolvedChunks) {
+	// One chunk at a time keeps a long history under public RPC rate limits.
+	for (const keySetChunk of chunks) {
+		const chunkResult = await fetchChunk(
+			keySetChunk.flatMap((set) => [set.epoch, set.deposit, set.redeem]),
+		)
 		for (const set of keySetChunk) {
 			results.set(set.epochId, {
 				epoch: decodeLedgerEntry<EpochInfo>(
@@ -239,14 +234,8 @@ export async function readEpochs(
 		key: contractDataLedgerKey(contract, epochDataKey(epochId)),
 	}))
 
-	const resolvedChunks = await Promise.all(
-		chunk(keyed, LEDGER_ENTRIES_PER_REQUEST).map(async (keyedChunk) => ({
-			keyedChunk,
-			chunkResult: await fetchChunk(keyedChunk.map(({ key }) => key)),
-		})),
-	)
-
-	for (const { keyedChunk, chunkResult } of resolvedChunks) {
+	for (const keyedChunk of chunk(keyed, LEDGER_ENTRIES_PER_REQUEST)) {
+		const chunkResult = await fetchChunk(keyedChunk.map(({ key }) => key))
 		for (const { epochId, key } of keyedChunk) {
 			results.set(
 				epochId,

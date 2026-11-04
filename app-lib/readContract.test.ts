@@ -192,6 +192,18 @@ function entryFor(
 	}
 }
 
+const trackInFlight = () => {
+	const tracker = { inFlight: 0, maxInFlight: 0 }
+	getLedgerEntriesMock.mockImplementation(async () => {
+		tracker.inFlight += 1
+		tracker.maxInFlight = Math.max(tracker.maxInFlight, tracker.inFlight)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		tracker.inFlight -= 1
+		return { entries: [], latestLedger: 100 }
+	})
+	return tracker
+}
+
 describe("readEpochRequests", () => {
 	beforeEach(() => {
 		getLedgerEntriesMock.mockReset()
@@ -306,6 +318,17 @@ describe("readEpochRequests", () => {
 		expect(result.get(5n)?.epoch).toEqual({ kind: "unreadable" })
 	})
 
+	it("reads three chunks one at a time and still returns every epoch", async () => {
+		const tracker = trackInFlight()
+		const epochIds = Array.from({ length: 150 }, (_, i) => BigInt(i + 1))
+
+		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, epochIds)
+
+		expect(getLedgerEntriesMock).toHaveBeenCalledTimes(3)
+		expect(tracker.maxInFlight).toBe(1)
+		expect([...result.keys()]).toEqual(epochIds)
+	})
+
 	it("marks only the failed chunk's keys unreadable, leaving the other chunk unaffected", async () => {
 		getLedgerEntriesMock
 			.mockRejectedValueOnce(new Error("network down"))
@@ -395,6 +418,17 @@ describe("readEpochs", () => {
 		expect(getLedgerEntriesMock).toHaveBeenCalledTimes(2)
 		expect(getLedgerEntriesMock.mock.calls[0]).toHaveLength(200)
 		expect(getLedgerEntriesMock.mock.calls[1]).toHaveLength(1)
+	})
+
+	it("reads three chunks one at a time and still returns every epoch", async () => {
+		const tracker = trackInFlight()
+		const epochIds = Array.from({ length: 450 }, (_, i) => BigInt(i + 1))
+
+		const result = await readEpochs(CONTRACT_ID, epochIds)
+
+		expect(getLedgerEntriesMock).toHaveBeenCalledTimes(3)
+		expect(tracker.maxInFlight).toBe(1)
+		expect([...result.keys()]).toEqual(epochIds)
 	})
 
 	it("marks only the failed chunk's epochs unreadable", async () => {
