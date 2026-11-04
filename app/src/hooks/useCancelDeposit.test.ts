@@ -1,6 +1,8 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { useCancelDeposit } from "./useCancelDeposit"
 import { depositBalanceKey } from "./useDepositBalance"
@@ -67,7 +69,7 @@ describe("useCancelDeposit", () => {
 		)
 
 		expect(vaultMock.cancel_deposit).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 	})
@@ -108,7 +110,7 @@ describe("useCancelDeposit", () => {
 
 	it("does not touch cached requests or balance when the vault refuses at simulation", async () => {
 		vaultMock.cancel_deposit.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6039)" },
+			simulation: { error: simulationError(VaultError, "AlreadyPriced") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderCancelDeposit()
@@ -122,7 +124,7 @@ describe("useCancelDeposit", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.cancel_deposit.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6039)" },
+			simulation: { error: simulationError(VaultError, "AlreadyPriced") },
 			signAndSend,
 		})
 		const { result } = renderCancelDeposit()
@@ -131,7 +133,11 @@ describe("useCancelDeposit", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6039 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "AlreadyPriced"),
+				name: "AlreadyPriced",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -304,7 +310,7 @@ describe("useCancelDeposit", () => {
 		)
 		expect(vaultMock.cancel_deposit).toHaveBeenCalledTimes(1)
 		expect(vaultMock.cancel_deposit).toHaveBeenCalledWith({
-			from: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 

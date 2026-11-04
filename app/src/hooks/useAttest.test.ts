@@ -1,15 +1,28 @@
+import { Buffer } from "buffer"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
+import type * as AppLib from "@stellar-scaffold/app-lib"
 import { type Price } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { OracleError } from "../../../app-lib/clients/nav_oracle/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { attestWriteKeys, useAttest } from "./useAttest"
+import { cycleReadsKey } from "./useCycleState"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { navLatestKey } from "./useNavPrice"
 
-const { oracleMock, navOracleWriterMock } = vi.hoisted(() => ({
-	oracleMock: { attest: vi.fn() },
-	navOracleWriterMock: vi.fn(),
+const { oracleMock, navOracleWriterMock, readLedgerTimeMock } = vi.hoisted(
+	() => ({
+		oracleMock: { attest: vi.fn() },
+		navOracleWriterMock: vi.fn(),
+		readLedgerTimeMock: vi.fn(),
+	}),
+)
+
+vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
+	...(await importOriginal<typeof AppLib>()),
+	readLedgerTime: readLedgerTimeMock,
 }))
 
 vi.mock("../config/clients", () => ({
@@ -19,6 +32,8 @@ vi.mock("../config/clients", () => ({
 const attestation = {
 	price: 1_040_000_000_000_000_000n as Price,
 	freshness: 86_400n,
+	proofHash: "ab".repeat(32),
+	proofUri: "https://example.com/nav.pdf",
 }
 const wallClock = 1_700_200_000
 
@@ -37,6 +52,7 @@ describe("useAttest", () => {
 		vi.clearAllMocks()
 		vi.spyOn(Date, "now").mockReturnValue(wallClock * 1000 + 999)
 		navOracleWriterMock.mockResolvedValue(oracleMock)
+		readLedgerTimeMock.mockResolvedValue(null)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed, in order, expiring the report a freshness window after the wall clock", async () => {
@@ -73,19 +89,111 @@ describe("useAttest", () => {
 		)
 
 		expect(oracleMock.attest).toHaveBeenCalledWith({
-			report: {
+			input: {
 				nav_per_share: attestation.price,
 				expires_at: BigInt(wallClock) + attestation.freshness,
-				timestamp: 0n,
+				proof_hash: Buffer.alloc(32, 0xab),
+				proof_uri: "https://example.com/nav.pdf",
 			},
 			caller: investorAddress,
 		})
 	})
 
+	it("expires the report a freshness window after the cached ledger time when the wall clock is behind it", async () => {
+		const ledgerTime = BigInt(wallClock) + 3_600n
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result, queryClient } = renderAttest()
+		queryClient.setQueryData(cycleReadsKey, { ledgerTime })
+
+		await act(() => result.current.submit(attestation))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				expires_at: ledgerTime + attestation.freshness,
+			}),
+			caller: investorAddress,
+		})
+		expect(readLedgerTimeMock).not.toHaveBeenCalled()
+	})
+
+	it("advances a cached ledger time by the time elapsed since it was read", async () => {
+		const ledgerTime = BigInt(wallClock) + 3_600n
+		const elapsed = 600
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result, queryClient } = renderAttest()
+		queryClient.setQueryData(
+			cycleReadsKey,
+			{ ledgerTime },
+			{ updatedAt: Date.now() - elapsed * 1000 },
+		)
+
+		await act(() => result.current.submit(attestation))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				expires_at: ledgerTime + BigInt(elapsed) + attestation.freshness,
+			}),
+			caller: investorAddress,
+		})
+	})
+
+	it("does not age a cached ledger time backwards when the clock moved back since it was read", async () => {
+		const ledgerTime = BigInt(wallClock) + 3_600n
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result, queryClient } = renderAttest()
+		queryClient.setQueryData(
+			cycleReadsKey,
+			{ ledgerTime },
+			{ updatedAt: Date.now() + 600_000 },
+		)
+
+		await act(() => result.current.submit(attestation))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				expires_at: ledgerTime + attestation.freshness,
+			}),
+			caller: investorAddress,
+		})
+	})
+
+	it("reads ledger time once when none is cached", async () => {
+		const ledgerTime = BigInt(wallClock) + 3_600n
+		readLedgerTimeMock.mockResolvedValue(ledgerTime)
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result } = renderAttest()
+
+		await act(() => result.current.submit(attestation))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				expires_at: ledgerTime + attestation.freshness,
+			}),
+			caller: investorAddress,
+		})
+		expect(readLedgerTimeMock).toHaveBeenCalledTimes(1)
+	})
+
+	it("sends an empty proof URI when the attester gives none", async () => {
+		oracleMock.attest.mockResolvedValue(successful())
+		const { result } = renderAttest()
+
+		await act(() => result.current.submit({ ...attestation, proofUri: "" }))
+
+		expect(oracleMock.attest).toHaveBeenCalledWith({
+			input: expect.objectContaining({
+				proof_hash: Buffer.alloc(32, 0xab),
+				proof_uri: "",
+			}),
+			caller: investorAddress,
+		})
+		expect(result.current.status.status).toBe("confirmed")
+	})
+
 	it("refuses before ever asking for a signature when the simulation carries the oracle's reason", async () => {
 		const signAndSend = vi.fn()
 		oracleMock.attest.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #3004)" },
+			simulation: { error: simulationError(OracleError, "DeviationExceeded") },
 			signAndSend,
 		})
 		const { result } = renderAttest()
@@ -94,7 +202,11 @@ describe("useAttest", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 3004 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(OracleError, "DeviationExceeded"),
+				name: "DeviationExceeded",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -163,7 +275,7 @@ describe("useAttest", () => {
 
 	it("refreshes the cached cycle when the oracle refuses at simulation", async () => {
 		oracleMock.attest.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #3002)" },
+			simulation: { error: simulationError(OracleError, "NavOutOfBand") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderAttest()

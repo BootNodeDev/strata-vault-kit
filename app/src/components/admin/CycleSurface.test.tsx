@@ -131,6 +131,33 @@ describe("CycleSurface", () => {
 		).toBe("https://explorer.test/CCUSTODIAN1234567890")
 	})
 
+	it("links a detail row that carries an address, opening it in a new tab", () => {
+		renderSurface({
+			groups: [
+				{
+					title: "Price",
+					tiles: [],
+					rows: [
+						{
+							label: "Proof URI",
+							value: "https://example.com/nav.pdf",
+							href: "https://example.com/nav.pdf",
+						},
+						{ label: "Proof hash", value: "abab...abab" },
+					],
+				},
+			],
+		})
+
+		const link = screen.getByRole("link", {
+			name: "https://example.com/nav.pdf",
+		})
+		expect(link.getAttribute("href")).toBe("https://example.com/nav.pdf")
+		expect(link.getAttribute("target")).toBe("_blank")
+		expect(link.getAttribute("rel")).toBe("noreferrer")
+		expect(screen.queryByRole("link", { name: "abab...abab" })).toBeNull()
+	})
+
 	it("shows an address row placeholder in place of Unavailable", () => {
 		renderSurface({
 			groups: [

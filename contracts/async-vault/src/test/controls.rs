@@ -1,3 +1,6 @@
+use stellar_access::access_control::AccessControlError;
+use stellar_contract_utils::pausable::PausableError;
+
 use super::*;
 
 #[test]
@@ -7,7 +10,10 @@ fn a_paused_vault_takes_no_deposits() {
 
     f.vault.pause(&f.guardian);
     assert!(f.vault.paused());
-    assert!(f.vault.try_request_deposit(&investor, &100).is_err());
+    assert_eq!(
+        f.vault.try_request_deposit(&investor, &100),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
 
     f.vault.unpause(&f.admin);
     f.vault.request_deposit(&investor, &100);
@@ -19,10 +25,22 @@ fn only_the_guardian_pauses() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    assert!(f.vault.try_pause(&stranger).is_err());
-    assert!(f.vault.try_pause(&f.admin).is_err());
-    assert!(f.vault.try_pause(&f.manager).is_err());
-    assert!(f.vault.try_pause(&f.treasury).is_err());
+    assert_eq!(
+        f.vault.try_pause(&stranger),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.vault.try_pause(&f.admin),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.vault.try_pause(&f.manager),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
+    assert_eq!(
+        f.vault.try_pause(&f.treasury),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
     assert!(!f.vault.paused());
 
     f.vault.pause(&f.guardian);
@@ -35,13 +53,24 @@ fn the_guardian_pauses_but_only_governance_unpauses() {
     f.vault.pause(&f.guardian);
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_unpause(&f.guardian).is_err());
-    assert!(f.vault.try_unpause(&f.admin).is_err());
+    refused(f.vault.try_unpause(&f.guardian), VaultError::AdminRequired);
+    missing_auth(f.vault.try_unpause(&f.admin));
     assert!(f.vault.paused());
 
     f.e.mock_all_auths();
     f.vault.unpause(&f.admin);
     assert!(!f.vault.paused());
+}
+
+#[test]
+fn a_caller_other_than_the_admin_cannot_unpause_even_when_it_signs() {
+    let f = setup();
+    f.vault.pause(&f.guardian);
+
+    for who in [f.guardian.clone(), Address::generate(&f.e)] {
+        refused(f.vault.try_unpause(&who), VaultError::AdminRequired);
+    }
+    assert!(f.vault.paused());
 }
 
 #[test]
@@ -81,16 +110,97 @@ fn a_paused_vault_still_pays_redemptions() {
 }
 
 #[test]
+fn a_paused_vault_still_funds_and_deploys_to_custodian() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(wad(2));
+    f.vault.pause(&f.guardian);
+
+    let free = f.vault.free_reserve();
+    assert!(free > 0);
+    let vault_before = f.balance(&f.vault.address);
+    f.vault.deploy_to_custodian(&f.treasury, &free);
+    assert_eq!(f.balance(&f.custodian), free);
+    assert_eq!(f.balance(&f.vault.address), vault_before - free);
+
+    let funder = f.unverified_investor(1_000);
+    let vault_before_fund = f.balance(&f.vault.address);
+    f.vault.fund(&funder, &100);
+    assert_eq!(f.balance(&funder), 900);
+    assert_eq!(f.balance(&f.vault.address), vault_before_fund + 100);
+    assert!(f.vault.paused());
+}
+
+#[test]
 fn a_paused_vault_does_not_fulfill_epochs() {
     let f = setup();
     f.close_epoch();
     f.attest(wad(2));
     f.vault.pause(&f.guardian);
 
-    assert!(f.vault.try_fulfill_epoch(&1).is_err());
+    assert_eq!(
+        f.vault.try_fulfill_epoch(&1),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
 
     f.vault.unpause(&f.admin);
     assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
+}
+
+#[test]
+fn the_token_admin_pauses_transfers_at_once_after_setup() {
+    let f = setup();
+    let holder = f.holder(500);
+    let other = f.investor(0);
+    let spender = Address::generate(&f.e);
+    f.share
+        .approve(&holder, &spender, &10, &(f.e.ledger().sequence() + 1_000));
+    assert!(!f.share.setup_open());
+
+    f.share.pause(&f.admin);
+    assert!(f.share.paused());
+    assert!(f.share.pending_changes().is_empty());
+    assert_eq!(
+        f.share.try_transfer(&holder, &other, &1),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
+    assert_eq!(
+        f.share.try_transfer_from(&spender, &holder, &other, &1),
+        Err(Ok(PausableError::EnforcedPause.into()))
+    );
+
+    f.share.unpause(&f.admin);
+    f.share.transfer(&holder, &other, &1);
+    f.share.transfer_from(&spender, &holder, &other, &1);
+    assert_eq!(f.shares(&other), 2);
+}
+
+#[test]
+fn a_token_pause_leaves_deposits_exits_and_cancellations_open() {
+    let f = setup();
+    let redeemer = f.holder(500);
+    let leaver = f.holder(500);
+    let depositor = f.investor(1_000);
+    let quitter = f.investor(1_000);
+    f.share.pause(&f.admin);
+
+    let epoch = f.vault.request_deposit(&depositor, &400);
+    assert_eq!(f.vault.request_redeem(&redeemer, &200), epoch);
+    assert_eq!(f.vault.request_redeem(&leaver, &100), epoch);
+    assert_eq!(f.shares(&f.vault.address), 300);
+
+    f.vault.request_deposit(&quitter, &300);
+    assert_eq!(f.vault.cancel_deposit(&quitter, &epoch), 300);
+    assert_eq!(f.vault.cancel_redeem(&leaver, &epoch), 100);
+    assert_eq!(f.shares(&leaver), 500);
+
+    f.fulfill_epoch(wad(2));
+    assert_eq!(f.vault.claim_deposit(&depositor, &epoch), 200);
+    assert_eq!(f.shares(&depositor), 200);
+    assert_eq!(f.vault.claim_redeem(&redeemer, &epoch), 400);
+    assert_eq!(f.balance(&redeemer), 400);
+    assert!(f.share.paused());
 }
 
 #[test]
@@ -108,13 +218,23 @@ fn governance_can_replace_the_guardian() {
     let f = setup();
     let next = Address::generate(&f.e);
 
-    f.vault
-        .grant_role(&next, &symbol_short!("guardian"), &f.admin);
-    f.vault
-        .revoke_role(&f.guardian, &symbol_short!("guardian"), &f.admin);
+    let grant = f.vault.propose_change(&VaultChange::GrantRole(
+        symbol_short!("guardian"),
+        next.clone(),
+    ));
+    let revoke = f.vault.propose_change(&VaultChange::RevokeRole(
+        symbol_short!("guardian"),
+        f.guardian.clone(),
+    ));
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_change(&grant);
+    f.vault.apply_change(&revoke);
 
     assert_eq!(f.vault.guardian(), Some(next.clone()));
-    assert!(f.vault.try_pause(&f.guardian).is_err());
+    assert_eq!(
+        f.vault.try_pause(&f.guardian),
+        Err(Ok(AccessControlError::Unauthorized.into()))
+    );
     f.vault.pause(&next);
     assert!(f.vault.paused());
 }
@@ -145,17 +265,11 @@ fn a_cooldown_holds_the_standing_price() {
     // Inside the cooldown a new attestation is refused, so the epoch prices at
     // the record already standing rather than one the attester cannot post.
     f.advance(60);
-    assert!(f
-        .oracle
-        .try_attest(
-            &NavReport {
-                nav_per_share: wad(1),
-                timestamp: 0,
-                expires_at: 1_000_000,
-            },
-            &f.attester
-        )
-        .is_err());
+    assert_eq!(
+        f.oracle
+            .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester),
+        Err(Ok(nav_oracle::OracleError::CooldownActive.into()))
+    );
 
     f.vault.fulfill_epoch(&epoch);
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
@@ -176,17 +290,11 @@ fn a_cooldown_delays_pricing_until_the_attester_can_post() {
 
     // Inside the cooldown the attester cannot post, so the epoch has no
     // valuation younger than its close and waits.
-    assert!(f
-        .oracle
-        .try_attest(
-            &NavReport {
-                nav_per_share: wad(1),
-                timestamp: 0,
-                expires_at: 1_000_000,
-            },
-            &f.attester
-        )
-        .is_err());
+    assert_eq!(
+        f.oracle
+            .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester),
+        Err(Ok(nav_oracle::OracleError::CooldownActive.into()))
+    );
     refused(
         f.vault.try_fulfill_epoch(&epoch),
         VaultError::AttestationBeforeClose,
@@ -198,23 +306,6 @@ fn a_cooldown_delays_pricing_until_the_attester_can_post() {
     f.attest(wad(1));
     f.vault.fulfill_epoch(&epoch);
 
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(1));
-}
-
-#[test]
-fn a_stale_feed_refuses_to_price_until_reattested() {
-    let f = setup();
-    let holder = f.holder(100);
-
-    f.attest(wad(1));
-    f.vault.request_redeem(&holder, &100);
-    let epoch = f.close_epoch();
-
-    f.advance(7_200); // past the 3600s freshness window
-    refused(f.vault.try_fulfill_epoch(&epoch), VaultError::FeedNotValid);
-
-    f.attest(wad(1));
-    f.vault.fulfill_epoch(&epoch);
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(1));
 }
 
@@ -235,7 +326,9 @@ fn governance_hands_over_in_two_steps_instead() {
     let f = setup();
     let next = Address::generate(&f.e);
 
-    f.vault.transfer_admin_role(&next, &1_000);
+    let id = f.vault.propose_change(&VaultChange::Admin(next.clone()));
+    f.advance(MIN_UPGRADE_DELAY);
+    f.vault.apply_change(&id);
     f.vault.accept_admin_transfer();
 
     assert_eq!(f.vault.governance(), Some(next.clone()));

@@ -2,6 +2,7 @@ use soroban_sdk::{panic_with_error, token::TokenClient, Address, Env};
 
 use crate::error::VaultError;
 use crate::event::{CustodianSet, Deployed, Funded};
+use crate::guards;
 use crate::keys::DataKey;
 use crate::state;
 use crate::wind_down;
@@ -14,7 +15,7 @@ pub(crate) fn set_custodian(e: &Env, custodian: &Address) {
     .publish(e);
 }
 
-fn held(e: &Env) -> i128 {
+pub(crate) fn held(e: &Env) -> i128 {
     let asset = state::get_addr(e, &DataKey::Asset);
     TokenClient::new(e, &asset).balance(&e.current_contract_address())
 }
@@ -30,8 +31,9 @@ pub(crate) fn free_reserve(e: &Env) -> i128 {
     (liquid_reserve(e) - state::committed(e) - wind_down::owed(e)).max(0)
 }
 
-/// Owed to holders beyond what the vault holds. Zero when every priced claim is
-/// payable. While this is positive nothing may leave for the custodian.
+/// How far the vault is short of paying priced redemptions and the escrow
+/// depositors can cancel. While this is positive nothing may leave for the
+/// custodian.
 pub(crate) fn uncovered(e: &Env) -> i128 {
     (state::committed(e) - liquid_reserve(e)).max(0)
 }
@@ -39,21 +41,19 @@ pub(crate) fn uncovered(e: &Env) -> i128 {
 /// Capital in the vault and deployed to the custodian, less liabilities already
 /// committed to priced exits. Used to evaluate headroom against the deposit cap.
 pub(crate) fn deposited_capital(e: &Env) -> i128 {
-    (held(e) + state::net_deployed(e)).saturating_sub(state::committed(e))
+    held(e)
+        .checked_add(state::net_deployed(e))
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AmountTooLarge))
+        .checked_sub(state::committed(e))
+        .unwrap_or_else(|| panic_with_error!(e, VaultError::AccountingMismatch))
 }
 
 pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {
-    wind_down::refuse_if_active(e);
-    if assets <= 0 {
-        panic_with_error!(e, VaultError::InvalidAmount);
-    }
-
+    guards::not_winding_down(e);
+    guards::positive_amount(e, assets);
     let custodian = state::get_addr_opt(e, &DataKey::Custodian)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::CustodianNotSet));
-
-    if assets > free_reserve(e) {
-        panic_with_error!(e, VaultError::ReserveCommittedToExits);
-    }
+    guards::within_free_reserve(e, assets);
 
     let net_deployed = state::net_deployed(e)
         .checked_add(assets)
@@ -73,12 +73,9 @@ pub(crate) fn deploy(e: &Env, assets: i128) -> i128 {
     net_deployed
 }
 
-pub(crate) fn fund(e: &Env, from: &Address, assets: i128) -> i128 {
-    from.require_auth();
-
-    if assets <= 0 {
-        panic_with_error!(e, VaultError::InvalidAmount);
-    }
+pub(crate) fn fund(e: &Env, caller: &Address, assets: i128) -> i128 {
+    caller.require_auth();
+    guards::positive_amount(e, assets);
 
     let net_deployed = state::net_deployed(e)
         .checked_sub(assets)
@@ -86,10 +83,10 @@ pub(crate) fn fund(e: &Env, from: &Address, assets: i128) -> i128 {
     state::set_net_deployed(e, net_deployed);
 
     let asset = state::get_addr(e, &DataKey::Asset);
-    TokenClient::new(e, &asset).transfer(from, e.current_contract_address(), &assets);
+    TokenClient::new(e, &asset).transfer(caller, e.current_contract_address(), &assets);
 
     Funded {
-        from: from.clone(),
+        caller: caller.clone(),
         assets,
         net_deployed,
     }

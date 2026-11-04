@@ -15,6 +15,7 @@
 	},
 	"include": [
 		"deploy.ts",
+		"extend.ts",
 		"keys.ts",
 		"build-clients.ts",
 		"seed.ts",

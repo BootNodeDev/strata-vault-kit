@@ -11,7 +11,7 @@ import { type Grant } from "../hooks/useAdminAuthority"
 import { type TargetReads, type TargetState } from "../hooks/useComplianceState"
 import {
 	type AllowanceChange,
-	type ForcedTransfer,
+	type LegalTransferOrder,
 	type SharesChange,
 } from "../hooks/useComplianceTransactions"
 import { type Allowance } from "../hooks/useIsAllowed"
@@ -38,7 +38,7 @@ type AddressActionId = AllowActionId | FreezeActionId
 type SharesActionId = "freeze-shares" | "unfreeze-shares"
 
 export type ComplianceActionId =
-	AddressActionId | SharesActionId | "force-transfer"
+	AddressActionId | SharesActionId | "legal-transfer"
 
 export const COMPLIANCE_ACTION_IDS: ComplianceActionId[] = [
 	"allow-address",
@@ -47,14 +47,14 @@ export const COMPLIANCE_ACTION_IDS: ComplianceActionId[] = [
 	"unfreeze-address",
 	"freeze-shares",
 	"unfreeze-shares",
-	"force-transfer",
+	"legal-transfer",
 ]
 
 export type ComplianceAction =
 	| Built<AllowActionId, AllowanceChange | undefined>
 	| Built<FreezeActionId, string | undefined>
 	| Built<SharesActionId, SharesChange | undefined>
-	| Built<"force-transfer", ForcedTransfer | undefined>
+	| Built<"legal-transfer", LegalTransferOrder | undefined>
 
 export type ComplianceState = {
 	verifier: string | null
@@ -65,7 +65,9 @@ export type ComplianceState = {
 	adminUnknown: boolean
 }
 
-const DESTINATION_KEY = "force-transfer-destination"
+const DESTINATION_KEY = "legal-transfer-destination"
+const REFERENCE_KEY = "legal-transfer-reference"
+const MAX_REFERENCE_BYTES = 128
 
 export const destinationOf = (inputs: Inputs): string | undefined =>
 	parseAccount(inputs[DESTINATION_KEY] ?? "")
@@ -309,11 +311,43 @@ const transferOutcome = (
 	return `${shares} Frozen shares ${exactAmount(reads.frozenShares)} → ${exactAmount(unfrozen)}.`
 }
 
-function forceTransferSpec(
+const referenceEntry = (inputs: Inputs) => {
+	const text = inputs[REFERENCE_KEY] ?? ""
+	const bytes = new TextEncoder().encode(text).length
+	const fits = bytes >= 1 && bytes <= MAX_REFERENCE_BYTES
+	const condition: Condition = {
+		label: "Reference of 1 to 128 bytes",
+		met: text === "" ? null : fits,
+	}
+	const field: RailField = {
+		key: REFERENCE_KEY,
+		label: "Reference",
+		placeholder: "Order reference",
+		value: text,
+		invalid: text !== "" && !fits,
+		text: true,
+	}
+	return { reference: fits ? text : undefined, condition, field }
+}
+
+const notVault = (
+	vault: string,
+	from: string | undefined,
+	to: string | undefined,
+): Condition => {
+	if (from === vault || to === vault)
+		return { label: "Neither account is the vault", met: false }
+	return {
+		label: "Neither account is the vault",
+		met: from === undefined || to === undefined ? null : true,
+	}
+}
+
+function legalTransferSpec(
 	state: ComplianceState,
 	inputs: Inputs,
-): BuiltSpec<"force-transfer", ForcedTransfer | undefined> {
-	const id = "force-transfer"
+): BuiltSpec<"legal-transfer", LegalTransferOrder | undefined> {
+	const id = "legal-transfer"
 	const { target } = state
 	const reads = readsOf(state)
 	const shares = reads?.shares ?? null
@@ -321,6 +355,7 @@ function forceTransferSpec(
 	const destination = destinationOf(inputs)
 	const entry = amountEntry(`${id}-amount`, inputs, shares)
 	const { amount } = entry
+	const { reference, ...referenced } = referenceEntry(inputs)
 	const entered = targetEntered(target)
 	const destinationEntered: Condition = {
 		label: "Destination entered",
@@ -333,42 +368,34 @@ function forceTransferSpec(
 				? null
 				: destination !== target,
 	}
+	const outsideVault = notVault(state.vault, target, destination)
 	const bound = atMost("Amount ≤ shares", amount, shares)
-	const confirm = vaultConfirmation(
-		id,
-		"Drains the vault's redemption escrow.",
-		state,
-		inputs,
-		`:${destinationText}:${entry.text}`,
-	)
-	const required = [
-		entered,
-		destinationEntered,
-		differs,
-		positive(entry),
-		...(confirm ? [confirm.condition] : []),
-	]
 	const valid =
 		target !== undefined &&
 		destination !== undefined &&
 		differs.met === true &&
+		outsideVault.met === true &&
 		amount !== undefined &&
-		amount > 0n
+		amount > 0n &&
+		reference !== undefined
 	return {
 		id,
-		label: "Force a transfer",
+		label: "Legal transfer",
 		conditions: [
 			entered,
 			destinationEntered,
 			differs,
+			outsideVault,
 			positive(entry),
 			bound,
-			...(confirm ? [confirm.condition] : []),
+			referenced.condition,
 		],
 		outcome:
 			!valid || bound.met !== true ? null : transferOutcome(reads, amount),
 		...(destination !== undefined && state.destination === "not-allowed"
-			? { note: "The destination is not allowlisted and cannot move them." }
+			? {
+					note: "The destination is not allowlisted, so the share token will refuse the transfer.",
+				}
 			: {}),
 		fields: [
 			{
@@ -380,11 +407,19 @@ function forceTransferSpec(
 				text: true,
 			},
 			entry.field,
-			...(confirm ? [confirm.field] : []),
+			referenced.field,
 		],
-		...(confirm === undefined ? {} : { danger: true }),
-		ready: allMet(required),
-		arg: valid ? { from: target, to: destination, amount } : undefined,
+		ready: allMet([
+			entered,
+			destinationEntered,
+			differs,
+			outsideVault,
+			positive(entry),
+			referenced.condition,
+		]),
+		arg: valid
+			? { from: target, to: destination, amount, reference }
+			: undefined,
 		next: valid
 			? `${exactAmount(amount)} shares from ${shortAddress(target)} to ${shortAddress(destination)}`
 			: "",
@@ -442,7 +477,7 @@ export function toComplianceActions(
 			),
 			build(sharesSpec("freeze-shares", state, inputs), officer),
 			build(sharesSpec("unfreeze-shares", state, inputs), officer),
-			build(forceTransferSpec(state, inputs), officer),
+			build(legalTransferSpec(state, inputs), officer),
 		)
 	return actions
 }

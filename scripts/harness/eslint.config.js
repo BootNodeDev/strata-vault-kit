@@ -11,4 +11,22 @@ export default [
 			parserOptions: { tsconfigRoot: import.meta.dirname },
 		},
 	},
+	{
+		files: ["**/*.ts"],
+		ignores: ["**/*.test.ts", "vitest.config.ts"],
+		rules: {
+			"@typescript-eslint/no-restricted-imports": [
+				"error",
+				{
+					paths: [
+						{
+							name: "vitest",
+							message:
+								"Only tests import vitest: scripts such as seed.ts run without it.",
+						},
+					],
+				},
+			],
+		},
+	},
 ]

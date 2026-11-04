@@ -22,7 +22,11 @@ describe("classifyOracle", () => {
 		["Valid", tagged("Valid"), "valid"],
 		["Stale", tagged("Stale"), "stale"],
 		["Paused", tagged("Paused"), "paused"],
-		["a contract error", { kind: "contract-error", code: 1 }, "unreadable"],
+		[
+			"a contract error",
+			{ kind: "contract-error", code: 1, name: undefined },
+			"unreadable",
+		],
 		["an unreadable read", { kind: "unreadable" }, "unreadable"],
 	])("classifies %s as %s", (_name, read, expected) => {
 		expect(classifyOracle(read)).toBe(expected)
@@ -34,7 +38,7 @@ describe("useOracleState", () => {
 		vi.clearAllMocks()
 	})
 
-	it("reports the oracle as paused while the ripcord is raised", async () => {
+	it("reports the oracle as paused while the NAV is paused", async () => {
 		oracleMock.state.mockResolvedValue({
 			result: { tag: "Paused", values: undefined },
 		})

@@ -2,13 +2,14 @@ import {
 	existsSync,
 	readFileSync,
 	renameSync,
+	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { type AccountName } from "./accounts.js"
+import { ACCOUNT_NAMES, type AccountName, type Accounts } from "./accounts.js"
 import { type NetworkName } from "./network.js"
 
 export const CONTRACT_NAMES = [
@@ -24,10 +25,19 @@ export type ContractName = (typeof CONTRACT_NAMES)[number]
 export interface Deployment {
 	network: NetworkName
 	deployedAt: string
+	commit: string
+	uncommittedChanges: boolean
 	ledger: number
 	asset: { code: string; issuer: string; contract: string }
 	contracts: Record<ContractName, string>
-	accounts: Record<AccountName, { public: string; secret: string }>
+	wasmHashes: Record<ContractName, string>
+	accounts: Record<AccountName, { public: string }>
+}
+
+export function publicKeysOf(accounts: Accounts): Deployment["accounts"] {
+	return Object.fromEntries(
+		ACCOUNT_NAMES.map((name) => [name, { public: accounts[name].publicKey() }]),
+	) as Deployment["accounts"]
 }
 
 export const PACKAGE_ROOT = resolve(
@@ -156,4 +166,48 @@ export function saveDeployment(
 
 export function loadDeployment(network: NetworkName): Deployment {
 	return JSON.parse(readFileSync(deploymentFile(network), "utf8")) as Deployment
+}
+
+export interface IncompleteDeployment {
+	network: NetworkName
+	startedAt: string
+	complete: false
+	asset: Deployment["asset"]
+	contracts: Partial<Record<ContractName, string>>
+}
+
+export function incompleteFile(
+	network: NetworkName,
+	dir = PACKAGE_ROOT,
+): string {
+	return join(dir, `deployed.${network}.incomplete.json`)
+}
+
+export function writeIncomplete(
+	progress: IncompleteDeployment,
+	dir = PACKAGE_ROOT,
+): void {
+	writeFileSync(
+		incompleteFile(progress.network, dir),
+		`${JSON.stringify(progress, null, 2)}\n`,
+	)
+}
+
+export function clearIncomplete(
+	network: NetworkName,
+	dir = PACKAGE_ROOT,
+): void {
+	const file = incompleteFile(network, dir)
+	if (existsSync(file)) rmSync(file)
+}
+
+export function refuseIncomplete(
+	network: NetworkName,
+	dir = PACKAGE_ROOT,
+): void {
+	const file = incompleteFile(network, dir)
+	if (!existsSync(file)) return
+	throw new Error(
+		`a deploy to ${network} stopped before it finished. The contracts it created are listed in ${relative(REPO_ROOT, file)}, and nothing else uses them. Move or delete that file, then deploy again for a new set.`,
+	)
 }

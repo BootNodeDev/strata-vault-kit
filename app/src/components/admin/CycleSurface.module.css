@@ -36,6 +36,20 @@
 	margin: 0;
 }
 
+.rowLink {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--vault-ink);
+	text-decoration: none;
+	border-bottom: 1px solid transparent;
+}
+
+.rowLink:hover {
+	border-bottom-color: var(--vault-ink);
+}
+
 .rowSkeleton {
 	height: 1em;
 	width: 11ch;

@@ -1,6 +1,8 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { useCloseEpoch } from "./useCloseEpoch"
 import { cycleWriteKeys } from "./useCycleState"
@@ -75,7 +77,7 @@ describe("useCloseEpoch", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.close_epoch.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6032)" },
+			simulation: { error: simulationError(VaultError, "EpochNotOpen") },
 			signAndSend,
 		})
 		const { result } = renderCloseEpoch()
@@ -84,7 +86,11 @@ describe("useCloseEpoch", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6032 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "EpochNotOpen"),
+				name: "EpochNotOpen",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -150,7 +156,7 @@ describe("useCloseEpoch", () => {
 
 	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.close_epoch.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6046)" },
+			simulation: { error: simulationError(VaultError, "WindDownActive") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderCloseEpoch()

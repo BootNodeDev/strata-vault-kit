@@ -27,8 +27,14 @@ fn request_redeem_rejects_a_non_positive_amount() {
     let f = setup();
     let user = f.holder(500);
 
-    assert!(f.vault.try_request_redeem(&user, &0).is_err());
-    assert!(f.vault.try_request_redeem(&user, &-1).is_err());
+    refused(
+        f.vault.try_request_redeem(&user, &0),
+        VaultError::InvalidAmount,
+    );
+    refused(
+        f.vault.try_request_redeem(&user, &-1),
+        VaultError::InvalidAmount,
+    );
     assert_eq!(f.shares(&user), 500);
 }
 
@@ -38,7 +44,10 @@ fn a_second_redeem_request_in_the_same_epoch_is_rejected() {
     let user = f.holder(500);
 
     f.vault.request_redeem(&user, &200);
-    assert!(f.vault.try_request_redeem(&user, &100).is_err());
+    refused(
+        f.vault.try_request_redeem(&user, &100),
+        VaultError::RequestOutstanding,
+    );
     assert_eq!(f.shares(&user), 300);
 }
 
@@ -48,7 +57,7 @@ fn request_redeem_needs_the_holder_authorisation() {
     let user = f.holder(500);
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_request_redeem(&user, &200).is_err());
+    missing_auth(f.vault.try_request_redeem(&user, &200));
     assert_eq!(f.shares(&user), 500);
 }
 
@@ -57,7 +66,11 @@ fn redeeming_more_shares_than_held_is_rejected() {
     let f = setup();
     let user = f.holder(500);
 
-    assert!(f.vault.try_request_redeem(&user, &501).is_err());
+    // Nothing is frozen, so the token's own balance check applies, not `Frozen`.
+    assert_eq!(
+        f.vault.try_request_redeem(&user, &501).err(),
+        Some(Ok(soroban_sdk::Error::from_contract_error(300)))
+    );
     assert_eq!(f.shares(&user), 500);
 }
 
@@ -88,7 +101,10 @@ fn a_redeem_cannot_be_claimed_twice() {
     f.fulfill_epoch(wad(2));
 
     f.vault.claim_redeem(&user, &epoch);
-    assert!(f.vault.try_claim_redeem(&user, &epoch).is_err());
+    refused(
+        f.vault.try_claim_redeem(&user, &epoch),
+        VaultError::AlreadyClaimed,
+    );
     assert_eq!(f.balance(&user), 400);
 }
 
@@ -98,8 +114,29 @@ fn claiming_a_redeem_before_the_epoch_is_fulfilled_is_rejected() {
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
 
-    assert!(f.vault.try_claim_redeem(&user, &epoch).is_err());
+    refused(
+        f.vault.try_claim_redeem(&user, &epoch),
+        VaultError::EpochNotFulfilled,
+    );
     assert_eq!(f.shares(&f.vault.address), 200);
+}
+
+#[test]
+fn claiming_a_redeem_without_a_request_finds_no_request_before_pricing() {
+    let f = setup();
+    let stranger = Address::generate(&f.e);
+    let epoch = f.vault.current_epoch();
+
+    refused(
+        f.vault.try_claim_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
+
+    f.close_epoch();
+    refused(
+        f.vault.try_claim_redeem(&stranger, &epoch),
+        VaultError::RequestNotFound,
+    );
 }
 
 #[test]
@@ -121,7 +158,10 @@ fn the_epoch_prices_but_the_claim_waits_for_the_cash() {
     );
     assert_eq!(f.vault.committed(), 2_000);
     assert_eq!(f.vault.uncovered(), 1_000);
-    assert!(f.vault.try_claim_redeem(&user, &epoch).is_err());
+    refused(
+        f.vault.try_claim_redeem(&user, &epoch),
+        VaultError::ClaimNotCovered,
+    );
 }
 
 #[test]

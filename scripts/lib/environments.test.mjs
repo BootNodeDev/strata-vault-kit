@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { contractIds, networkOf, selectedEnvironment } from "./environments.mjs"
 
 const toml = `
@@ -21,6 +21,20 @@ network-passphrase = "Local Passphrase"
 
 [development.contracts.compliance]
 client = true
+constructor_args = "--admin me"
+
+[development.contracts.share_token]
+client = true
+
+[development.contracts.async_vault]
+client = true
+constructor_args = "--asset share_token"
+
+[testing.network]
+rpc-url = "http://localhost:8000/rpc"
+network-passphrase = "Local Passphrase"
+
+[testing.contracts]
 `
 
 describe("selectedEnvironment", () => {
@@ -49,9 +63,36 @@ describe("contractIds", () => {
 		)
 	})
 
-	it("fails when the section declares no deployed ids", () => {
-		expect(() => contractIds(toml, "development")).toThrow(
-			/\[development\.contracts\] declares no deployed addresses/,
+	it("fails when the section declares no ids and no contracts to deploy", () => {
+		expect(() => contractIds(toml, "testing")).toThrow(
+			/\[testing\.contracts\] declares no deployed addresses/,
+		)
+	})
+
+	it("resolves scaffold-deployed blocks plus the asset through aliases", () => {
+		const resolveAlias = vi.fn((alias) => `C${alias.toUpperCase()}`)
+		expect(contractIds(toml, "development", resolveAlias)).toEqual([
+			{ name: "compliance", id: "CCOMPLIANCE" },
+			{ name: "share_token", id: "CSHARE_TOKEN" },
+			{ name: "async_vault", id: "CASYNC_VAULT" },
+			{ name: "asset", id: "CASSET" },
+		])
+		expect(resolveAlias).toHaveBeenCalledWith("compliance", {
+			rpcUrl: "http://localhost:8000/rpc",
+			networkPassphrase: "Local Passphrase",
+			allowHttp: true,
+		})
+	})
+
+	it("names the alias and the environment when one cannot be resolved", () => {
+		const resolveAlias = (alias) => {
+			if (alias === "asset") {
+				throw new Error("error: no contract found with alias 'asset'")
+			}
+			return "CAAA"
+		}
+		expect(() => contractIds(toml, "development", resolveAlias)).toThrow(
+			/alias 'asset' for \[development\.contracts\].*no contract found with alias 'asset'/,
 		)
 	})
 })

@@ -1,6 +1,7 @@
 import { type Metric } from "../components/vault/MetricsStrip"
 import { type Grant } from "../hooks/useAdminAuthority"
 import { type OracleStatus } from "../hooks/useOracleState"
+import { type SetupState } from "../hooks/useSetupOpen"
 import { type PauseState } from "../hooks/useVaultPaused"
 import {
 	type Condition,
@@ -13,6 +14,7 @@ import {
 
 export type EmergencyState = {
 	vault: PauseState
+	setup: SetupState
 	token: PauseState
 	oracle: OracleStatus
 }
@@ -20,13 +22,13 @@ export type EmergencyState = {
 type PlainId =
 	| "pause-vault"
 	| "unpause-vault"
-	| "lower-ripcord"
+	| "unpause-nav"
 	| "clear-latest"
 	| "pause-token"
 	| "unpause-token"
 
 export type EmergencyAction = RailAction &
-	({ id: PlainId } | { id: "raise-ripcord"; viaAdmin: boolean })
+	({ id: PlainId } | { id: "pause-nav"; viaAdmin: boolean })
 
 const PAUSE_LABELS = { open: "Open", paused: "Paused" } as const
 
@@ -48,8 +50,8 @@ const pauseIs = (
 	met: isKnown(state) ? state === wanted : null,
 })
 
-const ripcordRaised = (oracle: OracleStatus): Condition => ({
-	label: "Ripcord raised",
+const navPaused = (oracle: OracleStatus): Condition => ({
+	label: "NAV paused",
 	met: isKnown(oracle) ? oracle === "paused" : null,
 })
 
@@ -75,8 +77,8 @@ const oracleAdminSpecs = (
 	oracle: OracleStatus,
 ): [Spec<PlainId>, Spec<PlainId>] => [
 	{
-		id: "lower-ripcord",
-		label: "Lower the ripcord",
+		id: "unpause-nav",
+		label: "Unpause the NAV",
 		conditions: [],
 		outcome:
 			"Resumes pricing: epochs can be fulfilled again while the price is valid.",
@@ -84,9 +86,9 @@ const oracleAdminSpecs = (
 	{
 		id: "clear-latest",
 		label: "Clear the latest price",
-		conditions: [ripcordRaised(oracle)],
+		conditions: [navPaused(oracle)],
 		outcome:
-			"Removes the recorded price, so the next attestation is not limited by its distance from the last. Pricing stays stopped until the ripcord is lowered.",
+			"Removes the recorded price, so the next attestation is not limited by its distance from the last. Pricing stays stopped until the NAV is unpaused.",
 		danger: true,
 	},
 ]
@@ -97,18 +99,18 @@ const tokenSpecs = (token: PauseState): [Spec<PlainId>, Spec<PlainId>] => [
 		label: "Pause the share token",
 		conditions: [pauseIs("Share token is open", token, "open")],
 		outcome:
-			"Stops holder transfers and returns of escrowed shares. Minting, burning and forced transfers stay open.",
+			"Stops holder transfers only. Minting, burning, the vault's escrow moves and legal transfers continue.",
 		danger: true,
 	},
 	{
 		id: "unpause-token",
 		label: "Unpause the share token",
 		conditions: [pauseIs("Share token is paused", token, "paused")],
-		outcome: "Resumes holder transfers and returns of escrowed shares.",
+		outcome: "Resumes holder transfers.",
 	},
 ]
 
-const raiseGrant = (
+const pauseGrant = (
 	guardian: Grant | undefined,
 	admin: Grant | undefined,
 ): Grant | undefined => {
@@ -117,13 +119,13 @@ const raiseGrant = (
 	return guardian ?? admin
 }
 
-const raiseSpec = (oracle: OracleStatus): Spec<"raise-ripcord"> => ({
-	id: "raise-ripcord",
-	label: "Raise the ripcord",
+const pauseSpec = (oracle: OracleStatus): Spec<"pause-nav"> => ({
+	id: "pause-nav",
+	label: "Pause the NAV",
 	conditions: [],
 	outcome:
-		"Stops pricing: no epoch can be fulfilled until it is lowered. Attesting stays open.",
-	...(oracle === "paused" ? { note: "Ripcord already raised." } : {}),
+		"Stops pricing: no epoch can be fulfilled until it is unpaused. Attesting stays open. Revoking an attester is instant; granting a replacement waits for the timelock once the oracle's setup is closed.",
+	...(oracle === "paused" ? { note: "NAV already paused." } : {}),
 	danger: true,
 })
 
@@ -135,24 +137,24 @@ export function toEmergencyActions(
 	if (grants.length === 0) return []
 	const held = (role: string) => grantFor(grants, role, wallet)
 	const [pauseVault, unpauseVault] = vaultSpecs(state.vault)
-	const [lower, clear] = oracleAdminSpecs(state.oracle)
+	const [unpause, clear] = oracleAdminSpecs(state.oracle)
 	const [pauseToken, unpauseToken] = tokenSpecs(state.token)
 	const oracleAdmin = held(ROLES.oracleAdmin)
 	const tokenAdmin = held(ROLES.tokenAdmin)
-	const raiser = raiseGrant(held(ROLES.oracleGuardian), oracleAdmin)
+	const pauser = pauseGrant(held(ROLES.oracleGuardian), oracleAdmin)
 
 	const actions: EmergencyAction[] = []
 	const guardian = held(ROLES.vaultGuardian)
 	if (guardian !== undefined) actions.push(toAction(pauseVault, guardian))
 	const governance = held(ROLES.governance)
 	if (governance !== undefined) actions.push(toAction(unpauseVault, governance))
-	if (raiser !== undefined)
+	if (pauser !== undefined)
 		actions.push({
-			...toAction(raiseSpec(state.oracle), raiser),
-			viaAdmin: raiser.role === ROLES.oracleAdmin,
+			...toAction(pauseSpec(state.oracle), pauser),
+			viaAdmin: pauser.role === ROLES.oracleAdmin,
 		})
 	if (oracleAdmin !== undefined)
-		actions.push(toAction(lower, oracleAdmin), toAction(clear, oracleAdmin))
+		actions.push(toAction(unpause, oracleAdmin), toAction(clear, oracleAdmin))
 	if (tokenAdmin !== undefined)
 		actions.push(
 			toAction(pauseToken, tokenAdmin),
@@ -173,12 +175,33 @@ const oracleTile = (oracle: OracleStatus): Metric => {
 	return {
 		label,
 		value: ORACLE_LABELS[oracle],
-		note: oracle === "paused" ? "Ripcord raised" : "Ripcord not raised",
+		note: oracle === "paused" ? "NAV paused" : "NAV not paused",
 	}
+}
+
+const SETUP_TILES: Record<"open" | "closed", Metric> = {
+	open: {
+		label: "Setup",
+		value: "Open",
+		note: "Changes apply at once; no deposits yet",
+	},
+	closed: {
+		label: "Setup",
+		value: "Closed",
+		note: "Changes wait for the timelock",
+	},
+}
+
+const setupTile = (setup: SetupState): Metric => {
+	if (setup === "checking")
+		return { label: "Setup", value: null, pending: true }
+	if (setup === "unreadable") return { label: "Setup", value: null }
+	return SETUP_TILES[setup]
 }
 
 export const toEmergencyTiles = (state: EmergencyState): Metric[] => [
 	pauseTile("Vault", state.vault),
+	setupTile(state.setup),
 	pauseTile("Share token", state.token),
 	oracleTile(state.oracle),
 ]

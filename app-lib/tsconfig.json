@@ -1,4 +1,5 @@
 {
 	"extends": "@theahaco/ts-config/typescript.app",
-	"include": ["."]
+	"include": ["."],
+	"exclude": ["clients/*/dist", "node_modules"]
 }

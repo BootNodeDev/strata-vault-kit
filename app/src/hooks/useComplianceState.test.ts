@@ -1,5 +1,7 @@
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { RWAError } from "../../../app-lib/clients/share_token/src/index"
+import { simulationError } from "../test/contractErrorCode"
 import { renderWithWallet } from "./testSupport"
 import { useComplianceState } from "./useComplianceState"
 
@@ -80,7 +82,7 @@ describe("useComplianceState", () => {
 		tokenMock.is_frozen.mockRejectedValue(new Error("rpc down"))
 		tokenMock.balance.mockResolvedValue({
 			result: 0n,
-			simulation: { error: "HostError: Error(Contract, #300)" },
+			simulation: { error: simulationError(RWAError, "InsufficientBalance") },
 		})
 		const { result } = renderWithWallet(() =>
 			useComplianceState({

@@ -1,6 +1,6 @@
 import { type Amount, type Price } from "@stellar-scaffold/app-lib"
-import { fireEvent, render, screen, within } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type ActivateWindDownStatus } from "../../hooks/useActivateWindDown"
 import { type Grant } from "../../hooks/useAdminAuthority"
 import { type AttestStatus } from "../../hooks/useAttest"
@@ -34,36 +34,43 @@ const {
 	closeEpochMock: {
 		status: { status: "idle" } as CloseEpochStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	fulfillEpochMock: {
 		status: { status: "idle" } as FulfillEpochStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	attestMock: {
 		status: { status: "idle" } as AttestStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	deployMock: {
 		status: { status: "idle" } as DeployToCustodianStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	fundMock: {
 		status: { status: "idle" } as FundStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	activateMock: {
 		status: { status: "idle" } as ActivateWindDownStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 	finalizeMock: {
 		status: { status: "idle" } as FinalizeWindDownRoundStatus,
 		submit: vi.fn(() => true),
+		prepare: vi.fn(),
 		reset: vi.fn(),
 	},
 }))
@@ -134,19 +141,22 @@ const ready = (overrides: Partial<ReadyState> = {}): CycleState => ({
 		awaiting: sealed,
 		awaitingKnown: true,
 		noticeSeconds: 3_600n,
+		minDuration: { kind: "unset" },
+		openedAt: 1_700_000_000n,
 	},
 	oracle: {
 		state: "valid",
 		price: price(1n),
 		attestedAt: 1_700_050_000n,
 		expiresAt: 1_700_136_000n,
-		ripcord: false,
+		proof: { hash: "cd".repeat(32), uri: "https://example.com/nav.pdf" },
+		navPaused: false,
 		recorded: true,
 		limits: {
 			freshness: 86_400n,
 			cooldown: 3_600n,
 			maxUpBps: 500,
-			maxDownBps: null,
+			maxDownBps: 1_000,
 			min: price(1n) / 2n,
 			max: price(2n),
 		},
@@ -210,6 +220,16 @@ const FIELD_ROWS: Record<string, string> = {
 	"Amount to deploy": "Deploy to custodian",
 	"Amount to fund": "Fund the reserve",
 	"Share price": "Attest price",
+	"Proof hash": "Attest price",
+	"Proof URI": "Attest price",
+}
+
+const PROOF_HASH = "ab".repeat(32)
+
+const typeAttestation = (price: string, proofUri = "") => {
+	fireEvent.change(fieldOf("Share price"), { target: { value: price } })
+	fireEvent.change(fieldOf("Proof hash"), { target: { value: PROOF_HASH } })
+	fireEvent.change(fieldOf("Proof URI"), { target: { value: proofUri } })
 }
 
 const fieldOf = (name: string) => {
@@ -218,6 +238,10 @@ const fieldOf = (name: string) => {
 }
 
 describe("CycleSection", () => {
+	afterEach(() => {
+		vi.useRealTimers()
+	})
+
 	beforeEach(() => {
 		vi.clearAllMocks()
 		closeEpochMock.status = { status: "idle" }
@@ -495,8 +519,12 @@ describe("CycleSection", () => {
 
 		fireEvent.change(field, { target: { value: "1.04" } })
 
-		expect(button("Attest price").disabled).toBe(false)
 		expect(band.textContent).toMatch(/^Pass: Within the band/)
+		expect(button("Attest price").disabled).toBe(true)
+
+		fireEvent.change(fieldOf("Proof hash"), { target: { value: PROOF_HASH } })
+
+		expect(button("Attest price").disabled).toBe(false)
 		expect(
 			screen.getByText("Records 1.0400 as the share price, valid for 1d."),
 		).toBeTruthy()
@@ -507,15 +535,15 @@ describe("CycleSection", () => {
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(fieldOf("Share price"), {
-			target: { value: "1.04" },
-		})
+		typeAttestation("1.04", "https://example.com/nav.pdf")
 		fireEvent.click(button("Attest price"))
 
 		expect(attestMock.submit).toHaveBeenCalledWith(
 			{
 				price: 1_040_000_000_000_000_000n,
 				freshness: 86_400n,
+				proofHash: PROOF_HASH,
+				proofUri: "https://example.com/nav.pdf",
 			},
 			attester,
 		)
@@ -528,14 +556,44 @@ describe("CycleSection", () => {
 		).toBeTruthy()
 	})
 
+	it("collects the proof hash and the proof URI in the attest form, sending an attestation without a URI", () => {
+		render(<CycleSection grants={[attester]} wallet={WALLET} />)
+		const rail = screen.getByRole("complementary", { name: "Actions" })
+
+		openRow("Attest price")
+		expect(
+			within(rail).getByRole("textbox", { name: "Proof hash" }),
+		).toBeTruthy()
+		expect(
+			within(rail).getByRole("textbox", { name: "Proof URI" }),
+		).toBeTruthy()
+
+		typeAttestation("1.04")
+		fireEvent.click(button("Attest price"))
+
+		expect(attestMock.submit).toHaveBeenCalledWith(
+			expect.objectContaining({ proofHash: PROOF_HASH, proofUri: "" }),
+			attester,
+		)
+	})
+
+	it("shows the latest proof in the Price group, its URI as a link", () => {
+		render(<CycleSection grants={[attester]} wallet={WALLET} />)
+
+		expect(screen.getByText("cdcd...cdcd")).toBeTruthy()
+		expect(
+			screen
+				.getByRole("link", { name: "https://example.com/nav.pdf" })
+				.getAttribute("href"),
+		).toBe("https://example.com/nav.pdf")
+	})
+
 	it("labels the modal with the exact price that is signed", () => {
 		const { rerender } = render(
 			<CycleSection grants={[attester]} wallet={WALLET} />,
 		)
 
-		fireEvent.change(fieldOf("Share price"), {
-			target: { value: "1.04123456" },
-		})
+		typeAttestation("1.04123456")
 		fireEvent.click(button("Attest price"))
 		attestMock.status = { status: "preparing" }
 		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
@@ -551,7 +609,7 @@ describe("CycleSection", () => {
 		)
 		const field = () => fieldOf("Share price")
 
-		fireEvent.change(field(), { target: { value: "1.04" } })
+		typeAttestation("1.04", "https://example.com/nav.pdf")
 		fireEvent.click(button("Attest price"))
 		attestMock.status = { status: "awaiting-signature" }
 		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
@@ -561,6 +619,8 @@ describe("CycleSection", () => {
 		rerender(<CycleSection grants={[attester]} wallet={WALLET} />)
 
 		expect(field().value).toBe("")
+		expect(fieldOf("Proof hash").value).toBe("")
+		expect(fieldOf("Proof URI").value).toBe("")
 		expect(button("Attest price").disabled).toBe(true)
 	})
 
@@ -595,6 +655,32 @@ describe("CycleSection", () => {
 		expect(button("Fulfill epoch").disabled).toBe(true)
 		const notice = screen.getByText("Notice elapsed").closest("li")!
 		expect(notice.textContent).toMatch(/^Fail: Notice elapsed/)
+	})
+
+	it("prepares the open ready close and still submits it on click", () => {
+		vi.useFakeTimers()
+		render(<CycleSection grants={[manager]} wallet={WALLET} />)
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(closeEpochMock.prepare).toHaveBeenCalledWith(undefined, manager)
+
+		fireEvent.click(button("Close epoch"))
+
+		expect(closeEpochMock.submit).toHaveBeenCalledWith(undefined, manager)
+	})
+
+	it("prepares nothing while the cycle tab is hidden", () => {
+		vi.useFakeTimers()
+		render(<CycleSection grants={[manager]} wallet={WALLET} active={false} />)
+
+		act(() => {
+			vi.advanceTimersByTime(400)
+		})
+
+		expect(closeEpochMock.prepare).not.toHaveBeenCalled()
 	})
 
 	it("lets a manager signing through a multisig close the epoch, passing its grant", () => {

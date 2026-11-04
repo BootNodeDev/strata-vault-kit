@@ -7,6 +7,7 @@ import {
 	type PendingAdmins,
 	readContract,
 	readContractAdmin,
+	requiredWeight,
 	type ShareTokenApi,
 	uniformWeights,
 } from "@stellar-scaffold/app-lib"
@@ -159,7 +160,7 @@ const standingOf = (
 	if (signers === undefined) return wallet === holder ? "signs-alone" : null
 	const weight = signers.signers.find(({ key }) => key === wallet)?.weight
 	if (weight === undefined || weight === 0) return null
-	const threshold = signers.thresholds.med
+	const threshold = requiredWeight(signers)
 	if (weight >= threshold) return "signs-alone"
 	return uniformWeights(signers.signers)
 		? { needs: threshold }

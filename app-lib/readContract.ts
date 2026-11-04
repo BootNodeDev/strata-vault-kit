@@ -1,5 +1,6 @@
 import { Address, scValToNative, xdr } from "@stellar/stellar-sdk"
 import { Api } from "@stellar/stellar-sdk/rpc"
+import { errorName } from "./contractErrors"
 import type {
 	DepositRequest,
 	EpochInfo,
@@ -8,21 +9,25 @@ import type {
 } from "./contracts"
 import { server } from "./rpc"
 
+export type ContractError = { code: number; name: string | undefined }
+
 export type ContractRead<T> =
 	| { kind: "value"; value: T }
-	| { kind: "contract-error"; code: number }
+	| ({ kind: "contract-error" } & ContractError)
 	| { kind: "archived" }
 	| { kind: "unreadable" }
 
 const CONTRACT_ERROR = /Error\(Contract, #(\d+)\)/
 
-export function parseErrorCode(
+export function parseContractError(
 	simulation: Api.SimulateTransactionResponse | undefined,
-): number | null {
+): ContractError | null {
 	if (simulation === undefined || !Api.isSimulationError(simulation))
 		return null
 	const match = simulation.error.match(CONTRACT_ERROR)
-	return match ? Number(match[1]) : null
+	if (!match) return null
+	const code = Number(match[1])
+	return { code, name: errorName(code) }
 }
 
 export async function readContract<T>(
@@ -36,9 +41,9 @@ export async function readContract<T>(
 		if (tx.simulation !== undefined && Api.isSimulationRestore(tx.simulation)) {
 			return { kind: "archived" }
 		}
-		const code = parseErrorCode(tx.simulation)
-		return code !== null
-			? { kind: "contract-error", code }
+		const error = parseContractError(tx.simulation)
+		return error !== null
+			? { kind: "contract-error", ...error }
 			: { kind: "value", value: tx.result }
 	} catch {
 		return { kind: "unreadable" }
@@ -187,16 +192,11 @@ export async function readEpochRequests(
 		EPOCHS_PER_LEDGER_ENTRIES_REQUEST,
 	)
 
-	const resolvedChunks = await Promise.all(
-		chunks.map(async (keySetChunk) => ({
-			keySetChunk,
-			chunkResult: await fetchChunk(
-				keySetChunk.flatMap((set) => [set.epoch, set.deposit, set.redeem]),
-			),
-		})),
-	)
-
-	for (const { keySetChunk, chunkResult } of resolvedChunks) {
+	// One chunk at a time keeps a long history under public RPC rate limits.
+	for (const keySetChunk of chunks) {
+		const chunkResult = await fetchChunk(
+			keySetChunk.flatMap((set) => [set.epoch, set.deposit, set.redeem]),
+		)
 		for (const set of keySetChunk) {
 			results.set(set.epochId, {
 				epoch: decodeLedgerEntry<EpochInfo>(
@@ -234,14 +234,8 @@ export async function readEpochs(
 		key: contractDataLedgerKey(contract, epochDataKey(epochId)),
 	}))
 
-	const resolvedChunks = await Promise.all(
-		chunk(keyed, LEDGER_ENTRIES_PER_REQUEST).map(async (keyedChunk) => ({
-			keyedChunk,
-			chunkResult: await fetchChunk(keyedChunk.map(({ key }) => key)),
-		})),
-	)
-
-	for (const { keyedChunk, chunkResult } of resolvedChunks) {
+	for (const keyedChunk of chunk(keyed, LEDGER_ENTRIES_PER_REQUEST)) {
+		const chunkResult = await fetchChunk(keyedChunk.map(({ key }) => key))
 		for (const { epochId, key } of keyedChunk) {
 			results.set(
 				epochId,
@@ -410,7 +404,11 @@ export async function readContractAdmin(
 	}
 }
 
-export type EventSelection = { contractId: string; names: string[] }
+export type EventSelection = {
+	contractId: string
+	names: string[]
+	topics?: number
+}
 
 export type ChainEvent = {
 	contractId: string
@@ -421,13 +419,18 @@ export type ChainEvent = {
 	closedAt: bigint
 }
 
+// "*" matches exactly one topic, so the filter names every topic after the symbol.
 const toEventFilter = ({
 	contractId,
 	names,
+	topics = 1,
 }: EventSelection): Api.EventFilter => ({
 	type: "contract",
 	contractIds: [contractId],
-	topics: names.map((name) => [xdr.ScVal.scvSymbol(name).toXDR("base64"), "*"]),
+	topics: names.map((name) => [
+		xdr.ScVal.scvSymbol(name).toXDR("base64"),
+		...Array<string>(topics).fill("*"),
+	]),
 })
 
 const decodeEvent = (event: Api.EventResponse): ChainEvent | null => {
@@ -445,6 +448,36 @@ const decodeEvent = (event: Api.EventResponse): ChainEvent | null => {
 	} catch {
 		return null
 	}
+}
+
+export type TransactionEvent = {
+	name: string
+	topics: unknown[]
+	data: unknown
+}
+
+const decodeContractEvent = (
+	event: xdr.ContractEvent,
+): TransactionEvent | null => {
+	try {
+		const body = event.body().v0()
+		const [name, ...topics] = body.topics().map((topic) => scValToNative(topic))
+		if (typeof name !== "string") return null
+		return { name, topics, data: scValToNative(body.data()) }
+	} catch {
+		return null
+	}
+}
+
+export function decodeTransactionEvents(
+	events: xdr.ContractEvent[][] | undefined,
+): TransactionEvent[] {
+	const decoded: TransactionEvent[] = []
+	for (const event of events?.flat() ?? []) {
+		const next = decodeContractEvent(event)
+		if (next !== null) decoded.push(next)
+	}
+	return decoded
 }
 
 export type EventsRead =

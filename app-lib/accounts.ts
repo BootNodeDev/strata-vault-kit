@@ -6,6 +6,10 @@ export interface AccountSigners {
 	sequence: string
 }
 
+// The network needs a source signature even when every threshold is zero.
+export const requiredWeight = (account: AccountSigners): number =>
+	Math.max(account.thresholds.med, 1)
+
 export const uniformWeights = (signers: AccountSigners["signers"]): boolean =>
 	signers.every(({ weight }) => weight <= 1)
 

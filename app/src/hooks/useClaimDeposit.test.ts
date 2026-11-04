@@ -1,7 +1,17 @@
+import { nativeToScVal } from "@stellar/stellar-sdk"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { deferred, investorAddress, renderWithWallet } from "./testSupport"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { RWAError } from "../../../app-lib/clients/identity_verifier/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import {
+	contractEvent,
+	deferred,
+	investorAddress,
+	renderWithWallet,
+	succeededWith,
+} from "./testSupport"
 import { useClaimDeposit } from "./useClaimDeposit"
 import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
@@ -25,6 +35,60 @@ describe("useClaimDeposit", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		asyncVaultWriterMock.mockResolvedValue(vaultMock)
+	})
+
+	it.each([
+		["a redemption in a later epoch", 5n],
+		["the wind-down claim", 0n],
+	])(
+		"reports a delisted holder's shares converted into %s",
+		async (_label, intoEpoch) => {
+			const converted = contractEvent(
+				"deposit_converted_to_exit",
+				nativeToScVal(
+					{ epoch: epochId, into_epoch: intoEpoch, shares: 50_0000000n },
+					{
+						type: {
+							epoch: ["symbol", "u64"],
+							into_epoch: ["symbol", "u64"],
+							shares: ["symbol", "i128"],
+						},
+					},
+				),
+			)
+			vaultMock.claim_deposit.mockResolvedValue({
+				simulation: undefined,
+				signAndSend: vi.fn().mockResolvedValue(succeededWith(0n, [converted])),
+			})
+			const { result } = renderClaimDeposit()
+
+			await act(async () => {
+				result.current.submit(epochId)
+			})
+
+			await waitFor(() =>
+				expect(result.current.status).toEqual({
+					status: "confirmed",
+					sharesMinted: 0n,
+					queuedInto: intoEpoch,
+				}),
+			)
+		},
+	)
+
+	it("reports no conversion when the claim mints shares", async () => {
+		vaultMock.claim_deposit.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi.fn().mockResolvedValue(succeededWith(50_0000000n, [])),
+		})
+		const { result } = renderClaimDeposit()
+
+		await act(async () => {
+			result.current.submit(epochId)
+		})
+
+		await waitFor(() => expect(result.current.status.status).toBe("confirmed"))
+		expect(result.current.status).not.toHaveProperty("queuedInto")
 	})
 
 	it("reports whether the submission was accepted synchronously, not through a promise", async () => {
@@ -83,7 +147,7 @@ describe("useClaimDeposit", () => {
 		)
 
 		expect(vaultMock.claim_deposit).toHaveBeenCalledWith({
-			caller: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 	})
@@ -132,7 +196,7 @@ describe("useClaimDeposit", () => {
 
 	it("does not touch cached requests, balance or share position when the vault refuses at simulation", async () => {
 		vaultMock.claim_deposit.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6035)" },
+			simulation: { error: simulationError(VaultError, "AlreadyClaimed") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderClaimDeposit()
@@ -146,7 +210,7 @@ describe("useClaimDeposit", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.claim_deposit.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6035)" },
+			simulation: { error: simulationError(VaultError, "AlreadyClaimed") },
 			signAndSend,
 		})
 		const { result } = renderClaimDeposit()
@@ -155,14 +219,20 @@ describe("useClaimDeposit", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6035 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "AlreadyClaimed"),
+				name: "AlreadyClaimed",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
 
 	it("refuses at simulation with the identity verifier's cross-contract code", async () => {
 		vaultMock.claim_deposit.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #304)" },
+			simulation: {
+				error: simulationError(RWAError, "IdentityVerificationFailed"),
+			},
 			signAndSend: vi.fn(),
 		})
 		const { result } = renderClaimDeposit()
@@ -171,7 +241,11 @@ describe("useClaimDeposit", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 304 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(RWAError, "IdentityVerificationFailed"),
+				name: "IdentityVerificationFailed",
+			},
 		})
 	})
 

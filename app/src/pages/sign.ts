@@ -8,6 +8,7 @@ import {
 	type PendingTransaction,
 	PRICE_DECIMALS,
 	type Price,
+	requiredWeight,
 	shortAddress,
 	uniformWeights,
 } from "@stellar-scaffold/app-lib"
@@ -18,12 +19,14 @@ import {
 	type TransactionModalProps,
 } from "../components/vault/TransactionModal"
 import { type TransactionStatus } from "../hooks/useContractTransaction"
+import { type TimelockedContract } from "../hooks/useSetupOpen"
 import {
 	exactAmount,
 	formatDuration,
 	formatPercent,
 	formatSignedPrice,
 } from "./cycle"
+import { changeName, type PendingChange, QUEUES } from "./pendingChanges"
 
 export type SignContract =
 	"Vault" | "Oracle" | "Share token" | "Identity verifier"
@@ -53,7 +56,7 @@ type Decoder = (args: unknown[]) => Decoded
 
 const malformed = () => new InvalidPendingTransaction("malformed arguments")
 
-const address = (value: unknown): string => {
+const text = (value: unknown): string => {
 	if (typeof value !== "string") throw malformed()
 	return value
 }
@@ -85,7 +88,7 @@ const record = (value: unknown): Record<string, unknown> => {
 
 const addr = (label: string, value: unknown): SignArg => ({
 	label,
-	value: shortAddress(address(value)),
+	value: shortAddress(text(value)),
 })
 
 const amount = (label: string, value: unknown): SignArg => ({
@@ -112,11 +115,11 @@ const governed = (
 ): Record<string, Decoder> => ({
 	grant_role: ([account, role]) => ({
 		action: `grant-${contract}-role`,
-		args: [{ label: "Role", value: address(role) }, addr("Account", account)],
+		args: [{ label: "Role", value: text(role) }, addr("Account", account)],
 	}),
 	revoke_role: ([account, role]) => ({
 		action: `revoke-${contract}-role`,
-		args: [{ label: "Role", value: address(role) }, addr("Account", account)],
+		args: [{ label: "Role", value: text(role) }, addr("Account", account)],
 	}),
 	transfer_admin_role: ([newAdmin, liveUntil]) =>
 		count(liveUntil) === 0
@@ -134,7 +137,128 @@ const governed = (
 	accept_admin_transfer: only(`accept-${contract}-admin`),
 })
 
-const VAULT: Record<string, Decoder> = {
+const roleArgs = (role: unknown, account: unknown): SignArg[] => [
+	{ label: "Role", value: text(role) },
+	addr("Account", account),
+]
+
+const roleProposals = (
+	grant: SignAction,
+	revoke: SignAction,
+	admin: SignAction,
+): Record<string, Decoder> => ({
+	GrantRole: ([role, account]) => ({
+		action: grant,
+		args: roleArgs(role, account),
+	}),
+	RevokeRole: ([role, account]) => ({
+		action: revoke,
+		args: roleArgs(role, account),
+	}),
+	Admin: ([account]) => ({
+		action: admin,
+		args: [addr("New admin", account)],
+	}),
+})
+
+const VAULT_PROPOSALS: Record<string, Decoder> = {
+	Custodian: ([custodian]) => ({
+		action: "propose-custodian",
+		args: [addr("Custodian", custodian)],
+	}),
+	Notice: ([secs]) => ({
+		action: "propose-notice",
+		args: [duration("Notice", secs)],
+	}),
+	WindDownDelay: ([secs]) => ({
+		action: "propose-wind-down-delay",
+		args: [duration("Wind-down delay", secs)],
+	}),
+	MinEpochDuration: ([secs]) => ({
+		action: "propose-min-epoch-duration",
+		args: [duration("Minimum epoch duration", secs)],
+	}),
+	Upgrade: ([hash]) => ({
+		action: "propose-code-upgrade",
+		args: [{ label: "Wasm hash", value: hex(hash) }],
+	}),
+	UpgradeDelay: ([secs]) => ({
+		action: "propose-upgrade-delay",
+		args: [duration("Upgrade delay", secs)],
+	}),
+	...roleProposals(
+		"propose-grant-role",
+		"propose-revoke-role",
+		"propose-admin",
+	),
+}
+
+const TOKEN_PROPOSALS: Record<string, Decoder> = {
+	Compliance: ([compliance]) => ({
+		action: "propose-compliance",
+		args: [addr("Compliance contract", compliance)],
+	}),
+	IdentityVerifier: ([verifier]) => ({
+		action: "propose-identity-verifier",
+		args: [addr("Identity verifier", verifier)],
+	}),
+	...roleProposals(
+		"propose-token-grant-role",
+		"propose-token-revoke-role",
+		"propose-token-admin",
+	),
+}
+
+const decoderOf = (table: Record<string, Decoder>, name: unknown): Decoder => {
+	if (typeof name !== "string" || !Object.hasOwn(table, name))
+		throw new InvalidPendingTransaction("unknown operation")
+	return table[name] as Decoder
+}
+
+const proposal =
+	(table: Record<string, Decoder>): Decoder =>
+	([change]) => {
+		if (!Array.isArray(change)) throw malformed()
+		const [tag, ...values] = change as unknown[]
+		return decoderOf(table, tag)(values)
+	}
+
+export type SignChanges = Partial<Record<TimelockedContract, PendingChange[]>>
+
+const byId =
+	(
+		action: SignAction,
+		contract: TimelockedContract,
+		changes: SignChanges,
+	): Decoder =>
+	([id]) => {
+		const { name } = QUEUES[contract]
+		const known = changes[contract]?.find((change) => change.id === count(id))
+		return {
+			action,
+			args: [
+				{
+					label: "Change",
+					value:
+						known === undefined
+							? `${name} change #${count(id)}`
+							: changeName(name, known),
+				},
+			],
+		}
+	}
+
+const timelockDecoders = (
+	contract: TimelockedContract,
+	proposals: Record<string, Decoder>,
+	changes: SignChanges,
+): Record<string, Decoder> => ({
+	propose_change: proposal(proposals),
+	apply_change: byId(QUEUES[contract].apply, contract, changes),
+	cancel_change: byId(QUEUES[contract].cancel, contract, changes),
+})
+
+const vaultDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	...governed("vault"),
 	pause: only("pause-vault"),
 	unpause: only("unpause-vault"),
@@ -159,16 +283,11 @@ const VAULT: Record<string, Decoder> = {
 		action: "set-wind-down-delay",
 		args: [duration("Wind-down delay", secs)],
 	}),
-	propose_upgrade: ([hash]) => ({
-		action: "propose-code-upgrade",
-		args: [{ label: "Wasm hash", value: hex(hash) }],
+	set_min_epoch_duration: ([secs]) => ({
+		action: "set-min-epoch-duration",
+		args: [duration("Minimum epoch duration", secs)],
 	}),
-	propose_upgrade_delay: ([secs]) => ({
-		action: "propose-upgrade-delay",
-		args: [duration("Upgrade delay", secs)],
-	}),
-	apply_upgrade: only("apply-upgrade"),
-	cancel_upgrade: only("cancel-upgrade"),
+	...timelockDecoders("vault", VAULT_PROPOSALS, changes),
 	propose_wind_down: only("propose-wind-down"),
 	cancel_wind_down_proposal: only("cancel-wind-down"),
 	close_epoch: only("close-epoch"),
@@ -176,28 +295,39 @@ const VAULT: Record<string, Decoder> = {
 		action: "deploy",
 		args: [amount("Amount", assets)],
 	}),
-}
+})
 
 const oracleLimits = (config: Record<string, unknown>): SignArg[] => [
 	duration("Freshness window", config.freshness_duration),
 	duration("Cooldown", config.cooldown_secs),
 	{ label: "Largest rise", value: formatPercent(count(config.max_up_bps)) },
-	{
-		label: "Largest fall",
-		value:
-			config.max_down_bps === null
-				? "No limit"
-				: formatPercent(count(config.max_down_bps)),
-	},
+	{ label: "Largest fall", value: formatPercent(count(config.max_down_bps)) },
 	price("Price floor", config.min_answer),
 	price("Price ceiling", config.max_answer),
 ]
 
-const ORACLE: Record<string, Decoder> = {
+const ORACLE_PROPOSALS: Record<string, Decoder> = {
+	Upgrade: ([hash]) => ({
+		action: "propose-oracle-upgrade",
+		args: [{ label: "Wasm hash", value: hex(hash) }],
+	}),
+	Config: ([config]) => ({
+		action: "propose-oracle-config",
+		args: oracleLimits(record(config)),
+	}),
+	...roleProposals(
+		"propose-oracle-grant-role",
+		"propose-oracle-revoke-role",
+		"propose-oracle-admin",
+	),
+}
+
+const oracleDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	...governed("oracle"),
-	raise_ripcord: only("raise-ripcord"),
-	set_ripcord: ([paused]) => ({
-		action: flag(paused) ? "raise-ripcord" : "lower-ripcord",
+	...timelockDecoders("oracle", ORACLE_PROPOSALS, changes),
+	pause_nav: only("pause-nav"),
+	set_nav_paused: ([paused]) => ({
+		action: flag(paused) ? "pause-nav" : "unpause-nav",
 		args: [],
 	}),
 	clear_latest: only("clear-latest"),
@@ -205,8 +335,9 @@ const ORACLE: Record<string, Decoder> = {
 		action: "set-oracle-config",
 		args: oracleLimits(record(config)),
 	}),
-	attest: ([report]) => {
-		const { nav_per_share, expires_at } = record(report)
+	attest: ([input]) => {
+		const { nav_per_share, expires_at, proof_hash, proof_uri } = record(input)
+		const uri = text(proof_uri)
 		return {
 			action: "attest",
 			args: [
@@ -215,13 +346,16 @@ const ORACLE: Record<string, Decoder> = {
 					value: formatSignedPrice(integer(nav_per_share) as Price),
 				},
 				{ label: "Expires", value: formatDate(integer(expires_at)) },
+				{ label: "Proof hash", value: hex(proof_hash) },
+				{ label: "Proof URI", value: uri === "" ? "None" : uri },
 			],
 		}
 	},
-}
+})
 
-const TOKEN: Record<string, Decoder> = {
+const tokenDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	...governed("token"),
+	...timelockDecoders("token", TOKEN_PROPOSALS, changes),
 	pause: only("pause-token"),
 	unpause: only("unpause-token"),
 	set_compliance: ([compliance]) => ({
@@ -244,11 +378,17 @@ const TOKEN: Record<string, Decoder> = {
 		action: "unfreeze-shares",
 		args: [addr("Address", account), amount("Amount", shares)],
 	}),
-	forced_transfer: ([from, to, shares]) => ({
-		action: "force-transfer",
-		args: [addr("From", from), addr("To", to), amount("Amount", shares)],
+	legal_transfer: ([from, to, shares, reference, caller]) => ({
+		action: "legal-transfer",
+		args: [
+			addr("From", from),
+			addr("To", to),
+			amount("Amount", shares),
+			{ label: "Reference", value: text(reference) },
+			addr("Caller", caller),
+		],
 	}),
-}
+})
 
 const VERIFIER: Record<string, Decoder> = {
 	allow: ([account, allowed]) => ({
@@ -268,12 +408,14 @@ const VERBS: Record<SignAction, string> = { ...ADMIN_VERBS, ...CYCLE_VERBS }
 const contractOf = (
 	contractId: string,
 	addresses: SignAddresses,
+	changes: SignChanges,
 ): { contract: SignContract; table: Record<string, Decoder> } => {
-	if (contractId === addresses.vault) return { contract: "Vault", table: VAULT }
+	if (contractId === addresses.vault)
+		return { contract: "Vault", table: vaultDecoders(changes) }
 	if (contractId === addresses.oracle)
-		return { contract: "Oracle", table: ORACLE }
+		return { contract: "Oracle", table: oracleDecoders(changes) }
 	if (contractId === addresses.shareToken)
-		return { contract: "Share token", table: TOKEN }
+		return { contract: "Share token", table: tokenDecoders(changes) }
 	if (contractId === addresses.identityVerifier) {
 		return { contract: "Identity verifier", table: VERIFIER }
 	}
@@ -283,13 +425,10 @@ const contractOf = (
 export function describePending(
 	pending: PendingTransaction,
 	addresses: SignAddresses,
+	changes: SignChanges = {},
 ): SignDescription {
-	const { contract, table } = contractOf(pending.contractId, addresses)
-	const decode = table[pending.fn]
-	if (decode === undefined) {
-		throw new InvalidPendingTransaction("unknown operation")
-	}
-	const { action, args } = decode(pending.args)
+	const { contract, table } = contractOf(pending.contractId, addresses, changes)
+	const { action, args } = decoderOf(table, pending.fn)(pending.args)
 	const verb = VERBS[action]
 	return {
 		contract,
@@ -307,6 +446,10 @@ export type PendingState =
 	| "not-signer"
 	| "already-signed"
 	| "ready"
+	| "awaiting-authorization"
+	| "authorization-expired"
+
+export type AuthorizationState = "none" | "awaiting" | "expired" | "authorized"
 
 export type PendingStateInput = {
 	now: Date
@@ -317,6 +460,7 @@ export type PendingStateInput = {
 	threshold: number
 	walletIsSigner: boolean | null
 	walletHasSigned: boolean
+	authorization: AuthorizationState
 }
 
 export function pendingState(input: PendingStateInput): PendingState {
@@ -327,6 +471,8 @@ export function pendingState(input: PendingStateInput): PendingState {
 	) {
 		return "consumed"
 	}
+	if (input.authorization === "expired") return "authorization-expired"
+	if (input.authorization === "awaiting") return "awaiting-authorization"
 	if (input.weight >= input.threshold) return "ready"
 	if (input.walletHasSigned) return "already-signed"
 	if (input.walletIsSigner === false) return "not-signer"
@@ -341,6 +487,9 @@ export const STATE_COPY: Record<PendingState, string> = {
 	"not-signer": "Your wallet does not sign for this account.",
 	"already-signed": "You already signed. Share the link with the next signer.",
 	ready: "Signatures complete. Anyone can submit.",
+	"awaiting-authorization": "Waiting for the token admin's authorization.",
+	"authorization-expired":
+		"The token admin's authorization expired. The link must be rebuilt.",
 }
 
 export type StateTone = "neutral" | "success" | "danger" | "muted"
@@ -398,10 +547,28 @@ export const STATE_VIEW: Record<PendingState, StateView> = {
 		nextStep: "Only a signer of this account can sign.",
 		shareable: true,
 	},
+	"awaiting-authorization": {
+		pill: "Awaiting the admin's authorization",
+		tone: "neutral",
+		nextStep:
+			"The token admin authorizes first. Then compliance's signers sign.",
+		shareable: true,
+	},
+	"authorization-expired": {
+		pill: "Authorization expired",
+		tone: "danger",
+		nextStep: "Ask compliance to build the legal transfer again.",
+		shareable: false,
+	},
 }
 
 export type PrimaryAction = {
-	label: "Sign" | "Submit" | "Connect a wallet to sign"
+	label:
+		| "Sign"
+		| "Submit"
+		| "Authorize"
+		| "Connect a wallet to sign"
+		| "Connect a wallet to authorize"
 	enabled: boolean
 }
 
@@ -411,6 +578,10 @@ export const primaryAction = (
 	canSign: boolean,
 ): PrimaryAction | null => {
 	if (state === "ready") return { label: "Submit", enabled: true }
+	if (state === "awaiting-authorization")
+		return hasWallet
+			? { label: "Authorize", enabled: canSign }
+			: { label: "Connect a wallet to authorize", enabled: false }
 	if (state !== "valid") return null
 	return hasWallet
 		? { label: "Sign", enabled: canSign }
@@ -434,7 +605,7 @@ export const describeCollected = (
 	weight: number,
 	signers: AccountSigners,
 ): string => {
-	const threshold = signers.thresholds.med
+	const threshold = requiredWeight(signers)
 	return uniformWeights(signers.signers)
 		? `${weight} of ${threshold} signatures`
 		: `weight ${weight} of threshold ${threshold}`
@@ -445,8 +616,8 @@ type ModalHandlers = { onClose: () => void; onRetry: () => void }
 const EMERGENCY_ACTIONS: ReadonlySet<string> = new Set<EmergencyModalAction>([
 	"pause-vault",
 	"unpause-vault",
-	"raise-ripcord",
-	"lower-ripcord",
+	"pause-nav",
+	"unpause-nav",
 	"clear-latest",
 	"pause-token",
 	"unpause-token",
@@ -481,6 +652,15 @@ export function toModalProps(
 			}
 		case "deploy":
 			return { action, status, amount: args[0]?.value ?? "", ...handlers }
+		case "legal-transfer": {
+			const [from, to, shares] = args.map(({ value }) => value)
+			return {
+				action,
+				status,
+				value: `${shares ?? ""} shares from ${from ?? ""} to ${to ?? ""}`,
+				...handlers,
+			}
+		}
 		default:
 			if (isEmergency(action)) return { action, status, ...handlers }
 			return {

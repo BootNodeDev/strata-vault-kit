@@ -12,14 +12,24 @@ import {
 	type EpochInfo,
 	type EpochStatus,
 	type RedeemRequest,
+	type VaultChange,
+	type VaultPendingChange,
+	type WindDownInfo,
 } from "./clients/async_vault/src/index"
+import { Client as ComplianceApi } from "./clients/compliance/src/index"
 import { Client as IdentityVerifierApi } from "./clients/identity_verifier/src/index"
 import {
 	Client as NavOracleApi,
 	type NavReport,
+	type OracleChange,
+	type OraclePendingChange,
 	type OracleState,
 } from "./clients/nav_oracle/src/index"
-import { Client as ShareTokenApi } from "./clients/share_token/src/index"
+import {
+	Client as ShareTokenApi,
+	type TokenChange,
+	type TokenPendingChange,
+} from "./clients/share_token/src/index"
 
 export type {
 	AssetApi,
@@ -30,9 +40,16 @@ export type {
 	IdentityVerifierApi,
 	NavOracleApi,
 	NavReport,
+	OracleChange,
+	OraclePendingChange,
 	OracleState,
 	RedeemRequest,
 	ShareTokenApi,
+	TokenChange,
+	TokenPendingChange,
+	VaultChange,
+	VaultPendingChange,
+	WindDownInfo,
 }
 
 export interface Signer {
@@ -63,6 +80,19 @@ export const connectAsyncVault = async (
 	options?: ConnectOptions,
 ): Promise<AsyncVaultApi> =>
 	new AsyncVaultApi(clientOptions(contractId, signer, options))
+
+// The spec is embedded in the generated client; building one calls no contract.
+export const generatedSpecs = () => {
+	const options = clientOptions("")
+	return [
+		new AssetApi(options).spec,
+		new AsyncVaultApi(options).spec,
+		new ComplianceApi(options).spec,
+		new IdentityVerifierApi(options).spec,
+		new NavOracleApi(options).spec,
+		new ShareTokenApi(options).spec,
+	]
+}
 
 export const isUserRejection = (error: unknown): boolean =>
 	error instanceof AssembledTransaction.Errors.UserRejected

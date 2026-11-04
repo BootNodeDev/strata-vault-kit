@@ -3,8 +3,9 @@
 /// same laws.
 pub(crate) trait FulfilmentTiming {
     /// The moment an epoch becomes priceable. Read once, when the epoch
-    /// closes, so a later change to the notice cannot move it.
-    fn priceable_at(closed_at: u64, notice: u64) -> u64;
+    /// closes, so a later change to the notice cannot move it. `None` when
+    /// that moment does not fit a `u64`.
+    fn priceable_at(closed_at: u64, notice: u64) -> Option<u64>;
 
     fn notice_elapsed(now: u64, priceable_at: u64) -> bool;
 
@@ -15,8 +16,8 @@ pub(crate) trait FulfilmentTiming {
 pub(crate) struct StandardTiming;
 
 impl FulfilmentTiming for StandardTiming {
-    fn priceable_at(closed_at: u64, notice: u64) -> u64 {
-        closed_at.saturating_add(notice)
+    fn priceable_at(closed_at: u64, notice: u64) -> Option<u64> {
+        closed_at.checked_add(notice)
     }
 
     fn notice_elapsed(now: u64, priceable_at: u64) -> bool {

@@ -1,7 +1,17 @@
+import { xdr } from "@stellar/stellar-sdk"
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { deferred, investorAddress, renderWithWallet } from "./testSupport"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { RWAError } from "../../../app-lib/clients/identity_verifier/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import {
+	contractEvent,
+	deferred,
+	investorAddress,
+	renderWithWallet,
+	succeededWith,
+} from "./testSupport"
 import { useClaimRedeem } from "./useClaimRedeem"
 import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
@@ -79,11 +89,12 @@ describe("useClaimRedeem", () => {
 			expect(result.current.status).toEqual({
 				status: "confirmed",
 				assetsClaimed: 50_0000000n,
+				sharesReturned: false,
 			}),
 		)
 
 		expect(vaultMock.claim_redeem).toHaveBeenCalledWith({
-			caller: investorAddress,
+			holder: investorAddress,
 			epoch_id: epochId,
 		})
 	})
@@ -103,6 +114,29 @@ describe("useClaimRedeem", () => {
 		expect(result.current.status).toEqual({
 			status: "confirmed",
 			assetsClaimed: 0n,
+			sharesReturned: false,
+		})
+	})
+
+	it("reports the shares returned when a zero-price claim gives them back", async () => {
+		vaultMock.claim_redeem.mockResolvedValue({
+			simulation: undefined,
+			signAndSend: vi
+				.fn()
+				.mockResolvedValue(
+					succeededWith(0n, [
+						contractEvent("redeem_cancelled", xdr.ScVal.scvVoid()),
+					]),
+				),
+		})
+		const { result } = renderClaimRedeem()
+
+		await act(() => result.current.submit(epochId))
+
+		expect(result.current.status).toEqual({
+			status: "confirmed",
+			assetsClaimed: 0n,
+			sharesReturned: true,
 		})
 	})
 
@@ -132,7 +166,7 @@ describe("useClaimRedeem", () => {
 
 	it("does not touch cached requests, balance or share position when the vault refuses at simulation", async () => {
 		vaultMock.claim_redeem.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6035)" },
+			simulation: { error: simulationError(VaultError, "AlreadyClaimed") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderClaimRedeem()
@@ -146,7 +180,7 @@ describe("useClaimRedeem", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.claim_redeem.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6035)" },
+			simulation: { error: simulationError(VaultError, "AlreadyClaimed") },
 			signAndSend,
 		})
 		const { result } = renderClaimRedeem()
@@ -155,14 +189,20 @@ describe("useClaimRedeem", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6035 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "AlreadyClaimed"),
+				name: "AlreadyClaimed",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
 
 	it("refuses at simulation with the identity verifier's cross-contract code", async () => {
 		vaultMock.claim_redeem.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #304)" },
+			simulation: {
+				error: simulationError(RWAError, "IdentityVerificationFailed"),
+			},
 			signAndSend: vi.fn(),
 		})
 		const { result } = renderClaimRedeem()
@@ -171,7 +211,11 @@ describe("useClaimRedeem", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 304 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(RWAError, "IdentityVerificationFailed"),
+				name: "IdentityVerificationFailed",
+			},
 		})
 	})
 
