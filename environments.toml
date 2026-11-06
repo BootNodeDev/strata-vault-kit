@@ -65,6 +65,12 @@ constructor_args = '--asset share_token --share_token share_token --oracle nav_o
 # contract's, the token's, the oracle's and the vault's setup open, so its
 # vault refuses deposits with `SetupOpen`. The harness deploy closes all four.
 
+# The SEP-40 feed sits outside the vault's setup: nothing is wired to it, and it
+# reads the vault, its governance included, on every call.
+[development.contracts.sep40_feed]
+client = true
+constructor_args = "--vault async_vault"
+
 
 ### Staging environment configuration
 [staging.network]

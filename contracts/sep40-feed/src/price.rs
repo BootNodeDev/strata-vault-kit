@@ -1,6 +1,3 @@
-// Wired into the feed's constructor and entrypoints by a later task.
-#![allow(dead_code)]
-
 /// SEP-40 price decimals the feed answers.
 pub const DECIMALS: u32 = 14;
 /// One unit of the feed's price, at `DECIMALS`.
@@ -10,6 +7,7 @@ pub const ONE: i128 = 100_000_000_000_000;
 const WAD_TO_FEED_SHIFT: u32 = 4;
 
 /// Converts a WAD-scaled NAV per share into a SEP-40 price, floored.
+#[allow(dead_code)]
 pub(crate) fn share_price(
     nav_per_share: i128,
     asset_decimals: u32,
