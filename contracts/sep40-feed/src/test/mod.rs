@@ -1,5 +1,6 @@
 mod constructor;
 mod price;
+mod quotes;
 mod stubs;
 
 use soroban_sdk::{

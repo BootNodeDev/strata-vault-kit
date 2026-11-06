@@ -7,7 +7,6 @@ pub const ONE: i128 = 100_000_000_000_000;
 const WAD_TO_FEED_SHIFT: u32 = 4;
 
 /// Converts a WAD-scaled NAV per share into a SEP-40 price, floored.
-#[allow(dead_code)]
 pub(crate) fn share_price(
     nav_per_share: i128,
     asset_decimals: u32,

@@ -130,24 +130,42 @@ impl PriceFeed for Sep40Feed {
         ]
     }
 
-    /// Decimal places every price carries: always `DECIMALS`.
+    /// Decimal places every price carries: always `DECIMALS` (14).
     fn decimals(_e: &Env) -> u32 {
         DECIMALS
     }
 
-    /// Seconds between price records: the oracle's freshness window.
+    /// Seconds a report stays current: the vault's current oracle's
+    /// `freshness_duration`. `0` when the vault or the oracle cannot be read,
+    /// or the window does not fit a `u32`, `u32::MAX`.
     fn resolution(e: &Env) -> u32 {
         quote::resolution(e)
     }
 
-    /// The price of `asset` recorded at `timestamp`, if any.
+    /// The price of `asset` at `timestamp`, in `DECIMALS`, if the standing
+    /// report covered that second.
+    ///
+    /// # Arguments
+    ///
+    /// * `asset` - The share token or the vault's base asset.
+    /// * `timestamp` - Ledger seconds to price at; later than the current
+    ///   ledger time gives `None`.
+    ///
+    /// `None` when `asset` is neither, the vault is winding down, its oracle
+    /// is not `Valid`, `timestamp` falls outside `[attested_at,
+    /// attested_at + resolution)`, or any read fails.
     fn price(e: &Env, asset: Asset, timestamp: u64) -> Option<PriceData> {
         quote::at(e, &asset, timestamp)
     }
 
-    /// Up to `records` most recent prices of `asset`, newest first, if any.
-    /// The feed keeps no history, so this is the latest price alone, or
+    /// Up to `records` most recent prices of `asset`, in `DECIMALS`, newest
+    /// first. The feed keeps no history, so this is `lastprice` alone, or
     /// `None` when `records` is `0`.
+    ///
+    /// # Arguments
+    ///
+    /// * `asset` - The share token or the vault's base asset.
+    /// * `records` - Prices requested; only `0` changes the answer.
     fn prices(e: &Env, asset: Asset, records: u32) -> Option<Vec<PriceData>> {
         if records == 0 {
             return None;
@@ -155,7 +173,16 @@ impl PriceFeed for Sep40Feed {
         quote::latest(e, &asset).map(|data| vec![e, data])
     }
 
-    /// The most recent price of `asset`, if any.
+    /// The most recent price of `asset`, in `DECIMALS`, timestamped at the
+    /// report's attestation time.
+    ///
+    /// # Arguments
+    ///
+    /// * `asset` - The share token or the vault's base asset.
+    ///
+    /// `None` when `asset` is neither, the vault is winding down, its oracle
+    /// is not `Valid`, or any read fails. A vault pause or a proposed
+    /// wind-down does not clear it.
     fn lastprice(e: &Env, asset: Asset) -> Option<PriceData> {
         quote::latest(e, &asset)
     }
