@@ -27,8 +27,9 @@ fn winding_down(wind_down: &Option<WindDownInfo>) -> bool {
     )
 }
 
-/// The most recent price of `asset`, if any.
-pub(crate) fn latest(e: &Env, asset: &Asset) -> Option<PriceData> {
+/// The latest price of `asset` and the oracle it came from, so a caller that
+/// also needs the oracle's own state reads it once, not twice.
+fn quote<'a>(e: &'a Env, asset: &Asset) -> Option<(PriceData, OracleFeedClient<'a>)> {
     let vault = VaultViewClient::new(e, &bound_vault(e));
     let share_token = ok(vault.try_share_token())?;
     let base = ok(vault.try_asset())?;
@@ -57,24 +58,29 @@ pub(crate) fn latest(e: &Env, asset: &Asset) -> Option<PriceData> {
         ONE
     };
 
-    Some(PriceData { price, timestamp })
+    Some((PriceData { price, timestamp }, oracle))
 }
 
-/// The price of `asset` recorded at `timestamp`, if any.
+/// The most recent price of `asset`, if any.
+pub(crate) fn latest(e: &Env, asset: &Asset) -> Option<PriceData> {
+    quote(e, asset).map(|(data, _)| data)
+}
+
+/// The latest report's price if its window covers `timestamp`, which must
+/// not be later than the ledger time.
 pub(crate) fn at(e: &Env, asset: &Asset, timestamp: u64) -> Option<PriceData> {
     if timestamp > e.ledger().timestamp() {
         return None;
     }
 
-    let data = latest(e, asset)?;
-    let oracle_address = ok(VaultViewClient::new(e, &bound_vault(e)).try_oracle())?;
-    let freshness = ok(OracleFeedClient::new(e, &oracle_address).try_freshness_duration())?;
+    let (data, oracle) = quote(e, asset)?;
+    let freshness = ok(oracle.try_freshness_duration())?;
     let expires_at = data.timestamp.checked_add(freshness)?;
 
     (data.timestamp <= timestamp && timestamp < expires_at).then_some(data)
 }
 
-/// Seconds between price records.
+/// The current oracle's freshness window, in seconds.
 pub(crate) fn resolution(e: &Env) -> u32 {
     let oracle_address = match ok(VaultViewClient::new(e, &bound_vault(e)).try_oracle()) {
         Some(address) => address,

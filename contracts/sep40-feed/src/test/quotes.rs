@@ -195,6 +195,23 @@ fn resolution_is_zero_when_the_oracle_cannot_answer() {
 }
 
 #[test]
+fn price_needs_the_window_but_lastprice_does_not() {
+    let f = setup();
+    f.oracle.trap(&Symbol::new(&f.e, "freshness_duration"));
+
+    assert_eq!(f.feed.lastprice(&f.share_asset()), Some(at(PRICE, 10_000)));
+    assert_eq!(f.feed.price(&f.share_asset(), &10_000), None);
+}
+
+#[test]
+fn a_window_that_overflows_the_ledger_clock_gives_no_price() {
+    let f = setup();
+    f.report(|r| r.freshness_duration = u64::MAX);
+
+    assert_eq!(f.feed.price(&f.share_asset(), &10_000), None);
+}
+
+#[test]
 fn the_feed_follows_an_oracle_swap() {
     let f = setup();
     let second = super::OracleStubClient::new(&f.e, &f.e.register(super::OracleStub, ()));

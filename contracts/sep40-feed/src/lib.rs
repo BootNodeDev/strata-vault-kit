@@ -7,8 +7,9 @@
 //! - **It follows the vault.** Every quote reads the vault's asset, share
 //!   token, oracle and wind-down state. The cost: about nine reads per quote.
 //! - **No price unless valid and quiet.** A price answers only while the
-//!   oracle reports `Valid` and no wind-down is active. The cost: a vault
-//!   pause holds the price away too.
+//!   oracle reports `Valid` and no wind-down is active. The cost: an oracle
+//!   NAV pause holds the price away too; a vault pause or a proposed
+//!   wind-down does not.
 //! - **A failing read is no price.** A read that fails, the vault's or the
 //!   oracle's, answers as if no price exists. The cost: a broken oracle looks
 //!   like a missing price.
@@ -136,8 +137,8 @@ impl PriceFeed for Sep40Feed {
     }
 
     /// Seconds a report stays current: the vault's current oracle's
-    /// `freshness_duration`. `0` when the vault or the oracle cannot be read,
-    /// or the window does not fit a `u32`, `u32::MAX`.
+    /// `freshness_duration`. `0` when the vault or the oracle cannot be
+    /// read; `u32::MAX` when the window does not fit a `u32`.
     fn resolution(e: &Env) -> u32 {
         quote::resolution(e)
     }
