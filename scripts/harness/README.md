@@ -20,6 +20,13 @@ npm run test:unit
 
 CI runs these in the `js` job through the root `npm run test`.
 
+`npm run deploy:feed` adds a SEP-40 feed to a set deployed before the feed
+existed. It reads every other contract already in the record and deploys only
+the feed, bound to that record's vault; it writes the updated record and, on
+testnet, `environments.toml` and the README addresses table, the same as
+`npm run deploy` does. `npm run extend` covers the feed like any other
+contract in the record: it needs no changes once the feed is in it.
+
 ```sh
 # Run test suites
 npm run test:happy-path

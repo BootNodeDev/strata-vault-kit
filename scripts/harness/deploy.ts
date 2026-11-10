@@ -9,6 +9,7 @@ import type * as AsyncVaultModule from "../../app-lib/clients/async_vault/dist/i
 import type * as ComplianceModule from "../../app-lib/clients/compliance/dist/index.js"
 import type * as IdentityVerifierModule from "../../app-lib/clients/identity_verifier/dist/index.js"
 import type * as NavOracleModule from "../../app-lib/clients/nav_oracle/dist/index.js"
+import type * as Sep40FeedModule from "../../app-lib/clients/sep40_feed/dist/index.js"
 import type * as ShareTokenModule from "../../app-lib/clients/share_token/dist/index.js"
 
 import { ACCOUNT_NAMES, fund, pay, type Accounts } from "./lib/accounts.js"
@@ -36,6 +37,7 @@ import { ensureKeys } from "./lib/keys.js"
 import { network, type Network } from "./lib/network.js"
 import { readProvenance, type Provenance } from "./lib/provenance.js"
 import { withAccountRetry } from "./lib/rpc.js"
+import { stellarAsset } from "./lib/sep40.js"
 
 const RELEASE_DIR = join(REPO_ROOT, "target", "wasm32v1-none", "release")
 export const SHORT_WIND_DOWN_DIR = join(
@@ -145,12 +147,19 @@ async function deployContracts(
 	console.log("async_vault", asyncVault)
 	onDeployed?.("async_vault", asyncVault)
 
+	const sep40Feed = await deployContract(net, wasms.sep40_feed, deployer, {
+		vault: asyncVault,
+	})
+	console.log("sep40_feed", sep40Feed)
+	onDeployed?.("sep40_feed", sep40Feed)
+
 	return {
 		compliance,
 		identity_verifier: identityVerifier,
 		share_token: shareToken,
 		nav_oracle: navOracle,
 		async_vault: asyncVault,
+		sep40_feed: sep40Feed,
 	}
 }
 
@@ -328,6 +337,35 @@ async function finishVaultSetup(
 		throw new Error(`the vault is not wired: ${broken.join(", ")}`)
 }
 
+// The feed carries no state of its own, so following the vault means quoting
+// its asset and its share token: anything else is a feed bound to the wrong vault.
+export async function verifyFeed(
+	net: Network,
+	accounts: Accounts,
+	record: Deployment,
+	server: rpc.Server,
+): Promise<void> {
+	const { Client: Sep40Feed } = (await import(
+		clientEntry("sep40_feed")
+	)) as typeof Sep40FeedModule
+	const feed = new Sep40Feed(
+		clientOptions(net, record.contracts.sep40_feed, accounts.outsider, server),
+	)
+	const base = (await feed.base()).result
+	const assets = (await feed.assets()).result
+	const expectedBase = stellarAsset(record.asset.contract)
+	const expectedAssets = [stellarAsset(record.contracts.share_token)]
+	const follows =
+		JSON.stringify(base) === JSON.stringify(expectedBase) &&
+		JSON.stringify(assets) === JSON.stringify(expectedAssets)
+	if (!follows) {
+		throw new Error(
+			"sep40_feed does not quote the vault's asset and its share token",
+		)
+	}
+	console.log("sep40_feed follows the vault")
+}
+
 async function freshSet(
 	net: Network,
 	wasms: Record<ContractName, string>,
@@ -422,6 +460,7 @@ export async function deployThrowaway(
 	const deployment = await freshSet(net, wasms, provenance, keys, server)
 	await grantAndVerify(net, keys, deployment.contracts, server)
 	await finishVaultSetup(net, keys, deployment.contracts, server)
+	await verifyFeed(net, keys, deployment, server)
 	return { deployment, keys }
 }
 
@@ -465,6 +504,7 @@ async function main(): Promise<void> {
 
 	await grantAndVerify(net, accounts, record.contracts, server)
 	await finishVaultSetup(net, accounts, record.contracts, server)
+	await verifyFeed(net, accounts, record, server)
 
 	const kept = saveDeployment(record)
 	clearIncomplete(net.name)
