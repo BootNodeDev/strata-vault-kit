@@ -1,6 +1,6 @@
 # Authorization & Access Control Matrix
 
-This document provides the complete authorization and role model specification for the Strata Vault Kit across all five contracts (`AsyncVault`, `ShareToken`, `NavOracle`, `IdentityVerifier` and `Compliance`).
+This document provides the complete authorization and role model specification for the Strata Vault Kit across all six contracts (`AsyncVault`, `ShareToken`, `NavOracle`, `IdentityVerifier`, `Compliance` and `Sep40Feed`).
 
 ---
 
@@ -12,6 +12,7 @@ This document provides the complete authorization and role model specification f
    - Where an OpenZeppelin trait fixes a `caller` or `operator` argument (`pause`, `unpause`, `set_compliance`, `set_identity_verifier`), the entrypoint refuses any account other than the stored admin with `AdminRequired`, then asks that account to sign.
    - A role entrypoint checks the role of the `caller` or `operator` it names, then asks that account to sign. `legal_transfer` and `recover_balance` also ask the admin, a different account, to sign the same call.
    - The testnet stubs are the exception. The compliance contract's `bind_token`, `unbind_token`, `add_module_to` and `remove_module_from`, and the identity verifier's `set_claim_topics_and_issuers`, keep the `operator` argument their trait fixes but do not read it. `#[only_admin]` asks the stored admin to sign, so each still asks for one signature. Production replaces both stubs with external contracts (§5.4, §5.5).
+   - The SEP-40 feed has no stored admin. Its change calls read the vault's current `governance()` and ask it to sign, fresh on each call (§5.6).
 3. **Exit guarantee, with one hold**: A covered redemption claim pays out cash regardless of pause, staleness or allowlist status. A delisted investor exits through the cash path and cannot re-enter share circulation. A frozen investor is held: the vault refuses their requests, cancellations and claims, and pays them only after the freeze lifts.
 4. **Five Separate Authorities, plus the Vault's `manager` Role**:
    - **Governance (Admin)**: Root authority; upgrades, timelock parameters, custodian settings, unpause, oracle parameters, emergency NAV pause reset. As the share token's admin, it co-signs compliance's `legal_transfer` and `recover_balance`.
@@ -79,7 +80,7 @@ The following entrypoints are open to any caller on purpose:
 
 ---
 
-## 5. Complete Access Control Matrix Across All 5 Contracts
+## 5. Complete Access Control Matrix Across All 6 Contracts
 
 ### 5.1 AsyncVault (`contracts/async-vault`)
 
@@ -210,3 +211,25 @@ Tests: [`contracts/compliance/src/test/changes.rs`](../contracts/compliance/src/
 | `pending_changes` | Open view | None | None (view) |
 | `transfer_admin_role` | Admin | Instant during setup; `UseTimelock` after. A zero `live_until_ledger` cancels at once | `test::changes::only_the_admin_offers_or_cancels_a_hand_over`, `test::changes::after_setup_the_admin_hands_over_through_the_timelock`, `test::changes::a_cancelled_hand_over_no_longer_holds_setup_open`, `test::changes::a_hand_over_after_setup_is_cancelled_at_once` |
 | `accept_admin_transfer` | The pending admin's auth | A hand-over is pending; an applied `Admin` change stays open for seven days of ledgers; refused while the vault winds down (`WindDownActive`) | `test::changes::only_the_nominee_accepts_a_hand_over`, `test::changes::setup_cannot_finish_while_a_hand_over_is_pending`, `test::changes::the_hand_over_offer_lasts_seven_days_of_ledgers`, `test::changes::an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down` |
+
+### 5.6 Sep40Feed (`contracts/sep40-feed`)
+
+No stored admin: each change call reads the vault's current `governance()`
+and asks it to sign, so a vault admin hand-over carries over to the feed at
+once. `NoGovernance` when the vault names none, or cannot be read. Setup
+closes inside the constructor, which binds the vault and reads every view the
+feed will ever use, so admin changes are never instant: the only change the
+feed proposes is its own upgrade, and it always waits for the vault's
+timelock. The feed exposes no other admin power.
+
+Tests: [`contracts/sep40-feed/src/test/constructor.rs`](../contracts/sep40-feed/src/test/constructor.rs), [`contracts/sep40-feed/src/test/timelock.rs`](../contracts/sep40-feed/src/test/timelock.rs) and [`contracts/sep40-feed/src/test/kit.rs`](../contracts/sep40-feed/src/test/kit.rs).
+
+| Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
+|---|---|---|---|
+| `__constructor` | None: runs once, at deployment | `vault` must answer `asset`, `share_token`, `oracle`, `wind_down`, `governance` and `timelock_clock` (`NotAVault`) | `test::constructor::an_address_that_is_not_a_vault_is_refused`, `test::constructor::a_vault_whose_governance_view_fails_is_refused`, `test::constructor::a_vault_without_a_clock_is_refused`, `test::constructor::a_vault_whose_wind_down_view_fails_is_refused`, `test::constructor::the_feed_stores_no_admin` |
+| `propose_change` | The vault's `governance()`, read fresh on this call, signs | `NoGovernance` when the vault names none or cannot be read; `WindDownActive` while the vault winds down; `UpgradeAlreadyPending` while one already waits | `test::timelock::only_the_vaults_governance_proposes_cancels_and_applies`, `test::timelock::each_change_call_asks_the_vaults_governance_for_one_signature`, `test::timelock::a_vault_that_names_no_governance_refuses_every_change`, `test::timelock::nothing_is_proposed_or_applied_while_the_vault_winds_down`, `test::timelock::one_upgrade_waits_at_a_time`, `test::timelock::an_upgrade_shorter_than_a_raised_notice_never_lands` |
+| `cancel_change` | The vault's `governance()`, read fresh on this call, signs | `ChangeNotFound` when no pending change has that id | `test::timelock::only_the_vaults_governance_proposes_cancels_and_applies`, `test::timelock::a_cancelled_upgrade_is_gone` |
+| `apply_change` | The vault's `governance()`, read fresh on this call, signs | Timelocked on the vault's clock: `ChangeNotReady` before the delay, `VaultPaused` while paused, `WindDownActive` while winding down, `DelayBelowNotice` if the delay falls below a raised notice | `test::timelock::only_the_vaults_governance_proposes_cancels_and_applies`, `test::timelock::an_upgrade_waits_for_the_vaults_delay`, `test::timelock::a_vault_pause_holds_the_upgrade`, `test::timelock::nothing_is_proposed_or_applied_while_the_vault_winds_down`, `test::timelock::an_upgrade_shorter_than_a_raised_notice_never_lands` |
+| `pending_changes` | Open view | None | `test::timelock::an_upgrade_waits_for_the_vaults_delay` (the `eta` it reports) |
+| `base`, `assets`, `decimals`, `resolution`, `price`, `prices`, `lastprice`, `vault`, `setup_open` | Open view | None; each answers `None` or an empty result rather than failing on a bad read | `test::quotes::a_failing_read_gives_no_price`, `test::quotes::an_unknown_asset_gives_no_price`, `test::quotes::the_feed_follows_an_oracle_swap`, `test::kit::the_feed_quotes_a_kit_vault_through_its_oracle` |
+| `upgrade` | Not exposed | The feed's only upgrade path is `apply_change`; calling `upgrade` directly fails, as does any function the feed does not export | `test::timelock::the_feed_exposes_no_immediate_upgrade`, `test::kit::an_upgrade_is_signed_by_the_kit_vaults_governance` |

@@ -39,6 +39,8 @@ than its pending deposits, and once a wind-down is proposed.
 - [Grant differences](./docs/GRANT_DIFFERENCES.md) — where the built kit
   differs from the SCF grant proposal, what is not built yet, and the limits an
   adopter should know.
+- [Architecture decisions](./docs/adr/) — the hard-to-reverse choices behind
+  each component, and why.
 
 ## Status
 

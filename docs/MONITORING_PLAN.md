@@ -423,17 +423,18 @@ lists the powers that act at once.
 ### P6. Change proposed to the timelock
 
 - **Source:** `ChangeProposed`, with the change and its `eta`, on the vault,
-  the share token, the oracle and the compliance contract. The event's `eta`
-  is the one `pending_changes()` reports at that moment. Every second the
-  vault spends paused afterwards, a pause already running included, moves the
-  real one later, so P7 reads the `eta` from `pending_changes()`, which lists
-  what waits on each contract.
+  the share token, the oracle, the compliance contract and the SEP-40 feed.
+  The event's `eta` is the one `pending_changes()` reports at that moment.
+  Every second the vault spends paused afterwards, a pause already running
+  included, moves the real one later, so P7 reads the `eta` from
+  `pending_changes()`, which lists what waits on each contract.
 - **Threshold:** every one.
 - **Severity:** Critical for `Upgrade`, `Admin`, `GrantRole`, `RevokeRole`,
   the vault's `Oracle` and `Custodian`, the token's `Compliance` and
   `IdentityVerifier`, and every change on the compliance contract. Warning for
   the rest: `UpgradeDelay`, `Notice`, `WindDownDelay` and the oracle's
-  `Config`.
+  `Config`. The feed only ever queues `Upgrade`, so every proposal on it is
+  Critical.
 - **Told:** every governance signer, the guardian, and holders, since the delay
   is their notice.
 - **Response:** every governance signer checks it against what they agreed, and
@@ -444,8 +445,8 @@ lists the powers that act at once.
 
 ### P7. Change applied, cancelled or due
 
-- **Source:** `ChangeApplied` and `ChangeCancelled` on the four contracts; the
-  `eta` of each entry in `pending_changes()`.
+- **Source:** `ChangeApplied` and `ChangeCancelled` on the four contracts and
+  the SEP-40 feed; the `eta` of each entry in `pending_changes()`.
 - **Threshold:** every applied or cancelled change, and a pending change within
   24 hours of its `eta`.
 - **Severity:** Warning. **Told:** governance.
@@ -587,7 +588,7 @@ rules and module events come from OpenZeppelin's Stellar libraries.
 | `Paused`, `Unpaused` | `paused`, `unpaused` | Vault, share token | P1, P3 |
 | `RoleGranted`, `RoleRevoked` | `role_granted`, `role_revoked` | Vault, share token, oracle | P4 |
 | `AdminTransferInitiated`, `AdminTransferCompleted` | `admin_transfer_initiated`, `admin_transfer_completed` | Vault, share token, oracle, compliance | P5 |
-| `ChangeProposed`, `ChangeApplied`, `ChangeCancelled` | `change_proposed`, `change_applied`, `change_cancelled` | Vault, share token, oracle, compliance | P6, P7 |
+| `ChangeProposed`, `ChangeApplied`, `ChangeCancelled` | `change_proposed`, `change_applied`, `change_cancelled` | Vault, share token, oracle, compliance, SEP-40 feed | P6, P7 |
 | `DepositCapUpdated`, `NoticeSet`, `WindDownDelaySet`, `CustodianSet` | `deposit_cap_updated`, `notice_set`, `wind_down_delay_set`, `custodian_set` | Vault | P8 |
 | `WindDownProposed`, `WindDownProposalCancelled`, `WindDownActivated`, `WindDownRoundFinalized` | `wind_down_proposed`, `wind_down_proposal_cancelled`, `wind_down_activated`, `wind_down_round_finalized` | Vault | P9 |
 | `AddressFrozen`, `TokensFrozen`, `TokensUnfrozen`, `LegalTransfer`, `RecoverySuccess` | `address_frozen`, `tokens_frozen`, `tokens_unfrozen`, `legal_transfer`, `recovery_success` | Share token | P11 |

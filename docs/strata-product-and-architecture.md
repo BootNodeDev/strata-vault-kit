@@ -65,7 +65,8 @@ admin panel for the operator, both backend-free.
 Everything ships as an Apache-2.0 template with reproducible, verified deploys,
 so a team sets roughly ten parameters and five authorities, brands the frontend,
 and runs its own instance. A standard SEP-40 price-feed adapter, so integrators
-can consume the share price, is a planned addition and is not yet delivered.
+can consume the share price, ships with the kit; it is optional, one per vault,
+and a deployment that does not need it can skip it.
 
 What stays with the operator: legal entity, custody, KYC, the data behind the
 attestation, and what the numbers mean. Deliberately not a custody, compliance,
@@ -123,8 +124,8 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
   spend its grant on its business, not on vault plumbing.
 - A fund or asset manager tokenizing an off-chain strategy for verified
   investors.
-- An integrator or protocol consuming the vault share price the vault exposes
-  on-chain (a standard SEP-40 feed adapter is a planned addition).
+- An integrator or protocol consuming the vault share price through the kit's
+  SEP-40 feed, an optional adapter deployed alongside the vault.
 
 ## 8. Architecture
 
@@ -293,6 +294,11 @@ transactions that the authority multisigs sign. The chain never sees KYC data or
 valuation methodology, only their outputs: an allowlisted address, and an
 attested number with a hash of its evidence and, optionally, where to read it.
 
+The SEP-40 feed sits outside this wiring. It is an optional contract, deployed
+after the vault's own setup with just the vault's address, and nothing above
+is changed or re-signed to add it: the vault does not know the feed exists, and
+removing the feed takes nothing away from the vault.
+
 ### 8.3 Components and authorities
 
 | Component             | Role                                                                                                                                                                                                      | Controls                                                                                                                                                                      |
@@ -448,10 +454,15 @@ governance lifts it.
 **Integrator surface:** the oracle exposes the attested share price directly:
 the latest report (`latest`), which returns `nav_per_share`, `expires_at`,
 `accepted_at`, `proof_hash` and `proof_uri`; the price alone (`nav_per_share`);
-and the acceptance time alone (`attested_at`). The
-SEP-40 feed named in section 4 is an adapter over that surface scheduled for
-Tranche 3 and is not implemented yet; integrators read the oracle's own
-interface today.
+and the acceptance time alone (`attested_at`). The optional SEP-40 feed named
+in section 4 is an adapter over that surface, in SEP-40's own terms: `base`
+and `assets` name the vault's deposit asset and share token, `lastprice`
+answers the share price while the vault's oracle is `Valid` and no wind-down
+is active, and `price(asset, ts)` answers only for a `ts` the standing report
+actually covers. It gives no price once a wind-down starts, while the oracle
+is stale or paused, or when any read it depends on fails; a vault pause or a
+proposed wind-down does not stop it. See the
+[ADR](./adr/0001-sep40-feed.md) for why it is built this way.
 
 ### 8.6 Compliance
 

@@ -6,10 +6,10 @@ paths. Tranche 3's threat-to-test matrix builds on it.
 
 ## Scope
 
-- **Contracts.** `async-vault`, `share-token` and `nav-oracle`, the testnet
-  stubs `identity-verifier` and `compliance`, and the shared crates
-  `strata-timelock`, `strata-bindings` and `strata-storage`, at commit
-  `f3c03f8`.
+- **Contracts.** `async-vault`, `share-token`, `nav-oracle` and `sep40-feed`,
+  the testnet stubs `identity-verifier` and `compliance`, and the shared
+  crates `strata-timelock`, `strata-bindings`, `strata-storage` and `sep40`,
+  at commit `f3c03f8`.
 - **The console**, as far as signing goes: the `/sign` page that collects an
   authority's signatures (R12).
 - **Not the testnet deployment.** The deployment listed in the
@@ -381,12 +381,52 @@ without checking the feed's state.
   prices.
 - **Residual:** `nav_per_share()` and `latest()` return the stored report even
   when it is stale, out of band or paused. An integrator who skips `state()`
-  reads a price the vault would refuse. The SEP-40 adapter is not built yet.
+  reads a price the vault would refuse. The SEP-40 feed (O13) answers this for
+  a reader who goes through it instead of the oracle directly.
 - **Tests:** `the_nav_pause_holds_regardless_of_freshness` and
   `heartbeat_expiry_makes_it_stale` in
   [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
+
+### O13. An integrator relies on the SEP-40 feed
+
+An integrator reads the vault's share price through `sep40-feed` instead of
+the oracle directly.
+
+- **Control:** A price answers only when seven conditions all hold: the asset
+  asked for is the vault's share token or its base asset; the vault's
+  `share_token`, `asset`, `wind_down` and `oracle` reads all succeed; no
+  wind-down is active; the oracle reports `Valid`; the oracle's own reads
+  succeed and the converted price is above zero; and, for `price(asset, ts)`
+  only, `ts` falls inside `[attested_at, attested_at + freshness_duration)`
+  and is not later than the current ledger time. Any failed read, anywhere in
+  that chain, answers `None` rather than a stale or wrong price. Upgrading the
+  feed goes through the vault's timelock and is signed by the vault's current
+  `governance()`. The feed follows an oracle swap on its own: it reads
+  `vault.oracle()` fresh on every call, so the vault's own timing of the swap
+  is what an integrator sees too.
+- **Residual:** A vault pause and a proposed wind-down keep the price: both
+  hold the vault's own operations, not the feed's reads, so `lastprice`
+  answers through either. `resolution()` is the oracle's current
+  `freshness_duration`, which moves when governance changes the window or
+  swaps the oracle; a caller that reads it once and keeps it can be wrong
+  after such a change, which SEP-40's own text does not anticipate. Whoever
+  holds the vault's governance also upgrades the feed, and a vault admin
+  hand-over moves that power at once, with no delay of the feed's own. `base()`
+  and `assets()` fail outright, rather than answering `None`, once the vault
+  itself is archived and its reads trap. A read that exhausts its resource
+  budget still fails the caller's whole transaction, feed or no feed.
+- **Tests:** `a_stale_or_paused_oracle_gives_no_price`,
+  `an_active_wind_down_gives_no_price`,
+  `a_proposed_wind_down_or_a_vault_pause_keeps_the_price`,
+  `a_failing_read_gives_no_price`, `a_time_after_the_ledger_gives_no_price`,
+  `price_answers_inside_the_reports_window_only` and
+  `the_feed_follows_an_oracle_swap` in
+  [`sep40-feed/src/test/quotes.rs`](../contracts/sep40-feed/src/test/quotes.rs);
+  `only_the_vaults_governance_proposes_cancels_and_applies` and
+  `the_feed_follows_a_governance_hand_over_on_the_vault` in
+  [`sep40-feed/src/test/timelock.rs`](../contracts/sep40-feed/src/test/timelock.rs).
 
 ## Roles
 

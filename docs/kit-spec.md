@@ -131,7 +131,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 
 ## 2. Deploy-Time Parameters & Runtime Configuration
 
-Deploying the Strata Vault Kit involves five contracts configured via `environments.toml`. Parameters are split into immutable deploy-time constructor arguments and governance-tunable runtime settings.
+Deploying the Strata Vault Kit involves six contracts configured via `environments.toml`. Parameters are split into immutable deploy-time constructor arguments and governance-tunable runtime settings.
 
 ### Deploy-Time Parameters (`constructor_args`)
 
@@ -163,6 +163,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`async_vault`** | `roles.manager` | `Address` | Account that gets the vault's `manager` role (closes epochs); a role, not one of the five authorities | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.compliance` | `Address` | Compliance multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.attester` | `Address` | Attestation authority. Not read: nothing checks that it matches the oracle's attester | `async_vault.constructor_args` |
+| **`sep40_feed`** | `vault` | `Address` | The vault this feed quotes. Must answer `VaultView` (`asset`, `share_token`, `oracle`, `wind_down`, `governance`) and `timelock_clock`, or the constructor refuses it (`NotAVault`). The feed has no admin parameter: its upgrades are signed by the vault's current `governance()` | `sep40_feed.constructor_args` |
 
 The share token's decimals are fixed at 7 in its constructor; they are not a parameter.
 
@@ -367,12 +368,17 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 | **`Compliance`** | `pending_changes` | Permissionless | None (view) | No |
 | **`Compliance`** | `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
+| **`Sep40Feed`** | `propose_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); refused while the vault winds down (`WindDownActive`) or an upgrade already waits (`UpgradeAlreadyPending`) | No |
+| **`Sep40Feed`** | `cancel_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); the change must be pending (`ChangeNotFound`) | No |
+| **`Sep40Feed`** | `apply_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); timelocked on the vault's clock (`ChangeNotReady`, `DelayBelowNotice`) | Refused if the vault is paused or winding down |
+| **`Sep40Feed`** | `base`, `assets`, `decimals`, `resolution`, `price`, `prices`, `lastprice`, `vault`, `setup_open`, `pending_changes` | Permissionless | None (views) | No |
 
 ---
 
 ## 4. Deployment Runbook Summary
 
-A clean deployment executes in three sequenced phases:
+A clean deployment executes in three sequenced phases, plus an optional
+fourth to add the SEP-40 feed:
 
 1. **Phase 1: Contract Deployment**
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
@@ -389,6 +395,8 @@ A clean deployment executes in three sequenced phases:
    - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit, redemption, seal or pricing before it.
 3. **Phase 3: Operational Parameterization**
    - Oracle reporter submits the genesis NAV attestation (`attest`). Deposits open only once it is valid, so post it before announcing the vault.
+4. **Phase 4 (optional): The SEP-40 feed**
+   - Deploy `sep40_feed` with the vault's address. There is nothing to wire: the feed reads the vault on every call, and the vault does not know the feed exists.
 
 ---
 
@@ -417,6 +425,7 @@ before any extension (see **Network settings**).
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance, the modules and bound tokens it writes, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
 | `async_vault`, `share_token`, `nav_oracle` | The four entries a grant writes: the account's role, its member-list slot, the member count and the role list | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change) extends all four. After that, a role check extends only that account's role entry; the slot, the count and the list are extended only by grants and by calls that list role members (such as the vault's `manager()` or the token's `get_role_member_count`) | 90 days (1,555,200 ledgers), once 89 days or less remain |
+| `sep40_feed` | Its instance, and each pending change it reads or writes | Every call that reads it, a quote or a view included, and every governance call (`propose_change`, `cancel_change`, `apply_change`); pending changes are extended as the other contracts' queues | Same |
 
 The kit's own lengths are the constants in `crates/strata-storage`
 (`PERSISTENT_EXTEND_AMOUNT`, `INSTANCE_EXTEND_AMOUNT`, and thresholds one day
@@ -599,6 +608,13 @@ name the token's vault with their setup closed. Like `finish_setup`, the token
 accepts an external module that does not answer `VaultBinding`, on trust. A new
 identity verifier must accept the vault's address in `verify_identity`.
 
+The SEP-40 feed reaches the vault through one more trait, in the other
+direction: `VaultView` (`crates/strata-bindings`), implemented by `async-vault`
+(`asset`, `share_token`, `oracle`, `wind_down`, `governance`). The feed itself
+implements `PriceFeed` (`crates/sep40`), the SEP-40 interface. A replacement
+vault must answer `VaultView` for the feed to quote it; the feed's constructor
+checks this once, at deployment.
+
 ---
 
 ## 7. Error Codes and Entrypoint Docs
@@ -616,9 +632,10 @@ for the same failure, so `304` says what failed, not where.
 | `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6077 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7019 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
+| `sep40_feed` | `FeedError` | 9000–9999 | 9001–9008 |
 
 The blocks are defined once, in `crates/strata-bindings` (`ORACLE_ERRORS`,
-`VAULT_ERRORS`, `TOKEN_ERRORS`, `COMPLIANCE_ERRORS`). Each contract declares
+`VAULT_ERRORS`, `TOKEN_ERRORS`, `COMPLIANCE_ERRORS`, `FEED_ERRORS`). Each contract declares
 its enum through `strata_bindings::error_enum!`, and the build fails if a code
 leaves its contract's block or two blocks overlap. A code is never reused: a
 removed variant leaves its number retired. The testnet identity verifier has
