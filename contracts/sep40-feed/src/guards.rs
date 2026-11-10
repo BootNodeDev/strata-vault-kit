@@ -1,8 +1,8 @@
 use soroban_sdk::{panic_with_error, Address, Env};
 use strata_bindings::VaultViewClient;
-use strata_timelock::{queue, ClockSourceClient};
+use strata_timelock::{queue, ClockSourceClient, TimelockHost};
 
-use crate::{bound_vault, FeedChange, FeedError};
+use crate::{bound_vault, governance, FeedChange, FeedError, Sep40Feed};
 
 /// Refuses an address that does not answer every view the feed reads from a
 /// vault, so the feed never binds to one it cannot follow.
@@ -41,5 +41,15 @@ pub(crate) fn no_upgrade_pending(e: &Env) {
         .any(|id| queue::pending::<FeedChange>(e, id).is_some());
     if pending {
         panic_with_error!(e, FeedError::UpgradeAlreadyPending);
+    }
+}
+
+/// A wind-down outranks even the one-upgrade-at-a-time check.
+pub(crate) fn vault_not_winding_down(e: &Env) {
+    if <Sep40Feed as TimelockHost>::clock(e)
+        .unwrap_or_else(|r| governance::refuse(e, r))
+        .winding_down
+    {
+        panic_with_error!(e, FeedError::WindDownActive);
     }
 }

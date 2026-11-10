@@ -43,6 +43,17 @@ fn a_vault_pause_holds_the_upgrade() {
     f.clock(|c| c.paused = true);
 
     refused(f.feed.try_apply_change(&id), FeedError::VaultPaused);
+
+    f.clock(|c| {
+        c.paused = false;
+        c.paused_secs = 3 * DAY_DURATION;
+    });
+
+    assert_eq!(
+        f.feed.pending_changes().get(0).unwrap().eta,
+        10_000 + MIN_DELAY + 3 * DAY_DURATION
+    );
+    refused(f.feed.try_apply_change(&id), FeedError::ChangeNotReady);
 }
 
 #[test]
@@ -152,6 +163,12 @@ fn the_feed_follows_a_governance_hand_over_on_the_vault() {
     f.sign_only_as(&next, "propose_change", (change.clone(),).into_val(&f.e));
     let new_id = f.feed.propose_change(&change);
     assert_ne!(new_id, id);
+
+    f.sign_only_as(&f.governance, "apply_change", (new_id,).into_val(&f.e));
+    missing_auth(f.feed.try_apply_change(&new_id));
+
+    f.sign_only_as(&next, "apply_change", (new_id,).into_val(&f.e));
+    refused(f.feed.try_apply_change(&new_id), FeedError::ChangeNotReady);
 
     f.sign_only_as(
         &f.governance,

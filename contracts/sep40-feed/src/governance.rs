@@ -44,10 +44,7 @@ fn vault_clock(e: &Env) -> Clock {
 }
 
 pub(crate) fn propose(e: &Env, change: FeedChange) -> u32 {
-    // A wind-down outranks even the one-upgrade-at-a-time check.
-    if vault_clock(e).winding_down {
-        refuse(e, Refusal::WindingDown);
-    }
+    guards::vault_not_winding_down(e);
     guards::no_upgrade_pending(e);
     let id = queue::propose::<Sep40Feed, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
