@@ -105,7 +105,9 @@ complete record is left alone.
 The record keeps `commit`, the commit checked out when the deploy ran, and
 `wasmHashes`, the SHA-256 of each Wasm file it deployed. The deploy does not
 rebuild, so build right before you deploy. With `uncommittedChanges: true`,
-the commit alone cannot reproduce the build.
+the commit alone cannot reproduce the build. A feed added later with
+`npm run deploy:feed` was built at its own commit: rebuild `sep40_feed` at
+`feedCommit` (and check `feedUncommittedChanges` the same way).
 
 Rebuild and compare on the same operating system and CPU as the deploy:
 
