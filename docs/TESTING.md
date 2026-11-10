@@ -13,23 +13,26 @@ nix develop -c cargo test
 `cargo test` and `cargo clippy` need no extra variable.
 `SOROBAN_SDK_BUILD_SYSTEM_SUPPORTS_SPEC_SHAKING_V2=1` matters only when `cargo`
 itself builds a contract for the Wasm target (see [AGENTS.md](../AGENTS.md)).
-The tests that upgrade the vault, the share token and the oracle to a real WASM
-build run only with `--features upgrade_wasm`, after five builds: the share
-token, the oracle, and a probe build of the token, of the oracle and of the
-vault, each a stand-in for its next version. Inside `nix develop`:
+The tests that upgrade the vault, the share token, the oracle and the feed to
+a real WASM build run only with `--features upgrade_wasm`, after seven
+builds: the share token, the oracle, the feed, and a probe build of the
+token, of the oracle, of the vault and of the feed, each a stand-in for its
+next version. Inside `nix develop`:
 
 ```sh
 stellar contract build --package share-token
 stellar contract build --package nav-oracle
+stellar contract build --package sep40-feed
 CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
 CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
 CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package async-vault --features upgrade_probe
-cargo test -p async-vault -p nav-oracle --features upgrade_wasm with_wasm
+CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package sep40-feed --features upgrade_probe
+cargo test -p async-vault -p nav-oracle -p sep40-feed --features upgrade_wasm with_wasm
 ```
 
 CI runs the same command and then `scripts/ci/check-tests-ran.sh`, which fails
-the step unless both `with_wasm` modules ran a passing test, because a filter
-that matches nothing makes `cargo test` pass.
+the step unless all three `with_wasm` modules ran a passing test, because a
+filter that matches nothing makes `cargo test` pass.
 
 The `short_wind_down` feature builds a vault whose wind-down minimum is zero,
 for a local harness only; its WASM carries the meta entry `build = short

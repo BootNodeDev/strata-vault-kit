@@ -313,5 +313,14 @@ impl PriceFeed for Sep40Feed {
     }
 }
 
+/// Stands in for a later feed version in the upgrade test. Never deployed.
+#[cfg(feature = "upgrade_probe")]
+#[contractimpl]
+impl Sep40Feed {
+    pub fn probe(_e: &Env) -> bool {
+        true
+    }
+}
+
 #[cfg(test)]
 mod test;

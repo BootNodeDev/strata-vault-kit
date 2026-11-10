@@ -234,3 +234,112 @@ fn governance_calls_restore_the_instance_ttl() {
     f.restores_the_instance(|| id = f.feed.propose_change(&change));
     f.restores_the_instance(|| f.feed.cancel_change(&id));
 }
+
+#[cfg(feature = "upgrade_wasm")]
+mod with_wasm {
+    use soroban_sdk::xdr::{ContractEventBody, ScError, ScErrorCode, ScErrorType, ScSymbol, ScVal};
+
+    use sep40::PriceData;
+
+    use crate::ChangeApplied;
+
+    use super::super::{setup_with, PRICE};
+    use super::*;
+
+    mod feed_v1 {
+        soroban_sdk::contractimport!(file = "../../target/wasm32v1-none/release/sep40_feed.wasm");
+    }
+
+    mod feed_probe {
+        soroban_sdk::contractimport!(
+            file = "../../target/upgrade-probe/wasm32v1-none/release/sep40_feed.wasm"
+        );
+    }
+
+    /// What a caller sees when the host refuses a call: every host error is
+    /// narrowed to this one.
+    fn host_refusal() -> soroban_sdk::Error {
+        soroban_sdk::Error::from_type_and_code(ScErrorType::Context, ScErrorCode::InvalidAction)
+    }
+
+    /// Whether the host refused a call to `function` because the contract
+    /// exports no function of that name. The reason is only in the
+    /// diagnostic events.
+    fn exports_no(e: &Env, function: &str) -> bool {
+        let missing = ScVal::Error(ScError::WasmVm(ScErrorCode::MissingValue));
+        let name = ScVal::Symbol(ScSymbol(function.try_into().unwrap()));
+        e.host()
+            .get_diagnostic_events()
+            .unwrap()
+            .0
+            .iter()
+            .any(|event| {
+                let ContractEventBody::V0(body) = &event.event.body;
+                body.topics.contains(&missing)
+                    && matches!(&body.data, ScVal::Vec(Some(args)) if args.contains(&name))
+            })
+    }
+
+    #[test]
+    fn the_feed_exposes_no_immediate_upgrade() {
+        let f = setup_with(|e, args| e.register(feed_v1::WASM, args));
+        let probe_hash = f.e.deployer().upload_contract_wasm(feed_probe::WASM);
+        let upgrader =
+            stellar_contract_utils::upgradeable::UpgradeableClient::new(&f.e, &f.feed.address);
+
+        assert_eq!(
+            upgrader.try_upgrade(&probe_hash, &f.governance),
+            Err(Ok(host_refusal()))
+        );
+        assert!(exports_no(&f.e, "upgrade"));
+        assert_eq!(
+            feed_probe::Client::new(&f.e, &f.feed.address).try_probe(),
+            Err(Ok(host_refusal()))
+        );
+        assert!(exports_no(&f.e, "probe"));
+    }
+
+    #[test]
+    fn the_feed_upgrades_through_the_timelock_and_keeps_following_the_vault() {
+        let f = setup_with(|e, args| e.register(feed_v1::WASM, args));
+        let probe_hash = f.e.deployer().upload_contract_wasm(feed_probe::WASM);
+        let change = FeedChange::Upgrade(probe_hash);
+        let id = f.feed.propose_change(&change);
+
+        let old_governance = f.governance.clone();
+        let next = Address::generate(&f.e);
+        f.vault.set_governance(&Some(next.clone()));
+        f.advance(MIN_DELAY);
+
+        f.sign_only_as(&old_governance, "apply_change", (id,).into_val(&f.e));
+        missing_auth(f.feed.try_apply_change(&id));
+        assert_eq!(f.feed.pending_changes().len(), 1);
+
+        f.sign_only_as(&next, "apply_change", (id,).into_val(&f.e));
+        f.feed.apply_change(&id);
+
+        let events = f.e.events().all().filter_by_contract(&f.feed.address);
+        assert_eq!(
+            events.events().last(),
+            Some(
+                &ChangeApplied {
+                    id,
+                    change: change.clone(),
+                }
+                .to_xdr(&f.e, &f.feed.address)
+            )
+        );
+
+        let probe = feed_probe::Client::new(&f.e, &f.feed.address);
+        assert!(probe.probe());
+        assert_eq!(f.feed.vault(), Some(f.vault.address.clone()));
+        assert_eq!(
+            f.feed.lastprice(&f.share_asset()),
+            Some(PriceData {
+                price: PRICE,
+                timestamp: 10_000,
+            })
+        );
+        assert_eq!(f.feed.pending_changes().len(), 0);
+    }
+}

@@ -158,11 +158,13 @@ jobs:
           set -o pipefail
           stellar contract build --package share-token
           stellar contract build --package nav-oracle
+          stellar contract build --package sep40-feed
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package async-vault --features upgrade_probe
-          cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm 2>&1 | tee upgrade-tests.log
-          scripts/ci/check-tests-ran.sh upgrade-tests.log test::upgrade::with_wasm test::governance::with_wasm
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package sep40-feed --features upgrade_probe
+          cargo test --locked -p async-vault -p nav-oracle -p sep40-feed --features upgrade_wasm with_wasm 2>&1 | tee upgrade-tests.log
+          scripts/ci/check-tests-ran.sh upgrade-tests.log test::upgrade::with_wasm test::governance::with_wasm test::timelock::with_wasm
 
   network:
     needs: changes
