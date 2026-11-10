@@ -1,8 +1,10 @@
 //! Proves the feed against the kit's real vault and oracle, not stubs.
 
+extern crate std;
+
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    Address, BytesN, Env, String,
+    testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Ledger as _},
+    Address, BytesN, Env, IntoVal, String, Symbol,
 };
 
 use async_vault::{AsyncVault, VaultRoles};
@@ -11,7 +13,7 @@ use nav_oracle::{NavInput, NavOracleContract, NavOracleContractClient, OracleCon
 use sep40::{Asset, PriceData};
 
 use super::PRICE;
-use crate::{Sep40Feed, Sep40FeedClient};
+use crate::{FeedChange, Sep40Feed, Sep40FeedClient};
 
 const WAD: i128 = 1_000_000_000_000_000_000;
 
@@ -94,4 +96,72 @@ fn the_feed_quotes_a_kit_vault_through_its_oracle() {
     );
     assert_eq!(feed.resolution(), 3_600);
     assert_eq!(feed.base(), Asset::Stellar(asset));
+}
+
+#[test]
+fn an_upgrade_is_signed_by_the_kit_vaults_governance() {
+    let e = Env::default();
+    e.mock_all_auths();
+    e.ledger().set_timestamp(10_000);
+
+    let asset = e
+        .register_stellar_asset_contract_v2(Address::generate(&e))
+        .address();
+    let share = e
+        .register_stellar_asset_contract_v2(Address::generate(&e))
+        .address();
+
+    let admin = Address::generate(&e);
+    let attester = Address::generate(&e);
+    let guardian = Address::generate(&e);
+    let oracle = NavOracleContractClient::new(
+        &e,
+        &e.register(
+            NavOracleContract,
+            (
+                admin,
+                attester,
+                guardian,
+                OracleConfig {
+                    freshness_duration: 3_600,
+                    cooldown_secs: 1,
+                    max_up_bps: 10_000,
+                    max_down_bps: 10_000,
+                    min_answer: MIN_ANSWER,
+                    max_answer: 1_000 * WAD,
+                },
+            ),
+        ),
+    );
+
+    let roles = VaultRoles {
+        governance: Address::generate(&e),
+        manager: Address::generate(&e),
+        treasury: Address::generate(&e),
+        guardian: Address::generate(&e),
+        compliance: Address::generate(&e),
+        attester: Address::generate(&e),
+    };
+    let governance = roles.governance.clone();
+    let vault = e.register(AsyncVault, (asset, share, oracle.address, roles));
+
+    let feed = Sep40FeedClient::new(&e, &e.register(Sep40Feed, (vault,)));
+    let change = FeedChange::Upgrade(BytesN::from_array(&e, &[7; 32]));
+
+    feed.propose_change(&change);
+
+    assert_eq!(
+        e.auths(),
+        std::vec![(
+            governance,
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    feed.address.clone(),
+                    Symbol::new(&e, "propose_change"),
+                    (change,).into_val(&e),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
 }

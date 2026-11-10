@@ -1,12 +1,18 @@
+extern crate std;
+
 mod constructor;
 mod kit;
 mod price;
 mod quotes;
 mod stubs;
+mod timelock;
 
 use soroban_sdk::{
-    testutils::{Address as _, Ledger as _},
-    Address, Env,
+    testutils::{
+        storage::Instance as _, Address as _, AuthorizedFunction, AuthorizedInvocation,
+        Ledger as _, MockAuth, MockAuthInvoke,
+    },
+    Address, Env, Symbol, Val,
 };
 use strata_bindings::{OracleFeedClient, OracleState};
 use strata_timelock::{Clock, MIN_DELAY};
@@ -18,6 +24,9 @@ pub(crate) use stubs::{
 };
 
 use crate::{FeedError, Sep40Feed, Sep40FeedClient};
+
+/// A margin past the instance's extend threshold, in ledgers.
+const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
 
 /// The vault's standing report, as `nav_per_share = 1.05` WAD, prices at the
 /// feed's 14 decimals.
@@ -77,6 +86,58 @@ impl Fixture<'_> {
             l.timestamp += secs;
             l.sequence_number += (secs / 5).max(1) as u32;
         });
+    }
+
+    #[allow(dead_code)]
+    fn instance_ttl(&self) -> u32 {
+        self.e
+            .as_contract(&self.feed.address, || self.e.storage().instance().get_ttl())
+    }
+
+    /// Lets the instance decay past its extend threshold, then checks the call
+    /// extends it back to the full TTL.
+    #[allow(dead_code)]
+    fn restores_the_instance(&self, call: impl FnOnce()) {
+        self.e
+            .ledger()
+            .with_mut(|l| l.sequence_number += TWO_DAYS_IN_LEDGERS);
+        assert!(self.instance_ttl() < strata_storage::INSTANCE_EXTEND_AMOUNT);
+        call();
+        assert_eq!(self.instance_ttl(), strata_storage::INSTANCE_EXTEND_AMOUNT);
+    }
+
+    /// Signs one call to the feed as `who` and nothing else, so the call
+    /// carries that account's signature but not the vault's governance.
+    #[allow(dead_code)]
+    fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<Val>) {
+        self.e.mock_auths(&[MockAuth {
+            address: who,
+            invoke: &MockAuthInvoke {
+                contract: &self.feed.address,
+                fn_name,
+                args,
+                sub_invokes: &[],
+            },
+        }]);
+    }
+
+    /// The last call asked `who` alone to sign, once, on exactly this call.
+    #[allow(dead_code)]
+    fn signed_once_by(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<Val>) {
+        assert_eq!(
+            self.e.auths(),
+            std::vec![(
+                who.clone(),
+                AuthorizedInvocation {
+                    function: AuthorizedFunction::Contract((
+                        self.feed.address.clone(),
+                        Symbol::new(&self.e, fn_name),
+                        args,
+                    )),
+                    sub_invocations: std::vec![],
+                },
+            )]
+        );
     }
 }
 
