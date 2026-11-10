@@ -117,7 +117,7 @@ shasum -a 256 target/wasm32v1-none/release/*.wasm
 
 Each hash should equal the matching entry in `wasmHashes`. A build on
 another platform can differ: CI's Linux build and a macOS build of the same
-commit hash differently for four of the five contracts, with no build path
+commit hash differently for five of the six contracts, with no build path
 in either.
 
 To check what the network runs, which needs no rebuild:

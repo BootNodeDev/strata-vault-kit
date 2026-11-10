@@ -9,7 +9,7 @@ paths. Tranche 3's threat-to-test matrix builds on it.
 - **Contracts.** `async-vault`, `share-token`, `nav-oracle` and `sep40-feed`,
   the testnet stubs `identity-verifier` and `compliance`, and the shared
   crates `strata-timelock`, `strata-bindings`, `strata-storage` and `sep40`,
-  at commit `f3c03f8`.
+  at commit `28d0261`.
 - **The console**, as far as signing goes: the `/sign` page that collects an
   authority's signatures (R12).
 - **Not the testnet deployment.** The deployment listed in the
@@ -416,7 +416,16 @@ the oracle directly.
   hand-over moves that power at once, with no delay of the feed's own. `base()`
   and `assets()` fail outright, rather than answering `None`, once the vault
   itself is archived and its reads trap. A read that exhausts its resource
-  budget still fails the caller's whole transaction, feed or no feed.
+  budget still fails the caller's whole transaction, feed or no feed. A feed
+  deployed against a different vault answers `base()` and `assets()` the same
+  as the real one whenever that vault returns the same `asset()` and
+  `share_token()`: those two calls alone do not identify a feed. An integrator
+  should pin the feed's contract ID from the README's
+  [Deployed addresses](../README.md#deployed-addresses), or check the feed's
+  own `vault()` against the vault it expects. The feed also reads both
+  tokens' `decimals()` on every quote: an upgradeable asset token that
+  changed its decimals would shift the feed's price by a power of ten with no
+  change to the vault's NAV; the vault itself does not depend on this.
 - **Tests:** `a_stale_or_paused_oracle_gives_no_price`,
   `an_active_wind_down_gives_no_price`,
   `a_proposed_wind_down_or_a_vault_pause_keeps_the_price`,

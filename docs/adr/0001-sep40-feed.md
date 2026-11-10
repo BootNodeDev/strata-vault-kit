@@ -45,11 +45,13 @@ it.
 
 `resolution()` returns the current oracle's `freshness_duration`, and
 `PriceData.timestamp` is the report's `attested_at`. The feed has no fixed
-ticks: a report stands for `freshness_duration` after the oracle accepts it,
-which is the honest period. SEP-40's text rounds the timestamp down to a
-multiple of the resolution and says the resolution never changes. We depart
-from both. Rounding would make a fresh report look older than it is, and the
-resolution changes when governance changes the window or swaps the oracle.
+ticks: a report stands for at most `freshness_duration` after the oracle
+accepts it, which is the honest period — the attester can set an earlier
+expiry (`contracts/nav-oracle/src/lib.rs:632-634`). SEP-40's text rounds the
+timestamp down to a multiple of the resolution and says the resolution never
+changes. We depart from both. Rounding would make a fresh report look older
+than it is, and the resolution changes when governance changes the window or
+swaps the oracle.
 
 Consequences: a consumer that reads the resolution once and keeps it can be
 wrong after such a change. It should check the timestamp against the ledger
