@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { accountSigners, uniformWeights } from "./accounts"
+import { accountSigners, requiredWeight, uniformWeights } from "./accounts"
 
 const { callMock, accountIdMock } = vi.hoisted(() => ({
 	callMock: vi.fn(),
@@ -99,5 +99,21 @@ describe("uniformWeights", () => {
 				{ key: "GSIGNERTWO", weight: 2 },
 			]),
 		).toBe(false)
+	})
+})
+
+describe("requiredWeight", () => {
+	const withMed = (med: number) => ({
+		signers: [{ key: "GKEY", weight: 1 }],
+		thresholds: { low: med, med, high: med },
+		sequence: "1",
+	})
+
+	it("needs one signature from a single-key account whose thresholds are zero", () => {
+		expect(requiredWeight(withMed(0))).toBe(1)
+	})
+
+	it("needs the medium threshold of a multisig account", () => {
+		expect(requiredWeight(withMed(3))).toBe(3)
 	})
 })

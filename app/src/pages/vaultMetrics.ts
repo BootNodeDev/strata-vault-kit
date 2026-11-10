@@ -43,14 +43,14 @@ export function toMetrics(
 
 	return [
 		metric(
-			"Liquid reserve",
+			"Withdrawable",
 			figures?.liquidReserve ?? null,
-			`${tokenSymbol} the vault holds now`,
+			`${tokenSymbol} held now, less cancellable deposits`,
 		),
 		metric(
 			"Committed",
 			figures?.committed ?? null,
-			`${tokenSymbol} owed on priced claims`,
+			`${tokenSymbol} owed to priced redemptions`,
 		),
 		metric("Uncovered · vault", uncovered, uncoveredNote(uncovered)),
 	]
@@ -159,16 +159,25 @@ export function toSizeFigures(
 	figures: VaultFigures | undefined,
 	isPending: boolean,
 ): FigureRow[] {
-	const figure = (label: string, raw: Amount | null): FigureRow =>
+	const figure = (
+		label: string,
+		raw: Amount | null,
+		note?: string,
+	): FigureRow =>
 		isPending
-			? { label, value: null, pending: true }
+			? { label, value: null, note, pending: true }
 			: {
 					label,
 					value: raw === null ? null : formatScaled(raw, AMOUNT_DECIMALS),
+					note,
 				}
 
 	return [
-		figure("Economic supply", figures?.economicSupply ?? null),
+		figure(
+			"Economic supply",
+			figures?.economicSupply ?? null,
+			"Shares outside the vault, plus priced deposits not yet claimed",
+		),
 		figure("Net deployed", figures?.netDeployed ?? null),
 	]
 }

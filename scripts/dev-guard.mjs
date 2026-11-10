@@ -7,15 +7,15 @@ const TOOLS = [
 	{
 		name: "Stellar CLI",
 		check: "stellar --version",
-		install: "cargo install --locked stellar-cli",
-		binstall: "cargo binstall -y --locked stellar-cli",
+		install: "cargo install --locked stellar-cli@27.0.0",
+		binstall: "cargo binstall -y --locked stellar-cli@27.0.0",
 		url: "https://developers.stellar.org/docs/tools/developer-tools/cli/install-cli",
 	},
 	{
 		name: "Stellar Scaffold CLI",
 		check: "stellar scaffold --version",
-		install: "cargo install --locked stellar-scaffold-cli",
-		binstall: "cargo binstall -y --locked stellar-scaffold-cli",
+		install: "cargo install --locked stellar-scaffold-cli@0.0.27",
+		binstall: "cargo binstall -y --locked stellar-scaffold-cli@0.0.27",
 		url: "https://github.com/stellar-scaffold/cli#quickstart-new-developers-welcome",
 	},
 ]

@@ -3,23 +3,11 @@ import { configDefaults, defineConfig } from "vitest/config"
 
 const setupFiles = [resolve(import.meta.dirname, "vitest.setup.ts")]
 
-// The generated bindings are fetched from the network at build time, so CI
-// tests run without them.
-const resolveGeneratedClients = {
-	alias: [
-		{
-			find: /^\.\/clients\/\w+\/src\/index$/,
-			replacement: resolve(import.meta.dirname, "vitest.clients.ts"),
-		},
-	],
-}
-
 export default defineConfig({
 	test: {
 		projects: [
 			{
 				root: "./app",
-				resolve: resolveGeneratedClients,
 				test: {
 					name: "app",
 					environment: "jsdom",
@@ -40,12 +28,11 @@ export default defineConfig({
 			},
 			{
 				root: "./app-lib",
-				resolve: resolveGeneratedClients,
 				test: {
 					name: "app-lib",
 					environment: "node",
 					include: ["**/*.test.ts"],
-					// `clients/` is generated and does not exist yet.
+					// Generated code, with no tests of its own.
 					exclude: [...configDefaults.exclude, "clients/**"],
 				},
 			},

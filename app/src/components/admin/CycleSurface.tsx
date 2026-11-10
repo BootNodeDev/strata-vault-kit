@@ -73,6 +73,16 @@ const FigureRows: React.FC<{ rows: FigureRow[] }> = ({ rows }) => (
 					<Skeleton
 						className={`${typeStyles.railValue} ${styles.rowSkeleton}`}
 					/>
+				) : row.href !== undefined && row.value !== null ? (
+					<a
+						className={`${typeStyles.railValue} ${styles.rowLink}`}
+						href={row.href}
+						target="_blank"
+						rel="noreferrer"
+						title={row.value}
+					>
+						{row.value}
+					</a>
 				) : (
 					<span
 						className={`${typeStyles.railValue} ${
@@ -103,7 +113,7 @@ const Group: React.FC<{ group: CycleGroup }> = ({ group }) => (
 	</div>
 )
 
-const Section: React.FC<{
+export const Section: React.FC<{
 	title: string
 	state: ListState<unknown>
 	unreadable: string
@@ -185,8 +195,11 @@ const Detail: React.FC<{ parts: ActivityDetail }> = ({ parts }) => (
 	</>
 )
 
-const ActivityTable: React.FC<{ rows: ActivityRow[] }> = ({ rows }) => (
-	<Table name="Recent activity" columns={ACTIVITY_COLUMNS}>
+export const ActivityTable: React.FC<{
+	rows: ActivityRow[]
+	name?: string
+}> = ({ rows, name = "Recent activity" }) => (
+	<Table name={name} columns={ACTIVITY_COLUMNS}>
 		{rows.map((row) => (
 			<tr key={row.key}>
 				<td className={figureCell}>{row.when}</td>

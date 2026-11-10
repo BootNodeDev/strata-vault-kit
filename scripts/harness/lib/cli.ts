@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process"
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { readFileSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, join } from "node:path"
 import { promisify } from "node:util"
 
 import {
+	BindingGenerator,
 	Contract,
 	StrKey,
 	type Asset,
@@ -12,6 +13,8 @@ import {
 	type rpc,
 } from "@stellar/stellar-sdk"
 
+import { writeClient } from "../../lib/clients.mjs"
+import { REPO_ROOT } from "./deployment.js"
 import { type Network } from "./network.js"
 
 const run = promisify(execFile)
@@ -42,14 +45,17 @@ async function exec(
 	}
 }
 
-async function stellar(
+export async function stellar(
 	args: readonly string[],
 	options: Record<string, unknown> = {},
 ): Promise<string> {
 	return exec("stellar", args, options)
 }
 
-function rpcArgs(net: Network): string[] {
+/** The two settings every network command needs. */
+export type Rpc = Pick<Network, "rpcUrl" | "passphrase">
+
+export function rpcArgs(net: Rpc): string[] {
 	return ["--rpc-url", net.rpcUrl, "--network-passphrase", net.passphrase]
 }
 
@@ -130,36 +136,68 @@ export async function ensureAssetContract(
 	return deployAssetContract(net, asset, source)
 }
 
-export async function generateClient(
-	wasm: string,
-	outDir: string,
-): Promise<void> {
-	await stellar([
-		"contract",
-		"bindings",
-		"typescript",
-		"--wasm",
-		wasm,
-		"--output-dir",
-		outDir,
-		"--overwrite",
-	])
-	const pkgPath = join(outDir, "package.json")
-	if (existsSync(pkgPath)) {
-		const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
-			dependencies?: Record<string, string>
-		}
-		if (pkg.dependencies?.["@stellar/stellar-sdk"]) {
-			pkg.dependencies["@stellar/stellar-sdk"] = "16.1.0"
-			writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n")
-		}
+export type ClientPackageJson = Record<string, unknown> & {
+	dependencies?: Record<string, string>
+}
+
+/** Pins a generated client's stellar-sdk dependency, leaving other packages untouched. */
+export function pinClientSdk<T extends ClientPackageJson>(
+	pkg: T,
+	version: string,
+): T {
+	if (pkg.dependencies?.["@stellar/stellar-sdk"] === undefined) return pkg
+	return {
+		...pkg,
+		dependencies: { ...pkg.dependencies, "@stellar/stellar-sdk": version },
 	}
-	// TypeScript 6 rejects the CLI-generated tsconfig without an explicit rootDir.
+}
+
+export function rootSdkVersion(): string {
+	const rootPkg = JSON.parse(
+		readFileSync(join(REPO_ROOT, "package.json"), "utf8"),
+	) as { overrides?: Record<string, string> }
+	const version = rootPkg.overrides?.["@stellar/stellar-sdk"]
+	if (version === undefined) {
+		throw new Error(
+			'root package.json is missing overrides["@stellar/stellar-sdk"]',
+		)
+	}
+	return version
+}
+
+export const wasmGenerator = (wasm: string): BindingGenerator =>
+	BindingGenerator.fromWasm(readFileSync(wasm))
+
+/** Writes a client's SDK bindings to `outDir`, named after it, with its stellar-sdk pinned. */
+export function writeClientSources(
+	outDir: string,
+	generator: BindingGenerator,
+	sdkVersion: string,
+): void {
+	writeClient(outDir, generator.generate({ contractName: basename(outDir) }))
+	const pkgPath = join(outDir, "package.json")
+	const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as ClientPackageJson
+	const pinned = pinClientSdk(pkg, sdkVersion)
+	if (pinned !== pkg) {
+		writeFileSync(pkgPath, JSON.stringify(pinned, null, 2) + "\n")
+	}
+}
+
+/** Writes a client's sources and compiles its `dist/`, which the harness imports. */
+export async function generateClient(
+	outDir: string,
+	generator: BindingGenerator,
+	sdkVersion: string,
+): Promise<void> {
+	writeClientSources(outDir, generator, sdkVersion)
+	// TypeScript 6 needs the rootDir and the node types the generated tsconfig leaves to defaults.
 	await exec(process.execPath, [
 		tsc,
 		"-p",
 		outDir,
 		"--rootDir",
 		join(outDir, "src"),
+		"--types",
+		"node",
 	])
 }

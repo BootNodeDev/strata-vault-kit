@@ -1,3 +1,5 @@
+use stellar_access::access_control::AccessControlError;
+
 use super::*;
 
 #[test]
@@ -91,18 +93,26 @@ fn an_open_epoch_cannot_be_fulfilled() {
     let f = setup();
     f.attest(wad(2));
 
-    assert!(f.vault.try_fulfill_epoch(&1).is_err());
+    refused(f.vault.try_fulfill_epoch(&1), VaultError::EpochNotPending);
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Open);
 }
 
 #[test]
 fn a_sealed_epoch_cannot_be_closed_again() {
     let f = setup();
-    f.close_epoch();
+    let sealed = f.close_epoch();
+    let record = f.vault.get_epoch(&sealed).unwrap();
+    f.advance(60);
+    // No entrypoint points the vault back at a sealed epoch.
+    f.e.as_contract(&f.vault.address, || {
+        crate::state::set_current_epoch(&f.e, sealed)
+    });
 
-    assert!(f.vault.try_fulfill_epoch(&1).is_err());
-    assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Pending);
-    assert_eq!(f.vault.current_epoch(), 2);
+    refused(
+        f.vault.try_close_epoch(&f.manager),
+        VaultError::EpochNotOpen,
+    );
+    assert_eq!(f.vault.get_epoch(&sealed).unwrap(), record);
 }
 
 #[test]
@@ -110,7 +120,10 @@ fn a_fulfilled_epoch_cannot_be_fulfilled_again() {
     let f = setup();
     let epoch = f.fulfill_epoch(wad(2));
 
-    assert!(f.vault.try_fulfill_epoch(&epoch).is_err());
+    refused(
+        f.vault.try_fulfill_epoch(&epoch),
+        VaultError::EpochNotPending,
+    );
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
 }
 
@@ -136,19 +149,16 @@ fn epochs_can_be_fulfilled_out_of_order_after_closing() {
 }
 
 #[test]
-#[should_panic(expected = "#2000")]
 fn a_non_manager_cannot_close() {
     let f = setup();
     let impostor = Address::generate(&f.e);
 
-    f.vault.close_epoch(&impostor);
-}
-
-#[test]
-fn the_admin_is_not_the_manager() {
-    let f = setup();
-
-    assert!(f.vault.try_close_epoch(&f.admin).is_err());
+    for who in [&impostor, &f.admin] {
+        assert_eq!(
+            f.vault.try_close_epoch(who),
+            Err(Ok(AccessControlError::Unauthorized.into()))
+        );
+    }
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Open);
 }
 
@@ -157,14 +167,13 @@ fn closing_needs_the_manager_authorisation() {
     let f = setup();
 
     f.e.set_auths(&[]);
-    assert!(f.vault.try_close_epoch(&f.manager).is_err());
+    missing_auth(f.vault.try_close_epoch(&f.manager));
     assert_eq!(f.vault.current_epoch(), 1);
 }
 
 #[test]
 fn anyone_may_fulfill_a_closed_epoch() {
     let f = setup();
-    let stranger = Address::generate(&f.e);
     let epoch = f.close_epoch();
     f.attest(wad(2));
 
@@ -175,5 +184,4 @@ fn anyone_may_fulfill_a_closed_epoch() {
         f.vault.get_epoch(&epoch).unwrap().status,
         EpochStatus::Fulfilled
     );
-    assert_eq!(f.shares(&stranger), 0);
 }

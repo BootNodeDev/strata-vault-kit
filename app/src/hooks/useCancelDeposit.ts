@@ -2,8 +2,9 @@ import { type Amount, type Signer } from "@stellar-scaffold/app-lib"
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 
 export type CancelDepositStatus = TransactionStatus<{ refundedAmount: Amount }>
@@ -11,6 +12,7 @@ export type CancelDepositStatus = TransactionStatus<{ refundedAmount: Amount }>
 export interface UseCancelDeposit {
 	status: CancelDepositStatus
 	submit: (epochId: bigint) => boolean
+	prepare: (epochId: bigint) => Release
 	reset: () => void
 }
 
@@ -18,7 +20,7 @@ export function useCancelDeposit(): UseCancelDeposit {
 	const call = useCallback(
 		(signer: Signer, epochId: bigint) =>
 			asyncVaultWriter(signer).then((vault) =>
-				vault.cancel_deposit({ from: signer.publicKey, epoch_id: epochId }),
+				vault.cancel_deposit({ holder: signer.publicKey, epoch_id: epochId }),
 			),
 		[],
 	)

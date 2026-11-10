@@ -29,6 +29,7 @@ export type InvestorRequest = {
 	amount: Amount
 	claimed: boolean
 	priceableAt: bigint
+	closedAt: bigint
 }
 
 export type ArchivedRequest = {
@@ -82,6 +83,7 @@ export function classifyRequest(
 			amount: amount as Amount,
 			claimed: read.value.claimed,
 			priceableAt: epoch.priceable_at,
+			closedAt: epoch.closed_at,
 		},
 	}
 }

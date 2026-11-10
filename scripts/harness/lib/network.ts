@@ -8,9 +8,14 @@ export interface OracleConfig {
 	freshness_duration: number
 	cooldown_secs: number
 	max_up_bps: number
-	max_down_bps: number | null
+	max_down_bps: number
 	min_answer: string
 	max_answer: string
+}
+
+export interface VaultConfig {
+	notice_secs: number
+	min_epoch_duration_secs: number
 }
 
 export type Funding =
@@ -22,12 +27,14 @@ export interface Network {
 	passphrase: string
 	funding: Funding
 	oracle: OracleConfig
+	vault: VaultConfig
 }
 
 // The band is the protocol's; only the two waits are the fixture's choice.
+// A fall of any size lands at once, as a real loss must.
 const band = {
 	max_up_bps: 1000,
-	max_down_bps: null,
+	max_down_bps: 10_000,
 	min_answer: (WAD / 2n).toString(),
 	max_answer: (WAD * 100n).toString(),
 }
@@ -35,6 +42,20 @@ const band = {
 // The quickstart image's standalone root key. Public, and worthless off a laptop.
 const QUICKSTART_ROOT =
 	"SC5O7VZUXDJ6JBDSZ74DSERXL7W3Y5LTOAMRF7RQRL3TAGAPS7LUVG3L"
+
+const LOCAL_COOLDOWN_SECS = 5
+const TESTNET_COOLDOWN_SECS = 60
+
+// The contract's own floor (MIN_EPOCH_DURATION_FLOOR): one day, so outsiders
+// cannot seal a stream of tiny epochs. Every network deploys with the floor
+// itself, the simplest minimum that is always in bounds.
+const MIN_EPOCH_DURATION_SECS = 24 * 60 * 60
+
+// Twice the cooldown, so a valuation attested after the close lands before the notice ends.
+const vaultConfigFor = (cooldownSecs: number): VaultConfig => ({
+	notice_secs: 2 * cooldownSecs,
+	min_epoch_duration_secs: MIN_EPOCH_DURATION_SECS,
+})
 
 const NETWORKS: Record<NetworkName, Network> = {
 	local: {
@@ -45,7 +66,12 @@ const NETWORKS: Record<NetworkName, Network> = {
 			kind: "root",
 			secret: process.env["HARNESS_ROOT_SECRET"] ?? QUICKSTART_ROOT,
 		},
-		oracle: { freshness_duration: 300, cooldown_secs: 5, ...band },
+		oracle: {
+			freshness_duration: 300,
+			cooldown_secs: LOCAL_COOLDOWN_SECS,
+			...band,
+		},
+		vault: vaultConfigFor(LOCAL_COOLDOWN_SECS),
 	},
 	testnet: {
 		name: "testnet",
@@ -53,8 +79,22 @@ const NETWORKS: Record<NetworkName, Network> = {
 			process.env["HARNESS_RPC_URL"] ?? "https://soroban-testnet.stellar.org",
 		passphrase: Networks.TESTNET,
 		funding: { kind: "friendbot", url: "https://friendbot.stellar.org" },
-		oracle: { freshness_duration: 3600, cooldown_secs: 60, ...band },
+		oracle: {
+			freshness_duration: 3600,
+			cooldown_secs: TESTNET_COOLDOWN_SECS,
+			...band,
+		},
+		vault: vaultConfigFor(TESTNET_COOLDOWN_SECS),
 	},
+}
+
+export function networkNamed(name: string): Network {
+	if (!Object.hasOwn(NETWORKS, name)) {
+		throw new Error(
+			`unknown network ${name}; expected ${Object.keys(NETWORKS).join(" or ")}`,
+		)
+	}
+	return NETWORKS[name as NetworkName]
 }
 
 export function network(): Network {

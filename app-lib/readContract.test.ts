@@ -1,8 +1,14 @@
 import { Address, nativeToScVal, xdr } from "@stellar/stellar-sdk"
 import type { Api } from "@stellar/stellar-sdk/rpc"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import {
+	contractErrorCode,
+	simulationError,
+} from "../app/src/test/contractErrorCode"
+import { OracleError } from "./clients/nav_oracle/src/index"
 import type { DepositRequest, EpochInfo, RedeemRequest } from "./contracts"
 import {
+	decodeTransactionEvents,
 	readContract,
 	readEpochRequests,
 	readEpochs,
@@ -44,7 +50,7 @@ const errorSimulation: Api.SimulateTransactionErrorResponse = {
 	latestLedger: 100,
 	events: [],
 	_parsed: true,
-	error: "HostError: Error(Contract, #3006)",
+	error: simulationError(OracleError, "NoRecord"),
 }
 
 describe("readContract", () => {
@@ -54,7 +60,7 @@ describe("readContract", () => {
 		expect(read).toEqual({ kind: "value", value: 42n })
 	})
 
-	it("parses the error code out of the simulation, never touching result", async () => {
+	it("parses the error code out of the simulation and names it, never touching result", async () => {
 		const read = await readContract(() =>
 			Promise.resolve({
 				simulation: errorSimulation,
@@ -64,7 +70,11 @@ describe("readContract", () => {
 			}),
 		)
 
-		expect(read).toEqual({ kind: "contract-error", code: 3006 })
+		expect(read).toEqual({
+			kind: "contract-error",
+			code: contractErrorCode(OracleError, "NoRecord"),
+			name: "NoRecord",
+		})
 	})
 
 	it("is unreadable when the call itself rejects", async () => {
@@ -182,6 +192,18 @@ function entryFor(
 	}
 }
 
+const trackInFlight = () => {
+	const tracker = { inFlight: 0, maxInFlight: 0 }
+	getLedgerEntriesMock.mockImplementation(async () => {
+		tracker.inFlight += 1
+		tracker.maxInFlight = Math.max(tracker.maxInFlight, tracker.inFlight)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		tracker.inFlight -= 1
+		return { entries: [], latestLedger: 100 }
+	})
+	return tracker
+}
+
 describe("readEpochRequests", () => {
 	beforeEach(() => {
 		getLedgerEntriesMock.mockReset()
@@ -296,6 +318,17 @@ describe("readEpochRequests", () => {
 		expect(result.get(5n)?.epoch).toEqual({ kind: "unreadable" })
 	})
 
+	it("reads three chunks one at a time and still returns every epoch", async () => {
+		const tracker = trackInFlight()
+		const epochIds = Array.from({ length: 150 }, (_, i) => BigInt(i + 1))
+
+		const result = await readEpochRequests(CONTRACT_ID, CONTROLLER, epochIds)
+
+		expect(getLedgerEntriesMock).toHaveBeenCalledTimes(3)
+		expect(tracker.maxInFlight).toBe(1)
+		expect([...result.keys()]).toEqual(epochIds)
+	})
+
 	it("marks only the failed chunk's keys unreadable, leaving the other chunk unaffected", async () => {
 		getLedgerEntriesMock
 			.mockRejectedValueOnce(new Error("network down"))
@@ -385,6 +418,17 @@ describe("readEpochs", () => {
 		expect(getLedgerEntriesMock).toHaveBeenCalledTimes(2)
 		expect(getLedgerEntriesMock.mock.calls[0]).toHaveLength(200)
 		expect(getLedgerEntriesMock.mock.calls[1]).toHaveLength(1)
+	})
+
+	it("reads three chunks one at a time and still returns every epoch", async () => {
+		const tracker = trackInFlight()
+		const epochIds = Array.from({ length: 450 }, (_, i) => BigInt(i + 1))
+
+		const result = await readEpochs(CONTRACT_ID, epochIds)
+
+		expect(getLedgerEntriesMock).toHaveBeenCalledTimes(3)
+		expect(tracker.maxInFlight).toBe(1)
+		expect([...result.keys()]).toEqual(epochIds)
 	})
 
 	it("marks only the failed chunk's epochs unreadable", async () => {
@@ -477,6 +521,28 @@ describe("readEvents", () => {
 					[symbolTopic("epoch_closed").toXDR("base64"), "*"],
 					[symbolTopic("epoch_fulfilled").toXDR("base64"), "*"],
 				],
+			},
+		])
+	})
+
+	it("matches every topic an event names after its symbol", async () => {
+		getHealthMock.mockResolvedValue({
+			latestLedger: 500_000,
+			oldestLedger: 1,
+		})
+		getEventsMock.mockResolvedValue({ events: [], cursor: "c" })
+
+		await readEvents(
+			[{ contractId: CONTRACT_ID, names: ["legal_transfer"], topics: 2 }],
+			SEVEN_DAYS_OF_LEDGERS,
+		)
+
+		const [request] = getEventsMock.mock.calls[0] as [{ filters: unknown[] }]
+		expect(request.filters).toEqual([
+			{
+				type: "contract",
+				contractIds: [CONTRACT_ID],
+				topics: [[symbolTopic("legal_transfer").toXDR("base64"), "*", "*"]],
 			},
 		])
 	})
@@ -964,5 +1030,65 @@ describe("readContractAdmin", () => {
 		expect(await readContractAdmin(CONTRACT_ID)).toEqual({
 			kind: "unreadable",
 		})
+	})
+})
+
+const HOLDER = "GAAZI4TCR3TY5OJHCTJC2A4QSY6CJWJH5IAJTGKIN2ER7LBNVKOCCWN7"
+
+const contractEvent = (topics: xdr.ScVal[], data: xdr.ScVal) =>
+	new xdr.ContractEvent({
+		ext: new xdr.ExtensionPoint(0),
+		contractId: null,
+		type: xdr.ContractEventType.contract(),
+		body: new xdr.ContractEventBody(
+			0,
+			new xdr.ContractEventV0({ topics, data }),
+		),
+	})
+
+describe("decodeTransactionEvents", () => {
+	it("decodes the name, topics and data of every event across operations", () => {
+		const converted = contractEvent(
+			[
+				xdr.ScVal.scvSymbol("deposit_converted_to_exit"),
+				nativeToScVal(Address.fromString(HOLDER)),
+			],
+			nativeToScVal(
+				{ epoch: 3n, into_epoch: 5n, shares: 7n },
+				{
+					type: {
+						epoch: ["symbol", "u64"],
+						into_epoch: ["symbol", "u64"],
+						shares: ["symbol", "i128"],
+					},
+				},
+			),
+		)
+		const transfer = contractEvent(
+			[xdr.ScVal.scvSymbol("transfer")],
+			nativeToScVal(1n, { type: "i128" }),
+		)
+
+		expect(decodeTransactionEvents([[converted], [transfer]])).toEqual([
+			{
+				name: "deposit_converted_to_exit",
+				topics: [HOLDER],
+				data: { epoch: 3n, into_epoch: 5n, shares: 7n },
+			},
+			{ name: "transfer", topics: [], data: 1n },
+		])
+	})
+
+	it("returns no events when the response carries none", () => {
+		expect(decodeTransactionEvents(undefined)).toEqual([])
+	})
+
+	it("skips an event whose first topic is not a name", () => {
+		const unnamed = contractEvent(
+			[nativeToScVal(1n, { type: "u64" })],
+			xdr.ScVal.scvVoid(),
+		)
+
+		expect(decodeTransactionEvents([[unnamed]])).toEqual([])
 	})
 })

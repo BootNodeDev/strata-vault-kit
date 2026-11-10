@@ -2,8 +2,9 @@ import { type Amount, type Signer } from "@stellar-scaffold/app-lib"
 import { useCallback } from "react"
 import { asyncVaultWriter } from "../config/clients"
 import {
-	useContractTransaction,
+	type Release,
 	type TransactionStatus,
+	useContractTransaction,
 } from "./useContractTransaction"
 import { cycleWriteKeys } from "./useCycleState"
 
@@ -14,6 +15,7 @@ export type FinalizeWindDownRoundStatus = TransactionStatus<{
 export interface UseFinalizeWindDownRound {
 	status: FinalizeWindDownRoundStatus
 	submit: () => boolean
+	prepare: () => Release
 	reset: () => void
 }
 

@@ -19,6 +19,13 @@ export const parseAccount = (text: string): string | undefined => {
 		: undefined
 }
 
+const HASH = /^[0-9a-f]{64}$/i
+
+export const parseHash = (text: string): string | undefined => {
+	const trimmed = text.trim()
+	return HASH.test(trimmed) ? trimmed.toLowerCase() : undefined
+}
+
 export type Condition = {
 	label: string
 	met: boolean | null
@@ -59,6 +66,7 @@ export type RailField = ActionField | SelectField | ConfirmField
 
 export type RailAction<F extends RailField = ActionField> = {
 	id: string
+	slot?: string
 	label: string
 	conditions: Condition[]
 	outcome: string | null
@@ -111,6 +119,7 @@ export const grantFor = (
 
 export type Spec<Id extends string, F extends RailField = ActionField> = {
 	id: Id
+	slot?: string
 	label: string
 	conditions: Condition[]
 	outcome: string | null
@@ -125,6 +134,7 @@ export const toAction = <Id extends string, F extends RailField>(
 	grant: Grant,
 ): RailAction<F> & { id: Id } => ({
 	id: spec.id,
+	...(spec.slot === undefined ? {} : { slot: spec.slot }),
 	label: spec.label,
 	conditions: spec.conditions,
 	outcome: spec.outcome,

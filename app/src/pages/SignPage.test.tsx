@@ -29,9 +29,12 @@ const { accountSignersMock, submitSignedMock, transactionStatusMock } =
 		transactionStatusMock: vi.fn(),
 	}))
 
+const tokenAdmin = "GTOKENADMINACCOUNT"
+
 vi.mock("../config/clients", () => ({
 	shareToken: async () => ({
 		identity_verifier: async () => ({ result: "CLIVEVERIFIER" }),
+		get_admin: async () => ({ result: tokenAdmin }),
 	}),
 }))
 
@@ -54,6 +57,22 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 		submitSigned: submitSignedMock,
 		transactionStatus: transactionStatusMock,
 		decodePending: (xdr: string): PendingTransaction => {
+			if (xdr === "xdr:transfer")
+				return {
+					transaction: { signedBy: [] } as unknown as Transaction,
+					source: authority,
+					sequence: "42",
+					expiresAt: new Date("2027-01-15T08:00:00Z"),
+					contractId: addresses.share_token,
+					fn: "legal_transfer",
+					args: [first, second, 25_000_000n, "ORDER-1", authority],
+					hash: "abc123",
+					authorization: {
+						address: tokenAdmin,
+						signed: false,
+						expirationLedger: 0,
+					},
+				}
 			const match = /^xdr:([^;]*)(;expired)?$/.exec(xdr)
 			if (match === null) {
 				throw new actual.InvalidPendingTransaction("not a transaction envelope")
@@ -73,6 +92,7 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 				fn: "set_deposit_cap",
 				args: [1_500_000_000n, authority],
 				hash: "abc123",
+				authorization: null,
 			}
 		},
 		signatureWeight: (transaction: Transaction, signers: AccountSigners) => {
@@ -122,6 +142,7 @@ const renderSign = (hash: string, address: string | undefined) => {
 		updateBalances: async () => {},
 		signTransaction:
 			walletSigns as unknown as WalletContextType["signTransaction"],
+		signAuthEntry: vi.fn() as unknown as WalletContextType["signAuthEntry"],
 	}
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false } },
@@ -334,5 +355,33 @@ describe("SignPage", () => {
 				"The account moved on; this transaction is no longer valid.",
 			),
 		).toBeTruthy()
+	})
+
+	it("asks the token admin to authorize a legal transfer before anyone signs", async () => {
+		renderSign("#xdr:transfer", tokenAdmin)
+
+		expect(
+			await screen.findByRole("heading", { name: "Make a legal transfer" }),
+		).toBeTruthy()
+		expect(screen.getByText("ORDER-1")).toBeTruthy()
+		expect(screen.getByText(short(tokenAdmin))).toBeTruthy()
+		expect(screen.getByText("Pending")).toBeTruthy()
+		expect(status().textContent).toBe("Awaiting the admin's authorization")
+		await waitFor(() => expect(button("Authorize").disabled).toBe(false))
+		noButton("Sign")
+		expect(
+			screen.getByText(
+				"The token admin authorizes first. Then compliance's signers sign.",
+			),
+		).toBeTruthy()
+	})
+
+	it("keeps Authorize disabled for a wallet that is not the token admin", async () => {
+		renderSign("#xdr:transfer", second)
+
+		expect(
+			await screen.findByRole("heading", { name: "Make a legal transfer" }),
+		).toBeTruthy()
+		await waitFor(() => expect(button("Authorize").disabled).toBe(true))
 	})
 })

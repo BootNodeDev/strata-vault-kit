@@ -37,21 +37,21 @@ const readAuthorities: VaultAuthorities = {
 
 describe("toMetrics", () => {
 	it("renders the three liquidity metrics from readable figures, using the reported token symbol", () => {
-		const [liquidReserve, committed, uncovered] = toMetrics(
+		const [withdrawable, committed, uncovered] = toMetrics(
 			readFigures,
 			false,
 			"USDC",
 		)
 
-		expect(liquidReserve).toEqual({
-			label: "Liquid reserve",
+		expect(withdrawable).toEqual({
+			label: "Withdrawable",
 			value: "18,400.00",
-			note: "USDC the vault holds now",
+			note: "USDC held now, less cancellable deposits",
 		})
 		expect(committed).toEqual({
 			label: "Committed",
 			value: "6,200.00",
-			note: "USDC owed on priced claims",
+			note: "USDC owed to priced redemptions",
 		})
 		expect(uncovered).toEqual({
 			label: "Uncovered · vault",
@@ -266,6 +266,20 @@ describe("toEstimate", () => {
 })
 
 describe("toSizeFigures", () => {
+	it("defines economic supply in one line, also while loading", () => {
+		const economicSupplyNote =
+			"Shares outside the vault, plus priced deposits not yet claimed"
+		const [economicSupply] = toSizeFigures(readFigures, false)
+		const [pendingEconomicSupply] = toSizeFigures(undefined, true)
+
+		expect(economicSupply).toEqual({
+			label: "Economic supply",
+			value: "1,000,000.00",
+			note: economicSupplyNote,
+		})
+		expect(pendingEconomicSupply!.note).toBe(economicSupplyNote)
+	})
+
 	it("renders net deployed of zero, distinguishable from unavailable", () => {
 		const [, netDeployed] = toSizeFigures(readFigures, false)
 		expect(netDeployed).toEqual({ label: "Net deployed", value: "0.00" })

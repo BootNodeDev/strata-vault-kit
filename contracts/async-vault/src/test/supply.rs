@@ -1,3 +1,5 @@
+use soroban_sdk::{contract, contractimpl};
+
 use super::*;
 
 #[test]
@@ -93,4 +95,37 @@ fn economic_supply_combines_circulating_and_pending_mint_correctly() {
     assert_eq!(f.share.total_supply(), 400);
     assert_eq!(f.vault.pending_mint_shares(), 0);
     assert_eq!(f.vault.total_economic_supply(), 360);
+}
+
+/// A share token whose books disagree: the vault holds more than exists.
+#[contract]
+struct SkewedShares;
+
+#[contractimpl]
+impl SkewedShares {
+    pub fn total_supply(_e: Env) -> i128 {
+        1
+    }
+
+    pub fn balance(_e: Env, _id: Address) -> i128 {
+        2
+    }
+}
+
+#[test]
+fn a_vault_holding_more_shares_than_exist_fails_loudly() {
+    let e = Env::default();
+    let asset = e
+        .register_stellar_asset_contract_v2(Address::generate(&e))
+        .address();
+    let shares = e.register(SkewedShares, ());
+    let vault = AsyncVaultClient::new(
+        &e,
+        &e.register(AsyncVault, (&asset, &shares, &asset, distinct_roles(&e))),
+    );
+
+    refused(
+        vault.try_total_economic_supply(),
+        VaultError::AccountingMismatch,
+    );
 }

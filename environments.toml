@@ -34,13 +34,14 @@ constructor_args = "--admin me"
 client = true
 constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --compliance_authority me --compliance compliance --identity_verifier identity_verifier'
 
-# `--config` takes the OracleConfig struct as JSON. The values mirror the
-# contract's own tests: a one-hour freshness window, a one-minute cooldown, a
-# 10% deviation cap and a 0.5–100 band at the 18-decimal scale. The two i128
-# fields are strings because they do not survive a JSON number round trip.
+# `--config` takes the OracleConfig struct as JSON. The values match the
+# harness's testnet oracle: a one-hour freshness window, a one-minute cooldown,
+# a 10% cap on a rise, no cap on a fall (10,000 bps lets a loss of any size
+# land at once) and a 0.5–100 band at the 18-decimal scale. The two i128 fields
+# are strings because they do not survive a JSON number round trip.
 [development.contracts.nav_oracle]
 client = true
-constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_up_bps\":1000,\"max_down_bps\":null,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
+constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_up_bps\":1000,\"max_down_bps\":10000,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
 
 [development.contracts.async_vault]
 client = true
@@ -51,8 +52,18 @@ constructor_args = '--asset share_token --share_token share_token --oracle nav_o
 # The vault needs the share token's manager role and needs allowlisting on the
 # identity verifier, and both target other contracts while requiring the vault's
 # own address, which only exists after it deploys last. The deploy in
-# scripts/harness performs and verifies both. A deployment made only from
-# this file can take deposits but can neither deliver shares nor return them.
+# scripts/harness performs and verifies both.
+#
+# Setup cannot finish from this file either. The vault's `finish_setup` checks
+# the token, oracle and compliance bindings, the manager role and the
+# allowlist, which only the harness deploy wires, and that the token has no
+# shares outstanding. It also checks that the asset has the token's decimals,
+# that the asset, the token, the oracle and the vault are four different
+# addresses (here the asset is the share token, so this one fails too), that
+# the oracle answers as a feed, and that a custodian other than the vault is
+# set. A deploy made only from this file leaves the compliance
+# contract's, the token's, the oracle's and the vault's setup open, so its
+# vault refuses deposits with `SetupOpen`. The harness deploy closes all four.
 
 
 ### Staging environment configuration
@@ -71,11 +82,11 @@ default = true
 # underlying Stellar Asset Contract and has no crate here; it still gets a
 # generated client, because a SAC carries its own spec.
 [staging.contracts]
-async_vault = { id = "CD5LYYXGOJ7R23P6D7YUN6DUJQYMI23KEUEOIFKXOSWOX3KHKTXRITED" }
-nav_oracle = { id = "CBKVMUMIX7MXYHX5K34N5HYZOP6S2VGWF7MN27RIWBV3A3WD3X3L63CO" }
-share_token = { id = "CDOISQTQRCYOTH6S3DFQ6UKJ2TEXLNO7NFIGOZS4RZL63IRCVXXCGP5N" }
-identity_verifier = { id = "CCTCCY7AVFAIRGEWWJZT2UDMBHS3NGNKVUWLY43CHDNN75AQEV6P3EOY" }
-compliance = { id = "CDEH6FJBK7NDFLALO3X3GDXZUREYHUSNC7ODPM64RBG3BBXW2USMW7OO" }
+async_vault = { id = "CDJHQ2R5XUJGP6WUKCW4VBEVGWFAZ5TZLEONBITKITNXFDLWNNK7WVYO" }
+nav_oracle = { id = "CCZ4X25GLMYRQ33PM4ZYDMGKAJJKPUG2ABUZ4NIGUSA7W4RUTBOEEDYI" }
+share_token = { id = "CDOZT5VNIKSLQSFELF4PHVZRZA3GCJYJEHVDZTUB7O2QMBHBKKOYORQI" }
+identity_verifier = { id = "CCGHNGPI66WGVSLLALQVCIRIOZKX73QW23UDZLZ3LMXLGEG7SLVUOULD" }
+compliance = { id = "CCQI5NFRWBOO77LYSFY54D6PSU4TVWD5A3CFX2A5AWLEURVR35XISMKG" }
 asset = { id = "CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E" }
 
 ### Production environment configuration

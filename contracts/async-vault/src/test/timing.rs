@@ -7,7 +7,9 @@ fn priceable_at_never_precedes_the_close<W: FulfilmentTiming>(
     closed_at: u64,
     notice: u64,
 ) -> TestCaseResult {
-    prop_assert!(W::priceable_at(closed_at, notice) >= closed_at);
+    if let Some(at) = W::priceable_at(closed_at, notice) {
+        prop_assert!(at >= closed_at);
+    }
     Ok(())
 }
 
@@ -17,12 +19,19 @@ fn a_longer_notice_never_prices_sooner<W: FulfilmentTiming>(
     longer: u64,
 ) -> TestCaseResult {
     prop_assume!(shorter <= longer);
-    prop_assert!(W::priceable_at(closed_at, longer) >= W::priceable_at(closed_at, shorter));
+    match W::priceable_at(closed_at, shorter) {
+        None => prop_assert_eq!(W::priceable_at(closed_at, longer), None),
+        Some(at_shorter) => {
+            if let Some(at_longer) = W::priceable_at(closed_at, longer) {
+                prop_assert!(at_longer >= at_shorter);
+            }
+        }
+    }
     Ok(())
 }
 
 fn a_zero_notice_prices_at_the_close<W: FulfilmentTiming>(closed_at: u64) -> TestCaseResult {
-    prop_assert_eq!(W::priceable_at(closed_at, 0), closed_at);
+    prop_assert_eq!(W::priceable_at(closed_at, 0), Some(closed_at));
     Ok(())
 }
 
@@ -117,6 +126,10 @@ fn the_notice_ends_on_its_last_second() {
 }
 
 #[test]
-fn a_notice_that_would_overflow_saturates() {
-    assert_eq!(StandardTiming::priceable_at(u64::MAX, 1), u64::MAX);
+fn a_notice_that_would_overflow_has_no_end() {
+    assert_eq!(StandardTiming::priceable_at(u64::MAX, 1), None);
+    assert_eq!(
+        StandardTiming::priceable_at(u64::MAX - 1, 1),
+        Some(u64::MAX)
+    );
 }

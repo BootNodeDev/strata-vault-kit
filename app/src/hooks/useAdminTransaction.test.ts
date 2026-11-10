@@ -4,6 +4,11 @@ import type * as AppLib from "@stellar-scaffold/app-lib"
 import { OPERATOR_TIMEOUT_SECONDS } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import * as VaultClient from "../../../app-lib/clients/async_vault/src/index"
+import * as VerifierClient from "../../../app-lib/clients/identity_verifier/src/index"
+import * as OracleClient from "../../../app-lib/clients/nav_oracle/src/index"
+import * as ShareTokenClient from "../../../app-lib/clients/share_token/src/index"
+import { contractErrorCode, type ErrorTable } from "../test/contractErrorCode"
 import { governanceReadsKey } from "./pendingAdmins"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { adminAuthorityKey, type Grant } from "./useAdminAuthority"
@@ -11,14 +16,19 @@ import { complianceReadsKey } from "./useComplianceState"
 import {
 	useAllowAddress,
 	useDisallowAddress,
-	useForceTransfer,
 	useFreezeAddress,
+	useLegalTransfer,
 	useFreezeShares,
 	useUnfreezeAddress,
 	useUnfreezeShares,
 } from "./useComplianceTransactions"
 import { configurationReadsKey } from "./useConfigurationState"
 import {
+	useProposeCompliance,
+	useProposeCustodian,
+	useProposeIdentityVerifier,
+	useProposeNotice,
+	useProposeWindDownDelay,
 	useSetCompliance,
 	useSetCustodian,
 	useSetDepositCap,
@@ -27,25 +37,27 @@ import {
 	useSetOracleConfig,
 	useSetWindDownDelay,
 } from "./useConfigurationTransactions"
-import { cycleReadsKey } from "./useCycleState"
+import { cycleReadsKey, legalTransfersKey } from "./useCycleState"
 import {
 	useClearLatest,
 	usePauseToken,
 	usePauseVault,
-	useRaiseRipcord,
-	useSetRipcord,
+	usePauseNav,
+	useSetNavPaused,
 	useUnpauseToken,
 	useUnpauseVault,
 } from "./useEmergencyTransactions"
-import { upgradeProposalKey } from "./useGovernanceState"
+import { pendingChangesKey } from "./useGovernanceState"
 import {
 	useAcceptOracleAdmin,
 	useAcceptTokenAdmin,
 	useAcceptVaultAdmin,
-	useApplyUpgrade,
+	useApplyChange,
+	useApplyTokenChange,
 	useCancelOracleHandover,
 	useCancelTokenHandover,
-	useCancelUpgrade,
+	useCancelChange,
+	useCancelTokenChange,
 	useCancelVaultHandover,
 	useCancelWindDown,
 	useGrantOracleRole,
@@ -54,7 +66,13 @@ import {
 	useHandOverOracleAdmin,
 	useHandOverTokenAdmin,
 	useHandOverVaultAdmin,
+	useProposeAdmin,
 	useProposeCodeUpgrade,
+	useProposeGrantRole,
+	useProposeRevokeRole,
+	useProposeTokenAdmin,
+	useProposeTokenGrantRole,
+	useProposeTokenRevokeRole,
 	useProposeUpgradeDelay,
 	useProposeWindDown,
 	useRevokeOracleRole,
@@ -91,10 +109,9 @@ const {
 		revoke_role: vi.fn(),
 		transfer_admin_role: vi.fn(),
 		accept_admin_transfer: vi.fn(),
-		propose_upgrade: vi.fn(),
-		propose_upgrade_delay: vi.fn(),
-		apply_upgrade: vi.fn(),
-		cancel_upgrade: vi.fn(),
+		propose_change: vi.fn(),
+		apply_change: vi.fn(),
+		cancel_change: vi.fn(),
 		propose_wind_down: vi.fn(),
 		cancel_wind_down_proposal: vi.fn(),
 	},
@@ -110,13 +127,16 @@ const {
 		set_address_frozen: vi.fn(),
 		freeze_partial_tokens: vi.fn(),
 		unfreeze_partial_tokens: vi.fn(),
-		forced_transfer: vi.fn(),
+		legal_transfer: vi.fn(),
+		propose_change: vi.fn(),
+		apply_change: vi.fn(),
+		cancel_change: vi.fn(),
 	},
 	verifier: { allow: vi.fn() },
 	verifierWriterMock: vi.fn(),
 	oracle: {
-		raise_ripcord: vi.fn(),
-		set_ripcord: vi.fn(),
+		pause_nav: vi.fn(),
+		set_nav_paused: vi.fn(),
 		clear_latest: vi.fn(),
 		set_config: vi.fn(),
 		grant_role: vi.fn(),
@@ -144,7 +164,7 @@ const ORACLE_CONFIG = {
 	freshness_duration: 86_400n,
 	cooldown_secs: 3_600n,
 	max_up_bps: 1_000,
-	max_down_bps: null,
+	max_down_bps: 500,
 	min_answer: 1n,
 	max_answer: 10n,
 }
@@ -159,8 +179,13 @@ type Case = {
 	arg: unknown
 	args?: object
 	keys: readonly (readonly string[])[]
-	refusal: number
+	refusal: { code: number; name: string }
 }
+
+const refused = (errors: ErrorTable, name: string) => ({
+	code: contractErrorCode(errors, name),
+	name,
+})
 
 const cases: Case[] = [
 	{
@@ -170,7 +195,7 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: [vaultPausedKey],
-		refusal: 1000,
+		refusal: refused(VaultClient.PausableError, "EnforcedPause"),
 	},
 	{
 		name: "useUnpauseVault",
@@ -179,7 +204,7 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: [vaultPausedKey],
-		refusal: 1001,
+		refusal: refused(VaultClient.PausableError, "ExpectedPause"),
 	},
 	{
 		name: "usePauseToken",
@@ -188,7 +213,7 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: [tokenPausedKey],
-		refusal: 1000,
+		refusal: refused(ShareTokenClient.PausableError, "EnforcedPause"),
 	},
 	{
 		name: "useUnpauseToken",
@@ -197,70 +222,96 @@ const cases: Case[] = [
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: [tokenPausedKey],
-		refusal: 1001,
+		refusal: refused(ShareTokenClient.PausableError, "ExpectedPause"),
 	},
 	{
-		name: "useRaiseRipcord",
-		useHook: useRaiseRipcord,
-		method: oracle.raise_ripcord,
+		name: "usePauseNav",
+		useHook: usePauseNav,
+		method: oracle.pause_nav,
 		arg: undefined,
 		args: { caller: investorAddress },
 		keys: oracleWriteKeys,
-		refusal: 2000,
+		refusal: refused(OracleClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useClearLatest",
 		useHook: useClearLatest,
 		method: oracle.clear_latest,
 		arg: undefined,
-		args: { caller: investorAddress },
 		keys: oracleWriteKeys,
-		refusal: 3008,
+		refusal: refused(OracleClient.OracleError, "NavNotPaused"),
 	},
 	{
-		name: "useSetRipcord",
-		useHook: useSetRipcord,
-		method: oracle.set_ripcord,
+		name: "useSetNavPaused",
+		useHook: useSetNavPaused,
+		method: oracle.set_nav_paused,
 		arg: false,
-		args: { paused: false, caller: investorAddress },
+		args: { paused: false },
 		keys: oracleWriteKeys,
-		refusal: 2000,
+		refusal: refused(OracleClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useSetDepositCap",
 		useHook: useSetDepositCap,
 		method: vault.set_deposit_cap,
 		arg: null,
-		args: { cap: null, caller: investorAddress },
+		args: { cap: null },
 		keys: [cycleReadsKey],
-		refusal: 6007,
+		refusal: refused(VaultClient.VaultError, "InvalidAmount"),
 	},
 	{
 		name: "useSetCustodian",
 		useHook: useSetCustodian,
 		method: vault.set_custodian,
 		arg: CONTRACT,
-		args: { custodian: CONTRACT, caller: investorAddress },
+		args: { custodian: CONTRACT },
 		keys: [vaultAuthoritiesKey],
-		refusal: 2000,
+		refusal: refused(VaultClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useSetNotice",
 		useHook: useSetNotice,
 		method: vault.set_notice,
 		arg: 86_400n,
-		args: { secs: 86_400n, caller: investorAddress },
+		args: { secs: 86_400n },
 		keys: [cycleReadsKey],
-		refusal: 6061,
+		refusal: refused(VaultClient.VaultError, "NoticeAboveUpgradeDelay"),
 	},
 	{
 		name: "useSetWindDownDelay",
 		useHook: useSetWindDownDelay,
 		method: vault.set_wind_down_delay,
 		arg: 86_400n,
-		args: { secs: 86_400n, caller: investorAddress },
+		args: { secs: 86_400n },
 		keys: [cycleReadsKey],
-		refusal: 6053,
+		refusal: refused(VaultClient.VaultError, "WindDownDelayTooLong"),
+	},
+	{
+		name: "useProposeCustodian",
+		useHook: useProposeCustodian,
+		method: vault.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "Custodian", values: [CONTRACT] } },
+		keys: [pendingChangesKey("vault"), vaultAuthoritiesKey],
+		refusal: refused(VaultClient.VaultError, "InvalidCustodian"),
+	},
+	{
+		name: "useProposeNotice",
+		useHook: useProposeNotice,
+		method: vault.propose_change,
+		arg: 43_200n,
+		args: { change: { tag: "Notice", values: [43_200n] } },
+		keys: [pendingChangesKey("vault"), cycleReadsKey],
+		refusal: refused(VaultClient.VaultError, "NoticeAboveUpgradeDelay"),
+	},
+	{
+		name: "useProposeWindDownDelay",
+		useHook: useProposeWindDownDelay,
+		method: vault.propose_change,
+		arg: 691_200n,
+		args: { change: { tag: "WindDownDelay", values: [691_200n] } },
+		keys: [pendingChangesKey("vault"), cycleReadsKey],
+		refusal: refused(VaultClient.VaultError, "WindDownDelayTooShort"),
 	},
 	{
 		name: "useSetOracleConfig",
@@ -269,7 +320,7 @@ const cases: Case[] = [
 		arg: ORACLE_CONFIG,
 		args: { config: ORACLE_CONFIG },
 		keys: oracleWriteKeys,
-		refusal: 3001,
+		refusal: refused(OracleClient.OracleError, "InvalidConfig"),
 	},
 	{
 		name: "useSetCompliance",
@@ -278,7 +329,7 @@ const cases: Case[] = [
 		arg: CONTRACT,
 		args: { compliance: CONTRACT, operator: investorAddress },
 		keys: [configurationReadsKey, isAllowedKey],
-		refusal: 2000,
+		refusal: refused(ShareTokenClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useSetIdentityVerifier",
@@ -287,7 +338,25 @@ const cases: Case[] = [
 		arg: CONTRACT,
 		args: { identity_verifier: CONTRACT, operator: investorAddress },
 		keys: [configurationReadsKey, adminAuthorityKey, isAllowedKey],
-		refusal: 2000,
+		refusal: refused(ShareTokenClient.AccessControlError, "Unauthorized"),
+	},
+	{
+		name: "useProposeCompliance",
+		useHook: useProposeCompliance,
+		method: token.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "Compliance", values: [CONTRACT] } },
+		keys: [pendingChangesKey("token"), configurationReadsKey],
+		refusal: refused(ShareTokenClient.ShareTokenError, "SetupOpen"),
+	},
+	{
+		name: "useProposeIdentityVerifier",
+		useHook: useProposeIdentityVerifier,
+		method: token.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "IdentityVerifier", values: [CONTRACT] } },
+		keys: [pendingChangesKey("token"), configurationReadsKey],
+		refusal: refused(ShareTokenClient.ShareTokenError, "TooManyPendingChanges"),
 	},
 ]
 
@@ -303,6 +372,7 @@ const governedContracts: {
 	hooks: Record<"grant" | "revoke" | "handOver" | "cancel" | "accept", Hook>
 	roleKeys: Case["keys"]
 	handoverKeys: Case["keys"]
+	errors: Record<"AccessControlError" | "RoleTransferError", ErrorTable>
 }[] = [
 	{
 		name: "Vault",
@@ -316,6 +386,7 @@ const governedContracts: {
 		},
 		roleKeys: [adminAuthorityKey, vaultAuthoritiesKey],
 		handoverKeys: [governanceReadsKey, adminAuthorityKey, vaultAuthoritiesKey],
+		errors: VaultClient,
 	},
 	{
 		name: "Oracle",
@@ -329,6 +400,7 @@ const governedContracts: {
 		},
 		roleKeys: [adminAuthorityKey],
 		handoverKeys: [governanceReadsKey, adminAuthorityKey],
+		errors: OracleClient,
 	},
 	{
 		name: "Token",
@@ -342,6 +414,7 @@ const governedContracts: {
 		},
 		roleKeys: [adminAuthorityKey],
 		handoverKeys: [governanceReadsKey, adminAuthorityKey],
+		errors: ShareTokenClient,
 	},
 ]
 
@@ -353,7 +426,7 @@ const roleArgs = {
 
 const governanceCases: Case[] = [
 	...governedContracts.flatMap(
-		({ name, client, hooks, roleKeys, handoverKeys }): Case[] => [
+		({ name, client, hooks, roleKeys, handoverKeys, errors }): Case[] => [
 			{
 				name: `useGrant${name}Role`,
 				useHook: hooks.grant,
@@ -361,7 +434,7 @@ const governanceCases: Case[] = [
 				arg: ROLE_CHANGE,
 				args: roleArgs,
 				keys: roleKeys,
-				refusal: 2000,
+				refusal: refused(errors.AccessControlError, "Unauthorized"),
 			},
 			{
 				name: `useRevoke${name}Role`,
@@ -370,7 +443,7 @@ const governanceCases: Case[] = [
 				arg: ROLE_CHANGE,
 				args: roleArgs,
 				keys: roleKeys,
-				refusal: 2007,
+				refusal: refused(errors.AccessControlError, "RoleNotHeld"),
 			},
 			{
 				name: `useHandOver${name}Admin`,
@@ -379,7 +452,7 @@ const governanceCases: Case[] = [
 				arg: OFFER,
 				args: { new_admin: CONTRACT, live_until_ledger: 1_234 },
 				keys: handoverKeys,
-				refusal: 2201,
+				refusal: refused(errors.RoleTransferError, "InvalidLiveUntilLedger"),
 			},
 			{
 				name: `useCancel${name}Handover`,
@@ -388,7 +461,7 @@ const governanceCases: Case[] = [
 				arg: { ...OFFER, liveUntilLedger: 0 },
 				args: { new_admin: CONTRACT, live_until_ledger: 0 },
 				keys: handoverKeys,
-				refusal: 2200,
+				refusal: refused(errors.RoleTransferError, "NoPendingTransfer"),
 			},
 			{
 				name: `useAccept${name}Admin`,
@@ -396,63 +469,146 @@ const governanceCases: Case[] = [
 				method: client.accept_admin_transfer,
 				arg: undefined,
 				keys: handoverKeys,
-				refusal: 2202,
+				refusal: refused(errors.RoleTransferError, "InvalidPendingAccount"),
 			},
 		],
 	),
 	{
 		name: "useProposeCodeUpgrade",
 		useHook: useProposeCodeUpgrade,
-		method: vault.propose_upgrade,
+		method: vault.propose_change,
 		arg: WASM_HASH,
-		args: { wasm_hash: Buffer.alloc(32, 0xab), caller: investorAddress },
-		keys: [upgradeProposalKey, configurationReadsKey],
-		refusal: 6055,
+		args: { change: { tag: "Upgrade", values: [Buffer.alloc(32, 0xab)] } },
+		keys: [pendingChangesKey("vault"), configurationReadsKey],
+		refusal: refused(VaultClient.VaultError, "UpgradeProposalExists"),
 	},
 	{
 		name: "useProposeUpgradeDelay",
 		useHook: useProposeUpgradeDelay,
-		method: vault.propose_upgrade_delay,
+		method: vault.propose_change,
 		arg: 604_800n,
-		args: { secs: 604_800n, caller: investorAddress },
-		keys: [upgradeProposalKey, configurationReadsKey],
-		refusal: 6058,
+		args: { change: { tag: "UpgradeDelay", values: [604_800n] } },
+		keys: [pendingChangesKey("vault"), configurationReadsKey],
+		refusal: refused(VaultClient.VaultError, "UpgradeDelayTooShort"),
 	},
 	{
-		name: "useApplyUpgrade",
-		useHook: useApplyUpgrade,
-		method: vault.apply_upgrade,
-		arg: undefined,
-		args: { caller: investorAddress },
-		keys: [upgradeProposalKey, configurationReadsKey],
-		refusal: 6057,
+		name: "useProposeGrantRole",
+		useHook: useProposeGrantRole,
+		method: vault.propose_change,
+		arg: ROLE_CHANGE,
+		args: { change: { tag: "GrantRole", values: ["guardian", CONTRACT] } },
+		keys: [pendingChangesKey("vault")],
+		refusal: refused(VaultClient.VaultError, "TooManyPendingChanges"),
 	},
 	{
-		name: "useCancelUpgrade",
-		useHook: useCancelUpgrade,
-		method: vault.cancel_upgrade,
-		arg: undefined,
-		args: { caller: investorAddress },
-		keys: [upgradeProposalKey, configurationReadsKey],
-		refusal: 6056,
+		name: "useProposeRevokeRole",
+		useHook: useProposeRevokeRole,
+		method: vault.propose_change,
+		arg: ROLE_CHANGE,
+		args: { change: { tag: "RevokeRole", values: ["guardian", CONTRACT] } },
+		keys: [pendingChangesKey("vault")],
+		refusal: refused(VaultClient.VaultError, "SetupOpen"),
+	},
+	{
+		name: "useProposeAdmin",
+		useHook: useProposeAdmin,
+		method: vault.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "Admin", values: [CONTRACT] } },
+		keys: [pendingChangesKey("vault")],
+		refusal: refused(VaultClient.VaultError, "WindDownActive"),
+	},
+	{
+		name: "useApplyChange",
+		useHook: useApplyChange,
+		method: vault.apply_change,
+		arg: 3,
+		args: { id: 3 },
+		keys: [
+			pendingChangesKey("vault"),
+			configurationReadsKey,
+			cycleReadsKey,
+			governanceReadsKey,
+			adminAuthorityKey,
+			vaultAuthoritiesKey,
+		],
+		refusal: refused(VaultClient.VaultError, "ChangeNotReady"),
+	},
+	{
+		name: "useCancelChange",
+		useHook: useCancelChange,
+		method: vault.cancel_change,
+		arg: 3,
+		args: { id: 3 },
+		keys: [pendingChangesKey("vault")],
+		refusal: refused(VaultClient.VaultError, "ChangeNotFound"),
+	},
+	{
+		name: "useProposeTokenGrantRole",
+		useHook: useProposeTokenGrantRole,
+		method: token.propose_change,
+		arg: ROLE_CHANGE,
+		args: { change: { tag: "GrantRole", values: ["guardian", CONTRACT] } },
+		keys: [pendingChangesKey("token")],
+		refusal: refused(ShareTokenClient.ShareTokenError, "TooManyPendingChanges"),
+	},
+	{
+		name: "useProposeTokenRevokeRole",
+		useHook: useProposeTokenRevokeRole,
+		method: token.propose_change,
+		arg: ROLE_CHANGE,
+		args: { change: { tag: "RevokeRole", values: ["guardian", CONTRACT] } },
+		keys: [pendingChangesKey("token")],
+		refusal: refused(ShareTokenClient.ShareTokenError, "WindDownActive"),
+	},
+	{
+		name: "useProposeTokenAdmin",
+		useHook: useProposeTokenAdmin,
+		method: token.propose_change,
+		arg: CONTRACT,
+		args: { change: { tag: "Admin", values: [CONTRACT] } },
+		keys: [pendingChangesKey("token")],
+		refusal: refused(ShareTokenClient.ShareTokenError, "SetupOpen"),
+	},
+	{
+		name: "useApplyTokenChange",
+		useHook: useApplyTokenChange,
+		method: token.apply_change,
+		arg: 3,
+		args: { id: 3 },
+		keys: [
+			pendingChangesKey("token"),
+			configurationReadsKey,
+			governanceReadsKey,
+			adminAuthorityKey,
+			isAllowedKey,
+		],
+		refusal: refused(ShareTokenClient.ShareTokenError, "VaultPaused"),
+	},
+	{
+		name: "useCancelTokenChange",
+		useHook: useCancelTokenChange,
+		method: token.cancel_change,
+		arg: 3,
+		args: { id: 3 },
+		keys: [pendingChangesKey("token")],
+		refusal: refused(ShareTokenClient.ShareTokenError, "ChangeNotFound"),
 	},
 	{
 		name: "useProposeWindDown",
 		useHook: useProposeWindDown,
 		method: vault.propose_wind_down,
 		arg: undefined,
-		args: { caller: investorAddress },
 		keys: [cycleReadsKey],
-		refusal: 6046,
+		refusal: refused(VaultClient.VaultError, "WindDownActive"),
 	},
 	{
 		name: "useCancelWindDown",
 		useHook: useCancelWindDown,
 		method: vault.cancel_wind_down_proposal,
 		arg: undefined,
-		args: { caller: investorAddress },
 		keys: [cycleReadsKey],
-		refusal: 6047,
+		refusal: refused(VaultClient.VaultError, "WindDownNotProposed"),
 	},
 ]
 
@@ -474,18 +630,18 @@ const complianceCases: Case[] = [
 		useHook: useAllowAddress,
 		method: verifier.allow,
 		arg: { verifier: VERIFIER, account: TARGET },
-		args: { account: TARGET, allowed: true, caller: investorAddress },
+		args: { account: TARGET, allowed: true },
 		keys: [complianceReadsKey, isAllowedKey],
-		refusal: 2000,
+		refusal: refused(VerifierClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useDisallowAddress",
 		useHook: useDisallowAddress,
 		method: verifier.allow,
 		arg: { verifier: VERIFIER, account: TARGET },
-		args: { account: TARGET, allowed: false, caller: investorAddress },
+		args: { account: TARGET, allowed: false },
 		keys: [complianceReadsKey, isAllowedKey],
-		refusal: 2001,
+		refusal: refused(VerifierClient.AccessControlError, "AdminNotSet"),
 	},
 	{
 		name: "useFreezeAddress",
@@ -494,7 +650,7 @@ const complianceCases: Case[] = [
 		arg: TARGET,
 		args: { user_address: TARGET, freeze: true, operator: investorAddress },
 		keys: [complianceReadsKey],
-		refusal: 2000,
+		refusal: refused(ShareTokenClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useUnfreezeAddress",
@@ -503,7 +659,7 @@ const complianceCases: Case[] = [
 		arg: TARGET,
 		args: { user_address: TARGET, freeze: false, operator: investorAddress },
 		keys: [complianceReadsKey],
-		refusal: 2000,
+		refusal: refused(ShareTokenClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useFreezeShares",
@@ -512,7 +668,7 @@ const complianceCases: Case[] = [
 		arg: { account: TARGET, amount: 5n },
 		args: { user_address: TARGET, amount: 5n, operator: investorAddress },
 		keys: [complianceReadsKey],
-		refusal: 300,
+		refusal: refused(ShareTokenClient.RWAError, "InsufficientBalance"),
 	},
 	{
 		name: "useUnfreezeShares",
@@ -521,21 +677,22 @@ const complianceCases: Case[] = [
 		arg: { account: TARGET, amount: 5n },
 		args: { user_address: TARGET, amount: 5n, operator: investorAddress },
 		keys: [complianceReadsKey],
-		refusal: 303,
+		refusal: refused(ShareTokenClient.RWAError, "InsufficientFreeTokens"),
 	},
 	{
-		name: "useForceTransfer",
-		useHook: useForceTransfer,
-		method: token.forced_transfer,
-		arg: { from: TARGET, to: DESTINATION, amount: 5n },
+		name: "useLegalTransfer",
+		useHook: useLegalTransfer,
+		method: token.legal_transfer,
+		arg: { from: TARGET, to: DESTINATION, amount: 5n, reference: "ORDER-1" },
 		args: {
 			from: TARGET,
 			to: DESTINATION,
 			amount: 5n,
-			operator: investorAddress,
+			reference: "ORDER-1",
+			caller: investorAddress,
 		},
-		keys: [complianceReadsKey, ["share", "balance"]],
-		refusal: 300,
+		keys: [complianceReadsKey, ["share", "balance"], legalTransfersKey],
+		refusal: refused(ShareTokenClient.RWAError, "InsufficientBalance"),
 	},
 ]
 
@@ -585,7 +742,9 @@ describe.each([...cases, ...governanceCases, ...complianceCases])(
 		it("refuses before asking for a signature and refreshes the state it read", async () => {
 			const signAndSend = vi.fn()
 			method.mockResolvedValue({
-				simulation: { error: `HostError: Error(Contract, #${refusal})` },
+				simulation: {
+					error: `HostError: Error(Contract, #${refusal.code})`,
+				},
 				signAndSend,
 			})
 			const { result, queryClient } = renderWithWallet(useHook)
@@ -595,7 +754,7 @@ describe.each([...cases, ...governanceCases, ...complianceCases])(
 
 			expect(result.current.status).toEqual({
 				status: "failed",
-				failure: { kind: "contract-error", code: refusal },
+				failure: { kind: "contract-error", ...refusal },
 			})
 			expect(signAndSend).not.toHaveBeenCalled()
 			for (const queryKey of keys)
@@ -647,11 +806,13 @@ describe("usePauseVault with a grant", () => {
 	const signable = () => {
 		const signed = {
 			toEnvelope: () => ({ toXDR: () => "SIGNEDXDR" }),
+			hash: () => ({ toString: () => "abcd" }),
 		}
 		const tx = {
 			simulation: undefined,
 			result: undefined,
 			signed: undefined as typeof signed | undefined,
+			needsNonInvokerSigningBy: vi.fn((): string[] => []),
 			sign: vi.fn(async () => {
 				tx.signed = signed
 			}),
@@ -747,5 +908,55 @@ describe("usePauseVault with a grant", () => {
 		expect(tx.sign).not.toHaveBeenCalled()
 		expect(submitSignedMock).not.toHaveBeenCalled()
 		expect(result.current.status).toEqual({ status: "confirmed" })
+	})
+})
+
+describe("useLegalTransfer with a grant", () => {
+	const AUTHORITY = "GAUTHORITYACCOUNT0987654321"
+	const ADMIN = "GTOKENADMINACCOUNT12345678"
+	const order = {
+		from: "GFROMACCOUNT",
+		to: "GTOACCOUNT",
+		amount: 5n,
+		reference: "ORDER-1",
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks()
+	})
+
+	it("shares the simulated transaction unsigned while the token admin must authorize it", async () => {
+		const tx = {
+			simulation: undefined,
+			result: undefined,
+			built: { toEnvelope: () => ({ toXDR: () => "UNSIGNEDXDR" }) },
+			needsNonInvokerSigningBy: vi.fn(() => [ADMIN]),
+			sign: vi.fn(),
+			signAndSend: vi.fn(),
+		}
+		token.legal_transfer.mockResolvedValue(tx)
+		const { result } = renderWithWallet(useLegalTransfer)
+
+		await act(() =>
+			result.current.submit(order, {
+				role: "share-token compliance",
+				authority: AUTHORITY,
+				standing: "signs-alone",
+			}),
+		)
+
+		expect(token.legal_transfer).toHaveBeenCalledWith({
+			...order,
+			caller: AUTHORITY,
+		})
+		expect(tx.sign).not.toHaveBeenCalled()
+		expect(tx.signAndSend).not.toHaveBeenCalled()
+		expect(submitSignedMock).not.toHaveBeenCalled()
+		expect(result.current.status).toEqual({
+			status: "shared",
+			xdr: "UNSIGNEDXDR",
+			standing: "admin-authorization",
+			expiresAt: null,
+		})
 	})
 })

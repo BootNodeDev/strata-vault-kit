@@ -1,6 +1,8 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, renderWithWallet } from "./testSupport"
 import { useActivateWindDown } from "./useActivateWindDown"
 import { cycleWriteKeys } from "./useCycleState"
@@ -72,7 +74,9 @@ describe("useActivateWindDown", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.activate_wind_down.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6049)" },
+			simulation: {
+				error: simulationError(VaultError, "WindDownDelayNotElapsed"),
+			},
 			signAndSend,
 		})
 		const { result } = renderActivateWindDown()
@@ -81,7 +85,11 @@ describe("useActivateWindDown", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6049 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "WindDownDelayNotElapsed"),
+				name: "WindDownDelayNotElapsed",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -147,7 +155,7 @@ describe("useActivateWindDown", () => {
 
 	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.activate_wind_down.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6047)" },
+			simulation: { error: simulationError(VaultError, "WindDownNotProposed") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderActivateWindDown()

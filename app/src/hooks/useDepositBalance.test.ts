@@ -13,6 +13,7 @@ const held: ContractRead<bigint> = { kind: "value", value: 500_0000000n }
 const contractError: ContractRead<bigint> = {
 	kind: "contract-error",
 	code: 1,
+	name: undefined,
 }
 const unreadable: ContractRead<bigint> = { kind: "unreadable" }
 

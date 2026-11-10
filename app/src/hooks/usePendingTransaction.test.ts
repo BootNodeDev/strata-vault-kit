@@ -9,6 +9,7 @@ const makeTransaction = <TArg = bigint>(
 ): UseContractTransaction<TArg, Record<never, never>> => ({
 	status: { status: "idle" },
 	submit,
+	prepare: vi.fn(),
 	reset: vi.fn(),
 })
 
@@ -108,5 +109,23 @@ describe("usePendingTransaction", () => {
 		result.current.reset()
 
 		expect(reset).toHaveBeenCalledTimes(1)
+	})
+
+	it("prepares through the underlying transaction without recording a label", () => {
+		const prepare = vi.fn()
+		const transaction = makeTransaction(() => true)
+		const grant: Grant = {
+			role: "manager",
+			authority: "GAUTHORITY",
+			standing: "signs-alone",
+		}
+		const { result } = renderHook(() =>
+			usePendingTransaction({ ...transaction, prepare }),
+		)
+
+		result.current.prepare(5n, grant)
+
+		expect(prepare).toHaveBeenCalledWith(5n, grant)
+		expect(result.current.amountLabel).toBe("")
 	})
 })

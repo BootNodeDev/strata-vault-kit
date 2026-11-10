@@ -12,7 +12,8 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
-import { attest } from "./lib/oracle.js"
+import { waitForNotice } from "./lib/notice.js"
+import { attest, freshFeed, navInput, SAMPLE_PROOF_URI } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -22,15 +23,7 @@ const holders = [
 	c.keys["holder-3"],
 ] as const
 const [first, second, canceller] = holders
-const {
-	governance,
-	compliance,
-	custodian,
-	outsider,
-	issuer,
-	manager,
-	treasury,
-} = c.keys
+const { compliance, custodian, outsider, issuer, manager, treasury } = c.keys
 
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
@@ -79,7 +72,6 @@ describe("setup", () => {
 				verifier.allow({
 					account: holder.publicKey(),
 					allowed: true,
-					caller: compliance.publicKey(),
 				}),
 			)
 			expect(
@@ -96,13 +88,14 @@ describe("subscription", () => {
 	let freeBefore = 0n
 
 	it("two holders subscribe in the same epoch and see their escrow", async () => {
+		await freshFeed(c, price(2))
 		subscriptionEpoch = (await reader.current_epoch()).result
 		escrowBefore = (await reader.cancellable_escrow()).result
 		freeBefore = (await reader.free_reserve()).result
 		for (const holder of [first, second]) {
 			const epoch = await send(
 				vault(c, holder).request_deposit({
-					from: holder.publicKey(),
+					holder: holder.publicKey(),
 					amount: each(),
 				}),
 			)
@@ -110,7 +103,7 @@ describe("subscription", () => {
 			const request = (
 				await reader.get_deposit_request({
 					epoch_id: subscriptionEpoch,
-					controller: holder.publicKey(),
+					holder: holder.publicKey(),
 				})
 			).result
 			expect(request?.amount).toBe(each())
@@ -128,7 +121,7 @@ describe("subscription", () => {
 		const v = vault(c, first)
 		expectRefused(
 			await v.cancel_deposit({
-				from: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: subscriptionEpoch + 1000n,
 			}),
 			v,
@@ -140,12 +133,12 @@ describe("subscription", () => {
 		const before = await usdcBalance(c, canceller.publicKey())
 		const v = vault(c, canceller)
 		await send(
-			v.request_deposit({ from: canceller.publicKey(), amount: each() }),
+			v.request_deposit({ holder: canceller.publicKey(), amount: each() }),
 		)
 		expect(await usdcBalance(c, canceller.publicKey())).toBe(before - each())
 		const returned = await send(
 			v.cancel_deposit({
-				from: canceller.publicKey(),
+				holder: canceller.publicKey(),
 				epoch_id: subscriptionEpoch,
 			}),
 		)
@@ -180,12 +173,15 @@ describe("pricing", () => {
 		await attest(c, nav)
 		const latest = (await oracle(c, outsider).latest()).result
 		expect(latest.nav_per_share).toBe(nav)
-		expect(latest.expires_at - latest.timestamp).toBe(
+		expect(latest.expires_at - latest.accepted_at).toBe(
 			BigInt(c.net.oracle.freshness_duration),
 		)
+		expect(latest.proof_hash).toEqual(navInput(nav).proof_hash)
+		expect(latest.proof_uri).toBe(SAMPLE_PROOF_URI)
 	})
 
 	it("an account with no role prices the epoch", async () => {
+		await waitForNotice(c, reader, subscriptionEpoch)
 		const priced = await send(
 			vault(c, outsider).fulfill_epoch({ epoch_id: subscriptionEpoch }),
 		)
@@ -209,7 +205,7 @@ describe("pricing", () => {
 			const before = await shares(holder.publicKey())
 			const got = await send(
 				vault(c, holder).claim_deposit({
-					caller: holder.publicKey(),
+					holder: holder.publicKey(),
 					epoch_id: subscriptionEpoch,
 				}),
 			)
@@ -224,7 +220,7 @@ describe("pricing", () => {
 		const v = vault(c, first)
 		expectRefused(
 			await v.claim_deposit({
-				caller: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: subscriptionEpoch,
 			}),
 			v,
@@ -275,7 +271,7 @@ describe("redemption", () => {
 			const held = await shares(holder.publicKey())
 			const epoch = await send(
 				vault(c, holder).request_redeem({
-					from: holder.publicKey(),
+					holder: holder.publicKey(),
 					shares: held,
 				}),
 			)
@@ -290,7 +286,7 @@ describe("redemption", () => {
 	it("refuses a second exit request in one epoch", async () => {
 		const v = vault(c, first)
 		expectRefused(
-			await v.request_redeem({ from: first.publicKey(), shares: 1n }),
+			await v.request_redeem({ holder: first.publicKey(), shares: 1n }),
 			v,
 			"RequestOutstanding",
 		)
@@ -300,7 +296,7 @@ describe("redemption", () => {
 		const v = vault(c, first)
 		expectRefused(
 			await v.claim_redeem({
-				caller: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: redemptionEpoch,
 			}),
 			v,
@@ -313,14 +309,9 @@ describe("treasury", () => {
 	const deployed = () => usdc(150)
 	let owed = 0n
 
-	it("governance sets the custodian", async () => {
-		await send(
-			vault(c, governance).set_custodian({
-				custodian: custodian.publicKey(),
-				caller: governance.publicKey(),
-			}),
-		)
+	it("the deploy set the custodian before setup closed", async () => {
 		expect((await reader.custodian()).result).toBe(custodian.publicKey())
+		expect((await reader.setup_open()).result).toBe(false)
 	})
 
 	it("the treasury deploys part of the reserve and the free reserve falls by exactly that amount", async () => {
@@ -341,6 +332,7 @@ describe("treasury", () => {
 	it("the exits are priced while the reserve is deployed", async () => {
 		await send(vault(c, manager).close_epoch({ caller: manager.publicKey() }))
 		await attest(c, nav)
+		await waitForNotice(c, reader, redemptionEpoch)
 		await send(vault(c, outsider).fulfill_epoch({ epoch_id: redemptionEpoch }))
 		expect(await epochStatus(redemptionEpoch)).toBe("Fulfilled")
 		const total = [...redeemed.values()].reduce((a, b) => a + b, 0n)
@@ -352,7 +344,7 @@ describe("treasury", () => {
 		const v = vault(c, first)
 		expectRefused(
 			await v.claim_redeem({
-				caller: first.publicKey(),
+				holder: first.publicKey(),
 				epoch_id: redemptionEpoch,
 			}),
 			v,
@@ -375,7 +367,7 @@ describe("treasury", () => {
 	it("fund returns the capital and the refused claims then pay", async () => {
 		await send(
 			vault(c, custodian).fund({
-				from: custodian.publicKey(),
+				caller: custodian.publicKey(),
 				assets: deployed(),
 			}),
 		)
@@ -384,7 +376,7 @@ describe("treasury", () => {
 			const before = await usdcBalance(c, holder.publicKey())
 			const paid = await send(
 				vault(c, holder).claim_redeem({
-					caller: holder.publicKey(),
+					holder: holder.publicKey(),
 					epoch_id: redemptionEpoch,
 				}),
 			)

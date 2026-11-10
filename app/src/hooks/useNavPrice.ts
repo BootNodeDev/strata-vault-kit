@@ -23,7 +23,7 @@ export function classifyNav(
 	if (state.value.tag === "Paused") return { status: "paused" }
 
 	if (state.value.tag === "Stale") {
-		if (latest.kind === "contract-error" && latest.code === 3006)
+		if (latest.kind === "contract-error" && latest.name === "NoRecord")
 			return { status: "never" }
 		return latest.kind === "value"
 			? { status: "stale", expiresAt: latest.value.expires_at }
@@ -34,7 +34,7 @@ export function classifyNav(
 		? {
 				status: "valid",
 				price: latest.value.nav_per_share as Price,
-				attestedAt: latest.value.timestamp,
+				attestedAt: latest.value.accepted_at,
 			}
 		: { status: "unreadable" }
 }

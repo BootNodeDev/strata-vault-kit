@@ -1,6 +1,8 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
+import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import { deferred, renderWithWallet } from "./testSupport"
 import { cycleWriteKeys } from "./useCycleState"
 import { useFulfillEpoch } from "./useFulfillEpoch"
@@ -80,7 +82,7 @@ describe("useFulfillEpoch", () => {
 	it("refuses before ever asking for a signature when the simulation carries the vault's reason", async () => {
 		const signAndSend = vi.fn()
 		vaultMock.fulfill_epoch.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6042)" },
+			simulation: { error: simulationError(VaultError, "NoticeNotElapsed") },
 			signAndSend,
 		})
 		const { result } = renderFulfillEpoch()
@@ -89,7 +91,11 @@ describe("useFulfillEpoch", () => {
 
 		expect(result.current.status).toEqual({
 			status: "failed",
-			failure: { kind: "contract-error", code: 6042 },
+			failure: {
+				kind: "contract-error",
+				code: contractErrorCode(VaultError, "NoticeNotElapsed"),
+				name: "NoticeNotElapsed",
+			},
 		})
 		expect(signAndSend).not.toHaveBeenCalled()
 	})
@@ -155,7 +161,7 @@ describe("useFulfillEpoch", () => {
 
 	it("refreshes the cached cycle when the vault refuses at simulation", async () => {
 		vaultMock.fulfill_epoch.mockResolvedValue({
-			simulation: { error: "HostError: Error(Contract, #6044)" },
+			simulation: { error: simulationError(VaultError, "FeedNotValid") },
 			signAndSend: vi.fn(),
 		})
 		const { result, queryClient } = renderFulfillEpoch()
