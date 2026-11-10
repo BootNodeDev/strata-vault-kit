@@ -28,6 +28,10 @@ export interface Deployment {
 	deployedAt: string
 	commit: string
 	uncommittedChanges: boolean
+	// The feed's own source commit: equal to `commit` for a set deployed
+	// whole, but its own when `withFeed` adds a feed to an older set.
+	feedCommit: string
+	feedUncommittedChanges: boolean
 	ledger: number
 	asset: { code: string; issuer: string; contract: string }
 	contracts: Record<ContractName, string>
@@ -40,6 +44,7 @@ export function withFeed(
 	record: Deployment,
 	feed: string,
 	wasmHash: string,
+	source: { commit: string; uncommittedChanges: boolean },
 ): Deployment {
 	if (record.contracts.sep40_feed !== undefined) {
 		throw new Error("the deployment already has a sep40_feed")
@@ -48,6 +53,8 @@ export function withFeed(
 		...record,
 		contracts: { ...record.contracts, sep40_feed: feed },
 		wasmHashes: { ...record.wasmHashes, sep40_feed: wasmHash },
+		feedCommit: source.commit,
+		feedUncommittedChanges: source.uncommittedChanges,
 	}
 }
 

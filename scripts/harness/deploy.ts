@@ -337,8 +337,10 @@ async function finishVaultSetup(
 		throw new Error(`the vault is not wired: ${broken.join(", ")}`)
 }
 
-// The feed carries no state of its own, so following the vault means quoting
-// its asset and its share token: anything else is a feed bound to the wrong vault.
+// The feed carries no state of its own, so following the vault means naming
+// it and quoting its asset and its share token: anything else is a feed
+// bound to the wrong vault, including a copy deployed against one that
+// happens to answer the same asset and share token.
 export async function verifyFeed(
 	net: Network,
 	accounts: Accounts,
@@ -351,16 +353,18 @@ export async function verifyFeed(
 	const feed = new Sep40Feed(
 		clientOptions(net, record.contracts.sep40_feed, accounts.outsider, server),
 	)
+	const vault = (await feed.vault()).result
 	const base = (await feed.base()).result
 	const assets = (await feed.assets()).result
 	const expectedBase = stellarAsset(record.asset.contract)
 	const expectedAssets = [stellarAsset(record.contracts.share_token)]
 	const follows =
+		vault === record.contracts.async_vault &&
 		JSON.stringify(base) === JSON.stringify(expectedBase) &&
 		JSON.stringify(assets) === JSON.stringify(expectedAssets)
 	if (!follows) {
 		throw new Error(
-			"sep40_feed does not quote the vault's asset and its share token",
+			"sep40_feed does not name the vault, or does not quote its asset and its share token",
 		)
 	}
 	console.log("sep40_feed follows the vault")
@@ -428,6 +432,8 @@ async function freshSet(
 		network: net.name,
 		deployedAt: new Date().toISOString(),
 		...provenance,
+		feedCommit: provenance.commit,
+		feedUncommittedChanges: provenance.uncommittedChanges,
 		ledger: (await server.getLatestLedger()).sequence,
 		asset: assetInfo,
 		contracts,

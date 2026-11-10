@@ -43,6 +43,8 @@ const record = (deployedAt: string): Deployment => ({
 	deployedAt,
 	commit: "0123456789abcdef0123456789abcdef01234567",
 	uncommittedChanges: false,
+	feedCommit: "0123456789abcdef0123456789abcdef01234567",
+	feedUncommittedChanges: false,
 	ledger: 1,
 	asset: { code: "USDC", issuer: "G", contract: "C" },
 	contracts: {
@@ -198,17 +200,26 @@ describe("publicKeysOf", () => {
 const at = "2026-11-04T00:00:00.000Z"
 
 describe("withFeed", () => {
-	it("adds the feed and its Wasm hash to a set deployed before the feed", () => {
-		const added = withFeed(beforeFeed(at), "C7", "H7")
+	it("adds the feed, its Wasm hash and its own source commit to a set deployed before the feed", () => {
+		const added = withFeed(beforeFeed(at), "C7", "H7", {
+			commit: "fedcba9876543210fedcba9876543210fedcba9",
+			uncommittedChanges: true,
+		})
 		expect(added.contracts.sep40_feed).toBe("C7")
 		expect(added.wasmHashes.sep40_feed).toBe("H7")
 		expect(added.contracts.async_vault).toBe("C5")
+		expect(added.feedCommit).toBe("fedcba9876543210fedcba9876543210fedcba9")
+		expect(added.feedUncommittedChanges).toBe(true)
+		expect(added.commit).toBe("0123456789abcdef0123456789abcdef01234567")
 	})
 
 	it("refuses a set that already has a feed", () => {
-		expect(() => withFeed(record(at), "C7", "H7")).toThrow(
-			/already has a sep40_feed/,
-		)
+		expect(() =>
+			withFeed(record(at), "C7", "H7", {
+				commit: "fedcba9876543210fedcba9876543210fedcba9",
+				uncommittedChanges: false,
+			}),
+		).toThrow(/already has a sep40_feed/)
 	})
 })
 

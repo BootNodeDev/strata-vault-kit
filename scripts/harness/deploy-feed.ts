@@ -5,8 +5,8 @@ import { pathToFileURL } from "node:url"
 import { verifyFeed, wasmOf } from "./deploy.js"
 import { deployContract } from "./lib/cli.js"
 import { connect } from "./lib/clients.js"
-import { saveDeployment, withFeed } from "./lib/deployment.js"
-import { wasmHash } from "./lib/provenance.js"
+import { REPO_ROOT, saveDeployment, withFeed } from "./lib/deployment.js"
+import { sourceCommit, wasmHash } from "./lib/provenance.js"
 
 // Adds a feed to a vault set deployed before the feed existed. It reads every
 // other contract in the record; it deploys and writes nothing else.
@@ -28,7 +28,15 @@ async function main(): Promise<void> {
 	})
 	console.log("sep40_feed", id)
 
-	const record = withFeed(c.deployment, id, wasmHash(feedWasm))
+	const record = withFeed(
+		c.deployment,
+		id,
+		wasmHash(feedWasm),
+		sourceCommit(REPO_ROOT),
+	)
+	console.log(
+		`feed built at ${record.feedCommit}${record.feedUncommittedChanges ? " with uncommitted changes" : ""}`,
+	)
 	await verifyFeed(c.net, c.keys, record, c.server)
 
 	const kept = saveDeployment(record)

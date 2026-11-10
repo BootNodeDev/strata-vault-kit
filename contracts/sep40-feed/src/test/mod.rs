@@ -30,34 +30,28 @@ const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
 
 /// The vault's standing report, as `nav_per_share = 1.05` WAD, prices at the
 /// feed's 14 decimals.
-#[allow(dead_code)]
 pub(crate) const PRICE: i128 = 105_000_000_000_000;
 
 pub(crate) struct Fixture<'a> {
     pub e: Env,
     pub feed: Sep40FeedClient<'a>,
     pub vault: VaultStubClient<'a>,
-    #[allow(dead_code)]
     pub oracle: OracleStubClient<'a>,
     pub asset: Address,
     pub share: Address,
-    #[allow(dead_code)]
     pub governance: Address,
 }
 
 impl Fixture<'_> {
-    #[allow(dead_code)]
     fn share_asset(&self) -> Asset {
         Asset::Stellar(self.share.clone())
     }
 
-    #[allow(dead_code)]
     fn base_asset(&self) -> Asset {
         Asset::Stellar(self.asset.clone())
     }
 
     /// Reads the oracle's standing report, lets `f` change it, then writes it back.
-    #[allow(dead_code)]
     fn report(&self, f: impl FnOnce(&mut StubReport)) {
         let view = OracleFeedClient::new(&self.e, &self.oracle.address);
         let mut report = StubReport {
@@ -71,7 +65,6 @@ impl Fixture<'_> {
     }
 
     /// Reads the vault's standing clock, lets `f` change it, then writes it back.
-    #[allow(dead_code)]
     fn clock(&self, f: impl FnOnce(&mut Clock)) {
         let mut clock =
             strata_timelock::ClockSourceClient::new(&self.e, &self.vault.address).timelock_clock();
@@ -80,7 +73,6 @@ impl Fixture<'_> {
     }
 
     /// Moves the ledger clock and its sequence together, as nav-oracle's fixture does.
-    #[allow(dead_code)]
     fn advance(&self, secs: u64) {
         self.e.ledger().with_mut(|l| {
             l.timestamp += secs;
@@ -88,7 +80,6 @@ impl Fixture<'_> {
         });
     }
 
-    #[allow(dead_code)]
     fn instance_ttl(&self) -> u32 {
         self.e
             .as_contract(&self.feed.address, || self.e.storage().instance().get_ttl())
@@ -96,7 +87,6 @@ impl Fixture<'_> {
 
     /// Lets the instance decay past its extend threshold, then checks the call
     /// extends it back to the full TTL.
-    #[allow(dead_code)]
     fn restores_the_instance(&self, call: impl FnOnce()) {
         self.e
             .ledger()
@@ -108,7 +98,6 @@ impl Fixture<'_> {
 
     /// Signs one call to the feed as `who` and nothing else, so the call
     /// carries that account's signature but not the vault's governance.
-    #[allow(dead_code)]
     fn sign_only_as(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<Val>) {
         self.e.mock_auths(&[MockAuth {
             address: who,
@@ -122,7 +111,6 @@ impl Fixture<'_> {
     }
 
     /// The last call asked `who` alone to sign, once, on exactly this call.
-    #[allow(dead_code)]
     fn signed_once_by(&self, who: &Address, fn_name: &str, args: soroban_sdk::Vec<Val>) {
         assert_eq!(
             self.e.auths(),
@@ -142,7 +130,6 @@ impl Fixture<'_> {
 }
 
 /// Asserts a call was refused with exactly this error.
-#[allow(dead_code)]
 pub(crate) fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
     result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
     expected: FeedError,
@@ -153,7 +140,6 @@ pub(crate) fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + Par
 /// Asserts a call failed for lack of a valid signature, or because the callee
 /// answers no interface the host can invoke: either way, the host's own
 /// refusal of the invocation, not one of the feed's named errors.
-#[allow(dead_code)]
 pub(crate) fn missing_auth<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(
     result: Result<Result<T, E>, Result<soroban_sdk::Error, soroban_sdk::InvokeError>>,
 ) {
