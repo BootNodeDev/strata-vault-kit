@@ -1,4 +1,5 @@
 mod constructor;
+mod kit;
 mod price;
 mod quotes;
 mod stubs;
