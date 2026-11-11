@@ -109,6 +109,26 @@ refused with `ClaimNotCovered`. It fails at simulation and leaves no
 transaction, so the evidence of the short reserve is the pricing transaction
 before it and the `fund` that clears it.
 
+## SEP-40 price feed
+
+The feed answers a vault's share price through SEP-40, the Stellar price-feed
+interface, so a third-party contract can read it without depending on any kit
+crate ([ADR](./docs/adr/0001-sep40-feed.md)). Repeat the scenario against the
+deployed feed:
+
+```sh
+HARNESS_NETWORK=testnet npm run test:sep40 -w scripts/harness
+```
+
+| Step | Contract | Transaction |
+| --- | --- | --- |
+| Deploy the consumer | `sep40_consumer` `CCC6AVA3VOYTUGU5X7SMFVPWPHZYN2U74EGE45UKGIETQK6K5JF2NCL7` | [`0659012a…dcb6`](https://stellar.expert/explorer/testnet/tx/0659012a81e09dabb26d7811b72d9e62075137bf1745341abcc20abd9023dcb6) |
+| Call `record_price` against the feed | `sep40_consumer` | [`4e892dc1…d1f6`](https://stellar.expert/explorer/testnet/tx/4e892dc150459a3cc1a5775f216160e2c6044313da0eebb5f34423b531bcd1f6) |
+
+The call returned no price: the oracle's NAV on this deployment is stale, so
+the consumer emitted `NoPrice` rather than `PriceRecorded`. The mainnet run is
+tracked in #433.
+
 ## Vault figures
 
 The [live dApp](https://strata-vault-kit-app.vercel.app) shows Withdrawable and
