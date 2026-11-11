@@ -95,18 +95,21 @@ interface Sendable<T> {
 }
 
 // A label makes the run print `tx <label> <hash>`, so a scenario can be
-// linked to an explorer afterwards.
+// linked to an explorer afterwards. `force` skips the SDK's read-call check,
+// for a call that changes no storage and so simulates as one; every other
+// caller keeps it off, so a no-auth call that was meant to write still gets
+// that check.
 export async function send<T>(
 	tx: Promise<Sendable<T>>,
 	label?: string,
+	{ force = false }: { force?: boolean } = {},
 ): Promise<T> {
 	const awaited = await tx
 	const simulation = awaited.simulation as { error?: string } | undefined
 	if (simulation?.error !== undefined) {
 		throw new Error(`simulation failed: ${simulation.error}`)
 	}
-	// A call that changes no storage simulates as a read; force still sends it.
-	const sent = await awaited.signAndSend({ force: true })
+	const sent = await awaited.signAndSend({ force })
 	const hash = sent.sendTransactionResponse?.hash
 	if (label !== undefined && hash !== undefined) {
 		console.log(`tx ${label} ${hash}`)
