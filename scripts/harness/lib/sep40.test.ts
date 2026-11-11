@@ -1,7 +1,7 @@
 import { Keypair, nativeToScVal, xdr } from "@stellar/stellar-sdk"
 import { describe, expect, it } from "vitest"
 
-import { decodedEvent, recordedEvent } from "./sep40.js"
+import { decodedEvent } from "./sep40.js"
 
 const contractEvent = (
 	topics: xdr.ScVal[],
@@ -34,34 +34,15 @@ const hostEvent = (topic: string) =>
 const diagnostic = (event: xdr.ContractEvent) =>
 	new xdr.DiagnosticEvent({ inSuccessfulContractCall: true, event })
 
-describe("recordedEvent", () => {
-	it("finds a recorded price", () => {
-		const events = [
-			diagnostic(contractEvent([xdr.ScVal.scvSymbol("price_recorded")])),
-		]
-
-		expect(recordedEvent(events)).toBe("price_recorded")
-	})
-
+describe("decodedEvent", () => {
 	it("finds a missing price", () => {
 		const events = [
 			diagnostic(contractEvent([xdr.ScVal.scvSymbol("no_price")])),
 		]
 
-		expect(recordedEvent(events)).toBe("no_price")
+		expect(decodedEvent(events)?.name).toBe("no_price")
 	})
 
-	it("ignores the host's call events", () => {
-		const events = [
-			diagnostic(hostEvent("fn_call")),
-			diagnostic(hostEvent("fn_return")),
-		]
-
-		expect(recordedEvent(events)).toBeUndefined()
-	})
-})
-
-describe("decodedEvent", () => {
 	it("decodes the price recorded event's topics and data", () => {
 		const feed = Keypair.random().publicKey()
 		// A Rust contracttype enum variant with a field encodes as a vec

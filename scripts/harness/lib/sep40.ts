@@ -37,14 +37,6 @@ function find(
 	return undefined
 }
 
-export function recordedEvent(
-	events: readonly xdr.DiagnosticEvent[],
-): Recorded | undefined {
-	return find(events)?.name
-}
-
-// The event's own topics and data, for a caller that checks more than which
-// outcome fired.
 export function decodedEvent(
 	events: readonly xdr.DiagnosticEvent[],
 ): DecodedEvent | undefined {
