@@ -7,10 +7,12 @@ import {
 	connect,
 	oracle,
 	send,
+	sentEvents,
 	sep40Consumer,
 	sep40Feed,
 	simulationEvents,
 	type Connected,
+	type Sent,
 } from "./lib/clients.js"
 import { freshFeed } from "./lib/oracle.js"
 import { decodedEvent, stellarAsset } from "./lib/sep40.js"
@@ -74,6 +76,20 @@ describe("a third-party contract reads the share price through SEP-40", () => {
 			resolution: (await feed.resolution()).result,
 		})
 		// record_price writes no storage, so the SDK treats it as a read call.
-		await send(Promise.resolve(tx), "record_price", { force: true })
+		let sent: Sent<void> | undefined
+		await send(Promise.resolve(tx), "record_price", {
+			force: true,
+			onSent: (s) => {
+				sent = s
+			},
+		})
+		// The NAV can lapse between simulation and inclusion; re-check the
+		// event the network actually recorded, not just the simulated one.
+		const included = decodedEvent(sentEvents(sent ?? {}))
+		expect(included?.name).toBe("price_recorded")
+		expect(included?.topics).toEqual([
+			c.deployment.contracts.sep40_feed,
+			shareNative,
+		])
 	})
 })

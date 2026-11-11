@@ -86,21 +86,30 @@ export const sep40Feed = (c: Connected, as: Keypair) =>
 export const sep40Consumer = (c: Connected, contractId: string, as: Keypair) =>
 	new Sep40ConsumerClient(optionsFor(c, contractId, as))
 
+export interface Sent<T> {
+	result: T
+	sendTransactionResponse?: { hash: string }
+	getTransactionResponse?: rpc.Api.GetTransactionResponse
+}
+
 interface Sendable<T> {
 	simulation?: unknown
-	signAndSend(options?: { force?: boolean }): Promise<{
-		result: T
-		sendTransactionResponse?: { hash: string }
-	}>
+	signAndSend(options?: { force?: boolean }): Promise<Sent<T>>
 }
 
 // A label makes the run print `tx <label> <hash>`, so a scenario can be
 // linked to an explorer afterwards. `force` sends a call that simulates as a
 // read; off by default so a write that turned into a no-op still fails.
+// `onSent`, when given, sees the sent transaction before `send` resolves, so
+// a caller can read back what was actually included (its own events, not
+// just the simulation's).
 export async function send<T>(
 	tx: Promise<Sendable<T>>,
 	label?: string,
-	{ force = false }: { force?: boolean } = {},
+	{
+		force = false,
+		onSent,
+	}: { force?: boolean; onSent?: (sent: Sent<T>) => void } = {},
 ): Promise<T> {
 	const awaited = await tx
 	const simulation = awaited.simulation as { error?: string } | undefined
@@ -108,11 +117,23 @@ export async function send<T>(
 		throw new Error(`simulation failed: ${simulation.error}`)
 	}
 	const sent = await awaited.signAndSend({ force })
+	onSent?.(sent)
 	const hash = sent.sendTransactionResponse?.hash
 	if (label !== undefined && hash !== undefined) {
 		console.log(`tx ${label} ${hash}`)
 	}
 	return sent.result
+}
+
+// The included transaction's own events, from its `getTransaction` result
+// (as opposed to `simulationEvents`, which are read before it is sent).
+export function sentEvents(sent: {
+	getTransactionResponse?: rpc.Api.GetTransactionResponse
+}): readonly xdr.DiagnosticEvent[] {
+	const response = sent.getTransactionResponse
+	return response && "diagnosticEventsXdr" in response
+		? (response.diagnosticEventsXdr ?? [])
+		: []
 }
 
 export function usdcBalance(c: Connected, address: string): Promise<bigint> {
