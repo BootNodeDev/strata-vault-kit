@@ -3,7 +3,8 @@ extern crate std;
 use soroban_sdk::{
     contract, contractimpl, symbol_short,
     testutils::{
-        storage::Instance as _, storage::Persistent as _, Address as _, Events as _, Ledger as _,
+        storage::Instance as _, storage::Persistent as _, storage::Temporary as _, Address as _,
+        Events as _, Ledger as _,
     },
     Address, Env, Event as _,
 };
@@ -205,6 +206,9 @@ fn the_consumer_keeps_no_state() {
         f.e.as_contract(&f.consumer.address, || f.e.storage().instance().all());
     let persistent =
         f.e.as_contract(&f.consumer.address, || f.e.storage().persistent().all());
+    let temporary =
+        f.e.as_contract(&f.consumer.address, || f.e.storage().temporary().all());
     assert!(instance.is_empty());
     assert!(persistent.is_empty());
+    assert!(temporary.is_empty());
 }
