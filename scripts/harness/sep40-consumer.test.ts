@@ -1,11 +1,10 @@
-import { beforeAll, describe, expect, it } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import { wasmOf } from "./deploy.js"
 import { price } from "./lib/amounts.js"
 import { deployContract } from "./lib/cli.js"
 import {
 	connect,
-	oracle,
 	send,
 	sentEvents,
 	sep40Consumer,
@@ -23,21 +22,10 @@ const share = stellarAsset(c.deployment.contracts.share_token)
 // decodes a sep40::Asset as a plain [tag, ...values] array, not {tag, values}.
 const shareNative = [share.tag, ...share.values]
 
-let nav = price(1)
 let consumerId = ""
 let quote: { price: bigint; timestamp: bigint } | null = null
 
 describe("a third-party contract reads the share price through SEP-40", () => {
-	beforeAll(async () => {
-		// The vault prices at the oracle's standing valuation, so the run
-		// attests it again rather than a price the deviation cap could refuse.
-		try {
-			nav = (await oracle(c, c.keys.outsider).latest()).result.nav_per_share
-		} catch {
-			nav = price(1)
-		}
-	})
-
 	it("deploys the consumer", async () => {
 		consumerId = await deployContract(
 			c.net,
@@ -49,7 +37,7 @@ describe("a third-party contract reads the share price through SEP-40", () => {
 	})
 
 	it("the feed has a price to read", async () => {
-		await freshFeed(c, nav)
+		await freshFeed(c, price(1))
 		quote = (await sep40Feed(c, c.keys.outsider).lastprice({ asset: share }))
 			.result
 		expect(quote).not.toBeNull()
