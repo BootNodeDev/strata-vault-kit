@@ -36,8 +36,9 @@ npm run test:guards
 # transaction as `tx <label> <hash>`
 npm run test:queue
 
-# Deploys the sep40-consumer example and reads the feed through it; prints
-# its contract id and `tx record_price <hash>`
+# Deploys the sep40-consumer example and reads the feed through it,
+# attesting a fresh NAV first if the current one is stale; prints its
+# contract id and `tx record_price <hash>`
 npm run test:sep40
 ```
 
