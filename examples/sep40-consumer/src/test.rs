@@ -212,3 +212,22 @@ fn the_consumer_keeps_no_state() {
     assert!(persistent.is_empty());
     assert!(temporary.is_empty());
 }
+
+#[test]
+fn an_account_address_records_no_price() {
+    let f = setup();
+    let account =
+        <soroban_sdk::MuxedAddress as soroban_sdk::testutils::MuxedAddress>::generate(&f.e)
+            .address();
+
+    f.consumer.record_price(&account, &f.share);
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.consumer.address),
+        [NoPrice {
+            feed: account,
+            asset: f.share.clone(),
+        }
+        .to_xdr(&f.e, &f.consumer.address)]
+    );
+}

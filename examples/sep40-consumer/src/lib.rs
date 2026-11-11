@@ -8,9 +8,11 @@
 //!   kit crate. The cost: it cannot tell a kit feed from any other SEP-40
 //!   feed, nor use anything the kit adds beyond the standard.
 //! - **Never panics on a missing price or a failing feed.** A feed that
-//!   answers no price, or whose call fails outright, both end in `NoPrice`.
-//!   The cost: a malformed feed address and an honest "no price yet" look the
-//!   same from here.
+//!   answers no price, whose call fails outright, or whose address is not a
+//!   contract, all end in `NoPrice`. The cost: a malformed feed address and
+//!   an honest "no price yet" look the same from here. A feed that uses up
+//!   the whole transaction budget still fails the call; this contract cannot
+//!   protect against that.
 //! - **One event per call.** `record_price` always emits exactly one of
 //!   `PriceRecorded` or `NoPrice`. The cost: a caller watching only one event
 //!   kind must still handle the other.
@@ -27,7 +29,7 @@
 mod test;
 
 use sep40::{Asset, PriceFeedClient};
-use soroban_sdk::{contract, contractevent, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractevent, contractimpl, Address, Env, Executable};
 
 #[contractevent]
 pub struct PriceRecorded {
@@ -65,12 +67,18 @@ impl Sep40Consumer {
     ///
     /// * `PriceRecorded` - `feed` answered `decimals`, `resolution` and a
     ///   price for `asset`.
-    /// * `NoPrice` - Any of those reads failed, or the feed named no price.
+    /// * `NoPrice` - Any of those reads failed, the feed named no price, or
+    ///   `feed` is not a contract address.
     ///
     /// # Authorization
     ///
     /// None.
     pub fn record_price(e: &Env, feed: Address, asset: Asset) {
+        if !matches!(feed.executable(), Some(Executable::Wasm(_))) {
+            NoPrice { feed, asset }.publish(e);
+            return;
+        }
+
         let client = PriceFeedClient::new(e, &feed);
         let reading = (
             client.try_decimals(),
