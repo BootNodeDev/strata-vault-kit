@@ -123,14 +123,12 @@ HARNESS_NETWORK=testnet npm run test:sep40 -w scripts/harness
 
 | Step | Contract | Transaction |
 | --- | --- | --- |
-| Deploy the consumer | `sep40_consumer` `CCC6AVA3VOYTUGU5X7SMFVPWPHZYN2U74EGE45UKGIETQK6K5JF2NCL7` | [`0659012a…dcb6`](https://stellar.expert/explorer/testnet/tx/0659012a81e09dabb26d7811b72d9e62075137bf1745341abcc20abd9023dcb6) |
-| Call `record_price` against the feed | `sep40_consumer` | [`4e892dc1…d1f6`](https://stellar.expert/explorer/testnet/tx/4e892dc150459a3cc1a5775f216160e2c6044313da0eebb5f34423b531bcd1f6) |
+| Deploy the consumer | `sep40_consumer` `CDKCYZ6IHE2I6KAGATCQPTOYX7GUTTCYRLK26HOQ2JVHEHGXNVA27DOJ` | [`5142b57e…4505`](https://stellar.expert/explorer/testnet/tx/5142b57e6f09a07dcf7d07b09aa41818c85e9b8460165067dddc0071057a4505) |
+| Attest a fresh NAV | `nav_oracle` | [`3478b5b3…2bf2`](https://stellar.expert/explorer/testnet/tx/3478b5b3a2abf4b7435832e13aca2cc2f40c0aa2228f2a4e8cf5218ecf752bf2) |
+| Call `record_price` against the feed | `sep40_consumer` | [`eb0fd738…fba7`](https://stellar.expert/explorer/testnet/tx/eb0fd738e9ffa10f736946c7fb8c51f18a7595ab941214aa9f3c8a9c4beffba7) |
 
-The call returned no price. This recorded run (2026-11-11) was sent without
-attesting first, to show the no-price path: the NAV had lapsed (the report
-had expired at 14:39:00 UTC, and the call landed at 14:39:48 UTC), so the
-consumer emitted `NoPrice` rather than `PriceRecorded`. The mainnet run is
-tracked in #433.
+The call recorded a price of 1.00100000000000 (100100000000000 at 14
+decimals) on 2026-11-11. The mainnet run is tracked in #433.
 
 ## Vault figures
 
