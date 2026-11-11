@@ -23,6 +23,10 @@ export const CONTRACT_NAMES = [
 
 export type ContractName = (typeof CONTRACT_NAMES)[number]
 
+export const EXAMPLE_NAMES = ["sep40_consumer"] as const
+
+export type ExampleName = (typeof EXAMPLE_NAMES)[number]
+
 export interface Deployment {
 	network: NetworkName
 	deployedAt: string

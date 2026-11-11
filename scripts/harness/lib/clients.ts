@@ -1,10 +1,11 @@
-import { Asset, rpc, type Keypair } from "@stellar/stellar-sdk"
+import { Asset, rpc, type Keypair, type xdr } from "@stellar/stellar-sdk"
 import { basicNodeSigner } from "@stellar/stellar-sdk/contract"
 
 import { Client as VaultClient } from "../../../app-lib/clients/async_vault/dist/index.js"
 import { Client as ComplianceClient } from "../../../app-lib/clients/compliance/dist/index.js"
 import { Client as IdentityVerifierClient } from "../../../app-lib/clients/identity_verifier/dist/index.js"
 import { Client as OracleClient } from "../../../app-lib/clients/nav_oracle/dist/index.js"
+import { Client as Sep40ConsumerClient } from "../../../app-lib/clients/sep40_consumer/dist/index.js"
 import { Client as Sep40FeedClient } from "../../../app-lib/clients/sep40_feed/dist/index.js"
 import { Client as ShareTokenClient } from "../../../app-lib/clients/share_token/dist/index.js"
 import { type Accounts } from "./accounts.js"
@@ -52,9 +53,9 @@ export function connectTo(
 	}
 }
 
-function options(c: Connected, contract: ContractName, as: Keypair) {
+function optionsFor(c: Connected, contractId: string, as: Keypair) {
 	return {
-		contractId: c.deployment.contracts[contract],
+		contractId,
 		rpcUrl: c.net.rpcUrl,
 		networkPassphrase: c.net.passphrase,
 		allowHttp: c.net.name === "local",
@@ -62,6 +63,10 @@ function options(c: Connected, contract: ContractName, as: Keypair) {
 		server: c.server,
 		...basicNodeSigner(as, c.net.passphrase),
 	}
+}
+
+function options(c: Connected, contract: ContractName, as: Keypair) {
+	return optionsFor(c, c.deployment.contracts[contract], as)
 }
 
 export const vault = (c: Connected, as: Keypair) =>
@@ -76,10 +81,14 @@ export const complianceContract = (c: Connected, as: Keypair) =>
 	new ComplianceClient(options(c, "compliance", as))
 export const sep40Feed = (c: Connected, as: Keypair) =>
 	new Sep40FeedClient(options(c, "sep40_feed", as))
+// The consumer is deployed ad hoc, not part of the standing record, so it is
+// named by its contract id rather than a ContractName.
+export const sep40Consumer = (c: Connected, contractId: string, as: Keypair) =>
+	new Sep40ConsumerClient(optionsFor(c, contractId, as))
 
 interface Sendable<T> {
 	simulation?: unknown
-	signAndSend(): Promise<{
+	signAndSend(options?: { force?: boolean }): Promise<{
 		result: T
 		sendTransactionResponse?: { hash: string }
 	}>
@@ -96,7 +105,8 @@ export async function send<T>(
 	if (simulation?.error !== undefined) {
 		throw new Error(`simulation failed: ${simulation.error}`)
 	}
-	const sent = await awaited.signAndSend()
+	// A call that changes no storage simulates as a read; force still sends it.
+	const sent = await awaited.signAndSend({ force: true })
 	const hash = sent.sendTransactionResponse?.hash
 	if (label !== undefined && hash !== undefined) {
 		console.log(`tx ${label} ${hash}`)
@@ -106,4 +116,11 @@ export async function send<T>(
 
 export function usdcBalance(c: Connected, address: string): Promise<bigint> {
 	return assetBalance(c.server, address, c.asset, c.net.passphrase)
+}
+
+// The simulation's own events, read before the transaction is sent.
+export function simulationEvents(tx: {
+	simulation?: { events: xdr.DiagnosticEvent[] }
+}): readonly xdr.DiagnosticEvent[] {
+	return tx.simulation?.events ?? []
 }

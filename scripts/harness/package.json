@@ -17,6 +17,7 @@
     "test:guards": "vitest run guards.test.ts",
     "test:wind-down": "vitest run wind-down.test.ts",
     "test:queue": "vitest run redemption-queue.test.ts",
+    "test:sep40": "vitest run sep40-consumer.test.ts",
     "seed": "tsx seed.ts"
   },
   "dependencies": {
