@@ -95,10 +95,8 @@ interface Sendable<T> {
 }
 
 // A label makes the run print `tx <label> <hash>`, so a scenario can be
-// linked to an explorer afterwards. `force` skips the SDK's read-call check,
-// for a call that changes no storage and so simulates as one; every other
-// caller keeps it off, so a no-auth call that was meant to write still gets
-// that check.
+// linked to an explorer afterwards. `force` sends a call that simulates as a
+// read; off by default so a write that turned into a no-op still fails.
 export async function send<T>(
 	tx: Promise<Sendable<T>>,
 	label?: string,
