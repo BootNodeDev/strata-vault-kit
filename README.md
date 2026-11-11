@@ -33,7 +33,7 @@ than its pending deposits, and once a wind-down is proposed.
   ledger time, events and calls between contracts.
 - [Threat model](./docs/THREAT_MODEL.md) — what can go wrong with the oracle,
   the roles and the redemption paths, what stops it, what is left, and the
-  test for each control.
+  test for each control, with each threat placed under STRIDE.
 - [Monitoring plan](./docs/MONITORING_PLAN.md) — what an operator watches on
   chain, where each signal comes from, and what to do when it fires.
 - [Grant differences](./docs/GRANT_DIFFERENCES.md) — where the built kit
