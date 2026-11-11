@@ -49,11 +49,10 @@ export const SHORT_WIND_DOWN_DIR = join(
 	"release",
 )
 
-export const wasmOf = (name: ContractName, dir = RELEASE_DIR): string =>
-	join(dir, `${name}.wasm`)
-
-export const exampleWasmOf = (name: ExampleName, dir = RELEASE_DIR): string =>
-	join(dir, `${name}.wasm`)
+export const wasmOf = (
+	name: ContractName | ExampleName,
+	dir = RELEASE_DIR,
+): string => join(dir, `${name}.wasm`)
 
 const clientDir = (name: ContractName): string =>
 	join(REPO_ROOT, "app-lib", "clients", name)

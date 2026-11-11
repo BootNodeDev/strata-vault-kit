@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest"
 
-import { exampleWasmOf } from "./deploy.js"
+import { wasmOf } from "./deploy.js"
 import { price } from "./lib/amounts.js"
 import { deployContract } from "./lib/cli.js"
 import {
@@ -39,7 +39,7 @@ describe("a third-party contract reads the share price through SEP-40", () => {
 	it("deploys the consumer", async () => {
 		consumerId = await deployContract(
 			c.net,
-			exampleWasmOf("sep40_consumer"),
+			wasmOf("sep40_consumer"),
 			c.keys.deployer,
 			[],
 		)
