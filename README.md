@@ -113,8 +113,9 @@ before it and the `fund` that clears it.
 
 The feed answers a vault's share price through SEP-40, the Stellar price-feed
 interface, so a third-party contract can read it without depending on any kit
-crate ([ADR](./docs/adr/0001-sep40-feed.md)). Repeat the scenario against the
-deployed feed:
+crate ([ADR](./docs/adr/0001-sep40-feed.md)). The harness repeats the scenario
+with the team's keys: it deploys a new consumer and, when the NAV is stale,
+first attests a fresh one on the oracle:
 
 ```sh
 HARNESS_NETWORK=testnet npm run test:sep40 -w scripts/harness
