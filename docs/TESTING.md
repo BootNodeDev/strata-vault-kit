@@ -206,7 +206,7 @@ without a warning. Each contract's error codes stay inside the block
 
 | Behaviour | Tests | Key test names |
 | --- | --- | --- |
-| Every entrypoint and error variant doc of the six contracts fits in 1,024 bytes | [`crates/strata-bindings/tests/spec_docs.rs`](../crates/strata-bindings/tests/spec_docs.rs) | `every_contract_doc_fits_the_spec` |
+| Every entrypoint and error variant doc of the six contracts, plus the SEP-40 consumer example, fits in 1,024 bytes | [`crates/strata-bindings/tests/spec_docs.rs`](../crates/strata-bindings/tests/spec_docs.rs) | `every_contract_doc_fits_the_spec` |
 | An error enum declared through `error_enum!` compiles only while every code stays in its contract's block | [`crates/strata-bindings/src/errors.rs`](../crates/strata-bindings/src/errors.rs) (doctests) | the in-range example compiles; the out-of-range one fails with `E0080` |
 | Every `#[only_role]` string literal matches one of its contract's role constants | [`crates/strata-bindings/tests/role_checks.rs`](../crates/strata-bindings/tests/role_checks.rs) | `every_only_role_literal_matches_its_role_constant` |
 
