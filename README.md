@@ -137,6 +137,58 @@ The vault's test runs with `cargo test -p async-vault
 fulfill_is_rejected_once_the_feed_goes_stale`. [Testing](./docs/TESTING.md)
 lists the TTL tests for every contract.
 
+## Asset metadata (SEP-1)
+
+[`stellar.toml`](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0001.md)
+is the file wallets and explorers check to show who issues the share token and
+to link its latest attestation. `npm run sep1 -w scripts/harness` generates
+one from a deployment: it reads the share token's name, symbol and decimals,
+the network, and the oracle's latest `proof_uri`, and writes
+`scripts/harness/stellar.<network>.toml`. A field it cannot fill — no report
+yet, or a `symbol()`/`name()` past the SEP-1 length limit — stays a
+placeholder and is printed as `missing <field>: <reason>` so nothing silently
+goes out wrong.
+
+```sh
+HARNESS_NETWORK=testnet npm run sep1 -w scripts/harness
+```
+
+The fields an operator sets by hand — organization details, the share
+description and image, the anchor asset, and redemption instructions — come
+from a JSON file passed as `SEP1_OPERATOR`, so regenerating after a new
+attestation never means re-typing them:
+
+```json
+{
+  "ORG_NAME": "Acme Capital",
+  "ORG_URL": "https://acme.example",
+  "ORG_LOGO": "https://acme.example/logo.png",
+  "ORG_DESCRIPTION": "Acme Capital issues the Acme Treasury Vault share",
+  "ORG_OFFICIAL_EMAIL": "official@acme.example",
+  "ORG_SUPPORT_EMAIL": "support@acme.example",
+  "desc": "Share of the Acme Treasury Vault",
+  "image": "https://acme.example/share.png",
+  "anchor_asset_type": "other",
+  "anchor_asset": "ACME-RWA",
+  "redemption_instructions": "Redeem through the vault's dApp"
+}
+```
+
+```sh
+SEP1_OPERATOR=./operator.json HARNESS_NETWORK=testnet npm run sep1 -w scripts/harness
+```
+
+Publish the result at `https://DOMAIN/.well-known/stellar.toml`, where
+`DOMAIN` matches `ORG_URL`, with `Access-Control-Allow-Origin: *` and,
+recommended, a `text/plain` content type. The file must stay under 100 KB.
+Regenerate and republish it after each attestation, so
+`attestation_of_reserve` keeps pointing at the latest proof.
+
+[`docs/sep1/stellar.template.toml`](./docs/sep1/stellar.template.toml) is the
+template with every field open; [`docs/sep1/stellar.testnet.toml`](./docs/sep1/stellar.testnet.toml)
+is an example generated from the team's testnet deployment, with the operator
+fields still placeholders.
+
 ## Admin panel
 
 The operations console is at

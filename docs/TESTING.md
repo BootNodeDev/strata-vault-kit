@@ -197,6 +197,17 @@ raw copy on `main`, which resolves once the file is on `main`; the hash then
 matches only while that copy is unchanged. With `PROOF_URI` pointing at a
 release tag's copy, the URL and the hash name the same bytes for good.
 
+## SEP-1 metadata
+
+The `stellar.toml` renderer behind `npm run sep1 -w scripts/harness` turns a
+deployment's chain reads and an operator's JSON into the file wallets and
+explorers read. See [Asset metadata (SEP-1)](../README.md#asset-metadata-sep-1)
+for how to generate and publish it.
+
+| Behaviour | Tests | Key test names |
+| --- | --- | --- |
+| A full deployment fills every chain field; a deployment with no report yet, or none that answers it, leaves `attestation_of_reserve` open with a reason instead of a broken link; a record with no SEP-40 feed omits the feed comment; a `symbol()` or `name()` past the SEP-1 length limit stays a placeholder with its reason rather than a file wallets would reject; quotes, backslashes and newlines in a chain or operator value come out escaped, and a real resolver still parses the result; an operator JSON with an unknown key or a non-string value is refused and names the key; the committed template is exactly what the renderer writes with no inputs at all | [`scripts/harness/lib/stellar-toml.test.ts`](../scripts/harness/lib/stellar-toml.test.ts) | `a full deployment fills every chain field`, `no attestation leaves the proof open`, `no feed omits its comment`, `values past SEP-1 limits stay open`, `values are escaped`, `operator values are checked`, `wallets parse the output`, `the committed template is the empty render` |
+
 ## Contract spec docs and error codes
 
 The contract spec keeps the first 1,024 bytes of each doc and drops the rest
