@@ -1,0 +1,715 @@
+{
+  "name": "Scoutme",
+  "date": "2026-11-12",
+  "summary": {
+    "executed_on": [
+      {
+        "name": "strata-bindings",
+        "id": "path+file:///scoutme/crates/strata-bindings#0.1.0",
+        "relative_path": "crates/strata-bindings/Cargo.toml",
+        "absolute_path": "/scoutme/crates/strata-bindings/Cargo.toml"
+      },
+      {
+        "name": "strata-storage",
+        "id": "path+file:///scoutme/crates/strata-storage#0.1.0",
+        "relative_path": "crates/strata-storage/Cargo.toml",
+        "absolute_path": "/scoutme/crates/strata-storage/Cargo.toml"
+      },
+      {
+        "name": "strata-timelock",
+        "id": "path+file:///scoutme/crates/strata-timelock#0.1.0",
+        "relative_path": "crates/strata-timelock/Cargo.toml",
+        "absolute_path": "/scoutme/crates/strata-timelock/Cargo.toml"
+      },
+      {
+        "name": "async-vault",
+        "id": "path+file:///scoutme/contracts/async-vault#0.1.0",
+        "relative_path": "contracts/async-vault/Cargo.toml",
+        "absolute_path": "/scoutme/contracts/async-vault/Cargo.toml"
+      },
+      {
+        "name": "compliance",
+        "id": "path+file:///scoutme/contracts/compliance#0.1.0",
+        "relative_path": "contracts/compliance/Cargo.toml",
+        "absolute_path": "/scoutme/contracts/compliance/Cargo.toml"
+      },
+      {
+        "name": "identity-verifier",
+        "id": "path+file:///scoutme/contracts/identity-verifier#0.1.0",
+        "relative_path": "contracts/identity-verifier/Cargo.toml",
+        "absolute_path": "/scoutme/contracts/identity-verifier/Cargo.toml"
+      },
+      {
+        "name": "nav-oracle",
+        "id": "path+file:///scoutme/contracts/nav-oracle#0.1.0",
+        "relative_path": "contracts/nav-oracle/Cargo.toml",
+        "absolute_path": "/scoutme/contracts/nav-oracle/Cargo.toml"
+      },
+      {
+        "name": "share-token",
+        "id": "path+file:///scoutme/contracts/share-token#0.1.0",
+        "relative_path": "contracts/share-token/Cargo.toml",
+        "absolute_path": "/scoutme/contracts/share-token/Cargo.toml"
+      }
+    ],
+    "total_vulnerabilities": 28,
+    "by_severity": {
+      "medium": 5,
+      "minor": 1,
+      "enhancement": 13,
+      "critical": 9
+    },
+    "table": {
+      "header": {
+        "cells": [
+          {
+            "content": "Crate",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Status",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Critical",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Medium",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Minor",
+            "color": {
+              "Importance": "Header"
+            }
+          },
+          {
+            "content": "Enhancement",
+            "color": {
+              "Importance": "Header"
+            }
+          }
+        ]
+      },
+      "rows": [
+        {
+          "cells": [
+            {
+              "content": "async_vault",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "6",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            },
+            {
+              "content": "5",
+              "color": "Default"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "content": "compliance",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "content": "identity_verifier",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "content": "nav_oracle",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "2",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "content": "share_token",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "content": "strata_bindings",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "2",
+              "color": "Default"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "content": "strata_storage",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            }
+          ]
+        },
+        {
+          "cells": [
+            {
+              "content": "strata_timelock",
+              "color": "Default"
+            },
+            {
+              "content": "Analyzed",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            },
+            {
+              "content": "0",
+              "color": "Default"
+            },
+            {
+              "content": "1",
+              "color": "Default"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "categories": [
+    {
+      "id": "DoS",
+      "name": "Dos Unexpected Revert With Storage",
+      "vulnerabilities": [
+        {
+          "id": "dos_unexpected_revert_with_storage",
+          "name": "Dos Unexpected Revert With Storage",
+          "short_message": "This storage (vector or map) operation is called without access control",
+          "long_message": " It occurs by preventing transactions by other users from being successfully executed forcing the blockchain state to revert to its original state.",
+          "severity": "Medium",
+          "help": "https://coinfabrik.github.io/scout-audit/docs/detectors/soroban/dos-unexpected-revert-with-storage"
+        }
+      ]
+    },
+    {
+      "id": "Arithmetic",
+      "name": "Integer Overflow Or Underflow",
+      "vulnerabilities": [
+        {
+          "id": "integer_overflow_or_underflow",
+          "name": "Integer Overflow Or Underflow",
+          "short_message": "Potential for integer arithmetic overflow/underflow. Consider checked, wrapping or saturating arithmetic.",
+          "long_message": "An overflow/underflow is typically caught and generates an error. When it is not caught, the operation will result in an inexact result which could lead to serious problems.",
+          "severity": "Critical",
+          "help": "https://coinfabrik.github.io/scout-audit/docs/detectors/soroban/integer-overflow-or-underflow"
+        }
+      ]
+    },
+    {
+      "id": "Error Handling",
+      "name": "Assert Violation",
+      "vulnerabilities": [
+        {
+          "id": "assert_violation",
+          "name": "Assert Violation",
+          "short_message": "Assert causes panic. Instead, return a proper error.",
+          "long_message": "Using assert! macro in production code can cause unexpected panics. This violates best practices for smart contract error handling.",
+          "severity": "Enhancement",
+          "help": "https://coinfabrik.github.io/scout-audit/docs/detectors/rust/assert-violation"
+        },
+        {
+          "id": "unused_return_enum",
+          "name": "Unused Return Enum",
+          "short_message": "If any of the variants (Ok/Err) is not used, the code could be simplified or it could imply a bug",
+          "long_message": "Soroban functions can return a Result enum with a custom error type. This is useful for the caller to know what went wrong when the message fails. The definition of the Result type enum consists of two variants: Ok and Err. If any of the variants is not used, the code could be simplified or it could imply a bug.    ",
+          "severity": "Minor",
+          "help": "https://coinfabrik.github.io/scout-audit/docs/detectors/soroban/unused-return-enum"
+        }
+      ]
+    },
+    {
+      "id": "Best Practices",
+      "name": "Soroban Version",
+      "vulnerabilities": [
+        {
+          "id": "soroban_version",
+          "name": "Soroban Version",
+          "short_message": "Use the latest version of Soroban",
+          "long_message": "Using a older version of Soroban can be dangerous, as it may have bugs or security issues. Use the latest version available.",
+          "severity": "Enhancement",
+          "help": "https://coinfabrik.github.io/scout-audit/docs/detectors/soroban/soroban-version"
+        },
+        {
+          "id": "storage_change_events",
+          "name": "Storage Change Events",
+          "short_message": "Consider emiting an event when storage is modified",
+          "long_message": "Emiting an event when storage changes is a good practice to make the contracts more transparent and usable to its clients and observers",
+          "severity": "Enhancement",
+          "help": "https://coinfabrik.github.io/scout-audit/docs/detectors/soroban/storage-change-events"
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": 0,
+      "occurrence_index": 1,
+      "category_id": "Error Handling",
+      "vulnerability_id": "assert_violation",
+      "error_message": "[ENHANCEMENT] Assert causes panic. Instead, return a proper error.",
+      "span": "errors.rs:39:9 - 42:10",
+      "code_snippet": "assert!(\n            ranges[i - 1].last < ranges[i].first,\n            \"two contracts' error ranges overlap\"\n        )",
+      "package": "crates",
+      "file_path": "crates/strata-bindings/src/errors.rs"
+    },
+    {
+      "id": 1,
+      "occurrence_index": 1,
+      "category_id": "Best Practices",
+      "vulnerability_id": "soroban_version",
+      "error_message": "[ENHANCEMENT] Use the latest version of Soroban",
+      "span": "lib.rs:1:1 - 1:1",
+      "code_snippet": "",
+      "package": "crates",
+      "file_path": "crates/strata-storage/src/lib.rs"
+    },
+    {
+      "id": 2,
+      "occurrence_index": 2,
+      "category_id": "Best Practices",
+      "vulnerability_id": "soroban_version",
+      "error_message": "[ENHANCEMENT] Use the latest version of Soroban",
+      "span": "lib.rs:1:1 - 1:1",
+      "code_snippet": "",
+      "package": "crates",
+      "file_path": "crates/strata-bindings/src/lib.rs"
+    },
+    {
+      "id": 3,
+      "occurrence_index": 3,
+      "category_id": "Best Practices",
+      "vulnerability_id": "soroban_version",
+      "error_message": "[ENHANCEMENT] Use the latest version of Soroban",
+      "span": "lib.rs:1:1 - 1:1",
+      "code_snippet": "",
+      "package": "crates",
+      "file_path": "crates/strata-timelock/src/lib.rs"
+    },
+    {
+      "id": 4,
+      "occurrence_index": 1,
+      "category_id": "DoS",
+      "vulnerability_id": "dos_unexpected_revert_with_storage",
+      "error_message": "[MEDIUM] This storage (vector or map) operation is called without access control",
+      "span": "queue.rs:51:10 - 51:19",
+      "code_snippet": "push_back",
+      "package": "crates",
+      "file_path": "crates/strata-timelock/src/queue.rs"
+    },
+    {
+      "id": 5,
+      "occurrence_index": 1,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This addition operation could overflow.",
+      "span": "queue.rs:53:60 - 53:68",
+      "code_snippet": "(id + 1)",
+      "package": "crates",
+      "file_path": "crates/strata-timelock/src/queue.rs"
+    },
+    {
+      "id": 6,
+      "occurrence_index": 4,
+      "category_id": "Best Practices",
+      "vulnerability_id": "soroban_version",
+      "error_message": "[ENHANCEMENT] Use the latest version of Soroban",
+      "span": "lib.rs:1:1 - 1:1",
+      "code_snippet": "",
+      "package": "contracts",
+      "file_path": "contracts/identity-verifier/src/lib.rs"
+    },
+    {
+      "id": 7,
+      "occurrence_index": 5,
+      "category_id": "Best Practices",
+      "vulnerability_id": "soroban_version",
+      "error_message": "[ENHANCEMENT] Use the latest version of Soroban",
+      "span": "lib.rs:1:1 - 1:1",
+      "code_snippet": "",
+      "package": "contracts",
+      "file_path": "contracts/compliance/src/lib.rs"
+    },
+    {
+      "id": 8,
+      "occurrence_index": 2,
+      "category_id": "DoS",
+      "vulnerability_id": "dos_unexpected_revert_with_storage",
+      "error_message": "[MEDIUM] This storage (vector or map) operation is called without access control",
+      "span": "governance.rs:145:17 - 145:26",
+      "code_snippet": "push_back",
+      "package": "contracts",
+      "file_path": "contracts/compliance/src/governance.rs"
+    },
+    {
+      "id": 9,
+      "occurrence_index": 6,
+      "category_id": "Best Practices",
+      "vulnerability_id": "soroban_version",
+      "error_message": "[ENHANCEMENT] Use the latest version of Soroban",
+      "span": "lib.rs:1:1 - 1:1",
+      "code_snippet": "",
+      "package": "contracts",
+      "file_path": "contracts/nav-oracle/src/lib.rs"
+    },
+    {
+      "id": 10,
+      "occurrence_index": 3,
+      "category_id": "DoS",
+      "vulnerability_id": "dos_unexpected_revert_with_storage",
+      "error_message": "[MEDIUM] This storage (vector or map) operation is called without access control",
+      "span": "governance.rs:157:17 - 157:26",
+      "code_snippet": "push_back",
+      "package": "contracts",
+      "file_path": "contracts/nav-oracle/src/governance.rs"
+    },
+    {
+      "id": 11,
+      "occurrence_index": 2,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This subtraction operation could underflow.",
+      "span": "guards.rs:148:16 - 148:52",
+      "code_snippet": "(nav_per_share - last.nav_per_share)",
+      "package": "contracts",
+      "file_path": "contracts/nav-oracle/src/guards.rs"
+    },
+    {
+      "id": 12,
+      "occurrence_index": 3,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This operation could overflow or underflow.",
+      "span": "guards.rs:149:17 - 149:63",
+      "code_snippet": "last.nav_per_share * (bps as i128) / BPS_DENOM",
+      "package": "contracts",
+      "file_path": "contracts/nav-oracle/src/guards.rs"
+    },
+    {
+      "id": 13,
+      "occurrence_index": 7,
+      "category_id": "Best Practices",
+      "vulnerability_id": "soroban_version",
+      "error_message": "[ENHANCEMENT] Use the latest version of Soroban",
+      "span": "lib.rs:1:1 - 1:1",
+      "code_snippet": "",
+      "package": "contracts",
+      "file_path": "contracts/share-token/src/lib.rs"
+    },
+    {
+      "id": 14,
+      "occurrence_index": 4,
+      "category_id": "DoS",
+      "vulnerability_id": "dos_unexpected_revert_with_storage",
+      "error_message": "[MEDIUM] This storage (vector or map) operation is called without access control",
+      "span": "governance.rs:174:17 - 174:26",
+      "code_snippet": "push_back",
+      "package": "contracts",
+      "file_path": "contracts/share-token/src/governance.rs"
+    },
+    {
+      "id": 15,
+      "occurrence_index": 8,
+      "category_id": "Best Practices",
+      "vulnerability_id": "soroban_version",
+      "error_message": "[ENHANCEMENT] Use the latest version of Soroban",
+      "span": "lib.rs:1:1 - 1:1",
+      "code_snippet": "",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/lib.rs"
+    },
+    {
+      "id": 16,
+      "occurrence_index": 4,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This addition operation could overflow.",
+      "span": "governance.rs:181:33 - 181:38",
+      "code_snippet": "i + 1",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/governance.rs"
+    },
+    {
+      "id": 17,
+      "occurrence_index": 5,
+      "category_id": "DoS",
+      "vulnerability_id": "dos_unexpected_revert_with_storage",
+      "error_message": "[MEDIUM] This storage (vector or map) operation is called without access control",
+      "span": "governance.rs:312:17 - 312:26",
+      "code_snippet": "push_back",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/governance.rs"
+    },
+    {
+      "id": 18,
+      "occurrence_index": 5,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This subtraction operation could underflow.",
+      "span": "lock_policy.rs:100:5 - 100:23",
+      "code_snippet": "(balance - frozen)",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/lock_policy.rs"
+    },
+    {
+      "id": 19,
+      "occurrence_index": 6,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This subtraction operation could underflow.",
+      "span": "treasury.rs:25:5 - 25:43",
+      "code_snippet": "held(e) - state::cancellable_escrow(e)",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/treasury.rs"
+    },
+    {
+      "id": 20,
+      "occurrence_index": 7,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This operation could overflow or underflow.",
+      "span": "treasury.rs:31:5 - 31:67",
+      "code_snippet": "(liquid_reserve(e) - state::committed(e) - wind_down::owed(e))",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/treasury.rs"
+    },
+    {
+      "id": 21,
+      "occurrence_index": 8,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This subtraction operation could underflow.",
+      "span": "treasury.rs:38:5 - 38:46",
+      "code_snippet": "(state::committed(e) - liquid_reserve(e))",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/treasury.rs"
+    },
+    {
+      "id": 22,
+      "occurrence_index": 9,
+      "category_id": "Arithmetic",
+      "vulnerability_id": "integer_overflow_or_underflow",
+      "error_message": "[CRITICAL] This addition operation could overflow.",
+      "span": "wind_down.rs:188:5 - 188:18",
+      "code_snippet": "wd.round += 1",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/wind_down.rs"
+    },
+    {
+      "id": 23,
+      "occurrence_index": 1,
+      "category_id": "Error Handling",
+      "vulnerability_id": "unused_return_enum",
+      "error_message": "[MINOR] If any of the variants (Ok/Err) is not used, the code could be simplified or it could imply a bug",
+      "span": "lib.rs:1307:9 - 1307:33",
+      "code_snippet": "Ok(governance::clock(e))",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/lib.rs"
+    },
+    {
+      "id": 24,
+      "occurrence_index": 1,
+      "category_id": "Best Practices",
+      "vulnerability_id": "storage_change_events",
+      "error_message": "[ENHANCEMENT] Consider emiting an event when storage is modified",
+      "span": "lib.rs:891:5 - 891:74",
+      "code_snippet": "pub fn claim_deposit(e: &Env, holder: Address, epoch_id: u64) -> i128",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/lib.rs"
+    },
+    {
+      "id": 25,
+      "occurrence_index": 2,
+      "category_id": "Best Practices",
+      "vulnerability_id": "storage_change_events",
+      "error_message": "[ENHANCEMENT] Consider emiting an event when storage is modified",
+      "span": "lib.rs:1030:5 - 1030:73",
+      "code_snippet": "pub fn claim_redeem(e: &Env, holder: Address, epoch_id: u64) -> i128",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/lib.rs"
+    },
+    {
+      "id": 26,
+      "occurrence_index": 3,
+      "category_id": "Best Practices",
+      "vulnerability_id": "storage_change_events",
+      "error_message": "[ENHANCEMENT] Consider emiting an event when storage is modified",
+      "span": "lib.rs:956:5 - 956:74",
+      "code_snippet": "pub fn cancel_redeem(e: &Env, holder: Address, epoch_id: u64) -> i128",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/lib.rs"
+    },
+    {
+      "id": 27,
+      "occurrence_index": 4,
+      "category_id": "Best Practices",
+      "vulnerability_id": "storage_change_events",
+      "error_message": "[ENHANCEMENT] Consider emiting an event when storage is modified",
+      "span": "lib.rs:923:5 - 923:75",
+      "code_snippet": "pub fn cancel_deposit(e: &Env, holder: Address, epoch_id: u64) -> i128",
+      "package": "contracts",
+      "file_path": "contracts/async-vault/src/lib.rs"
+    }
+  ]
+}
