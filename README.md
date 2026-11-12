@@ -144,19 +144,23 @@ is the file wallets and explorers check to show who issues the share token and
 to link its latest attestation. `npm run sep1 -w scripts/harness` generates
 one from a deployment: it reads the share token's name, symbol and decimals,
 the network, and the oracle's latest `proof_uri`, and writes
-`scripts/harness/stellar.<network>.toml`. A field it cannot fill — no report
-yet, or a `symbol()`/`name()` past the SEP-1 length limit — stays a
-placeholder and is printed as `missing <field>: <reason>` so nothing silently
-goes out wrong.
+`scripts/harness/stellar.<network>.toml`, replacing the whole file. It needs
+the deployment record `scripts/harness/deployed.<network>.json` and the keys
+file `.env.keys.<network>` that `connect()` checks, even though the command
+only reads from the chain. A field it cannot fill — no report yet, or a
+`symbol()`/`name()` past the SEP-1 length limit — stays a placeholder and is
+printed as `missing <field>: <reason>` so nothing silently goes out wrong.
 
 ```sh
 HARNESS_NETWORK=testnet npm run sep1 -w scripts/harness
 ```
 
 The fields an operator sets by hand — organization details, the share
-description and image, the anchor asset, and redemption instructions — come
-from a JSON file passed as `SEP1_OPERATOR`, so regenerating after a new
-attestation never means re-typing them:
+description and image, the anchor asset, redemption instructions, and
+optionally `code`, `name` and `status` (overriding the chain's values and the
+kit's `test`/`live` default) — come from a JSON file passed as
+`SEP1_OPERATOR`, so regenerating after a new attestation never means
+re-typing them:
 
 ```json
 {
@@ -182,7 +186,15 @@ Publish the result at `https://DOMAIN/.well-known/stellar.toml`, where
 `DOMAIN` matches `ORG_URL`, with `Access-Control-Allow-Origin: *` and,
 recommended, a `text/plain` content type. The file must stay under 100 KB.
 Regenerate and republish it after each attestation, so
-`attestation_of_reserve` keeps pointing at the latest proof.
+`attestation_of_reserve` keeps pointing at the latest proof. A domain that
+already serves a `stellar.toml` for other currencies must merge the share
+token's `[[CURRENCIES]]` entry into it rather than publish the generated file
+as is.
+
+SEP-1 ties a domain to an account through that account's `home_domain`. The
+share token is a SEP-41 contract, which has no `home_domain`, so how a wallet
+is meant to find this file for a contract token is not settled by this
+command.
 
 [`docs/sep1/stellar.template.toml`](./docs/sep1/stellar.template.toml) is the
 template with every field open; [`docs/sep1/stellar.testnet.toml`](./docs/sep1/stellar.testnet.toml)
