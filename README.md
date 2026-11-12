@@ -155,12 +155,12 @@ printed as `missing <field>: <reason>` so nothing silently goes out wrong.
 HARNESS_NETWORK=testnet npm run sep1 -w scripts/harness
 ```
 
-The fields an operator sets by hand — organization details, the share
-description and image, the anchor asset, redemption instructions, and
-optionally `code`, `name` and `status` (overriding the chain's values and the
-kit's `test`/`live` default) — come from a JSON file passed as
-`SEP1_OPERATOR`, so regenerating after a new attestation never means
-re-typing them:
+The fields an operator sets by hand (organization details, the share
+description and image, the anchor asset, and redemption instructions) come
+from a JSON file passed as `SEP1_OPERATOR`, so regenerating after a new
+attestation never means re-typing them. The same file may also set `code`,
+`name` and `status`; they replace the values read from the chain and the kit's
+`test`/`live` default:
 
 ```json
 {
