@@ -1,10 +1,12 @@
+/// The kit's NAV scale.
+const WAD_DECIMALS: u32 = 18;
 /// SEP-40 price decimals the feed answers.
 pub const DECIMALS: u32 = 14;
 /// One unit of the feed's price, at `DECIMALS`.
-pub const ONE: i128 = 100_000_000_000_000;
+pub const ONE: i128 = 10i128.pow(DECIMALS);
 
-/// The gap between the kit's WAD (18 decimals) and the feed's `DECIMALS`.
-const WAD_TO_FEED_SHIFT: u32 = 4;
+/// The gap between the kit's WAD and the feed's `DECIMALS`.
+const WAD_TO_FEED: i128 = 10i128.pow(WAD_DECIMALS - DECIMALS);
 
 /// Converts a WAD-scaled NAV per share into a SEP-40 price, floored.
 pub(crate) fn share_price(
@@ -17,15 +19,11 @@ pub(crate) fn share_price(
     }
 
     let price = if share_decimals >= asset_decimals {
-        let scale = 10i128.checked_pow(share_decimals.checked_sub(asset_decimals)?)?;
-        let shift = 10i128.checked_pow(WAD_TO_FEED_SHIFT)?;
-        nav_per_share.checked_mul(scale)?.checked_div(shift)?
+        let scale = 10i128.checked_pow(share_decimals - asset_decimals)?;
+        nav_per_share.checked_mul(scale)? / WAD_TO_FEED
     } else {
-        let exponent = asset_decimals
-            .checked_sub(share_decimals)?
-            .checked_add(WAD_TO_FEED_SHIFT)?;
-        let scale = 10i128.checked_pow(exponent)?;
-        nav_per_share.checked_div(scale)?
+        let scale = 10i128.checked_pow(asset_decimals - share_decimals)?;
+        nav_per_share / WAD_TO_FEED / scale
     };
 
     (price > 0).then_some(price)

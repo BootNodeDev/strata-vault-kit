@@ -80,7 +80,9 @@ pub(crate) fn at(e: &Env, asset: &Asset, timestamp: u64) -> Option<PriceData> {
     (data.timestamp <= timestamp && timestamp < expires_at).then_some(data)
 }
 
-/// The current oracle's freshness window, in seconds.
+/// The current oracle's freshness window, in seconds; `0` when the vault or
+/// its oracle cannot be read, which a real oracle never reports. A caller
+/// must check for `0` before dividing by this value.
 pub(crate) fn resolution(e: &Env) -> u32 {
     let oracle_address = match ok(VaultViewClient::new(e, &bound_vault(e)).try_oracle()) {
         Some(address) => address,

@@ -451,18 +451,55 @@ pricing, share and cash claims, mint, burn and forced transfer are unaffected.
 It is a trading restriction, not an emergency stop for the vault, and only
 governance lifts it.
 
+**A separate contract, not built into the oracle or the vault:** SEP-40 asks
+for a feed address that never changes. Governance can swap the vault's
+oracle, so a feed built into the oracle would get a new address with every
+swap; a feed built into the vault would add code to the contract that most
+needs to stay small, for a read many deployments never use. Reading
+`vault.oracle()` on every call keeps the feed's address stable across a swap,
+at the cost of about nine cross-contract calls per quote and serving whatever
+oracle governance has installed, with no delay of its own. The feed stores no
+admin either: each upgrade call reads the vault's current `governance()` and
+asks it to sign, the same way it reads the oracle, so an admin hand-over on
+the vault carries over to the feed with no step of its own, upgrades wait for
+the vault's timelock, and a vault that cannot name its governance leaves the
+feed with no way to upgrade.
+
 **Integrator surface:** the oracle exposes the attested share price directly:
 the latest report (`latest`), which returns `nav_per_share`, `expires_at`,
 `accepted_at`, `proof_hash` and `proof_uri`; the price alone (`nav_per_share`);
 and the acceptance time alone (`attested_at`). The optional SEP-40 feed named
 in section 4 is an adapter over that surface, in SEP-40's own terms: `base`
-and `assets` name the vault's deposit asset and share token, `lastprice`
+and `assets` name the vault's deposit asset and share token, and both fail
+the call rather than guess if the vault cannot answer, since SEP-40 gives
+`base` no way to say "unknown" and `assets` follows it so the two never
+disagree. `lastprice`
 answers the share price while the vault's oracle is `Valid` and no wind-down
 is active, and `price(asset, ts)` answers only for a `ts` the standing report
-actually covers. It gives no price once a wind-down starts, while the oracle
-is stale or paused, or when any read it depends on fails; a vault pause or a
-proposed wind-down does not stop it. See the
-[ADR](./adr/0001-sep40-feed.md) for why it is built this way.
+actually covers — the oracle keeps a single report, not a history, so an
+older NAV is not a price anyone could trade at today and no time-weighted
+average can be built from this feed alone. It gives no price once a
+wind-down starts: holders are then paid a pro-rata share of returning cash,
+not the NAV, so the NAV no longer says what a share is worth. It also gives
+no price while the oracle is stale or paused, or when any read it depends on
+fails; a vault pause or a proposed wind-down does not stop it, since the
+attested value still stands and a pause can be lifted. `resolution()` returns
+the current oracle's `freshness_duration`, and `PriceData.timestamp` is the
+report's `attested_at`, not rounded down to a multiple of the resolution as
+SEP-40's text prescribes: rounding would make a fresh report look older than
+it is, and the resolution itself changes whenever governance changes the
+window or swaps the oracle, so a consumer should check the timestamp against
+the ledger time on every read rather than cache the resolution. `resolution()`
+answers `0` when the vault or its oracle cannot be read — a real oracle never
+reports a zero window, so `0` only ever means the feed has no price either,
+and a consumer must check for it before dividing. `decimals()`
+is 14, as Stellar price feeds use; the kit keeps the NAV in WAD (18
+decimals), so the feed converts at the edge:
+`nav_per_share × 10^(share decimals − asset decimals) / 10^4`, rounded down,
+with an overflow or a non-positive result giving no price — precision below
+10^-14 of an asset unit per share is lost, and a share whose value rounds to
+zero has no price. Moving the NAV itself to 14 decimals is a separate
+decision.
 
 ### 8.6 Compliance
 
