@@ -141,7 +141,9 @@ contracts. The addresses emitted by the deploy script are authoritative.
 
 - **Crate names.** Shared crates in `crates/` start with `strata-`
   (`strata-timelock`, `strata-storage`, `strata-bindings`), so a path such as
-  `strata_timelock::DAY_DURATION` reads as the kit's own code.
+  `strata_timelock::DAY_DURATION` reads as the kit's own code. `crates/sep40`
+  keeps the standard's name, without the `strata-` prefix, because it holds a
+  Stellar standard and no kit code.
 - **Addresses in entrypoints.** In an entrypoint the kit defines, `caller` is
   the account that must sign the call, and `holder` is the account whose
   position, request or balance the call is about. When one account is both, the

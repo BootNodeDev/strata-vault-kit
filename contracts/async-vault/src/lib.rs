@@ -66,6 +66,7 @@ use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
 use stellar_tokens::fungible::FungibleTokenClient;
+use strata_bindings::VaultView;
 use strata_timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
 use keys::DataKey;
@@ -165,26 +166,6 @@ impl AsyncVault {
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
         state::set_current_epoch(e, FIRST_EPOCH);
         upgradeable::set_schema_version(e, 1);
-    }
-
-    /// The deposit asset's token contract.
-    pub fn asset(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::Asset)
-    }
-
-    /// The share token.
-    pub fn share_token(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::ShareToken)
-    }
-
-    /// The feed epochs are priced from.
-    pub fn oracle(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::Oracle)
-    }
-
-    /// The admin: governance.
-    pub fn governance(e: &Env) -> Option<Address> {
-        access_control::get_admin(e)
     }
 
     /// The first holder of `manager`, which closes epochs.
@@ -394,12 +375,6 @@ impl AsyncVault {
     /// manager seals.
     pub fn min_epoch_duration(e: &Env) -> Option<u64> {
         state::min_epoch_duration(e)
-    }
-
-    /// The wind-down once proposed: whether it is proposed or active, the time
-    /// in seconds it may start, and the rounds finalised.
-    pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
-        wind_down::info(e)
     }
 
     /// Announces a wind-down, which anyone can start once the delay has run.
@@ -1289,6 +1264,35 @@ impl Pausable for AsyncVault {
         caller.require_auth();
         pausable::unpause(e);
         strata_timelock::pause::end(e);
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl VaultView for AsyncVault {
+    /// The deposit asset's token contract.
+    fn asset(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::Asset)
+    }
+
+    /// The share token.
+    fn share_token(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::ShareToken)
+    }
+
+    /// The feed epochs are priced from.
+    fn oracle(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::Oracle)
+    }
+
+    /// The wind-down once proposed: whether it is proposed or active, the time
+    /// in seconds it may start, and the rounds finalised.
+    fn wind_down(e: &Env) -> Option<WindDownInfo> {
+        wind_down::info(e)
+    }
+
+    /// The admin: governance.
+    fn governance(e: &Env) -> Option<Address> {
+        access_control::get_admin(e)
     }
 }
 

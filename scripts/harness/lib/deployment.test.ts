@@ -19,7 +19,10 @@ import {
 	incompleteFile,
 	publicKeysOf,
 	refuseIncomplete,
+	renderAddressesTable,
+	replaceStagingContracts,
 	saveDeployment,
+	withFeed,
 	writeIncomplete,
 	type Deployment,
 	type IncompleteDeployment,
@@ -40,6 +43,8 @@ const record = (deployedAt: string): Deployment => ({
 	deployedAt,
 	commit: "0123456789abcdef0123456789abcdef01234567",
 	uncommittedChanges: false,
+	feedCommit: "0123456789abcdef0123456789abcdef01234567",
+	feedUncommittedChanges: false,
 	ledger: 1,
 	asset: { code: "USDC", issuer: "G", contract: "C" },
 	contracts: {
@@ -48,6 +53,7 @@ const record = (deployedAt: string): Deployment => ({
 		share_token: "C3",
 		nav_oracle: "C4",
 		async_vault: "C5",
+		sep40_feed: "C6",
 	},
 	wasmHashes: {
 		compliance: "H1",
@@ -55,9 +61,21 @@ const record = (deployedAt: string): Deployment => ({
 		share_token: "H3",
 		nav_oracle: "H4",
 		async_vault: "H5",
+		sep40_feed: "H6",
 	},
 	accounts: {} as Deployment["accounts"],
 })
+
+const beforeFeed = (deployedAt: string): Deployment => {
+	const full = record(deployedAt)
+	const { sep40_feed: _feed, ...contracts } = full.contracts
+	const { sep40_feed: _hash, ...wasmHashes } = full.wasmHashes
+	return {
+		...full,
+		contracts: contracts as Deployment["contracts"],
+		wasmHashes: wasmHashes as Deployment["wasmHashes"],
+	}
+}
 
 const deployedAtOf = (file: string): unknown =>
 	(JSON.parse(readFileSync(file, "utf8")) as { deployedAt?: unknown })
@@ -176,5 +194,50 @@ describe("publicKeysOf", () => {
 			expect(text).toContain(accounts[name].publicKey())
 			expect(text).not.toContain(accounts[name].secret())
 		}
+	})
+})
+
+const at = "2026-11-04T00:00:00.000Z"
+
+describe("withFeed", () => {
+	it("adds the feed, its Wasm hash and its own source commit to a set deployed before the feed", () => {
+		const added = withFeed(beforeFeed(at), "C7", "H7", {
+			commit: "fedcba9876543210fedcba9876543210fedcba9",
+			uncommittedChanges: true,
+		})
+		expect(added.contracts.sep40_feed).toBe("C7")
+		expect(added.wasmHashes.sep40_feed).toBe("H7")
+		expect(added.contracts.async_vault).toBe("C5")
+		expect(added.feedCommit).toBe("fedcba9876543210fedcba9876543210fedcba9")
+		expect(added.feedUncommittedChanges).toBe(true)
+		expect(added.commit).toBe("0123456789abcdef0123456789abcdef01234567")
+	})
+
+	it("refuses a set that already has a feed", () => {
+		expect(() =>
+			withFeed(record(at), "C7", "H7", {
+				commit: "fedcba9876543210fedcba9876543210fedcba9",
+				uncommittedChanges: false,
+			}),
+		).toThrow(/already has a sep40_feed/)
+	})
+})
+
+describe("replaceStagingContracts", () => {
+	it("rewrites a staging block that already lists the feed", () => {
+		const before =
+			'[staging.contracts]\nasync_vault = { id = "OLD" }\nsep40_feed = { id = "OLDFEED" }\n\n### Production'
+		const after = replaceStagingContracts(before, record(at))
+		expect(after.match(/^sep40_feed = /gm)).toHaveLength(1)
+		expect(after).toContain('sep40_feed = { id = "C6" }')
+		expect(after).toContain("### Production")
+	})
+})
+
+describe("renderAddressesTable", () => {
+	it("lists the feed", () => {
+		expect(renderAddressesTable(record(at))).toContain(
+			"| `sep40_feed` | `C6` |",
+		)
 	})
 })

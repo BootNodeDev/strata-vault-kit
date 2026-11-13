@@ -20,6 +20,13 @@ npm run test:unit
 
 CI runs these in the `js` job through the root `npm run test`.
 
+`npm run deploy:feed` adds a SEP-40 feed to a set deployed before the feed
+existed. It reads every other contract already in the record and deploys only
+the feed, bound to that record's vault; it writes the updated record and, on
+testnet, `environments.toml` and the README addresses table, the same as
+`npm run deploy` does. `npm run extend` covers the feed like any other
+contract in the record: it needs no changes once the feed is in it.
+
 ```sh
 # Run test suites
 npm run test:happy-path
@@ -98,7 +105,9 @@ complete record is left alone.
 The record keeps `commit`, the commit checked out when the deploy ran, and
 `wasmHashes`, the SHA-256 of each Wasm file it deployed. The deploy does not
 rebuild, so build right before you deploy. With `uncommittedChanges: true`,
-the commit alone cannot reproduce the build.
+the commit alone cannot reproduce the build. A feed added later with
+`npm run deploy:feed` was built at its own commit: rebuild `sep40_feed` at
+`feedCommit` (and check `feedUncommittedChanges` the same way).
 
 Rebuild and compare on the same operating system and CPU as the deploy:
 
@@ -110,7 +119,7 @@ shasum -a 256 target/wasm32v1-none/release/*.wasm
 
 Each hash should equal the matching entry in `wasmHashes`. A build on
 another platform can differ: CI's Linux build and a macOS build of the same
-commit hash differently for four of the five contracts, with no build path
+commit hash differently for five of the six contracts, with no build path
 in either.
 
 To check what the network runs, which needs no rebuild:
