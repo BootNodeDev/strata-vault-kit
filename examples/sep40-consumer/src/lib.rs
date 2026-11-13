@@ -19,6 +19,12 @@
 //! - **No state.** Nothing is written to instance or persistent storage; the
 //!   price lives only in the event. The cost: no history, no last-known
 //!   price to read back from the contract itself.
+//! - **The price's age is left to the caller.** The price and timestamp are
+//!   recorded as the feed gives them, with no check of the price's age
+//!   against the ledger time; the feed already answers no price once its
+//!   report lapses, but a contract that acts on a price should check its age
+//!   against its own tolerance. The cost: copied as is, it trusts whatever
+//!   window the feed's oracle uses.
 //! - **Anyone may call it.** `record_price` takes no authorization. The cost:
 //!   anyone can spend the call's fee to record a price, including a stale or
 //!   absent one.
