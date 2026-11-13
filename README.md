@@ -33,7 +33,13 @@ than its pending deposits, and once a wind-down is proposed.
   ledger time, events and calls between contracts.
 - [Threat model](./docs/THREAT_MODEL.md) — what can go wrong with the oracle,
   the roles and the redemption paths, what stops it, what is left, and the
-  test for each control.
+  test for each control, with each threat placed under STRIDE.
+- [STRIDE threat model](./docs/STRIDE-threat-model.md) — the threat model in
+  the format of Stellar's STRIDE template: a data flow diagram, numbered flows,
+  issues for each category and their remediations.
+- [Security scan](./docs/SECURITY_SCAN.md) — what the self-service security
+  tools found in the contracts, how each finding was triaged, and the plan for
+  what stays open.
 - [Monitoring plan](./docs/MONITORING_PLAN.md) — what an operator watches on
   chain, where each signal comes from, and what to do when it fires.
 - [Grant differences](./docs/GRANT_DIFFERENCES.md) — where the built kit
