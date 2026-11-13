@@ -24,3 +24,6 @@ playwright-report
 
 scripts/harness/deployed.*.json
 scripts/harness/runs
+
+# Raw security tool output, kept as the tool wrote it
+docs/evidence/scout

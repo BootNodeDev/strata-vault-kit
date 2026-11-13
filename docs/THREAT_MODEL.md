@@ -389,6 +389,28 @@ without checking the feed's state.
   `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
 
+### O13. Choosing which report prices an epoch
+
+Once an epoch's notice ends, whoever calls `fulfill_epoch` picks the moment,
+and with it which valid report prices the epoch.
+
+- **Control:** Requests are fixed when the epoch is sealed, and only a report
+  accepted at or after the seal can price it. Between the end of the notice and
+  the call, the cooldown limits how many reports can land and the caps limit
+  how far each one moves. Anyone may call `fulfill_epoch` as soon as the notice
+  ends.
+- **Residual:** Whoever fulfils chooses among the reports accepted by then. A
+  holder who waits for a better report can be beaten by anyone who fulfils
+  first. A keeper that fulfils as soon as the notice ends removes the choice;
+  the kit runs none.
+- **Tests:** `an_epoch_cannot_be_priced_inside_its_notice` in
+  [`notice.rs`](../contracts/async-vault/src/test/notice.rs);
+  `anyone_may_fulfill_a_closed_epoch` in
+  [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
+  `attest_enforces_cooldown_and_deviation` in
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs).
+  A keeper: none, because the kit runs no keeper.
+
 ## Roles
 
 ### R1. Governance compromised: the changes that wait
@@ -1300,6 +1322,31 @@ or queued changes.
   release changes a stored type yet. The failures above are read from the
   code, and a test belongs with the first release that changes one.
 
+### X14. A call made in a holder's name
+
+Someone requests, cancels or claims for a holder who did not sign, to move the
+holder's escrow or take their payout.
+
+- **Control:** Each request, cancellation and claim names its holder and asks
+  that holder to sign. The vault has no operators or approvals, so no other
+  account can act for a holder. A claim pays the holder, never the caller. A
+  wind-down claim for the vault's own address is refused (`NoEntitlement`).
+- **Residual:** Whoever holds a holder's keys acts as that holder. A wallet that
+  signs without showing the call is outside the kit.
+- **Tests:** `request_deposit_needs_the_investor_authorisation`,
+  `one_investor_signature_covers_the_request_and_the_transfer` and
+  `claiming_needs_the_investor_authorisation` in
+  [`deposit.rs`](../contracts/async-vault/src/test/deposit.rs);
+  `request_redeem_needs_the_holder_authorisation` in
+  [`redeem.rs`](../contracts/async-vault/src/test/redeem.rs);
+  `cancel_deposit_asks_the_holder_for_one_signature`,
+  `cancel_redeem_asks_the_holder_for_one_signature`,
+  `claim_redeem_asks_the_holder_for_one_signature` and
+  `claim_wind_down_asks_the_holder_for_one_signature` in
+  [`signatures.rs`](../contracts/async-vault/src/test/signatures.rs);
+  `the_vault_cannot_claim_against_its_own_escrowed_shares` in
+  [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs).
+
 ## STRIDE
 
 STRIDE sorts threats into six kinds: spoofing, tampering, repudiation,
@@ -1308,6 +1355,8 @@ threats above are grouped by area instead. The table places each one under the
 kinds it belongs to. The sections after it say what each kind covers here, and
 cover in full the three that the threats above cover least: spoofing,
 repudiation and information disclosure.
+[`STRIDE-threat-model.md`](./STRIDE-threat-model.md) presents the same threats
+in the format of Stellar's STRIDE template, with a data flow diagram.
 
 ### Map
 
@@ -1328,6 +1377,7 @@ of service. E: elevation of privilege.
 | [O10](#o10-the-proof-proves-nothing-on-chain) The proof proves nothing on chain |   | x | x |   |   |   |
 | [O11](#o11-an-oracle-upgraded-in-place-cannot-read-its-old-report) An oracle upgraded in place cannot read its old report |   |   |   |   | x |   |
 | [O12](#o12-an-integrator-reads-a-price-the-vault-would-refuse) An integrator reads a price the vault would refuse |   | x |   |   |   |   |
+| [O13](#o13-choosing-which-report-prices-an-epoch) Choosing which report prices an epoch |   | x |   |   |   |   |
 | [R1](#r1-governance-compromised-the-changes-that-wait) Governance compromised: the changes that wait |   | x |   |   |   | x |
 | [R2](#r2-governance-compromised-the-powers-that-act-at-once) Governance compromised: the powers that act at once |   | x |   |   | x | x |
 | [R3](#r3-setup-left-open-or-wired-wrong) Setup left open, or wired wrong |   | x |   |   |   | x |
@@ -1355,6 +1405,7 @@ of service. E: elevation of privilege.
 | [X11](#x11-storage-that-expires) Storage that expires |   |   |   |   | x |   |
 | [X12](#x12-resource-limits-contention-and-griefing) Resource limits, contention and griefing |   |   |   |   | x |   |
 | [X13](#x13-an-upgrade-cannot-read-what-the-vault-stored) An upgrade cannot read what the vault stored |   |   |   |   | x |   |
+| [X14](#x14-a-call-made-in-a-holders-name) A call made in a holder's name | x |   |   |   |   |   |
 
 ### Spoofing
 
@@ -1362,8 +1413,8 @@ Acting as another account, contract or person. What proves who is calling:
 
 - **Holders.** Each request, cancellation and claim names a holder, and the
   vault asks that holder to sign (`holder.require_auth()`). The vault has no
-  operators, so no one else can act for a holder. The calls anyone may make
-  check no role: pricing a sealed epoch, funding the vault, activating a
+  operators, so no one else can act for a holder (X14). The calls anyone may
+  make check no role: pricing a sealed epoch, funding the vault, activating a
   wind-down that is due, finalizing a round, and sealing an epoch that has run
   the minimum epoch duration. They act on ledger time and stored state, and
   `fund` asks only the payer to sign.
@@ -1389,14 +1440,15 @@ Acting as another account, contract or person. What proves who is calling:
   copy of the console hosted by someone else can show anything; each operator
   hosts its own.
 
-R4 and R12 hold the tests: one signature per account for each privileged call,
-and the signing page's refusals.
+R4, R12 and X14 hold the tests: one signature per account for each privileged
+call, the signing page's refusals, and the holder's signature on each of their
+calls.
 
 ### Tampering
 
 Changing the price, the books, the code, or a transaction before it is signed:
 
-- the price: O1, O2, O3, O5, O8, O9, O10, O12;
+- the price: O1, O2, O3, O5, O8, O9, O10, O12, O13;
 - code, roles and wiring: R1, R2, R3, R11;
 - what a holder is owed or paid: R10, X3, X8, X9, X10;
 - when an epoch is sealed: R8;
