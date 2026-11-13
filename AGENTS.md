@@ -177,6 +177,8 @@ contracts. The addresses emitted by the deploy script are authoritative.
   and with no issue numbers or decision ids.
 - **Exact pins.** Every crates.io dependency, dev-dependencies included, is
   pinned with `=` to the version in `Cargo.lock`.
+- **Examples.** `examples/` holds contracts that show a third party using the
+  kit; an example depends on no kit crate, only on standards such as `sep40`.
 
 ## Conventions
 

@@ -107,6 +107,28 @@ refused with `ClaimNotCovered`. It fails at simulation and leaves no
 transaction, so the evidence of the short reserve is the pricing transaction
 before it and the `fund` that clears it.
 
+## SEP-40 price feed
+
+The feed answers a vault's share price through SEP-40, the Stellar price-feed
+interface, so a third-party contract can read it without depending on any kit
+crate; the design document explains how it is built
+([Valuation and accounting](./docs/strata-product-and-architecture.md#85-valuation-and-accounting)).
+The harness repeats the scenario with the team's keys: it deploys a new
+consumer and, when the NAV is stale, first attests a fresh one on the oracle:
+
+```sh
+HARNESS_NETWORK=testnet npm run test:sep40 -w scripts/harness
+```
+
+| Step | Contract | Transaction |
+| --- | --- | --- |
+| Deploy the consumer | `sep40_consumer` `CDKCYZ6IHE2I6KAGATCQPTOYX7GUTTCYRLK26HOQ2JVHEHGXNVA27DOJ` | [`5142b57e…4505`](https://stellar.expert/explorer/testnet/tx/5142b57e6f09a07dcf7d07b09aa41818c85e9b8460165067dddc0071057a4505) |
+| Attest a fresh NAV | `nav_oracle` | [`3478b5b3…2bf2`](https://stellar.expert/explorer/testnet/tx/3478b5b3a2abf4b7435832e13aca2cc2f40c0aa2228f2a4e8cf5218ecf752bf2) |
+| Call `record_price` against the feed | `sep40_consumer` | [`eb0fd738…fba7`](https://stellar.expert/explorer/testnet/tx/eb0fd738e9ffa10f736946c7fb8c51f18a7595ab941214aa9f3c8a9c4beffba7) |
+
+The call recorded a price of 1.00100000000000 (100100000000000 at 14
+decimals) on 2026-11-11. The mainnet run is tracked in #433.
+
 ## Vault figures
 
 The [live dApp](https://strata-vault-kit-app.vercel.app) shows Withdrawable and

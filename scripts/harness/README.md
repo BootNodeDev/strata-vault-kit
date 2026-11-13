@@ -35,6 +35,11 @@ npm run test:guards
 # The redemption queue on a seeded deployment (`npm run seed`); prints each
 # transaction as `tx <label> <hash>`
 npm run test:queue
+
+# Deploys the sep40-consumer example and reads the feed through it,
+# attesting a fresh NAV first if the current one is stale; prints its
+# contract id and `tx record_price <hash>`
+npm run test:sep40
 ```
 
 `HARNESS_NETWORK` picks the network: `local` (the default) or `testnet`.
