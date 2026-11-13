@@ -15,7 +15,7 @@ use sep40::{Asset, PriceData};
 use super::PRICE;
 use crate::{FeedChange, Sep40Feed, Sep40FeedClient};
 
-const WAD: i128 = 1_000_000_000_000_000_000;
+const WAD: i128 = 10i128.pow(18);
 
 fn reads_the_vault_view<T: strata_bindings::VaultView>() {}
 fn reads_the_oracle_feed<T: strata_bindings::OracleFeed>() {}

@@ -1,6 +1,6 @@
 use crate::price::share_price;
 
-const WAD: i128 = 1_000_000_000_000_000_000;
+const WAD: i128 = 10i128.pow(18);
 
 #[test]
 fn equal_decimals_drop_four_digits() {
@@ -41,7 +41,7 @@ fn the_price_rounds_down() {
 fn an_overflow_gives_no_price() {
     assert_eq!(share_price(WAD, 0, 38), None); // nav × 10^38 overflows
     assert_eq!(share_price(WAD, 0, 39), None); // 10^39 overflows
-    assert_eq!(share_price(WAD, 40, 0), None); // 10^44 overflows
+    assert_eq!(share_price(WAD, 40, 0), None); // 10^40 overflows
 }
 
 #[test]
