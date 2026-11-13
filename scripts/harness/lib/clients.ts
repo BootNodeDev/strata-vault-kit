@@ -125,14 +125,17 @@ export async function send<T>(
 	return sent.result
 }
 
-// The included transaction's own events, from its `getTransaction` result
-// (as opposed to `simulationEvents`, which are read before it is sent).
+// The included transaction's own contract events, from its `getTransaction`
+// result (as opposed to `simulationEvents`, which are read before it is
+// sent). `diagnosticEventsXdr` is optional and present only when the RPC
+// emits diagnostic events; `events.contractEventsXdr` is always there on an
+// included transaction, one array per operation, so it is flattened here.
 export function sentEvents(sent: {
 	getTransactionResponse?: rpc.Api.GetTransactionResponse
-}): readonly xdr.DiagnosticEvent[] {
+}): readonly xdr.ContractEvent[] {
 	const response = sent.getTransactionResponse
-	return response && "diagnosticEventsXdr" in response
-		? (response.diagnosticEventsXdr ?? [])
+	return response && "events" in response
+		? response.events.contractEventsXdr.flat()
 		: []
 }
 
@@ -140,9 +143,11 @@ export function usdcBalance(c: Connected, address: string): Promise<bigint> {
 	return assetBalance(c.server, address, c.asset, c.net.passphrase)
 }
 
-// The simulation's own events, read before the transaction is sent.
+// The simulation's own events, read before the transaction is sent, each
+// unwrapped to its contract event (`DiagnosticEvent.event()`) so the same
+// finder reads these and `sentEvents`.
 export function simulationEvents(tx: {
 	simulation?: { events: xdr.DiagnosticEvent[] }
-}): readonly xdr.DiagnosticEvent[] {
-	return tx.simulation?.events ?? []
+}): readonly xdr.ContractEvent[] {
+	return (tx.simulation?.events ?? []).map((diagnostic) => diagnostic.event())
 }

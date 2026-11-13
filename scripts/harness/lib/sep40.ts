@@ -15,13 +15,11 @@ export interface DecodedEvent {
 	data: unknown
 }
 
-// Diagnostic events also carry the host's own fn_call/fn_return pair, whose
-// type is "diagnostic" rather than "contract": skip those.
-function find(
-	events: readonly xdr.DiagnosticEvent[],
-): DecodedEvent | undefined {
-	for (const diagnostic of events) {
-		const event = diagnostic.event()
+// A transaction's contract events also carry the host's own fn_call/
+// fn_return pair, whose type is "diagnostic" rather than "contract": skip
+// those.
+function find(events: readonly xdr.ContractEvent[]): DecodedEvent | undefined {
+	for (const event of events) {
 		if (event.type().name !== "contract") continue
 		const body = event.body().v0()
 		const [first, ...rest] = body.topics()
@@ -38,7 +36,7 @@ function find(
 }
 
 export function decodedEvent(
-	events: readonly xdr.DiagnosticEvent[],
+	events: readonly xdr.ContractEvent[],
 ): DecodedEvent | undefined {
 	return find(events)
 }

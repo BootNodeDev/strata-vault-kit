@@ -31,14 +31,9 @@ const hostEvent = (topic: string) =>
 		),
 	})
 
-const diagnostic = (event: xdr.ContractEvent) =>
-	new xdr.DiagnosticEvent({ inSuccessfulContractCall: true, event })
-
 describe("decodedEvent", () => {
 	it("finds a missing price", () => {
-		const events = [
-			diagnostic(contractEvent([xdr.ScVal.scvSymbol("no_price")])),
-		]
+		const events = [contractEvent([xdr.ScVal.scvSymbol("no_price")])]
 
 		expect(decodedEvent(events)?.name).toBe("no_price")
 	})
@@ -55,25 +50,23 @@ describe("decodedEvent", () => {
 			timestamp: 1_700_000_000n,
 		}
 		const events = [
-			diagnostic(
-				contractEvent(
-					[
-						xdr.ScVal.scvSymbol("price_recorded"),
+			contractEvent(
+				[
+					xdr.ScVal.scvSymbol("price_recorded"),
+					nativeToScVal(feed, { type: "address" }),
+					xdr.ScVal.scvVec([
+						xdr.ScVal.scvSymbol("Stellar"),
 						nativeToScVal(feed, { type: "address" }),
-						xdr.ScVal.scvVec([
-							xdr.ScVal.scvSymbol("Stellar"),
-							nativeToScVal(feed, { type: "address" }),
-						]),
-					],
-					nativeToScVal(data, {
-						type: {
-							decimals: ["symbol", "u32"],
-							price: ["symbol", "i128"],
-							resolution: ["symbol", "u32"],
-							timestamp: ["symbol", "u64"],
-						},
-					}),
-				),
+					]),
+				],
+				nativeToScVal(data, {
+					type: {
+						decimals: ["symbol", "u32"],
+						price: ["symbol", "i128"],
+						resolution: ["symbol", "u32"],
+						timestamp: ["symbol", "u64"],
+					},
+				}),
 			),
 		]
 
@@ -85,7 +78,7 @@ describe("decodedEvent", () => {
 	})
 
 	it("finds nothing among the host's call events", () => {
-		const events = [diagnostic(hostEvent("fn_call"))]
+		const events = [hostEvent("fn_call")]
 
 		expect(decodedEvent(events)).toBeUndefined()
 	})

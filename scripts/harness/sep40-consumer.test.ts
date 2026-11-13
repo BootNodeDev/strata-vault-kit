@@ -79,5 +79,9 @@ describe("a third-party contract reads the share price through SEP-40", () => {
 			c.deployment.contracts.sep40_feed,
 			shareNative,
 		])
+		expect(included?.data).toMatchObject({
+			decimals: (await feed.decimals()).result,
+			resolution: (await feed.resolution()).result,
+		})
 	})
 })
