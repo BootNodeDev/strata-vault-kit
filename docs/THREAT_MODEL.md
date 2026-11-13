@@ -382,7 +382,7 @@ without checking the feed's state.
   prices.
 - **Residual:** `nav_per_share()` and `latest()` return the stored report even
   when it is stale, out of band or paused. An integrator who skips `state()`
-  reads a price the vault would refuse. The SEP-40 feed (O13) answers this for
+  reads a price the vault would refuse. The SEP-40 feed (O14) answers this for
   a reader who goes through it instead of the oracle directly.
 - **Tests:** `the_nav_pause_holds_regardless_of_freshness` and
   `heartbeat_expiry_makes_it_stale` in
@@ -390,7 +390,29 @@ without checking the feed's state.
   `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
 
-### O13. An integrator relies on the SEP-40 feed
+### O13. Choosing which report prices an epoch
+
+Once an epoch's notice ends, whoever calls `fulfill_epoch` picks the moment,
+and with it which valid report prices the epoch.
+
+- **Control:** Requests are fixed when the epoch is sealed, and only a report
+  accepted at or after the seal can price it. Between the end of the notice and
+  the call, the cooldown limits how many reports can land and the caps limit
+  how far each one moves. Anyone may call `fulfill_epoch` as soon as the notice
+  ends.
+- **Residual:** Whoever fulfils chooses among the reports accepted by then. A
+  holder who waits for a better report can be beaten by anyone who fulfils
+  first. A keeper that fulfils as soon as the notice ends removes the choice;
+  the kit runs none.
+- **Tests:** `an_epoch_cannot_be_priced_inside_its_notice` in
+  [`notice.rs`](../contracts/async-vault/src/test/notice.rs);
+  `anyone_may_fulfill_a_closed_epoch` in
+  [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
+  `attest_enforces_cooldown_and_deviation` in
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs).
+  A keeper: none, because the kit runs no keeper.
+
+### O14. An integrator relies on the SEP-40 feed
 
 An integrator reads the vault's share price through `sep40-feed` instead of
 the oracle directly.
@@ -1405,6 +1427,7 @@ of service. E: elevation of privilege.
 | [O11](#o11-an-oracle-upgraded-in-place-cannot-read-its-old-report) An oracle upgraded in place cannot read its old report |   |   |   |   | x |   |
 | [O12](#o12-an-integrator-reads-a-price-the-vault-would-refuse) An integrator reads a price the vault would refuse |   | x |   |   |   |   |
 | [O13](#o13-choosing-which-report-prices-an-epoch) Choosing which report prices an epoch |   | x |   |   |   |   |
+| [O14](#o14-an-integrator-relies-on-the-sep-40-feed) An integrator relies on the SEP-40 feed | x | x |   |   | x |   |
 | [R1](#r1-governance-compromised-the-changes-that-wait) Governance compromised: the changes that wait |   | x |   |   |   | x |
 | [R2](#r2-governance-compromised-the-powers-that-act-at-once) Governance compromised: the powers that act at once |   | x |   |   | x | x |
 | [R3](#r3-setup-left-open-or-wired-wrong) Setup left open, or wired wrong |   | x |   |   |   | x |
@@ -1457,7 +1480,10 @@ Acting as another account, contract or person. What proves who is calling:
   as the vault. The other way round, the vault and the token believe whatever
   answers at the oracle, compliance and verifier addresses governance set.
   After setup, changing those waits for the timelock (O9, R11), and
-  `finish_setup` checks that each one answers what it should (R3).
+  `finish_setup` checks that each one answers what it should (R3). An
+  integrator who picks the SEP-40 feed by what it answers can be handed a copy
+  bound to another vault; pinning the feed's contract ID, or checking its
+  `vault()`, tells the two apart (O14).
 - **Investors.** The allowlist says who may hold shares. A compliance key that
   lists an address it should not (R9), a verifier that lets anyone in (R11), or
   an unlisted address that gets in (X4) lets someone pose as a verified
@@ -1475,7 +1501,7 @@ calls.
 
 Changing the price, the books, the code, or a transaction before it is signed:
 
-- the price: O1, O2, O3, O5, O8, O9, O10, O12, O13;
+- the price: O1, O2, O3, O5, O8, O9, O10, O12, O13, O14;
 - code, roles and wiring: R1, R2, R3, R11;
 - what a holder is owed or paid: R10, X3, X8, X9, X10;
 - when an epoch is sealed: R8;
@@ -1584,7 +1610,7 @@ Stopping pricing, exits or calls:
 - an authority stalls the vault, holds back a holder or leaves the reserve
   short: R2, R6, R7, R8, R9, R11;
 - exits are held: X1 to X8, X10;
-- calls fail: X11, X12, X13.
+- calls fail: X11, X12, X13, O14.
 
 ### Elevation of privilege
 
