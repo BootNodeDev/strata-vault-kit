@@ -242,12 +242,17 @@ impl VaultBinding for Sep40Feed {
 
 #[contractimpl(contracttrait)]
 impl PriceFeed for Sep40Feed {
-    /// The vault's deposit asset: every price is quoted in it.
+    /// The vault's deposit asset: every price is quoted in it. Fails the
+    /// call if the vault cannot answer: SEP-40 gives `base` no way to say
+    /// "unknown", and a feed whose vault cannot name its own asset is
+    /// broken.
     fn base(e: &Env) -> Asset {
         Asset::Stellar(VaultViewClient::new(e, &bound_vault(e)).asset())
     }
 
-    /// The vault's share token: the only asset this feed prices.
+    /// The vault's share token: the only asset this feed prices. Fails the
+    /// call if the vault cannot answer, for the same reason as `base`, so
+    /// the two never disagree.
     fn assets(e: &Env) -> Vec<Asset> {
         vec![
             e,
@@ -262,7 +267,9 @@ impl PriceFeed for Sep40Feed {
 
     /// Seconds a report stays current: the vault's current oracle's
     /// `freshness_duration`. `0` when the vault or the oracle cannot be
-    /// read; `u32::MAX` when the window does not fit a `u32`.
+    /// read, which a real oracle never reports; `u32::MAX` when the window
+    /// does not fit a `u32`. A caller must check for `0` before dividing by
+    /// this value.
     fn resolution(e: &Env) -> u32 {
         quote::resolution(e)
     }

@@ -470,7 +470,10 @@ the latest report (`latest`), which returns `nav_per_share`, `expires_at`,
 `accepted_at`, `proof_hash` and `proof_uri`; the price alone (`nav_per_share`);
 and the acceptance time alone (`attested_at`). The optional SEP-40 feed named
 in section 4 is an adapter over that surface, in SEP-40's own terms: `base`
-and `assets` name the vault's deposit asset and share token, `lastprice`
+and `assets` name the vault's deposit asset and share token, and both fail
+the call rather than guess if the vault cannot answer, since SEP-40 gives
+`base` no way to say "unknown" and `assets` follows it so the two never
+disagree. `lastprice`
 answers the share price while the vault's oracle is `Valid` and no wind-down
 is active, and `price(asset, ts)` answers only for a `ts` the standing report
 actually covers — the oracle keeps a single report, not a history, so an
@@ -486,7 +489,10 @@ report's `attested_at`, not rounded down to a multiple of the resolution as
 SEP-40's text prescribes: rounding would make a fresh report look older than
 it is, and the resolution itself changes whenever governance changes the
 window or swaps the oracle, so a consumer should check the timestamp against
-the ledger time on every read rather than cache the resolution. `decimals()`
+the ledger time on every read rather than cache the resolution. `resolution()`
+answers `0` when the vault or its oracle cannot be read — a real oracle never
+reports a zero window, so `0` only ever means the feed has no price either,
+and a consumer must check for it before dividing. `decimals()`
 is 14, as Stellar price feeds use; the kit keeps the NAV in WAD (18
 decimals), so the feed converts at the edge:
 `nav_per_share × 10^(share decimals − asset decimals) / 10^4`, rounded down,
