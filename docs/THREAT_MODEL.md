@@ -2,14 +2,15 @@
 
 What can go wrong in a Strata vault, what stops it, what is left, and the test
 that shows each control. It covers the oracle, the roles and the redemption
-paths. Tranche 3's threat-to-test matrix builds on it.
+paths, and places each threat under STRIDE ([STRIDE](#stride)). Tranche 3's
+threat-to-test matrix builds on it.
 
 ## Scope
 
 - **Contracts.** `async-vault`, `share-token` and `nav-oracle`, the testnet
   stubs `identity-verifier` and `compliance`, and the shared crates
   `strata-timelock`, `strata-bindings` and `strata-storage`, at commit
-  `f3c03f8`.
+  `56b22d1`.
 - **The console**, as far as signing goes: the `/sign` page that collects an
   authority's signatures (R12).
 - **Not the testnet deployment.** The deployment listed in the
@@ -387,6 +388,28 @@ without checking the feed's state.
   [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `fulfill_is_rejected_while_the_nav_is_paused` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs).
+
+### O13. Choosing which report prices an epoch
+
+Once an epoch's notice ends, whoever calls `fulfill_epoch` picks the moment,
+and with it which valid report prices the epoch.
+
+- **Control:** Requests are fixed when the epoch is sealed, and only a report
+  accepted at or after the seal can price it. Between the end of the notice and
+  the call, the cooldown limits how many reports can land and the caps limit
+  how far each one moves. Anyone may call `fulfill_epoch` as soon as the notice
+  ends.
+- **Residual:** Whoever fulfils chooses among the reports accepted by then. A
+  holder who waits for a better report can be beaten by anyone who fulfils
+  first. A keeper that fulfils as soon as the notice ends removes the choice;
+  the kit runs none.
+- **Tests:** `an_epoch_cannot_be_priced_inside_its_notice` in
+  [`notice.rs`](../contracts/async-vault/src/test/notice.rs);
+  `anyone_may_fulfill_a_closed_epoch` in
+  [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
+  `attest_enforces_cooldown_and_deviation` in
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs).
+  A keeper: none, because the kit runs no keeper.
 
 ## Roles
 
@@ -836,6 +859,49 @@ An authority opens a shared `/sign` link, sees one operation and signs another.
   does not propose" and "refuses arguments of the wrong shape" in
   [`app/src/pages/sign.test.ts`](../app/src/pages/sign.test.ts).
 
+### R13. A signing link read before the call lands
+
+Whoever holds an authority's `/sign` link can read the call in it before it
+lands.
+
+- **Control:** The console puts the transaction after the link's `#`, which a
+  browser does not send to the server that hosts the console. The signers pass
+  the link to each other themselves. The transaction expires seven days after
+  the console builds it, and the page then refuses to sign it.
+- **Residual:** Anyone who sees the link, in a chat or an email, can read the
+  call until it lands or expires. A holder who learns of a coming freeze can
+  collect a covered claim, or move wallet shares to another listed account,
+  before the freeze lands. If a report's link goes round while the epoch it
+  will price is still open, whoever reads it can join that epoch knowing its
+  price (O5). Nothing on chain shows who read a link.
+- **Tests:** "shows the pending operation in the console's terms" and "signs,
+  updates the link and submits at the threshold" (the transaction follows
+  `/sign#`), and "sends an expired link back to the proposer without a share
+  row", in
+  [`app/src/pages/SignPage.test.tsx`](../app/src/pages/SignPage.test.tsx).
+  Who reads a link: none, because nothing can observe it.
+
+### R14. An allowlist change that publishes no event
+
+The kit's identity verifier lists or delists an address without publishing an
+event.
+
+- **Control:** None in the verifier: `allow` stores the answer and publishes
+  nothing. `is_allowed` gives the current answer for any address, and the
+  signed transaction stays in the network's history
+  ([Repudiation](#repudiation)). The verifier is a testnet stub; a production
+  identity registry has its own events. An event for `allow` is planned in
+  [#441](https://github.com/BootNodeDev/strata-vault-kit/issues/441).
+- **Residual:** A watcher that reads events misses every listing and delisting.
+  A wrong listing (R9) shows only in `is_allowed`, or in the verifier's
+  transactions: an RPC serves them for about seven days, and after that only a
+  history archive or a full-history indexer has them.
+  `set_claim_topics_and_issuers` publishes nothing either, but it stores
+  nothing.
+- **Tests:** none, because the stub publishes no event. The
+  [monitoring plan](./MONITORING_PLAN.md#what-this-plan-does-not-cover) leaves
+  the allowlist out for the same reason.
+
 ## Redemption paths
 
 ### X1. The reserve cannot pay a priced exit
@@ -1256,6 +1322,256 @@ or queued changes.
   release changes a stored type yet. The failures above are read from the
   code, and a test belongs with the first release that changes one.
 
+### X14. A call made in a holder's name
+
+Someone requests, cancels or claims for a holder who did not sign, to move the
+holder's escrow or take their payout.
+
+- **Control:** Each request, cancellation and claim names its holder and asks
+  that holder to sign. The vault has no operators or approvals, so no other
+  account can act for a holder. A claim pays the holder, never the caller. A
+  wind-down claim for the vault's own address is refused (`NoEntitlement`).
+- **Residual:** Whoever holds a holder's keys acts as that holder. A wallet that
+  signs without showing the call is outside the kit.
+- **Tests:** `request_deposit_needs_the_investor_authorisation`,
+  `one_investor_signature_covers_the_request_and_the_transfer` and
+  `claiming_needs_the_investor_authorisation` in
+  [`deposit.rs`](../contracts/async-vault/src/test/deposit.rs);
+  `request_redeem_needs_the_holder_authorisation` in
+  [`redeem.rs`](../contracts/async-vault/src/test/redeem.rs);
+  `cancel_deposit_asks_the_holder_for_one_signature`,
+  `cancel_redeem_asks_the_holder_for_one_signature`,
+  `claim_redeem_asks_the_holder_for_one_signature` and
+  `claim_wind_down_asks_the_holder_for_one_signature` in
+  [`signatures.rs`](../contracts/async-vault/src/test/signatures.rs);
+  `the_vault_cannot_claim_against_its_own_escrowed_shares` in
+  [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs).
+
+## STRIDE
+
+STRIDE sorts threats into six kinds: spoofing, tampering, repudiation,
+information disclosure, denial of service and elevation of privilege. The
+threats above are grouped by area instead. The table places each one under the
+kinds it belongs to. The sections after it say what each kind covers here, and
+cover in full the three that the threats above cover least: spoofing,
+repudiation and information disclosure.
+[`STRIDE-threat-model.md`](./STRIDE-threat-model.md) presents the same threats
+in the format of Stellar's STRIDE template, with a data flow diagram.
+
+### Map
+
+S: spoofing. T: tampering. R: repudiation. I: information disclosure. D: denial
+of service. E: elevation of privilege.
+
+| Threat | S | T | R | I | D | E |
+| --- | --- | --- | --- | --- | --- | --- |
+| [O1](#o1-one-false-report-within-the-limits) One false report within the limits |   | x |   |   |   |   |
+| [O2](#o2-a-walk-of-reports) A walk of reports |   | x |   |   |   |   |
+| [O3](#o3-a-real-move-larger-than-a-cap) A real move larger than a cap |   | x |   |   | x |   |
+| [O4](#o4-the-feed-goes-stale) The feed goes stale |   |   |   |   | x |   |
+| [O5](#o5-time-games) Time games |   | x |   |   |   |   |
+| [O6](#o6-declining-a-price-after-seeing-it) Declining a price after seeing it |   |   |   | x |   |   |
+| [O7](#o7-the-nav-pause-used-to-stall-pricing) The NAV pause used to stall pricing |   |   |   |   | x |   |
+| [O8](#o8-clearing-the-stored-report) Clearing the stored report |   | x |   |   |   |   |
+| [O9](#o9-governance-changes-the-limits-or-the-feed) Governance changes the limits or the feed | x | x |   |   |   |   |
+| [O10](#o10-the-proof-proves-nothing-on-chain) The proof proves nothing on chain |   | x | x |   |   |   |
+| [O11](#o11-an-oracle-upgraded-in-place-cannot-read-its-old-report) An oracle upgraded in place cannot read its old report |   |   |   |   | x |   |
+| [O12](#o12-an-integrator-reads-a-price-the-vault-would-refuse) An integrator reads a price the vault would refuse |   | x |   |   |   |   |
+| [O13](#o13-choosing-which-report-prices-an-epoch) Choosing which report prices an epoch |   | x |   |   |   |   |
+| [R1](#r1-governance-compromised-the-changes-that-wait) Governance compromised: the changes that wait |   | x |   |   |   | x |
+| [R2](#r2-governance-compromised-the-powers-that-act-at-once) Governance compromised: the powers that act at once |   | x |   |   | x | x |
+| [R3](#r3-setup-left-open-or-wired-wrong) Setup left open, or wired wrong |   | x |   |   |   | x |
+| [R4](#r4-an-authoritys-keys) An authority's keys | x |   |   |   |   | x |
+| [R5](#r5-one-account-in-several-seats) One account in several seats |   |   |   |   |   | x |
+| [R6](#r6-guardian-compromised) Guardian compromised |   |   |   |   | x | x |
+| [R7](#r7-treasury-compromised) Treasury compromised |   |   |   |   | x | x |
+| [R8](#r8-the-manager-stops-sealing-or-picks-the-moment) The manager stops sealing, or picks the moment |   | x |   |   | x |   |
+| [R9](#r9-compliance-compromised) Compliance compromised | x |   |   |   | x | x |
+| [R10](#r10-compliance-and-governance-move-a-holders-shares-together) Compliance and governance move a holder's shares together |   | x |   |   |   | x |
+| [R11](#r11-swapping-the-tokens-compliance-contract-or-verifier) Swapping the token's compliance contract or verifier | x | x |   |   | x |   |
+| [R12](#r12-a-crafted-transaction-on-the-consoles-signing-page) A crafted transaction on the console's signing page | x | x |   |   |   |   |
+| [R13](#r13-a-signing-link-read-before-the-call-lands) A signing link read before the call lands |   |   |   | x |   |   |
+| [R14](#r14-an-allowlist-change-that-publishes-no-event) An allowlist change that publishes no event |   |   | x |   |   |   |
+| [X1](#x1-the-reserve-cannot-pay-a-priced-exit) The reserve cannot pay a priced exit |   |   |   |   | x |   |
+| [X2](#x2-a-pause-a-stale-feed-or-a-delisting-blocks-a-covered-claim) A pause, a stale feed or a delisting blocks a covered claim |   |   |   |   | x |   |
+| [X3](#x3-a-frozen-holder) A frozen holder |   | x |   |   | x |   |
+| [X4](#x4-a-delisted-holder) A delisted holder | x |   |   |   | x |   |
+| [X5](#x5-escrowed-shares-that-should-come-back) Escrowed shares that should come back |   |   |   |   | x |   |
+| [X6](#x6-a-compliance-module-blocks-exits) A compliance module blocks exits |   |   |   |   | x |   |
+| [X7](#x7-escrow-behind-stalled-pricing) Escrow behind stalled pricing |   |   |   |   | x |   |
+| [X8](#x8-wind-down) Wind-down |   | x |   |   | x |   |
+| [X9](#x9-rounding-and-amounts-below-one-share) Rounding and amounts below one share |   | x |   |   |   |   |
+| [X10](#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash) The deposit asset's issuer freezes or claws back the vault's cash |   | x |   |   | x |   |
+| [X11](#x11-storage-that-expires) Storage that expires |   |   |   |   | x |   |
+| [X12](#x12-resource-limits-contention-and-griefing) Resource limits, contention and griefing |   |   |   |   | x |   |
+| [X13](#x13-an-upgrade-cannot-read-what-the-vault-stored) An upgrade cannot read what the vault stored |   |   |   |   | x |   |
+| [X14](#x14-a-call-made-in-a-holders-name) A call made in a holder's name | x |   |   |   |   |   |
+
+### Spoofing
+
+Acting as another account, contract or person. What proves who is calling:
+
+- **Holders.** Each request, cancellation and claim names a holder, and the
+  vault asks that holder to sign (`holder.require_auth()`). The vault has no
+  operators, so no one else can act for a holder (X14). The calls anyone may
+  make check no role: pricing a sealed epoch, funding the vault, activating a
+  wind-down that is due, finalizing a round, and sealing an epoch that has run
+  the minimum epoch duration. They act on ledger time and stored state, and
+  `fund` asks only the payer to sign.
+- **Authorities.** Each privileged call checks that the account holds the role,
+  or is the admin, and asks that account for one signature
+  ([authorization matrix](./AUTHORIZATION_MATRIX.md)). The Soroban host checks
+  the signature against the account's signers and thresholds; the kit takes
+  that check on trust ([Assumptions](#assumptions)). No contract can check that
+  an authority is a multisig, or how many keys it needs (R4).
+- **Contracts.** The share token accepts a mint, a burn or a forced transfer
+  only from its `manager`, the vault. The host accepts a contract's
+  authorization only when that contract makes the call, so no account can pose
+  as the vault. The other way round, the vault and the token believe whatever
+  answers at the oracle, compliance and verifier addresses governance set.
+  After setup, changing those waits for the timelock (O9, R11), and
+  `finish_setup` checks that each one answers what it should (R3).
+- **Investors.** The allowlist says who may hold shares. A compliance key that
+  lists an address it should not (R9), a verifier that lets anyone in (R11), or
+  an unlisted address that gets in (X4) lets someone pose as a verified
+  investor.
+- **The console.** The `/sign` page decodes a transaction and shows it in the
+  console's terms before anyone signs, and refuses one it cannot show (R12). A
+  copy of the console hosted by someone else can show anything; each operator
+  hosts its own.
+
+R4, R12 and X14 hold the tests: one signature per account for each privileged
+call, the signing page's refusals, and the holder's signature on each of their
+calls.
+
+### Tampering
+
+Changing the price, the books, the code, or a transaction before it is signed:
+
+- the price: O1, O2, O3, O5, O8, O9, O10, O12, O13;
+- code, roles and wiring: R1, R2, R3, R11;
+- what a holder is owed or paid: R10, X3, X8, X9, X10;
+- when an epoch is sealed: R8;
+- the transaction a signer approves: R12.
+
+### Repudiation
+
+Denying an act, or an act no one can trace. What the chain records:
+
+- **Events.** Every privileged call that changes state publishes an event,
+  except the verifier's `allow` (R14). That covers the setup setters and
+  `finish_setup`; the change queue (`ChangeProposed`, `ChangeApplied`,
+  `ChangeCancelled`; an upgrade's `ChangeApplied` carries the new code's hash);
+  role grants, revocations and admin hand-overs; the vault's, the token's and
+  the NAV's pauses; reports, `clear_latest` and `set_config`; sealing an epoch
+  and deploying to the custodian; the wind-down; freezes, legal transfers and
+  recoveries; and the compliance contract's modules and bindings. Holders'
+  requests, cancellations and claims publish events too, and so do the calls
+  anyone may make. Three calls succeed without an event because they change
+  nothing: granting a role already held, a recovery from an empty balance, and
+  the verifier's `set_claim_topics_and_issuers`. A refused call publishes
+  nothing, because its transaction rolls back.
+- **Who signed.** An event says what happened, not whose keys approved it. The
+  transaction does: it carries a signature from each account the call needs
+  (R4) and, for a multisig, shows which of its keys signed. A legal transfer
+  or a recovery carries both compliance's and governance's signatures (R10).
+  A report carries a proof hash that ties the attester to its evidence (O10).
+- **After the RPC drops them.** An RPC serves events and transactions for about
+  seven days by default
+  ([monitoring plan](./MONITORING_PLAN.md#how-events-are-read-and-kept)). After
+  that, three things still prove an act:
+  - the network's history archives, which keep every transaction with its
+    signatures and its result. Reading one back takes the archive files or an
+    indexer that keeps full history, not an RPC;
+  - the state the act left, which the getters show: role holders, freezes,
+    queued changes, the stored report. It shows the outcome, not who caused it
+    or when;
+  - the records a watcher keeps as it reads each event. The monitoring plan
+    lists the [events it reads](./MONITORING_PLAN.md#events-the-plan-reads).
+- **Residual:** The kit runs no watcher, so history past the RPC's window
+  depends on one the operator runs, or on the archives. A change to an
+  authority's signers or thresholds is a Stellar account operation, not a
+  contract event; the monitoring plan leaves it to an account-history service
+  (R4). The verifier stub's listings publish no event (R14).
+- **Tests:** `a_refused_call_publishes_nothing` in
+  [`events.rs`](../contracts/async-vault/src/test/events.rs);
+  `finishing_setup_publishes_it` in
+  [`setup.rs`](../contracts/async-vault/src/test/setup.rs);
+  `applying_a_custodian_change_publishes_both_events` in
+  [`governance.rs`](../contracts/async-vault/src/test/governance.rs);
+  `proposing_and_applying_publish_the_change` and
+  `cancelling_publishes_the_change_id` in
+  [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs), and
+  `proposing_and_applying_publish_the_change` in
+  [`share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs),
+  [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs)
+  and
+  [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs);
+  `attesting_publishes_the_stored_valuation` in
+  [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
+  `a_zero_share_legal_transfer_passes_and_is_published` in
+  [`share-token/src/test.rs`](../contracts/share-token/src/test.rs). The
+  pause, role, hand-over, freeze and recovery events come from OpenZeppelin's
+  libraries ([Assumptions](#assumptions)). The kit's own `LatestCleared`,
+  `NavPausedSet`, `Deployed`, `DepositCapUpdated`, `NoticeSet`,
+  `WindDownDelaySet` and `VaultBound`, and the wind-down's events: none yet.
+
+### Information disclosure
+
+Revealing what should stay private, or revealing it too early. Everything a
+contract stores or publishes can be read by anyone, now and later. That is the
+design: anyone can check the books without trusting the operator. On chain:
+
+- each holder's shares and frozen shares, requests per epoch, what is owed to
+  them, and wind-down credits;
+- each address's allowlist entry; the kit's verifier stores only whether the
+  address is listed;
+- each report: the price, its times, the proof hash and, when the attester
+  gives one, the proof URI;
+- the role holders, the queued changes, and every event with its addresses and
+  amounts.
+
+Off chain: the KYC data behind each allowlist entry, and the valuation's inputs
+behind each report. The kit's verifier keeps only a yes or no per address, and
+the oracle only a hash and an optional URI per report. What an external
+identity registry keeps on chain is its own choice. The quality of the KYC and
+of the valuation is out of scope ([Out of scope](#out-of-scope)); this section
+says only where the data stays.
+
+- **Residual:** An address is not a name, but anyone who links one to a person
+  sees that person's position and its history. A listed address shows that its
+  owner passed the operator's KYC. A holder who needs more privacy than a
+  public ledger gives cannot get it from the kit. What the proof URI points to
+  is public as well; an attester that wants the evidence kept private publishes
+  the hash alone and shows the evidence to whoever checks it.
+
+Two threats are about learning something too early: O6, a sealed epoch's price
+read while its holders can still cancel, and R13, a signing link read before
+its call lands.
+
+### Denial of service
+
+Stopping pricing, exits or calls:
+
+- pricing stops: O3, O4, O7, O11;
+- an authority stalls the vault, holds back a holder or leaves the reserve
+  short: R2, R6, R7, R8, R9, R11;
+- exits are held: X1 to X8, X10;
+- calls fail: X11, X12, X13.
+
+### Elevation of privilege
+
+Gaining a power one should not hold, or using one beyond its purpose:
+
+- an authority's keys are taken: R1, R2, R6, R7, R9;
+- setup is left open: R3;
+- one key acts alone, or a call takes more signatures than it shows: R4;
+- one account holds several seats: R5;
+- two authorities act together: R10.
+
+No threat covers a holder gaining a role: every privileged call checks the role
+and asks its holder to sign (R4).
+
 ## Known limits
 
 These are decided, and stated as they stand:
@@ -1267,7 +1583,7 @@ These are decided, and stated as they stand:
    the minimum epoch duration, then anyone seals; with none set, holders wait
    until governance replaces the manager (R8).
 3. The identity verifier and compliance contracts in this repository are
-   testnet stubs, not for mainnet (R9, R11).
+   testnet stubs, not for mainnet (R9, R11, R14).
 4. The vault's constructor is the only check on who holds which role, for four
    pairs; later grants and the other contracts' roles are not checked (R5). The
    share token does refuse a legal transfer or recovery signed by one account
@@ -1303,6 +1619,10 @@ For Tranche 3's matrix:
   earlier shape (X13).
 - Alerts on large price moves, on `LatestCleared` and on the report after it
   (O2, O8), which belong to the [monitoring plan](./MONITORING_PLAN.md).
+- The events of the kit's own `LatestCleared`, `NavPausedSet`, `Deployed`,
+  `DepositCapUpdated`, `NoticeSet`, `WindDownDelaySet` and `VaultBound`, and
+  of the wind-down ([Repudiation](#repudiation)).
+- An allowlist change, which publishes no event to test (R14).
 
 ## Out of scope
 

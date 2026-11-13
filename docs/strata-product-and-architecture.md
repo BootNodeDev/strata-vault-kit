@@ -674,7 +674,10 @@ public surface given the vault address.
 | Wind-down distribution | Unfinalized rounds stall distribution          | Finalizing a round is permissionless: once treasury returns capital, anyone can finalize the round to credit holders; the operator cannot stall payouts after funding                                                                                                                                                                                                                                                                                           |
 
 The full threat model, with the test for each control, is in
-[`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
+[`docs/THREAT_MODEL.md`](./THREAT_MODEL.md). It follows STRIDE: a table places
+each threat under one or more of spoofing, tampering, repudiation, information
+disclosure, denial of service and elevation of privilege, and every category
+has at least one threat.
 
 The monitoring plan, with what an operator watches on chain and the response to
 each signal, is in [`docs/MONITORING_PLAN.md`](./MONITORING_PLAN.md).
