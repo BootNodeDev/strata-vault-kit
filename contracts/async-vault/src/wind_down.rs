@@ -2,6 +2,8 @@ use soroban_sdk::{contracttype, panic_with_error, token::TokenClient, Address, E
 use stellar_contract_utils::math::i128_fixed_point::checked_mul_div_floor;
 use stellar_tokens::{fungible::FungibleTokenClient, rwa::RWATokenClient};
 
+pub use strata_bindings::{WindDownInfo, WindDownStatus};
+
 use crate::error::VaultError;
 use crate::event::{
     WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
@@ -24,23 +26,6 @@ pub const MIN_WIND_DOWN_DELAY: u64 = 7 * strata_timelock::DAY_DURATION;
 /// The local harness build activates a wind-down at once.
 #[cfg(feature = "short_wind_down")]
 pub const MIN_WIND_DOWN_DELAY: u64 = 0;
-
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WindDownStatus {
-    Proposed,
-    Active,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WindDownInfo {
-    pub status: WindDownStatus,
-    /// Ledger time the proposal may be activated.
-    pub active_at: u64,
-    /// Rounds finalised so far. Zero means no snapshot has been taken.
-    pub round: u32,
-}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]

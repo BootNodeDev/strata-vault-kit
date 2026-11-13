@@ -69,8 +69,8 @@ body:
     attributes:
       label: Architecture & technical considerations
       description:
-        Key technical decisions, patterns, constraints, or risks. Link to ADRs
-        or design docs if they exist.
+        Key technical decisions, patterns, constraints, or risks. Link to design
+        docs if they exist.
     validations:
       required: false
 

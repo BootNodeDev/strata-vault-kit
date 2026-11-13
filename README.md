@@ -33,7 +33,13 @@ than its pending deposits, and once a wind-down is proposed.
   ledger time, events and calls between contracts.
 - [Threat model](./docs/THREAT_MODEL.md) — what can go wrong with the oracle,
   the roles and the redemption paths, what stops it, what is left, and the
-  test for each control.
+  test for each control, with each threat placed under STRIDE.
+- [STRIDE threat model](./docs/STRIDE-threat-model.md) — the threat model in
+  the format of Stellar's STRIDE template: a data flow diagram, numbered flows,
+  issues for each category and their remediations.
+- [Security scan](./docs/SECURITY_SCAN.md) — what the self-service security
+  tools found in the contracts, how each finding was triaged, and the plan for
+  what stays open.
 - [Monitoring plan](./docs/MONITORING_PLAN.md) — what an operator watches on
   chain, where each signal comes from, and what to do when it fires.
 - [Grant differences](./docs/GRANT_DIFFERENCES.md) — where the built kit
@@ -57,6 +63,7 @@ deploy from `environments.toml` → `[staging.contracts]`, which is the record.
 | `share_token` | `CDOZT5VNIKSLQSFELF4PHVZRZA3GCJYJEHVDZTUB7O2QMBHBKKOYORQI` |
 | `identity_verifier` | `CCGHNGPI66WGVSLLALQVCIRIOZKX73QW23UDZLZ3LMXLGEG7SLVUOULD` |
 | `compliance` | `CCQI5NFRWBOO77LYSFY54D6PSU4TVWD5A3CFX2A5AWLEURVR35XISMKG` |
+| `sep40_feed` | `CCDNFOV7GFBAZQLXLFBBX6H3T66NYAZG7Z6AWBEHSKLYFNJWRZTPYD2N` |
 | `asset` | `CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E` |
 <!-- deployed-addresses:end -->
 
@@ -105,6 +112,28 @@ liquid reserve, so `uncovered()` is above zero. The claim at that point is
 refused with `ClaimNotCovered`. It fails at simulation and leaves no
 transaction, so the evidence of the short reserve is the pricing transaction
 before it and the `fund` that clears it.
+
+## SEP-40 price feed
+
+The feed answers a vault's share price through SEP-40, the Stellar price-feed
+interface, so a third-party contract can read it without depending on any kit
+crate; the design document explains how it is built
+([Valuation and accounting](./docs/strata-product-and-architecture.md#85-valuation-and-accounting)).
+The harness repeats the scenario with the team's keys: it deploys a new
+consumer and, when the NAV is stale, first attests a fresh one on the oracle:
+
+```sh
+HARNESS_NETWORK=testnet npm run test:sep40 -w scripts/harness
+```
+
+| Step | Contract | Transaction |
+| --- | --- | --- |
+| Deploy the consumer | `sep40_consumer` `CDKCYZ6IHE2I6KAGATCQPTOYX7GUTTCYRLK26HOQ2JVHEHGXNVA27DOJ` | [`5142b57e…4505`](https://stellar.expert/explorer/testnet/tx/5142b57e6f09a07dcf7d07b09aa41818c85e9b8460165067dddc0071057a4505) |
+| Attest a fresh NAV | `nav_oracle` | [`3478b5b3…2bf2`](https://stellar.expert/explorer/testnet/tx/3478b5b3a2abf4b7435832e13aca2cc2f40c0aa2228f2a4e8cf5218ecf752bf2) |
+| Call `record_price` against the feed | `sep40_consumer` | [`eb0fd738…fba7`](https://stellar.expert/explorer/testnet/tx/eb0fd738e9ffa10f736946c7fb8c51f18a7595ab941214aa9f3c8a9c4beffba7) |
+
+The call recorded a price of 1.00100000000000 (100100000000000 at 14
+decimals) on 2026-11-11. The mainnet run is tracked in #433.
 
 ## Vault figures
 

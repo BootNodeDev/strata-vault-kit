@@ -65,7 +65,8 @@ admin panel for the operator, both backend-free.
 Everything ships as an Apache-2.0 template with reproducible, verified deploys,
 so a team sets roughly ten parameters and five authorities, brands the frontend,
 and runs its own instance. A standard SEP-40 price-feed adapter, so integrators
-can consume the share price, is a planned addition and is not yet delivered.
+can consume the share price, ships with the kit; it is optional, one per vault,
+and a deployment that does not need it can skip it.
 
 What stays with the operator: legal entity, custody, KYC, the data behind the
 attestation, and what the numbers mean. Deliberately not a custody, compliance,
@@ -123,8 +124,8 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
   spend its grant on its business, not on vault plumbing.
 - A fund or asset manager tokenizing an off-chain strategy for verified
   investors.
-- An integrator or protocol consuming the vault share price the vault exposes
-  on-chain (a standard SEP-40 feed adapter is a planned addition).
+- An integrator or protocol consuming the vault share price through the kit's
+  SEP-40 feed, an optional adapter deployed alongside the vault.
 
 ## 8. Architecture
 
@@ -293,6 +294,11 @@ transactions that the authority multisigs sign. The chain never sees KYC data or
 valuation methodology, only their outputs: an allowlisted address, and an
 attested number with a hash of its evidence and, optionally, where to read it.
 
+The SEP-40 feed sits outside this wiring. It is an optional contract, deployed
+after the vault's own setup with just the vault's address, and nothing above
+is changed or re-signed to add it: the vault does not know the feed exists, and
+removing the feed takes nothing away from the vault.
+
 ### 8.3 Components and authorities
 
 | Component             | Role                                                                                                                                                                                                      | Controls                                                                                                                                                                      |
@@ -445,13 +451,55 @@ pricing, share and cash claims, mint, burn and forced transfer are unaffected.
 It is a trading restriction, not an emergency stop for the vault, and only
 governance lifts it.
 
+**A separate contract, not built into the oracle or the vault:** SEP-40 asks
+for a feed address that never changes. Governance can swap the vault's
+oracle, so a feed built into the oracle would get a new address with every
+swap; a feed built into the vault would add code to the contract that most
+needs to stay small, for a read many deployments never use. Reading
+`vault.oracle()` on every call keeps the feed's address stable across a swap,
+at the cost of about nine cross-contract calls per quote and serving whatever
+oracle governance has installed, with no delay of its own. The feed stores no
+admin either: each upgrade call reads the vault's current `governance()` and
+asks it to sign, the same way it reads the oracle, so an admin hand-over on
+the vault carries over to the feed with no step of its own, upgrades wait for
+the vault's timelock, and a vault that cannot name its governance leaves the
+feed with no way to upgrade.
+
 **Integrator surface:** the oracle exposes the attested share price directly:
 the latest report (`latest`), which returns `nav_per_share`, `expires_at`,
 `accepted_at`, `proof_hash` and `proof_uri`; the price alone (`nav_per_share`);
-and the acceptance time alone (`attested_at`). The
-SEP-40 feed named in section 4 is an adapter over that surface scheduled for
-Tranche 3 and is not implemented yet; integrators read the oracle's own
-interface today.
+and the acceptance time alone (`attested_at`). The optional SEP-40 feed named
+in section 4 is an adapter over that surface, in SEP-40's own terms: `base`
+and `assets` name the vault's deposit asset and share token, and both fail
+the call rather than guess if the vault cannot answer, since SEP-40 gives
+`base` no way to say "unknown" and `assets` follows it so the two never
+disagree. `lastprice`
+answers the share price while the vault's oracle is `Valid` and no wind-down
+is active, and `price(asset, ts)` answers only for a `ts` the standing report
+actually covers — the oracle keeps a single report, not a history, so an
+older NAV is not a price anyone could trade at today and no time-weighted
+average can be built from this feed alone. It gives no price once a
+wind-down starts: holders are then paid a pro-rata share of returning cash,
+not the NAV, so the NAV no longer says what a share is worth. It also gives
+no price while the oracle is stale or paused, or when any read it depends on
+fails; a vault pause or a proposed wind-down does not stop it, since the
+attested value still stands and a pause can be lifted. `resolution()` returns
+the current oracle's `freshness_duration`, and `PriceData.timestamp` is the
+report's `attested_at`, not rounded down to a multiple of the resolution as
+SEP-40's text prescribes: rounding would make a fresh report look older than
+it is, and the resolution itself changes whenever governance changes the
+window or swaps the oracle, so a consumer should check the timestamp against
+the ledger time on every read rather than cache the resolution. `resolution()`
+answers `0` when the vault or its oracle cannot be read — a real oracle never
+reports a zero window, so `0` only ever means the feed has no price either,
+and a consumer must check for it before dividing. `decimals()`
+is 14, as Stellar price feeds use; the kit keeps the NAV in WAD (18
+decimals), so the feed converts at the edge:
+`nav_per_share × 10^(share decimals − asset decimals) / 10^4`, rounded down,
+with an overflow or a non-positive result giving no price — precision below
+10^-14 of an asset unit per share is lost, and a share whose value rounds to
+zero has no price. Moving the NAV itself to 14 decimals is a separate
+decision.
 
 ### 8.6 Compliance
 
@@ -674,7 +722,10 @@ public surface given the vault address.
 | Wind-down distribution | Unfinalized rounds stall distribution          | Finalizing a round is permissionless: once treasury returns capital, anyone can finalize the round to credit holders; the operator cannot stall payouts after funding                                                                                                                                                                                                                                                                                           |
 
 The full threat model, with the test for each control, is in
-[`docs/THREAT_MODEL.md`](./THREAT_MODEL.md).
+[`docs/THREAT_MODEL.md`](./THREAT_MODEL.md). It follows STRIDE: a table places
+each threat under one or more of spoofing, tampering, repudiation, information
+disclosure, denial of service and elevation of privilege, and every category
+has at least one threat.
 
 The monitoring plan, with what an operator watches on chain and the response to
 each signal, is in [`docs/MONITORING_PLAN.md`](./MONITORING_PLAN.md).
@@ -709,7 +760,7 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 | SEP-41 token + SEP-57 RWA extensions (freeze, forced transfer, recovery) | OpenZeppelin stellar-tokens; the RWA Wizard scaffolds the regulated token  | Consumed and extended; the kit's compliance module implements the SEP-57 interfaces the token expects. Burn follows the RWA extension, not SEP-41 (§8.1)                               |
 | Synchronous tokenized vault                                              | SEP-56 / OZ Token Vault                                                    | Not a base for Strata: SEP-56 assumes the price exists at call time, so its interface cannot express a request lifecycle. Only OZ conversion and rounding math reused, as library code |
 | Access control, pausable, upgradeable                                    | OZ crates                                                                  | Consumed; pinned by exact version, audit coverage and gaps documented per component                                                                                                    |
-| Timelock for admin changes                                               | OZ `stellar-governance` timelock                                           | Not used. The kit's own `strata-timelock` crate: one clock for the four contracts, an ETA that a vault pause pushes back, a setup window, 7 to 90 day bounds, and no change but a share-token `compliance` grant lands during a wind-down |
+| Timelock for admin changes                                               | OZ `stellar-governance` timelock                                           | Not used. The kit's own `strata-timelock` crate: one clock for five contracts, with the feed, an ETA that a vault pause pushes back, a setup window, 7 to 90 day bounds, and no change but a share-token `compliance` grant lands during a wind-down |
 | Multisig and signing coordination                                        | Native Stellar + existing coordinators, OZ Role Manager                    | Integrated                                                                                                                                                                             |
 | Request lifecycle priced against attestations                            | Not provided (ERC-7540 on EVM, where OpenZeppelin ships an implementation) | Core of the kit                                                                                                                                                                        |
 | Guarded valuation oracle with freshness and pause                        | Not provided                                                               | Core of the kit                                                                                                                                                                        |

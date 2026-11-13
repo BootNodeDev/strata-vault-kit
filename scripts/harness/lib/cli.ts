@@ -81,6 +81,24 @@ function formatArgs(args: ConstructorArgs): string[] {
 	return Object.entries(args).flatMap(([k, v]) => [`--${k}`, String(v)])
 }
 
+// No "--" separator for a constructor that takes no arguments: the CLI
+// refuses an empty one.
+export function deployArgs(
+	wasm: string,
+	net: Rpc,
+	constructorArgs: ConstructorArgs,
+): string[] {
+	const formatted = formatArgs(constructorArgs)
+	return [
+		"contract",
+		"deploy",
+		"--wasm",
+		wasm,
+		...rpcArgs(net),
+		...(formatted.length > 0 ? ["--", ...formatted] : []),
+	]
+}
+
 export async function deployContract(
 	net: Network,
 	wasm: string,
@@ -88,15 +106,7 @@ export async function deployContract(
 	constructorArgs: ConstructorArgs,
 ): Promise<string> {
 	const out = await stellar(
-		[
-			"contract",
-			"deploy",
-			"--wasm",
-			wasm,
-			...rpcArgs(net),
-			"--",
-			...formatArgs(constructorArgs),
-		],
+		deployArgs(wasm, net, constructorArgs),
 		withSource(source),
 	)
 	return lastContractId(out)

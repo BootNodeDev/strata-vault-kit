@@ -1,0 +1,117 @@
+Scout static analysis run
+=========================
+
+Date (UTC): 2026-11-12, run started 15:59:36Z, finished 16:10:58Z
+Exit code: 0
+
+Tool
+----
+Image:          coinfabrik/scout:0.3.17
+Image digest:   coinfabrik/scout@sha256:216faf0b3c413cbe69770b0e2f999b9d45fa5bcb481940e8af4be1a48a7a54a5
+Image created:  2026-09-25T20:14:45Z, linux/amd64 (run under amd64 emulation on an Apple Silicon host, Docker 29.8.2)
+Scout version:  cargo-scout-audit 0.3.17
+                (docker run --rm --platform linux/amd64 --entrypoint cargo coinfabrik/scout:0.3.17 scout-audit --version)
+Detector toolchain: nightly-2025-09-18 (bundled in the image)
+
+Code analysed
+-------------
+Worktree HEAD:  32c6c7bcec2b0fde4e138c8120fb05d6f00d1515
+Tag tranche2:   db90b9570af12deaace85b237678b69a8a912296  (git log -1 --format=%H db90b95)
+Also equal to:  56b22d132350f2e2f26098dea1ca6734c588fd0a
+`git diff db90b95 <rev> -- contracts crates Cargo.toml Cargo.lock rust-toolchain.toml`
+is empty for both HEAD and 56b22d1.
+
+Scope: one run over the whole Cargo workspace (members = crates/*, contracts/*).
+Scout reports all 8 crates as analysed:
+  contracts: async-vault, share-token, nav-oracle, compliance, identity-verifier
+  crates:    strata-bindings, strata-storage, strata-timelock
+
+Step 1: copy the code to a scratch directory
+-------------------------------------------
+Scout writes its build output and reports into the project directory, so it ran
+on a copy and the worktree was not touched.
+
+  rsync -a --exclude target --exclude node_modules --exclude .git \
+    <worktree>/ <scratch>/scout/src/
+
+The copy was checked against the tagged commit:
+
+  git -C <worktree> archive db90b95 contracts crates Cargo.toml Cargo.lock rust-toolchain.toml \
+    | tar -x -C <scratch>/scout/verify
+  diff -rq verify/contracts src/contracts && diff -rq verify/crates src/crates \
+    && cmp verify/Cargo.lock src/Cargo.lock && cmp verify/Cargo.toml src/Cargo.toml \
+    && cmp verify/rust-toolchain.toml src/rust-toolchain.toml
+  -> no differences
+
+Step 2: git hook for a dylint bug
+---------------------------------
+Scout builds a dylint driver at run time. dylint_driver 4.1.2 clones
+https://github.com/rust-lang/rust-clippy and checks out the branch "master".
+Upstream renamed that branch to "main", so without help the driver build fails with:
+  Error: `revparse_ext` failed for `master` ... revspec 'master' not found
+The hook below only creates a local "master" branch in that clone. It does not
+change Scout, its detectors or the code under analysis.
+
+<scratch>/scout/git-hooks/post-checkout:
+  #!/bin/sh
+  case "$(git remote get-url origin 2>/dev/null)" in
+    *rust-lang/rust-clippy*)
+      git rev-parse -q --verify refs/heads/master >/dev/null || git branch master HEAD ;;
+  esac
+  exit 0
+
+Step 3: the Scout run
+---------------------
+This uses the image's own entrypoint, as the scout-audit README shows. The
+entrypoint runs, inside /scoutme:
+  cargo scout-audit --local-detectors /scout-audit/nightly --scout-source /scout-audit $INPUT_SCOUT_ARGS
+
+  docker run --rm --name scout-run6 --platform linux/amd64 \
+    -e SCOUT_OFFLINE=1 \
+    -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=core.hooksPath -e GIT_CONFIG_VALUE_0=/scout-fix/hooks \
+    -v "<scratch>/scout/git-hooks:/scout-fix/hooks:ro" \
+    -e INPUT_TARGET=/scoutme \
+    -e INPUT_SCOUT_ARGS="--output-format json,md" \
+    -v "<scratch>/scout/src:/scoutme" \
+    coinfabrik/scout:0.3.17
+
+Notes:
+- SCOUT_OFFLINE=1 turns off only Scout's telemetry and its own update check. It
+  does not affect detectors. The soroban-version detector still queried crates.io
+  and reported: latest Soroban version "29.0.1", project version "26.1.1".
+- rust-toolchain.toml pins 1.97.0, so rustup installed that toolchain in the
+  container for the cargo command. The analysis itself compiles with Scout's
+  nightly-2025-09-18 toolchain.
+
+Output files
+------------
+  scout-report.json   Scout's JSON report (written as report.json, renamed)
+  scout-report.md     Scout's markdown report (written as report.md, renamed)
+  scout-console.log   Console output of the run, ANSI colour codes removed
+
+Results: 28 findings.
+  By severity: Critical 9, Medium 5, Minor 1, Enhancement 13
+  integer_overflow_or_underflow       9  Critical
+  dos_unexpected_revert_with_storage  5  Medium
+  unused_return_enum                  1  Minor
+  soroban_version                     8  Enhancement
+  storage_change_events               4  Enhancement
+  assert_violation                    1  Enhancement
+The markdown report's "Issues found" list counts per category but names each
+category after its first detector: "Assert Violation (2 results)" is the Error
+Handling category (assert_violation 1 + unused_return_enum 1), and
+"Soroban Version (12 results)" is Best Practices (soroban_version 8 +
+storage_change_events 4). The per-detector sections and the JSON give the exact counts.
+
+Attempts that did not produce a report
+--------------------------------------
+1. Worktree mounted read-only, CARGO_TARGET_DIR=/target set for the whole
+   container: hung. A nested `cargo install dylint-link` waited forever on the
+   lock of the shared target directory.
+2. Worktree read-only, target dir passed only to cargo check: failed, because
+   Scout builds detectors in the project's default target dir (read-only).
+3. Target dir set in a scratch .cargo/config.toml: failed on the rust-clippy
+   "master" checkout described in step 2.
+4. Same, with the git hook: failed with "--target-dir cannot be used multiple
+   times" (an extra `-- --target-dir /target` clashed with the one Scout passes).
+5. Stopped by hand in favour of the copy-based run above.
