@@ -17,6 +17,7 @@
 		"deploy.ts",
 		"deploy-feed.ts",
 		"extend.ts",
+		"sep1.ts",
 		"keys.ts",
 		"build-clients.ts",
 		"seed.ts",
