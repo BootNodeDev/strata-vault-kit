@@ -6,6 +6,7 @@
   "description": "Deploys the vault set to a network and runs integration tests.",
   "scripts": {
     "deploy": "tsx deploy.ts",
+    "deploy:feed": "tsx deploy-feed.ts",
     "extend": "tsx extend.ts",
     "keys": "tsx keys.ts",
     "build:clients": "tsx build-clients.ts",
@@ -16,6 +17,7 @@
     "test:guards": "vitest run guards.test.ts",
     "test:wind-down": "vitest run wind-down.test.ts",
     "test:queue": "vitest run redemption-queue.test.ts",
+    "test:sep40": "vitest run sep40-consumer.test.ts",
     "seed": "tsx seed.ts"
   },
   "dependencies": {
