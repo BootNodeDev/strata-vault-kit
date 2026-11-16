@@ -321,7 +321,7 @@ proptest! {
         }
 
         let s = f.vault.get_epoch_settlement(&epoch).unwrap();
-        prop_assert!(s.reconciled);
+        prop_assert!(s.reconciled());
         prop_assert_eq!(f.vault.pending_mint_shares(), 0);
         prop_assert_eq!(
             f.vault.get_epoch(&open).unwrap().total_shares_redeeming,

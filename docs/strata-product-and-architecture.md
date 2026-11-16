@@ -326,9 +326,12 @@ the oracle and fixes one share price for every request it holds. Pricing is
 permissionless and refuses a feed that is not valid, so a sealed epoch waits
 rather than settling at a stale price, and no investor can choose their price.
 Claims round down one by one, so together they never pay more than pricing
-promised. When an epoch's last request settles, the remainder leaves
-`pending_mint_shares` and `committed` and stays in the reserve as fund money
-(`EpochReconciled` says how much).
+promised. Each side of an epoch releases its remainder once its own requests
+have settled: the share remainder leaves `pending_mint_shares` after the last
+deposit, the cash remainder leaves `committed` after the last redemption, and
+each is released once. The cash stays in the reserve as fund money
+(`EpochReconciled` says how much). So a refund for a deposit below one share
+never waits on cash its own epoch's redemptions left behind.
 
 The manager can seal the open epoch at any time. Once governance sets a minimum
 epoch duration — between 1 and 30 days — anyone may seal an epoch that has been

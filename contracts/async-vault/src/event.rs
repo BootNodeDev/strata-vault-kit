@@ -181,6 +181,9 @@ pub struct DepositConvertedToExit {
     pub shares: i128,
 }
 
+/// Rounding remainder a priced epoch released: `share_dust` from
+/// `pending_mint_shares` once its last deposit settles, `cash_dust` from
+/// `committed` once its last redemption settles. Each side is released once.
 #[contractevent]
 pub struct EpochReconciled {
     #[topic]

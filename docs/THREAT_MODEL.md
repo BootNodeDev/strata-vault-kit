@@ -1199,21 +1199,27 @@ others' cost.
 Rounding lets a claim take more than its share, or a tiny deposit is lost.
 
 - **Control:** Conversions round down, in the vault's favour. Claims round one
-  by one, so together they never pay more than pricing promised. When an
-  epoch's last request settles, the remainder leaves `committed` and
-  `pending_mint_shares` and stays in the reserve (`EpochReconciled`). A running
+  by one, so together they never pay more than pricing promised. Each side of
+  an epoch releases its remainder once its own requests settle, and only once:
+  the cash remainder leaves `committed` after the last redemption and stays in
+  the reserve, the share remainder leaves `pending_mint_shares` after the last
+  deposit (`EpochReconciled`). A running
   total that would go below zero fails (`AccountingMismatch`) instead of being
   clamped. A deposit worth less than one share mints nothing and is refunded at
   claim, from the free reserve.
 - **Residual:** Rounding remainders stay with the fund. A request that never
-  settles keeps its epoch's remainder in the totals. The refund for a deposit
+  settles keeps its side's remainder in the totals. The refund for a deposit
   below one share is not set aside when the epoch is priced: the treasury or a
   wind-down round can spend that cash first, and the claim then waits for the
-  free reserve.
+  free reserve. It waits on its own epoch's cash remainder only until that
+  epoch's last redemption settles.
 - **Tests:** `deposit_and_redeem_round_trip_never_manufactures_assets` and
   `conversion_rounds_down_in_the_vaults_favour` in
   [`conversions.rs`](../contracts/async-vault/src/test/conversions.rs);
-  `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once` and
+  `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once`,
+  `a_zero_share_refund_is_paid_once_its_epochs_redemptions_settle`,
+  `each_remainder_leaves_once_whichever_side_settles_last`,
+  `a_settled_epoch_leaves_no_remainder_in_the_totals` and
   `a_total_that_would_go_below_zero_fails_loudly` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
   `a_deposit_below_one_share_is_refunded_at_claim` and

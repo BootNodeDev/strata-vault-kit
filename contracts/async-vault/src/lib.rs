@@ -11,7 +11,8 @@
 //!   minimum set, until a replacement passes the timelock.
 //! - **Pricing records totals; claims mint and burn.** Pricing costs the same
 //!   for any number of requests. The cost: an epoch's rounding remainder stays
-//!   in `committed` and `pending_mint_shares` until its last request settles.
+//!   in `pending_mint_shares` until its last deposit settles, and in
+//!   `committed` until its last redemption settles.
 //! - **A readable price closes cancellation,** during the notice too, until the
 //!   feed goes stale or the NAV or the vault is paused. The cost: a report that
 //!   lapses lets requests leave a sealed epoch late.
@@ -858,7 +859,8 @@ impl AsyncVault {
     ///
     /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
     ///   `DepositRefunded`.
-    /// * `EpochReconciled` once the epoch's last request settles.
+    /// * `EpochReconciled` when it releases a remainder or settles the
+    ///   epoch's last request.
     ///
     /// # Authorization
     ///
@@ -997,7 +999,8 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `RedeemClaimed`, or `RedeemCancelled` when the shares come back.
-    /// * `EpochReconciled` once the epoch's last request settles.
+    /// * `EpochReconciled` when it releases a remainder or settles the
+    ///   epoch's last request.
     ///
     /// # Authorization
     ///
