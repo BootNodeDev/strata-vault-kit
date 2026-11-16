@@ -1047,7 +1047,9 @@ address gets in.
   escrow, so it waits while compliance has delisted the vault;
   `health().allowlisted` then reads false, and nothing is lost. A redemption
   priced at zero assets cannot give its shares back to a delisted holder, so
-  its request stays open. Only the holder can start an exit: nothing lets
+  its claim burns them, as a wind-down claim does: the holder loses shares
+  worth less than one asset unit, and the request settles. Only the holder can
+  start an exit: nothing lets
   compliance or governance redeem a holder who is no longer eligible. If a
   fund's terms require that, it needs a new power, and counsel must confirm the
   process.
@@ -1058,8 +1060,8 @@ address gets in.
   `a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch`
   and `a_conversion_waits_while_the_vault_is_delisted` in
   [`delisted.rs`](../contracts/async-vault/src/test/delisted.rs);
-  `a_delisted_holder_with_a_worthless_exit_keeps_the_request` in
-  [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs).
+  `a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles` in
+  [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs).
 
 ### X5. Escrowed shares that should come back
 
@@ -1071,11 +1073,13 @@ redemption from returning.
   and returns the shares with the manager's `forced_transfer`. Neither the token
   pause nor the vault's own place on the allowlist applies to that move.
 - **Residual:** A return the rules refuse fails with `HolderNotEligible`; the
-  request stays and is paid in cash once priced. In a wind-down no shares come
-  back: the escrow is burned into the holder's entitlement.
+  request stays and is paid in cash once priced. If that price pays nothing,
+  the claim burns the shares instead of returning them. In a wind-down no
+  shares come back: the escrow is burned into the holder's entitlement.
 - **Tests:** `a_token_pause_stops_trading_but_not_a_share_return`,
   `a_delisted_vault_still_returns_escrowed_shares`,
-  `a_return_the_compliance_rules_refuse_stays_escrowed` and
+  `a_return_the_compliance_rules_refuse_stays_escrowed`,
+  `a_worthless_exit_the_compliance_rules_refuse_to_return_burns` and
   `a_partial_freeze_does_not_stop_a_return` in
   [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs);
   `an_escrowed_redemption_cancelled_in_a_wind_down_joins_the_payout` in

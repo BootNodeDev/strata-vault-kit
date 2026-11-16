@@ -29,8 +29,10 @@
 //!   cancellations fail with `Frozen` until it lifts: compliance can delay a
 //!   payout, never redirect it. The cost: even a covered claim waits.
 //! - **A delisted holder leaves in cash.** Shares priced for them join their
-//!   redemption in the open epoch, or their wind-down entitlement. The cost:
-//!   another epoch at its price, and a wait while the vault itself is delisted.
+//!   redemption in the open epoch, or their wind-down entitlement; a
+//!   redemption priced at nothing burns the shares they may not take back. The
+//!   cost: another epoch at its price, a wait while the vault itself is
+//!   delisted, and burned shares worth less than one asset unit.
 //! - **Setup, then the timelock.** Until `finish_setup` checks the wiring,
 //!   admin changes are instant and requests and epochs refused; after it,
 //!   changes that move value or cut a wait are timelocked. The cost: fixes
@@ -978,7 +980,8 @@ impl AsyncVault {
 
     /// Pays a priced redemption and returns the asset base units paid. Open
     /// while paused and to a delisted holder. Outside a wind-down, shares
-    /// priced at nothing come back instead.
+    /// priced at nothing come back instead, or burn when the holder may not
+    /// take them back.
     ///
     /// # Arguments
     ///
@@ -993,7 +996,6 @@ impl AsyncVault {
     /// * `AlreadyClaimed` - The redemption was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
-    /// * `HolderNotEligible` - Shares priced at nothing cannot come back.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events

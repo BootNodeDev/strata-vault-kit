@@ -1,7 +1,10 @@
 use soroban_sdk::{Address, Env};
 use stellar_tokens::{
     fungible::FungibleTokenClient,
-    rwa::{identity_verification::IdentityVerifierClient, RWATokenClient},
+    rwa::{
+        compliance::ComplianceClient as RulesClient, identity_verification::IdentityVerifierClient,
+        RWATokenClient,
+    },
 };
 
 use crate::error::VaultError;
@@ -90,6 +93,15 @@ pub(crate) fn refused_with(standing: Standing) -> VaultError {
         Standing::Frozen => VaultError::Frozen,
         Standing::Listed | Standing::Delisted => VaultError::NotAllowlisted,
     }
+}
+
+/// The holder may hold shares and the compliance rules let the vault send them.
+pub(crate) fn can_receive(e: &Env, holder: &Address, shares: i128) -> bool {
+    let vault = e.current_contract_address();
+    let token = state::get_addr(e, &DataKey::ShareToken);
+    let share = RWATokenClient::new(e, &token);
+    standing(e, holder) == Standing::Listed
+        && RulesClient::new(e, &share.compliance()).can_transfer(&vault, holder, &shares, &token)
 }
 
 /// Shares the holder can move: the balance less any partial freeze.

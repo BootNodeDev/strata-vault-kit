@@ -121,18 +121,23 @@ fn a_partial_freeze_does_not_stop_a_return() {
 }
 
 #[test]
-fn a_delisted_holder_with_a_worthless_exit_keeps_the_request() {
+fn a_worthless_exit_the_compliance_rules_refuse_to_return_burns() {
     let f = setup();
     let holder = f.holder(10);
     let epoch = f.vault.request_redeem(&holder, &1);
     // Priced at half a unit per share, one share pays nothing.
     f.fulfill_epoch(WAD_SCALE / 2);
-    f.identity.allow(&holder, &false);
+    let module = f.e.register(RefusesEveryTransfer, ());
+    f.add_compliance_module(ComplianceHook::CanTransfer, &module);
 
-    refused(
-        f.vault.try_claim_redeem(&holder, &epoch),
-        VaultError::HolderNotEligible,
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
+
+    assert_eq!(f.shares(&holder), 9);
+    assert_eq!(f.shares(&f.vault.address), 0);
+    assert_eq!(f.vault.pending_burn_shares(), 0);
+    assert!(f.vault.get_redeem_request(&epoch, &holder).unwrap().claimed);
+    assert_eq!(
+        f.vault.get_epoch_settlement(&epoch).unwrap().redeems_open,
+        0
     );
-    assert_eq!(f.vault.pending_burn_shares(), 1);
-    assert!(f.vault.get_redeem_request(&epoch, &holder).is_some());
 }

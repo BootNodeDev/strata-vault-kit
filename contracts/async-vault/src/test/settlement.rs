@@ -3,7 +3,7 @@ use soroban_sdk::{testutils::Events as _, Event as _};
 use stellar_tokens::rwa::{compliance::ComplianceHook, RWAError};
 
 use super::*;
-use crate::{DepositClaimed, EpochFulfilled, EpochReconciled, RedeemClaimed};
+use crate::{DepositClaimed, EpochFulfilled, EpochReconciled, RedeemCancelled, RedeemClaimed};
 
 /// Three assets a share: deposits of 4 and 5 promise floor(9 / 3) = 3 shares,
 /// but each claim floors to 1.
@@ -368,29 +368,74 @@ fn each_remainder_leaves_once_whichever_side_settles_last() {
     }
 }
 
-/// A request that can never settle holds its epoch open, so the remainder
-/// stays in the totals. Here the redemption pays nothing and the holder, since
-/// delisted, cannot take the shares back.
+/// At half a unit a share, redemptions of 1, 1 and 3 shares promise
+/// floor(2.5) = 2 and pay 0, 0 and 1. The delisted holder cannot take a share
+/// back, so the claim burns it, as a wind-down claim does; the listed holder
+/// gets theirs back.
 #[test]
-fn a_request_that_cannot_settle_keeps_its_epoch_open() {
+fn a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles() {
     let f = setup();
-    let a = f.holder(1);
-    let b = f.holder(3);
-    let epoch = f.vault.request_redeem(&a, &1);
-    f.vault.request_redeem(&b, &3);
+    let delisted = f.holder(1);
+    let listed = f.holder(1);
+    let paid = f.holder(3);
+    let epoch = f.vault.request_redeem(&delisted, &1);
+    f.vault.request_redeem(&listed, &1);
+    f.vault.request_redeem(&paid, &3);
     f.fulfill_epoch(wad(1) / 2);
-    f.identity.allow(&a, &false);
+    f.identity.allow(&delisted, &false);
+    let supply = f.share.total_supply();
 
-    refused(
-        f.vault.try_claim_redeem(&a, &epoch),
-        VaultError::HolderNotEligible,
+    assert_eq!(f.vault.claim_redeem(&delisted, &epoch), 0);
+
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.vault.address),
+        [RedeemClaimed {
+            holder: delisted.clone(),
+            epoch,
+            shares: 1,
+            assets: 0,
+        }
+        .to_xdr(&f.e, &f.vault.address)]
     );
-    assert_eq!(f.vault.claim_redeem(&b, &epoch), 1);
+    assert_eq!(f.shares(&delisted), 0);
+    assert_eq!(f.share.total_supply(), supply - 1);
+    assert_eq!(f.shares(&f.vault.address), 4);
+    assert_eq!(f.vault.pending_burn_shares(), 4);
+    assert!(
+        f.vault
+            .get_redeem_request(&epoch, &delisted)
+            .unwrap()
+            .claimed
+    );
+    assert_eq!(
+        f.vault.get_epoch_settlement(&epoch).unwrap().redeems_open,
+        2
+    );
+    refused(
+        f.vault.try_claim_redeem(&delisted, &epoch),
+        VaultError::AlreadyClaimed,
+    );
+
+    assert_eq!(f.vault.claim_redeem(&listed, &epoch), 0);
+    assert_eq!(
+        f.e.events().all().filter_by_contract(&f.vault.address),
+        [RedeemCancelled {
+            holder: listed.clone(),
+            epoch,
+            shares: 1,
+        }
+        .to_xdr(&f.e, &f.vault.address)]
+    );
+    assert_eq!(f.shares(&listed), 1);
+    assert_eq!(f.vault.claim_redeem(&paid, &epoch), 1);
 
     let s = f.vault.get_epoch_settlement(&epoch).unwrap();
-    assert_eq!(s.redeems_open, 1);
-    assert!(!s.cash_reconciled);
-    assert_eq!(f.vault.committed(), s.assets_promised - s.assets_settled);
+    assert_eq!(s.redeems_open, 0);
+    assert_eq!((s.assets_promised, s.assets_settled), (2, 1));
+    assert_eq!(f.vault.committed(), 0);
+    assert_eq!(f.vault.pending_burn_shares(), 0);
+    assert_eq!(f.shares(&f.vault.address), 0);
+    assert_eq!(f.share.total_supply(), supply - 1 - 3);
 }
 
 /// A request that can never settle: a compliance module refuses a priced
@@ -425,9 +470,9 @@ fn a_refused_mint_keeps_a_priced_deposit_epoch_open() {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
-    /// Any mix of deposits, cancellations, redemptions, refunds and
-    /// zero-asset claims, claimed in any order while a later epoch stays
-    /// unclaimed. After every claim each side's remainder is in
+    /// Any mix of deposits, cancellations, redemptions, refunds, zero-asset
+    /// claims and delisted redeemers, claimed in any order while a later
+    /// epoch stays unclaimed. After every claim each side's remainder is in
     /// the totals exactly until that side's last request settles. Once every
     /// request settles the totals hold only the later epoch's, and the vault
     /// holds what it held less what it paid.
@@ -436,6 +481,7 @@ proptest! {
         deposits in proptest::collection::vec(prop_oneof![Just(1i128), 1i128..5_000], 1..5),
         cancels in proptest::collection::vec(any::<bool>(), 5),
         redeems in proptest::collection::vec(prop_oneof![Just(1i128), 1i128..500], 0..4),
+        delists in proptest::collection::vec(any::<bool>(), 4),
         price_tenths in 5i128..=20,
         order in proptest::collection::vec(any::<u16>(), 8),
     ) {
@@ -466,6 +512,12 @@ proptest! {
         let l = f.vault.get_epoch_settlement(&later).unwrap();
         let (later_mint, later_owed) = (l.shares_promised, l.assets_promised);
         let held = f.balance(&f.vault.address);
+
+        for (i, (who, _)) in holders.iter().enumerate() {
+            if delists[i] {
+                f.identity.allow(who, &false);
+            }
+        }
 
         let mut claims: std::vec::Vec<(u16, bool, &Address, i128)> = investors
             .iter()
