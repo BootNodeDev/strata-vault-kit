@@ -217,8 +217,9 @@ The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer mo
 | `feed_answers` | The oracle answers `state()` and `freshness_duration()`. A new feed with no report passes. `oracle_bound` cannot tell a feed from another contract bound to this vault, such as the compliance contract. |
 | `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired, it is in band and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
+| `min_epoch_duration_set` | A minimum epoch duration is set. |
 
-`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation.
+`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation. `min_epoch_duration_set` false means only the manager can seal the open epoch; see [When the Manager or the Attester Stops](#when-the-manager-or-the-attester-stops).
 
 ### Supply and Capital Figures
 
