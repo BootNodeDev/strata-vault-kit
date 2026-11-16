@@ -329,11 +329,13 @@ Claims round down one by one, so together they never pay more than pricing
 promised. Each side of an epoch releases its remainder once its own requests
 have settled: the share remainder leaves `pending_mint_shares` after the last
 deposit, the cash remainder leaves `committed` after the last redemption, and
-each is released once. The cash stays in the reserve as fund money
-(`EpochReconciled` says how much). So a refund for a deposit below one share
-never waits on cash its own epoch's redemptions left behind. A redemption
-priced at zero assets returns its shares, or burns them when the holder may
-not take them back, so it always settles.
+each is released once. The cash stays in the reserve as fund money. Each side
+says how much it released in its own event (`EpochSharesReconciled`,
+`EpochCashReconciled`), and `EpochReconciled` follows once both are done. So
+a refund for a deposit below one share never waits on cash its own epoch's
+redemptions left behind. A redemption priced at zero assets returns its
+shares, or burns them when the holder may not take them back, so it always
+settles.
 
 The manager can seal the open epoch at any time. Once governance sets a minimum
 epoch duration — between 1 and 30 days — anyone may seal an epoch that has been

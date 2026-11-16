@@ -181,15 +181,32 @@ pub struct DepositConvertedToExit {
     pub shares: i128,
 }
 
-/// Rounding remainder a priced epoch released: `share_dust` from
-/// `pending_mint_shares` once its last deposit settles, `cash_dust` from
-/// `committed` once its last redemption settles. Each side is released once.
+/// A priced epoch has no deposit left open: its share remainder,
+/// `share_dust` in share base units, left `pending_mint_shares`. Published
+/// once per epoch, zero included.
+#[contractevent]
+pub struct EpochSharesReconciled {
+    #[topic]
+    pub epoch: u64,
+    pub share_dust: i128,
+}
+
+/// A priced epoch has no redemption left open: its cash remainder,
+/// `cash_dust` in asset base units, left `committed` and stays in the reserve.
+/// Published once per epoch, zero included.
+#[contractevent]
+pub struct EpochCashReconciled {
+    #[topic]
+    pub epoch: u64,
+    pub cash_dust: i128,
+}
+
+/// Both sides of a priced epoch are reconciled. Published once, after the
+/// second side's event.
 #[contractevent]
 pub struct EpochReconciled {
     #[topic]
     pub epoch: u64,
-    pub share_dust: i128,
-    pub cash_dust: i128,
 }
 
 #[contractevent]

@@ -80,10 +80,10 @@ pub use error::VaultError;
 pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCancelled,
     DepositCapUpdated, DepositClaimed, DepositConvertedToExit, DepositRefunded, DepositRequested,
-    EpochClosed, EpochFulfilled, EpochReconciled, Funded, MinEpochDurationSet, NoticeSet,
-    RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered, SetupFinished,
-    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
-    WindDownProposed, WindDownRoundFinalized,
+    EpochCashReconciled, EpochClosed, EpochFulfilled, EpochReconciled, EpochSharesReconciled,
+    Funded, MinEpochDurationSet, NoticeSet, RedeemCancelled, RedeemClaimed, RedeemRequested,
+    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -859,10 +859,9 @@ impl AsyncVault {
     ///
     /// # Events
     ///
-    /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
-    ///   `DepositRefunded`.
-    /// * `EpochReconciled` when it releases a remainder or settles the
-    ///   epoch's last request.
+    /// * `DepositClaimed`, `DepositConvertedToExit` or `DepositRefunded`.
+    /// * `EpochSharesReconciled` on the last deposit, then `EpochReconciled`
+    ///   if no redemption is open.
     ///
     /// # Authorization
     ///
@@ -1001,8 +1000,8 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `RedeemClaimed`, or `RedeemCancelled` when the shares come back.
-    /// * `EpochReconciled` when it releases a remainder or settles the
-    ///   epoch's last request.
+    /// * `EpochCashReconciled` on the last redemption, then `EpochReconciled`
+    ///   if no deposit is open.
     ///
     /// # Authorization
     ///
@@ -1069,7 +1068,8 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `EpochFulfilled`
-    /// * `EpochReconciled` when the epoch has no open request.
+    /// * `EpochSharesReconciled` and `EpochCashReconciled` for each side
+    ///   with no open request, then `EpochReconciled` if both have none.
     ///
     /// # Authorization
     ///

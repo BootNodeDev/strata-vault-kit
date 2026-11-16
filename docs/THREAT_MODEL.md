@@ -1206,11 +1206,11 @@ Rounding lets a claim take more than its share, or a tiny deposit is lost.
   by one, so together they never pay more than pricing promised. Each side of
   an epoch releases its remainder once its own requests settle, and only once:
   the cash remainder leaves `committed` after the last redemption and stays in
-  the reserve, the share remainder leaves `pending_mint_shares` after the last
-  deposit (`EpochReconciled`). A running
-  total that would go below zero fails (`AccountingMismatch`) instead of being
-  clamped. A deposit worth less than one share mints nothing and is refunded at
-  claim, from the free reserve.
+  the reserve (`EpochCashReconciled`), the share remainder leaves
+  `pending_mint_shares` after the last deposit (`EpochSharesReconciled`). A
+  running total that would go below zero fails (`AccountingMismatch`) instead
+  of being clamped. A deposit worth less than one share mints nothing and is
+  refunded at claim, from the free reserve.
 - **Residual:** Rounding remainders stay with the fund. A request that never
   settles keeps its side's remainder in the totals. The refund for a deposit
   below one share is not set aside when the epoch is priced: the treasury or a

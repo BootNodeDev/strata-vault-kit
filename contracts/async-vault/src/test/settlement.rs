@@ -1,9 +1,53 @@
 use proptest::prelude::*;
-use soroban_sdk::{testutils::Events as _, Event as _};
+use soroban_sdk::{
+    testutils::Events as _,
+    xdr::{ContractEvent, ContractEventBody, ScVal},
+    Event as _,
+};
 use stellar_tokens::rwa::{compliance::ComplianceHook, RWAError};
 
 use super::*;
-use crate::{DepositClaimed, EpochFulfilled, EpochReconciled, RedeemCancelled, RedeemClaimed};
+use crate::{
+    DepositClaimed, EpochCashReconciled, EpochFulfilled, EpochReconciled, EpochSharesReconciled,
+    RedeemCancelled, RedeemClaimed,
+};
+
+const RECONCILIATIONS: [&[u8]; 3] = [
+    b"epoch_shares_reconciled",
+    b"epoch_cash_reconciled",
+    b"epoch_reconciled",
+];
+
+/// The reconciliation events for `epoch` that the last call published.
+fn reconciliations(f: &Fixture, epoch: u64) -> std::vec::Vec<ContractEvent> {
+    f.e.events()
+        .all()
+        .filter_by_contract(&f.vault.address)
+        .events()
+        .iter()
+        .filter(|event| {
+            let ContractEventBody::V0(body) = &event.body;
+            let named = matches!(
+                body.topics.first(),
+                Some(ScVal::Symbol(name)) if RECONCILIATIONS.contains(&name.as_slice())
+            );
+            named && body.topics.get(1) == Some(&ScVal::U64(epoch))
+        })
+        .cloned()
+        .collect()
+}
+
+fn shares_reconciled(f: &Fixture, epoch: u64, share_dust: i128) -> ContractEvent {
+    EpochSharesReconciled { epoch, share_dust }.to_xdr(&f.e, &f.vault.address)
+}
+
+fn cash_reconciled(f: &Fixture, epoch: u64, cash_dust: i128) -> ContractEvent {
+    EpochCashReconciled { epoch, cash_dust }.to_xdr(&f.e, &f.vault.address)
+}
+
+fn reconciled(f: &Fixture, epoch: u64) -> ContractEvent {
+    EpochReconciled { epoch }.to_xdr(&f.e, &f.vault.address)
+}
 
 /// Three assets a share: deposits of 4 and 5 promise floor(9 / 3) = 3 shares,
 /// but each claim floors to 1.
@@ -28,7 +72,8 @@ fn the_last_deposit_claim_clears_the_share_remainder() {
 }
 
 /// At 1.5 assets a share, 101 and 103 shares promise floor(306) = 306 assets
-/// but pay floor(151.5) + floor(154.5) = 305.
+/// but pay floor(151.5) + floor(154.5) = 305. The epoch has no deposit, so
+/// pricing reconciles its share side at once, with nothing to release.
 #[test]
 fn the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once() {
     let f = setup();
@@ -37,9 +82,12 @@ fn the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once() {
     f.vault.request_redeem(&a, &101);
     f.vault.request_redeem(&b, &103);
     let epoch = f.fulfill_epoch(wad(3) / 2);
+    let mut published = reconciliations(&f, epoch);
+    assert_eq!(published, [shares_reconciled(&f, epoch, 0)]);
     assert_eq!(f.vault.committed(), 306);
 
     f.vault.claim_redeem(&a, &epoch);
+    published.extend(reconciliations(&f, epoch));
     assert!(!f.vault.get_epoch_settlement(&epoch).unwrap().reconciled());
     assert_eq!(f.vault.committed(), 155);
 
@@ -55,12 +103,17 @@ fn the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once() {
                 assets: 154,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
-                epoch,
-                share_dust: 0,
-                cash_dust: 1,
-            }
-            .to_xdr(&f.e, &f.vault.address),
+            cash_reconciled(&f, epoch, 1),
+            reconciled(&f, epoch),
+        ]
+    );
+    published.extend(reconciliations(&f, epoch));
+    assert_eq!(
+        published,
+        [
+            shares_reconciled(&f, epoch, 0),
+            cash_reconciled(&f, epoch, 1),
+            reconciled(&f, epoch),
         ]
     );
     assert_eq!(f.vault.committed(), 0);
@@ -83,12 +136,9 @@ fn an_epoch_with_no_requests_settles_when_it_is_priced() {
                 total_deposited: 0,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
-                epoch,
-                share_dust: 0,
-                cash_dust: 0,
-            }
-            .to_xdr(&f.e, &f.vault.address),
+            shares_reconciled(&f, epoch, 0),
+            cash_reconciled(&f, epoch, 0),
+            reconciled(&f, epoch),
         ]
     );
     assert!(f.vault.get_epoch_settlement(&epoch).unwrap().reconciled());
@@ -267,12 +317,7 @@ fn the_share_remainder_leaves_once_the_deposits_settle() {
                 shares: 3,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
-                epoch: m.epoch,
-                share_dust: 1,
-                cash_dust: 0,
-            }
-            .to_xdr(&f.e, &f.vault.address),
+            shares_reconciled(&f, m.epoch, 1),
         ]
     );
     assert_eq!(
@@ -295,12 +340,8 @@ fn the_share_remainder_leaves_once_the_deposits_settle() {
                 assets: 154,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
-                epoch: m.epoch,
-                share_dust: 0,
-                cash_dust: 1,
-            }
-            .to_xdr(&f.e, &f.vault.address),
+            cash_reconciled(&f, m.epoch, 1),
+            reconciled(&f, m.epoch),
         ]
     );
     assert_eq!((f.vault.pending_mint_shares(), f.vault.committed()), (0, 0));
@@ -332,33 +373,45 @@ fn each_remainder_leaves_once_whichever_side_settles_last() {
         let f = setup();
         let z = f.holder(7);
         let m = mixed_epoch_with_a_remainder_on_each_side(&f);
+        let mut published = reconciliations(&f, m.epoch);
         let c = f.investor(9);
         let later = f.vault.request_deposit(&c, &9);
         f.vault.request_redeem(&z, &7);
         f.fulfill_epoch(wad(3) / 2);
+        published.extend(reconciliations(&f, m.epoch));
         let (later_mint, later_owed) = (6, 10);
         assert_eq!(f.vault.pending_mint_shares(), 6 + later_mint);
         assert_eq!(f.vault.committed(), 306 + later_owed);
         let held = f.balance(&f.vault.address);
 
-        let claim_deposits = || {
+        let claim_deposits = |published: &mut std::vec::Vec<ContractEvent>| {
             for (who, shares) in &m.depositors {
                 assert_eq!(f.vault.claim_deposit(who, &m.epoch), *shares);
+                published.extend(reconciliations(&f, m.epoch));
             }
         };
-        let claim_redemptions = || {
+        let claim_redemptions = |published: &mut std::vec::Vec<ContractEvent>| {
             for (who, assets) in &m.redeemers {
                 assert_eq!(f.vault.claim_redeem(who, &m.epoch), *assets);
+                published.extend(reconciliations(&f, m.epoch));
             }
         };
-        if deposits_first {
-            claim_deposits();
-            claim_redemptions();
+        let (shares_side, cash_side) = (
+            shares_reconciled(&f, m.epoch, 1),
+            cash_reconciled(&f, m.epoch, 1),
+        );
+        let sides = if deposits_first {
+            claim_deposits(&mut published);
+            claim_redemptions(&mut published);
+            [shares_side, cash_side]
         } else {
-            claim_redemptions();
-            claim_deposits();
-        }
+            claim_redemptions(&mut published);
+            claim_deposits(&mut published);
+            [cash_side, shares_side]
+        };
 
+        let [first, second] = sides;
+        assert_eq!(published, [first, second, reconciled(&f, m.epoch)]);
         assert_eq!(f.vault.pending_mint_shares(), later_mint);
         assert_eq!(f.vault.committed(), later_owed);
         assert_eq!(f.balance(&f.vault.address), held - 305);
@@ -473,9 +526,11 @@ proptest! {
     /// Any mix of deposits, cancellations, redemptions, refunds, zero-asset
     /// claims and delisted redeemers, claimed in any order while a later
     /// epoch stays unclaimed. After every claim each side's remainder is in
-    /// the totals exactly until that side's last request settles. Once every
-    /// request settles the totals hold only the later epoch's, and the vault
-    /// holds what it held less what it paid.
+    /// the totals exactly until that side's last request settles, and each
+    /// side's event has been published exactly when its flag is set. Once
+    /// every request settles the totals hold only the later epoch's, the
+    /// epoch published one event per side and then `EpochReconciled`, and the
+    /// vault holds what it held less what it paid.
     #[test]
     fn a_settled_epoch_leaves_no_remainder_in_the_totals(
         deposits in proptest::collection::vec(prop_oneof![Just(1i128), 1i128..5_000], 1..5),
@@ -504,6 +559,7 @@ proptest! {
         }
         let price = wad(1) * price_tenths / 10;
         let epoch = f.fulfill_epoch(price);
+        let mut published = reconciliations(&f, epoch);
 
         let later_investor = f.investor(9);
         let later = f.vault.request_deposit(&later_investor, &9);
@@ -536,10 +592,13 @@ proptest! {
             } else {
                 paid += f.vault.claim_redeem(who, &epoch);
             }
+            published.extend(reconciliations(&f, epoch));
 
             let s = f.vault.get_epoch_settlement(&epoch).unwrap();
             prop_assert_eq!(s.shares_reconciled, s.deposits_open == 0);
             prop_assert_eq!(s.cash_reconciled, s.redeems_open == 0);
+            let side_events = usize::from(s.shares_reconciled) + usize::from(s.cash_reconciled);
+            prop_assert_eq!(published.len(), side_events + usize::from(s.reconciled()));
             let share_left = if s.shares_reconciled { 0 } else { s.shares_promised - s.shares_settled };
             let cash_left = if s.cash_reconciled { 0 } else { s.assets_promised - s.assets_settled };
             prop_assert_eq!(f.vault.pending_mint_shares(), later_mint + share_left);
@@ -548,6 +607,14 @@ proptest! {
 
         let s = f.vault.get_epoch_settlement(&epoch).unwrap();
         prop_assert!(s.reconciled());
+        let shares_side = shares_reconciled(&f, epoch, s.shares_promised - s.shares_settled);
+        let cash_side = cash_reconciled(&f, epoch, s.assets_promised - s.assets_settled);
+        prop_assert_eq!(published.len(), 3);
+        prop_assert!(
+            published[..2] == [shares_side.clone(), cash_side.clone()]
+                || published[..2] == [cash_side, shares_side]
+        );
+        prop_assert_eq!(&published[2], &reconciled(&f, epoch));
         prop_assert!(s.shares_settled <= s.shares_promised);
         prop_assert!(s.assets_settled <= s.assets_promised);
         prop_assert_eq!(f.vault.pending_mint_shares(), later_mint);

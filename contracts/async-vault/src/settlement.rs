@@ -1,7 +1,7 @@
 use soroban_sdk::{contracttype, panic_with_error, Env};
 
 use crate::error::VaultError;
-use crate::event::EpochReconciled;
+use crate::event::{EpochCashReconciled, EpochReconciled, EpochSharesReconciled};
 use crate::keys::DataKey;
 use crate::state::{self, EpochStatus};
 
@@ -110,8 +110,7 @@ pub(crate) fn on_redeem_claimed(e: &Env, epoch: u64, assets: i128) {
 }
 
 /// Releases each side's remainder once that side has no open request, each
-/// side once. The call that releases a remainder, or settles the epoch's last
-/// request, publishes what it released.
+/// side once, and says so once per side and once for the whole epoch.
 fn reconcile_if_settled(e: &Env, epoch: u64, s: &mut EpochSettlement) {
     let shares_due = !s.shares_reconciled && s.deposits_open == 0;
     let cash_due = !s.cash_reconciled && s.redeems_open == 0;
@@ -123,28 +122,22 @@ fn reconcile_if_settled(e: &Env, epoch: u64, s: &mut EpochSettlement) {
         return;
     }
 
-    let mut share_dust = 0;
     if shares_due {
-        share_dust = state::reduce(e, s.shares_promised, s.shares_settled);
+        let share_dust = state::reduce(e, s.shares_promised, s.shares_settled);
         state::set_pending_mint_shares(
             e,
             state::reduce(e, state::pending_mint_shares(e), share_dust),
         );
         s.shares_reconciled = true;
+        EpochSharesReconciled { epoch, share_dust }.publish(e);
     }
-    let mut cash_dust = 0;
     if cash_due {
-        cash_dust = state::reduce(e, s.assets_promised, s.assets_settled);
+        let cash_dust = state::reduce(e, s.assets_promised, s.assets_settled);
         state::set_committed(e, state::reduce(e, state::committed(e), cash_dust));
         s.cash_reconciled = true;
+        EpochCashReconciled { epoch, cash_dust }.publish(e);
     }
-
-    if share_dust > 0 || cash_dust > 0 || s.reconciled() {
-        EpochReconciled {
-            epoch,
-            share_dust,
-            cash_dust,
-        }
-        .publish(e);
+    if s.reconciled() {
+        EpochReconciled { epoch }.publish(e);
     }
 }

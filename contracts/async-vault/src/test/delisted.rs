@@ -2,7 +2,9 @@ use proptest::prelude::*;
 use soroban_sdk::{testutils::Events as _, Event as _};
 
 use super::*;
-use crate::{DepositConvertedToExit, EpochReconciled, RedemptionSurrendered};
+use crate::{
+    DepositConvertedToExit, EpochReconciled, EpochSharesReconciled, RedemptionSurrendered,
+};
 
 /// A 400 deposit priced at 2.0 for 200 shares, then delisted before the claim.
 fn delisted_with_a_priced_deposit(f: &Fixture) -> (Address, u64) {
@@ -31,12 +33,12 @@ fn a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch() 
                 shares: 200,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
+            EpochSharesReconciled {
                 epoch,
                 share_dust: 0,
-                cash_dust: 0,
             }
             .to_xdr(&f.e, &f.vault.address),
+            EpochReconciled { epoch }.to_xdr(&f.e, &f.vault.address),
         ]
     );
     assert_eq!(f.shares(&investor), 0);
@@ -122,12 +124,12 @@ fn in_a_wind_down_the_shares_are_credited_before_the_first_round() {
                 shares: 200,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
+            EpochSharesReconciled {
                 epoch,
                 share_dust: 0,
-                cash_dust: 0,
             }
             .to_xdr(&f.e, &f.vault.address),
+            EpochReconciled { epoch }.to_xdr(&f.e, &f.vault.address),
         ]
     );
     assert_eq!(f.vault.finalize_wind_down_round(), 400);

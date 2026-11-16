@@ -2,8 +2,8 @@ use soroban_sdk::{testutils::Events as _, Event as _};
 
 use super::*;
 use crate::{
-    DepositCancelled, DepositClaimed, DepositRefunded, DepositRequested, EpochClosed,
-    EpochFulfilled, EpochReconciled, RedeemCancelled,
+    DepositCancelled, DepositClaimed, DepositRefunded, DepositRequested, EpochCashReconciled,
+    EpochClosed, EpochFulfilled, EpochReconciled, EpochSharesReconciled, RedeemCancelled,
 };
 
 #[test]
@@ -55,12 +55,19 @@ fn pricing_an_epoch_publishes_the_share_price() {
 
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
-        [EpochFulfilled {
-            epoch,
-            share_price,
-            total_deposited: 400,
-        }
-        .to_xdr(&f.e, &f.vault.address)]
+        [
+            EpochFulfilled {
+                epoch,
+                share_price,
+                total_deposited: 400,
+            }
+            .to_xdr(&f.e, &f.vault.address),
+            EpochCashReconciled {
+                epoch,
+                cash_dust: 0,
+            }
+            .to_xdr(&f.e, &f.vault.address),
+        ]
     );
 }
 
@@ -83,12 +90,12 @@ fn claiming_the_last_deposit_publishes_the_shares_paid_and_the_settlement() {
                 shares: 200,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
+            EpochSharesReconciled {
                 epoch: 1,
                 share_dust: 0,
-                cash_dust: 0,
             }
             .to_xdr(&f.e, &f.vault.address),
+            EpochReconciled { epoch: 1 }.to_xdr(&f.e, &f.vault.address),
         ]
     );
 }
