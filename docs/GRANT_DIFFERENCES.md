@@ -55,8 +55,7 @@ spec" is the [Kit specification](./kit-spec.md).
    The delay is 7 to 90 days. See design doc
    [§9](./strata-product-and-architecture.md#9-relationship-to-existing-stellar-tooling).
 
-4. **Two cases hold a priced claim: a compliance freeze, and a delisted
-   holder's redemption that rounds to zero.** The proposal said exits are
+4. **One case holds a priced claim: a compliance freeze.** The proposal said exits are
    "never gated or pausable". In the kit, a vault pause, a delisting, or a
    stale or paused price never blocks a priced claim once the vault's cash,
    not counting deposits that can still be cancelled, covers it. A compliance
@@ -66,11 +65,11 @@ spec" is the [Kit specification](./kit-spec.md).
    generally treat frozen property. One edge case, a frozen holder's deposit
    too small to mint any shares, is described in the
    [compliance matrix](./COMPLIANCE_MATRIX.md#1-investor-states). There is one
-   more exception. A redemption so small that it rounds down to zero assets
-   pays no cash and gives the shares back, so the holder must be able to
-   receive shares. If the holder has been removed from the allowlist
-   (delisted), that claim waits until they are listed again. In a wind-down
-   the shares are burned instead. See kit spec
+   more case. A redemption so small that it rounds down to zero assets pays no
+   cash. It returns the shares to a holder who may take them back, and burns
+   them otherwise, always in a wind-down, under one asset unit, from the
+   holder's own signed claim. It waits only while the identity verifier fails
+   instead of answering. See kit spec
    [Invariant 4](./kit-spec.md#invariant-4-covered-claims-always-pay-exit-guarantee).
 
 5. **New deposits stop while the price cannot be trusted or the cash is

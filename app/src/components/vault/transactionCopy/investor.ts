@@ -76,7 +76,7 @@ const CANCEL_REASONS: Reasons = {
 }
 
 const cancelRedeemReasons = (assetTicker: string): Reasons => {
-	const claimInstead = `Once priced, claim the ${assetTicker} it owes you instead.`
+	const claimInstead = `Once priced, claim the ${assetTicker} it owes you instead. If it prices at zero, claiming burns the shares.`
 	return {
 		...CANCEL_REASONS,
 		NotAllowlisted: `${NOT_ALLOWLISTED} These shares cannot come back to you. ${claimInstead}`,

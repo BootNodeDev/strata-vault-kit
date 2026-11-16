@@ -981,8 +981,9 @@ An administrative act stops a holder from collecting a priced, covered exit.
 
 - **Control:** `claim_redeem` has no pause check and does not read the oracle.
   It asks the verifier about the holder but pays a delisted holder like a listed
-  one, and a verifier that fails to answer counts as delisted. Of the holder's
-  own standing, only a freeze holds the claim (X3).
+  one, and a verifier that fails to answer counts as delisted, except a claim
+  that pays nothing (X4). Of the holder's own standing, only a freeze holds
+  the claim (X3).
 - **Residual:** The claim still needs the liquid reserve to cover it, or it
   fails with `ClaimNotCovered` (X1). It also calls the share token, to check
   the freeze and burn the escrow, and the token calls the compliance contract.
@@ -1045,7 +1046,10 @@ address gets in.
 - **Residual:** They leave at a later epoch's price, and a fall since their
   deposit was priced is theirs. The conversion mints into the vault's own
   escrow, so it waits while compliance has delisted the vault;
-  `health().allowlisted` then reads false, and nothing is lost. A redemption
+  `health().allowlisted` then reads false, and nothing is lost.
+  `claim_deposit` does not tell a verifier fault from a real delisting, so a
+  fault for one holder also converts that holder's priced deposit into the
+  same cash exit; nothing is destroyed. A redemption
   priced at zero assets cannot give its shares back to a delisted holder, so
   its claim burns them, as a wind-down claim does: the holder loses shares
   worth less than one asset unit, and the request settles. Only the verifier's
