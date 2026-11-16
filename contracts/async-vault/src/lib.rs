@@ -995,6 +995,8 @@ impl AsyncVault {
     /// * `AlreadyClaimed` - The redemption was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
+    /// * `VerifierFailed` - It pays nothing and the identity verifier fails.
+    /// * A compliance module's own error when it fails on that return.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events

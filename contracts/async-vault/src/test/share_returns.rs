@@ -1,11 +1,54 @@
-use soroban_sdk::{contract, contractimpl};
+use soroban_sdk::{contract, contracterror, contractimpl, panic_with_error};
 use stellar_contract_utils::pausable::PausableError;
-use stellar_tokens::rwa::compliance::ComplianceHook;
+use stellar_tokens::rwa::{compliance::ComplianceHook, RWA};
 
 use super::*;
 
 #[contract]
 pub(super) struct RefusesEveryTransfer;
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+enum ModuleError {
+    CheckFailed = 1,
+}
+
+#[contract]
+struct FailsEveryTransferCheck;
+
+#[contractimpl]
+impl FailsEveryTransferCheck {
+    pub fn can_transfer(
+        e: Env,
+        _from: Address,
+        _to: Address,
+        _amount: i128,
+        _token: Address,
+    ) -> bool {
+        panic_with_error!(&e, ModuleError::CheckFailed)
+    }
+}
+
+/// A holder with one share escrowed in a redemption priced at half a unit a
+/// share, which pays nothing.
+fn worthless_exit(f: &Fixture) -> (Address, u64) {
+    let holder = f.holder(10);
+    let epoch = f.vault.request_redeem(&holder, &1);
+    f.fulfill_epoch(WAD_SCALE / 2);
+    (holder, epoch)
+}
+
+fn still_open(f: &Fixture, holder: &Address, epoch: u64) {
+    assert_eq!(f.shares(holder), 9);
+    assert_eq!(f.shares(&f.vault.address), 1);
+    assert_eq!(f.vault.pending_burn_shares(), 1);
+    assert!(!f.vault.get_redeem_request(&epoch, holder).unwrap().claimed);
+    assert_eq!(
+        f.vault.get_epoch_settlement(&epoch).unwrap().redeems_open,
+        1
+    );
+}
 
 #[contractimpl]
 impl RefusesEveryTransfer {
@@ -140,4 +183,43 @@ fn a_worthless_exit_the_compliance_rules_refuse_to_return_burns() {
         f.vault.get_epoch_settlement(&epoch).unwrap().redeems_open,
         0
     );
+}
+
+/// A verifier that fails is not an answer that the holder is ineligible, so
+/// nothing burns: the claim fails and can be retried once it answers again.
+#[test]
+fn a_worthless_exit_waits_while_the_verifier_cannot_answer() {
+    let f = setup();
+    let (holder, epoch) = worthless_exit(&f);
+    let verifier = f.share.identity_verifier();
+    let silent = Address::generate(&f.e);
+    f.e.as_contract(&f.share.address, || {
+        RWA::set_identity_verifier(&f.e, &silent)
+    });
+
+    refused(
+        f.vault.try_claim_redeem(&holder, &epoch),
+        VaultError::VerifierFailed,
+    );
+    still_open(&f, &holder, epoch);
+
+    f.e.as_contract(&f.share.address, || {
+        RWA::set_identity_verifier(&f.e, &verifier)
+    });
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
+    assert_eq!(f.shares(&holder), 10);
+}
+
+#[test]
+fn a_worthless_exit_waits_while_the_compliance_rules_cannot_answer() {
+    let f = setup();
+    let (holder, epoch) = worthless_exit(&f);
+    let module = f.e.register(FailsEveryTransferCheck, ());
+    f.add_compliance_module(ComplianceHook::CanTransfer, &module);
+
+    assert_eq!(
+        f.vault.try_claim_redeem(&holder, &epoch),
+        Err(Ok(ModuleError::CheckFailed.into()))
+    );
+    still_open(&f, &holder, epoch);
 }

@@ -1048,11 +1048,12 @@ address gets in.
   `health().allowlisted` then reads false, and nothing is lost. A redemption
   priced at zero assets cannot give its shares back to a delisted holder, so
   its claim burns them, as a wind-down claim does: the holder loses shares
-  worth less than one asset unit, and the request settles. Only the holder can
-  start an exit: nothing lets
-  compliance or governance redeem a holder who is no longer eligible. If a
-  fund's terms require that, it needs a new power, and counsel must confirm the
-  process.
+  worth less than one asset unit, and the request settles. Only the verifier's
+  answer burns them: a verifier that fails instead of answering fails the
+  claim (`VerifierFailed`), and the request waits for a retry. Only the holder
+  can start an exit: nothing lets compliance or governance redeem a holder who
+  is no longer eligible. If a fund's terms require that, it needs a new power,
+  and counsel must confirm the process.
 - **Tests:** `an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves`,
   `a_delisted_holder_can_still_queue_an_exit` and
   `a_delisted_holder_cannot_cancel_redemption_back_to_shares` in
@@ -1061,7 +1062,9 @@ address gets in.
   and `a_conversion_waits_while_the_vault_is_delisted` in
   [`delisted.rs`](../contracts/async-vault/src/test/delisted.rs);
   `a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles` in
-  [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs).
+  [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
+  `a_worthless_exit_waits_while_the_verifier_cannot_answer` in
+  [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs).
 
 ### X5. Escrowed shares that should come back
 
@@ -1356,7 +1359,11 @@ or queued changes.
   vault, because its settlement record cannot count requests made before it
   existed
   ([kit spec, Invariant 7](./kit-spec.md#invariant-7-directional-rounding--non-creation-of-value)).
-  The oracle's own case has a written recovery (O11).
+  The oracle's own case has a written recovery (O11). This release also
+  changes a stored type: the vault's settlement record (`EpochSettlement`)
+  replaces `reconciled` with `shares_reconciled` and `cash_reconciled`. It is
+  therefore deployed fresh, as the rule above already requires; it is never
+  upgraded in place over a vault that stored records of the old shape.
 - **Residual:** No release ships a `migrate`; only test builds have one. If an
   upgrade changes a stored struct's fields or a variant's payload, every entry
   of the old shape fails to decode. Read from the code, not from a test, that
@@ -1377,9 +1384,11 @@ or queued changes.
   [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
   `the_oracle_upgrades_under_a_live_valuation`, also with `upgrade_wasm`, in
   [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs).
-  A vault upgrade over stored entries of another shape: none, because no
-  release changes a stored type yet. The failures above are read from the
-  code, and a test belongs with the first release that changes one.
+  A vault upgrade over stored entries of another shape: none. This release
+  changes `EpochSettlement` but is deployed fresh, so no vault ever holds both
+  shapes; the failures above are read from the code. A test belongs with the
+  first release that must upgrade a live vault across a changed type, together
+  with the migration it needs.
 
 ### X14. A call made in a holder's name
 

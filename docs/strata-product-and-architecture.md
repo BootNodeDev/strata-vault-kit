@@ -335,7 +335,8 @@ says how much it released in its own event (`EpochSharesReconciled`,
 a refund for a deposit below one share never waits on cash its own epoch's
 redemptions left behind. A redemption priced at zero assets returns its
 shares, or burns them when the holder may not take them back, so it always
-settles.
+settles; a verifier that fails instead of answering makes the claim wait
+rather than burn.
 
 The manager can seal the open epoch at any time. Once governance sets a minimum
 epoch duration — between 1 and 30 days — anyone may seal an epoch that has been

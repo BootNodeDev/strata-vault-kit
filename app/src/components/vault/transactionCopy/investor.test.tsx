@@ -832,20 +832,20 @@ describe("TransactionModal, claiming a redemption", () => {
 		expect(screen.getByText(/enough USDC in reserve/)).toBeTruthy()
 	})
 
-	it("names HolderNotEligible as the zero-price return the address cannot receive, in the same words as a withdrawal cancellation", () => {
+	it("names VerifierFailed as a zero-price claim that waits for the address check, with the shares kept by the vault", () => {
 		renderClaimRedeemModal({
 			status: "failed",
 			failure: {
 				kind: "contract-error",
-				code: contractErrorCode(VaultError, "HolderNotEligible"),
-				name: "HolderNotEligible",
+				code: contractErrorCode(VaultError, "VerifierFailed"),
+				name: "VerifierFailed",
 			},
 		})
 
-		expect(screen.getByText(/tried to return your shares/)).toBeTruthy()
 		expect(
-			screen.getByText(/cannot receive these shares right now/),
+			screen.getByText(/could not check your address right now/),
 		).toBeTruthy()
+		expect(screen.getByText(/shares stay with the vault/)).toBeTruthy()
 		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
 	})
 

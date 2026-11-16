@@ -52,8 +52,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**: If `liquid_reserve >= assets_owed`, `claim_redeem` succeeds when:
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
-  3. The caller has been de-listed in the `IdentityVerifier`, unless the claim pays zero assets outside a wind-down (see below).
-  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back when the holder may receive them. When the holder may not (delisted, or the compliance rules refuse the move), and always in a wind-down, the claim burns the shares instead and publishes `RedeemClaimed` with zero assets, so the request still settles (`a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles`, `a_worthless_exit_the_compliance_rules_refuse_to_return_burns`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`).
+  3. The caller has been de-listed in the `IdentityVerifier`. A claim that pays zero assets also succeeds: it burns the escrowed shares instead of paying (see below).
+  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back when the holder may receive them. When the holder may not (the identity verifier answers that the holder is delisted, or the compliance rules refuse the move), and always in a wind-down, the claim burns the shares instead and publishes `RedeemClaimed` with zero assets, so the request still settles (`a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles`, `a_worthless_exit_the_compliance_rules_refuse_to_return_burns`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`). Only an answer burns: if the verifier fails instead of answering, the claim fails with `VerifierFailed`, and if the compliance call fails, with its own error; nothing moves and the request stays open for a retry (`a_worthless_exit_waits_while_the_verifier_cannot_answer`, `a_worthless_exit_waits_while_the_compliance_rules_cannot_answer`).
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
 - **Definition**: Investors cannot be trapped in the vault by a vault pause.
@@ -629,7 +629,7 @@ for the same failure, so `304` says what failed, not where.
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|
 | `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
-| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6077 |
+| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6078 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7019 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
 | `sep40_feed` | `FeedError` | 9000–9999 | 9001–9008 |
