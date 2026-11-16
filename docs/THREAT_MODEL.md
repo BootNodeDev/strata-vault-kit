@@ -158,18 +158,23 @@ The asset really loses, or gains, more than one report may show.
 The attester stops reporting, or the last report expires.
 
 - **Control:** A report expires at the earlier of its own `expires_at` and its
-  acceptance plus `freshness_duration`. A stale feed makes `fulfill_epoch`
-  fail, and requests in a sealed epoch can be cancelled again. A stale feed
-  also makes `request_deposit` refuse (`FeedNotValid`), so no new deposit waits
-  on it. Priced claims still pay: no claim reads the oracle. Governance revokes
-  the attester at once. `health()` reports `feed_valid`, and
+  acceptance plus `freshness_duration`. `attest` refuses a stored expiry that
+  would fall before `cooldown_secs` has run from acceptance, so a report
+  always outlives its own cooldown and the next one is never blocked by
+  `CooldownActive` once this one has gone stale. A stale feed makes
+  `fulfill_epoch` fail, and requests in a sealed epoch can be cancelled again. A
+  stale feed also makes `request_deposit` refuse (`FeedNotValid`), so no new
+  deposit waits on it. Priced claims still pay: no claim reads the oracle.
+  Governance revokes the attester at once. `health()` reports `feed_valid`, and
   `freshness_covers_notice` is false when the freshness window is shorter than
   the notice.
 - **Residual:** Holders with shares cannot exit until a report lands, or until
   a wind-down pays them pro rata (X8). After setup, granting a new attester
   waits for the timelock: at least seven days, plus any time the vault spends
   paused.
-- **Tests:** `heartbeat_expiry_makes_it_stale` in
+- **Tests:** `heartbeat_expiry_makes_it_stale`,
+  `an_expiry_inside_its_own_cooldown_is_refused` and
+  `a_lapsed_report_is_refreshed_at_once_with_no_cooldown_wait` in
   [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `fulfill_is_rejected_once_the_feed_goes_stale` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
