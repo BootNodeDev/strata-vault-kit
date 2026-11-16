@@ -628,7 +628,7 @@ for the same failure, so `304` says what failed, not where.
 
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|
-| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
+| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3027 |
 | `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6077 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7019 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
