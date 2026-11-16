@@ -480,9 +480,10 @@ Someone takes governance's keys and changes code, roles or wiring.
 
   The delay is 7 to 90 days, and never shorter than the notice when the change
   applies. Time the vault spends paused does not count, nothing applies while it
-  is paused, nothing but a grant of the token's `compliance` role is proposed or
-  applied during a wind-down, and no admin hand-over is accepted then. One code
-  change waits at a time. No contract offers an immediate upgrade. Renouncing
+  is paused, and no admin hand-over is accepted during a wind-down. Of the
+  changes above, only a grant of the token's `compliance` role and removing a
+  compliance module are proposed or applied then; everything else waits for
+  the wind-down to end. One code change waits at a time. No contract offers an immediate upgrade. Renouncing
   the admin and setting a role admin are always refused. Every proposal is
   published (`ChangeProposed`) and listed by `pending_changes()`.
 - **Residual:** The delay is notice, not a guaranteed exit: leaving needs a
@@ -1087,16 +1088,24 @@ A module on the compliance contract refuses or fails, so the token's calls fail.
 
 - **Control:** On the kit's compliance contract, modules change only through the
   vault's timelock after setup, never while the vault is paused. A wind-down
-  refuses every module, binding or admin change except removing a module,
-  which still waits the normal delay. The kit registers no modules.
+  refuses every module, binding or admin change except removing a module:
+  governance may remove any module, failing or not, after the normal delay,
+  the same power it already has outside a wind-down. The kit registers no
+  modules.
 - **Residual:** The token calls the compliance contract on every mint, transfer
   and burn, and exits use all three: a mint for a share claim, a forced transfer
   to escrow or return a redemption, a burn to pay a redemption or a wind-down
   claim. A module that refuses or fails there blocks even a covered exit until
   its removal lands, the normal delay after it is proposed, in a wind-down too.
-  An external compliance contract changes its modules under its own
-  governance. Which modules mainnet uses, and what they may do during an exit,
-  is decided with
+  Because removal is not conditioned on the module failing, a compromised or
+  adversarial governance could remove a working module during a wind-down to
+  drop a rule it enforced (a holder limit, a transfer restriction) for the
+  rest of it. What stays protected: exits keep working either way, the
+  vault's own checks (the allowlist, a freeze, reserve coverage) are not
+  modules and cannot be removed this way, and the delay still gives holders
+  and the operator notice before the removal lands. An external compliance
+  contract changes its modules under its own governance. Which modules
+  mainnet uses, and what they may do during an exit, is decided with
   [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238).
 - **Tests:** `a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim`
   in [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs);

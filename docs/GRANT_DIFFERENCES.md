@@ -50,7 +50,8 @@ spec" is the [Kit specification](./kit-spec.md).
    - a setup window in which changes are instant; it closes once and never
      reopens;
    - no change lands during a wind-down, except a grant of the share token's
-     `compliance` role, which still waits the full delay.
+     `compliance` role and removing a compliance module, both of which still
+     wait the full delay.
 
    The delay is 7 to 90 days. See design doc
    [§9](./strata-product-and-architecture.md#9-relationship-to-existing-stellar-tooling).
