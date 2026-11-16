@@ -324,8 +324,9 @@ The vault's figures, all in asset base units:
   the minimum epoch duration (`min_epoch_duration()`), anyone may call it
   instead. If the manager is gone and no minimum is set, follow
   [When the Manager or the Attester Stops](./kit-spec.md#when-the-manager-or-the-attester-stops).
-  `health().min_epoch_duration_set` false ahead of time flags a vault with no
-  minimum set, before the manager ever stops sealing. Threat:
+  To catch this early, watch `health().min_epoch_duration_set`: when it is
+  false, only the manager can seal, even while the manager is still active.
+  Threat:
   [R8](./THREAT_MODEL.md#r8-the-manager-stops-sealing-or-picks-the-moment).
 
 ### C7. Redemptions waiting for a price
