@@ -168,7 +168,7 @@ spec" is the [Kit specification](./kit-spec.md).
     compliance contract) starts failing during a wind-down, those claims fail
     until the module is removed. Removing it still waits the normal timelock
     delay, the same way a `compliance` grant does; every other timelocked
-    change still waits for the wind-down to end. A frozen holder's wind-down
+    change is refused for the rest of the wind-down. A frozen holder's wind-down
     payout also waits until the compliance authority
     (a holder of the share token's `compliance` role) lifts the freeze. If that
     key is lost, granting the role to a new account waits the full timelock

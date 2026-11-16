@@ -10,7 +10,7 @@
 //!   and admin changes wait, and a wind-down refuses them, except removing a
 //!   module: a faulty one would otherwise block every exit for good. The
 //!   cost: a faulty module still takes a full delay to come off, and adding
-//!   one or rebinding a token still waits for a wind-down to end.
+//!   one or rebinding a token is refused for the rest of an active wind-down.
 //! - **An unbound token fails.** The hooks the token calls after each mint,
 //!   transfer and burn refuse it when it is not bound. The cost: unbinding it
 //!   stops all three, the vault's claims included.
