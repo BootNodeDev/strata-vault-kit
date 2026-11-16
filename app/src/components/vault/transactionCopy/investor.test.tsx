@@ -832,7 +832,7 @@ describe("TransactionModal, claiming a redemption", () => {
 		expect(screen.getByText(/enough USDC in reserve/)).toBeTruthy()
 	})
 
-	it("names VerifierFailed as a zero-price claim that waits for the address check, with the shares kept by the vault", () => {
+	it("names VerifierFailed as a zero-price claim whose identity check could not be completed, pointing to a later retry or the operator", () => {
 		renderClaimRedeemModal({
 			status: "failed",
 			failure: {
@@ -843,9 +843,10 @@ describe("TransactionModal, claiming a redemption", () => {
 		})
 
 		expect(
-			screen.getByText(/could not check your address right now/),
+			screen.getByText(/identity check on your address could not be completed/),
 		).toBeTruthy()
 		expect(screen.getByText(/shares stay with the vault/)).toBeTruthy()
+		expect(screen.getByText(/contact the vault's operator/)).toBeTruthy()
 		expect(screen.queryByText(/claim the USDC/i)).toBeNull()
 	})
 

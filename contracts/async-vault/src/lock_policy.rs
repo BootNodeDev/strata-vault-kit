@@ -1,8 +1,9 @@
-use soroban_sdk::{panic_with_error, Address, Env};
+use soroban_sdk::{panic_with_error, Address, Env, Error};
 use stellar_tokens::{
     fungible::FungibleTokenClient,
     rwa::{
-        compliance::ComplianceClient as RulesClient, identity_verification::IdentityVerifierClient,
+        compliance::ComplianceClient as RulesClient,
+        identity_verification::{identity_registry_storage::IRSError, IdentityVerifierClient},
         RWAError, RWATokenClient,
     },
 };
@@ -19,6 +20,11 @@ pub(crate) enum Standing {
     Frozen,
 }
 
+/// The standard refusal of an identity verifier: the holder does not verify.
+const NOT_VERIFIED: Error = Error::from_contract_error(RWAError::IdentityVerificationFailed as u32);
+/// OpenZeppelin's registry holds no identity for the holder, as after off-boarding.
+const NO_IDENTITY: Error = Error::from_contract_error(IRSError::IdentityNotFound as u32);
+
 /// What the identity verifier said of a holder.
 enum Verdict {
     Verified,
@@ -31,7 +37,7 @@ fn verdict(e: &Env, token: &RWATokenClient, holder: &Address) -> Verdict {
     let verifier = token.identity_verifier();
     match IdentityVerifierClient::new(e, &verifier).try_verify_identity(holder) {
         Ok(Ok(())) => Verdict::Verified,
-        Err(Ok(error)) if error == RWAError::IdentityVerificationFailed.into() => Verdict::Refused,
+        Err(Ok(error)) if error == NOT_VERIFIED || error == NO_IDENTITY => Verdict::Refused,
         _ => Verdict::Failed,
     }
 }

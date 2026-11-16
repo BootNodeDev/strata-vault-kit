@@ -1049,10 +1049,19 @@ address gets in.
   priced at zero assets cannot give its shares back to a delisted holder, so
   its claim burns them, as a wind-down claim does: the holder loses shares
   worth less than one asset unit, and the request settles. Only the verifier's
-  answer burns them: a verifier that fails instead of answering fails the
-  claim (`VerifierFailed`), and the request waits for a retry. Only the holder
-  can start an exit: nothing lets compliance or governance redeem a holder who
-  is no longer eligible. If a fund's terms require that, it needs a new power,
+  answer burns them, and only two codes count as one:
+  `RWAError::IdentityVerificationFailed` (304), the standard refusal, and
+  `IRSError::IdentityNotFound` (321), OpenZeppelin's answer for an address
+  removed from its identity registry. Anything else is a failure: the claim
+  fails (`VerifierFailed`), nothing moves, and the request waits for a retry.
+  A third-party verifier that refuses with another code leaves such a request,
+  and its epoch's cash remainder, open until it answers with one of the two.
+  The vault takes both codes at their word. OpenZeppelin's verifier also
+  reports a claim issuer that fails as 304, and error codes are not scoped to
+  one contract, so such a fault burns a zero-asset claim: the loss is under
+  one asset unit and needs the holder's own signed claim. Only the holder can
+  start an exit: nothing lets compliance or governance redeem a holder who is
+  no longer eligible. If a fund's terms require that, it needs a new power,
   and counsel must confirm the process.
 - **Tests:** `an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves`,
   `a_delisted_holder_can_still_queue_an_exit` and
@@ -1063,7 +1072,9 @@ address gets in.
   [`delisted.rs`](../contracts/async-vault/src/test/delisted.rs);
   `a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
-  `a_worthless_exit_waits_while_the_verifier_cannot_answer` in
+  `a_worthless_exit_burns_for_a_holder_with_no_identity`,
+  `a_worthless_exit_waits_while_the_verifier_cannot_answer` and
+  `a_worthless_exit_waits_while_the_verifier_fails_with_any_other_code` in
   [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs).
 
 ### X5. Escrowed shares that should come back

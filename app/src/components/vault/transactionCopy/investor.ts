@@ -119,7 +119,7 @@ const claimRedeemReasons = (ticker: string, uncovered?: string): Reasons => ({
 			? `The vault is ${uncovered} short of covering every priced claim. Try again once the reserve catches up.`
 			: `The vault does not yet hold enough ${ticker} in reserve to cover this claim. Try again shortly.`,
 	VerifierFailed:
-		"The price left nothing to pay out, and the vault could not check your address right now, so your shares stay with the vault. Try again shortly.",
+		"The price left nothing to pay out, but the identity check on your address could not be completed, so your shares stay with the vault. Try again later, or contact the vault's operator if this keeps happening.",
 })
 
 const WIND_DOWN_CLAIM_REASONS: Reasons = {
