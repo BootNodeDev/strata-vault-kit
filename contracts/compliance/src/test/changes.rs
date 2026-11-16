@@ -389,6 +389,29 @@ fn nothing_lands_while_the_vault_is_paused_or_winding_down() {
 }
 
 #[test]
+fn removing_a_module_still_lands_through_the_timelock_during_a_wind_down() {
+    let f = finished();
+    let module = Address::generate(&f.e);
+    f.land(&ComplianceChange::AddModule(
+        ComplianceHook::CanTransfer,
+        module.clone(),
+    ));
+
+    let mut winding = running();
+    winding.winding_down = true;
+    f.clock.set(&winding);
+
+    f.land(&ComplianceChange::RemoveModule(
+        ComplianceHook::CanTransfer,
+        module.clone(),
+    ));
+
+    assert!(!f
+        .rules
+        .is_module_registered(&ComplianceHook::CanTransfer, &module));
+}
+
+#[test]
 fn a_vault_pause_pushes_the_change_back() {
     let f = finished();
     let id = f.propose(&ComplianceChange::BindToken(Address::generate(&f.e)));

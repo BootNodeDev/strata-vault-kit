@@ -164,10 +164,11 @@ spec" is the [Kit specification](./kit-spec.md).
     wind-down, a holder collects their part of the cash by surrendering
     shares, which the vault burns. The share token calls the compliance
     contract on each burn. If a compliance module (a rule plugged into the
-    compliance contract) starts failing during a wind-down, those claims fail.
-    The module cannot be removed then: removing it waits for the timelock, and
-    no timelocked change lands in a wind-down except a `compliance` grant. A
-    frozen holder's wind-down payout also waits until the compliance authority
+    compliance contract) starts failing during a wind-down, those claims fail
+    until the module is removed. Removing it still waits the normal timelock
+    delay, the same way a `compliance` grant does; every other timelocked
+    change still waits for the wind-down to end. A frozen holder's wind-down
+    payout also waits until the compliance authority
     (a holder of the share token's `compliance` role) lifts the freeze. If that
     key is lost, granting the role to a new account waits the full timelock
     delay, at least seven days. So each deployment keeps a second `compliance`

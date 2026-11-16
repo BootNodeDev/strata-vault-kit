@@ -43,6 +43,23 @@ impl TimelockHost for Compliance {
     }
 }
 
+/// The vault's clock with its wind-down ignored, so removing a module still
+/// lands after the normal delay: left in place, a failing one would block
+/// every exit for good.
+struct RemoveModuleHost;
+
+impl TimelockHost for RemoveModuleHost {
+    fn clock(e: &Env) -> Result<Clock, Refusal> {
+        let mut clock = <Compliance as TimelockHost>::clock(e)?;
+        clock.winding_down = false;
+        Ok(clock)
+    }
+}
+
+fn removes_module(change: &ComplianceChange) -> bool {
+    matches!(change, ComplianceChange::RemoveModule(..))
+}
+
 fn refuse(e: &Env, refusal: Refusal) -> ! {
     match refusal {
         Refusal::WindingDown => panic_with_error!(e, ComplianceContractError::WindDownActive),
@@ -81,7 +98,12 @@ pub(crate) fn finish_setup(e: &Env) {
 }
 
 pub(crate) fn propose(e: &Env, change: ComplianceChange) -> u32 {
-    let id = queue::propose::<Compliance, _>(e, &change).unwrap_or_else(|r| refuse(e, r));
+    let queued = if removes_module(&change) {
+        queue::propose::<RemoveModuleHost, _>(e, &change)
+    } else {
+        queue::propose::<Compliance, _>(e, &change)
+    };
+    let id = queued.unwrap_or_else(|r| refuse(e, r));
     let (_, schedule) =
         queue::pending::<ComplianceChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));
     // No pause has run since the proposal, so the eta needs no second clock read.
@@ -100,8 +122,14 @@ pub(crate) fn cancel(e: &Env, id: u32) {
 }
 
 pub(crate) fn apply(e: &Env, id: u32) {
-    let change: ComplianceChange =
-        queue::take_ready::<Compliance, _>(e, id).unwrap_or_else(|r| refuse(e, r));
+    let (waiting, _) =
+        queue::pending::<ComplianceChange>(e, id).unwrap_or_else(|| refuse(e, Refusal::NotFound));
+    let ready = if removes_module(&waiting) {
+        queue::take_ready::<RemoveModuleHost, ComplianceChange>(e, id)
+    } else {
+        queue::take_ready::<Compliance, ComplianceChange>(e, id)
+    };
+    let change = ready.unwrap_or_else(|r| refuse(e, r));
     match &change {
         ComplianceChange::AddModule(hook, module) => {
             compliance::storage::add_module_to(e, hook.clone(), module.clone());
