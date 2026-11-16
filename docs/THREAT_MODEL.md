@@ -161,7 +161,12 @@ The attester stops reporting, or the last report expires.
   acceptance plus `freshness_duration`. `attest` refuses a stored expiry that
   would fall before `cooldown_secs` has run from acceptance, so a report
   always outlives its own cooldown and the next one is never blocked by
-  `CooldownActive` once this one has gone stale. A stale feed makes
+  `CooldownActive` once this one has gone stale — while `cooldown_secs` stays
+  the value the report was accepted under. Applying a timelocked raise of
+  `cooldown_secs` stores the new value without rechecking the stored report
+  (`nav-oracle/src/governance.rs:132`), so a report accepted just before the
+  change lands can go stale under the old cooldown before the new, longer one
+  ends: a bounded stale window, no longer than the new cooldown. A stale feed makes
   `fulfill_epoch` fail, and requests in a sealed epoch can be cancelled again. A
   stale feed also makes `request_deposit` refuse (`FeedNotValid`), so no new
   deposit waits on it. Priced claims still pay: no claim reads the oracle.

@@ -597,9 +597,10 @@ impl NavOracleContract {
     ///
     /// # Arguments
     ///
-    /// * `input` - `nav_per_share` in WAD: asset units per share. `expires_at`
-    ///   in seconds: the attester's own expiry. `proof_hash` hashes the
-    ///   evidence; `proof_uri` says where to read it, or is empty.
+    /// * `input` - `nav_per_share` in WAD: asset base units per share base
+    ///   unit. `expires_at` in seconds: the attester's own expiry.
+    ///   `proof_hash` hashes the evidence; `proof_uri` says where to read it,
+    ///   or is empty.
     /// * `caller` - An `attester`.
     ///
     /// # Errors
@@ -608,7 +609,7 @@ impl NavOracleContract {
     /// * `NavPaused` - The NAV is paused.
     /// * `NavOutOfBand` - `nav_per_share` is outside the band.
     /// * `ExpiresInPast`, `ExpiresBeforeCooldown` - `expires_at` is not in the
-    ///   future, or its stored expiry falls inside the cooldown.
+    ///   future, or its expiry falls inside the cooldown.
     /// * `EmptyProofHash` - `proof_hash` is all zeros.
     /// * `ProofUriTooLong` - `proof_uri` is over 256 bytes.
     /// * `CooldownActive` - The last report is younger than `cooldown_secs`.
