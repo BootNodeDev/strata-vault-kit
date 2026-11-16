@@ -483,8 +483,9 @@ Someone takes governance's keys and changes code, roles or wiring.
   is paused, and no admin hand-over is accepted during a wind-down. Of the
   changes above, only a grant of the token's `compliance` role and removing a
   compliance module are proposed or applied then; everything else waits for
-  the wind-down to end. One code change waits at a time. No contract offers an immediate upgrade. Renouncing
-  the admin and setting a role admin are always refused. Every proposal is
+  the wind-down to end. One code change waits at a time. No contract offers
+  an immediate upgrade. Renouncing the admin and setting a role admin are
+  always refused. Every proposal is
   published (`ChangeProposed`) and listed by `pending_changes()`.
 - **Residual:** The delay is notice, not a guaranteed exit: leaving needs a
   sealed epoch, a valid price accepted after the seal, and cash. Once the delay
