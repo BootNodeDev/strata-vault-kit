@@ -16,12 +16,15 @@ fn all_healthy() -> Health {
         feed_answers: true,
         feed_valid: true,
         freshness_covers_notice: true,
+        min_epoch_duration_set: true,
     }
 }
 
 #[test]
 fn a_finished_vault_with_a_fresh_report_is_healthy() {
-    let f = setup();
+    let f = setup_unfinished();
+    f.vault.set_min_epoch_duration(&DAY_DURATION);
+    f.vault.finish_setup();
     f.attest(wad(1));
 
     assert_eq!(f.vault.health(), all_healthy());
@@ -30,6 +33,7 @@ fn a_finished_vault_with_a_fresh_report_is_healthy() {
 #[test]
 fn an_open_setup_is_reported() {
     let f = setup_unfinished();
+    f.vault.set_min_epoch_duration(&DAY_DURATION);
     f.attest(wad(1));
 
     assert_eq!(
@@ -147,6 +151,7 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
     ];
     for (miswire, expected) in cases {
         let f = miswired(miswire);
+        f.vault.set_min_epoch_duration(&DAY_DURATION);
         f.attest(wad(1));
 
         assert_eq!(
@@ -179,4 +184,22 @@ fn a_notice_longer_than_a_report_lives_is_reported() {
     f.vault.set_notice(&(freshness + 1));
 
     assert!(!f.vault.health().freshness_covers_notice);
+}
+
+#[test]
+fn a_vault_with_no_minimum_set_is_reported() {
+    let f = setup();
+    f.attest(wad(1));
+
+    assert!(!f.vault.health().min_epoch_duration_set);
+}
+
+#[test]
+fn setting_the_minimum_during_setup_clears_the_flag() {
+    let f = setup_unfinished();
+    f.vault.set_min_epoch_duration(&DAY_DURATION);
+    f.vault.finish_setup();
+    f.attest(wad(1));
+
+    assert!(f.vault.health().min_epoch_duration_set);
 }

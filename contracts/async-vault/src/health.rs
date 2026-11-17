@@ -32,6 +32,9 @@ pub struct Health {
     /// A report outlives the notice, so an epoch's cancellation window does
     /// not reopen on its own while the notice runs.
     pub freshness_covers_notice: bool,
+    /// A minimum epoch duration is set. While unset, only the manager can
+    /// seal the open epoch.
+    pub min_epoch_duration_set: bool,
 }
 
 pub(crate) fn health(e: &Env) -> Health {
@@ -55,5 +58,6 @@ pub(crate) fn health(e: &Env) -> Health {
             feed.try_freshness_duration(),
             Ok(Ok(freshness)) if freshness >= notice
         ),
+        min_epoch_duration_set: state::min_epoch_duration(e).is_some(),
     }
 }

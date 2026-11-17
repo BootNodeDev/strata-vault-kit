@@ -773,7 +773,8 @@ The manager stops sealing, so nothing is priced, or seals when it suits someone.
   carry a valuation made before it. Before this branch only the manager could
   pick that moment; now any outsider can too. Holders still get no price
   older than the seal, so the risk falls on the operator's own cut-off
-  routine, which must now assume an outsider may seal first.
+  routine, which must now assume an outsider may seal first. `health()`
+  reports `min_epoch_duration_set`, false while no minimum is set.
 - **Tests:** `a_non_manager_cannot_close` and
   `anyone_may_fulfill_a_closed_epoch` in
   [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
@@ -785,7 +786,10 @@ The manager stops sealing, so nothing is priced, or seals when it suits someone.
   `cancelling_a_redemption_returns_the_shares` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
   `grants_and_manager_revokes_wait_for_the_timelock` in
-  [`governance.rs`](../contracts/async-vault/src/test/governance.rs).
+  [`governance.rs`](../contracts/async-vault/src/test/governance.rs);
+  `a_vault_with_no_minimum_set_is_reported` and
+  `setting_the_minimum_during_setup_clears_the_flag` in
+  [`health.rs`](../contracts/async-vault/src/test/health.rs).
 
 ### R9. Compliance compromised
 
