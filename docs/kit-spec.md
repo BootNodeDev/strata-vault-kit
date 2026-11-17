@@ -105,7 +105,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
   - Time spent paused does not count. Applying while paused is refused.
-  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The one exception is a grant of the share token's `compliance` role, which waits the normal delay.
+  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The exceptions are a grant of the share token's `compliance` role and removing a compliance module, both of which still wait the normal delay.
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
   - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant, granting it also lands during a wind-down, and the last holder cannot renounce (`LastComplianceHolder`).
@@ -217,8 +217,9 @@ The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer mo
 | `feed_answers` | The oracle answers `state()` and `freshness_duration()`. A new feed with no report passes. `oracle_bound` cannot tell a feed from another contract bound to this vault, such as the compliance contract. |
 | `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired, it is in band and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
+| `min_epoch_duration_set` | A minimum epoch duration is set. |
 
-`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation.
+`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation. `min_epoch_duration_set` false means only the manager can seal the open epoch; see [When the Manager or the Attester Stops](#when-the-manager-or-the-attester-stops).
 
 ### Supply and Capital Figures
 
@@ -362,9 +363,9 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 | **`Compliance`** | `bind_token`, `unbind_token`, `add_module_to`, `remove_module_from` | Governance | `#[only_admin]`, `operator` is not read; instant during setup, then `propose_change` | No |
 | **`Compliance`** | `bind_vault` | Governance (compliance admin) | `#[only_admin]`; during setup, once | No |
 | **`Compliance`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
-| **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
+| **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup; refused while the vault is winding down, except removing a module | No |
 | **`Compliance`** | `cancel_change` | Governance | `#[only_admin]` | No |
-| **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
+| **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused; while it winds down too, except removing a module |
 | **`Compliance`** | `pending_changes` | Permissionless | None (view) | No |
 | **`Compliance`** | `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
@@ -628,7 +629,7 @@ for the same failure, so `304` says what failed, not where.
 
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|
-| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
+| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3027 |
 | `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6078 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7019 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |

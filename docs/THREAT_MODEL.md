@@ -158,18 +158,28 @@ The asset really loses, or gains, more than one report may show.
 The attester stops reporting, or the last report expires.
 
 - **Control:** A report expires at the earlier of its own `expires_at` and its
-  acceptance plus `freshness_duration`. A stale feed makes `fulfill_epoch`
-  fail, and requests in a sealed epoch can be cancelled again. A stale feed
-  also makes `request_deposit` refuse (`FeedNotValid`), so no new deposit waits
-  on it. Priced claims still pay: no claim reads the oracle. Governance revokes
-  the attester at once. `health()` reports `feed_valid`, and
+  acceptance plus `freshness_duration`. `attest` refuses a stored expiry that
+  would fall before `cooldown_secs` has run from acceptance, so a report
+  always outlives its own cooldown and the next one is never blocked by
+  `CooldownActive` once this one has gone stale — while `cooldown_secs` stays
+  the value the report was accepted under. Applying a timelocked raise of
+  `cooldown_secs` stores the new value without rechecking the stored report
+  (`apply` in `nav-oracle/src/governance.rs`), so a report accepted just before the
+  change lands can go stale under the old cooldown before the new, longer one
+  ends: a bounded stale window, no longer than the new cooldown. A stale feed makes
+  `fulfill_epoch` fail, and requests in a sealed epoch can be cancelled again. A
+  stale feed also makes `request_deposit` refuse (`FeedNotValid`), so no new
+  deposit waits on it. Priced claims still pay: no claim reads the oracle.
+  Governance revokes the attester at once. `health()` reports `feed_valid`, and
   `freshness_covers_notice` is false when the freshness window is shorter than
   the notice.
 - **Residual:** Holders with shares cannot exit until a report lands, or until
   a wind-down pays them pro rata (X8). After setup, granting a new attester
   waits for the timelock: at least seven days, plus any time the vault spends
   paused.
-- **Tests:** `heartbeat_expiry_makes_it_stale` in
+- **Tests:** `heartbeat_expiry_makes_it_stale`,
+  `an_expiry_inside_its_own_cooldown_is_refused` and
+  `a_lapsed_report_is_refreshed_at_once_with_no_cooldown_wait` in
   [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `fulfill_is_rejected_once_the_feed_goes_stale` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
@@ -480,11 +490,13 @@ Someone takes governance's keys and changes code, roles or wiring.
 
   The delay is 7 to 90 days, and never shorter than the notice when the change
   applies. Time the vault spends paused does not count, nothing applies while it
-  is paused, nothing but a grant of the token's `compliance` role is proposed or
-  applied during a wind-down, and no admin hand-over is accepted then. One code
-  change waits at a time. No contract offers an immediate upgrade. Renouncing
-  the admin and setting a role admin are always refused. Every proposal is
-  published (`ChangeProposed`) and listed by `pending_changes()`.
+  is paused, and no admin hand-over is accepted during a wind-down. Of the
+  changes above, only a grant of the token's `compliance` role and removing a
+  compliance module are proposed or applied then; everything else is refused
+  for the rest of an active wind-down. One code change waits at a time. No
+  contract offers an immediate upgrade. Renouncing the admin and setting a
+  role admin are always refused. Every proposal is published
+  (`ChangeProposed`) and listed by `pending_changes()`.
 - **Residual:** The delay is notice, not a guaranteed exit: leaving needs a
   sealed epoch, a valid price accepted after the seal, and cash. Once the delay
   runs, an upgrade can do anything, and a vault upgrade can also change the
@@ -761,7 +773,8 @@ The manager stops sealing, so nothing is priced, or seals when it suits someone.
   carry a valuation made before it. Before this branch only the manager could
   pick that moment; now any outsider can too. Holders still get no price
   older than the seal, so the risk falls on the operator's own cut-off
-  routine, which must now assume an outsider may seal first.
+  routine, which must now assume an outsider may seal first. `health()`
+  reports `min_epoch_duration_set`, false while no minimum is set.
 - **Tests:** `a_non_manager_cannot_close` and
   `anyone_may_fulfill_a_closed_epoch` in
   [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
@@ -773,7 +786,10 @@ The manager stops sealing, so nothing is priced, or seals when it suits someone.
   `cancelling_a_redemption_returns_the_shares` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
   `grants_and_manager_revokes_wait_for_the_timelock` in
-  [`governance.rs`](../contracts/async-vault/src/test/governance.rs).
+  [`governance.rs`](../contracts/async-vault/src/test/governance.rs);
+  `a_vault_with_no_minimum_set_is_reported` and
+  `setting_the_minimum_during_setup_clears_the_flag` in
+  [`health.rs`](../contracts/async-vault/src/test/health.rs).
 
 ### R9. Compliance compromised
 
@@ -1108,25 +1124,35 @@ redemption from returning.
 A module on the compliance contract refuses or fails, so the token's calls fail.
 
 - **Control:** On the kit's compliance contract, modules change only through the
-  vault's timelock after setup, never while the vault is paused, and never
-  during a wind-down. The kit registers no modules.
+  vault's timelock after setup, never while the vault is paused. A wind-down
+  refuses every module, binding or admin change except removing a module:
+  governance may remove any module, failing or not, after the normal delay,
+  the same power it already has outside a wind-down. The kit registers no
+  modules.
 - **Residual:** The token calls the compliance contract on every mint, transfer
   and burn, and exits use all three: a mint for a share claim, a forced transfer
   to escrow or return a redemption, a burn to pay a redemption or a wind-down
-  claim. A module that refuses or fails there blocks even a covered exit.
-  Removing it waits for the timelock, and during a wind-down it cannot be
-  removed at all. An external compliance contract changes its modules under its
-  own governance. Which modules mainnet uses, and what they may do during an
-  exit, is decided with
+  claim. A module that refuses or fails there blocks even a covered exit until
+  its removal lands, the normal delay after it is proposed, in a wind-down too.
+  Because removal is not conditioned on the module failing, a compromised or
+  adversarial governance could remove a working module during a wind-down to
+  drop a rule it enforced (a holder limit, a transfer restriction) for the
+  rest of it. What stays protected: exits keep working either way, the
+  vault's own checks (the allowlist, a freeze, reserve coverage) are not
+  modules and cannot be removed this way, and the delay still gives holders
+  and the operator notice before the removal lands. An external compliance
+  contract changes its modules under its own governance. Which modules
+  mainnet uses, and what they may do during an exit, is decided with
   [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238).
 - **Tests:** `a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim`
   in [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs);
-  `a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed` in
+  `a_module_failing_on_burn_blocks_claims_until_removed_in_a_wind_down` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
   `a_refused_mint_keeps_a_priced_deposit_epoch_open` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
-  `after_setup_rule_changes_wait_for_the_timelock` and
-  `nothing_lands_while_the_vault_is_paused_or_winding_down` in
+  `after_setup_rule_changes_wait_for_the_timelock`,
+  `nothing_lands_while_the_vault_is_paused_or_winding_down` and
+  `removing_a_module_still_lands_through_the_timelock_during_a_wind_down` in
   [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs).
 
 ### X7. Escrow behind stalled pricing
@@ -1185,8 +1211,8 @@ others' cost.
     per holder in `wind_down_owed` at any price the oracle allows, plus the
     value of any shares the snapshot counted that were never minted.
   - No queued change applies during a wind-down except a grant of the token's
-    `compliance` role, so nothing else can be fixed then, a failing module
-    included (X6).
+    `compliance` role and removing a compliance module, so nothing else can be
+    fixed then (X6).
   - `uncovered()` leaves out what the rounds owe, although `free_reserve()`
     subtracts it. After a loss of reserve, such as an issuer clawback (X10),
     `uncovered()` can read zero while the vault cannot pay both its priced exits

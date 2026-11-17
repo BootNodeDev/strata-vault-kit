@@ -324,6 +324,8 @@ The vault's figures, all in asset base units:
   the minimum epoch duration (`min_epoch_duration()`), anyone may call it
   instead. If the manager is gone and no minimum is set, follow
   [When the Manager or the Attester Stops](./kit-spec.md#when-the-manager-or-the-attester-stops).
+  To catch this early, watch `health().min_epoch_duration_set`: when it is
+  false, only the manager can seal, even while the manager is still active.
   Threat:
   [R8](./THREAT_MODEL.md#r8-the-manager-stops-sealing-or-picks-the-moment).
 
@@ -525,7 +527,8 @@ lists the powers that act at once.
 
 - **Source:** `health()` on the vault. On a live vault, `setup_open` is false
   and every other flag is true. `feed_valid` and `freshness_covers_notice` are
-  V2 and V3.
+  V2 and V3; `min_epoch_duration_set` is C6, since a vault can run without a
+  minimum on purpose and the flag cannot drift once set.
 - **Threshold:** any other flag false, or `setup_open` true on a vault meant to
   be live.
 - **Severity:** Critical. **Told:** governance.

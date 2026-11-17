@@ -7,8 +7,10 @@
 //!   allowlist lives in the identity verifier. The cost: any other rule needs a
 //!   module or another compliance contract.
 //! - **Changes wait for the vault's timelock.** After setup, module, binding
-//!   and admin changes wait, and a wind-down refuses them. The cost: a faulty
-//!   module takes a full delay to remove, and stays in a wind-down.
+//!   and admin changes wait, and a wind-down refuses them, except removing a
+//!   module: a faulty one would otherwise block every exit for good. The
+//!   cost: a faulty module still takes a full delay to come off, and adding
+//!   one or rebinding a token is refused for the rest of an active wind-down.
 //! - **An unbound token fails.** The hooks the token calls after each mint,
 //!   transfer and burn refuse it when it is not bound. The cost: unbinding it
 //!   stops all three, the vault's claims included.
@@ -187,7 +189,8 @@ impl Compliance {
     /// # Errors
     ///
     /// * `SetupOpen` - Setup has not finished; change it directly.
-    /// * `WindDownActive` - The vault is winding down.
+    /// * `WindDownActive` - The vault is winding down, and the change does
+    ///   not remove a module.
     /// * `TooManyPendingChanges` - The queue is full.
     ///
     /// # Events
@@ -236,7 +239,8 @@ impl Compliance {
     /// # Errors
     ///
     /// * `ChangeNotFound` - No pending change has this id.
-    /// * `WindDownActive` - The vault is winding down.
+    /// * `WindDownActive` - The vault is winding down, and the change does
+    ///   not remove a module.
     /// * `VaultPaused` - The vault is paused.
     /// * `DelayBelowNotice` - The change's delay is shorter than the vault's
     ///   notice now.

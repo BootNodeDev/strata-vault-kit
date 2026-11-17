@@ -50,7 +50,8 @@ spec" is the [Kit specification](./kit-spec.md).
    - a setup window in which changes are instant; it closes once and never
      reopens;
    - no change lands during a wind-down, except a grant of the share token's
-     `compliance` role, which still waits the full delay.
+     `compliance` role and removing a compliance module, both of which still
+     wait the full delay.
 
    The delay is 7 to 90 days. See design doc
    [§9](./strata-product-and-architecture.md#9-relationship-to-existing-stellar-tooling).
@@ -163,10 +164,11 @@ spec" is the [Kit specification](./kit-spec.md).
     wind-down, a holder collects their part of the cash by surrendering
     shares, which the vault burns. The share token calls the compliance
     contract on each burn. If a compliance module (a rule plugged into the
-    compliance contract) starts failing during a wind-down, those claims fail.
-    The module cannot be removed then: removing it waits for the timelock, and
-    no timelocked change lands in a wind-down except a `compliance` grant. A
-    frozen holder's wind-down payout also waits until the compliance authority
+    compliance contract) starts failing during a wind-down, those claims fail
+    until the module is removed. Removing it still waits the normal timelock
+    delay, the same way a `compliance` grant does; every other timelocked
+    change is refused for the rest of the wind-down. A frozen holder's wind-down
+    payout also waits until the compliance authority
     (a holder of the share token's `compliance` role) lifts the freeze. If that
     key is lost, granting the role to a new account waits the full timelock
     delay, at least seven days. So each deployment keeps a second `compliance`

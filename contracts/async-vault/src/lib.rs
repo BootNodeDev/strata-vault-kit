@@ -39,7 +39,8 @@
 //!   take a week.
 //! - **Wind-down claims run the compliance hooks:** surrendered shares burn
 //!   through the `destroyed` modules. The cost: one failing in a wind-down
-//!   blocks those claims, and no change can remove it then.
+//!   blocks those claims until its removal lands, the normal delay after it
+//!   is proposed.
 
 #![no_std]
 
