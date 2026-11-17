@@ -629,6 +629,41 @@ fn a_reporter_expiry_past_the_window_is_cut_to_the_window() {
 }
 
 #[test]
+fn an_expiry_inside_its_own_cooldown_is_refused() {
+    let f = setup();
+    // cooldown_secs = 60: an expiry one second short of it is refused.
+    refused(
+        f.oracle
+            .try_attest(&input(&f.e, SCALE, 10_000 + 59), &f.attester),
+        OracleError::ExpiresBeforeCooldown,
+    );
+}
+
+#[test]
+fn an_expiry_exactly_at_the_cooldown_is_accepted() {
+    let f = setup();
+    f.oracle
+        .attest(&input(&f.e, SCALE, 10_000 + 60), &f.attester);
+    assert_eq!(f.oracle.latest().expires_at, 10_000 + 60);
+}
+
+#[test]
+fn a_lapsed_report_is_refreshed_at_once_with_no_cooldown_wait() {
+    let f = setup();
+    f.oracle
+        .attest(&input(&f.e, SCALE, 10_000 + 60), &f.attester);
+
+    f.e.ledger().set_timestamp(10_000 + 61);
+    assert_eq!(f.oracle.state(), OracleState::Stale);
+
+    // The cooldown has also elapsed by the moment the report lapses, so the
+    // next one is accepted at once.
+    f.oracle
+        .attest(&input(&f.e, SCALE, 10_000 + 61 + 60), &f.attester);
+    assert_eq!(f.oracle.state(), OracleState::Valid);
+}
+
+#[test]
 fn attesting_is_refused_while_the_nav_is_paused() {
     let f = setup();
     f.oracle.pause_nav(&f.guardian);

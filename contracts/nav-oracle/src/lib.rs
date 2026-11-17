@@ -31,6 +31,11 @@
 //! - **One report per cooldown.** The cooldown runs from one second to
 //!   `freshness_duration`, so no two reports share a ledger. The cost: an epoch
 //!   sealed just after a report waits up to a cooldown for the next.
+//! - **A report outlives its own cooldown.** `attest` refuses a stored expiry
+//!   that would fall before `cooldown_secs` has run from acceptance. The cost:
+//!   an attester cannot give a very short report a very short life; the
+//!   config already requires `cooldown_secs <= freshness_duration`, so an
+//!   honest attester can always comply.
 
 #![no_std]
 
@@ -145,6 +150,10 @@ strata_bindings::error_enum! {
         /// The configuration the constructor writes is absent from instance
         /// storage.
         NotInitialized = 3026,
+        /// The record's stored expiry, the earlier of `expires_at` and the
+        /// freshness window, would fall before `cooldown_secs` has run from
+        /// now: the next report could not land once this one goes stale.
+        ExpiresBeforeCooldown = 3027,
     }
 }
 
@@ -583,15 +592,15 @@ impl NavOracleContract {
     }
 
     /// Stores a valuation and its proof for the vault to price epochs from.
-    /// The stored `expires_at` is the earlier of the input's and the time of
-    /// acceptance plus `freshness_duration`. It never verifies the proof.
+    /// The stored `expires_at` is the earlier of the input's and the
+    /// freshness window. It never verifies the proof.
     ///
     /// # Arguments
     ///
     /// * `input` - `nav_per_share` in WAD: asset base units per share base
-    ///   unit. `expires_at` in seconds: the last moment the attester vouches
-    ///   for it. `proof_hash` hashes the evidence; `proof_uri` says where to
-    ///   read it, or is empty.
+    ///   unit. `expires_at` in seconds: the attester's own expiry.
+    ///   `proof_hash` hashes the evidence; `proof_uri` says where to read it,
+    ///   or is empty.
     /// * `caller` - An `attester`.
     ///
     /// # Errors
@@ -599,7 +608,8 @@ impl NavOracleContract {
     /// * `AccessControlError::Unauthorized` - `caller` is not an `attester`.
     /// * `NavPaused` - The NAV is paused.
     /// * `NavOutOfBand` - `nav_per_share` is outside the band.
-    /// * `ExpiresInPast` - `expires_at` is not in the future.
+    /// * `ExpiresInPast`, `ExpiresBeforeCooldown` - `expires_at` is not in the
+    ///   future, or its expiry falls inside the cooldown.
     /// * `EmptyProofHash` - `proof_hash` is all zeros.
     /// * `ProofUriTooLong` - `proof_uri` is over 256 bytes.
     /// * `CooldownActive` - The last report is younger than `cooldown_secs`.
@@ -618,6 +628,7 @@ impl NavOracleContract {
         let cfg = get_config(e);
         guards::nav_in_band(e, &cfg, input.nav_per_share);
         guards::expires_in_future(e, input.expires_at);
+        guards::expires_covers_cooldown(e, &cfg, input.expires_at);
         guards::proof_hash_not_empty(e, &input.proof_hash);
         guards::proof_uri_fits(e, &input.proof_uri);
         if let Some(last) = get_latest(e) {

@@ -121,6 +121,16 @@ pub(crate) fn expires_in_future(e: &Env, expires_at: u64) {
     }
 }
 
+/// A report must outlive its own cooldown, or a stale feed could not be
+/// refreshed until the cooldown passes.
+pub(crate) fn expires_covers_cooldown(e: &Env, cfg: &OracleConfig, expires_at: u64) {
+    let now = e.ledger().timestamp();
+    let stored_expiry = expires_at.min(now.saturating_add(cfg.freshness_duration));
+    if stored_expiry < now.saturating_add(cfg.cooldown_secs) {
+        panic_with_error!(e, OracleError::ExpiresBeforeCooldown);
+    }
+}
+
 pub(crate) fn proof_hash_not_empty(e: &Env, proof_hash: &BytesN<32>) {
     if proof_hash.to_array() == [0; 32] {
         panic_with_error!(e, OracleError::EmptyProofHash);

@@ -46,6 +46,8 @@ const FULFILL_EPOCH_REASONS: Reasons = {
 const ATTEST_REASONS: Reasons = {
 	NavOutOfBand: "That price is outside the band the oracle accepts.",
 	ExpiresInPast: "The attestation would already have expired when recorded.",
+	ExpiresBeforeCooldown:
+		"That expiry would fall before the cooldown ends. Give it more time.",
 	CooldownActive:
 		"The cooldown since the last attestation has not elapsed yet.",
 	DeviationExceeded:
