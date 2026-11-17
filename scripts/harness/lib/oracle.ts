@@ -66,7 +66,8 @@ export async function freshFeed(c: Connected, fallback: bigint): Promise<void> {
 	if ((await reader.state()).result.tag !== "Stale") return
 	const latest = await reader.latest()
 	const stored = outcome(latest, reader)
-	if (stored === "accepted") return attest(c, latest.result.nav_per_share)
-	if (stored === "refused: NoRecord") return attest(c, fallback)
+	if (stored === "accepted")
+		return attest(c, latest.result.nav_per_share, "refresh NAV")
+	if (stored === "refused: NoRecord") return attest(c, fallback, "refresh NAV")
 	throw new Error(stored)
 }
