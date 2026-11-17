@@ -480,11 +480,13 @@ Someone takes governance's keys and changes code, roles or wiring.
 
   The delay is 7 to 90 days, and never shorter than the notice when the change
   applies. Time the vault spends paused does not count, nothing applies while it
-  is paused, nothing but a grant of the token's `compliance` role is proposed or
-  applied during a wind-down, and no admin hand-over is accepted then. One code
-  change waits at a time. No contract offers an immediate upgrade. Renouncing
-  the admin and setting a role admin are always refused. Every proposal is
-  published (`ChangeProposed`) and listed by `pending_changes()`.
+  is paused, and no admin hand-over is accepted during a wind-down. Of the
+  changes above, only a grant of the token's `compliance` role and removing a
+  compliance module are proposed or applied then; everything else is refused
+  for the rest of an active wind-down. One code change waits at a time. No
+  contract offers an immediate upgrade. Renouncing the admin and setting a
+  role admin are always refused. Every proposal is published
+  (`ChangeProposed`) and listed by `pending_changes()`.
 - **Residual:** The delay is notice, not a guaranteed exit: leaving needs a
   sealed epoch, a valid price accepted after the seal, and cash. Once the delay
   runs, an upgrade can do anything, and a vault upgrade can also change the
@@ -1086,25 +1088,35 @@ redemption from returning.
 A module on the compliance contract refuses or fails, so the token's calls fail.
 
 - **Control:** On the kit's compliance contract, modules change only through the
-  vault's timelock after setup, never while the vault is paused, and never
-  during a wind-down. The kit registers no modules.
+  vault's timelock after setup, never while the vault is paused. A wind-down
+  refuses every module, binding or admin change except removing a module:
+  governance may remove any module, failing or not, after the normal delay,
+  the same power it already has outside a wind-down. The kit registers no
+  modules.
 - **Residual:** The token calls the compliance contract on every mint, transfer
   and burn, and exits use all three: a mint for a share claim, a forced transfer
   to escrow or return a redemption, a burn to pay a redemption or a wind-down
-  claim. A module that refuses or fails there blocks even a covered exit.
-  Removing it waits for the timelock, and during a wind-down it cannot be
-  removed at all. An external compliance contract changes its modules under its
-  own governance. Which modules mainnet uses, and what they may do during an
-  exit, is decided with
+  claim. A module that refuses or fails there blocks even a covered exit until
+  its removal lands, the normal delay after it is proposed, in a wind-down too.
+  Because removal is not conditioned on the module failing, a compromised or
+  adversarial governance could remove a working module during a wind-down to
+  drop a rule it enforced (a holder limit, a transfer restriction) for the
+  rest of it. What stays protected: exits keep working either way, the
+  vault's own checks (the allowlist, a freeze, reserve coverage) are not
+  modules and cannot be removed this way, and the delay still gives holders
+  and the operator notice before the removal lands. An external compliance
+  contract changes its modules under its own governance. Which modules
+  mainnet uses, and what they may do during an exit, is decided with
   [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238).
 - **Tests:** `a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim`
   in [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs);
-  `a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed` in
+  `a_module_failing_on_burn_blocks_claims_until_removed_in_a_wind_down` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
   `a_refused_mint_keeps_a_priced_deposit_epoch_open` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
-  `after_setup_rule_changes_wait_for_the_timelock` and
-  `nothing_lands_while_the_vault_is_paused_or_winding_down` in
+  `after_setup_rule_changes_wait_for_the_timelock`,
+  `nothing_lands_while_the_vault_is_paused_or_winding_down` and
+  `removing_a_module_still_lands_through_the_timelock_during_a_wind_down` in
   [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs).
 
 ### X7. Escrow behind stalled pricing
@@ -1163,8 +1175,8 @@ others' cost.
     per holder in `wind_down_owed` at any price the oracle allows, plus the
     value of any shares the snapshot counted that were never minted.
   - No queued change applies during a wind-down except a grant of the token's
-    `compliance` role, so nothing else can be fixed then, a failing module
-    included (X6).
+    `compliance` role and removing a compliance module, so nothing else can be
+    fixed then (X6).
   - `uncovered()` leaves out what the rounds owe, although `free_reserve()`
     subtracts it. After a loss of reserve, such as an issuer clawback (X10),
     `uncovered()` can read zero while the vault cannot pay both its priced exits

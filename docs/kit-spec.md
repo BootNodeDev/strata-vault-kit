@@ -105,7 +105,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
   - Time spent paused does not count. Applying while paused is refused.
-  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The one exception is a grant of the share token's `compliance` role, which waits the normal delay.
+  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The exceptions are a grant of the share token's `compliance` role and removing a compliance module, both of which still wait the normal delay.
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
   - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant, granting it also lands during a wind-down, and the last holder cannot renounce (`LastComplianceHolder`).
@@ -362,9 +362,9 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 | **`Compliance`** | `bind_token`, `unbind_token`, `add_module_to`, `remove_module_from` | Governance | `#[only_admin]`, `operator` is not read; instant during setup, then `propose_change` | No |
 | **`Compliance`** | `bind_vault` | Governance (compliance admin) | `#[only_admin]`; during setup, once | No |
 | **`Compliance`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
-| **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
+| **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup; refused while the vault is winding down, except removing a module | No |
 | **`Compliance`** | `cancel_change` | Governance | `#[only_admin]` | No |
-| **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
+| **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused; while it winds down too, except removing a module |
 | **`Compliance`** | `pending_changes` | Permissionless | None (view) | No |
 | **`Compliance`** | `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
