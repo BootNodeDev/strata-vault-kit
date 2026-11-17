@@ -164,7 +164,7 @@ The attester stops reporting, or the last report expires.
   `CooldownActive` once this one has gone stale — while `cooldown_secs` stays
   the value the report was accepted under. Applying a timelocked raise of
   `cooldown_secs` stores the new value without rechecking the stored report
-  (`nav-oracle/src/governance.rs:132`), so a report accepted just before the
+  (`apply` in `nav-oracle/src/governance.rs`), so a report accepted just before the
   change lands can go stale under the old cooldown before the new, longer one
   ends: a bounded stale window, no longer than the new cooldown. A stale feed makes
   `fulfill_epoch` fail, and requests in a sealed epoch can be cancelled again. A
