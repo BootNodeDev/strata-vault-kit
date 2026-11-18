@@ -28,8 +28,9 @@ On chain, the kit has five contracts:
   claims, the timelock for admin changes, and the wind-down.
 - **Share token** (`share-token`): an OpenZeppelin RWA token. Mints and
   transfers between holders are checked against the identity verifier and the
-  compliance contract. The vault's escrow moves (`forced_transfer`) skip those
-  checks; the vault checks the holder itself.
+  compliance contract. The vault's escrow moves (`forced_transfer`) skip the
+  freeze checks and check only the receiver's identity, and the compliance
+  contract sees them as forced moves; the vault checks the holder itself.
 - **NAV oracle** (`nav-oracle`): stores the latest report and refuses one
   outside the price band, beyond the maximum move, inside the cooldown or
   already expired.
@@ -93,8 +94,8 @@ flowchart LR
   V -->|"1.4 state<br/>5.2 state, attested_at, nav_per_share"| O
   V -->|"1.5 transfer in<br/>6.3, 11.4, 13.4 transfer out<br/>8.2 transfer to the custodian<br/>8.3 transfer from the payer"| A
   V -->|"1.3, 2.3 identity_verifier, is_frozen<br/>2.3 get_frozen_tokens<br/>2.4, 11.4 forced_transfer<br/>6.3 mint, burn<br/>13.4 burn"| T
-  T -->|"6.4, 12.2 verify_identity"| IV
-  T -->|"2.4, 11.4 transferred<br/>6.3, 13.4 destroyed<br/>6.4 can_create, created<br/>12.2 can_transfer"| C
+  T -->|"2.4, 6.4, 11.4, 12.2 verify_identity"| IV
+  T -->|"2.4, 11.4, 12.2 transferred<br/>6.3, 13.4 destroyed<br/>6.4 created"| C
   KEEP -->|"3.1 close_epoch<br/>5.1 fulfill_epoch<br/>8.3 fund<br/>13.2 activate_wind_down<br/>13.3 finalize_wind_down_round"| V
   CUST -->|"4.1 holdings"| VAL
   VAL -->|"4.2 price, proof hash, proof URI"| ATT
@@ -164,8 +165,9 @@ Each step is numbered so a threat can cite it.
    2. The dApp sends it to the vault.
    3. The vault checks the holder's standing (`verify_identity`, `is_frozen`)
       and their frozen shares (`get_frozen_tokens`).
-   4. The vault moves the shares into its escrow (`forced_transfer`), which the
-      token reports to the compliance contract (`transferred`), and publishes
+   4. The vault moves the shares into its escrow (`forced_transfer`). The
+      token checks the vault as the receiver (`verify_identity`) and reports
+      the move to the compliance contract (`transferred`). The vault publishes
       `RedeemRequested`.
 3. **Epoch close.**
    1. The manager, or anyone once the open epoch has run the minimum epoch
@@ -191,8 +193,8 @@ Each step is numbered so a threat can cite it.
       (`burn`), which the token reports to the compliance contract
       (`destroyed`).
    4. On a mint, the share token checks the holder with the identity verifier
-      and the compliance contract (`verify_identity`, `can_create`), then
-      reports the mint (`created`).
+      (`verify_identity`), then reports the mint to the compliance contract
+      (`created`), whose modules can refuse it.
 7. **Timelocked admin change.**
    1. Governance's signers sign `propose_change(change)` through the console's
       `/sign` page.
@@ -222,15 +224,16 @@ Each step is numbered so a threat can cite it.
     3. The vault checks that the request can still be cancelled: its epoch is
        open, or sealed but no longer priceable, or a wind-down is active.
     4. The vault returns the escrowed cash (`transfer`) or shares
-       (`forced_transfer`, reported to the compliance contract as
-       `transferred`), and publishes `DepositCancelled` or `RedeemCancelled`.
+       (`forced_transfer`, which checks the holder with `verify_identity` and
+       is reported to the compliance contract as `transferred`), and publishes
+       `DepositCancelled` or `RedeemCancelled`.
 12. **Legal transfer.**
     1. Compliance and governance sign one `legal_transfer` call, built outside
        the console.
     2. The share token checks that the two signers are different accounts, that
        neither side is the vault and that the destination passes the identity
-       check (`verify_identity`, `can_transfer`), moves the shares and
-       publishes `LegalTransfer`.
+       check (`verify_identity`), moves the shares, reports the move to the
+       compliance contract (`transferred`) and publishes `LegalTransfer`.
 13. **Wind-down.**
     1. Governance signs `propose_wind_down` through the console; it waits its
        own delay, 7 to 90 days.

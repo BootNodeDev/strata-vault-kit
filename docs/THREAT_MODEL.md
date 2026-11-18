@@ -1062,15 +1062,17 @@ address gets in.
   back into shares.
 - **Residual:** They leave at a later epoch's price, and a fall since their
   deposit was priced is theirs. The conversion mints into the vault's own
-  escrow, so it waits while compliance has delisted the vault;
-  `health().allowlisted` then reads false, and nothing is lost.
+  escrow, and a redemption request moves shares into it. The token checks the
+  vault's identity as the receiver of both, so both wait while compliance has
+  delisted the vault; `health().allowlisted` then reads false, and nothing is
+  lost.
   `claim_deposit` does not tell a verifier fault from a real delisting, so a
   fault for one holder also converts that holder's priced deposit into the
   same cash exit; nothing is destroyed. A redemption
   priced at zero assets cannot give its shares back to a delisted holder, so
   its claim burns them, as a wind-down claim does: the holder loses shares
-  worth less than one asset unit, and the request settles. Only the verifier's
-  answer burns them, and only two codes count as one:
+  worth less than one asset unit, and the request settles. Of the verifier's
+  results, only an answer burns them, and only two codes count as one:
   `RWAError::IdentityVerificationFailed` (304), the standard refusal, and
   `IRSError::IdentityNotFound` (321), OpenZeppelin's answer for an address
   removed from its identity registry. Anything else is a failure: the claim
@@ -1106,17 +1108,22 @@ A token pause, the vault's own delisting or the rules stop a cancelled
 redemption from returning.
 
 - **Control:** Outside a wind-down, `cancel_redeem` checks the holder itself
-  (not frozen, passes the identity check, allowed by the rules' `can_transfer`)
-  and returns the shares with the manager's `forced_transfer`. Neither the token
-  pause nor the vault's own place on the allowlist applies to that move.
-- **Residual:** A return the rules refuse fails with `HolderNotEligible`; the
-  request stays and is paid in cash once priced. If that price pays nothing,
-  the claim burns the shares instead of returning them. In a wind-down no
-  shares come back: the escrow is burned into the holder's entitlement.
+  (not frozen, passes the identity check) and returns the shares with the
+  manager's `forced_transfer`, which the compliance modules judge as a forced
+  move. Neither the token pause nor the vault's own place on the allowlist
+  applies to that move.
+- **Residual:** A return that fails, whether a module refuses it or fails,
+  is refused with `HolderNotEligible`; the request stays and is paid in cash
+  once priced. If that price pays nothing, the claim burns the shares instead
+  of returning them, so a module that fails costs the holder shares worth
+  under one asset unit, and only on the holder's own signed claim. In a
+  wind-down no shares come back: the escrow is burned into the holder's
+  entitlement.
 - **Tests:** `a_token_pause_stops_trading_but_not_a_share_return`,
   `a_delisted_vault_still_returns_escrowed_shares`,
   `a_return_the_compliance_rules_refuse_stays_escrowed`,
-  `a_worthless_exit_the_compliance_rules_refuse_to_return_burns` and
+  `a_worthless_exit_the_compliance_rules_refuse_to_return_burns`,
+  `a_worthless_exit_burns_like_a_refusal_when_the_compliance_rules_fail` and
   `a_partial_freeze_does_not_stop_a_return` in
   [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs);
   `an_escrowed_redemption_cancelled_in_a_wind_down_joins_the_payout` in
@@ -1134,9 +1141,13 @@ A module on the compliance contract refuses or fails, so the token's calls fail.
   modules.
 - **Residual:** The token calls the compliance contract on every mint, transfer
   and burn, and exits use all three: a mint for a share claim, a forced transfer
-  to escrow or return a redemption, a burn to pay a redemption or a wind-down
-  claim. A module that refuses or fails there blocks even a covered exit until
-  its removal lands, the normal delay after it is proposed, in a wind-down too.
+  to escrow a redemption, a burn to pay a redemption or a wind-down claim. A
+  module that refuses or fails there blocks even a covered exit until its
+  removal lands, the normal delay after it is proposed, in a wind-down too.
+  The vault's escrow moves reach modules as `TransferKind::Forced`, so a
+  module that refuses `Forced` blocks redemption requests. A share return is
+  the exception: a module that refuses or fails on it leaves the holder in the
+  queue to exit in cash (X5).
   Because removal is not conditioned on the module failing, a compromised or
   adversarial governance could remove a working module during a wind-down to
   drop a rule it enforced (a holder limit, a transfer restriction) for the
@@ -1407,7 +1418,10 @@ or queued changes.
   changes a stored type: the vault's settlement record (`EpochSettlement`)
   replaces `reconciled` with `shares_reconciled` and `cash_reconciled`. It is
   therefore deployed fresh, as the rule above already requires; it is never
-  upgraded in place over a vault that stored records of the old shape.
+  upgraded in place over a vault that stored records of the old shape. A
+  share token deployed on OpenZeppelin 0.7.2 is not upgraded in place either:
+  0.7.2 kept the supply in the token's instance, and this release reads it
+  from its own entry, so it would read a supply of zero.
 - **Residual:** No release ships a `migrate`; only test builds have one. If an
   upgrade changes a stored struct's fields or a variant's payload, every entry
   of the old shape fails to decode. Read from the code, not from a test, that
@@ -1693,8 +1707,9 @@ and asks its holder to sign (R4).
 
 These are decided, and stated as they stand:
 
-1. A compliance module that refuses can block a covered exit, and removing it
-   waits for the timelock (X6). Which modules mainnet uses is decided in
+1. A compliance module that refuses can block a redemption request or a
+   covered exit, and removing it waits for the timelock (X6). Which modules
+   mainnet uses is decided in
    [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238).
 2. A stopped manager holds exits at a price back until the open epoch has run
    the minimum epoch duration, then anyone seals; with none set, holders wait

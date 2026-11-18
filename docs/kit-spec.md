@@ -53,7 +53,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
   3. The caller has been de-listed in the `IdentityVerifier`. A claim that pays zero assets also succeeds: it burns the escrowed shares instead of paying (see below).
-  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back when the holder may receive them. When the holder may not (the identity verifier answers that the holder is delisted, or the compliance rules refuse the move), and always in a wind-down, the claim burns the shares instead and publishes `RedeemClaimed` with zero assets, so the request still settles (`a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles`, `a_worthless_exit_the_compliance_rules_refuse_to_return_burns`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`). Only an answer burns. The vault takes two verifier errors as the answer "not eligible": `RWAError::IdentityVerificationFailed` (304), the standard refusal, and `IRSError::IdentityNotFound` (321), which OpenZeppelin's verifier returns for an address with no identity in its registry, as after off-boarding (`a_worthless_exit_burns_for_a_holder_with_no_identity`). Any other result is a failure: the claim fails with `VerifierFailed`, and a failing compliance call fails it with its own error; nothing moves and the request stays open for a retry (`a_worthless_exit_waits_while_the_verifier_cannot_answer`, `a_worthless_exit_waits_while_the_verifier_fails_with_any_other_code`, `a_worthless_exit_waits_while_the_compliance_rules_cannot_answer`). The vault takes both codes at their word: OpenZeppelin's verifier also reports a claim issuer that fails as 304, and contract error codes are not scoped to one contract, so such a fault burns a zero-asset claim. The loss is under one asset unit and needs the holder's own signed claim.
+  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back when the holder may receive them. When the holder may not (the identity verifier answers that the holder is delisted, or the move back fails, as when a compliance module refuses it), and always in a wind-down, the claim burns the shares instead and publishes `RedeemClaimed` with zero assets, so the request still settles (`a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles`, `a_worthless_exit_the_compliance_rules_refuse_to_return_burns`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`). From the verifier, only an answer burns. The vault takes two verifier errors as the answer "not eligible": `RWAError::IdentityVerificationFailed` (304), the standard refusal, and `IRSError::IdentityNotFound` (321), which OpenZeppelin's verifier returns for an address with no identity in its registry, as after off-boarding (`a_worthless_exit_burns_for_a_holder_with_no_identity`). Any other verifier result is a failure: the claim fails with `VerifierFailed`; nothing moves and the request stays open for a retry (`a_worthless_exit_waits_while_the_verifier_cannot_answer`, `a_worthless_exit_waits_while_the_verifier_fails_with_any_other_code`). Compliance modules refuse by panicking, so a module that fails cannot be told from one that refuses: its failure burns the shares too (`a_worthless_exit_burns_like_a_refusal_when_the_compliance_rules_fail`). The vault takes both codes at their word: OpenZeppelin's verifier also reports a claim issuer that fails as 304, and contract error codes are not scoped to one contract, so such a fault burns a zero-asset claim. The loss is under one asset unit and needs the holder's own signed claim.
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
 - **Definition**: Investors cannot be trapped in the vault by a vault pause.
@@ -93,6 +93,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **A deposit worth less than one share base unit** mints nothing and is refunded at claim, from the free reserve (`a_deposit_below_one_share_is_refunded_at_claim`). Pricing moves the epoch's whole deposit into the reserve and records no refund, so `deploy_to_custodian` or a wind-down round can spend that cash first; the claim then fails with `ClaimNotCovered` until the free reserve covers it again (`a_dust_refund_never_takes_committed_money`, `a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve`). The refund never waits on its own epoch's cash remainder past that epoch's last redemption, which releases it (`a_zero_share_refund_is_paid_once_its_epochs_redemptions_settle`). This is accepted: pricing sees only the epoch's totals, so reserving these refunds would mean visiting every request, and each is worth less than one share base unit.
 
 **Settlement and upgrades.** The settlement record counts a request only from the moment it exists. A vault upgraded in place to this version while any request is open would under-count its open epochs: claims in epochs priced before the upgrade would revert, and a mixed epoch could reconcile early. This version is therefore deployed fresh: an earlier vault is not upgraded to it in place.
+
+**The share token and upgrades.** A share token deployed on OpenZeppelin 0.7.2 must not be upgraded in place to this version either. 0.7.2 kept the share supply in the token's instance; this version keeps it in its own persistent entry, so the new code would read a supply of zero. A deployment built on 0.7.2 is redeployed.
 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
@@ -193,9 +195,9 @@ The `async_vault` constructor refuses these four pairs of equal addresses and co
 
 The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer modes: disabled, or allowed when both sides are allowlisted. The kit already has both modes, so it adds no separate transfer-mode setting.
 
-- **Allowed when both sides are allowlisted** is the default and is always on. The share token's `transfer` and `transfer_from` refuse a move unless the sender and the receiver both pass the identity verifier (`IdentityVerificationFailed`) and neither address is frozen (`AddressFrozen`). The token runs these checks itself, whatever the compliance contract answers. The kit's compliance contract registers no modules, so its `can_transfer` accepts any pair. That leaves the decision to the token's own checks; it does not open transfers (`rules_with_no_modules_accept_any_pair_yet_the_token_still_checks_both_sides`). A module can only refuse more moves, and after setup adding one waits for the timelock.
-- **Disabled** is the share token's pause. Only the token admin (governance) can call `pause` and `unpause`; anyone else is refused with `AdminRequired`, and the guardian has no role on the token. Both calls take effect at once, before and after setup: they do not go through the timelock. While the token is paused, `transfer` and `transfer_from` are refused with `EnforcedPause` (`the_token_admin_pauses_transfers_at_once_after_setup`).
-- **Exits stay open in either mode.** Both modes apply only to transfers between holders. The vault moves shares with `mint`, `burn` and `forced_transfer`, which ignore the pause, and `legal_transfer` ignores it too. While the token is paused, deposit and redemption requests (the redemption escrows shares with `forced_transfer`), cancellations of both, deposit claims (mint) and redemption claims (burn and cash payout) all go through (`a_token_pause_leaves_deposits_exits_and_cancellations_open`, `a_token_pause_stops_trading_but_not_a_share_return`, `a_token_pause_does_not_hold_a_redemption_in_a_wind_down`). A delisted holder still exits in cash (Invariant 4); only a freeze holds an exit, as below. `burn` is the RWA extension's manager-only call, with the vault as the token's sole `manager`; the token has no `burn_from`, so no holder can burn their own shares.
+- **Allowed when both sides are allowlisted** is the default and is always on. The share token's `transfer`, `transfer_from` and `batch_transfer` refuse a move unless the sender and the receiver both pass the identity verifier (`IdentityVerificationFailed`) and neither address is frozen (`AddressFrozen`). The token runs these checks itself, whatever the compliance contract answers. The kit's compliance contract registers no modules, so its `transferred` hook accepts any pair. That leaves the decision to the token's own checks; it does not open transfers (`rules_with_no_modules_accept_any_pair_yet_the_token_still_checks_both_sides`). A module can only refuse more moves, and after setup adding one waits for the timelock.
+- **Disabled** is the share token's pause. Only the token admin (governance) can call `pause` and `unpause`; anyone else is refused with `AdminRequired`, and the guardian has no role on the token. Both calls take effect at once, before and after setup: they do not go through the timelock. While the token is paused, `transfer`, `transfer_from` and `batch_transfer` are refused with `EnforcedPause` (`the_token_admin_pauses_transfers_at_once_after_setup`).
+- **Exits stay open in either mode.** Both modes apply only to transfers between holders. The vault moves shares with `mint`, `burn` and `forced_transfer`, which ignore the pause, and `legal_transfer` ignores it too. While the token is paused, deposit and redemption requests (the redemption escrows shares with `forced_transfer`), cancellations of both, deposit claims (mint) and redemption claims (burn and cash payout) all go through (`a_token_pause_leaves_deposits_exits_and_cancellations_open`, `a_token_pause_stops_trading_but_not_a_share_return`, `a_token_pause_does_not_hold_a_redemption_in_a_wind_down`, `a_token_pause_does_not_stop_a_mint`). A delisted holder still exits in cash (Invariant 4); only a freeze holds an exit, as below. `burn` is the RWA extension's manager-only call, with the vault as the token's sole `manager`; the token has no `burn_from`, so no holder can burn their own shares.
 - **Freezes and the pauses.** A freeze is per holder and set by the compliance authority. It stops that holder's transfers and also holds what the vault owes them until it is lifted (see the [compliance matrix](./COMPLIANCE_MATRIX.md)). The token pause is global and set by governance. It stops every transfer between holders and nothing else. The vault's own pause (the guardian pauses, governance unpauses) is a separate control. It stops deposit requests, pricing and applying queued changes, not transfers.
 
 ### Health View
@@ -340,11 +342,11 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 | **`NavOracle`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`ShareToken`** | `pause` | Admin (Governance) | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
 | **`ShareToken`** | `unpause` | Admin (Governance) | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
-| **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `forced_transfer` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `mint`, `batch_mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `burn`, `batch_burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `forced_transfer`, `batch_forced_transfer` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `legal_transfer` | Compliance, co-signed by Governance (token admin) | `#[only_role(caller, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address; the destination passes `verify_identity`; a reference of 1–128 bytes | Bypasses token pause |
-| **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens` | Compliance | `#[only_role(operator, "compliance")]`; never freezes the vault's address once the token knows its vault | No |
+| **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens` and their `batch_` versions | Compliance | `#[only_role(operator, "compliance")]`; never freezes the vault's address once the token knows its vault | No |
 | **`ShareToken`** | `recover_balance` | Compliance, co-signed by Governance (token admin) | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address | No |
 | **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `operator` must be the admin (`AdminRequired`), then `operator.require_auth()`; instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `bind_vault` | Governance (token admin) | `#[only_admin]`; during setup, once | No |
@@ -422,9 +424,9 @@ before any extension (see **Network settings**).
 |---|---|---|---|
 | `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once 29 days or less remain |
 | `nav_oracle` | Its instance, the latest report, and each pending governance change it reads or writes | `attest` extends the instance and the report; `bind_vault`, `finish_setup`, `grant_role`, `transfer_admin_role`, `propose_change`, `cancel_change` and `apply_change` extend the instance; every other call extends whichever entry it reads or writes | Same |
-| `share_token` | Its instance, each balance and freeze entry it writes, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change`; also the reads `balance` and `total_supply`, which may be the only token calls during a wind-down | Same |
+| `share_token` | Its instance, each balance and freeze entry it writes, the supply entry, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, the seven batch calls, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change`; also the reads `balance` and `total_supply`, which may be the only token calls during a wind-down | Same |
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
-| `compliance` | Its instance, the modules and bound tokens it writes, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
+| `compliance` | Its instance, the modules and bound tokens it writes, and each pending governance change it reads or writes | Every hook the token calls (`created`, `transferred`, `destroyed`) and its admin calls | Same |
 | `async_vault`, `share_token`, `nav_oracle` | The four entries a grant writes: the account's role, its member-list slot, the member count and the role list | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change) extends all four. After that, a role check extends only that account's role entry; the slot, the count and the list are extended only by grants and by calls that list role members (such as the vault's `manager()` or the token's `get_role_member_count`) | 90 days (1,555,200 ledgers), once 89 days or less remain |
 | `sep40_feed` | Its instance, and each pending change it reads or writes | Every call that reads it, a quote or a view included, and every governance call (`propose_change`, `cancel_change`, `apply_change`); pending changes are extended as the other contracts' queues | Same |
 
@@ -447,20 +449,21 @@ timelock crate does, and a test checks that the two agree. If the entry has
 archived, it restores it, then extends it the same 30 days as every instance
 and Wasm.
 
-**What OpenZeppelin extends, and what the kit adds.** `stellar-tokens` 0.7.2
-stores the share token's balances and freeze entries, and the compliance
-contract's modules and bound tokens. `stellar-access` 0.7.2 stores the roles of
-the vault, the token and the oracle. OpenZeppelin extends an existing entry
-when it reads it: balances, freezes, modules and bound tokens to 30 days, roles
-to 90. It does not extend an entry when it writes one, so a new entry would
-start at the network's minimum lifetime and wait for a later caller to read it.
-The kit closes that gap by reading back what it writes, through OpenZeppelin's
-own reads, in the same call:
+**What OpenZeppelin extends, and what the kit adds.** `stellar-tokens` 0.8.0
+stores the share token's balances, supply and freeze entries, and the
+compliance contract's modules and bound tokens. `stellar-access` 0.8.0 stores
+the roles of the vault, the token and the oracle. OpenZeppelin extends an
+existing entry when it reads it: balances, supply, freezes, modules and bound
+tokens to 30 days, roles to 90. It does not extend an entry when it writes
+one, so a new entry would start at the network's minimum lifetime and wait for
+a later caller to read it. The kit closes that gap by reading back what it
+writes, through OpenZeppelin's own reads, in the same call:
 
 - the share token reads back each balance and freeze entry after `mint`,
   `burn`, `transfer`, `transfer_from`, `forced_transfer`, `legal_transfer`,
-  `recover_balance`, `set_address_frozen`, `freeze_partial_tokens` and
-  `unfreeze_partial_tokens`;
+  `recover_balance`, `set_address_frozen`, `freeze_partial_tokens`,
+  `unfreeze_partial_tokens` and the seven batch calls, and the supply entry
+  after `mint` and `batch_mint`;
 - the vault, the token and the oracle read back every entry a grant writes (the
   account's role, its place in the member list, the member count and the list
   of roles) after each grant in their constructors, in `grant_role`, and in an
@@ -571,9 +574,10 @@ implementation against what the vault calls.
 | Interface | Defined in | Implemented here by | What the vault calls |
 |---|---|---|---|
 | `OracleFeed` | `crates/strata-bindings` | `nav-oracle` | `state`, `nav_per_share`, `attested_at`, `freshness_duration` |
-| `FungibleToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `transfer`, `balance`, `total_supply`, `decimals` |
-| `RWAToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `mint`, `burn`, `forced_transfer` |
-| `IdentityVerifier` | OpenZeppelin `stellar-tokens` 0.7.2 | `identity-verifier` (testnet stub) | `verify_identity`, called by the share token |
+| `FungibleToken` | OpenZeppelin `stellar-tokens` 0.8.0 | `share-token` | `transfer`, `balance`, `decimals` |
+| `FungibleTotalSupply` | OpenZeppelin `stellar-tokens` 0.8.0 | `share-token` | `total_supply` |
+| `RWAToken` | OpenZeppelin `stellar-tokens` 0.8.0 | `share-token` | `mint`, `burn`, `forced_transfer` |
+| `IdentityVerifier` | OpenZeppelin `stellar-tokens` 0.8.0 | `identity-verifier` (testnet stub) | `verify_identity`, called by the share token |
 
 A feed that implements `OracleFeed` can replace `nav-oracle`; it must report
 `Stale` once its report outlives `freshness_duration`, and `attested_at` must
