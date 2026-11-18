@@ -221,6 +221,40 @@ fn unauthorized_caller_cannot_freeze_or_recover() {
 }
 
 #[test]
+fn a_batch_call_takes_the_role_of_its_single_call() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let f = setup_fixture(&e);
+    let stranger = Address::generate(&e);
+    let users = soroban_sdk::vec![&e, Address::generate(&e)];
+    let amounts = soroban_sdk::vec![&e, 100_i128];
+
+    for outsider in [&stranger, &f.admin, &f.compliance_authority] {
+        assert_unauthorized(f.token.try_batch_mint(&users, &amounts, outsider));
+        assert_unauthorized(f.token.try_batch_burn(&users, &amounts, outsider));
+        assert_unauthorized(
+            f.token
+                .try_batch_forced_transfer(&users, &users, &amounts, outsider),
+        );
+    }
+    let freezes = soroban_sdk::vec![&e, true];
+    for outsider in [&stranger, &f.admin, &f.manager] {
+        assert_unauthorized(
+            f.token
+                .try_batch_set_address_frozen(&users, &freezes, outsider),
+        );
+        assert_unauthorized(
+            f.token
+                .try_batch_freeze_partial_tokens(&users, &amounts, outsider),
+        );
+        assert_unauthorized(
+            f.token
+                .try_batch_unfreeze_partial_tokens(&users, &amounts, outsider),
+        );
+    }
+}
+
+#[test]
 fn unauthorized_caller_cannot_set_compliance_or_verifier() {
     let e = Env::default();
     let f = setup_fixture(&e);
@@ -420,6 +454,8 @@ fn the_manager_escrows_but_does_not_intervene() {
     let holder = Address::generate(&e);
     let new_holder = Address::generate(&e);
     identity.allow(&holder, &true);
+    // Allowlisted, as the vault must be.
+    identity.allow(&f.manager, &true);
     f.token.mint(&holder, &1_000, &f.manager);
 
     assert_unauthorized(f.token.try_set_address_frozen(&holder, &true, &f.manager));
@@ -437,6 +473,50 @@ fn the_manager_escrows_but_does_not_intervene() {
     f.token
         .forced_transfer(&holder, &f.manager, &300, &f.manager);
     assert_eq!(f.token.balance(&f.manager), 300);
+}
+
+#[test]
+fn a_burn_lowers_the_supply_by_the_amount_burned() {
+    let e = Env::default();
+    let (f, identity) = setup_live(&e);
+    let holder = Address::generate(&e);
+    let other = Address::generate(&e);
+    identity.allow(&holder, &true);
+    identity.allow(&other, &true);
+    f.token.mint(&holder, &1_000, &f.manager);
+    f.token.mint(&other, &500, &f.manager);
+
+    f.token.burn(&holder, &300, &f.manager);
+    assert_eq!(f.token.total_supply(), 1_200);
+
+    f.token.batch_burn(
+        &soroban_sdk::vec![&e, holder.clone(), other.clone()],
+        &soroban_sdk::vec![&e, 100, 200],
+        &f.manager,
+    );
+    assert_eq!(f.token.total_supply(), 900);
+}
+
+#[test]
+fn a_token_pause_does_not_stop_a_mint() {
+    let e = Env::default();
+    let (f, identity) = setup_live(&e);
+    let holder = Address::generate(&e);
+    identity.allow(&holder, &true);
+    f.token.mint(&holder, &1_000, &f.manager);
+    f.token.pause(&f.admin);
+
+    f.token.mint(&holder, &100, &f.manager);
+    assert_eq!(f.token.balance(&holder), 1_100);
+    assert_eq!(f.token.total_supply(), 1_100);
+
+    f.token.batch_mint(
+        &soroban_sdk::vec![&e, holder.clone()],
+        &soroban_sdk::vec![&e, 50],
+        &f.manager,
+    );
+    assert_eq!(f.token.balance(&holder), 1_150);
+    assert_eq!(f.token.total_supply(), 1_150);
 }
 
 #[test]
@@ -883,6 +963,30 @@ mod legal_transfer {
     }
 
     #[test]
+    fn a_batch_transfer_into_the_vault_is_refused() {
+        let e = Env::default();
+        let (f, holder, destination, vault) = live(&e);
+
+        assert_eq!(
+            f.token
+                .try_batch_transfer(
+                    &holder,
+                    &soroban_sdk::vec![&e, destination.clone(), vault.clone()],
+                    &soroban_sdk::vec![&e, 100, 100],
+                )
+                .err(),
+            Some(Ok(ShareTokenError::VaultAddress.into())),
+        );
+        f.token.batch_transfer(
+            &holder,
+            &soroban_sdk::vec![&e, destination.clone()],
+            &soroban_sdk::vec![&e, 100],
+        );
+        assert_eq!(f.token.balance(&destination), 100);
+        assert_eq!(f.token.balance(&vault), 500);
+    }
+
+    #[test]
     fn the_destination_must_pass_the_identity_check() {
         let e = Env::default();
         let (f, holder, _, _) = live(&e);
@@ -1137,5 +1241,35 @@ mod legal_transfer {
             .set_address_frozen(&vault, &false, &f.compliance_authority);
         assert!(!f.token.is_frozen(&vault));
         assert_eq!(f.token.get_frozen_tokens(&vault), 0);
+    }
+
+    #[test]
+    fn the_vault_address_cannot_be_frozen_in_a_batch() {
+        let e = Env::default();
+        let (f, holder, _, vault) = live(&e);
+        let accounts = soroban_sdk::vec![&e, holder.clone(), vault.clone()];
+
+        assert_eq!(
+            f.token
+                .try_batch_set_address_frozen(
+                    &accounts,
+                    &soroban_sdk::vec![&e, true, true],
+                    &f.compliance_authority,
+                )
+                .err(),
+            Some(Ok(ShareTokenError::VaultAddress.into())),
+        );
+        assert_eq!(
+            f.token
+                .try_batch_freeze_partial_tokens(
+                    &accounts,
+                    &soroban_sdk::vec![&e, 100, 100],
+                    &f.compliance_authority,
+                )
+                .err(),
+            Some(Ok(ShareTokenError::VaultAddress.into())),
+        );
+        assert!(!f.token.is_frozen(&holder));
+        assert_eq!(f.token.get_frozen_tokens(&holder), 0);
     }
 }

@@ -1,4 +1,4 @@
-//! A new balance, freeze or role entry gets its full TTL in the call that creates it.
+//! A new balance, supply, freeze or role entry gets its full TTL in the call that creates it.
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short,
@@ -7,7 +7,10 @@ use soroban_sdk::{
 };
 use stellar_access::access_control::{AccessControlStorageKey, ROLE_EXTEND_AMOUNT};
 use stellar_tokens::{
-    fungible::{FungibleStorageKey, BALANCE_EXTEND_AMOUNT},
+    fungible::{
+        total_supply::TotalSupplyStorageKey, FungibleStorageKey, BALANCE_EXTEND_AMOUNT,
+        TOTAL_SUPPLY_EXTEND_AMOUNT,
+    },
     rwa::{identity_verification, RWAStorageKey, FROZEN_EXTEND_AMOUNT},
 };
 use strata_timelock::{Clock, MIN_DELAY};
@@ -181,6 +184,18 @@ fn a_mint_writes_the_new_balance_with_the_full_ttl() {
     let (_, holder) = f.holder(100);
 
     assert_eq!(f.balance_ttl(&holder), BALANCE_EXTEND_AMOUNT);
+}
+
+#[test]
+fn the_first_mint_writes_the_supply_with_the_full_ttl() {
+    let f = setup();
+
+    f.holder(100);
+
+    assert_eq!(
+        f.persistent_ttl(&TotalSupplyStorageKey::TotalSupply),
+        TOTAL_SUPPLY_EXTEND_AMOUNT
+    );
 }
 
 #[test]
