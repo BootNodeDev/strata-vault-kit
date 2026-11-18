@@ -8,6 +8,7 @@
     "deploy": "tsx deploy.ts",
     "deploy:feed": "tsx deploy-feed.ts",
     "extend": "tsx extend.ts",
+    "sep1": "tsx sep1.ts",
     "keys": "tsx keys.ts",
     "build:clients": "tsx build-clients.ts",
     "lint": "eslint .",
