@@ -579,9 +579,9 @@ A feed that implements `OracleFeed` can replace `nav-oracle`; it must report
 `Stale` once its report outlives `freshness_duration`, and `attested_at` must
 be the ledger time the report was accepted, not a time the reporter supplies.
 
-The testnet identity verifier sets one address per call (`allow`), emits no
-event and offers no paged listing. These are limits of the stub: a production
-identity registry replaces it.
+The testnet identity verifier sets one address per call (`allow`, which
+publishes `AllowedSet`) and offers no paged listing. These are limits of the
+stub: a production identity registry replaces it.
 
 Two more traits connect the share token, the oracle and the kit's compliance
 contract to the vault's timelock. The vault implements `ClockSource`
