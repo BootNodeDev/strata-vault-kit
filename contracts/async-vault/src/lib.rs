@@ -11,7 +11,8 @@
 //!   minimum set, until a replacement passes the timelock.
 //! - **Pricing records totals; claims mint and burn.** Pricing costs the same
 //!   for any number of requests. The cost: an epoch's rounding remainder stays
-//!   in `committed` and `pending_mint_shares` until its last request settles.
+//!   in `pending_mint_shares` until its last deposit settles, and in
+//!   `committed` until its last redemption settles.
 //! - **A readable price closes cancellation,** during the notice too, until the
 //!   feed goes stale or the NAV or the vault is paused. The cost: a report that
 //!   lapses lets requests leave a sealed epoch late.
@@ -28,15 +29,18 @@
 //!   cancellations fail with `Frozen` until it lifts: compliance can delay a
 //!   payout, never redirect it. The cost: even a covered claim waits.
 //! - **A delisted holder leaves in cash.** Shares priced for them join their
-//!   redemption in the open epoch, or their wind-down entitlement. The cost:
-//!   another epoch at its price, and a wait while the vault itself is delisted.
+//!   redemption in the open epoch, or their wind-down entitlement; a
+//!   redemption priced at nothing burns the shares they may not take back. The
+//!   cost: another epoch at its price, a wait while the vault itself is
+//!   delisted, and burned shares worth less than one asset unit.
 //! - **Setup, then the timelock.** Until `finish_setup` checks the wiring,
 //!   admin changes are instant and requests and epochs refused; after it,
 //!   changes that move value or cut a wait are timelocked. The cost: fixes
 //!   take a week.
 //! - **Wind-down claims run the compliance hooks:** surrendered shares burn
 //!   through the `destroyed` modules. The cost: one failing in a wind-down
-//!   blocks those claims, and no change can remove it then.
+//!   blocks those claims until its removal lands, the normal delay after it
+//!   is proposed.
 
 #![no_std]
 
@@ -66,6 +70,7 @@ use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
 use stellar_tokens::fungible::FungibleTokenClient;
+use strata_bindings::VaultView;
 use strata_timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
 use keys::DataKey;
@@ -76,10 +81,10 @@ pub use error::VaultError;
 pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCancelled,
     DepositCapUpdated, DepositClaimed, DepositConvertedToExit, DepositRefunded, DepositRequested,
-    EpochClosed, EpochFulfilled, EpochReconciled, Funded, MinEpochDurationSet, NoticeSet,
-    RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered, SetupFinished,
-    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
-    WindDownProposed, WindDownRoundFinalized,
+    EpochCashReconciled, EpochClosed, EpochFulfilled, EpochReconciled, EpochSharesReconciled,
+    Funded, MinEpochDurationSet, NoticeSet, RedeemCancelled, RedeemClaimed, RedeemRequested,
+    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -165,26 +170,6 @@ impl AsyncVault {
         state::set_epoch(e, FIRST_EPOCH, &epoch::open(0));
         state::set_current_epoch(e, FIRST_EPOCH);
         upgradeable::set_schema_version(e, 1);
-    }
-
-    /// The deposit asset's token contract.
-    pub fn asset(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::Asset)
-    }
-
-    /// The share token.
-    pub fn share_token(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::ShareToken)
-    }
-
-    /// The feed epochs are priced from.
-    pub fn oracle(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::Oracle)
-    }
-
-    /// The admin: governance.
-    pub fn governance(e: &Env) -> Option<Address> {
-        access_control::get_admin(e)
     }
 
     /// The first holder of `manager`, which closes epochs.
@@ -394,12 +379,6 @@ impl AsyncVault {
     /// manager seals.
     pub fn min_epoch_duration(e: &Env) -> Option<u64> {
         state::min_epoch_duration(e)
-    }
-
-    /// The wind-down once proposed: whether it is proposed or active, the time
-    /// in seconds it may start, and the rounds finalised.
-    pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
-        wind_down::info(e)
     }
 
     /// Announces a wind-down, which anyone can start once the delay has run.
@@ -881,9 +860,9 @@ impl AsyncVault {
     ///
     /// # Events
     ///
-    /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
-    ///   `DepositRefunded`.
-    /// * `EpochReconciled` once the epoch's last request settles.
+    /// * `DepositClaimed`, `DepositConvertedToExit` or `DepositRefunded`.
+    /// * `EpochSharesReconciled` on the last deposit, then `EpochReconciled`
+    ///   if no redemption is open.
     ///
     /// # Authorization
     ///
@@ -1001,7 +980,8 @@ impl AsyncVault {
 
     /// Pays a priced redemption and returns the asset base units paid. Open
     /// while paused and to a delisted holder. Outside a wind-down, shares
-    /// priced at nothing come back instead.
+    /// priced at nothing come back instead, or burn when the holder may not
+    /// take them back.
     ///
     /// # Arguments
     ///
@@ -1016,13 +996,15 @@ impl AsyncVault {
     /// * `AlreadyClaimed` - The redemption was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
-    /// * `HolderNotEligible` - Shares priced at nothing cannot come back.
+    /// * `VerifierFailed` - It pays nothing and the identity verifier fails.
+    /// * A compliance module's own error when it fails on that return.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
     ///
     /// * `RedeemClaimed`, or `RedeemCancelled` when the shares come back.
-    /// * `EpochReconciled` once the epoch's last request settles.
+    /// * `EpochCashReconciled` on the last redemption, then `EpochReconciled`
+    ///   if no deposit is open.
     ///
     /// # Authorization
     ///
@@ -1089,7 +1071,8 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `EpochFulfilled`
-    /// * `EpochReconciled` when the epoch has no open request.
+    /// * `EpochSharesReconciled` and `EpochCashReconciled` for each side
+    ///   with no open request, then `EpochReconciled` if both have none.
     ///
     /// # Authorization
     ///
@@ -1289,6 +1272,35 @@ impl Pausable for AsyncVault {
         caller.require_auth();
         pausable::unpause(e);
         strata_timelock::pause::end(e);
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl VaultView for AsyncVault {
+    /// The deposit asset's token contract.
+    fn asset(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::Asset)
+    }
+
+    /// The share token.
+    fn share_token(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::ShareToken)
+    }
+
+    /// The feed epochs are priced from.
+    fn oracle(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::Oracle)
+    }
+
+    /// The wind-down once proposed: whether it is proposed or active, the time
+    /// in seconds it may start, and the rounds finalised.
+    fn wind_down(e: &Env) -> Option<WindDownInfo> {
+        wind_down::info(e)
+    }
+
+    /// The admin: governance.
+    fn governance(e: &Env) -> Option<Address> {
+        access_control::get_admin(e)
     }
 }
 

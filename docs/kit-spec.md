@@ -52,8 +52,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**: If `liquid_reserve >= assets_owed`, `claim_redeem` succeeds when:
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
-  3. The caller has been de-listed in the `IdentityVerifier`, unless the claim pays zero assets outside a wind-down (see below).
-  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back, so the holder must be able to receive them. Outside a wind-down, a delisted holder's such claim is refused with `HolderNotEligible` and the request stays until the holder is listed again; in a wind-down the claim burns the shares instead (`a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`).
+  3. The caller has been de-listed in the `IdentityVerifier`. A claim that pays zero assets also succeeds: it burns the escrowed shares instead of paying (see below).
+  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back when the holder may receive them. When the holder may not (the identity verifier answers that the holder is delisted, or the compliance rules refuse the move), and always in a wind-down, the claim burns the shares instead and publishes `RedeemClaimed` with zero assets, so the request still settles (`a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles`, `a_worthless_exit_the_compliance_rules_refuse_to_return_burns`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`). Only an answer burns. The vault takes two verifier errors as the answer "not eligible": `RWAError::IdentityVerificationFailed` (304), the standard refusal, and `IRSError::IdentityNotFound` (321), which OpenZeppelin's verifier returns for an address with no identity in its registry, as after off-boarding (`a_worthless_exit_burns_for_a_holder_with_no_identity`). Any other result is a failure: the claim fails with `VerifierFailed`, and a failing compliance call fails it with its own error; nothing moves and the request stays open for a retry (`a_worthless_exit_waits_while_the_verifier_cannot_answer`, `a_worthless_exit_waits_while_the_verifier_fails_with_any_other_code`, `a_worthless_exit_waits_while_the_compliance_rules_cannot_answer`). The vault takes both codes at their word: OpenZeppelin's verifier also reports a claim issuer that fails as 304, and contract error codes are not scoped to one contract, so such a fault burns a zero-asset claim. The loss is under one asset unit and needs the holder's own signed claim.
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
 - **Definition**: Investors cannot be trapped in the vault by a vault pause.
@@ -88,9 +88,9 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   $`\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s`$
 - **Testable Property**: For all values of $`a, s \in [1, 10^{30}]`$ and $`\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]`$, a round-trip conversion never creates value. Remainder satisfies:
   $`(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}`$
-- **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. When the last request of a priced epoch settles, the remainder leaves `pending_mint_shares` and `committed` and the vault publishes `EpochReconciled { epoch, share_dust, cash_dust }`. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping. A deposit refunded after pricing (worth less than one share base unit) leaves the priced epoch's `total_deposited` as `EpochFulfilled` published it; only a cancellation still open for the epoch lowers it.
-- **A request that can never settle** keeps its epoch open, and the two cases leave different amounts behind. A zero-asset redemption whose holder may not take the shares back (`HolderNotEligible`, `a_request_that_cannot_settle_keeps_its_epoch_open`) leaves only the epoch's ordinary rounding remainder in `committed` — fewer units than the epoch had redemption requests — because that request was never owed any cash. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's own remainder, until the mint is allowed. Either way it is still owed to nobody.
-- **A deposit worth less than one share base unit** mints nothing and is refunded at claim, from the free reserve (`a_deposit_below_one_share_is_refunded_at_claim`). Pricing moves the epoch's whole deposit into the reserve and records no refund, so `deploy_to_custodian` or a wind-down round can spend that cash first; the claim then fails with `ClaimNotCovered` until the free reserve covers it again (`a_dust_refund_never_takes_committed_money`, `a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve`). This is accepted: pricing sees only the epoch's totals, so reserving these refunds would mean visiting every request, and each is worth less than one share base unit.
+- **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. Each side of a priced epoch releases its remainder once that side's last request settles: the share remainder leaves `pending_mint_shares` when the last deposit settles, and the cash remainder leaves `committed` when the last redemption settles. Each side has its own flag (`shares_reconciled`, `cash_reconciled`), so neither remainder is released twice. Setting a flag publishes that side's event once, zero included: `EpochSharesReconciled { epoch, share_dust }` and `EpochCashReconciled { epoch, cash_dust }`. Once both are set, `EpochReconciled { epoch }` follows, once, with no amounts. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping. A deposit refunded after pricing (worth less than one share base unit) leaves the priced epoch's `total_deposited` as `EpochFulfilled` published it; only a cancellation still open for the epoch lowers it.
+- **A request that can never settle** keeps its own side of the epoch open, not the other side. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's share remainder, until the mint is allowed. The epoch's cash remainder still leaves `committed` once its redemptions settle. A zero-asset redemption settles once the verifier answers, since its claim then returns or burns the shares; while the verifier fails, the claim fails with `VerifierFailed` and the request stays open.
+- **A deposit worth less than one share base unit** mints nothing and is refunded at claim, from the free reserve (`a_deposit_below_one_share_is_refunded_at_claim`). Pricing moves the epoch's whole deposit into the reserve and records no refund, so `deploy_to_custodian` or a wind-down round can spend that cash first; the claim then fails with `ClaimNotCovered` until the free reserve covers it again (`a_dust_refund_never_takes_committed_money`, `a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve`). The refund never waits on its own epoch's cash remainder past that epoch's last redemption, which releases it (`a_zero_share_refund_is_paid_once_its_epochs_redemptions_settle`). This is accepted: pricing sees only the epoch's totals, so reserving these refunds would mean visiting every request, and each is worth less than one share base unit.
 
 **Settlement and upgrades.** The settlement record counts a request only from the moment it exists. A vault upgraded in place to this version while any request is open would under-count its open epochs: claims in epochs priced before the upgrade would revert, and a mixed epoch could reconcile early. This version is therefore deployed fresh: an earlier vault is not upgraded to it in place.
 
@@ -105,7 +105,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
   - Time spent paused does not count. Applying while paused is refused.
-  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The one exception is a grant of the share token's `compliance` role, which waits the normal delay.
+  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The exceptions are a grant of the share token's `compliance` role and removing a compliance module, both of which still wait the normal delay.
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
   - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant, granting it also lands during a wind-down, and the last holder cannot renounce (`LastComplianceHolder`).
@@ -131,7 +131,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 
 ## 2. Deploy-Time Parameters & Runtime Configuration
 
-Deploying the Strata Vault Kit involves five contracts configured via `environments.toml`. Parameters are split into immutable deploy-time constructor arguments and governance-tunable runtime settings.
+Deploying the Strata Vault Kit involves six contracts configured via `environments.toml`. Parameters are split into immutable deploy-time constructor arguments and governance-tunable runtime settings.
 
 ### Deploy-Time Parameters (`constructor_args`)
 
@@ -163,6 +163,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`async_vault`** | `roles.manager` | `Address` | Account that gets the vault's `manager` role (closes epochs); a role, not one of the five authorities | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.compliance` | `Address` | Compliance multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.attester` | `Address` | Attestation authority. Not read: nothing checks that it matches the oracle's attester | `async_vault.constructor_args` |
+| **`sep40_feed`** | `vault` | `Address` | The vault this feed quotes. Must answer `VaultView` (`asset`, `share_token`, `oracle`, `wind_down`, `governance`) and `timelock_clock`, or the constructor refuses it (`NotAVault`). The feed has no admin parameter: its upgrades are signed by the vault's current `governance()` | `sep40_feed.constructor_args` |
 
 The share token's decimals are fixed at 7 in its constructor; they are not a parameter.
 
@@ -216,8 +217,9 @@ The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer mo
 | `feed_answers` | The oracle answers `state()` and `freshness_duration()`. A new feed with no report passes. `oracle_bound` cannot tell a feed from another contract bound to this vault, such as the compliance contract. |
 | `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired, it is in band and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
+| `min_epoch_duration_set` | A minimum epoch duration is set. |
 
-`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation.
+`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation. `min_epoch_duration_set` false means only the manager can seal the open epoch; see [When the Manager or the Attester Stops](#when-the-manager-or-the-attester-stops).
 
 ### Supply and Capital Figures
 
@@ -361,18 +363,23 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 | **`Compliance`** | `bind_token`, `unbind_token`, `add_module_to`, `remove_module_from` | Governance | `#[only_admin]`, `operator` is not read; instant during setup, then `propose_change` | No |
 | **`Compliance`** | `bind_vault` | Governance (compliance admin) | `#[only_admin]`; during setup, once | No |
 | **`Compliance`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
-| **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
+| **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup; refused while the vault is winding down, except removing a module | No |
 | **`Compliance`** | `cancel_change` | Governance | `#[only_admin]` | No |
-| **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
+| **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused; while it winds down too, except removing a module |
 | **`Compliance`** | `pending_changes` | Permissionless | None (view) | No |
 | **`Compliance`** | `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
+| **`Sep40Feed`** | `propose_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); refused while the vault winds down (`WindDownActive`) or an upgrade already waits (`UpgradeAlreadyPending`) | No |
+| **`Sep40Feed`** | `cancel_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); the change must be pending (`ChangeNotFound`) | No |
+| **`Sep40Feed`** | `apply_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); timelocked on the vault's clock (`ChangeNotReady`, `DelayBelowNotice`) | Refused if the vault is paused or winding down |
+| **`Sep40Feed`** | `base`, `assets`, `decimals`, `resolution`, `price`, `prices`, `lastprice`, `vault`, `setup_open`, `pending_changes` | Permissionless | None (views) | No |
 
 ---
 
 ## 4. Deployment Runbook Summary
 
-A clean deployment executes in three sequenced phases:
+A clean deployment executes in three sequenced phases, plus an optional
+fourth to add the SEP-40 feed:
 
 1. **Phase 1: Contract Deployment**
    - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
@@ -389,6 +396,8 @@ A clean deployment executes in three sequenced phases:
    - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit, redemption, seal or pricing before it.
 3. **Phase 3: Operational Parameterization**
    - Oracle reporter submits the genesis NAV attestation (`attest`). Deposits open only once it is valid, so post it before announcing the vault.
+4. **Phase 4 (optional): The SEP-40 feed**
+   - Deploy `sep40_feed` with the vault's address. There is nothing to wire: the feed reads the vault on every call, and the vault does not know the feed exists.
 
 ---
 
@@ -417,6 +426,7 @@ before any extension (see **Network settings**).
 | `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
 | `compliance` | Its instance, the modules and bound tokens it writes, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
 | `async_vault`, `share_token`, `nav_oracle` | The four entries a grant writes: the account's role, its member-list slot, the member count and the role list | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change) extends all four. After that, a role check extends only that account's role entry; the slot, the count and the list are extended only by grants and by calls that list role members (such as the vault's `manager()` or the token's `get_role_member_count`) | 90 days (1,555,200 ledgers), once 89 days or less remain |
+| `sep40_feed` | Its instance, and each pending change it reads or writes | Every call that reads it, a quote or a view included, and every governance call (`propose_change`, `cancel_change`, `apply_change`); pending changes are extended as the other contracts' queues | Same |
 
 The kit's own lengths are the constants in `crates/strata-storage`
 (`PERSISTENT_EXTEND_AMOUNT`, `INSTANCE_EXTEND_AMOUNT`, and thresholds one day
@@ -599,6 +609,13 @@ name the token's vault with their setup closed. Like `finish_setup`, the token
 accepts an external module that does not answer `VaultBinding`, on trust. A new
 identity verifier must accept the vault's address in `verify_identity`.
 
+The SEP-40 feed reaches the vault through one more trait, in the other
+direction: `VaultView` (`crates/strata-bindings`), implemented by `async-vault`
+(`asset`, `share_token`, `oracle`, `wind_down`, `governance`). The feed itself
+implements `PriceFeed` (`crates/sep40`), the SEP-40 interface. A replacement
+vault must answer `VaultView` for the feed to quote it; the feed's constructor
+checks this once, at deployment.
+
 ---
 
 ## 7. Error Codes and Entrypoint Docs
@@ -612,13 +629,14 @@ for the same failure, so `304` says what failed, not where.
 
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|
-| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
-| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6077 |
+| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3027 |
+| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6078 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7019 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
+| `sep40_feed` | `FeedError` | 9000–9999 | 9001–9008 |
 
 The blocks are defined once, in `crates/strata-bindings` (`ORACLE_ERRORS`,
-`VAULT_ERRORS`, `TOKEN_ERRORS`, `COMPLIANCE_ERRORS`). Each contract declares
+`VAULT_ERRORS`, `TOKEN_ERRORS`, `COMPLIANCE_ERRORS`, `FEED_ERRORS`). Each contract declares
 its enum through `strata_bindings::error_enum!`, and the build fails if a code
 leaves its contract's block or two blocks overlap. A code is never reused: a
 removed variant leaves its number retired. The testnet identity verifier has

@@ -1,0 +1,29 @@
+[package]
+name = "sep40-feed"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+sep40 = { path = "../../crates/sep40" }
+strata-bindings = { path = "../../crates/strata-bindings" }
+strata-timelock = { path = "../../crates/strata-timelock" }
+strata-storage = { path = "../../crates/strata-storage" }
+stellar-contract-utils = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+async-vault = { path = "../async-vault" }
+nav-oracle = { path = "../nav-oracle" }
+
+[features]
+# Builds a stand-in for a later feed version, used only by the upgrade test.
+upgrade_probe = []
+# Runs the test that upgrades the built feed to its probe build. Build both first.
+upgrade_wasm = []

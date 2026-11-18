@@ -140,7 +140,7 @@ describe("TransactionModal, conversion and surrender outcomes", () => {
 })
 
 describe("TransactionModal, wind-down outcomes", () => {
-	it("tells the investor a zero-price claim burned the shares during a wind-down, never that they came back", () => {
+	it("tells the investor a zero-price claim burned the shares, in a wind-down or for an address that cannot receive them, never that they came back", () => {
 		renderClaimRedeemModal({
 			status: "confirmed",
 			assetsClaimed: 0n as Amount,
@@ -151,6 +151,7 @@ describe("TransactionModal, wind-down outcomes", () => {
 			screen.getByRole("heading", { name: "Nothing to pay out" }),
 		).toBeTruthy()
 		expect(screen.getByText(/winding down/)).toBeTruthy()
+		expect(screen.getByText(/cannot receive them/)).toBeTruthy()
 		expect(screen.getByText(/burned/)).toBeTruthy()
 		expect(screen.queryByText(/returned to your wallet/)).toBeNull()
 	})

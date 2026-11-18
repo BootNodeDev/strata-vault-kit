@@ -7,6 +7,7 @@ import {
 	identityVerifier,
 	oracle,
 	send,
+	sep40Feed,
 	shareToken,
 	usdcBalance,
 	vault,
@@ -15,6 +16,7 @@ import {
 import { waitForNotice } from "./lib/notice.js"
 import { attest, freshFeed, navInput, SAMPLE_PROOF_URI } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
+import { stellarAsset } from "./lib/sep40.js"
 
 const c: Connected = connect()
 const holders = [
@@ -178,6 +180,17 @@ describe("pricing", () => {
 		)
 		expect(latest.proof_hash).toEqual(navInput(nav).proof_hash)
 		expect(latest.proof_uri).toBe(SAMPLE_PROOF_URI)
+	})
+
+	it("the SEP-40 feed quotes the share at the attested NAV", async () => {
+		const feed = sep40Feed(c, outsider)
+		expect((await feed.decimals()).result).toBe(14)
+		const quote = (
+			await feed.lastprice({
+				asset: stellarAsset(c.deployment.contracts.share_token),
+			})
+		).result
+		expect(quote?.price).toBe(nav / 10_000n)
 	})
 
 	it("an account with no role prices the epoch", async () => {

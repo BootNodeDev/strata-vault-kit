@@ -14,13 +14,34 @@ import { describe, expect, it } from "vitest"
 
 import { stellarAssetGenerator } from "./asset-client.js"
 import {
+	deployArgs,
 	ensureAssetContract,
 	pinClientSdk,
 	rootSdkVersion,
 	writeClientSources,
+	type Rpc,
 } from "./cli.js"
 import { REPO_ROOT } from "./deployment.js"
 import { type Network } from "./network.js"
+
+const net: Rpc = {
+	rpcUrl: "http://localhost:8000/rpc",
+	passphrase: Networks.STANDALONE,
+}
+
+describe("deployArgs", () => {
+	it("leaves out the separator when there are no constructor arguments", () => {
+		expect(deployArgs("c.wasm", net, [])).not.toContain("--")
+	})
+
+	it("passes constructor arguments after the separator", () => {
+		expect(deployArgs("c.wasm", net, { vault: "C1" }).slice(-3)).toEqual([
+			"--",
+			"--vault",
+			"C1",
+		])
+	})
+})
 
 describe("ensureAssetContract", () => {
 	it("returns the asset contract already on the network", async () => {

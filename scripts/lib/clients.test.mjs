@@ -9,10 +9,13 @@ import {
 	writeClient,
 } from "./clients.mjs"
 
-const repo = (contracts, clients, { unbuilt = [] } = {}) => {
+const repo = (contracts, clients, { unbuilt = [], examples = [] } = {}) => {
 	const root = mkdtempSync(join(tmpdir(), "clients-"))
 	for (const name of contracts) {
 		mkdirSync(join(root, "contracts", name), { recursive: true })
+	}
+	for (const name of examples) {
+		mkdirSync(join(root, "examples", name), { recursive: true })
 	}
 	for (const name of clients) {
 		const client = join(root, "app-lib", "clients", name)
@@ -68,6 +71,14 @@ describe("missingClients", () => {
 
 		expect(missing).toEqual([compiled("async_vault")])
 		expect(missingClientsMessage(missing)).toContain("npm run build:clients")
+	})
+
+	it("needs a client for each example contract too", () => {
+		const root = repo(["async-vault"], ["async_vault", "asset"], {
+			examples: ["sep40-consumer"],
+		})
+
+		expect(missingClients(root)).toEqual([source("sep40_consumer")])
 	})
 
 	it("names them all when the clients folder is empty", () => {

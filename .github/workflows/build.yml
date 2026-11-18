@@ -158,11 +158,13 @@ jobs:
           set -o pipefail
           stellar contract build --package share-token
           stellar contract build --package nav-oracle
+          stellar contract build --package sep40-feed
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package share-token --features upgrade_probe
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package nav-oracle --features upgrade_probe
           CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package async-vault --features upgrade_probe
-          cargo test --locked -p async-vault -p nav-oracle --features upgrade_wasm with_wasm 2>&1 | tee upgrade-tests.log
-          scripts/ci/check-tests-ran.sh upgrade-tests.log test::upgrade::with_wasm test::governance::with_wasm
+          CARGO_TARGET_DIR=target/upgrade-probe stellar contract build --package sep40-feed --features upgrade_probe
+          cargo test --locked -p async-vault -p nav-oracle -p sep40-feed --features upgrade_wasm with_wasm 2>&1 | tee upgrade-tests.log
+          scripts/ci/check-tests-ran.sh upgrade-tests.log test::upgrade::with_wasm test::governance::with_wasm test::timelock::with_wasm
 
   network:
     needs: changes
@@ -297,8 +299,9 @@ jobs:
             echo "Expected $INDEX to exist and be non-empty after client generation."
             exit 1
           fi
-          # Count one exported const per contract
-          EXPECTED=$(find contracts -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+          # Count one exported const per contract; the scaffold deploys every
+          # workspace contract, examples included.
+          EXPECTED=$(find contracts examples -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
           ACTUAL=$(grep -c "^export const " "$INDEX" || true)
           if [ "$ACTUAL" -ne "$EXPECTED" ]; then
             echo "Expected $EXPECTED client(s) in $INDEX, found $ACTUAL."
@@ -333,6 +336,10 @@ jobs:
           HARNESS_NETWORK: local
       - name: Run the vault happy path on the local network
         run: npm run test:happy-path -w scripts/harness
+        env:
+          HARNESS_NETWORK: local
+      - name: Read the share price through SEP-40 on the local network
+        run: npm run test:sep40 -w scripts/harness
         env:
           HARNESS_NETWORK: local
       - name: Run the vault guards on the local network

@@ -63,6 +63,7 @@ deploy from `environments.toml` → `[staging.contracts]`, which is the record.
 | `share_token` | `CDOZT5VNIKSLQSFELF4PHVZRZA3GCJYJEHVDZTUB7O2QMBHBKKOYORQI` |
 | `identity_verifier` | `CCGHNGPI66WGVSLLALQVCIRIOZKX73QW23UDZLZ3LMXLGEG7SLVUOULD` |
 | `compliance` | `CCQI5NFRWBOO77LYSFY54D6PSU4TVWD5A3CFX2A5AWLEURVR35XISMKG` |
+| `sep40_feed` | `CCDNFOV7GFBAZQLXLFBBX6H3T66NYAZG7Z6AWBEHSKLYFNJWRZTPYD2N` |
 | `asset` | `CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E` |
 <!-- deployed-addresses:end -->
 
@@ -112,6 +113,28 @@ refused with `ClaimNotCovered`. It fails at simulation and leaves no
 transaction, so the evidence of the short reserve is the pricing transaction
 before it and the `fund` that clears it.
 
+## SEP-40 price feed
+
+The feed answers a vault's share price through SEP-40, the Stellar price-feed
+interface, so a third-party contract can read it without depending on any kit
+crate; the design document explains how it is built
+([Valuation and accounting](./docs/strata-product-and-architecture.md#85-valuation-and-accounting)).
+The harness repeats the scenario with the team's keys: it deploys a new
+consumer and, when the NAV is stale, first attests a fresh one on the oracle:
+
+```sh
+HARNESS_NETWORK=testnet npm run test:sep40 -w scripts/harness
+```
+
+| Step | Contract | Transaction |
+| --- | --- | --- |
+| Deploy the consumer | `sep40_consumer` `CDKCYZ6IHE2I6KAGATCQPTOYX7GUTTCYRLK26HOQ2JVHEHGXNVA27DOJ` | [`5142b57e…4505`](https://stellar.expert/explorer/testnet/tx/5142b57e6f09a07dcf7d07b09aa41818c85e9b8460165067dddc0071057a4505) |
+| Attest a fresh NAV | `nav_oracle` | [`3478b5b3…2bf2`](https://stellar.expert/explorer/testnet/tx/3478b5b3a2abf4b7435832e13aca2cc2f40c0aa2228f2a4e8cf5218ecf752bf2) |
+| Call `record_price` against the feed | `sep40_consumer` | [`eb0fd738…fba7`](https://stellar.expert/explorer/testnet/tx/eb0fd738e9ffa10f736946c7fb8c51f18a7595ab941214aa9f3c8a9c4beffba7) |
+
+The call recorded a price of 1.00100000000000 (100100000000000 at 14
+decimals) on 2026-11-11. The mainnet run is tracked in #433.
+
 ## Vault figures
 
 The [live dApp](https://strata-vault-kit-app.vercel.app) shows Withdrawable and
@@ -141,6 +164,70 @@ alive (TTL). Run them with `cargo test -p nav-oracle`.
 The vault's test runs with `cargo test -p async-vault
 fulfill_is_rejected_once_the_feed_goes_stale`. [Testing](./docs/TESTING.md)
 lists the TTL tests for every contract.
+
+## Asset metadata (SEP-1)
+
+[`stellar.toml`](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0001.md)
+is the file wallets and explorers check to show who issues the share token and
+to link its latest attestation. `npm run sep1 -w scripts/harness` generates
+one from a deployment: it reads the share token's name, symbol and decimals,
+the network, and the oracle's latest `proof_uri`, and writes
+`scripts/harness/stellar.<network>.toml`, replacing the whole file. It needs
+the deployment record `scripts/harness/deployed.<network>.json` and the keys
+file `.env.keys.<network>` that `connect()` checks, even though the command
+only reads from the chain. A field it cannot fill — no report yet, or a
+`symbol()`/`name()` past the SEP-1 length limit — stays a placeholder and is
+printed as `missing <field>: <reason>` so nothing silently goes out wrong.
+
+```sh
+HARNESS_NETWORK=testnet npm run sep1 -w scripts/harness
+```
+
+The fields an operator sets by hand (organization details, the share
+description and image, the anchor asset, and redemption instructions) come
+from a JSON file passed as `SEP1_OPERATOR`, so regenerating after a new
+attestation never means re-typing them. The same file may also set `code`,
+`name` and `status`; they replace the values read from the chain and the kit's
+`test`/`live` default:
+
+```json
+{
+  "ORG_NAME": "Acme Capital",
+  "ORG_URL": "https://acme.example",
+  "ORG_LOGO": "https://acme.example/logo.png",
+  "ORG_DESCRIPTION": "Acme Capital issues the Acme Treasury Vault share",
+  "ORG_OFFICIAL_EMAIL": "official@acme.example",
+  "ORG_SUPPORT_EMAIL": "support@acme.example",
+  "desc": "Share of the Acme Treasury Vault",
+  "image": "https://acme.example/share.png",
+  "anchor_asset_type": "other",
+  "anchor_asset": "ACME-RWA",
+  "redemption_instructions": "Redeem through the vault's dApp"
+}
+```
+
+```sh
+SEP1_OPERATOR=./operator.json HARNESS_NETWORK=testnet npm run sep1 -w scripts/harness
+```
+
+Publish the result at `https://DOMAIN/.well-known/stellar.toml`, where
+`DOMAIN` matches `ORG_URL`, with `Access-Control-Allow-Origin: *` and,
+recommended, a `text/plain` content type. The file must stay under 100 KB.
+Regenerate and republish it after each attestation, so
+`attestation_of_reserve` keeps pointing at the latest proof. A domain that
+already serves a `stellar.toml` for other currencies must merge the share
+token's `[[CURRENCIES]]` entry into it rather than publish the generated file
+as is.
+
+SEP-1 ties a domain to an account through that account's `home_domain`. The
+share token is a SEP-41 contract, which has no `home_domain`, so how a wallet
+is meant to find this file for a contract token is not settled by this
+command.
+
+[`docs/sep1/stellar.template.toml`](./docs/sep1/stellar.template.toml) is the
+template with every field open; [`docs/sep1/stellar.testnet.toml`](./docs/sep1/stellar.testnet.toml)
+is an example generated from the team's testnet deployment, with the operator
+fields still placeholders.
 
 ## Admin panel
 
@@ -320,7 +407,7 @@ nav_oracle bound to the vault, setup finished
 vault notice set to 10 seconds
 vault minimum epoch duration set to 86400 seconds
 vault setup finished
-health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
+health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"min_epoch_duration_set":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
 wrote deployed.local.json
 ```
 

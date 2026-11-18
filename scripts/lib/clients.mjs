@@ -1,11 +1,20 @@
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
 
+const crateNames = (dir) =>
+	existsSync(dir)
+		? readdirSync(dir, { withFileTypes: true })
+				.filter((entry) => entry.isDirectory())
+				.map((entry) => entry.name.replaceAll("-", "_"))
+		: []
+
+// Examples (`examples/`) are third-party contracts, not kit crates, but they
+// still need a generated client.
 const crateClients = (root) =>
-	readdirSync(join(root, "contracts"), { withFileTypes: true })
-		.filter((entry) => entry.isDirectory())
-		.map((entry) => entry.name.replaceAll("-", "_"))
-		.sort()
+	[
+		...crateNames(join(root, "contracts")),
+		...crateNames(join(root, "examples")),
+	].sort()
 
 // Tests import `src/`; the type check also needs each contract client's `dist/`.
 export const missingClients = (root, { compiled = false } = {}) =>

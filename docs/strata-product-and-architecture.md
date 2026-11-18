@@ -65,7 +65,8 @@ admin panel for the operator, both backend-free.
 Everything ships as an Apache-2.0 template with reproducible, verified deploys,
 so a team sets roughly ten parameters and five authorities, brands the frontend,
 and runs its own instance. A standard SEP-40 price-feed adapter, so integrators
-can consume the share price, is a planned addition and is not yet delivered.
+can consume the share price, ships with the kit; it is optional, one per vault,
+and a deployment that does not need it can skip it.
 
 What stays with the operator: legal entity, custody, KYC, the data behind the
 attestation, and what the numbers mean. Deliberately not a custody, compliance,
@@ -123,8 +124,8 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
   spend its grant on its business, not on vault plumbing.
 - A fund or asset manager tokenizing an off-chain strategy for verified
   investors.
-- An integrator or protocol consuming the vault share price the vault exposes
-  on-chain (a standard SEP-40 feed adapter is a planned addition).
+- An integrator or protocol consuming the vault share price through the kit's
+  SEP-40 feed, an optional adapter deployed alongside the vault.
 
 ## 8. Architecture
 
@@ -172,9 +173,9 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
    claim. A pause can delay unpriced requests. Priced claims are never
    re-priced, and a cash payout never needs the identity check. A delisted,
    non-frozen investor exits through the exit-only cash path. One case differs:
-   a redemption priced at zero assets pays no cash and gives the shares back,
-   so a delisted holder's claim waits until they are listed again; if they
-   claim during a wind-down, the shares are burned instead
+   a redemption priced at zero assets pays no cash. It returns the shares to
+   a holder who may take them back, and burns them otherwise, always during a
+   wind-down; a verifier fault instead of an answer makes the claim wait
    ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §2). A frozen investor's
    claims are held, not paid, until the freeze is lifted
    ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1). A legal-order transfer
@@ -293,6 +294,11 @@ transactions that the authority multisigs sign. The chain never sees KYC data or
 valuation methodology, only their outputs: an allowlisted address, and an
 attested number with a hash of its evidence and, optionally, where to read it.
 
+The SEP-40 feed sits outside this wiring. It is an optional contract, deployed
+after the vault's own setup with just the vault's address, and nothing above
+is changed or re-signed to add it: the vault does not know the feed exists, and
+removing the feed takes nothing away from the vault.
+
 ### 8.3 Components and authorities
 
 | Component             | Role                                                                                                                                                                                                      | Controls                                                                                                                                                                      |
@@ -300,7 +306,7 @@ attested number with a hash of its evidence and, optionally, where to read it.
 | **Vault**             | Request lifecycle, epoch sealing by its manager role, or by anyone once the minimum epoch duration has run, pricing, split reserve accounting, custodian transfers, upgrade control                                                                             | One authority per privileged entrypoint; upgrades behind a governance timelock no shorter than the notice, bounded between 7 and 90 days. The share token and the oracle upgrade under the same timelock. Administrative handover follows a strict two-step transfer pattern; renouncing admin is permanently refused (`AdminRequired`)                                                                                                                                                                                    |
 | **Share token**       | OZ SEP-41 + SEP-57 RWA extensions: freeze, forced transfer, recovery, identity and compliance checks on every transfer, independent transfer pause (set only by the admin; governance by deploy)          | Manager role held only by the vault, for mint, burn (per the RWA extension, §8.1) and escrow; compliance role held by the compliance authority, for freezes, plus legal transfers and recovery co-signed by the token admin; swapping the compliance or identity-verifier contract needs the admin and, after a one-time setup, waits for the vault's timelock, as do the token's upgrades, role grants and admin hand-overs. New rules must list the token and, if they answer `VaultBinding`, run on the vault's clock; as at setup, an external module that does not answer is accepted on trust. A new verifier must accept the vault. Both are checked when the swap is proposed and when it applies |
 | **Token roles**       | Access-control roles on the share token, checked directly via native access control: `manager` mints, burns and escrows; `compliance` freezes, and makes legal transfers and recoveries co-signed by the token admin                              | Granted and revoked by the token admin (governance by deploy). After a one-time setup, a grant, revoking `manager` and an admin handover wait for the vault's timelock; revoking `compliance` stays instant                                                                                                                                                                                                                                                                                                                                                                                              |
-| **Compliance module** | Implements the SEP-57 identity and rules interfaces the share token consults, with the allowlist as its only rule                                                                                         | The compliance authority writes the allowlist on the identity verifier. Governance runs the compliance contract as its admin: adding or removing a module and binding or unbinding a token are instant only during its one-time setup, and after it wait for the vault's timelock, cannot land while the vault is paused and never land during a wind-down. Replaceable by OZ's identity verifier and compliance contracts (with RWA Wizard modules). After setup, the token's swap waits for the vault's timelock, and new rules must list the token. OZ's compliance contract does not answer `VaultBinding`, so the swap, like the vault's setup, accepts it as an external module whose own governance is a trust assumption |
+| **Compliance module** | Implements the SEP-57 identity and rules interfaces the share token consults, with the allowlist as its only rule                                                                                         | The compliance authority writes the allowlist on the identity verifier. Governance runs the compliance contract as its admin: adding or removing a module and binding or unbinding a token are instant only during its one-time setup, and after it wait for the vault's timelock, cannot land while the vault is paused, and never land during a wind-down, except removing a module, which still waits the normal delay. Replaceable by OZ's identity verifier and compliance contracts (with RWA Wizard modules). After setup, the token's swap waits for the vault's timelock, and new rules must list the token. OZ's compliance contract does not answer `VaultBinding`, so the swap, like the vault's setup, accepts it as an external module whose own governance is a trust assumption |
 | **Authorities**       | governance (parameters, roles, timelocked upgrades), compliance (allowlist, token interventions), attestation (valuation only), treasury (reserve movements only), guardian (pause; never payable claims) | Each contract grants its own roles; the oracle's, share token's and verifier's admins and the oracle's attester and guardian are constructor parameters independent of the vault's roles, equal to governance, compliance and guardian by deploy only; treasury and guardian distinct, treasury and governance distinct, compliance distinct from governance and treasury; governance and guardian may coincide; the vault's manager role is unconstrained |
 | **Custodian**         | Off-chain party holding the real-world structure; a genesis-configured slot rotatable only by governance                                                                                                  | Not an on-chain authority                                                                                                                                                     |
 
@@ -320,9 +326,17 @@ the oracle and fixes one share price for every request it holds. Pricing is
 permissionless and refuses a feed that is not valid, so a sealed epoch waits
 rather than settling at a stale price, and no investor can choose their price.
 Claims round down one by one, so together they never pay more than pricing
-promised. When an epoch's last request settles, the remainder leaves
-`pending_mint_shares` and `committed` and stays in the reserve as fund money
-(`EpochReconciled` says how much).
+promised. Each side of an epoch releases its remainder once its own requests
+have settled: the share remainder leaves `pending_mint_shares` after the last
+deposit, the cash remainder leaves `committed` after the last redemption, and
+each is released once. The cash stays in the reserve as fund money. Each side
+says how much it released in its own event (`EpochSharesReconciled`,
+`EpochCashReconciled`), and `EpochReconciled` follows once both are done. So
+a refund for a deposit below one share never waits on cash its own epoch's
+redemptions left behind. A redemption priced at zero assets returns its
+shares, or burns them when the holder may not take them back, so it settles
+once the verifier answers; a verifier that fails instead of answering makes
+the claim wait rather than burn.
 
 The manager can seal the open epoch at any time. Once governance sets a minimum
 epoch duration — between 1 and 30 days — anyone may seal an epoch that has been
@@ -445,13 +459,55 @@ pricing, share and cash claims, mint, burn and forced transfer are unaffected.
 It is a trading restriction, not an emergency stop for the vault, and only
 governance lifts it.
 
+**A separate contract, not built into the oracle or the vault:** SEP-40 asks
+for a feed address that never changes. Governance can swap the vault's
+oracle, so a feed built into the oracle would get a new address with every
+swap; a feed built into the vault would add code to the contract that most
+needs to stay small, for a read many deployments never use. Reading
+`vault.oracle()` on every call keeps the feed's address stable across a swap,
+at the cost of about nine cross-contract calls per quote and serving whatever
+oracle governance has installed, with no delay of its own. The feed stores no
+admin either: each upgrade call reads the vault's current `governance()` and
+asks it to sign, the same way it reads the oracle, so an admin hand-over on
+the vault carries over to the feed with no step of its own, upgrades wait for
+the vault's timelock, and a vault that cannot name its governance leaves the
+feed with no way to upgrade.
+
 **Integrator surface:** the oracle exposes the attested share price directly:
 the latest report (`latest`), which returns `nav_per_share`, `expires_at`,
 `accepted_at`, `proof_hash` and `proof_uri`; the price alone (`nav_per_share`);
-and the acceptance time alone (`attested_at`). The
-SEP-40 feed named in section 4 is an adapter over that surface scheduled for
-Tranche 3 and is not implemented yet; integrators read the oracle's own
-interface today.
+and the acceptance time alone (`attested_at`). The optional SEP-40 feed named
+in section 4 is an adapter over that surface, in SEP-40's own terms: `base`
+and `assets` name the vault's deposit asset and share token, and both fail
+the call rather than guess if the vault cannot answer, since SEP-40 gives
+`base` no way to say "unknown" and `assets` follows it so the two never
+disagree. `lastprice`
+answers the share price while the vault's oracle is `Valid` and no wind-down
+is active, and `price(asset, ts)` answers only for a `ts` the standing report
+actually covers — the oracle keeps a single report, not a history, so an
+older NAV is not a price anyone could trade at today and no time-weighted
+average can be built from this feed alone. It gives no price once a
+wind-down starts: holders are then paid a pro-rata share of returning cash,
+not the NAV, so the NAV no longer says what a share is worth. It also gives
+no price while the oracle is stale or paused, or when any read it depends on
+fails; a vault pause or a proposed wind-down does not stop it, since the
+attested value still stands and a pause can be lifted. `resolution()` returns
+the current oracle's `freshness_duration`, and `PriceData.timestamp` is the
+report's `attested_at`, not rounded down to a multiple of the resolution as
+SEP-40's text prescribes: rounding would make a fresh report look older than
+it is, and the resolution itself changes whenever governance changes the
+window or swaps the oracle, so a consumer should check the timestamp against
+the ledger time on every read rather than cache the resolution. `resolution()`
+answers `0` when the vault or its oracle cannot be read — a real oracle never
+reports a zero window, so `0` only ever means the feed has no price either,
+and a consumer must check for it before dividing. `decimals()`
+is 14, as Stellar price feeds use; the kit keeps the NAV in WAD (18
+decimals), so the feed converts at the edge:
+`nav_per_share × 10^(share decimals − asset decimals) / 10^4`, rounded down,
+with an overflow or a non-positive result giving no price — precision below
+10^-14 of an asset unit per share is lost, and a share whose value rounds to
+zero has no price. Moving the NAV itself to 14 decimals is a separate
+decision.
 
 ### 8.6 Compliance
 
@@ -515,9 +571,9 @@ interface today.
 - A compliance module can block wind-down claims. A claim that surrenders shares
   burns them through the token, which calls the compliance contract's
   `destroyed` hook, so a module that starts failing during a wind-down blocks
-  those claims; it cannot be removed then, because removing a module waits for
-  the timelock and no timelocked change but a `compliance` grant applies during
-  a wind-down.
+  those claims until it is removed. Removing a module is let through the
+  timelock during a wind-down, the same way a `compliance` grant is; every
+  other timelocked change is refused for the rest of the wind-down.
 - Funding a vault that is winding down cannot be undone. What arrives first
   covers priced exits and refundable escrow; the surplus is taken by the next
   round and credited to holders, and no entrypoint returns it. Treasury sends
@@ -661,14 +717,14 @@ public surface given the vault address.
 | Boundary               | Risk                                           | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | ---------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Attestation authority  | Wrong or compromised reports misprice requests | The reporter is meant to be a multisig, never a single key; the deploy script does not create one yet (§8.10). The deviation cap bounds a single report in both directions, and a downward cap of 100% leaves `min_answer` as the only floor; the cooldown bounds frequency; a sustained sequence of biased reports within the cap remains possible, is bounded in speed, and is the monitoring plan's primary alert, with the guardian pause as the reactive control. Residual risk: value transfer between entry and exit cohorts. A compromised attester is replaced in this order: pause the NAV, revoke the attester (instant), grant a replacement (through the timelock after setup, so the NAV stays paused that long), clear the stored report, which would otherwise price epochs again once the pause lifts, then lift the pause ([`kit-spec.md`](./kit-spec.md) §3) |
-| Governance keys        | Malicious upgrade                              | Timelock on every code change and on the delay itself: at least seven days, never shorter than the standing notice, at most 90 days. The delay is an announcement period. A pause freezes the timelock clock and pushes the ETA back by the time paused, so the whole delay runs unpaused, and applying while paused is refused. The delay does not guarantee an exit before a change lands: an exit also needs a sealed epoch, a valid price accepted after the seal, and cash in the reserve to pay the claim. Nothing but a grant of the share token's `compliance` role is proposed or applied while the vault winds down, and no admin hand-over is accepted then. The vault's own custodian, role grants, `manager` revocations, admin handovers, lowering of the notice or the wind-down delay, and the minimum epoch duration in either direction wait on that clock once its one-time setup closes, and before then it takes no request, seals or prices no epoch, and proposes no wind-down; revoking its treasury or guardian stays instant. Setup closes only once the token and the oracle run on the vault's clock with their own setup closed, the vault is the token's only minter, no shares exist yet (shares minted earlier would redeem against depositors' money), the vault passes the identity check, its address is not frozen on the token, the token is bound to its compliance contract, the asset has the token's decimals, the asset, the token, the oracle and the vault are four different addresses, the oracle answers the feed interface, a custodian other than the vault is set, and the vault's own books are empty, with nothing requested, committed or owed in shares (a request booked earlier would be paid from depositors' money); the kit's own compliance contract must also run on the vault's clock with its setup closed. The share token's upgrades, grants, `manager` revocations, admin handovers and compliance or verifier swaps wait on the same clock once its setup closes; new rules must also list the token and, if they answer `VaultBinding`, run on that clock (an external module that does not answer is taken on trust, as at setup), and a new verifier must accept the vault. So do the oracle's upgrades, grants, admin handovers and every guardrail change except a shorter freshness window; its NAV pause, `clear_latest` and revoking its attester or guardian stay instant. On the kit's compliance contract, adding or removing a module, binding or unbinding a token and handing over the admin wait on the same clock once its setup closes. |
+| Governance keys        | Malicious upgrade                              | Timelock on every code change and on the delay itself: at least seven days, never shorter than the standing notice, at most 90 days. The delay is an announcement period. A pause freezes the timelock clock and pushes the ETA back by the time paused, so the whole delay runs unpaused, and applying while paused is refused. The delay does not guarantee an exit before a change lands: an exit also needs a sealed epoch, a valid price accepted after the seal, and cash in the reserve to pay the claim. Nothing but a grant of the share token's `compliance` role, or removing a compliance module, is proposed or applied while the vault winds down, and no admin hand-over is accepted then. The vault's own custodian, role grants, `manager` revocations, admin handovers, lowering of the notice or the wind-down delay, and the minimum epoch duration in either direction wait on that clock once its one-time setup closes, and before then it takes no request, seals or prices no epoch, and proposes no wind-down; revoking its treasury or guardian stays instant. Setup closes only once the token and the oracle run on the vault's clock with their own setup closed, the vault is the token's only minter, no shares exist yet (shares minted earlier would redeem against depositors' money), the vault passes the identity check, its address is not frozen on the token, the token is bound to its compliance contract, the asset has the token's decimals, the asset, the token, the oracle and the vault are four different addresses, the oracle answers the feed interface, a custodian other than the vault is set, and the vault's own books are empty, with nothing requested, committed or owed in shares (a request booked earlier would be paid from depositors' money); the kit's own compliance contract must also run on the vault's clock with its setup closed. The share token's upgrades, grants, `manager` revocations, admin handovers and compliance or verifier swaps wait on the same clock once its setup closes; new rules must also list the token and, if they answer `VaultBinding`, run on that clock (an external module that does not answer is taken on trust, as at setup), and a new verifier must accept the vault. So do the oracle's upgrades, grants, admin handovers and every guardrail change except a shorter freshness window; its NAV pause, `clear_latest` and revoking its attester or guardian stay instant. On the kit's compliance contract, adding or removing a module, binding or unbinding a token and handing over the admin wait on the same clock once its setup closes; removing a module still lands during a wind-down, after the normal delay, while every other change there is refused for the rest of it. |
 | Mis-wired deployment   | A vault goes live without every binding wired  | `health()` reports each wiring step; `finish_setup` refuses until all hold and its own books are empty, and the vault takes no request and moves no epoch before that                                                                                                                                                                                                                                                                                              |
 | Treasury keys          | Reserve drained                                | Only free reserve is movable, only to the genesis-configured custodian, verified on-chain; outbound transfers are blocked while anything is uncovered, and escrowed subscriptions never leave the vault                                                                                                                                                                                                                                                          |
 | Guardian keys          | Griefing via pause                             | Guardian can only pause the vault, which stops deposit requests, epoch pricing and upgrade application and freezes the upgrade timelock; it cannot halt redemptions, custodian deployments, or payable claims, nor move funds; governance unpauses and rotates the vault role. It holds no role on the share token: the token's transfer pause is admin-gated (governance by deploy), not a guardian lever. No contract keeps governance and guardian apart |
 | Share-token pause      | Secondary transfers halted                     | Controlled by governance (the token admin), never the guardian; it refuses SEP-41 transfers between holders only, never the vault's escrow moves, pricing, claims, mint, burn or forced transfer; only governance lifts it (§8.5) |
 | Compliance keys        | Wrongful delisting, freeze or transfer         | Delisted investors keep the exit-only cash path; freezes require the share token's compliance role and are auditable per operation; moving a holder's shares also needs governance's signature in the same call, lands only on an allowlisted account and never moves shares out of or into the vault's address, which cannot be frozen once the token knows its vault |
 | Vault's own listing    | Compliance delists the vault's address         | Share returns do not depend on it: the vault checks the holder itself and moves the shares as the token's manager. A delisted holder's conversion, which mints into the vault's escrow, waits until the vault is allowlisted again; nothing is lost, and `health().allowlisted` turns false |
-| Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics. Governance, the compliance contract's admin, adds and removes modules: instantly during its one-time setup, and after it only through the vault's timelock, so a change cannot land while the vault is paused and never lands during a wind-down. Removing a faulty module waits the same way, and during a wind-down it cannot be removed at all (§8.7) |
+| Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics. Governance, the compliance contract's admin, adds and removes modules: instantly during its one-time setup, and after it only through the vault's timelock, so a change cannot land while the vault is paused. Adding a module or binding a token never lands during a wind-down; removing one still waits the normal delay and lands then too, whether or not it is failing, so a faulty module is never stuck for good. Residual risk: the same power lets a compromised governance drop a working module's rule during a wind-down, when holders have the least room to react; the vault's own checks (allowlist, freeze, reserve coverage) are not modules and cannot be removed this way (§8.7) |
 | Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; a declared risk of the chosen asset, whose auth flags the deploy is meant to check and report at genesis (not built yet, §8.10). After a clawback the vault pays pending escrow first, then priced claims, and refuses the rest by name, new deposits included, until treasury funds the gap; the loss reaches holders through the NAV ([THREAT_MODEL X10](./THREAT_MODEL.md#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash)) |
 | Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                                                          |
 | Wind-down distribution | Unfinalized rounds stall distribution          | Finalizing a round is permissionless: once treasury returns capital, anyone can finalize the round to credit holders; the operator cannot stall payouts after funding                                                                                                                                                                                                                                                                                           |
@@ -712,7 +768,7 @@ evaluated (Templar, Untangled OctoVault, DeFindex).
 | SEP-41 token + SEP-57 RWA extensions (freeze, forced transfer, recovery) | OpenZeppelin stellar-tokens; the RWA Wizard scaffolds the regulated token  | Consumed and extended; the kit's compliance module implements the SEP-57 interfaces the token expects. Burn follows the RWA extension, not SEP-41 (§8.1)                               |
 | Synchronous tokenized vault                                              | SEP-56 / OZ Token Vault                                                    | Not a base for Strata: SEP-56 assumes the price exists at call time, so its interface cannot express a request lifecycle. Only OZ conversion and rounding math reused, as library code |
 | Access control, pausable, upgradeable                                    | OZ crates                                                                  | Consumed; pinned by exact version, audit coverage and gaps documented per component                                                                                                    |
-| Timelock for admin changes                                               | OZ `stellar-governance` timelock                                           | Not used. The kit's own `strata-timelock` crate: one clock for the four contracts, an ETA that a vault pause pushes back, a setup window, 7 to 90 day bounds, and no change but a share-token `compliance` grant lands during a wind-down |
+| Timelock for admin changes                                               | OZ `stellar-governance` timelock                                           | Not used. The kit's own `strata-timelock` crate: one clock for five contracts, with the feed, an ETA that a vault pause pushes back, a setup window, 7 to 90 day bounds, and no change but a share-token `compliance` grant lands during a wind-down |
 | Multisig and signing coordination                                        | Native Stellar + existing coordinators, OZ Role Manager                    | Integrated                                                                                                                                                                             |
 | Request lifecycle priced against attestations                            | Not provided (ERC-7540 on EVM, where OpenZeppelin ships an implementation) | Core of the kit                                                                                                                                                                        |
 | Guarded valuation oracle with freshness and pause                        | Not provided                                                               | Core of the kit                                                                                                                                                                        |

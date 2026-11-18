@@ -466,7 +466,7 @@ impl FailsEveryBurn {
 }
 
 #[test]
-fn a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed() {
+fn a_module_failing_on_burn_blocks_claims_until_removed_in_a_wind_down() {
     let f = setup();
     let holder = f.holder(500);
     let module = f.e.register(FailsEveryBurn, ());
@@ -481,15 +481,16 @@ fn a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed() {
     assert_eq!(f.balance(&holder), 0);
 
     let rules = ComplianceClient::new(&f.e, &f.share.compliance());
-    assert_eq!(
-        rules.try_propose_change(&ComplianceChange::RemoveModule(
-            ComplianceHook::Destroyed,
-            module,
-        )),
-        Err(Ok(
-            ::compliance::ComplianceContractError::WindDownActive.into()
-        ))
-    );
+    let id = rules.propose_change(&ComplianceChange::RemoveModule(
+        ComplianceHook::Destroyed,
+        module,
+    ));
+    f.advance(MIN_UPGRADE_DELAY);
+    rules.apply_change(&id);
+
+    let paid = f.vault.claim_wind_down(&holder);
+    assert!(paid > 0);
+    assert_eq!(f.shares(&holder), 0);
 }
 
 #[test]

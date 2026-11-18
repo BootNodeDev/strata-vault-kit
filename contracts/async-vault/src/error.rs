@@ -185,5 +185,12 @@ strata_bindings::error_enum! {
         /// the minimum epoch duration, or has no recorded start yet (setup is
         /// still open).
         MinEpochDurationNotElapsed = 6077,
+        /// The identity verifier failed instead of answering, so a claim
+        /// priced at zero assets cannot tell whether to return the shares or
+        /// burn them. Only `RWAError::IdentityVerificationFailed` (304) and
+        /// `IRSError::IdentityNotFound` (321) count as an answer; any other
+        /// error is a failure. Nothing moves; the request stays open for a
+        /// retry.
+        VerifierFailed = 6078,
     }
 }

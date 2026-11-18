@@ -3,11 +3,12 @@ import { beforeAll, describe, expect, it } from "vitest"
 
 import { SHORT_WIND_DOWN_DIR, deployThrowaway, wasmOf } from "./deploy.js"
 import { pay, trustline } from "./lib/accounts.js"
-import { units } from "./lib/amounts.js"
+import { price, units } from "./lib/amounts.js"
 import {
 	connectTo,
 	identityVerifier,
 	send,
+	sep40Feed,
 	shareToken,
 	usdcBalance,
 	vault,
@@ -17,6 +18,7 @@ import { network } from "./lib/network.js"
 import { waitForNotice } from "./lib/notice.js"
 import { attest, freshFeed } from "./lib/oracle.js"
 import { outcome } from "./lib/refused.js"
+import { stellarAsset } from "./lib/sep40.js"
 
 const net = network()
 if (net.name !== "local") {
@@ -137,7 +139,11 @@ describe("a wind-down on a throwaway vault", () => {
 	})
 
 	it("governance proposes the wind-down and anyone activates it", async () => {
+		await freshFeed(c, price(1))
 		expect(await submit("propose_wind_down", "governance")).toBe("accepted")
+		const feed = sep40Feed(c, c.keys.outsider)
+		const shareAsset = stellarAsset(c.deployment.contracts.share_token)
+		expect((await feed.lastprice({ asset: shareAsset })).result).not.toBeNull()
 		expect(
 			await call("request_deposit", "holder-1", {
 				holder: holder(),
@@ -145,6 +151,7 @@ describe("a wind-down on a throwaway vault", () => {
 			}),
 		).toBe("refused: WindDownAlreadyProposed")
 		expect(await submit("activate_wind_down", "outsider")).toBe("accepted")
+		expect((await feed.lastprice({ asset: shareAsset })).result).toBeNull()
 	})
 
 	it("anyone finalises a round and the holder claims", async () => {
