@@ -1088,8 +1088,10 @@ address gets in.
   `a_delisted_holder_can_still_queue_an_exit` and
   `a_delisted_holder_cannot_cancel_redemption_back_to_shares` in
   [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs);
-  `a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch`
-  and `a_conversion_waits_while_the_vault_is_delisted` in
+  `a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch`,
+  `a_conversion_waits_while_the_vault_is_delisted`,
+  `a_verifier_fault_for_one_holder_pays_the_priced_deposit_out_in_cash` and
+  `a_verifier_fault_for_every_address_fails_the_deposit_claim` in
   [`delisted.rs`](../contracts/async-vault/src/test/delisted.rs);
   `a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
