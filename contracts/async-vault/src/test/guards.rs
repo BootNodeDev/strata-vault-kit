@@ -631,26 +631,28 @@ fn escrow_covered_refuses_while_the_balance_is_below_the_escrow() {
 }
 
 #[test]
-fn eligible_to_receive_refuses_a_holder_the_token_would_not_take() {
+fn sent_back_refuses_a_holder_the_token_would_not_take() {
     let f = setup();
+    let redeemer = f.holder(10);
+    f.vault.request_redeem(&redeemer, &4);
     let listed = f.investor(0);
-    holds(&f, || guards::eligible_to_receive(&f.e, &listed, 1));
+    holds(&f, || guards::sent_back(&f.e, &listed, 1));
 
     let delisted = f.unverified_investor(0);
     refuses(&f, VaultError::HolderNotEligible, || {
-        guards::eligible_to_receive(&f.e, &delisted, 1)
+        guards::sent_back(&f.e, &delisted, 1)
     });
 
     let frozen = f.investor(0);
     f.share.set_address_frozen(&frozen, &true, &f.compliance);
     refuses(&f, VaultError::HolderNotEligible, || {
-        guards::eligible_to_receive(&f.e, &frozen, 1)
+        guards::sent_back(&f.e, &frozen, 1)
     });
 
     let module = f.e.register(RefusesEveryTransfer, ());
-    f.add_compliance_module(ComplianceHook::CanTransfer, &module);
+    f.add_compliance_module(ComplianceHook::Transferred, &module);
     refuses(&f, VaultError::HolderNotEligible, || {
-        guards::eligible_to_receive(&f.e, &listed, 1)
+        guards::sent_back(&f.e, &listed, 1)
     });
 }
 

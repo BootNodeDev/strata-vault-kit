@@ -69,7 +69,7 @@ use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
-use stellar_tokens::fungible::FungibleTokenClient;
+use stellar_tokens::fungible::{total_supply::FungibleTotalSupplyClient, FungibleTokenClient};
 use strata_bindings::VaultView;
 use strata_timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
@@ -244,9 +244,9 @@ impl AsyncVault {
     /// `pending_mint_shares`.
     pub fn total_economic_supply(e: &Env) -> i128 {
         let share_token = state::get_addr(e, &DataKey::ShareToken);
-        let client = FungibleTokenClient::new(e, &share_token);
-        let total_supply = client.total_supply();
-        let vault_escrow = client.balance(&e.current_contract_address());
+        let total_supply = FungibleTotalSupplyClient::new(e, &share_token).total_supply();
+        let vault_escrow =
+            FungibleTokenClient::new(e, &share_token).balance(&e.current_contract_address());
         let circulating = state::reduce(e, total_supply, vault_escrow);
         circulating
             .checked_add(state::pending_mint_shares(e))
@@ -854,7 +854,8 @@ impl AsyncVault {
     /// * `AlreadyClaimed` - The deposit was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The free reserve cannot cover a refund yet.
-    /// * `RWAError::MintNotCompliant` - The compliance rules refuse the mint.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   mint.
     /// * `RWAError::IdentityVerificationFailed` - The vault is delisted, for a
     ///   conversion.
     /// * The asset's own error when `holder` cannot receive a refund.
@@ -998,7 +999,6 @@ impl AsyncVault {
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
     /// * `VerifierFailed` - It pays nothing and the identity verifier fails.
-    /// * A compliance module's own error when it fails on that return.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
