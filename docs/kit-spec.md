@@ -152,8 +152,8 @@ Deploying the Strata Vault Kit involves six contracts configured via `environmen
 | **`nav_oracle`** | `config.cooldown_secs` | `u64` (seconds) | Minimum time between consecutive attestations. At least 1 s (`MIN_COOLDOWN_SECS`), so at most one report per ledger. At most `freshness_duration`, so a new report can always replace the last one before the freshness window ends | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Largest upward move per attestation, 1 to 10,000 | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_down_bps` | `u32` (basis points) | Largest downward move per attestation, 1 to 10,000; 10,000 lets a loss of any size land at once | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share, at least `MIN_ANSWER` ($`10^{12}`$, a millionth of an asset unit per share). An oracle upgraded in place with a stored `min_answer` below the floor keeps it; even its instant `set_config` (a shorter freshness window) is refused until a timelocked `Config` change raises it to the floor | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{18}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.min_answer` | `i128` (14 decimals) | Absolute floor price per share, at least `MIN_ANSWER` ($`10^{8}`$, a millionth of an asset unit per share). An oracle upgraded in place with a stored `min_answer` below the floor keeps it; even its instant `set_config` (a shorter freshness window) is refused until a timelocked `Config` change raises it to the floor | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.max_answer` | `i128` (14 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{14}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
 | **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC). Must have the share token's 7 decimals: `finish_setup` refuses with `SetupIncomplete` otherwise (`health().decimals_match`). Every classic Stellar asset has 7; a Soroban token with other decimals needs a fork of the share token | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `oracle` | `Address` | Deployed NAV oracle contract address | `async_vault.constructor_args` |
@@ -653,7 +653,8 @@ section that would be empty is left out, so a view has no `# Events` and no
 override keep OpenZeppelin's docs.
 
 - Amounts are in the asset's base units and shares in the share token's base
-  units. Prices are in WAD: asset base units per share base unit, times 10^18.
+  units. Prices are asset base units per share base unit, times 10^14 (14
+  decimals).
   Times and durations are in seconds; `live_until_ledger` is a ledger number.
 - An error named without its enum is the contract's own. Any other error
   carries its enum, as in `AccessControlError::Unauthorized`.

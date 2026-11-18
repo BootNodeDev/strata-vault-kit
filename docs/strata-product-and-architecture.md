@@ -501,13 +501,13 @@ the ledger time on every read rather than cache the resolution. `resolution()`
 answers `0` when the vault or its oracle cannot be read — a real oracle never
 reports a zero window, so `0` only ever means the feed has no price either,
 and a consumer must check for it before dividing. `decimals()`
-is 14, as Stellar price feeds use; the kit keeps the NAV in WAD (18
-decimals), so the feed converts at the edge:
-`nav_per_share × 10^(share decimals − asset decimals) / 10^4`, rounded down,
-with an overflow or a non-positive result giving no price — precision below
-10^-14 of an asset unit per share is lost, and a share whose value rounds to
-zero has no price. Moving the NAV itself to 14 decimals is a separate
-decision.
+is 14, as Stellar price feeds use, and the oracle and the vault keep
+`nav_per_share` at that same scale: asset base units per share base unit,
+times 10^14. The vault's setup requires the asset and the share token to have
+the same decimals, so the feed answers `nav_per_share` unchanged. With other
+decimals it would answer
+`nav_per_share × 10^(share decimals − asset decimals)`, rounded down, with an
+overflow or a non-positive result giving no price.
 
 ### 8.6 Compliance
 
