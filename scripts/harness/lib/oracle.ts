@@ -60,6 +60,25 @@ export async function attest(
 	}
 }
 
+const BPS = 10_000n
+
+// The oracle caps each rise at `max_up_bps` of the last report, stale or not,
+// so a scenario climbs from a lower price an earlier run left.
+export async function moveNavTo(c: Connected, nav: bigint): Promise<void> {
+	const reader = oracle(c, c.keys.outsider)
+	const maxUp = BigInt((await reader.config()).result.max_up_bps)
+	for (;;) {
+		const latest = await reader.latest()
+		const stored = outcome(latest, reader)
+		if (stored === "refused: NoRecord") return attest(c, nav)
+		if (stored !== "accepted") throw new Error(stored)
+		const last = latest.result.nav_per_share
+		const ceiling = last + (last * maxUp) / BPS
+		if (nav <= ceiling) return attest(c, nav)
+		await attest(c, ceiling, "step NAV")
+	}
+}
+
 // Deposits need a valid feed: a lapsed report is posted again at its own value.
 export async function freshFeed(c: Connected, fallback: bigint): Promise<void> {
 	const reader = oracle(c, c.keys.outsider)
