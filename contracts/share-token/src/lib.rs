@@ -1,8 +1,9 @@
 //! # Design
 //!
 //! The vault's share token: OpenZeppelin's RWA token, which checks identity and
-//! the compliance rules on every `transfer` and mint; forced transfers skip
-//! both. The kit adds its roles, its guards and the vault's timelock.
+//! runs the compliance rules on every `transfer`, mint and forced transfer; a
+//! forced transfer checks only the receiver's identity. The kit adds its roles,
+//! its guards and the vault's timelock.
 //!
 //! - **No clock of its own.** After setup, upgrades, grants, `manager` revokes,
 //!   hand-overs and swaps wait for the vault's timelock. The cost: a vault
@@ -10,8 +11,8 @@
 //!   only way to lift a freeze then; it waits the delay, and with the admin
 //!   its holder can still move wallet shares.
 //! - **Only the vault is manager.** It mints, burns and moves anyone's shares;
-//!   a forced move skips the token's checks, so the vault checks receivers. The
-//!   cost: granting it waits; revoking too, as claims need it.
+//!   a forced move skips freezes, so the vault checks receivers. The cost:
+//!   granting it waits; revoking too, as claims need it.
 //! - **Two signers move a holder's shares.** A legal transfer or recovery needs
 //!   `compliance` and the admin, as two accounts. The cost: an order needs
 //!   both. A zero-share order passes and is published.
@@ -20,8 +21,9 @@
 //!   it holds others' escrow. The cost: orders cannot reach escrow; a frozen
 //!   holder's exits wait.
 //! - **The pause halts trading only.** The admin's transfer pause stops
-//!   `transfer` and `transfer_from`; mints, burns, escrow moves and legal
-//!   transfers go on. The cost: it is no emergency stop for the vault.
+//!   `transfer`, `transfer_from` and `batch_transfer`; mints, burns, escrow
+//!   moves and legal transfers go on. The cost: it is no emergency stop for
+//!   the vault.
 //! - **A swap must fit the vault.** New rules must list this token, and rules
 //!   that answer `VaultBinding` must run on the vault's clock with their setup
 //!   closed; a new verifier must accept the vault. Both are checked when

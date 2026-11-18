@@ -143,7 +143,9 @@ pub(crate) fn queue_escrowed(e: &Env, holder: &Address, shares: i128) -> u64 {
     epoch_id
 }
 
-/// Clears the request once its escrowed shares are back with the holder.
+/// Once the escrowed shares are back with the holder, removes the request,
+/// takes its shares off the epoch's `total_shares_redeeming` and publishes
+/// `RedeemCancelled`.
 fn shares_returned(e: &Env, holder: &Address, epoch_id: u64, shares: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));

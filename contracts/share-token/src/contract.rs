@@ -221,8 +221,7 @@ impl ShareToken {
         governance::pending(e)
     }
 
-    /// Moves shares under a legal order, at once. The pause, freezes and the
-    /// compliance rules' check do not apply.
+    /// Moves shares under a legal order, at once, past the pause and freezes.
     ///
     /// # Arguments
     ///
@@ -241,6 +240,7 @@ impl ShareToken {
     /// * `RWAError::IdentityVerificationFailed` - `to` is not allowlisted.
     /// * `RWAError::InsufficientBalance` - `amount` exceeds the balance.
     /// * `FungibleTokenError::LessThanZero` - `amount` is negative.
+    /// * A compliance module's own error - A module refuses this `Forced` move.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events
@@ -807,9 +807,10 @@ impl RWAToken for ShareToken {
     }
 
     /// Moves shares without the sender's signature: the vault escrows
-    /// redemptions and returns escrow through it. The pause, freezes and the
-    /// compliance rules' check do not apply; the receiver must pass the
-    /// identity check. Compliance moves shares with `legal_transfer` instead.
+    /// redemptions and returns escrow through it. The pause and freezes do not
+    /// apply; the receiver must pass the identity check, and compliance
+    /// modules see the move as `TransferKind::Forced` and can refuse it.
+    /// Compliance moves shares with `legal_transfer` instead.
     ///
     /// # Arguments
     ///
@@ -824,6 +825,7 @@ impl RWAToken for ShareToken {
     /// * `RWAError::IdentityVerificationFailed` - `to` is not allowlisted.
     /// * `RWAError::InsufficientBalance` - `amount` exceeds `from`'s balance.
     /// * `FungibleTokenError::LessThanZero` - `amount` is negative.
+    /// * A compliance module's own error - The compliance rules refuse it.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events

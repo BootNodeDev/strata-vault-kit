@@ -925,7 +925,8 @@ impl AsyncVault {
     ///   runs.
     /// * `NotAllowlisted` - `holder` is delisted.
     /// * `Frozen` - `holder` is frozen.
-    /// * `HolderNotEligible` - The compliance rules refuse the return.
+    /// * `HolderNotEligible` - The return fails, as when the compliance rules
+    ///   refuse it.
     ///
     /// # Events
     ///
@@ -957,6 +958,9 @@ impl AsyncVault {
     ///   already.
     /// * `AmountTooLarge` - A total would overflow.
     /// * `RWAError::InsufficientBalance` - `shares` exceeds the balance.
+    /// * `RWAError::IdentityVerificationFailed` - The vault is delisted.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   escrow move.
     ///
     /// # Events
     ///

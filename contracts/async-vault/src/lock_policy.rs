@@ -120,10 +120,10 @@ pub(crate) fn refused_with(standing: Standing) -> VaultError {
 /// Sends escrowed shares back to the holder when the holder may hold them.
 /// It moves them as the token's manager, so neither the vault's listing nor
 /// the token pause applies, while the compliance rules still judge the move.
-/// Returns whether they moved; a move the rules refuse rolls back. A verifier
-/// that fails fails the caller, so no verifier fault is read as a refusal.
-/// A module sees the return as `TransferKind::Forced`, so a module that must
-/// restrict who receives shares must not exempt `Forced`.
+/// Returns whether they moved: any move that fails rolls back and reads as
+/// "may not", whether a module refused it or failed. A verifier that fails
+/// fails the caller, so no verifier fault is read as a refusal.
+/// Module authors: see the compliance matrix (`docs/COMPLIANCE_MATRIX.md`).
 pub(crate) fn send_back(e: &Env, holder: &Address, shares: i128) -> bool {
     let token = state::get_addr(e, &DataKey::ShareToken);
     let share = RWATokenClient::new(e, &token);
