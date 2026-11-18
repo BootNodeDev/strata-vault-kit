@@ -14,7 +14,13 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
-import { attest, freshFeed, navInput, SAMPLE_PROOF_URI } from "./lib/oracle.js"
+import {
+	attest,
+	freshFeed,
+	moveNavTo,
+	navInput,
+	SAMPLE_PROOF_URI,
+} from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 import { stellarAsset } from "./lib/sep40.js"
 
@@ -30,6 +36,7 @@ const { compliance, custodian, outsider, issuer, manager, treasury } = c.keys
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
 const each = () => usdc(100)
+const nav = price(2)
 
 const reader = vault(c, outsider)
 const vaultId = c.deployment.contracts.async_vault
@@ -40,6 +47,7 @@ const epochStatus = async (id: bigint) =>
 
 beforeAll(async () => {
 	decimals = (await shareToken(c, outsider).decimals()).result
+	await moveNavTo(c, nav)
 })
 
 describe("setup", () => {
@@ -152,7 +160,6 @@ describe("subscription", () => {
 	})
 })
 
-const nav = price(2)
 let redemptionEpoch = 0n
 const redeemed = new Map<string, bigint>()
 

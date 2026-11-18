@@ -14,7 +14,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
-import { attest, freshFeed, navInput } from "./lib/oracle.js"
+import { attest, freshFeed, moveNavTo, navInput } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -37,6 +37,8 @@ const {
 
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
+const firstPrice = price(2)
+const secondPrice = (price(2) * 105n) / 100n
 
 const reader = vault(c, outsider)
 const feed = oracle(c, outsider)
@@ -67,6 +69,7 @@ beforeAll(async () => {
 			}),
 		)
 	}
+	await moveNavTo(c, firstPrice)
 })
 
 describe("an account with no role", () => {
@@ -409,8 +412,6 @@ describe("who may subscribe", () => {
 	})
 })
 
-const firstPrice = price(2)
-const secondPrice = (price(2) * 105n) / 100n
 let epochA = 0n
 let epochB = 0n
 
