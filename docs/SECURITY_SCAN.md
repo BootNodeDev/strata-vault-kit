@@ -29,10 +29,13 @@ own label; the triage is ours.
   positive or behaviour the design chose.
 - One new bug, rated low: a zero-asset redemption from a delisted holder stays
   stuck ([#445](https://github.com/BootNodeDev/strata-vault-kit/issues/445)).
+  Fixed in [#458](https://github.com/BootNodeDev/strata-vault-kit/pull/458).
 - Certora proved the pricing and oracle guard math, reproduced the known
   [#434](https://github.com/BootNodeDev/strata-vault-kit/issues/434), and showed
   the state behind [#435](https://github.com/BootNodeDev/strata-vault-kit/issues/435)
-  is reachable. Both are medium bugs, open, and in the remediation plan.
+  is reachable. Both are medium bugs, fixed in
+  [#458](https://github.com/BootNodeDev/strata-vault-kit/pull/458) and
+  [#459](https://github.com/BootNodeDev/strata-vault-kit/pull/459).
 
 Triage values: **Fixed** (with its PR), **Open** (with its issue), **False
 positive** (the tool is wrong, and why), **Accepted** (the tool is right about
@@ -169,7 +172,7 @@ grouped into 16 kinds, and each kind was checked against Strata.
 
 | Kind | Example in the portal | Triage | Why | Where we checked |
 | --- | --- | --- | --- | --- |
-| A zero-asset redemption from a blocked holder stays stuck (P0A) | Found while checking rounding and claims | Open: [#445](https://github.com/BootNodeDev/strata-vault-kit/issues/445), low | Returning the shares needs an eligible holder, and cancelling is closed once the epoch is priced. The epoch then never reconciles, which also defeats the fix planned for #434. | `contracts/async-vault/src/redeem.rs` `claim` → `deliver`; `contracts/async-vault/src/guards.rs:356-365` |
+| A zero-asset redemption from a blocked holder stays stuck (P0A) | Found while checking rounding and claims | Fixed: [#445](https://github.com/BootNodeDev/strata-vault-kit/issues/445) in [#458](https://github.com/BootNodeDev/strata-vault-kit/pull/458), low | Returning the shares needs an eligible holder, and cancelling is closed once the epoch is priced. The epoch then never reconciles, which also defeats the fix for #434. The fix burns the shares and settles the request when the identity verifier answers that the holder is not eligible, as a wind-down claim does. | `contracts/async-vault/src/redeem.rs` `claim` → `deliver`; `contracts/async-vault/src/guards.rs:356-365` |
 | Missing signature check | #735 Reflector | False positive | Every entrypoint that moves funds or changes state asks the holder or the role holder to sign first. | `contracts/async-vault/src/deposit.rs:21`; `redeem.rs:17`; `lib.rs:1062` |
 | Admin takeover or renounce | #746 Verseprop | False positive | `renounce_admin` always refuses, `set_role_admin` refuses, and a new admin goes through the timelock and must accept. | `contracts/async-vault/src/lib.rs:1223, 1236` |
 | Unauthorized upgrade | #305 Wombat, #456 Axelar | False positive | An upgrade is a timelocked change, checked when proposed and when applied. | `contracts/async-vault/src/governance.rs:270-274` |
@@ -181,7 +184,7 @@ grouped into 16 kinds, and each kind was checked against Strata.
 | Decimals mismatch between asset and shares | #484 Untangled, #841 HiYield | False positive | Setup requires the asset and the share token to have the same decimals. | `contracts/async-vault/src/governance.rs:215` |
 | Arithmetic overflow | #494, #676 | False positive | The release build has `overflow-checks = true`, and pricing uses checked math that fails with `AmountTooLarge`. | `Cargo.toml:11`; `contracts/async-vault/src/pricing.rs:24` |
 | Missing value read as zero | #773 OctoLend | False positive | A default of zero is used only for running totals that start at zero; a missing contract address aborts with `NotInitialized`. | `contracts/async-vault/src/state.rs:72, 142, 152, 172, 180` |
-| Stale or manipulated price | #1025, #1038 Peridot | False positive | The vault prices only when the oracle reports a valid state, and the oracle enforces expiry, the band, the maximum move and the cooldown. The known gap is #435. | `contracts/async-vault/src/epoch.rs:33-36`; `contracts/nav-oracle/src/guards.rs:142-150` |
+| Stale or manipulated price | #1025, #1038 Peridot | False positive | The vault prices only when the oracle reports a valid state, and the oracle enforces expiry, the band, the maximum move and the cooldown. The known gap was #435, fixed in [#459](https://github.com/BootNodeDev/strata-vault-kit/pull/459). | `contracts/async-vault/src/epoch.rs:33-36`; `contracts/nav-oracle/src/guards.rs:142-150` |
 | Failing call to another contract | #1022 Peridot | False positive | Calls to the oracle and the verifier use the `try_` form and turn a failure into a named error or a safe default (the holder treated as delisted). | `contracts/async-vault/src/pricing.rs:48`; `epoch.rs:33`; `lock_policy.rs:27` |
 | Share price inflation by donation | #801 Alula, #486, #1036 | False positive | The share price comes from the oracle, not the vault's balance. A donation can only use up the deposit cap. | `contracts/async-vault/src/pricing.rs:42-55` |
 | Claiming twice | #920 Matrixdock, #1019 Peridot | False positive | Each request is marked claimed when paid and refused afterwards. | `contracts/async-vault/src/deposit.rs:95`; `redeem.rs:88`; `wind_down.rs:239` |
@@ -205,8 +208,8 @@ and the jobs are not committed; each line gives the job id.
 | A new price sits inside the band | oracle | Proven | No finding | `band_guard_enforces_band` · c4b67354 |
 | Only a valid oracle config is accepted | oracle | Proven | No finding | `config_guard_admits_only_valid` · e9b55faa |
 | A new report waits for the cooldown | oracle | Proven | No finding | `cooldown_guard_enforces_wait` · 439001d7 · 6ca705ec |
-| A zero-share deposit refund can be blocked by cash dust | vault | Violated | Open: [#434](https://github.com/BootNodeDev/strata-vault-kit/issues/434) | `issue434_core_refund_covered` · a8adccfa · 2fe243c2 |
-| A stale report inside its cooldown, with a valid fresh one refused | oracle | Reachable | Open: [#435](https://github.com/BootNodeDev/strata-vault-kit/issues/435) | `stale_in_cooldown_state_reachable` · 08800b56 |
+| A zero-share deposit refund can be blocked by cash dust | vault | Violated | Fixed: [#434](https://github.com/BootNodeDev/strata-vault-kit/issues/434) in [#458](https://github.com/BootNodeDev/strata-vault-kit/pull/458) | `issue434_core_refund_covered` · a8adccfa · 2fe243c2 |
+| A stale report inside its cooldown, with a valid fresh one refused | oracle | Reachable | Fixed: [#435](https://github.com/BootNodeDev/strata-vault-kit/issues/435) in [#459](https://github.com/BootNodeDev/strata-vault-kit/pull/459) | `stale_in_cooldown_state_reachable` · 08800b56 |
 | Epoch fulfil, end-of-epoch cleanup, full deposit and claim flows | vault | No result | Not decided | 5f779e40 · 9f195846 · 64042512 · 77518228 |
 | Free reserve is never negative | vault | No result | Not decided | `free_reserve_never_negative` · 9c0cd8f7 |
 | A full `attest`: pause, expiry, signer, stored report | oracle | No result | Not decided | `attest_can_succeed` · e4f92083 |
@@ -219,14 +222,14 @@ share token the prover reverts the token's call to the compliance contract.
 
 ## Remediation plan
 
-Every critical, high and medium finding from Scout and Almanax is closed. What
-stays open is the three bugs the sweep found or confirmed, and two
-recommendations. Each open bug is fixed before the audit starts.
+Every critical, high and medium finding from Scout and Almanax is closed. The
+three bugs the sweep found or confirmed are fixed. What stays open is two
+recommendations.
 
 | Item | Severity | Fix | Who | Tracked in | By |
 | --- | --- | --- | --- | --- | --- |
-| A zero-share deposit refund blocked by cash dust | Medium | Release the dust so the refund pays, in the same change as the next row | Strata team (BootNode) | [#434](https://github.com/BootNodeDev/strata-vault-kit/issues/434) | Before the audit starts |
-| A zero-asset redemption from a delisted holder stays stuck (P0A) | Low | Let the request settle when the holder cannot receive its shares, for example by burning them as a wind-down claim does, so the epoch reconciles | Strata team (BootNode) | [#445](https://github.com/BootNodeDev/strata-vault-kit/issues/445) | With #434 |
-| A stale report cannot be replaced inside its cooldown | Medium | Let a fresh report replace an expired one before the cooldown ends | Strata team (BootNode) | [#435](https://github.com/BootNodeDev/strata-vault-kit/issues/435) | Before the audit starts |
+| A zero-share deposit refund blocked by cash dust | Medium | Each side of an epoch releases its rounding remainder once its own last request settles, so the refund pays; in the same change as the next row | Strata team (BootNode) | [#434](https://github.com/BootNodeDev/strata-vault-kit/issues/434) | Fixed in [#458](https://github.com/BootNodeDev/strata-vault-kit/pull/458) |
+| A zero-asset redemption from a delisted holder stays stuck (P0A) | Low | Burn the shares and settle the request when the identity verifier answers that the holder is not eligible, as a wind-down claim does, so the epoch reconciles. Any other verifier failure refuses the claim and leaves the request open | Strata team (BootNode) | [#445](https://github.com/BootNodeDev/strata-vault-kit/issues/445) | Fixed in [#458](https://github.com/BootNodeDev/strata-vault-kit/pull/458) |
+| A stale report cannot be replaced inside its cooldown | Medium | Refuse a report that would expire before the cooldown ends, so a stale report can always be replaced at once. A timelocked raise of the cooldown can still leave a short stale window, no longer than the new cooldown ([O4](./THREAT_MODEL.md#o4-the-feed-goes-stale)) | Strata team (BootNode) | [#435](https://github.com/BootNodeDev/strata-vault-kit/issues/435) | Fixed in [#459](https://github.com/BootNodeDev/strata-vault-kit/pull/459) |
 | Who picks the pricing report (A4) | Medium (Almanax), accepted | Run a keeper that fulfils each epoch as soon as its notice ends | The operator of each deployment | [O13](./THREAT_MODEL.md#o13-choosing-which-report-prices-an-epoch); [STRIDE Tamper.3.R.2](./STRIDE-threat-model.md#what-are-we-going-to-do-about-it) | Before going live |
 | Rules Certora could not decide | Not decided | Rerun with a verification-only mock of the compliance call, and once the prover reads stored structs back | Strata team (BootNode) | [STRIDE IP.7](./STRIDE-threat-model.md#investigation-points) | No date |
