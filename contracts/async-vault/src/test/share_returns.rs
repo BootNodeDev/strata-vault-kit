@@ -33,30 +33,6 @@ impl FailsEveryTransferCheck {
     }
 }
 
-/// An identity verifier that fails every check with one contract error code.
-#[contract]
-struct VerifierFailingWith;
-
-#[contractimpl]
-impl VerifierFailingWith {
-    pub fn __constructor(e: Env, code: u32) {
-        e.storage().instance().set(&symbol_short!("code"), &code);
-    }
-
-    pub fn verify_identity(e: Env, _account: Address) {
-        let code: u32 = e.storage().instance().get(&symbol_short!("code")).unwrap();
-        e.panic_with_error(soroban_sdk::Error::from_contract_error(code));
-    }
-}
-
-/// Points the share token at a verifier that fails every check with `code`.
-fn verifier_failing_with(f: &Fixture, code: u32) {
-    let verifier = f.e.register(VerifierFailingWith, (code,));
-    f.e.as_contract(&f.share.address, || {
-        RWA::set_identity_verifier(&f.e, &verifier)
-    });
-}
-
 /// A holder with one share escrowed in a redemption priced at half a unit a
 /// share, which pays nothing.
 fn worthless_exit(f: &Fixture) -> (Address, u64) {
@@ -258,7 +234,7 @@ fn a_worthless_exit_waits_while_the_compliance_rules_cannot_answer() {
 fn a_worthless_exit_burns_for_a_holder_with_no_identity() {
     let f = setup();
     let (holder, epoch) = worthless_exit(&f);
-    verifier_failing_with(&f, IRSError::IdentityNotFound as u32);
+    f.verifier_failing_with(IRSError::IdentityNotFound as u32, None);
 
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
 
@@ -283,7 +259,7 @@ fn a_worthless_exit_waits_while_the_verifier_fails_with_any_other_code() {
     ] {
         let f = setup();
         let (holder, epoch) = worthless_exit(&f);
-        verifier_failing_with(&f, code);
+        f.verifier_failing_with(code, None);
 
         refused(
             f.vault.try_claim_redeem(&holder, &epoch),
