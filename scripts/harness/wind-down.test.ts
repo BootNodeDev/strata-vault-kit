@@ -104,7 +104,7 @@ describe("a wind-down on a throwaway vault", () => {
 	const holder = () => c.keys["holder-1"].publicKey()
 
 	it("a holder subscribes, is priced and claims shares", async () => {
-		await freshFeed(c, 2n * 10n ** 18n)
+		await freshFeed(c, price(2))
 		expect(
 			await submit("request_deposit", "holder-1", {
 				holder: holder(),
@@ -116,7 +116,7 @@ describe("a wind-down on a throwaway vault", () => {
 				caller: c.keys.manager.publicKey(),
 			}),
 		).toBe("accepted")
-		await attest(c, 2n * 10n ** 18n)
+		await attest(c, price(2))
 		await waitForNotice(c, vault(c, c.keys.outsider), 1n)
 		expect(await submit("fulfill_epoch", "outsider", { epoch_id: 1n })).toBe(
 			"accepted",

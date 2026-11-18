@@ -81,7 +81,9 @@ export function networkStatus(
 }
 
 export const AMOUNT_DECIMALS = 7 as const
-export const PRICE_DECIMALS = 18 as const
+export const PRICE_DECIMALS = 14 as const
+/** A share price of one asset base unit per share base unit. */
+export const PRICE_SCALE = 10n ** BigInt(PRICE_DECIMALS)
 export type Decimals = typeof AMOUNT_DECIMALS | typeof PRICE_DECIMALS
 
 declare const scale: unique symbol
@@ -89,7 +91,7 @@ declare const scale: unique symbol
 export type Scaled<D extends Decimals> = bigint & { readonly [scale]: D }
 /** Asset units and share counts, scaled by `AMOUNT_DECIMALS`. */
 export type Amount = Scaled<typeof AMOUNT_DECIMALS>
-/** WAD share price, scaled by `PRICE_DECIMALS`. */
+/** Share price, scaled by `PRICE_DECIMALS`. */
 export type Price = Scaled<typeof PRICE_DECIMALS>
 
 /**

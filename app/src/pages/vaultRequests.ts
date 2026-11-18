@@ -4,6 +4,7 @@ import {
 	formatDayMonth,
 	formatExact,
 	type Price,
+	PRICE_SCALE,
 } from "@stellar-scaffold/app-lib"
 import {
 	type RequestAction,
@@ -55,8 +56,6 @@ export type LoadedRequests = {
 
 export type EntriesByStage = Record<RequestStage, RequestEntry[]>
 
-const WAD = 10n ** 18n
-
 const stageTone: Record<RequestStage, RequestTone> = {
 	waiting: "pending",
 	ready: "claimable",
@@ -80,8 +79,8 @@ export const owedAmount = (
 	price: Price,
 ): Amount =>
 	(side === "deposit"
-		? (amount * WAD) / price
-		: (amount * price) / WAD) as Amount
+		? (amount * PRICE_SCALE) / price
+		: (amount * price) / PRICE_SCALE) as Amount
 
 const hasValidPrice = (price: Price): boolean => price > 0n
 

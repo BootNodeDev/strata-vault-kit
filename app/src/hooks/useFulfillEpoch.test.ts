@@ -17,7 +17,7 @@ vi.mock("../config/clients", () => ({
 }))
 
 const epochId = 4n
-const sharePrice = 1_250_000_000_000_000_000n
+const sharePrice = 125_000_000_000_000n
 
 const renderFulfillEpoch = () => renderWithWallet(useFulfillEpoch)
 

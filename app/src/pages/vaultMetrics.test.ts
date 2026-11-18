@@ -160,7 +160,7 @@ describe("toAuthorityRows", () => {
 describe("toPriceMetric", () => {
 	const attestedAt = BigInt(Date.UTC(2026, 8, 16) / 1000)
 	const expiresAt = BigInt(Date.UTC(2026, 8, 20) / 1000)
-	const price = 1500000000000000000n as Price
+	const price = 150000000000000n as Price
 
 	it("renders the attested price and attestation date when valid", () => {
 		const nav: NavClassification = { status: "valid", price, attestedAt }

@@ -179,7 +179,7 @@ describe("TransactionModal, pricing an epoch", () => {
 	it("shows the share price the vault settled at once confirmed, to four places", () => {
 		renderFulfillEpochModal({
 			status: "confirmed",
-			sharePrice: 1_250_000_000_000_000_000n as Price,
+			sharePrice: 125_000_000_000_000n as Price,
 			hash: "b".repeat(64),
 		})
 

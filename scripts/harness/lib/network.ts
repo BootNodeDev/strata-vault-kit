@@ -1,6 +1,6 @@
 import { Networks } from "@stellar/stellar-sdk"
 
-import { WAD } from "./amounts.js"
+import { PRICE_SCALE } from "./amounts.js"
 
 export type NetworkName = "local" | "testnet"
 
@@ -35,8 +35,8 @@ export interface Network {
 const band = {
 	max_up_bps: 1000,
 	max_down_bps: 10_000,
-	min_answer: (WAD / 2n).toString(),
-	max_answer: (WAD * 100n).toString(),
+	min_answer: (PRICE_SCALE / 2n).toString(),
+	max_answer: (PRICE_SCALE * 100n).toString(),
 }
 
 // The quickstart image's standalone root key. Public, and worthless off a laptop.

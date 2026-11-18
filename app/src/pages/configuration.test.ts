@@ -1,4 +1,4 @@
-import { type Amount } from "@stellar-scaffold/app-lib"
+import { type Amount, PRICE_SCALE } from "@stellar-scaffold/app-lib"
 import { describe, expect, it } from "vitest"
 import { type Grant } from "../hooks/useAdminAuthority"
 import { type ConfigurationState } from "../hooks/useConfigurationState"
@@ -16,7 +16,6 @@ const CUSTODIAN = "CACAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAIBAEAQCAINCW"
 const COMPLIANCE = "CACQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQKBIFAUCQLC2U"
 const VERIFIER = "CADAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMBQGAYDAMSST"
 const DAY = 86_400n
-const PRICE_ONE = 10n ** 18n
 
 const grantOf = (role: string, overrides: Partial<Grant> = {}): Grant => ({
 	role,
@@ -47,8 +46,8 @@ const ready = (
 		cooldown: 3_600n,
 		maxUpBps: 1_000,
 		maxDownBps: 500,
-		min: PRICE_ONE / 2n,
-		max: 2n * PRICE_ONE,
+		min: PRICE_SCALE / 2n,
+		max: 2n * PRICE_SCALE,
 	},
 	compliance: COMPLIANCE,
 	identityVerifier: VERIFIER,
@@ -639,8 +638,8 @@ describe("toConfigurationActions", () => {
 			cooldown_secs: 3_600n,
 			max_up_bps: 500,
 			max_down_bps: 500,
-			min_answer: PRICE_ONE / 2n,
-			max_answer: 2n * PRICE_ONE,
+			min_answer: PRICE_SCALE / 2n,
+			max_answer: 2n * PRICE_SCALE,
 		})
 	})
 
