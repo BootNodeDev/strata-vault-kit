@@ -22,7 +22,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contractmeta, contracttype, panic_with_error, Address, Env,
+    contract, contractevent, contractimpl, contractmeta, contracttype, panic_with_error, Address,
+    Env,
 };
 
 contractmeta!(
@@ -36,6 +37,13 @@ use stellar_tokens::rwa::{identity_verification, RWAError};
 #[contracttype]
 enum DataKey {
     Allowed(Address),
+}
+
+#[contractevent]
+pub struct AllowedSet {
+    #[topic]
+    pub account: Address,
+    pub allowed: bool,
 }
 
 #[contract]
@@ -64,13 +72,18 @@ impl IdentityVerifier {
     /// * `account` - The account.
     /// * `allowed` - True adds it, false removes it.
     ///
+    /// # Events
+    ///
+    /// * `AllowedSet`, on every call, even when the answer does not change.
+    ///
     /// # Authorization
     ///
     /// The admin signs.
     #[only_admin]
     pub fn allow(e: &Env, account: Address, allowed: bool) {
         strata_storage::bump_instance(e);
-        strata_storage::set_persistent(e, &DataKey::Allowed(account), &allowed);
+        strata_storage::set_persistent(e, &DataKey::Allowed(account.clone()), &allowed);
+        AllowedSet { account, allowed }.publish(e);
     }
 
     /// Whether `account` is on the allowlist.

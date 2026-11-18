@@ -4,9 +4,9 @@ use super::*;
 use soroban_sdk::{
     testutils::{
         storage::Instance as _, storage::Persistent as _, Address as _, AuthorizedFunction,
-        AuthorizedInvocation, Ledger as _, MockAuth, MockAuthInvoke,
+        AuthorizedInvocation, Events as _, Ledger as _, MockAuth, MockAuthInvoke,
     },
-    Address, Env, IntoVal, Symbol, Val, Vec,
+    Address, Env, Event as _, IntoVal, Symbol, Val, Vec,
 };
 use strata_storage::{INSTANCE_EXTEND_AMOUNT, PERSISTENT_EXTEND_AMOUNT};
 
@@ -119,6 +119,46 @@ fn only_admin_can_allow() {
     e.mock_all_auths();
     client.allow(&investor, &false);
     assert!(!client.is_allowed(&investor));
+}
+
+#[test]
+fn listing_an_address_publishes_its_new_answer() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let investor = Address::generate(&e);
+    let id = e.register(IdentityVerifier, (Address::generate(&e),));
+
+    IdentityVerifierClient::new(&e, &id).allow(&investor, &true);
+
+    assert_eq!(
+        e.events().all().filter_by_contract(&id),
+        [AllowedSet {
+            account: investor,
+            allowed: true,
+        }
+        .to_xdr(&e, &id)]
+    );
+}
+
+#[test]
+fn delisting_an_address_publishes_its_new_answer() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let investor = Address::generate(&e);
+    let id = e.register(IdentityVerifier, (Address::generate(&e),));
+    let client = IdentityVerifierClient::new(&e, &id);
+    client.allow(&investor, &true);
+
+    client.allow(&investor, &false);
+
+    assert_eq!(
+        e.events().all().filter_by_contract(&id),
+        [AllowedSet {
+            account: investor,
+            allowed: false,
+        }
+        .to_xdr(&e, &id)]
+    );
 }
 
 #[test]
