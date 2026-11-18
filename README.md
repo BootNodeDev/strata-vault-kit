@@ -168,7 +168,7 @@ lists the TTL tests for every contract.
 ## Asset metadata (SEP-1)
 
 [`stellar.toml`](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0001.md)
-is the file wallets and explorers check to show who issues the share token and
+is the file explorers check to show who issues the share token and
 to link its latest attestation. `npm run sep1 -w scripts/harness` generates
 one from a deployment: it reads the share token's name, symbol and decimals,
 the network, and the oracle's latest `proof_uri`, and writes
@@ -219,15 +219,44 @@ already serves a `stellar.toml` for other currencies must merge the share
 token's `[[CURRENCIES]]` entry into it rather than publish the generated file
 as is.
 
-SEP-1 ties a domain to an account through that account's `home_domain`. The
-share token is a SEP-41 contract, which has no `home_domain`, so how a wallet
-is meant to find this file for a contract token is not settled by this
-command.
-
 [`docs/sep1/stellar.template.toml`](./docs/sep1/stellar.template.toml) is the
 template with every field open; [`docs/sep1/stellar.testnet.toml`](./docs/sep1/stellar.testnet.toml)
 is an example generated from the team's testnet deployment, with the operator
 fields still placeholders.
+
+### Showing the share token in wallets
+
+Publishing the file is not enough. Under SEP-1, a wallet finds the file through
+an account's `home_domain`, and the share token is a contract, which has none.
+No standard links a contract to a domain yet, so wallets and explorers use
+other sources. As of November 2026:
+
+- Varial (formerly Freighter) reads `name()`, `symbol()` and `decimals()` from
+  the contract, and takes the icon and the "Verified" label only from
+  [SEP-42](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0042.md)
+  asset lists. A token on none of the user's lists shows as "Unverified", with
+  no icon. The
+  [default mainnet lists](https://github.com/stellar/freighter/blob/master/%40shared/constants/soroban/asset-list.ts)
+  are StellarExpert's Top 50, which StellarExpert picks itself, the
+  [Soroswap token list](https://github.com/soroswap/token-list), which takes
+  pull requests, and LOBSTR's curated list, part of its
+  [listing program](https://lobstr.freshdesk.com/support/solutions/articles/151000169329-boost-visibility-of-your-assets-on-lobstr).
+- The operator can publish its own asset list: a JSON file with one entry for
+  the share token (`contract`, `code`, `name`, `org`, `domain`, `icon`,
+  `decimals`), linked from `stellar.toml` under `ASSET_LISTS`. Holders add its
+  URL in the Varial browser extension's asset list settings; the mobile app has
+  no such setting. On testnet this is the only route the operator controls:
+  Varial's one default list there is StellarExpert's testnet Top 50.
+- [StellarExpert](https://stellar.expert) shows this file's organization and
+  currency details on the token's page once it knows the contract's domain. For
+  contracts it takes the domain from a
+  [list its maintainer keeps by hand](https://github.com/stellar-expert/toml-domain-mapping),
+  mainnet only, so ask the maintainer to add the share token.
+
+These do not help yet: a `home_domain` on the deployer or admin account (no
+wallet follows it from the token), a contract meta entry (it belongs to the
+Wasm, so every deployment shares it), and a `home_domain()` getter on the
+contract (only [proposed](https://github.com/orgs/stellar/discussions/1966)).
 
 ## Admin panel
 
