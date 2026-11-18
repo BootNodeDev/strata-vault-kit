@@ -231,7 +231,7 @@ fn a_refund_after_pricing_leaves_the_priced_total_unchanged() {
     assert_eq!(f.vault.claim_deposit(&user, &epoch), 0);
 
     assert_eq!(f.vault.get_epoch(&epoch).unwrap().total_deposited, 1);
-    assert!(f.vault.get_epoch_settlement(&epoch).unwrap().reconciled);
+    assert!(f.vault.get_epoch_settlement(&epoch).unwrap().reconciled());
 }
 
 #[test]

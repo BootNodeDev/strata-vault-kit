@@ -173,9 +173,9 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
    claim. A pause can delay unpriced requests. Priced claims are never
    re-priced, and a cash payout never needs the identity check. A delisted,
    non-frozen investor exits through the exit-only cash path. One case differs:
-   a redemption priced at zero assets pays no cash and gives the shares back,
-   so a delisted holder's claim waits until they are listed again; if they
-   claim during a wind-down, the shares are burned instead
+   a redemption priced at zero assets pays no cash. It returns the shares to
+   a holder who may take them back, and burns them otherwise, always during a
+   wind-down; a verifier fault instead of an answer makes the claim wait
    ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §2). A frozen investor's
    claims are held, not paid, until the freeze is lifted
    ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1). A legal-order transfer
@@ -326,9 +326,17 @@ the oracle and fixes one share price for every request it holds. Pricing is
 permissionless and refuses a feed that is not valid, so a sealed epoch waits
 rather than settling at a stale price, and no investor can choose their price.
 Claims round down one by one, so together they never pay more than pricing
-promised. When an epoch's last request settles, the remainder leaves
-`pending_mint_shares` and `committed` and stays in the reserve as fund money
-(`EpochReconciled` says how much).
+promised. Each side of an epoch releases its remainder once its own requests
+have settled: the share remainder leaves `pending_mint_shares` after the last
+deposit, the cash remainder leaves `committed` after the last redemption, and
+each is released once. The cash stays in the reserve as fund money. Each side
+says how much it released in its own event (`EpochSharesReconciled`,
+`EpochCashReconciled`), and `EpochReconciled` follows once both are done. So
+a refund for a deposit below one share never waits on cash its own epoch's
+redemptions left behind. A redemption priced at zero assets returns its
+shares, or burns them when the holder may not take them back, so it settles
+once the verifier answers; a verifier that fails instead of answering makes
+the claim wait rather than burn.
 
 The manager can seal the open epoch at any time. Once governance sets a minimum
 epoch duration — between 1 and 30 days — anyone may seal an epoch that has been

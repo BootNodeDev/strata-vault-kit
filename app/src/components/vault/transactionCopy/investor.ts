@@ -76,7 +76,7 @@ const CANCEL_REASONS: Reasons = {
 }
 
 const cancelRedeemReasons = (assetTicker: string): Reasons => {
-	const claimInstead = `Once priced, claim the ${assetTicker} it owes you instead.`
+	const claimInstead = `Once priced, claim the ${assetTicker} it owes you instead. If it prices at zero, claiming burns the shares.`
 	return {
 		...CANCEL_REASONS,
 		NotAllowlisted: `${NOT_ALLOWLISTED} These shares cannot come back to you. ${claimInstead}`,
@@ -118,7 +118,8 @@ const claimRedeemReasons = (ticker: string, uncovered?: string): Reasons => ({
 		uncovered !== undefined
 			? `The vault is ${uncovered} short of covering every priced claim. Try again once the reserve catches up.`
 			: `The vault does not yet hold enough ${ticker} in reserve to cover this claim. Try again shortly.`,
-	HolderNotEligible: `The price left nothing to pay out, so the vault tried to return your shares. ${SHARES_NOT_RETURNABLE}`,
+	VerifierFailed:
+		"The price left nothing to pay out, but the identity check on your address could not be completed, so your shares stay with the vault. Try again later, or contact the vault's operator if this keeps happening.",
 })
 
 const WIND_DOWN_CLAIM_REASONS: Reasons = {
@@ -320,7 +321,7 @@ export const claimRedeemCopy = (
 				}
 			: {
 					heading: "Nothing to pay out",
-					body: "The price left nothing to pay out, and the vault is winding down, so these shares were burned.",
+					body: "The price left nothing to pay out, and these shares could not come back: the vault is winding down, or your address cannot receive them. So they were burned.",
 				}
 	},
 })

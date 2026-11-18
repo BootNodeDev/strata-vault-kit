@@ -116,10 +116,10 @@ between milestones, each migration as its own issue
 
 | Location | Entrypoint | Events it publishes |
 | --- | --- | --- |
-| `contracts/async-vault/src/lib.rs:891` | `claim_deposit` | `DepositClaimed`, or `DepositRefunded`; `EpochReconciled` when the epoch settles |
+| `contracts/async-vault/src/lib.rs:891` | `claim_deposit` | `DepositClaimed`, or `DepositRefunded`; `EpochSharesReconciled` for the epoch's last deposit and `EpochReconciled` when the epoch settles |
 | `contracts/async-vault/src/lib.rs:923` | `cancel_deposit` | `DepositCancelled` |
 | `contracts/async-vault/src/lib.rs:956` | `cancel_redeem` | `RedeemCancelled` |
-| `contracts/async-vault/src/lib.rs:1030` | `claim_redeem` | `RedeemClaimed`, or `RedeemCancelled` when a zero-asset claim returns the shares; `EpochReconciled` when the epoch settles |
+| `contracts/async-vault/src/lib.rs:1030` | `claim_redeem` | `RedeemClaimed`, or `RedeemCancelled` when a zero-asset claim returns the shares; `EpochCashReconciled` for the epoch's last redemption and `EpochReconciled` when the epoch settles |
 
 Each entrypoint calls into `deposit.rs` or `redeem.rs`, which publish the
 events; Scout does not follow the call from `lib.rs`. Tests:

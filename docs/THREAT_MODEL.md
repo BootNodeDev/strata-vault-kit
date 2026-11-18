@@ -997,8 +997,9 @@ An administrative act stops a holder from collecting a priced, covered exit.
 
 - **Control:** `claim_redeem` has no pause check and does not read the oracle.
   It asks the verifier about the holder but pays a delisted holder like a listed
-  one, and a verifier that fails to answer counts as delisted. Of the holder's
-  own standing, only a freeze holds the claim (X3).
+  one, and a verifier that fails to answer counts as delisted, except a claim
+  that pays nothing (X4). Of the holder's own standing, only a freeze holds
+  the claim (X3).
 - **Residual:** The claim still needs the liquid reserve to cover it, or it
   fails with `ClaimNotCovered` (X1). It also calls the share token, to check
   the freeze and burn the escrow, and the token calls the compliance contract.
@@ -1061,12 +1062,27 @@ address gets in.
 - **Residual:** They leave at a later epoch's price, and a fall since their
   deposit was priced is theirs. The conversion mints into the vault's own
   escrow, so it waits while compliance has delisted the vault;
-  `health().allowlisted` then reads false, and nothing is lost. A redemption
+  `health().allowlisted` then reads false, and nothing is lost.
+  `claim_deposit` does not tell a verifier fault from a real delisting, so a
+  fault for one holder also converts that holder's priced deposit into the
+  same cash exit; nothing is destroyed. A redemption
   priced at zero assets cannot give its shares back to a delisted holder, so
-  its request stays open. Only the holder can start an exit: nothing lets
-  compliance or governance redeem a holder who is no longer eligible. If a
-  fund's terms require that, it needs a new power, and counsel must confirm the
-  process.
+  its claim burns them, as a wind-down claim does: the holder loses shares
+  worth less than one asset unit, and the request settles. Only the verifier's
+  answer burns them, and only two codes count as one:
+  `RWAError::IdentityVerificationFailed` (304), the standard refusal, and
+  `IRSError::IdentityNotFound` (321), OpenZeppelin's answer for an address
+  removed from its identity registry. Anything else is a failure: the claim
+  fails (`VerifierFailed`), nothing moves, and the request waits for a retry.
+  A third-party verifier that refuses with another code leaves such a request,
+  and its epoch's cash remainder, open until it answers with one of the two.
+  The vault takes both codes at their word. OpenZeppelin's verifier also
+  reports a claim issuer that fails as 304, and error codes are not scoped to
+  one contract, so such a fault burns a zero-asset claim: the loss is under
+  one asset unit and needs the holder's own signed claim. Only the holder can
+  start an exit: nothing lets compliance or governance redeem a holder who is
+  no longer eligible. If a fund's terms require that, it needs a new power,
+  and counsel must confirm the process.
 - **Tests:** `an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves`,
   `a_delisted_holder_can_still_queue_an_exit` and
   `a_delisted_holder_cannot_cancel_redemption_back_to_shares` in
@@ -1074,7 +1090,11 @@ address gets in.
   `a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch`
   and `a_conversion_waits_while_the_vault_is_delisted` in
   [`delisted.rs`](../contracts/async-vault/src/test/delisted.rs);
-  `a_delisted_holder_with_a_worthless_exit_keeps_the_request` in
+  `a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles` in
+  [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
+  `a_worthless_exit_burns_for_a_holder_with_no_identity`,
+  `a_worthless_exit_waits_while_the_verifier_cannot_answer` and
+  `a_worthless_exit_waits_while_the_verifier_fails_with_any_other_code` in
   [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs).
 
 ### X5. Escrowed shares that should come back
@@ -1087,11 +1107,13 @@ redemption from returning.
   and returns the shares with the manager's `forced_transfer`. Neither the token
   pause nor the vault's own place on the allowlist applies to that move.
 - **Residual:** A return the rules refuse fails with `HolderNotEligible`; the
-  request stays and is paid in cash once priced. In a wind-down no shares come
-  back: the escrow is burned into the holder's entitlement.
+  request stays and is paid in cash once priced. If that price pays nothing,
+  the claim burns the shares instead of returning them. In a wind-down no
+  shares come back: the escrow is burned into the holder's entitlement.
 - **Tests:** `a_token_pause_stops_trading_but_not_a_share_return`,
   `a_delisted_vault_still_returns_escrowed_shares`,
-  `a_return_the_compliance_rules_refuse_stays_escrowed` and
+  `a_return_the_compliance_rules_refuse_stays_escrowed`,
+  `a_worthless_exit_the_compliance_rules_refuse_to_return_burns` and
   `a_partial_freeze_does_not_stop_a_return` in
   [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs);
   `an_escrowed_redemption_cancelled_in_a_wind_down_joins_the_payout` in
@@ -1225,21 +1247,27 @@ others' cost.
 Rounding lets a claim take more than its share, or a tiny deposit is lost.
 
 - **Control:** Conversions round down, in the vault's favour. Claims round one
-  by one, so together they never pay more than pricing promised. When an
-  epoch's last request settles, the remainder leaves `committed` and
-  `pending_mint_shares` and stays in the reserve (`EpochReconciled`). A running
-  total that would go below zero fails (`AccountingMismatch`) instead of being
-  clamped. A deposit worth less than one share mints nothing and is refunded at
-  claim, from the free reserve.
+  by one, so together they never pay more than pricing promised. Each side of
+  an epoch releases its remainder once its own requests settle, and only once:
+  the cash remainder leaves `committed` after the last redemption and stays in
+  the reserve (`EpochCashReconciled`), the share remainder leaves
+  `pending_mint_shares` after the last deposit (`EpochSharesReconciled`). A
+  running total that would go below zero fails (`AccountingMismatch`) instead
+  of being clamped. A deposit worth less than one share mints nothing and is
+  refunded at claim, from the free reserve.
 - **Residual:** Rounding remainders stay with the fund. A request that never
-  settles keeps its epoch's remainder in the totals. The refund for a deposit
+  settles keeps its side's remainder in the totals. The refund for a deposit
   below one share is not set aside when the epoch is priced: the treasury or a
   wind-down round can spend that cash first, and the claim then waits for the
-  free reserve.
+  free reserve. It waits on its own epoch's cash remainder only until that
+  epoch's last redemption settles.
 - **Tests:** `deposit_and_redeem_round_trip_never_manufactures_assets` and
   `conversion_rounds_down_in_the_vaults_favour` in
   [`conversions.rs`](../contracts/async-vault/src/test/conversions.rs);
-  `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once` and
+  `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once`,
+  `a_zero_share_refund_is_paid_once_its_epochs_redemptions_settle`,
+  `each_remainder_leaves_once_whichever_side_settles_last`,
+  `a_settled_epoch_leaves_no_remainder_in_the_totals` and
   `a_total_that_would_go_below_zero_fails_loudly` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
   `a_deposit_below_one_share_is_refunded_at_claim` and
@@ -1372,7 +1400,11 @@ or queued changes.
   vault, because its settlement record cannot count requests made before it
   existed
   ([kit spec, Invariant 7](./kit-spec.md#invariant-7-directional-rounding--non-creation-of-value)).
-  The oracle's own case has a written recovery (O11).
+  The oracle's own case has a written recovery (O11). This release also
+  changes a stored type: the vault's settlement record (`EpochSettlement`)
+  replaces `reconciled` with `shares_reconciled` and `cash_reconciled`. It is
+  therefore deployed fresh, as the rule above already requires; it is never
+  upgraded in place over a vault that stored records of the old shape.
 - **Residual:** No release ships a `migrate`; only test builds have one. If an
   upgrade changes a stored struct's fields or a variant's payload, every entry
   of the old shape fails to decode. Read from the code, not from a test, that
@@ -1393,9 +1425,11 @@ or queued changes.
   [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
   `the_oracle_upgrades_under_a_live_valuation`, also with `upgrade_wasm`, in
   [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs).
-  A vault upgrade over stored entries of another shape: none, because no
-  release changes a stored type yet. The failures above are read from the
-  code, and a test belongs with the first release that changes one.
+  A vault upgrade over stored entries of another shape: none. This release
+  changes `EpochSettlement` but is deployed fresh, so no vault ever holds both
+  shapes; the failures above are read from the code. A test belongs with the
+  first release that must upgrade a live vault across a changed type, together
+  with the migration it needs.
 
 ### X14. A call made in a holder's name
 

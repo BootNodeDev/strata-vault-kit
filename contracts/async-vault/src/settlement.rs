@@ -1,14 +1,15 @@
 use soroban_sdk::{contracttype, panic_with_error, Env};
 
 use crate::error::VaultError;
-use crate::event::EpochReconciled;
+use crate::event::{EpochCashReconciled, EpochReconciled, EpochSharesReconciled};
 use crate::keys::DataKey;
 use crate::state::{self, EpochStatus};
 
 /// What pricing promised an epoch's requests and what has been paid against
-/// it. Every claim floors, so the two drift apart by a few units; once the
-/// last request settles the remainder leaves `pending_mint_shares` and
-/// `committed`, and the cash stays in the reserve as fund money.
+/// it. Every claim floors, so the two drift apart by a few units. Once the
+/// last deposit settles, the share remainder leaves `pending_mint_shares`;
+/// once the last redemption settles, the cash remainder leaves `committed` and
+/// stays in the reserve as fund money. Each side's flag records its release.
 #[contracttype]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EpochSettlement {
@@ -18,7 +19,15 @@ pub struct EpochSettlement {
     pub shares_settled: i128,
     pub assets_promised: i128,
     pub assets_settled: i128,
-    pub reconciled: bool,
+    pub shares_reconciled: bool,
+    pub cash_reconciled: bool,
+}
+
+impl EpochSettlement {
+    /// Both remainders have left the totals.
+    pub(crate) fn reconciled(&self) -> bool {
+        self.shares_reconciled && self.cash_reconciled
+    }
 }
 
 pub(crate) fn get(e: &Env, epoch: u64) -> Option<EpochSettlement> {
@@ -100,27 +109,35 @@ pub(crate) fn on_redeem_claimed(e: &Env, epoch: u64, assets: i128) {
     save(e, epoch, &s);
 }
 
+/// Releases each side's remainder once that side has no open request, each
+/// side once, and says so once per side and once for the whole epoch.
 fn reconcile_if_settled(e: &Env, epoch: u64, s: &mut EpochSettlement) {
-    if s.reconciled || s.deposits_open > 0 || s.redeems_open > 0 {
+    let shares_due = !s.shares_reconciled && s.deposits_open == 0;
+    let cash_due = !s.cash_reconciled && s.redeems_open == 0;
+    if !shares_due && !cash_due {
         return;
     }
     let priced = state::get_epoch(e, epoch).is_some_and(|ep| ep.status == EpochStatus::Fulfilled);
     if !priced {
         return;
     }
-    let share_dust = state::reduce(e, s.shares_promised, s.shares_settled);
-    let cash_dust = state::reduce(e, s.assets_promised, s.assets_settled);
-    state::set_pending_mint_shares(
-        e,
-        state::reduce(e, state::pending_mint_shares(e), share_dust),
-    );
-    state::set_committed(e, state::reduce(e, state::committed(e), cash_dust));
-    s.reconciled = true;
 
-    EpochReconciled {
-        epoch,
-        share_dust,
-        cash_dust,
+    if shares_due {
+        let share_dust = state::reduce(e, s.shares_promised, s.shares_settled);
+        state::set_pending_mint_shares(
+            e,
+            state::reduce(e, state::pending_mint_shares(e), share_dust),
+        );
+        s.shares_reconciled = true;
+        EpochSharesReconciled { epoch, share_dust }.publish(e);
     }
-    .publish(e);
+    if cash_due {
+        let cash_dust = state::reduce(e, s.assets_promised, s.assets_settled);
+        state::set_committed(e, state::reduce(e, state::committed(e), cash_dust));
+        s.cash_reconciled = true;
+        EpochCashReconciled { epoch, cash_dust }.publish(e);
+    }
+    if s.reconciled() {
+        EpochReconciled { epoch }.publish(e);
+    }
 }
