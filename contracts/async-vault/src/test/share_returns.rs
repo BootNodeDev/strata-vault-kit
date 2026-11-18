@@ -38,7 +38,7 @@ impl FailsEveryTransferCheck {
 fn worthless_exit(f: &Fixture) -> (Address, u64) {
     let holder = f.holder(10);
     let epoch = f.vault.request_redeem(&holder, &1);
-    f.fulfill_epoch(WAD_SCALE / 2);
+    f.fulfill_epoch(PRICE_SCALE / 2);
     (holder, epoch)
 }
 
@@ -147,7 +147,7 @@ fn a_token_pause_does_not_stop_a_worthless_exit_coming_back() {
     let holder = f.holder(10);
     let epoch = f.vault.request_redeem(&holder, &1);
     // Priced at half a unit per share, one share pays nothing.
-    f.fulfill_epoch(WAD_SCALE / 2);
+    f.fulfill_epoch(PRICE_SCALE / 2);
     f.share.pause(&f.admin);
 
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
@@ -172,7 +172,7 @@ fn a_worthless_exit_the_compliance_rules_refuse_to_return_burns() {
     let holder = f.holder(10);
     let epoch = f.vault.request_redeem(&holder, &1);
     // Priced at half a unit per share, one share pays nothing.
-    f.fulfill_epoch(WAD_SCALE / 2);
+    f.fulfill_epoch(PRICE_SCALE / 2);
     let module = f.e.register(RefusesEveryTransfer, ());
     f.add_compliance_module(ComplianceHook::CanTransfer, &module);
 

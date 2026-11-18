@@ -58,7 +58,7 @@ fn the_last_deposit_claim_clears_the_share_remainder() {
     let b = f.investor(5);
     f.vault.request_deposit(&a, &4);
     f.vault.request_deposit(&b, &5);
-    let epoch = f.fulfill_epoch(wad(3));
+    let epoch = f.fulfill_epoch(price(3));
     assert_eq!(f.vault.pending_mint_shares(), 3);
 
     assert_eq!(f.vault.claim_deposit(&a, &epoch), 1);
@@ -81,7 +81,7 @@ fn the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once() {
     let b = f.holder(103);
     f.vault.request_redeem(&a, &101);
     f.vault.request_redeem(&b, &103);
-    let epoch = f.fulfill_epoch(wad(3) / 2);
+    let epoch = f.fulfill_epoch(price(3) / 2);
     let mut published = reconciliations(&f, epoch);
     assert_eq!(published, [shares_reconciled(&f, epoch, 0)]);
     assert_eq!(f.vault.committed(), 306);
@@ -123,7 +123,7 @@ fn the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once() {
 fn an_epoch_with_no_requests_settles_when_it_is_priced() {
     let f = setup();
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     f.vault.fulfill_epoch(&epoch);
 
@@ -132,7 +132,7 @@ fn an_epoch_with_no_requests_settles_when_it_is_priced() {
         [
             EpochFulfilled {
                 epoch,
-                share_price: wad(2),
+                share_price: price(2),
                 total_deposited: 0,
             }
             .to_xdr(&f.e, &f.vault.address),
@@ -151,7 +151,7 @@ fn a_cancelled_request_does_not_hold_the_epoch_open() {
     let epoch = f.vault.request_deposit(&a, &400);
     f.vault.cancel_deposit(&a, &epoch);
 
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     let s = f.vault.get_epoch_settlement(&epoch).unwrap();
     assert_eq!(s.deposits_open, 0);
@@ -167,7 +167,7 @@ fn a_deposit_refunded_at_claim_counts_as_settled() {
     let b = f.investor(3);
     let epoch = f.vault.request_deposit(&a, &1);
     f.vault.request_deposit(&b, &3);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     assert_eq!(f.vault.claim_deposit(&a, &epoch), 0);
     assert_eq!(f.vault.claim_deposit(&b, &epoch), 1);
@@ -183,7 +183,7 @@ fn a_redemption_that_pays_nothing_counts_as_settled() {
     let f = setup();
     let a = f.holder(1);
     let epoch = f.vault.request_redeem(&a, &1);
-    f.fulfill_epoch(wad(1) / 2);
+    f.fulfill_epoch(price(1) / 2);
 
     assert_eq!(f.vault.claim_redeem(&a, &epoch), 0);
 
@@ -246,7 +246,7 @@ fn a_zero_share_refund_is_paid_once_its_epochs_redemptions_settle() {
     let epoch = f.vault.request_deposit(&carol, &1);
     f.vault.request_redeem(&alice, &5);
     f.vault.request_redeem(&bob, &5);
-    f.fulfill_epoch(wad(11) / 10);
+    f.fulfill_epoch(price(11) / 10);
     assert_eq!(f.balance(&f.vault.address), 11);
     assert_eq!(f.vault.committed(), 11);
 
@@ -287,7 +287,7 @@ fn mixed_epoch_with_a_remainder_on_each_side(f: &Fixture) -> MixedEpoch {
     f.vault.request_deposit(&b, &5);
     f.vault.request_redeem(&x, &101);
     f.vault.request_redeem(&y, &103);
-    f.fulfill_epoch(wad(3) / 2);
+    f.fulfill_epoch(price(3) / 2);
     MixedEpoch {
         epoch,
         depositors: [(a, 2), (b, 3)],
@@ -377,7 +377,7 @@ fn each_remainder_leaves_once_whichever_side_settles_last() {
         let c = f.investor(9);
         let later = f.vault.request_deposit(&c, &9);
         f.vault.request_redeem(&z, &7);
-        f.fulfill_epoch(wad(3) / 2);
+        f.fulfill_epoch(price(3) / 2);
         published.extend(reconciliations(&f, m.epoch));
         let (later_mint, later_owed) = (6, 10);
         assert_eq!(f.vault.pending_mint_shares(), 6 + later_mint);
@@ -434,7 +434,7 @@ fn a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles() {
     let epoch = f.vault.request_redeem(&delisted, &1);
     f.vault.request_redeem(&listed, &1);
     f.vault.request_redeem(&paid, &3);
-    f.fulfill_epoch(wad(1) / 2);
+    f.fulfill_epoch(price(1) / 2);
     f.identity.allow(&delisted, &false);
     let supply = f.share.total_supply();
 
@@ -502,7 +502,7 @@ fn a_refused_mint_keeps_a_priced_deposit_epoch_open() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     let module = f.e.register(super::compliance::RefusesEveryMint, ());
     f.add_compliance_module(ComplianceHook::CanCreate, &module);
@@ -557,7 +557,7 @@ proptest! {
         for (who, shares) in &holders {
             f.vault.request_redeem(who, shares);
         }
-        let price = wad(1) * price_tenths / 10;
+        let price = price(1) * price_tenths / 10;
         let epoch = f.fulfill_epoch(price);
         let mut published = reconciliations(&f, epoch);
 

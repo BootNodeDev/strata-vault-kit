@@ -48,8 +48,8 @@ pub(crate) use nav_oracle::{
 };
 pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
-pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
 use stellar_tokens::rwa::{compliance::ComplianceHook, RWA};
+pub(crate) use strata_bindings::PRICE_SCALE;
 pub(crate) use strata_timelock::DAY_DURATION;
 
 pub(crate) use crate::{
@@ -58,8 +58,8 @@ pub(crate) use crate::{
     MAX_WIND_DOWN_DELAY, MIN_UPGRADE_DELAY, MIN_WIND_DOWN_DELAY,
 };
 
-fn wad(whole: i128) -> i128 {
-    whole * WAD_SCALE
+fn price(whole: i128) -> i128 {
+    whole * PRICE_SCALE
 }
 
 fn nav_input(e: &Env, nav_per_share: i128, expires_at: u64) -> NavInput {
@@ -184,7 +184,7 @@ impl Fixture<'_> {
     fn holder(&self, shares: i128) -> Address {
         let who = self.investor(shares * 2);
         let epoch = self.vault.request_deposit(&who, &(shares * 2));
-        self.fulfill_epoch(wad(2));
+        self.fulfill_epoch(price(2));
         self.vault.claim_deposit(&who, &epoch);
         who
     }
@@ -301,7 +301,7 @@ fn open_feed() -> OracleConfig {
         max_up_bps: 10_000,
         max_down_bps: 10_000,
         min_answer: MIN_ANSWER,
-        max_answer: 1_000 * WAD_SCALE,
+        max_answer: 1_000 * PRICE_SCALE,
     }
 }
 

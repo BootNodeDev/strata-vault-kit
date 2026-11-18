@@ -43,14 +43,14 @@ fn the_base_asset_is_quoted_at_one() {
 #[test]
 fn unequal_decimals_scale_the_price() {
     let f = setup_with_decimals(7, 9);
-    f.report(|r| r.nav_per_share = 20_000_000_000_000_000);
+    f.report(|r| r.nav_per_share = 2_000_000_000_000);
     assert_eq!(
         f.feed.lastprice(&f.share_asset()),
         Some(at(200_000_000_000_000, 10_000))
     );
 
     let f = setup_with_decimals(7, 6);
-    f.report(|r| r.nav_per_share = 20_000_000_000_000_000_000);
+    f.report(|r| r.nav_per_share = 2_000_000_000_000_000);
     assert_eq!(
         f.feed.lastprice(&f.share_asset()),
         Some(at(200_000_000_000_000, 10_000))
@@ -217,7 +217,7 @@ fn the_feed_follows_an_oracle_swap() {
     let second = super::OracleStubClient::new(&f.e, &f.e.register(super::OracleStub, ()));
     second.set_report(&super::StubReport {
         state: OracleState::Valid,
-        nav_per_share: 2_000_000_000_000_000_000,
+        nav_per_share: 200_000_000_000_000,
         attested_at: 10_000,
         freshness_duration: 600,
     });
@@ -251,7 +251,7 @@ fn the_feed_stores_no_price() {
     assert_eq!(instance_before, instance_after);
     assert_eq!(persistent_before, persistent_after);
 
-    f.report(|r| r.nav_per_share = 2_000_000_000_000_000_000);
+    f.report(|r| r.nav_per_share = 200_000_000_000_000);
     assert_eq!(
         f.feed.lastprice(&f.share_asset()).unwrap().price,
         200_000_000_000_000

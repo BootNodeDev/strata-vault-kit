@@ -28,8 +28,7 @@ use crate::{FeedError, Sep40Feed, Sep40FeedClient};
 /// A margin past the instance's extend threshold, in ledgers.
 const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
 
-/// The vault's standing report, as `nav_per_share = 1.05` WAD, prices at the
-/// feed's 14 decimals.
+/// The vault's standing report: a NAV of 1.05, which the feed answers as is.
 pub(crate) const PRICE: i128 = 105_000_000_000_000;
 
 pub(crate) struct Fixture<'a> {
@@ -167,7 +166,7 @@ fn build<'a>(
     let oracle = OracleStubClient::new(&e, &e.register(OracleStub, ()));
     oracle.set_report(&StubReport {
         state: OracleState::Valid,
-        nav_per_share: 1_050_000_000_000_000_000,
+        nav_per_share: PRICE,
         attested_at: 10_000,
         freshness_duration: 3_600,
     });

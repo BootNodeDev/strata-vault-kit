@@ -3,12 +3,21 @@ use super::*;
 #[test]
 fn direct_unit_pricing_reads_oracle_nav() {
     let f = setup();
-    f.attest(wad(2));
+    f.attest(price(2));
 
-    let price = f.e.as_contract(&f.vault.address, || {
+    let resolved = f.e.as_contract(&f.vault.address, || {
         DirectUnitPricing::resolve_share_price(&f.e).unwrap()
     });
-    assert_eq!(price, wad(2));
+    assert_eq!(resolved, price(2));
+}
+
+#[test]
+fn a_price_of_one_carries_fourteen_decimals() {
+    let env = Env::default();
+    let one = 100_000_000_000_000;
+
+    assert_eq!(DirectUnitPricing::deposit_shares(&env, 7, one), Ok(7));
+    assert_eq!(DirectUnitPricing::redeem_assets(&env, 7, one), Ok(7));
 }
 
 #[test]
@@ -37,11 +46,11 @@ fn direct_unit_pricing_rejects_zero_or_negative_price() {
 fn conversions_round_down_in_vault_favour_and_preserve_value() {
     let env = Env::default();
     let prices = [
-        wad(1) / 2,              // 0.5 NAV
-        wad(1),                  // 1.0 par NAV
-        3 * wad(1) / 2,          // 1.5 NAV
-        wad(2),                  // 2.0 NAV
-        1234567890123456789i128, // fractional irregular NAV
+        price(1) / 2,        // 0.5 NAV
+        price(1),            // 1.0 par NAV
+        3 * price(1) / 2,    // 1.5 NAV
+        price(2),            // 2.0 NAV
+        123_456_789_012_345, // fractional irregular NAV
     ];
 
     let amounts = [1i128, 10, 100, 1_001, 100_000, 10_000_000_000];
@@ -50,10 +59,10 @@ fn conversions_round_down_in_vault_favour_and_preserve_value() {
         for &assets in &amounts {
             let shares = DirectUnitPricing::deposit_shares(&env, assets, price).unwrap();
 
-            // Floor check for deposit: shares * price <= assets * WAD_SCALE
+            // Floor check for deposit: shares * price <= assets * PRICE_SCALE
             assert!(
-                shares * price <= assets * WAD_SCALE,
-                "deposit minted too many shares: {shares} * {price} > {assets} * WAD"
+                shares * price <= assets * PRICE_SCALE,
+                "deposit minted too many shares: {shares} * {price} > {assets} * PRICE_SCALE"
             );
 
             // Round trip: redeeming shares should never yield more assets than deposited
@@ -63,10 +72,10 @@ fn conversions_round_down_in_vault_favour_and_preserve_value() {
                 "round-trip value created: {redeemed} > {assets}"
             );
 
-            // Floor check for redeem: redeemed * WAD_SCALE <= shares * price
+            // Floor check for redeem: redeemed * PRICE_SCALE <= shares * price
             assert!(
-                redeemed * WAD_SCALE <= shares * price,
-                "redeem paid out too many assets: {redeemed} * WAD > {shares} * {price}"
+                redeemed * PRICE_SCALE <= shares * price,
+                "redeem paid out too many assets: {redeemed} * PRICE_SCALE > {shares} * {price}"
             );
         }
     }

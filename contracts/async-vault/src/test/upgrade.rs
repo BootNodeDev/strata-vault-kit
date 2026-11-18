@@ -540,7 +540,7 @@ mod with_wasm {
             40
         );
 
-        f.fulfill_epoch_at(f.close_epoch(), wad(2));
+        f.fulfill_epoch_at(f.close_epoch(), price(2));
         assert_eq!(f.vault.claim_redeem(&holder, &epoch), 80);
         assert_eq!(f.vault.claim_deposit(&depositor, &epoch), 250);
         assert_eq!(f.shares(&depositor), 250);
@@ -574,7 +574,7 @@ mod with_wasm {
         let staying = f.holder(500);
         let exiting = f.holder(300);
         let priced = f.vault.request_redeem(&exiting, &100);
-        f.fulfill_epoch(wad(2));
+        f.fulfill_epoch(price(2));
         let depositor = f.investor(400);
         let open = f.vault.request_deposit(&depositor, &400);
         let successor = Address::generate(&f.e);
@@ -613,7 +613,7 @@ mod with_wasm {
         f.vault.apply_change(&queued);
         assert_eq!(f.vault.custodian(), Some(successor));
         assert_eq!(f.close_epoch(), open);
-        f.fulfill_epoch_at(open, wad(2));
+        f.fulfill_epoch_at(open, price(2));
         assert_eq!(f.vault.claim_deposit(&depositor, &open), 200);
         f.vault.activate_wind_down();
         assert_eq!(f.vault.finalize_wind_down_round(), 1_800);
