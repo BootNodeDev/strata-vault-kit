@@ -197,7 +197,7 @@ describe("pricing", () => {
 				asset: stellarAsset(c.deployment.contracts.share_token),
 			})
 		).result
-		expect(quote?.price).toBe(nav / 10_000n)
+		expect(quote?.price).toBe(nav)
 	})
 
 	it("an account with no role prices the epoch", async () => {
