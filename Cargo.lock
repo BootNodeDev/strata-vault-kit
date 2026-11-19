@@ -1087,6 +1087,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "identity-verifier"
+version = "0.1.0"
+dependencies = [
+ "claim-issuer",
+ "claim-topics",
+ "ed25519-dalek",
+ "identity-registry",
+ "investor-identity",
+ "soroban-sdk",
+ "stellar-access",
+ "stellar-macros",
+ "stellar-tokens",
+ "strata-bindings",
+ "strata-storage",
+ "strata-timelock",
+]
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
