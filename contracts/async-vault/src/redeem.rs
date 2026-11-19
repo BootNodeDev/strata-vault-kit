@@ -75,8 +75,12 @@ pub(crate) fn claim(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
 
     // Burned below instead in a wind-down, whose snapshot left them out, and
     // when the holder may not take them back, so the request still settles.
-    if assets == 0 && !wind_down::is_active(e) && lock_policy::send_back(e, holder, request.shares)
-    {
+    let handed_back = if assets == 0 && !wind_down::is_active(e) {
+        lock_policy::send_back(e, holder, request.shares)
+    } else {
+        false
+    };
+    if handed_back {
         shares_returned(e, holder, epoch_id, request.shares);
         settlement::on_redeem_claimed(e, epoch_id, 0);
         return 0;
@@ -143,9 +147,7 @@ pub(crate) fn queue_escrowed(e: &Env, holder: &Address, shares: i128) -> u64 {
     epoch_id
 }
 
-/// Once the escrowed shares are back with the holder, removes the request,
-/// takes its shares off the epoch's `total_shares_redeeming` and publishes
-/// `RedeemCancelled`.
+/// Settles a cancelled request whose shares came back.
 fn shares_returned(e: &Env, holder: &Address, epoch_id: u64, shares: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
