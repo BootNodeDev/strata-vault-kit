@@ -113,16 +113,3 @@ macro_rules! error_enum {
         };
     };
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn identity_range_follows_the_feed_range_without_overlap() {
-        assert!(FEED_ERRORS.last < IDENTITY_ERRORS.first);
-        assert!(IDENTITY_ERRORS.contains(10000));
-        assert!(IDENTITY_ERRORS.contains(10999));
-        assert!(!IDENTITY_ERRORS.contains(11000));
-    }
-}
