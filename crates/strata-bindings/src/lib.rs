@@ -102,3 +102,10 @@ pub trait VerifierSetup {
     /// Whether the identity setup behind this verifier is ready for `vault` under `governance`.
     fn ready_for(e: Env, vault: Address, governance: Address) -> bool;
 }
+
+/// What an identity verifier answers to a registry before it links a wallet.
+#[contractclient(name = "ClaimsCheckClient")]
+pub trait ClaimsCheck {
+    /// Panics unless `identity` holds a valid claim from a trusted issuer for every required topic.
+    fn check_claims(e: Env, identity: Address);
+}
