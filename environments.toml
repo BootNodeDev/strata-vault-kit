@@ -26,10 +26,6 @@ default = true # Optional. Whether to use this account as the `--source` for com
 client = true
 constructor_args = "--admin me"
 
-[development.contracts.identity_verifier]
-client = true
-constructor_args = "--admin me"
-
 [development.contracts.share_token]
 client = true
 constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --compliance_authority me --compliance compliance --identity_verifier identity_verifier'

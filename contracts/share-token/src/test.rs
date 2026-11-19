@@ -13,8 +13,8 @@ use stellar_tokens::rwa::RWAError;
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
 
 use crate::{ShareToken, ShareTokenClient, ShareTokenError};
+use allowlist_verifier::{IdentityVerifier, IdentityVerifierClient};
 use compliance::{Compliance, ComplianceClient};
-use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
 
 /// Asserts a call was refused with exactly this error.
 fn refused<T: core::fmt::Debug + PartialEq, E: core::fmt::Debug + PartialEq>(

@@ -35,6 +35,10 @@ pub const FEED_ERRORS: ErrorRange = ErrorRange {
     first: 9000,
     last: 9999,
 };
+pub const IDENTITY_ERRORS: ErrorRange = ErrorRange {
+    first: 10000,
+    last: 10999,
+};
 
 const _: () = {
     let ranges = [
@@ -43,6 +47,7 @@ const _: () = {
         TOKEN_ERRORS,
         COMPLIANCE_ERRORS,
         FEED_ERRORS,
+        IDENTITY_ERRORS,
     ];
     let mut i = 1;
     while i < ranges.len() {
@@ -107,4 +112,17 @@ macro_rules! error_enum {
             );)+
         };
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identity_range_follows_the_feed_range_without_overlap() {
+        assert!(FEED_ERRORS.last < IDENTITY_ERRORS.first);
+        assert!(IDENTITY_ERRORS.contains(10000));
+        assert!(IDENTITY_ERRORS.contains(10999));
+        assert!(!IDENTITY_ERRORS.contains(11000));
+    }
 }

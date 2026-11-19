@@ -42,7 +42,7 @@ pub(crate) use soroban_sdk::{
 };
 
 pub(crate) use ::compliance::{Compliance, ComplianceChange, ComplianceClient};
-pub(crate) use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
+pub(crate) use allowlist_verifier::{IdentityVerifier, IdentityVerifierClient};
 pub(crate) use nav_oracle::{
     NavInput, NavOracleContract, NavOracleContractClient, OracleConfig, MIN_ANSWER,
 };

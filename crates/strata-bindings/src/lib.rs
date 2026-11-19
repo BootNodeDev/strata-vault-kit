@@ -25,10 +25,11 @@
 
 mod errors;
 
-use soroban_sdk::{contracttrait, contracttype, Address, Env};
+use soroban_sdk::{contractclient, contracttrait, contracttype, Address, Env};
 
 pub use errors::{
-    ErrorRange, COMPLIANCE_ERRORS, FEED_ERRORS, ORACLE_ERRORS, TOKEN_ERRORS, VAULT_ERRORS,
+    ErrorRange, COMPLIANCE_ERRORS, FEED_ERRORS, IDENTITY_ERRORS, ORACLE_ERRORS, TOKEN_ERRORS,
+    VAULT_ERRORS,
 };
 
 /// Decimal places of a share price: asset base units per share base unit,
@@ -93,4 +94,11 @@ pub trait VaultView {
     fn wind_down(e: &Env) -> Option<WindDownInfo>;
     /// The account that signs the vault's admin changes, and the feed's.
     fn governance(e: &Env) -> Option<Address>;
+}
+
+/// What an identity verifier answers to a vault about its own setup.
+#[contractclient(name = "VerifierSetupClient")]
+pub trait VerifierSetup {
+    /// Whether the identity setup behind this verifier is ready for `vault` under `governance`.
+    fn ready_for(e: Env, vault: Address, governance: Address) -> bool;
 }

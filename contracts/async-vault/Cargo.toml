@@ -25,7 +25,7 @@ soroban-sdk = { workspace = true, features = ["testutils"] }
 nav-oracle = { path = "../nav-oracle" }
 share-token = { path = "../share-token" }
 compliance = { path = "../compliance" }
-identity-verifier = { path = "../identity-verifier" }
+allowlist-verifier = { path = "../../crates/allowlist-verifier" }
 proptest = "=1.11.0"
 
 [features]

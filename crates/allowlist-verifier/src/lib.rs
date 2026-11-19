@@ -1,6 +1,7 @@
 //! # Design
 //!
-//! Testnet-only stub — in production this is an external ERC-3643 identity
+//! A test double, never deployed: it builds as a library for the kit's tests
+//! only. Testnet-only stub — in production this is an external ERC-3643 identity
 //! registry (a trusted issuer's), not part of this product. Do not deploy to mainnet.
 //!
 //! - **A yes or no per address.** No claims, topics or issuers, and an address
@@ -33,6 +34,7 @@ contractmeta!(
 use stellar_access::access_control;
 use stellar_macros::only_admin;
 use stellar_tokens::rwa::{identity_verification, RWAError};
+use strata_bindings::VerifierSetup;
 
 #[contracttype]
 enum DataKey {
@@ -94,6 +96,20 @@ impl IdentityVerifier {
     pub fn is_allowed(e: &Env, account: Address) -> bool {
         strata_storage::bump_instance(e);
         strata_storage::get_persistent(e, &DataKey::Allowed(account)).unwrap_or(false)
+    }
+}
+
+#[contractimpl]
+impl VerifierSetup for IdentityVerifier {
+    /// Whether `vault` is on the allowlist. This test double does not check
+    /// `governance`: its admin is the listing authority, not governance.
+    ///
+    /// # Arguments
+    ///
+    /// * `vault` - The vault.
+    /// * `governance` - Not read.
+    fn ready_for(e: Env, vault: Address, _governance: Address) -> bool {
+        Self::is_allowed(&e, vault)
     }
 }
 

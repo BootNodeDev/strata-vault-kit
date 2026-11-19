@@ -261,3 +261,20 @@ fn allowing_and_checking_restore_the_instance_ttl() {
     client.is_allowed(&investor);
     assert_eq!(instance_ttl(&e, &id), INSTANCE_EXTEND_AMOUNT);
 }
+
+#[test]
+fn ready_for_needs_the_vault_listed() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let admin = Address::generate(&e);
+    let vault = Address::generate(&e);
+    let governance = Address::generate(&e);
+    let id = e.register(IdentityVerifier, (admin,));
+    let setup = strata_bindings::VerifierSetupClient::new(&e, &id);
+
+    assert!(!setup.ready_for(&vault, &governance));
+    IdentityVerifierClient::new(&e, &id).allow(&vault, &true);
+    assert!(setup.ready_for(&vault, &governance));
+    IdentityVerifierClient::new(&e, &id).allow(&vault, &false);
+    assert!(!setup.ready_for(&vault, &governance));
+}

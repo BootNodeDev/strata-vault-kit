@@ -16,7 +16,7 @@ const CONTRACT_SOURCES: [&str; 9] = [
     "contracts/share-token/src/error.rs",
     "contracts/nav-oracle/src/lib.rs",
     "contracts/compliance/src/lib.rs",
-    "contracts/identity-verifier/src/lib.rs",
+    "crates/allowlist-verifier/src/lib.rs",
     "contracts/sep40-feed/src/lib.rs",
     "examples/sep40-consumer/src/lib.rs",
 ];
