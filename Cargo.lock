@@ -364,6 +364,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "claim-topics"
+version = "0.1.0"
+dependencies = [
+ "claim-issuer",
+ "soroban-sdk",
+ "stellar-access",
+ "stellar-macros",
+ "stellar-tokens",
+ "strata-bindings",
+ "strata-storage",
+ "strata-timelock",
+]
+
+[[package]]
 name = "compliance"
 version = "0.1.0"
 dependencies = [
