@@ -25,7 +25,7 @@ fn a_finished_vault_with_a_fresh_report_is_healthy() {
     let f = setup_unfinished();
     f.vault.set_min_epoch_duration(&DAY_DURATION);
     f.vault.finish_setup();
-    f.attest(wad(1));
+    f.attest(price(1));
 
     assert_eq!(f.vault.health(), all_healthy());
 }
@@ -34,7 +34,7 @@ fn a_finished_vault_with_a_fresh_report_is_healthy() {
 fn an_open_setup_is_reported() {
     let f = setup_unfinished();
     f.vault.set_min_epoch_duration(&DAY_DURATION);
-    f.attest(wad(1));
+    f.attest(price(1));
 
     assert_eq!(
         f.vault.health(),
@@ -152,7 +152,7 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
     for (miswire, expected) in cases {
         let f = miswired(miswire);
         f.vault.set_min_epoch_duration(&DAY_DURATION);
-        f.attest(wad(1));
+        f.attest(price(1));
 
         assert_eq!(
             f.vault.health(),
@@ -170,7 +170,7 @@ fn a_feed_with_no_report_or_the_nav_paused_is_not_valid() {
     let f = setup_unfinished();
     assert!(!f.vault.health().feed_valid);
 
-    f.attest(wad(1));
+    f.attest(price(1));
     f.oracle.pause_nav(&f.guardian);
     assert!(!f.vault.health().feed_valid);
 }
@@ -178,7 +178,7 @@ fn a_feed_with_no_report_or_the_nav_paused_is_not_valid() {
 #[test]
 fn a_notice_longer_than_a_report_lives_is_reported() {
     let f = setup();
-    f.attest(wad(1));
+    f.attest(price(1));
     let freshness = f.oracle.config().freshness_duration;
 
     f.vault.set_notice(&(freshness + 1));
@@ -189,7 +189,7 @@ fn a_notice_longer_than_a_report_lives_is_reported() {
 #[test]
 fn a_vault_with_no_minimum_set_is_reported() {
     let f = setup();
-    f.attest(wad(1));
+    f.attest(price(1));
 
     assert!(!f.vault.health().min_epoch_duration_set);
 }
@@ -199,7 +199,7 @@ fn setting_the_minimum_during_setup_clears_the_flag() {
     let f = setup_unfinished();
     f.vault.set_min_epoch_duration(&DAY_DURATION);
     f.vault.finish_setup();
-    f.attest(wad(1));
+    f.attest(price(1));
 
     assert!(f.vault.health().min_epoch_duration_set);
 }

@@ -2,7 +2,7 @@ import { type Keypair } from "@stellar/stellar-sdk"
 
 import { accountRow } from "./lib/account-table.js"
 import { pay, trustline } from "./lib/accounts.js"
-import { price, units } from "./lib/amounts.js"
+import { PRICE_DECIMALS, price, units } from "./lib/amounts.js"
 import { trustlineBalance } from "./lib/balances.js"
 import {
 	connect,
@@ -24,11 +24,8 @@ function formatAmount(amount: bigint, decimals: number): string {
 	return `${whole}.${fraction.toString().padStart(decimals, "0").slice(0, 4)}`
 }
 
-function formatWad(wad: bigint): string {
-	const factor = 10n ** 18n
-	const whole = wad / factor
-	const fraction = wad % factor
-	return `$${whole}.${fraction.toString().padStart(18, "0").slice(0, 4)}`
+function formatPrice(value: bigint): string {
+	return `$${formatAmount(value, PRICE_DECIMALS)}`
 }
 
 async function hasTrustline(c: Connected, address: string): Promise<boolean> {
@@ -194,7 +191,7 @@ async function main(): Promise<void> {
 			console.log("  ✓ Epoch 1 closed")
 
 			const nav = price(1) // $1.00 NAV
-			console.log(`  + attesting NAV (${formatWad(nav)})...`)
+			console.log(`  + attesting NAV (${formatPrice(nav)})...`)
 			await attest(c, nav)
 			console.log("  ✓ NAV attested on oracle")
 
@@ -329,7 +326,9 @@ async function main(): Promise<void> {
 	console.log(
 		`Total Value Locked:    ${formatAmount(finalFree + custodianBal, decimals)} USDC (NAV basis)`,
 	)
-	console.log(`Latest Attested NAV:   ${formatWad(oracleLatest.nav_per_share)}`)
+	console.log(
+		`Latest Attested NAV:   ${formatPrice(oracleLatest.nav_per_share)}`,
+	)
 
 	console.log("\n--- CONTRACT ADDRESSES ---")
 	console.table(c.deployment.contracts)

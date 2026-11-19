@@ -2,6 +2,7 @@ import {
 	type Amount,
 	type ChainEvent,
 	type Price,
+	PRICE_SCALE,
 } from "@stellar-scaffold/app-lib"
 import { describe, expect, it } from "vitest"
 import {
@@ -43,7 +44,7 @@ const activityOf = (events: ChainEvent[]) =>
 
 const NOW = 1_700_100_000n
 const amount = (whole: bigint) => (whole * 10_000_000n) as Amount
-const price = (whole: bigint) => (whole * 10n ** 18n) as Price
+const price = (whole: bigint) => (whole * PRICE_SCALE) as Price
 
 const sealed: EpochRecord = {
 	id: 4n,
@@ -1102,7 +1103,7 @@ describe("toCycleActions, attesting", () => {
 		expect(attest?.fields?.[0]?.invalid).toBe(false)
 	})
 
-	it.each(["abc", "1.2.3", "1.0000000000000000001"])(
+	it.each(["abc", "1.2.3", "1.000000000000001"])(
 		"marks %j as invalid and keeps the conditions open",
 		(input) => {
 			const attest = attestOf(input)
@@ -1122,7 +1123,7 @@ describe("toCycleActions, attesting", () => {
 			"Within the allowed move": true,
 			...proofConditions,
 		})
-		expect(attest?.price).toBe(1_040_000_000_000_000_000n)
+		expect(attest?.price).toBe(104_000_000_000_000n)
 		expect(attest?.freshness).toBe(86_400n)
 		expect(attest?.outcome).toBe(
 			"Records 1.0400 as the share price, valid for 1d.",
@@ -1185,14 +1186,14 @@ describe("toCycleActions, attesting", () => {
 	it("caps a rise at the largest allowed, letting an equal move through", () => {
 		expect(conditionsOf(attestOf("1.05"))["Within the allowed move"]).toBe(true)
 		expect(
-			conditionsOf(attestOf("1.050000000000000001"))["Within the allowed move"],
+			conditionsOf(attestOf("1.05000000000001"))["Within the allowed move"],
 		).toBe(false)
 	})
 
 	it("caps a fall at the largest allowed, letting an equal move through", () => {
 		expect(conditionsOf(attestOf("0.9"))["Within the allowed move"]).toBe(true)
 		expect(
-			conditionsOf(attestOf("0.899999999999999999"))["Within the allowed move"],
+			conditionsOf(attestOf("0.89999999999999"))["Within the allowed move"],
 		).toBe(false)
 	})
 

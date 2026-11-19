@@ -156,7 +156,7 @@ fn a_pending_request_still_claims_after_most_of_a_month() {
 
     f.advance(29 * DAY_DURATION);
     f.oracle
-        .attest(&nav_input(&f.e, wad(2), u64::MAX), &f.attester);
+        .attest(&nav_input(&f.e, price(2), u64::MAX), &f.attester);
     f.vault.fulfill_epoch(&epoch);
 
     assert_eq!(f.vault.claim_deposit(&user, &epoch), 200);
@@ -167,7 +167,7 @@ fn a_deposit_claim_writes_the_new_share_balance_with_the_full_ttl() {
     let f = setup();
     let user = f.investor(1_000);
     let epoch = f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     testnet_minimum(&f.e);
 
     f.vault.claim_deposit(&user, &epoch);

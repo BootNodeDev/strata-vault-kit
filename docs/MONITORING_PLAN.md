@@ -124,7 +124,7 @@ The oracle holds one report. It stays valid until its `expires_at`, which is at
 most `freshness_duration` after the oracle accepted it, while it sits in the
 band `[min_answer, max_answer]` and the NAV is not paused. The vault prices an
 epoch only from a valid report accepted at or after the epoch was sealed.
-Prices are in WAD: `10^18` is one asset base unit per share base unit.
+Prices carry 14 decimals: `10^14` is one asset base unit per share base unit.
 
 ### V1. Report close to expiry
 
@@ -264,7 +264,7 @@ The vault's figures, all in asset base units:
 - **Source:** on the vault, the headroom `liquid_reserve() - committed()`,
   against what the sealed epochs would commit: for each epoch whose
   `get_epoch(id)` status is `Pending`,
-  `total_shares_redeeming * nav_per_share / 10^18`, with `nav_per_share` from
+  `total_shares_redeeming * nav_per_share / 10^14`, with `nav_per_share` from
   `latest()` on the oracle.
 - **Threshold:** the headroom is smaller than that total.
 - **Severity:** Warning. **Told:** treasury.

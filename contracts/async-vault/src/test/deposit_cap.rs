@@ -111,7 +111,7 @@ fn deployed_capital_and_multi_epoch_accounting() {
     // Epoch 1 deposit
     f.vault.request_deposit(&investor1, &1_000);
     f.vault.close_epoch(&f.manager);
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.fulfill_epoch(&1);
 
     // Deploy 800 to custodian
@@ -143,7 +143,7 @@ fn redemptions_free_capacity() {
     // Epoch 1: investor1 deposits 1_000 and claims 1_000 shares
     f.vault.request_deposit(&investor1, &1_000);
     f.vault.close_epoch(&f.manager);
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.fulfill_epoch(&1);
     f.vault.claim_deposit(&investor1, &1);
 
@@ -156,7 +156,7 @@ fn redemptions_free_capacity() {
     // Investor 1 requests redemption of 500 shares
     f.vault.request_redeem(&investor1, &500);
     f.vault.close_epoch(&f.manager);
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.fulfill_epoch(&2);
 
     // Redemption is now priced and committed (500 committed to exit)
@@ -185,7 +185,7 @@ fn capital_deployed_under_a_cap(f: &Fixture) -> Address {
     f.vault.set_deposit_cap(&Some(1_000));
     let epoch = f.vault.request_deposit(&investor, &1_000);
     f.close_epoch();
-    f.fulfill_epoch_at(epoch, wad(1));
+    f.fulfill_epoch_at(epoch, price(1));
     f.vault.deploy_to_custodian(&f.treasury, &1_000);
     f.vault.set_deposit_cap(&Some(1_500));
     investor
@@ -224,7 +224,7 @@ fn a_gain_paid_out_to_leavers_leaves_room_above_the_cap() {
     StellarAssetClient::new(&f.e, &f.asset).mint(&f.custodian, &1_000);
     f.vault.fund(&f.custodian, &2_000);
     let exit = f.vault.request_redeem(&investor, &1_000);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.vault.claim_redeem(&investor, &exit);
 
     assert_eq!(f.vault.net_deployed(), -1_000);
@@ -244,7 +244,7 @@ fn a_loss_at_the_custodian_still_counts_toward_the_cap() {
     f.vault.claim_deposit(&investor, &1);
     f.vault.fund(&f.custodian, &500);
     let exit = f.vault.request_redeem(&investor, &1_000);
-    f.fulfill_epoch(wad(1) / 2);
+    f.fulfill_epoch(price(1) / 2);
     f.vault.claim_redeem(&investor, &exit);
 
     assert_eq!(f.vault.net_deployed(), 500);

@@ -28,7 +28,7 @@ pub struct EpochInfo {
     pub status: EpochStatus,
     pub total_deposited: i128,
     pub total_shares_redeeming: i128,
-    /// Assets per share, WAD-scaled: 1.0 is `WAD_SCALE`.
+    /// Assets per share at 14 decimals: 1.0 is `PRICE_SCALE`.
     pub share_price: i128,
     /// Ledger time the epoch closed. Zero while it is open.
     pub closed_at: u64,

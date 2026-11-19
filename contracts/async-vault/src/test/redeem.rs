@@ -83,7 +83,7 @@ fn claim_redeem_pays_assets_and_burns_the_shares() {
     let supply_before = f.share.total_supply();
     let vault_assets_before = f.balance(&f.vault.address);
 
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
 
     assert_eq!(f.balance(&user), 400);
@@ -98,7 +98,7 @@ fn a_redeem_cannot_be_claimed_twice() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     f.vault.claim_redeem(&user, &epoch);
     refused(
@@ -148,7 +148,7 @@ fn the_epoch_prices_but_the_claim_waits_for_the_cash() {
     assert_eq!(f.balance(&f.vault.address), 1_000);
 
     f.close_epoch();
-    f.attest(wad(4));
+    f.attest(price(4));
 
     // 2_000 owed against 1_000 held. Pricing records it; payment waits.
     f.vault.fulfill_epoch(&epoch);
@@ -170,7 +170,7 @@ fn a_covered_epoch_is_fulfilled_and_leaves_the_liability_pending() {
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &500);
 
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     assert_eq!(
         f.vault.get_epoch(&epoch).unwrap().status,

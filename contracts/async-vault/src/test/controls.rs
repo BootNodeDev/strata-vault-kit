@@ -79,7 +79,7 @@ fn a_paused_vault_still_lets_investors_claim() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.vault.pause(&f.guardian);
 
     assert_eq!(f.vault.claim_deposit(&user, &1), 200);
@@ -103,7 +103,7 @@ fn a_paused_vault_still_pays_redemptions() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.vault.pause(&f.guardian);
 
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
@@ -114,7 +114,7 @@ fn a_paused_vault_still_funds_and_deploys_to_custodian() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.vault.pause(&f.guardian);
 
     let free = f.vault.free_reserve();
@@ -136,7 +136,7 @@ fn a_paused_vault_still_funds_and_deploys_to_custodian() {
 fn a_paused_vault_does_not_fulfill_epochs() {
     let f = setup();
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.pause(&f.guardian);
 
     assert_eq!(
@@ -145,7 +145,7 @@ fn a_paused_vault_does_not_fulfill_epochs() {
     );
 
     f.vault.unpause(&f.admin);
-    assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
+    assert_eq!(f.vault.fulfill_epoch(&1), price(2));
 }
 
 #[test]
@@ -195,7 +195,7 @@ fn a_token_pause_leaves_deposits_exits_and_cancellations_open() {
     assert_eq!(f.vault.cancel_redeem(&leaver, &epoch), 100);
     assert_eq!(f.shares(&leaver), 500);
 
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     assert_eq!(f.vault.claim_deposit(&depositor, &epoch), 200);
     assert_eq!(f.shares(&depositor), 200);
     assert_eq!(f.vault.claim_redeem(&redeemer, &epoch), 400);
@@ -267,12 +267,12 @@ fn a_cooldown_holds_the_standing_price() {
     f.advance(60);
     assert_eq!(
         f.oracle
-            .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester),
+            .try_attest(&nav_input(&f.e, price(1), 1_000_000), &f.attester),
         Err(Ok(nav_oracle::OracleError::CooldownActive.into()))
     );
 
     f.vault.fulfill_epoch(&epoch);
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, price(2));
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn a_cooldown_delays_pricing_until_the_attester_can_post() {
     // valuation younger than its close and waits.
     assert_eq!(
         f.oracle
-            .try_attest(&nav_input(&f.e, wad(1), 1_000_000), &f.attester),
+            .try_attest(&nav_input(&f.e, price(1), 1_000_000), &f.attester),
         Err(Ok(nav_oracle::OracleError::CooldownActive.into()))
     );
     refused(
@@ -303,10 +303,10 @@ fn a_cooldown_delays_pricing_until_the_attester_can_post() {
     // Once the cooldown lapses the attester posts and the epoch prices at the
     // new number, not the one standing when it closed.
     f.advance(3_600);
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.fulfill_epoch(&epoch);
 
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(1));
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, price(1));
 }
 
 #[test]

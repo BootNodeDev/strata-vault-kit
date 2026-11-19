@@ -144,8 +144,8 @@ describe("describePending", () => {
 					cooldown_secs: 3_600n,
 					max_up_bps: 500,
 					max_down_bps: 250,
-					min_answer: 500_000_000_000_000_000n,
-					max_answer: 2_000_000_000_000_000_000n,
+					min_answer: 50_000_000_000_000n,
+					max_answer: 200_000_000_000_000n,
 				},
 				account,
 			]),
@@ -167,7 +167,7 @@ describe("describePending", () => {
 			describePending(
 				pending(addresses.oracle, "attest", [
 					{
-						nav_per_share: 1_050_000_000_000_000_000n,
+						nav_per_share: 105_000_000_000_000n,
 						expires_at: 1_800_000_000n,
 						proof_hash: Buffer.alloc(32, 0xab),
 						proof_uri: "https://example.com/nav.pdf",
@@ -193,7 +193,7 @@ describe("describePending", () => {
 		const { args } = describePending(
 			pending(addresses.oracle, "attest", [
 				{
-					nav_per_share: 1_050_000_000_000_000_000n,
+					nav_per_share: 105_000_000_000_000n,
 					expires_at: 1_800_000_000n,
 					proof_hash: Buffer.alloc(32, 0xab),
 					proof_uri: "",
@@ -500,8 +500,8 @@ describe("describePending", () => {
 					cooldown_secs: 3_600n,
 					max_up_bps: 500,
 					max_down_bps: 250,
-					min_answer: 500_000_000_000_000_000n,
-					max_answer: 2_000_000_000_000_000_000n,
+					min_answer: 50_000_000_000_000n,
+					max_answer: 200_000_000_000_000n,
 				},
 			],
 			"propose-oracle-config",
@@ -906,7 +906,7 @@ describe("toModalProps", () => {
 		const description = describePending(
 			pending(addresses.oracle, "attest", [
 				{
-					nav_per_share: 1_050_000_000_000_000_000n,
+					nav_per_share: 105_000_000_000_000n,
 					expires_at: 1_800_000_000n,
 					proof_hash: Buffer.alloc(32, 0xab),
 					proof_uri: "",

@@ -1,6 +1,7 @@
 //! # Design
 //!
-//! The interfaces the kit's contracts share, and their error code blocks.
+//! The interfaces the kit's contracts share, their price scale and their
+//! error code blocks.
 //!
 //! - **The compiler checks the feed.** The vault prices from `OracleFeed`,
 //!   which the kit's oracle and any adopter's feed implement. The cost: a feed
@@ -15,6 +16,10 @@
 //! - **The compiler checks the vault's views.** The SEP-40 feed reads
 //!   `VaultView`, which the vault implements. The cost: the wind-down types
 //!   live here, not in the vault.
+//! - **One price scale, the feeds' own.** The oracle, the vault and the
+//!   SEP-40 feed keep `nav_per_share` at 14 decimals, as Stellar price feeds
+//!   do, so the feed needs no scale conversion. The cost: a price finer than
+//!   10^-14 of an asset base unit per share base unit cannot be stored.
 
 #![no_std]
 
@@ -25,6 +30,12 @@ use soroban_sdk::{contracttrait, contracttype, Address, Env};
 pub use errors::{
     ErrorRange, COMPLIANCE_ERRORS, FEED_ERRORS, ORACLE_ERRORS, TOKEN_ERRORS, VAULT_ERRORS,
 };
+
+/// Decimal places of a share price: asset base units per share base unit,
+/// as Stellar price feeds carry them.
+pub const PRICE_DECIMALS: u32 = 14;
+/// A share price of one asset base unit per share base unit.
+pub const PRICE_SCALE: i128 = 10i128.pow(PRICE_DECIMALS);
 
 #[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -39,6 +50,7 @@ pub enum OracleState {
 #[contracttrait]
 pub trait OracleFeed {
     fn state(e: &Env) -> OracleState;
+    /// Asset base units per share base unit, at `PRICE_DECIMALS`.
     fn nav_per_share(e: &Env) -> i128;
     /// Ledger time the standing report was accepted.
     fn attested_at(e: &Env) -> u64;

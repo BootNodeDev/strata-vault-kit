@@ -1,4 +1,4 @@
-import { type Amount, type Price } from "@stellar-scaffold/app-lib"
+import { type Amount, type Price, PRICE_SCALE } from "@stellar-scaffold/app-lib"
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { type ActivateWindDownStatus } from "../../hooks/useActivateWindDown"
@@ -108,7 +108,7 @@ vi.mock("../../hooks/useDepositBalance", () => ({
 }))
 
 const amount = (whole: bigint) => (whole * 10_000_000n) as Amount
-const price = (whole: bigint) => (whole * 10n ** 18n) as Price
+const price = (whole: bigint) => (whole * PRICE_SCALE) as Price
 
 const sealed: EpochRecord = {
 	id: 4n,
@@ -540,7 +540,7 @@ describe("CycleSection", () => {
 
 		expect(attestMock.submit).toHaveBeenCalledWith(
 			{
-				price: 1_040_000_000_000_000_000n,
+				price: 104_000_000_000_000n,
 				freshness: 86_400n,
 				proofHash: PROOF_HASH,
 				proofUri: "https://example.com/nav.pdf",

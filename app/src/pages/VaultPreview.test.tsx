@@ -6,6 +6,7 @@ import {
 	networkPassphrase,
 	PRICE_DECIMALS,
 	type Price,
+	PRICE_SCALE,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
 import type * as AppLib from "@stellar-scaffold/app-lib"
@@ -73,7 +74,7 @@ const {
 				1n,
 				{
 					status: { tag: "Fulfilled" },
-					share_price: 1_000000000000000000n,
+					share_price: 1_00000000000000n,
 					priceable_at: 1_700_003_600n,
 				},
 			],
@@ -195,8 +196,6 @@ const defaultCancelRedeemImpl = async ({
 	}
 }
 
-const WAD_SCALE = 1_000000000000000000n
-
 const defaultClaimDepositImpl = async ({
 	epoch_id,
 }: {
@@ -207,7 +206,7 @@ const defaultClaimDepositImpl = async ({
 	const sharePrice = mockRequests.epochs.get(epoch_id)?.share_price ?? 0n
 	const shares =
 		request !== undefined && sharePrice > 0n
-			? (request.amount * WAD_SCALE) / sharePrice
+			? (request.amount * PRICE_SCALE) / sharePrice
 			: 0n
 	return {
 		simulation: undefined,
@@ -235,7 +234,7 @@ const defaultClaimRedeemImpl = async ({
 	const request = mockRequests.redeems.get(epoch_id)
 	const sharePrice = mockRequests.epochs.get(epoch_id)?.share_price ?? 0n
 	const assets =
-		request !== undefined ? (request.shares * sharePrice) / WAD_SCALE : 0n
+		request !== undefined ? (request.shares * sharePrice) / PRICE_SCALE : 0n
 	return {
 		simulation: undefined,
 		signAndSend: async ({
@@ -320,7 +319,7 @@ afterEach(() => {
 	resetMockRequests()
 })
 
-const price = 1500000000000000000n as Price
+const price = 150000000000000n as Price
 const attestedAt = 1757900000n
 
 vi.mock("../config/contracts", () => {
@@ -376,7 +375,7 @@ vi.mock("../config/clients", () => {
 		state: async () => ({ result: { tag: "Valid", values: undefined } }),
 		latest: async () => ({
 			result: {
-				nav_per_share: 1500000000000000000n,
+				nav_per_share: 150000000000000n,
 				expires_at: 1800000000n,
 				accepted_at: 1757900000n,
 				proof_hash: Buffer.alloc(32, 0xab),
@@ -1488,7 +1487,7 @@ describe("VaultPreview", () => {
 		mockRequests.currentEpoch = readyDepositEpoch
 		mockRequests.epochs.set(readyDepositEpoch, {
 			status: { tag: "Fulfilled" },
-			share_price: 1_000000000000000000n,
+			share_price: 1_00000000000000n,
 			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.deposits.set(readyDepositEpoch, {
@@ -1594,7 +1593,7 @@ describe("VaultPreview", () => {
 		mockRequests.currentEpoch = 4n
 		mockRequests.epochs.set(4n, {
 			status: { tag: "Fulfilled" },
-			share_price: 1_000000000000000000n,
+			share_price: 1_00000000000000n,
 			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.deposits.set(4n, { amount: 150_0000000n, claimed: false })
@@ -1718,7 +1717,7 @@ describe("VaultPreview", () => {
 		mockRequests.currentEpoch = readyRedeemEpoch
 		mockRequests.epochs.set(readyRedeemEpoch, {
 			status: { tag: "Fulfilled" },
-			share_price: 1_000000000000000000n,
+			share_price: 1_00000000000000n,
 			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.redeems.set(readyRedeemEpoch, {
@@ -1764,7 +1763,7 @@ describe("VaultPreview", () => {
 		mockRequests.currentEpoch = epoch
 		mockRequests.epochs.set(epoch, {
 			status: { tag: "Fulfilled" },
-			share_price: 1_000000000000000000n,
+			share_price: 1_00000000000000n,
 			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.redeems.set(epoch, { shares: 952380952n, claimed: false })

@@ -15,9 +15,9 @@ fn economic_supply_reflects_fulfilled_unminted_deposits() {
     assert_eq!(f.vault.total_economic_supply(), 0);
     assert_eq!(f.vault.pending_mint_shares(), 0);
 
-    // Close and fulfill epoch at 2.0 WAD (400 assets / 2 = 200 shares owed).
+    // Close and fulfill epoch at 2.0 (400 assets / 2 = 200 shares owed).
     f.close_epoch();
-    f.fulfill_epoch_at(epoch, wad(2));
+    f.fulfill_epoch_at(epoch, price(2));
 
     // Raw total_supply on token is still 0, but economic supply reflects the 200 shares owed.
     assert_eq!(f.share.total_supply(), 0);
@@ -52,7 +52,7 @@ fn economic_supply_excludes_shares_locked_in_redemption_escrow() {
 
     // Close and fulfill epoch and claim.
     f.close_epoch();
-    f.fulfill_epoch_at(epoch, wad(2));
+    f.fulfill_epoch_at(epoch, price(2));
     assert_eq!(f.vault.committed(), 100);
 
     f.vault.claim_redeem(&holder, &epoch);
@@ -80,9 +80,9 @@ fn economic_supply_combines_circulating_and_pending_mint_correctly() {
     // Circulating dropped to 60 (100 - 40 in vault).
     assert_eq!(f.vault.total_economic_supply(), 60);
 
-    // Close and fulfill at 1.0 WAD: 300 assets / 1 = 300 shares owed.
+    // Close and fulfill at 1.0: 300 assets / 1 = 300 shares owed.
     f.close_epoch();
-    f.fulfill_epoch_at(epoch, wad(1));
+    f.fulfill_epoch_at(epoch, price(1));
 
     // Economic supply = 60 circulating + 300 pending mint = 360.
     assert_eq!(f.vault.pending_mint_shares(), 300);

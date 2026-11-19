@@ -73,7 +73,7 @@ impl BrokenFeed {
         e.storage()
             .instance()
             .get(&symbol_short!("nav"))
-            .unwrap_or(WAD_SCALE)
+            .unwrap_or(PRICE_SCALE)
     }
 }
 
@@ -167,17 +167,17 @@ fn the_next_epoch_prices_from_the_new_feed() {
         .propose_change(&VaultChange::Oracle(next.address.clone()));
     f.advance(MIN_UPGRADE_DELAY);
     f.vault.apply_change(&id);
-    attest_on(&f, &next, wad(2));
+    attest_on(&f, &next, price(2));
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
     let epoch = f.close_epoch();
 
-    f.attest(wad(2));
+    f.attest(price(2));
     f.advance(next.config().cooldown_secs);
-    attest_on(&f, &next, wad(4));
+    attest_on(&f, &next, price(4));
     f.vault.fulfill_epoch(&epoch);
 
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(4));
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, price(4));
 }
 
 #[test]
@@ -193,7 +193,7 @@ fn a_sealed_epoch_is_priced_by_the_feed_standing_at_fulfilment() {
         .propose_change(&VaultChange::Oracle(next.address.clone()));
     f.advance(MIN_UPGRADE_DELAY);
     f.vault.apply_change(&id);
-    attest_on(&f, &next, wad(4));
+    attest_on(&f, &next, price(4));
     f.vault.fulfill_epoch(&epoch);
 
     assert_eq!(f.vault.claim_deposit(&investor, &epoch), 100);
@@ -369,7 +369,7 @@ fn both_sides_of_a_sealed_epoch_cancel_when_the_feed_traps_on_its_price() {
 
 #[test]
 fn both_sides_of_a_sealed_epoch_cancel_when_the_feed_prices_at_zero_or_less() {
-    for nav in [0, -WAD_SCALE] {
+    for nav in [0, -PRICE_SCALE] {
         let f = setup();
         let (investor, holder, epoch) = seal_both_sides(&f);
         swap_to_a_feed_that_prices_at(&f, nav);
@@ -381,7 +381,7 @@ fn both_sides_of_a_sealed_epoch_cancel_when_the_feed_prices_at_zero_or_less() {
 
 #[test]
 fn a_feed_that_prices_at_zero_or_less_refuses_fulfilment() {
-    for nav in [0, -WAD_SCALE] {
+    for nav in [0, -PRICE_SCALE] {
         let f = setup();
         let (_, _, epoch) = seal_both_sides(&f);
         swap_to_a_feed_that_prices_at(&f, nav);

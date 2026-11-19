@@ -30,7 +30,7 @@ vi.mock("../config/clients", () => ({
 }))
 
 const attestation = {
-	price: 1_040_000_000_000_000_000n as Price,
+	price: 104_000_000_000_000n as Price,
 	freshness: 86_400n,
 	proofHash: "ab".repeat(32),
 	proofUri: "https://example.com/nav.pdf",

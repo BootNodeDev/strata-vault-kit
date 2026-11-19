@@ -54,12 +54,12 @@ fn a_redemption_planted_during_setup_never_reaches_a_depositor() {
     f.vault.finish_setup();
 
     let investor = f.investor(1_000);
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.request_deposit(&investor, &100);
-    let entry = f.fulfill_epoch(wad(1));
+    let entry = f.fulfill_epoch(price(1));
     assert_eq!(f.vault.claim_deposit(&investor, &entry), 100);
     f.vault.request_redeem(&investor, &100);
-    let exit = f.fulfill_epoch(wad(1));
+    let exit = f.fulfill_epoch(price(1));
     assert_eq!(f.vault.claim_redeem(&investor, &exit), 100);
     assert_eq!(f.balance(&investor), 1_000);
     assert_eq!(f.shares(&planter), 0);
@@ -81,7 +81,7 @@ fn setup_finishes_once_the_wiring_is_complete() {
     f.vault.finish_setup();
 
     assert!(!f.vault.setup_open());
-    f.attest(wad(1));
+    f.attest(price(1));
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &100);
 }
