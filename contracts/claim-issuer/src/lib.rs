@@ -31,7 +31,7 @@ pub const ED25519_SCHEME: u32 = 101;
 /// Every contract error `is_claim_valid` refuses with: OpenZeppelin's
 /// `SigDataMismatch` (350) and `InvalidClaimDataExpiration` (357), then this
 /// contract's own codes. Any other failure is a fault or a bad signature.
-pub const REFUSALS: [u32; 8] = [350, 357, 10600, 10601, 10602, 10603, 10604, 10605];
+pub use strata_bindings::ISSUER_REFUSALS as REFUSALS;
 
 strata_bindings::error_enum! {
     strata_bindings::IDENTITY_ERRORS,

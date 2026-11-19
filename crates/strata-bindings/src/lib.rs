@@ -109,3 +109,10 @@ pub trait ClaimsCheck {
     /// Panics unless `identity` holds a valid claim from a trusted issuer for every required topic.
     fn check_claims(e: Env, identity: Address);
 }
+
+/// Every contract error the kit's claim issuer refuses a claim with:
+/// OpenZeppelin's `SigDataMismatch` (350) and `InvalidClaimDataExpiration`
+/// (357), then the issuer's own codes. The issuer and the verifier both read
+/// this list, because a contract that depends on a contract crate exports that
+/// crate's entrypoints too.
+pub const ISSUER_REFUSALS: [u32; 8] = [350, 357, 10600, 10601, 10602, 10603, 10604, 10605];
