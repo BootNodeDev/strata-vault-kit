@@ -1,5 +1,6 @@
 use proptest::prelude::*;
 use soroban_sdk::{testutils::Events as _, Event as _};
+use stellar_tokens::rwa::RWAError;
 
 use super::*;
 use crate::{
@@ -297,6 +298,27 @@ fn a_conversion_waits_while_the_vault_is_delisted() {
         f.vault.get_redeem_request(&open, &investor).unwrap().shares,
         500
     );
+}
+
+#[test]
+fn a_redemption_request_waits_while_the_vault_is_delisted() {
+    let f = setup();
+    let holder = f.holder(500);
+    let epoch = f.vault.current_epoch();
+    f.identity.allow(&f.vault.address, &false);
+
+    assert_eq!(
+        f.vault.try_request_redeem(&holder, &200),
+        Err(Ok(RWAError::IdentityVerificationFailed.into()))
+    );
+    assert_eq!(f.shares(&holder), 500);
+    assert_eq!(f.shares(&f.vault.address), 0);
+    assert!(f.vault.get_redeem_request(&epoch, &holder).is_none());
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().total_shares_redeeming, 0);
+
+    f.identity.allow(&f.vault.address, &true);
+    assert_eq!(f.vault.request_redeem(&holder, &200), epoch);
+    assert_eq!(f.shares(&f.vault.address), 200);
 }
 
 /// Unlike a zero-asset redemption, a deposit claim reads a verifier fault as
