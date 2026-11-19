@@ -46,7 +46,7 @@ Every investor account in the vault ecosystem exists in one of three primary com
 ## 3. Deep Dive into Key Lifecycle Invariants
 
 ### 3.1 The Exit-Only Cash Path
-A core guarantee of the Strata Vault Kit is that **a de-listed, non-frozen investor can always leave the fund in cash**. A frozen investor is held instead of paid, as §1 describes.
+A core guarantee of the Strata Vault Kit is that **a de-listed, non-frozen investor can always leave the fund in cash**. A frozen investor is held instead of paid, as §1 describes. One exception: delisting the vault's own address halts every holder's redemption request until the vault is listed again or the verifier is swapped, which waits for the timelock. Nothing is lost (see the stated limit below).
 
 - **Mechanism**:
   1. A de-listed holder queues an exit via `request_redeem`. The vault escrows the shares with `forced_transfer`. The token checks the vault's identity as the receiver, so this step waits while compliance has delisted the vault.
@@ -68,7 +68,7 @@ If an investor deposits while allowlisted but is de-listed after the epoch is pr
 - **`cancel_deposit` is refused** with `AlreadyPriced`: once an epoch has a price, cancellation is closed.
 - **In a wind-down**, which prices nothing further, the shares join her wind-down entitlement and `claim_wind_down` pays them.
 - **In a wind-down, cancelling any escrowed redemption**, whether from her converted deposit or one she requested before the delisting, burns the escrow into the holder's wind-down entitlement (`RedemptionSurrendered`). No shares come back, for any holder.
-- **The conversion needs the vault's own allowlist place**, because the vault mints the shares into its own escrow. If compliance removes the vault's address, her conversion waits until the vault is relisted. Nothing is lost. This is kept as a stated limit: delisting the vault is a compliance operator acting against holders, which the kit does not guard against (THREAT_MODEL R9), and `health().allowlisted` reads false meanwhile.
+- **The conversion needs the vault's own allowlist place**, because the vault mints the shares into its own escrow. If compliance removes the vault's address, her conversion waits until the vault is relisted, and so does every holder's redemption request, since the token checks the vault as the receiver of that escrow move too. Nothing is lost. This is kept as a stated limit: delisting the vault is a compliance operator acting against holders, which the kit does not guard against (THREAT_MODEL R9), and `health().allowlisted` reads false meanwhile.
 - **Relisting first** still works: if compliance re-allowlists her before she claims, `claim_deposit` mints the shares to her.
 - **A freeze holds her.** If she is also frozen, `claim_deposit` fails with `Frozen` (6071) and the priced deposit stays unclaimed until the freeze is lifted.
 

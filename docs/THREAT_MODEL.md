@@ -817,7 +817,12 @@ not.
   reach. The testnet verifier stub's admin, the
   compliance key by deploy, lists and delists at once (R14), and
   can be replaced only by swapping the verifier, which waits for the timelock
-  after setup. The verifier and compliance contracts in this repository are
+  after setup. Delisting the vault's own address halts every holder's
+  redemption request until the vault is listed again or the verifier is
+  swapped; wind-down claims do not need the vault's listing, nothing is lost,
+  and before OpenZeppelin 0.8 the same act held only delisted holders'
+  conversions (X4). The verifier and compliance contracts in this repository
+  are
   testnet stubs;
   [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238) chooses
   what replaces them on mainnet.
@@ -1092,6 +1097,7 @@ address gets in.
   [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs);
   `a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch`,
   `a_conversion_waits_while_the_vault_is_delisted`,
+  `a_redemption_request_waits_while_the_vault_is_delisted`,
   `a_verifier_fault_for_one_holder_pays_the_priced_deposit_out_in_cash` and
   `a_verifier_fault_for_every_address_fails_the_deposit_claim` in
   [`delisted.rs`](../contracts/async-vault/src/test/delisted.rs);
@@ -1733,6 +1739,11 @@ These are decided, and stated as they stand:
    that the vault does not assign. While it lasts, the vault refuses by name
    what its balance cannot cover: `EscrowNotCovered` for cancellations and new
    deposits, `ClaimNotCovered` for claims (X10).
+9. Delisting the vault's own address halts every holder's redemption request
+   until the vault is listed again or the verifier is swapped, which waits for
+   the timelock; wind-down claims do not need the vault's listing. Nothing is
+   lost. Before OpenZeppelin 0.8 the same act held only delisted holders'
+   conversions (R9, X4).
 
 ## What has no test yet
 

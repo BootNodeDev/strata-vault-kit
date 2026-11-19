@@ -498,6 +498,8 @@ impl AsyncVault {
     /// * `AccountingMismatch` - A payout would go below what was already paid.
     /// * `NoEntitlement` - Nothing to surrender and nothing owed, or
     ///   `holder` is the vault.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   burn.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -1003,6 +1005,8 @@ impl AsyncVault {
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
     /// * `VerifierFailed` - It pays nothing and the identity verifier fails.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   burn.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events

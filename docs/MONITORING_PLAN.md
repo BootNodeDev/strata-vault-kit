@@ -537,8 +537,8 @@ lists the powers that act at once.
 - **Response:** [Health View](./kit-spec.md#health-view) says what each flag
   means. `sole_token_manager` false means another account can mint shares
   ([R1](./THREAT_MODEL.md#r1-governance-compromised-the-changes-that-wait)).
-  `allowlisted` false holds delisted holders' conversions until the vault is
-  listed again. Threat:
+  `allowlisted` false holds every redemption request and delisted holders'
+  conversions until the vault is listed again. Threat:
   [R3](./THREAT_MODEL.md#r3-setup-left-open-or-wired-wrong).
 
 ### P14. An address listed or delisted

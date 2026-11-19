@@ -1,9 +1,9 @@
 //! # Design
 //!
-//! The vault's share token: OpenZeppelin's RWA token, which checks identity and
-//! runs the compliance rules on every `transfer`, mint and forced transfer; a
-//! forced transfer checks only the receiver's identity. The kit adds its roles,
-//! its guards and the vault's timelock.
+//! The vault's share token: OpenZeppelin's RWA token, which runs the compliance
+//! rules on every `transfer`, mint, burn, forced transfer and recovery, and
+//! checks identity on all but a burn; a forced transfer or recovery checks only
+//! the receiver's. The kit adds its roles, its guards and the vault's timelock.
 //!
 //! - **No clock of its own.** After setup, upgrades, grants, `manager` revokes,
 //!   hand-overs and swaps wait for the vault's timelock. The cost: a vault

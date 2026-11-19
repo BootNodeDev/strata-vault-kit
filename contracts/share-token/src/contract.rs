@@ -763,6 +763,7 @@ impl RWAToken for ShareToken {
     /// * `AccessControlError::Unauthorized` - `operator` is not a `manager`.
     /// * `RWAError::InsufficientBalance` - `amount` exceeds the balance.
     /// * `FungibleTokenError::LessThanZero` - `amount` is negative.
+    /// * A compliance module's own error - The compliance rules refuse it.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events
@@ -879,7 +880,7 @@ impl RWAToken for ShareToken {
 
     /// Moves a lost account's whole balance, and any freeze on it, to the
     /// recovery account the identity verifier names. Returns false when there
-    /// was nothing to move.
+    /// was nothing to move; an address freeze carries over even then.
     ///
     /// # Arguments
     ///
@@ -896,6 +897,7 @@ impl RWAToken for ShareToken {
     ///   allowlisted.
     /// * `RWAError::IdentityMismatch` - The verifier names another recovery
     ///   account, or none.
+    /// * A compliance module's own error - The compliance rules refuse it.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events
