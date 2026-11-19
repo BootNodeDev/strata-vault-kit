@@ -1,16 +1,25 @@
 use soroban_sdk::{
-    contracttype, symbol_short, xdr::ToXdr, Address, BytesN, ContractExecutable, Env, Vec,
+    contracttype, panic_with_error, symbol_short, xdr::ToXdr, Address, BytesN, ContractExecutable,
+    Env, Executable, Vec,
 };
 use stellar_tokens::rwa::identity_verification::identity_claims::IdentityClaimsClient;
 use strata_bindings::ClaimsCheckClient;
 
 use crate::governance;
-use crate::{IdentityRegistered, IdentityRemoved, SignedClaim, VetoSet};
+use crate::{IdentityRegistered, IdentityRegistryError, IdentityRemoved, SignedClaim, VetoSet};
 
 #[contracttype]
 pub(crate) enum DataKey {
     Link(Address),
     Veto(Address),
+}
+
+/// A wallet's identity and the code hash the identity ran when it was linked.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedIdentity {
+    pub identity: Address,
+    pub code: BytesN<32>,
 }
 
 fn salt(e: &Env, account: &Address) -> BytesN<32> {
@@ -23,18 +32,29 @@ pub(crate) fn identity_address(e: &Env, account: &Address) -> Address {
         .deployed_address()
 }
 
+/// The Wasm hash `identity` runs now, or `None` when it is not a Wasm
+/// contract.
+pub(crate) fn code_of(identity: &Address) -> Option<BytesN<32>> {
+    match identity.executable() {
+        Some(Executable::Wasm(code)) => Some(code),
+        _ => None,
+    }
+}
+
 /// Deploys the identity `account` owns, unless an earlier onboarding of the
-/// same wallet already did.
-pub(crate) fn deploy_identity(e: &Env, account: &Address) -> Address {
+/// same wallet already did, and returns it with the code it runs.
+pub(crate) fn deploy_identity(e: &Env, account: &Address) -> (Address, BytesN<32>) {
     let deployer = e.deployer().with_current_contract(salt(e, account));
     let identity = deployer.deployed_address();
     if identity.exists() {
-        return identity;
+        let code = code_of(&identity)
+            .unwrap_or_else(|| panic_with_error!(e, IdentityRegistryError::NotKitIdentity));
+        return (identity, code);
     }
-    deployer.deploy_contract(
-        ContractExecutable::Wasm(governance::identity_wasm(e)),
-        (account.clone(),),
-    )
+    let code = governance::identity_wasm(e);
+    let identity =
+        deployer.deploy_contract(ContractExecutable::Wasm(code.clone()), (account.clone(),));
+    (identity, code)
 }
 
 pub(crate) fn add_claims(e: &Env, identity: &Address, claims: &Vec<SignedClaim>) {
@@ -51,22 +71,19 @@ pub(crate) fn add_claims(e: &Env, identity: &Address, claims: &Vec<SignedClaim>)
     }
 }
 
-/// The identity's owner, or `None` when `identity` does not answer `owner`.
-pub(crate) fn owner_of(e: &Env, identity: &Address) -> Option<Address> {
-    e.try_invoke_contract::<Address, soroban_sdk::Error>(
-        identity,
-        &symbol_short!("owner"),
-        Vec::new(e),
-    )
-    .ok()
-    .and_then(Result::ok)
+pub(crate) fn owner_of(e: &Env, identity: &Address) -> Address {
+    e.invoke_contract(identity, &symbol_short!("owner"), Vec::new(e))
 }
 
-/// Links `account` to `identity` once the verifier accepts the identity's
-/// claims; a refusal or a fault there reverts the whole call.
-pub(crate) fn register(e: &Env, account: &Address, identity: &Address) {
+/// Links `account` to `identity`, running `code`, once the verifier accepts
+/// the identity's claims; a refusal or a fault there reverts the whole call.
+pub(crate) fn register(e: &Env, account: &Address, identity: &Address, code: BytesN<32>) {
     ClaimsCheckClient::new(e, &governance::verifier(e)).check_claims(identity);
-    strata_storage::set_persistent(e, &DataKey::Link(account.clone()), identity);
+    let link = LinkedIdentity {
+        identity: identity.clone(),
+        code,
+    };
+    strata_storage::set_persistent(e, &DataKey::Link(account.clone()), &link);
     IdentityRegistered {
         account: account.clone(),
         identity: identity.clone(),
@@ -74,8 +91,16 @@ pub(crate) fn register(e: &Env, account: &Address, identity: &Address) {
     .publish(e);
 }
 
-pub(crate) fn identity_of(e: &Env, account: &Address) -> Option<Address> {
+pub(crate) fn link_of(e: &Env, account: &Address) -> Option<LinkedIdentity> {
     strata_storage::get_persistent(e, &DataKey::Link(account.clone()))
+}
+
+/// The identity linked to `account`, while it still runs the code it ran
+/// when it was linked.
+pub(crate) fn identity_of(e: &Env, account: &Address) -> Option<Address> {
+    link_of(e, account)
+        .filter(|link| code_of(&link.identity).as_ref() == Some(&link.code))
+        .map(|link| link.identity)
 }
 
 pub(crate) fn unlink(e: &Env, account: &Address) {

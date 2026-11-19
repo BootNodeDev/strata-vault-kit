@@ -4,7 +4,7 @@
 use soroban_sdk::{testutils::Address as _, vec, Address, IntoVal, InvokeError, Val, Vec};
 use stellar_tokens::rwa::identity_verification::identity_registry_storage::IRSError;
 
-use super::{bound, deploy, unbound, Fixture};
+use super::{bound, deploy, unbound, Fixture, ForeignIdentity};
 use crate::guards;
 use crate::IdentityRegistryError;
 
@@ -127,6 +127,20 @@ fn not_registered_refuses_a_linked_wallet() {
     refuses(&f, IdentityRegistryError::AlreadyRegistered, || {
         guards::not_registered(&f.e, &linked)
     });
+}
+
+#[test]
+fn runs_kit_identity_code_refuses_other_code() {
+    let f = bound();
+    let kit = deploy(&f.e, &f.identity_wasm, &Address::generate(&f.e));
+    holds(&f, || guards::runs_kit_identity_code(&f.e, &kit));
+
+    let other = f.e.register(ForeignIdentity, (Address::generate(&f.e),));
+    for identity in [other, Address::generate(&f.e)] {
+        refuses(&f, IdentityRegistryError::NotKitIdentity, || {
+            guards::runs_kit_identity_code(&f.e, &identity)
+        });
+    }
 }
 
 #[test]

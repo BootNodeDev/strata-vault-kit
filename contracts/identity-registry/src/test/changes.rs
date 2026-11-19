@@ -273,6 +273,30 @@ fn new_identity_code_is_deployed_for_the_next_onboarding() {
 }
 
 #[test]
+fn changing_the_identity_wasm_keeps_existing_links() {
+    let f = finished();
+    let (account, identity) = f.onboarded();
+    let (returning, returning_identity) = f.onboarded();
+    f.registry.remove_identity(&returning, &f.compliance);
+    f.registry.lift_veto(&returning, &f.compliance);
+    let newcomer = Address::generate(&f.e);
+    let old_code = f.own_identity(&newcomer);
+
+    f.land(&RegistryChange::IdentityWasm(f.e.upload(InvestorIdentity)));
+
+    assert_eq!(f.registry.stored_identity(&account), identity);
+    assert_eq!(
+        f.registry.onboard(&returning, &f.claims_of(&returning)),
+        returning_identity
+    );
+    assert_eq!(f.registry.stored_identity(&returning), returning_identity);
+    refused(
+        f.registry.try_attach(&newcomer, &old_code),
+        IdentityRegistryError::NotKitIdentity,
+    );
+}
+
+#[test]
 fn a_new_verifier_answers_the_next_link() {
     let f = finished();
     let next = f.another_verifier();

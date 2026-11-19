@@ -72,6 +72,22 @@ enum Answer {
     Nobody,
 }
 
+/// Identity code other than the kit's: it reports an owner like the kit's
+/// identity, and nothing else.
+#[contract]
+struct ForeignIdentity;
+
+#[contractimpl]
+impl ForeignIdentity {
+    pub fn __constructor(e: Env, owner: Address) {
+        e.storage().instance().set(&symbol_short!("owner"), &owner);
+    }
+
+    pub fn owner(e: Env) -> Address {
+        e.storage().instance().get(&symbol_short!("owner")).unwrap()
+    }
+}
+
 /// Plays the identity verifier, and records each identity it accepted.
 #[contract]
 struct VerifierDouble;

@@ -1,8 +1,12 @@
 //! The compliance authority lists, delists and vetoes wallets at once.
 
+extern crate std;
+
 use soroban_sdk::{
     testutils::{Address as _, Events as _, MockAuth, MockAuthInvoke},
-    vec, Address, Event as _, IntoVal, Val, Vec,
+    vec,
+    xdr::{ContractEventBody, ScVal},
+    Address, Env, Event as _, IntoVal, Val, Vec,
 };
 use stellar_tokens::rwa::{identity_verification::identity_registry_storage::IRSError, RWAError};
 
@@ -397,16 +401,36 @@ fn an_unknown_account_is_identity_not_found_321() {
     assert_eq!(refusal.get_code(), 321);
 }
 
+fn symbol(name: &str) -> ScVal {
+    ScVal::Symbol(name.try_into().unwrap())
+}
+
+/// The function of every contract call the last top-level call made,
+/// itself included.
+fn calls(e: &Env) -> std::vec::Vec<ScVal> {
+    e.host()
+        .get_diagnostic_events()
+        .unwrap()
+        .0
+        .into_iter()
+        .filter_map(|event| {
+            let ContractEventBody::V0(body) = event.event.body;
+            let topics = body.topics.to_vec();
+            (topics.first() == Some(&symbol("fn_call"))).then(|| topics[2].clone())
+        })
+        .collect()
+}
+
 #[test]
 fn stored_identity_calls_no_other_contract() {
     let f = bound();
-    let account = Address::generate(&f.e);
-    let not_a_contract = Address::generate(&f.e);
-    f.verifier.answer(&Answer::Everyone);
-    f.list(&account, &not_a_contract);
+    let (account, identity) = f.onboarded();
+    assert!(calls(&f.e).contains(&symbol("check_claims")));
     f.verifier.answer(&Answer::Nobody);
 
-    assert_eq!(f.registry.stored_identity(&account), not_a_contract);
+    assert_eq!(f.registry.stored_identity(&account), identity);
+
+    assert_eq!(calls(&f.e), [symbol("stored_identity")]);
 }
 
 #[test]

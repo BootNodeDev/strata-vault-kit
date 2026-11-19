@@ -60,14 +60,22 @@ pub(crate) fn not_vetoed(e: &Env, account: &Address) {
     }
 }
 
+/// A link counts while it exists, even once its identity's code has changed:
+/// compliance removes it.
 pub(crate) fn not_registered(e: &Env, account: &Address) {
-    if registry::identity_of(e, account).is_some() {
+    if registry::link_of(e, account).is_some() {
         panic_with_error!(e, IdentityRegistryError::AlreadyRegistered);
     }
 }
 
+pub(crate) fn runs_kit_identity_code(e: &Env, identity: &Address) {
+    if registry::code_of(identity) != Some(governance::identity_wasm(e)) {
+        panic_with_error!(e, IdentityRegistryError::NotKitIdentity);
+    }
+}
+
 pub(crate) fn owns_identity(e: &Env, account: &Address, identity: &Address) {
-    if registry::owner_of(e, identity).as_ref() != Some(account) {
+    if registry::owner_of(e, identity) != *account {
         panic_with_error!(e, IdentityRegistryError::NotIdentityOwner);
     }
 }

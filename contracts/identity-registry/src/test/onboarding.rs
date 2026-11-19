@@ -8,7 +8,7 @@ use soroban_sdk::{
         Address as _, AuthorizedFunction, AuthorizedInvocation, Events as _, MockAuth,
         MockAuthInvoke,
     },
-    vec, Address, Event as _, Executable, IntoVal, Symbol, Vec,
+    vec, Address, ContractExecutable, Event as _, Executable, IntoVal, Symbol, Val, Vec,
 };
 use stellar_tokens::rwa::{
     identity_verification::{
@@ -17,7 +17,9 @@ use stellar_tokens::rwa::{
     RWAError,
 };
 
-use super::{bound, deploy, finished, missing_auth, refused, unbound, Answer, KYC};
+use super::{
+    bound, deploy, finished, missing_auth, refused, unbound, Answer, ForeignIdentity, KYC,
+};
 use crate::{
     IdentityRegistered, IdentityRegistry, IdentityRegistryClient, IdentityRegistryError,
     SignedClaim,
@@ -160,17 +162,58 @@ fn attach_needs_the_identity_owner() {
 }
 
 #[test]
-fn attaching_an_address_that_reports_no_owner_is_refused() {
+fn attach_needs_the_kit_identity_code() {
     let f = bound();
     let account = Address::generate(&f.e);
-    let verifier = f.verifier.address.clone();
+    let registered = f.e.register(ForeignIdentity, (account.clone(),));
+    let other_code = deploy(&f.e, &f.e.upload(ForeignIdentity), &account);
+    let no_contract = Address::generate(&f.e);
+    let none: Vec<Val> = Vec::new(&f.e);
 
-    for identity in [Address::generate(&f.e), verifier] {
+    for identity in [&registered, &other_code, &no_contract] {
         refused(
-            f.registry.try_attach(&account, &identity),
-            IdentityRegistryError::NotIdentityOwner,
+            f.registry.try_attach(&account, identity),
+            IdentityRegistryError::NotKitIdentity,
+        );
+        refused(
+            f.registry
+                .try_add_identity(&account, identity, &none, &f.compliance),
+            IdentityRegistryError::NotKitIdentity,
+        );
+        refused(
+            f.registry.try_batch_add_identity(
+                &vec![&f.e, account.clone()],
+                &vec![&f.e, identity.clone()],
+                &vec![&f.e, none.clone()],
+                &f.compliance,
+            ),
+            IdentityRegistryError::NotKitIdentity,
         );
     }
+    let kit = f.own_identity(&account);
+    f.registry.attach(&account, &kit);
+
+    assert_eq!(f.registry.stored_identity(&account), kit);
+}
+
+#[test]
+fn an_identity_whose_code_changed_is_not_found() {
+    let f = bound();
+    let (account, identity) = f.onboarded();
+    let (other, other_identity) = f.onboarded();
+    let swapped = f.e.upload(ForeignIdentity);
+
+    f.e.as_contract(&identity, || {
+        f.e.deployer()
+            .update_current_contract(ContractExecutable::Wasm(swapped.clone()))
+    });
+
+    assert_eq!(identity.executable(), Some(Executable::Wasm(swapped)));
+    refused(
+        f.registry.try_stored_identity(&account),
+        IRSError::IdentityNotFound,
+    );
+    assert_eq!(f.registry.stored_identity(&other), other_identity);
 }
 
 #[test]
