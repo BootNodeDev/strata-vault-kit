@@ -4,7 +4,7 @@ use soroban_sdk::{
     xdr::{ContractEvent, ContractEventBody, ScVal},
     Event as _,
 };
-use stellar_tokens::rwa::{compliance::ComplianceHook, RWAError};
+use stellar_tokens::rwa::compliance::ComplianceHook;
 
 use super::*;
 use crate::{
@@ -505,11 +505,11 @@ fn a_refused_mint_keeps_a_priced_deposit_epoch_open() {
     f.fulfill_epoch(price(2));
 
     let module = f.e.register(super::compliance::RefusesEveryMint, ());
-    f.add_compliance_module(ComplianceHook::CanCreate, &module);
+    f.add_compliance_module(ComplianceHook::Created, &module);
 
     assert_eq!(
         f.vault.try_claim_deposit(&investor, &epoch),
-        Err(Ok(RWAError::MintNotCompliant.into()))
+        Err(Ok(super::compliance::MintModuleError::MintRefused.into()))
     );
 
     assert_eq!(f.vault.pending_mint_shares(), 200);

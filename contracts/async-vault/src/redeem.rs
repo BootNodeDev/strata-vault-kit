@@ -75,11 +75,13 @@ pub(crate) fn claim(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
 
     // Burned below instead in a wind-down, whose snapshot left them out, and
     // when the holder may not take them back, so the request still settles.
-    if assets == 0
-        && !wind_down::is_active(e)
-        && lock_policy::can_receive(e, holder, request.shares)
-    {
-        return_shares(e, holder, epoch_id, request.shares);
+    let handed_back = if assets == 0 && !wind_down::is_active(e) {
+        lock_policy::send_back(e, holder, request.shares)
+    } else {
+        false
+    };
+    if handed_back {
+        shares_returned(e, holder, epoch_id, request.shares);
         settlement::on_redeem_claimed(e, epoch_id, 0);
         return 0;
     }
@@ -145,16 +147,13 @@ pub(crate) fn queue_escrowed(e: &Env, holder: &Address, shares: i128) -> u64 {
     epoch_id
 }
 
-/// Moves escrowed shares back to the holder and clears the request. The
-/// caller has checked that the holder may receive them.
-fn return_shares(e: &Env, holder: &Address, epoch_id: u64, shares: i128) {
+/// Settles a cancelled request whose shares came back.
+fn shares_returned(e: &Env, holder: &Address, epoch_id: u64, shares: i128) {
     let mut epoch = state::get_epoch(e, epoch_id)
         .unwrap_or_else(|| panic_with_error!(e, VaultError::EpochNotFound));
     epoch.total_shares_redeeming = state::reduce(e, epoch.total_shares_redeeming, shares);
     state::set_epoch(e, epoch_id, &epoch);
     state::remove_redeem_request(e, epoch_id, holder);
-
-    deliver(e, holder, shares);
 
     RedeemCancelled {
         holder: holder.clone(),
@@ -162,13 +161,6 @@ fn return_shares(e: &Env, holder: &Address, epoch_id: u64, shares: i128) {
         shares,
     }
     .publish(e);
-}
-
-/// Moves as manager, so the vault's listing and token pause never apply.
-fn deliver(e: &Env, holder: &Address, shares: i128) {
-    let vault = e.current_contract_address();
-    let token = state::get_addr(e, &DataKey::ShareToken);
-    RWATokenClient::new(e, &token).forced_transfer(&vault, holder, &shares, &vault);
 }
 
 pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
@@ -185,8 +177,8 @@ pub(crate) fn cancel(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
 
     match decision {
         Decision::Proceed => {
-            guards::eligible_to_receive(e, holder, request.shares);
-            return_shares(e, holder, epoch_id, request.shares);
+            guards::sent_back(e, holder, request.shares);
+            shares_returned(e, holder, epoch_id, request.shares);
         }
         Decision::Surrender => surrender_escrow(e, holder, epoch_id, request.shares),
         Decision::Refuse | Decision::Hold | Decision::ConvertToExit => {

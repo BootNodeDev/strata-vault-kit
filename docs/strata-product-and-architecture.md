@@ -175,7 +175,8 @@ For the exhaustive access control matrix, dual `manager` role distinction, and e
    non-frozen investor exits through the exit-only cash path. One case differs:
    a redemption priced at zero assets pays no cash. It returns the shares to
    a holder who may take them back, and burns them otherwise, always during a
-   wind-down; a verifier fault instead of an answer makes the claim wait
+   wind-down; a verifier fault instead of an answer makes the claim wait, but
+   a compliance module that fails counts as one that refuses
    ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §2). A frozen investor's
    claims are held, not paid, until the freeze is lifted
    ([`COMPLIANCE_MATRIX.md`](./COMPLIANCE_MATRIX.md) §1). A legal-order transfer
@@ -336,7 +337,10 @@ a refund for a deposit below one share never waits on cash its own epoch's
 redemptions left behind. A redemption priced at zero assets returns its
 shares, or burns them when the holder may not take them back, so it settles
 once the verifier answers; a verifier that fails instead of answering makes
-the claim wait rather than burn.
+the claim wait rather than burn. A compliance module that fails is different:
+modules refuse by panicking, so the vault cannot tell a failure from a
+refusal, and the shares burn. The loss stays under one asset unit and needs
+the holder's own signed claim.
 
 The manager can seal the open epoch at any time. Once governance sets a minimum
 epoch duration — between 1 and 30 days — anyone may seal an epoch that has been
@@ -723,7 +727,7 @@ public surface given the vault address.
 | Guardian keys          | Griefing via pause                             | Guardian can only pause the vault, which stops deposit requests, epoch pricing and upgrade application and freezes the upgrade timelock; it cannot halt redemptions, custodian deployments, or payable claims, nor move funds; governance unpauses and rotates the vault role. It holds no role on the share token: the token's transfer pause is admin-gated (governance by deploy), not a guardian lever. No contract keeps governance and guardian apart |
 | Share-token pause      | Secondary transfers halted                     | Controlled by governance (the token admin), never the guardian; it refuses SEP-41 transfers between holders only, never the vault's escrow moves, pricing, claims, mint, burn or forced transfer; only governance lifts it (§8.5) |
 | Compliance keys        | Wrongful delisting, freeze or transfer         | Delisted investors keep the exit-only cash path; freezes require the share token's compliance role and are auditable per operation; moving a holder's shares also needs governance's signature in the same call, lands only on an allowlisted account and never moves shares out of or into the vault's address, which cannot be frozen once the token knows its vault |
-| Vault's own listing    | Compliance delists the vault's address         | Share returns do not depend on it: the vault checks the holder itself and moves the shares as the token's manager. A delisted holder's conversion, which mints into the vault's escrow, waits until the vault is allowlisted again; nothing is lost, and `health().allowlisted` turns false |
+| Vault's own listing    | Compliance delists the vault's address         | Share returns do not depend on it: the vault checks the holder itself, then moves the shares as the token's manager, and the token checks only the holder as the receiver. Escrow moves into the vault depend on it: the token checks the vault's identity as the receiver of a redemption request and of a delisted holder's conversion, which mints into the vault's escrow. Both wait until the vault is allowlisted again; nothing is lost, and `health().allowlisted` turns false |
 | Compliance module      | Faulty module blocks transfers                 | Fail-closed semantics. Governance, the compliance contract's admin, adds and removes modules: instantly during its one-time setup, and after it only through the vault's timelock, so a change cannot land while the vault is paused. Adding a module or binding a token never lands during a wind-down; removing one still waits the normal delay and lands then too, whether or not it is failing, so a faulty module is never stuck for good. Residual risk: the same power lets a compromised governance drop a working module's rule during a wind-down, when holders have the least room to react; the vault's own checks (allowlist, freeze, reserve coverage) are not modules and cannot be removed this way (§8.7) |
 | Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; a declared risk of the chosen asset, whose auth flags the deploy is meant to check and report at genesis (not built yet, §8.10). After a clawback the vault pays pending escrow first, then priced claims, and refuses the rest by name, new deposits included, until treasury funds the gap; the loss reaches holders through the NAV ([THREAT_MODEL X10](./THREAT_MODEL.md#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash)) |
 | Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                                                          |

@@ -69,7 +69,7 @@ use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
-use stellar_tokens::fungible::FungibleTokenClient;
+use stellar_tokens::fungible::{total_supply::FungibleTotalSupplyClient, FungibleTokenClient};
 use strata_bindings::VaultView;
 use strata_timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
@@ -244,9 +244,9 @@ impl AsyncVault {
     /// `pending_mint_shares`.
     pub fn total_economic_supply(e: &Env) -> i128 {
         let share_token = state::get_addr(e, &DataKey::ShareToken);
-        let client = FungibleTokenClient::new(e, &share_token);
-        let total_supply = client.total_supply();
-        let vault_escrow = client.balance(&e.current_contract_address());
+        let total_supply = FungibleTotalSupplyClient::new(e, &share_token).total_supply();
+        let vault_escrow =
+            FungibleTokenClient::new(e, &share_token).balance(&e.current_contract_address());
         let circulating = state::reduce(e, total_supply, vault_escrow);
         circulating
             .checked_add(state::pending_mint_shares(e))
@@ -498,6 +498,8 @@ impl AsyncVault {
     /// * `AccountingMismatch` - A payout would go below what was already paid.
     /// * `NoEntitlement` - Nothing to surrender and nothing owed, or
     ///   `holder` is the vault.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   burn.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -854,7 +856,8 @@ impl AsyncVault {
     /// * `AlreadyClaimed` - The deposit was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The free reserve cannot cover a refund yet.
-    /// * `RWAError::MintNotCompliant` - The compliance rules refuse the mint.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   mint.
     /// * `RWAError::IdentityVerificationFailed` - The vault is delisted, for a
     ///   conversion.
     /// * The asset's own error when `holder` cannot receive a refund.
@@ -924,7 +927,8 @@ impl AsyncVault {
     ///   runs.
     /// * `NotAllowlisted` - `holder` is delisted.
     /// * `Frozen` - `holder` is frozen.
-    /// * `HolderNotEligible` - The compliance rules refuse the return.
+    /// * `HolderNotEligible` - The return fails, as when the compliance rules
+    ///   refuse it.
     ///
     /// # Events
     ///
@@ -956,6 +960,9 @@ impl AsyncVault {
     ///   already.
     /// * `AmountTooLarge` - A total would overflow.
     /// * `RWAError::InsufficientBalance` - `shares` exceeds the balance.
+    /// * `RWAError::IdentityVerificationFailed` - The vault is delisted.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   escrow move.
     ///
     /// # Events
     ///
@@ -998,7 +1005,8 @@ impl AsyncVault {
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
     /// * `VerifierFailed` - It pays nothing and the identity verifier fails.
-    /// * A compliance module's own error when it fails on that return.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   burn.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
