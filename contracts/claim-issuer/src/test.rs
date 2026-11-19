@@ -278,13 +278,54 @@ fn the_refusal_codes_match_the_error_enum() {
     assert_eq!(
         REFUSALS,
         [
+            350,
+            357,
             ClaimIssuerContractError::UnsupportedScheme as u32,
             ClaimIssuerContractError::ClaimExpired as u32,
             ClaimIssuerContractError::ClaimRevoked as u32,
             ClaimIssuerContractError::KeyNotAllowed as u32,
             ClaimIssuerContractError::ClaimInvalidated as u32,
+            ClaimIssuerContractError::ClaimNotYetValid as u32,
         ]
     );
+}
+
+#[test]
+fn malformed_input_is_refused_with_the_open_zeppelin_codes() {
+    let f = fixture();
+    let data = f.claim_data(NOW, NOW + 100);
+    let short_sig = Bytes::from_slice(&f.e, &[0u8; 10]);
+    let error = f.check(ED25519_SCHEME, &short_sig, &data).unwrap_err();
+    assert_eq!(contract_code(&error), Some(350));
+    let sig = f.sign(&f.key, &data);
+    let short_data = Bytes::from_slice(&f.e, &[0u8; 4]);
+    let error = f.check(ED25519_SCHEME, &sig, &short_data).unwrap_err();
+    assert_eq!(contract_code(&error), Some(357));
+}
+
+#[test]
+fn a_claim_dated_in_the_future_is_refused() {
+    let f = fixture();
+    let data = f.claim_data(NOW + 10, NOW + 100);
+    let sig = f.sign(&f.key, &data);
+    let error = f.check(ED25519_SCHEME, &sig, &data).unwrap_err();
+    assert_eq!(
+        contract_code(&error),
+        Some(ClaimIssuerContractError::ClaimNotYetValid as u32)
+    );
+}
+
+#[test]
+fn a_future_dated_claim_signed_under_the_old_nonce_fails_the_signature() {
+    let f = fixture();
+    let data = f.claim_data(NOW + 10, NOW + 1_000);
+    let sig = f.sign(&f.key, &data);
+    f.e.ledger().set_timestamp(NOW + 5);
+    f.issuer.invalidate_claims(&f.identity, &TOPIC);
+    f.e.ledger().set_timestamp(NOW + 20);
+    let error = f.check(ED25519_SCHEME, &sig, &data).unwrap_err();
+    std::eprintln!("NONCE error = {error:?}");
+    assert_eq!(contract_code(&error), None);
 }
 
 fn to_vec(bytes: &Bytes) -> std::vec::Vec<u8> {

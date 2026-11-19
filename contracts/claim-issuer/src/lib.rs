@@ -9,8 +9,10 @@
 //!   signature mismatch is the exception and cannot be told from a fault.
 //! - **Invalidation stores a cutoff.** `invalidate_claims` bumps the nonce,
 //!   and also refuses every claim created at or before that moment, with a
-//!   contract error of its own. The cost: a claim issued in the same second
-//!   as the invalidation is refused too.
+//!   contract error of its own. A claim dated after the ledger time is
+//!   refused, so a stored claim is never dated after the moment it was added
+//!   and a later cutoff always catches it. The cost: a claim issued in the
+//!   same second as the invalidation is refused too.
 //! - **The owner never changes.** There is no admin, setup window or
 //!   timelock. The cost: a lost owner key means a new issuer and new claims.
 //! - **The payload is not read.** Only the creation and expiry times are.
@@ -26,8 +28,10 @@ use stellar_tokens::rwa::identity_verification::claim_issuer::{
 
 pub const ED25519_SCHEME: u32 = 101;
 
-/// Every code `is_claim_valid` refuses with before the signature check.
-pub const REFUSALS: [u32; 5] = [10600, 10601, 10602, 10603, 10604];
+/// Every contract error `is_claim_valid` refuses with: OpenZeppelin's
+/// `SigDataMismatch` (350) and `InvalidClaimDataExpiration` (357), then this
+/// contract's own codes. Any other failure is a fault or a bad signature.
+pub const REFUSALS: [u32; 8] = [350, 357, 10600, 10601, 10602, 10603, 10604, 10605];
 
 strata_bindings::error_enum! {
     strata_bindings::IDENTITY_ERRORS,
@@ -48,6 +52,8 @@ strata_bindings::error_enum! {
         KeyNotAllowed = 10603,
         /// The owner invalidated claims created at or before this one.
         ClaimInvalidated = 10604,
+        /// The claim is dated after the current ledger time.
+        ClaimNotYetValid = 10605,
     }
 }
 
@@ -108,9 +114,8 @@ impl ClaimIssuerContract {
 
 #[contractimpl]
 impl ClaimIssuer for ClaimIssuerContract {
-    /// Panics unless the claim is valid. Refusals before the signature check
-    /// are `ClaimIssuerContractError`s; a bad signature is the host's crypto
-    /// error.
+    /// Panics unless the claim is valid. Every refusal is one of `REFUSALS`;
+    /// a bad signature is the host's crypto error.
     fn is_claim_valid(
         e: &Env,
         identity: Address,
@@ -123,13 +128,16 @@ impl ClaimIssuer for ClaimIssuerContract {
         if scheme != ED25519_SCHEME {
             fail(e, ClaimIssuerContractError::UnsupportedScheme);
         }
+        let (created_at, _, _) = decode_claim_data_expiration(e, &claim_data);
+        if created_at > e.ledger().timestamp() {
+            fail(e, ClaimIssuerContractError::ClaimNotYetValid);
+        }
         if is_claim_expired(e, &claim_data) {
             fail(e, ClaimIssuerContractError::ClaimExpired);
         }
         if is_claim_revoked(e, &identity, claim_topic, &claim_data) {
             fail(e, ClaimIssuerContractError::ClaimRevoked);
         }
-        let (created_at, _, _) = decode_claim_data_expiration(e, &claim_data);
         let cutoff: Option<u64> =
             strata_storage::get_persistent(e, &DataKey::Cutoff(identity.clone(), claim_topic));
         if cutoff.is_some_and(|cutoff| created_at <= cutoff) {
