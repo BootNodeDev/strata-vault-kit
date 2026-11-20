@@ -4,20 +4,18 @@ import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import {
+	asyncVaultWriter as asyncVaultWriterMock,
+	fakeAsyncVault,
+} from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { useRequestRedeem } from "./useRequestRedeem"
 import { sharePositionKey } from "./useSharePosition"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { request_redeem: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
-asyncVaultWriterMock.mockResolvedValue(vaultMock)
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("request_redeem")
 
 const shares = (100n * 10n ** BigInt(AMOUNT_DECIMALS)) as Amount
 
@@ -26,7 +24,6 @@ const renderRequestRedeem = () => renderWithWallet(useRequestRedeem)
 describe("useRequestRedeem", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("calls request_redeem with the shares to escrow", async () => {
