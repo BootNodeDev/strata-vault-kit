@@ -12,6 +12,7 @@ doctest = false
 [dependencies]
 soroban-sdk = { workspace = true }
 stellar-tokens = { workspace = true }
+strata-bindings = { path = "../../crates/strata-bindings" }
 strata-storage = { path = "../../crates/strata-storage" }
 
 [dev-dependencies]

@@ -9,18 +9,21 @@
 //!   in `ISSUER_REFUSALS` is its no. Anything else, including the host's one
 //!   error for a trap, a missing contract or a signature that fails, is a
 //!   fault. The cost: a stored claim whose signature fails reads as a fault.
-//! - **A definite no wins.** A topic refuses when every trusted issuer says
-//!   no, and a refusing topic refuses the account whatever the others say. A
-//!   topic with a failing issuer and no yes is a fault. The cost: the check
-//!   reads on after a fault, so it costs more.
+//! - **A definite no wins.** A topic refuses when it has trusted issuers and
+//!   each says no, and a refusing topic refuses the account whatever the
+//!   others say. A topic with a failing issuer and no yes is a fault. The
+//!   cost: the check reads on after a fault, so it costs more.
 //! - **Only the claims governance chose are read.** For each required topic
 //!   and trusted issuer, the verifier reads the one claim id OpenZeppelin
 //!   gives that pair, never the identity's index, so an investor cannot add
 //!   claims that push its check over budget. The cost: a claim stored under
 //!   another id is not seen.
-//! - **Fails closed.** No required topic, or a topic with no trusted issuer,
-//!   refuses every account, unlike OpenZeppelin's default. The cost: a fund
-//!   requires at least one topic before anyone holds shares.
+//! - **Fails closed, as a fault.** With no required topic, or a required
+//!   topic with no trusted issuer, nobody can answer, so the verifier fails
+//!   with `Unavailable` and lets no one in, unlike OpenZeppelin's default. It
+//!   is not a refusal, so a governance mistake holds priced deposits instead of
+//!   converting them. The cost: a fund requires at least one topic, each with
+//!   an issuer, before anyone holds shares.
 //! - **Protocol addresses pass unread.** The bound vault always passes and
 //!   cannot be removed; governance may name others. The cost: a protocol
 //!   address holds and moves shares with no identity.
@@ -69,7 +72,9 @@ strata_bindings::error_enum! {
         /// The bound vault is always a protocol address.
         VaultIsProtocol = 10001,
         /// A contract the answer depends on failed: the registry, the topics
-        /// contract, an identity or an issuer. Not a refusal.
+        /// contract, an identity or an issuer. Or nobody could answer: no
+        /// topic is required, or a required topic has no trusted issuer. Not
+        /// a refusal.
         Unavailable = 10002,
         /// The `operator` named is not the admin.
         OperatorNotAdmin = 10003,
@@ -477,10 +482,11 @@ impl ClaimsCheck for IdentityVerifier {
     ///
     /// # Errors
     ///
-    /// * `RWAError::IdentityVerificationFailed` - No topic is required, or
-    ///   every trusted issuer of a required topic answered no.
-    /// * `Unavailable` - A contract the answer depends on failed, and no
-    ///   topic was refused.
+    /// * `RWAError::IdentityVerificationFailed` - A required topic has
+    ///   trusted issuers, and each answered no.
+    /// * `Unavailable` - No topic refused, and no topic is required, a
+    ///   required topic has no trusted issuer, or a contract the answer
+    ///   depends on failed.
     fn check_claims(e: Env, identity: Address) {
         strata_storage::bump_instance(&e);
         verification::check_claims(&e, &identity);
@@ -501,10 +507,11 @@ impl identity_verification::IdentityVerifier for IdentityVerifier {
     ///
     /// * `IRSError::IdentityNotFound` - The registry links no identity to
     ///   `account`.
-    /// * `RWAError::IdentityVerificationFailed` - No topic is required, or
-    ///   every trusted issuer of a required topic answered no.
-    /// * `Unavailable` - The registry, the topics contract, the identity or an
-    ///   issuer failed, and no topic was refused.
+    /// * `RWAError::IdentityVerificationFailed` - A required topic has
+    ///   trusted issuers, and each answered no.
+    /// * `Unavailable` - No topic refused, and no topic is required, a
+    ///   required topic has no trusted issuer, or the registry, the topics
+    ///   contract, the identity or an issuer failed.
     fn verify_identity(e: &Env, account: &Address) {
         strata_storage::bump_instance(e);
         verification::verify(e, account);

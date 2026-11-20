@@ -1,6 +1,6 @@
 //! Each account gets one of three answers: verified, refused with one of
 //! OpenZeppelin's codes, or `Unavailable` when a contract the answer depends
-//! on failed.
+//! on failed or no issuer could answer.
 
 use soroban_sdk::{panic_with_error, Address, Env, Error, Executable, Vec};
 use stellar_tokens::rwa::{
@@ -57,7 +57,8 @@ fn stored_identity(e: &Env, account: &Address) -> Address {
 }
 
 /// A refusing topic refuses the identity whatever the other topics answer,
-/// so a fault is reported only when no topic refused.
+/// so a fault is reported only when no topic refused. With no topic required
+/// nobody can answer, which is a fault, not a refusal.
 pub(crate) fn check_claims(e: &Env, identity: &Address) {
     let topics = reachable(e, storage::claim_topics_and_issuers(e));
     let required =
@@ -66,7 +67,7 @@ pub(crate) fn check_claims(e: &Env, identity: &Address) {
             _ => panic_with_error!(e, VerifierError::Unavailable),
         };
     if required.is_empty() {
-        panic_with_error!(e, RWAError::IdentityVerificationFailed);
+        panic_with_error!(e, VerifierError::Unavailable);
     }
     let mut failed = false;
     for (topic, issuers) in required.iter() {
@@ -82,9 +83,10 @@ pub(crate) fn check_claims(e: &Env, identity: &Address) {
 }
 
 /// One yes satisfies the topic. Without one, a failing issuer might have
-/// said yes, so the topic fails rather than refuses.
+/// said yes, so the topic fails rather than refuses. A topic with no issuer
+/// fails too: nobody answered.
 fn topic_answer(e: &Env, identity: &Address, topic: u32, issuers: &Vec<Address>) -> Answer {
-    let mut failed = false;
+    let mut failed = issuers.is_empty();
     for issuer in issuers.iter() {
         match issuer_answer(e, identity, topic, &issuer) {
             Answer::Yes => return Answer::Yes,

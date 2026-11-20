@@ -1,5 +1,6 @@
-//! The production stack verifies a holder, refuses one with 304 or 321, and
-//! answers the registry's onboarding question with the same rule.
+//! The production stack verifies a holder, refuses one with 304 or 321, fails
+//! with `Unavailable` when no issuer could answer, and answers the registry's
+//! onboarding question with the same rule.
 
 use claim_issuer::ClaimIssuerContractClient;
 use soroban_sdk::{
@@ -9,7 +10,8 @@ use soroban_sdk::{
 use stellar_tokens::rwa::{identity_verification::identity_registry_storage::IRSError, RWAError};
 
 use super::{
-    calls, contract_id, finished, not_verified, refused, symbol, verified, AML, KYC, NOW, YEAR,
+    calls, contract_id, finished, not_verified, refused, symbol, unavailable, verified, AML, KYC,
+    NOW, YEAR,
 };
 
 #[test]
@@ -85,24 +87,25 @@ fn no_identity_is_321() {
 }
 
 #[test]
-fn no_required_topic_is_refused_with_304() {
+fn no_required_topic_is_unavailable() {
     let f = finished();
     let (account, identity) = f.onboarded();
 
     f.topics.remove_claim_topic(&KYC, &f.admin);
 
-    not_verified(f.verify(&account));
-    not_verified(f.check_claims(&identity));
+    unavailable(f.verify(&account));
+    unavailable(f.check_claims(&identity));
 }
 
 #[test]
-fn a_required_topic_with_no_trusted_issuer_is_refused_with_304() {
+fn a_required_topic_with_no_trusted_issuer_is_unavailable() {
     let f = finished();
-    let (account, _) = f.onboarded();
+    let (account, identity) = f.onboarded();
 
     f.topics.add_claim_topic(&AML, &f.admin);
 
-    not_verified(f.verify(&account));
+    unavailable(f.verify(&account));
+    unavailable(f.check_claims(&identity));
 }
 
 #[test]

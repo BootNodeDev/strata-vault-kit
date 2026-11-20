@@ -7,7 +7,7 @@ use soroban_sdk::{
 };
 use stellar_tokens::rwa::identity_verification::identity_claims::generate_claim_id;
 
-use crate::{InvestorIdentity, InvestorIdentityClient};
+use crate::{InvestorIdentity, InvestorIdentityClient, InvestorIdentityError, MAX_CLAIM_URI_LEN};
 
 #[contract]
 struct AcceptingIssuer;
@@ -60,6 +60,25 @@ impl Fixture<'_> {
             &Bytes::from_slice(&self.e, b"sig"),
             &Bytes::from_slice(&self.e, data),
             &String::from_str(&self.e, ""),
+        )
+    }
+
+    fn try_add_with_uri(
+        &self,
+        uri_len: u32,
+    ) -> Result<
+        Result<BytesN<32>, soroban_sdk::ConversionError>,
+        Result<soroban_sdk::Error, soroban_sdk::InvokeError>,
+    > {
+        self.e.mock_all_auths();
+        let uri = "u".repeat(uri_len as usize);
+        self.identity.try_add_claim(
+            &TOPIC,
+            &1,
+            &self.issuer,
+            &Bytes::from_slice(&self.e, b"sig"),
+            &Bytes::from_slice(&self.e, b"d"),
+            &String::from_str(&self.e, &uri),
         )
     }
 }
@@ -134,5 +153,25 @@ fn only_the_owner_removes_a_claim() {
 
     f.e.mock_all_auths();
     f.identity.remove_claim(&id);
+    assert!(f.identity.get_claim_ids_by_topic(&TOPIC).is_empty());
+}
+
+#[test]
+fn a_uri_up_to_the_cap_is_stored() {
+    let f = fixture();
+
+    let id = f.try_add_with_uri(MAX_CLAIM_URI_LEN).unwrap().unwrap();
+
+    assert_eq!(f.identity.get_claim(&id).uri.len(), MAX_CLAIM_URI_LEN);
+}
+
+#[test]
+fn a_uri_over_the_cap_is_refused() {
+    let f = fixture();
+
+    assert_eq!(
+        f.try_add_with_uri(MAX_CLAIM_URI_LEN + 1),
+        Err(Ok(InvestorIdentityError::ClaimUriTooLong.into()))
+    );
     assert!(f.identity.get_claim_ids_by_topic(&TOPIC).is_empty());
 }

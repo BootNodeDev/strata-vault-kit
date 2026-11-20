@@ -164,7 +164,7 @@ fn a_claim_naming_another_topic_or_issuer_is_a_no() {
 }
 
 #[test]
-fn a_topic_with_no_trusted_issuer_is_refused_with_304() {
+fn a_topic_with_no_trusted_issuer_is_unavailable() {
     let d = doubles();
     d.single_issuer();
     let issuer = d.issuer(Behaviour::Answers);
@@ -172,17 +172,30 @@ fn a_topic_with_no_trusted_issuer_is_refused_with_304() {
 
     d.require(&[(KYC, &[&issuer]), (AML, &[])]);
 
-    not_verified(d.verify());
+    unavailable(d.verify());
+    unavailable(d.check_claims());
 }
 
 #[test]
-fn no_required_topic_is_refused_with_304() {
+fn a_refusing_topic_wins_over_one_with_no_trusted_issuer() {
+    let d = doubles();
+    let refusing = d.issuer(Behaviour::Fails(ISSUER_REFUSALS[2]));
+    d.serve(&d.unsigned_claim(&refusing, KYC));
+
+    d.require(&[(KYC, &[&refusing]), (AML, &[])]);
+
+    not_verified(d.verify());
+    not_verified(d.check_claims());
+}
+
+#[test]
+fn no_required_topic_is_unavailable() {
     let d = doubles();
 
     d.require(&[]);
 
-    not_verified(d.verify());
-    not_verified(d.check_claims());
+    unavailable(d.verify());
+    unavailable(d.check_claims());
 }
 
 #[test]

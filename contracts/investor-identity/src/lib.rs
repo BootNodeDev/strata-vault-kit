@@ -10,11 +10,35 @@
 //!   refuses is not stored. The cost: an issuer that is down blocks the add.
 //! - **A stored claim proves nothing alone.** The verifier asks the issuer
 //!   again on every check, so revocation needs no change here.
+//! - **The claim URI is capped.** The issuer's signature does not cover it,
+//!   so the owner could make it as long as it likes, and the verifier reads
+//!   the whole claim on every check. The cap keeps that read within budget.
+//!   The cost: a longer URI does not fit.
 
 #![no_std]
 
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Bytes, BytesN, Env, String, Vec};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, panic_with_error, Address, Bytes, BytesN,
+    Env, String, Vec,
+};
 use stellar_tokens::rwa::identity_verification::identity_claims::{self, Claim, IdentityClaims};
+
+/// The longest claim URI, in bytes, that `add_claim` stores.
+pub const MAX_CLAIM_URI_LEN: u32 = 256;
+
+strata_bindings::error_enum! {
+    strata_bindings::IDENTITY_ERRORS,
+
+    /// Investor identity failures, coded 10800 to 10999. Codes are stable once
+    /// assigned and are never reused.
+    #[contracterror]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    #[repr(u32)]
+    pub enum InvestorIdentityError {
+        /// The claim's URI is longer than `MAX_CLAIM_URI_LEN` bytes.
+        ClaimUriTooLong = 10800,
+    }
+}
 
 #[contracttype]
 enum DataKey {
@@ -44,7 +68,28 @@ impl InvestorIdentity {
 #[contractimpl(contracttrait)]
 impl IdentityClaims for InvestorIdentity {
     /// Adds a claim, or replaces the issuer's claim on the same topic. The
-    /// issuer must accept it. Only the owner may call it.
+    /// issuer must accept it.
+    ///
+    /// # Arguments
+    ///
+    /// * `topic` - The claim topic.
+    /// * `scheme` - The signature scheme.
+    /// * `issuer` - The issuer contract, which checks the claim.
+    /// * `signature` - The issuer's signature.
+    /// * `data` - OpenZeppelin's expiry header, then the issuer's payload.
+    /// * `uri` - At most 256 bytes. The signature does not cover it.
+    ///
+    /// # Errors
+    ///
+    /// * `ClaimUriTooLong` - `uri` is over 256 bytes.
+    ///
+    /// # Events
+    ///
+    /// `ClaimAdded` for a new claim, `ClaimChanged` for a replaced one.
+    ///
+    /// # Authorization
+    ///
+    /// The owner signs.
     fn add_claim(
         e: &Env,
         topic: u32,
@@ -55,6 +100,9 @@ impl IdentityClaims for InvestorIdentity {
         uri: String,
     ) -> BytesN<32> {
         Self::owner(e).require_auth();
+        if uri.len() > MAX_CLAIM_URI_LEN {
+            panic_with_error!(e, InvestorIdentityError::ClaimUriTooLong);
+        }
         identity_claims::add_claim(e, topic, scheme, &issuer, &signature, &data, &uri)
     }
 }

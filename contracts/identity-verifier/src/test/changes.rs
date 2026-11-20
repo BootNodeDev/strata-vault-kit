@@ -15,7 +15,7 @@ use stellar_tokens::rwa::{
 use strata_timelock::{DAY_DURATION, MIN_DELAY};
 
 use super::{
-    bound, finished, missing_auth, not_verified, refused, running, unbound, verified, Fixture,
+    bound, finished, missing_auth, refused, running, unavailable, unbound, verified, Fixture,
     TokenSideClient, NOW,
 };
 use crate::{
@@ -317,7 +317,7 @@ fn a_new_topics_contract_is_the_one_read() {
         f.e.register(super::TopicsDouble, ()),
     ));
 
-    not_verified(f.verify(&account));
+    unavailable(f.verify(&account));
 }
 
 #[test]
