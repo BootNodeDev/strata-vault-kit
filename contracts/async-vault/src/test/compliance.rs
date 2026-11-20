@@ -196,7 +196,7 @@ fn an_unbound_compliance_swap_is_refused_and_every_move_goes_on() {
 }
 
 #[test]
-fn a_verifier_that_cannot_answer_counts_as_a_failed_check() {
+fn a_verifier_that_cannot_answer_refuses_a_deposit_as_a_fault() {
     let f = setup();
     let investor = f.investor(1_000);
 
@@ -209,7 +209,7 @@ fn a_verifier_that_cannot_answer_counts_as_a_failed_check() {
 
     refused(
         f.vault.try_request_deposit(&investor, &100),
-        VaultError::NotAllowlisted,
+        VaultError::VerifierFailed,
     );
 }
 

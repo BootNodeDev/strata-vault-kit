@@ -12,6 +12,7 @@ mod events;
 mod governance;
 mod guards;
 mod health;
+mod identity_stack;
 mod lock_policy;
 mod multi_epoch;
 mod notice;
@@ -334,6 +335,7 @@ enum Miswire {
     ComplianceUnbound,
     ComplianceBoundElsewhere,
     ComplianceSetupOpen,
+    ComplianceNotGoverned,
     AssetDecimalsDiffer,
     AssetIsShareToken,
     /// The compliance contract passed as the oracle: bound here, but no feed.
@@ -414,7 +416,11 @@ fn build<'a>(
     let attester = Address::generate(&e);
     let compliance_authority = Address::generate(&e);
 
-    let compliance = ComplianceClient::new(&e, &e.register(Compliance, (admin.clone(),)));
+    let rules_admin = match miswire {
+        Miswire::ComplianceNotGoverned => Address::generate(&e),
+        _ => admin.clone(),
+    };
+    let compliance = ComplianceClient::new(&e, &e.register(Compliance, (rules_admin.clone(),)));
     let identity = IdentityVerifierClient::new(
         &e,
         &e.register(IdentityVerifier, (compliance_authority.clone(),)),
@@ -435,7 +441,7 @@ fn build<'a>(
         ),
     );
     if miswire != Miswire::ComplianceUnbound {
-        compliance.bind_token(&share.address, &admin);
+        compliance.bind_token(&share.address, &rules_admin);
     }
 
     let oracle = NavOracleContractClient::new(
@@ -566,17 +572,7 @@ fn build<'a>(
         }),
         _ => {}
     }
-    if finish {
-        vault.finish_setup();
-        // Deposits need a valid report; a second on, so the next sealed epoch is not priced by it.
-        oracle.attest(
-            &nav_input(&e, oracle.config().max_answer / 2, u64::MAX),
-            &attester,
-        );
-        e.ledger().set_timestamp(e.ledger().timestamp() + 1);
-    }
-
-    Fixture {
+    let f = Fixture {
         vault,
         share,
         identity,
@@ -590,5 +586,20 @@ fn build<'a>(
         admin,
         compliance: compliance_authority,
         e,
+    };
+    if finish {
+        finish_setup_and_report(&f);
     }
+    f
+}
+
+/// Finishes the vault's setup and posts the first report, as a deployment does.
+fn finish_setup_and_report(f: &Fixture) {
+    f.vault.finish_setup();
+    // Deposits need a valid report; a second on, so the next sealed epoch is not priced by it.
+    f.oracle.attest(
+        &nav_input(&f.e, f.oracle.config().max_answer / 2, u64::MAX),
+        &f.attester,
+    );
+    f.e.ledger().set_timestamp(f.e.ledger().timestamp() + 1);
 }

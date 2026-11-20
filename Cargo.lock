@@ -197,7 +197,13 @@ name = "async-vault"
 version = "0.1.0"
 dependencies = [
  "allowlist-verifier",
+ "claim-issuer",
+ "claim-topics",
  "compliance",
+ "ed25519-dalek",
+ "identity-registry",
+ "identity-verifier",
+ "investor-identity",
  "nav-oracle",
  "proptest",
  "share-token",

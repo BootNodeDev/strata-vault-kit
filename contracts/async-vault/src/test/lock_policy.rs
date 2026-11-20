@@ -241,6 +241,82 @@ fn a_delisted_holder_is_refused_as_not_allowlisted() {
 }
 
 #[test]
+fn an_unverifiable_holder_may_not_request_a_deposit() {
+    assert_eq!(
+        in_and_out_of_a_wind_down(Exit::RequestDeposit, Standing::Unverifiable),
+        [Decision::Refuse; 2]
+    );
+}
+
+#[test]
+fn an_unverifiable_holders_claim_waits() {
+    assert_eq!(
+        lock_policy::decide(Exit::ClaimDeposit, Standing::Unverifiable, false),
+        Decision::Refuse
+    );
+}
+
+#[test]
+fn in_a_wind_down_an_unverifiable_holders_claim_is_surrendered() {
+    assert_eq!(
+        lock_policy::decide(Exit::ClaimDeposit, Standing::Unverifiable, true),
+        Decision::Surrender
+    );
+}
+
+#[test]
+fn an_unverifiable_holder_may_not_take_a_redemption_back() {
+    assert_eq!(
+        lock_policy::decide(Exit::CancelRedeem, Standing::Unverifiable, false),
+        Decision::Refuse
+    );
+}
+
+#[test]
+fn in_a_wind_down_an_unverifiable_holders_cancelled_redemption_is_surrendered() {
+    assert_eq!(
+        lock_policy::decide(Exit::CancelRedeem, Standing::Unverifiable, true),
+        Decision::Surrender
+    );
+}
+
+#[test]
+fn an_unverifiable_holder_still_exits() {
+    for exit in [
+        Exit::CancelDeposit,
+        Exit::RequestRedeem,
+        Exit::ClaimRedeem,
+        Exit::ClaimWindDown,
+    ] {
+        assert_eq!(
+            in_and_out_of_a_wind_down(exit, Standing::Unverifiable),
+            [Decision::Proceed; 2],
+            "{exit:?}"
+        );
+    }
+}
+
+#[test]
+fn an_unverifiable_holder_is_refused_as_a_verifier_fault() {
+    assert_eq!(
+        lock_policy::refused_with(Standing::Unverifiable),
+        VaultError::VerifierFailed
+    );
+}
+
+#[test]
+fn standing_is_unverifiable_when_the_verifier_fails() {
+    let f = setup();
+    let holder = f.investor(0);
+    f.verifier_failing_with(1, Some(&holder));
+
+    assert_eq!(
+        f.e.as_contract(&f.vault.address, || lock_policy::standing(&f.e, &holder)),
+        Standing::Unverifiable
+    );
+}
+
+#[test]
 fn standing_is_listed_for_an_allowlisted_holder() {
     let f = setup();
     let holder = f.investor(0);
