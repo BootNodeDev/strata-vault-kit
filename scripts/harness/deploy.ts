@@ -6,7 +6,10 @@ import { Asset, Keypair, rpc } from "@stellar/stellar-sdk"
 import { basicNodeSigner } from "@stellar/stellar-sdk/contract"
 
 import type * as AsyncVaultModule from "../../app-lib/clients/async_vault/dist/index.js"
+import type * as ClaimIssuerModule from "../../app-lib/clients/claim_issuer/dist/index.js"
+import type * as ClaimTopicsModule from "../../app-lib/clients/claim_topics/dist/index.js"
 import type * as ComplianceModule from "../../app-lib/clients/compliance/dist/index.js"
+import type * as IdentityRegistryModule from "../../app-lib/clients/identity_registry/dist/index.js"
 import type * as IdentityVerifierModule from "../../app-lib/clients/identity_verifier/dist/index.js"
 import type * as NavOracleModule from "../../app-lib/clients/nav_oracle/dist/index.js"
 import type * as Sep40FeedModule from "../../app-lib/clients/sep40_feed/dist/index.js"
@@ -14,25 +17,29 @@ import type * as ShareTokenModule from "../../app-lib/clients/share_token/dist/i
 
 import { ACCOUNT_NAMES, fund, pay, type Accounts } from "./lib/accounts.js"
 import { returnToIssuer } from "./lib/balances.js"
+import { KYC_TOPIC } from "./lib/claims.js"
 import {
 	deployContract,
 	ensureAssetContract,
 	generateClient,
 	rootSdkVersion,
+	uploadWasm,
 	wasmGenerator,
+	type ConstructorArgs,
 } from "./lib/cli.js"
 import {
 	clearIncomplete,
-	CONTRACT_NAMES,
 	publicKeysOf,
 	refuseIncomplete,
 	REPO_ROOT,
 	saveDeployment,
+	WASM_NAMES,
 	writeIncomplete,
 	type ContractName,
 	type Deployment,
 	type ExampleName,
 	type IncompleteDeployment,
+	type WasmName,
 } from "./lib/deployment.js"
 import { ensureKeys } from "./lib/keys.js"
 import { network, type Network } from "./lib/network.js"
@@ -50,18 +57,18 @@ export const SHORT_WIND_DOWN_DIR = join(
 )
 
 export const wasmOf = (
-	name: ContractName | ExampleName,
+	name: WasmName | ExampleName,
 	dir = RELEASE_DIR,
 ): string => join(dir, `${name}.wasm`)
 
-const clientDir = (name: ContractName): string =>
+const clientDir = (name: WasmName): string =>
 	join(REPO_ROOT, "app-lib", "clients", name)
 
-const clientEntry = (name: ContractName): string =>
+const clientEntry = (name: WasmName): string =>
 	pathToFileURL(join(clientDir(name), "dist", "index.js")).href
 
 function requireWasm(vaultWasm: string = wasmOf("async_vault")): void {
-	const missing = CONTRACT_NAMES.filter(
+	const missing = WASM_NAMES.filter(
 		(name) => !existsSync(name === "async_vault" ? vaultWasm : wasmOf(name)),
 	)
 	if (missing.length > 0) {
@@ -92,29 +99,50 @@ async function deployContracts(
 	net: Network,
 	accounts: Accounts,
 	assetContract: string,
-	wasms: Record<ContractName, string>,
+	wasms: Record<WasmName, string>,
 	onDeployed?: (name: ContractName, id: string) => void,
 ): Promise<Record<ContractName, string>> {
 	const pk = (name: keyof Accounts): string => accounts[name].publicKey()
 	const deployer = accounts.deployer
 	const governance = pk("governance")
+	const deploy = async (
+		name: ContractName,
+		args: ConstructorArgs,
+	): Promise<string> => {
+		const id = await deployContract(net, wasms[name], deployer, args)
+		console.log(name, id)
+		onDeployed?.(name, id)
+		return id
+	}
 
-	const compliance = await deployContract(net, wasms.compliance, deployer, {
+	const compliance = await deploy("compliance", { admin: governance })
+
+	// The registry deploys each investor's identity from this code, and the
+	// topics contract trusts only an issuer that runs the issuer code.
+	const identityWasm = await uploadWasm(net, wasms.investor_identity, deployer)
+	console.log("investor_identity wasm", identityWasm)
+	const issuerWasm = await uploadWasm(net, wasms.claim_issuer, deployer)
+	console.log("claim_issuer wasm", issuerWasm)
+
+	const claimTopics = await deploy("claim_topics", {
 		admin: governance,
+		issuer_wasm: issuerWasm,
 	})
-	console.log("compliance", compliance)
-	onDeployed?.("compliance", compliance)
+	const identityRegistry = await deploy("identity_registry", {
+		admin: governance,
+		compliance: pk("compliance"),
+		identity_wasm: identityWasm,
+	})
+	const identityVerifier = await deploy("identity_verifier", {
+		admin: governance,
+		registry: identityRegistry,
+		topics: claimTopics,
+	})
+	const claimIssuer = await deploy("claim_issuer", {
+		owner: pk("kyc-provider"),
+	})
 
-	const identityVerifier = await deployContract(
-		net,
-		wasms.identity_verifier,
-		deployer,
-		{ admin: pk("compliance") },
-	)
-	console.log("identity_verifier", identityVerifier)
-	onDeployed?.("identity_verifier", identityVerifier)
-
-	const shareToken = await deployContract(net, wasms.share_token, deployer, {
+	const shareToken = await deploy("share_token", {
 		name: "Strata Vault USDC",
 		symbol: "bvUSDC",
 		admin: governance,
@@ -122,19 +150,15 @@ async function deployContracts(
 		compliance,
 		identity_verifier: identityVerifier,
 	})
-	console.log("share_token", shareToken)
-	onDeployed?.("share_token", shareToken)
 
-	const navOracle = await deployContract(net, wasms.nav_oracle, deployer, {
+	const navOracle = await deploy("nav_oracle", {
 		admin: governance,
 		attester: pk("attester"),
 		guardian: pk("guardian"),
 		config: JSON.stringify(net.oracle),
 	})
-	console.log("nav_oracle", navOracle)
-	onDeployed?.("nav_oracle", navOracle)
 
-	const asyncVault = await deployContract(net, wasms.async_vault, deployer, {
+	const asyncVault = await deploy("async_vault", {
 		asset: assetContract,
 		share_token: shareToken,
 		oracle: navOracle,
@@ -147,18 +171,15 @@ async function deployContracts(
 			attester: pk("attester"),
 		}),
 	})
-	console.log("async_vault", asyncVault)
-	onDeployed?.("async_vault", asyncVault)
 
-	const sep40Feed = await deployContract(net, wasms.sep40_feed, deployer, {
-		vault: asyncVault,
-	})
-	console.log("sep40_feed", sep40Feed)
-	onDeployed?.("sep40_feed", sep40Feed)
+	const sep40Feed = await deploy("sep40_feed", { vault: asyncVault })
 
 	return {
 		compliance,
+		claim_topics: claimTopics,
+		identity_registry: identityRegistry,
 		identity_verifier: identityVerifier,
+		claim_issuer: claimIssuer,
 		share_token: shareToken,
 		nav_oracle: navOracle,
 		async_vault: asyncVault,
@@ -166,10 +187,107 @@ async function deployContracts(
 	}
 }
 
-// The vault mints and burns, so it needs the token's manager role; it mints a
-// delisted holder's converted deposit into its own escrow, so it must itself
-// be allowed; and compliance only runs its hooks for a bound token, so the
-// share token must be bound to it.
+interface Setup {
+	bind_vault(args: {
+		vault: string
+	}): Promise<{ signAndSend(): Promise<unknown> }>
+	finish_setup(): Promise<{ signAndSend(): Promise<unknown> }>
+	setup_open(): Promise<{ result: boolean }>
+}
+
+async function closeSetup(name: string, client: Setup, vault: string) {
+	await (await client.bind_vault({ vault })).signAndSend()
+	await (await client.finish_setup()).signAndSend()
+	if ((await client.setup_open()).result)
+		throw new Error(`the ${name} setup did not finish`)
+	console.log(`${name} bound to the vault, setup finished`)
+}
+
+// The vault mints a delisted holder's converted deposit into its own escrow,
+// so the verifier must let it in: binding the vault makes it a protocol
+// address. The vault's setup checks that the verifier, the registry and the
+// topics contract are governance's, bound to it and closed.
+async function wireIdentity(
+	net: Network,
+	accounts: Accounts,
+	contracts: Record<ContractName, string>,
+	server: rpc.Server,
+): Promise<void> {
+	const governance = accounts.governance
+	const operator = governance.publicKey()
+	const vault = contracts.async_vault
+	const kyc = accounts["kyc-provider"]
+
+	const { Client: ClaimTopics } = (await import(
+		clientEntry("claim_topics")
+	)) as typeof ClaimTopicsModule
+	const topics = new ClaimTopics(
+		clientOptions(net, contracts.claim_topics, governance, server),
+	)
+	await (
+		await topics.add_claim_topic({ claim_topic: KYC_TOPIC, operator })
+	).signAndSend()
+	await (
+		await topics.add_trusted_issuer({
+			trusted_issuer: contracts.claim_issuer,
+			claim_topics: [KYC_TOPIC],
+			operator,
+		})
+	).signAndSend()
+	if (!(await topics.is_complete()).result)
+		throw new Error("the claim topics have a topic with no trusted issuer")
+	console.log(`claim_topics requires topic ${KYC_TOPIC} from claim_issuer`)
+
+	// The issuer accepts a key only for a topic the topics contract trusts it on.
+	const { Client: ClaimIssuer } = (await import(
+		clientEntry("claim_issuer")
+	)) as typeof ClaimIssuerModule
+	const issuer = new ClaimIssuer(
+		clientOptions(net, contracts.claim_issuer, kyc, server),
+	)
+	await (
+		await issuer.allow_key({
+			public_key: kyc.rawPublicKey(),
+			registry: contracts.claim_topics,
+			claim_topic: KYC_TOPIC,
+		})
+	).signAndSend()
+	console.log("claim_issuer accepts claims signed by kyc-provider")
+
+	const { Client: IdentityRegistry } = (await import(
+		clientEntry("identity_registry")
+	)) as typeof IdentityRegistryModule
+	const registry = new IdentityRegistry(
+		clientOptions(net, contracts.identity_registry, governance, server),
+	)
+	await (
+		await registry.bind_verifier({ verifier: contracts.identity_verifier })
+	).signAndSend()
+	if ((await registry.verifier()).result !== contracts.identity_verifier)
+		throw new Error("the identity registry does not check with the verifier")
+	console.log("identity_registry checks claims with identity_verifier")
+
+	const { Client: IdentityVerifier } = (await import(
+		clientEntry("identity_verifier")
+	)) as typeof IdentityVerifierModule
+	const verifier = new IdentityVerifier(
+		clientOptions(net, contracts.identity_verifier, governance, server),
+	)
+	await closeSetup("claim_topics", topics, vault)
+	await closeSetup("identity_registry", registry, vault)
+	await closeSetup("identity_verifier", verifier, vault)
+
+	if (!(await verifier.is_protocol_address({ account: vault })).result)
+		throw new Error("the vault is not a protocol address of the verifier")
+	console.log("vault is a protocol address of identity_verifier")
+	if (!(await verifier.ready_for({ vault, governance: operator })).result)
+		throw new Error("the identity verifier is not ready for the vault")
+	console.log("identity_verifier is ready for the vault")
+}
+
+// The vault mints and burns, so it needs the token's manager role; and
+// compliance only runs its hooks for a bound token, so the share token must
+// be bound to it.
 async function grantAndVerify(
 	net: Network,
 	accounts: Accounts,
@@ -213,27 +331,7 @@ async function grantAndVerify(
 		throw new Error("the share token's setup did not finish")
 	console.log("share_token bound to the vault, setup finished")
 
-	const { Client: IdentityVerifier } = (await import(
-		clientEntry("identity_verifier")
-	)) as typeof IdentityVerifierModule
-	const verifier = new IdentityVerifier(
-		clientOptions(
-			net,
-			contracts.identity_verifier,
-			accounts.compliance,
-			server,
-		),
-	)
-	await (
-		await verifier.allow({
-			account: vault,
-			allowed: true,
-		})
-	).signAndSend()
-	const allowed = (await verifier.is_allowed({ account: vault })).result
-	if (allowed !== true)
-		throw new Error("the vault was not allowlisted on the identity verifier")
-	console.log("vault is allowlisted")
+	await wireIdentity(net, accounts, contracts, server)
 
 	const { Client: Compliance } = (await import(
 		clientEntry("compliance")
@@ -328,8 +426,10 @@ async function finishVaultSetup(
 		"oracle_bound",
 		"sole_token_manager",
 		"allowlisted",
+		"identity_ready",
 		"vault_unfrozen",
 		"compliance_bound",
+		"compliance_governed",
 		"decimals_match",
 		"addresses_distinct",
 		"custodian_set",
@@ -375,7 +475,7 @@ export async function verifyFeed(
 
 async function freshSet(
 	net: Network,
-	wasms: Record<ContractName, string>,
+	wasms: Record<WasmName, string>,
 	provenance: Provenance,
 	accounts: Accounts,
 	server: rpc.Server,
@@ -458,8 +558,8 @@ export async function deployThrowaway(
 ): Promise<{ deployment: Deployment; keys: Accounts }> {
 	requireWasm(vaultWasm)
 	const wasms = Object.fromEntries(
-		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
-	) as Record<ContractName, string>
+		WASM_NAMES.map((name) => [name, wasmOf(name)]),
+	) as Record<WasmName, string>
 	wasms.async_vault = vaultWasm
 	const provenance = readProvenance(REPO_ROOT, wasms)
 	const keys = throwawayAccounts()
@@ -479,8 +579,8 @@ async function main(): Promise<void> {
 	refuseIncomplete(net.name)
 	console.log(`deploying to ${net.name} (${net.rpcUrl})`)
 	const wasms = Object.fromEntries(
-		CONTRACT_NAMES.map((name) => [name, wasmOf(name)]),
-	) as Record<ContractName, string>
+		WASM_NAMES.map((name) => [name, wasmOf(name)]),
+	) as Record<WasmName, string>
 	const provenance = readProvenance(REPO_ROOT, wasms)
 	const sdkVersion = rootSdkVersion()
 	const { file, accounts, created } = ensureKeys(net.name, REPO_ROOT)
@@ -502,7 +602,7 @@ async function main(): Promise<void> {
 		`commit ${record.commit}${record.uncommittedChanges ? " with uncommitted changes" : ""}`,
 	)
 
-	for (const name of CONTRACT_NAMES) {
+	for (const name of WASM_NAMES) {
 		await generateClient(
 			clientDir(name),
 			wasmGenerator(wasmOf(name)),

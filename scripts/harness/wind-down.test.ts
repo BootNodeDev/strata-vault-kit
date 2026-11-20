@@ -6,7 +6,6 @@ import { pay, trustline } from "./lib/accounts.js"
 import { price, units } from "./lib/amounts.js"
 import {
 	connectTo,
-	identityVerifier,
 	send,
 	sep40Feed,
 	shareToken,
@@ -16,6 +15,7 @@ import {
 } from "./lib/clients.js"
 import { network } from "./lib/network.js"
 import { waitForNotice } from "./lib/notice.js"
+import { onboard } from "./lib/onboard.js"
 import { attest, freshFeed } from "./lib/oracle.js"
 import { outcome } from "./lib/refused.js"
 import { stellarAsset } from "./lib/sep40.js"
@@ -92,12 +92,7 @@ beforeAll(async () => {
 	await trustline(c.net, c.server, holder, c.asset)
 	await trustline(c.net, c.server, c.keys.custodian, c.asset)
 	await pay(c.net, c.server, c.keys.issuer, holder.publicKey(), c.asset, "1000")
-	await send(
-		identityVerifier(c, c.keys.compliance).allow({
-			account: holder.publicKey(),
-			allowed: true,
-		}),
-	)
+	await onboard(c, holder)
 })
 
 describe("a wind-down on a throwaway vault", () => {

@@ -112,6 +112,33 @@ export async function deployContract(
 	return lastContractId(out)
 }
 
+export const uploadArgs = (wasm: string, net: Rpc): string[] => [
+	"contract",
+	"upload",
+	"--wasm",
+	wasm,
+	...rpcArgs(net),
+]
+
+export function lastWasmHash(output: string): string {
+	const found = output
+		.split("\n")
+		.map((line) => line.trim())
+		.findLast((line) => /^[0-9a-f]{64}$/.test(line))
+	if (found === undefined)
+		throw new Error(`no Wasm hash in CLI output:\n${output}`)
+	return found
+}
+
+// Puts code on the network without an instance, for a contract that deploys it.
+export async function uploadWasm(
+	net: Network,
+	wasm: string,
+	source: Keypair,
+): Promise<string> {
+	return lastWasmHash(await stellar(uploadArgs(wasm, net), withSource(source)))
+}
+
 async function deployAssetContract(
 	net: Network,
 	asset: Asset,
