@@ -39,14 +39,16 @@ constructor_args = "--owner me"
 # The scaffold runs each `$(...)` in a shell before it deploys. The topics
 # contract trusts only an issuer running the claim issuer's code, and the
 # registry deploys identities from the investor identity's code, so each takes
-# that code's hash: the SHA-256 of the Wasm the scaffold uploaded above.
+# that code's hash: the SHA-256 of the Wasm the scaffold uploaded above, which
+# it writes under target/stellar/<STELLAR_NETWORK, default local>/, not the
+# release directory.
 [development.contracts.claim_topics]
 client = true
-constructor_args = '--admin me --issuer_wasm $(shasum -a 256 target/wasm32v1-none/release/claim_issuer.wasm | cut -d " " -f 1)'
+constructor_args = '--admin me --issuer_wasm $(shasum -a 256 target/stellar/${STELLAR_NETWORK:-local}/claim_issuer.wasm | cut -d " " -f 1)'
 
 [development.contracts.identity_registry]
 client = true
-constructor_args = '--admin me --compliance me --identity_wasm $(shasum -a 256 target/wasm32v1-none/release/investor_identity.wasm | cut -d " " -f 1)'
+constructor_args = '--admin me --compliance me --identity_wasm $(shasum -a 256 target/stellar/${STELLAR_NETWORK:-local}/investor_identity.wasm | cut -d " " -f 1)'
 
 [development.contracts.identity_verifier]
 client = true

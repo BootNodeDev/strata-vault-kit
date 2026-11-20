@@ -38,7 +38,7 @@ export interface Onboarding {
 	onboard(account: string, claims: SignedClaim[]): Promise<string>
 }
 
-export function kycClaim(
+function kycClaim(
 	signer: ClaimSigner,
 	identity: string,
 	nonce: number,
