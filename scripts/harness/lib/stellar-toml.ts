@@ -1,6 +1,7 @@
 import { Networks } from "@stellar/stellar-sdk"
 
 export const OPEN_FIELDS = [
+	"ASSET_LIST_URL",
 	"ORG_NAME",
 	"ORG_URL",
 	"ORG_LOGO",
@@ -19,6 +20,7 @@ export const OPERATOR_FIELDS = [
 	"code",
 	"name",
 	"status",
+	"domain",
 ] as const
 
 export type OpenField = (typeof OPEN_FIELDS)[number]
@@ -35,6 +37,9 @@ const ANCHOR_ASSET_TYPES = [
 	"realestate",
 	"other",
 ] as const
+
+const DOMAIN =
+	/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/
 
 const STATUSES = ["live", "dead", "test", "private"] as const
 
@@ -108,6 +113,14 @@ export function parseOperatorValues(json: unknown): OperatorValues {
 			)
 		if (key === "ORG_URL" && !value.startsWith("https://"))
 			throw new Error('operator field "ORG_URL" must start with "https://"')
+		if (key === "ASSET_LIST_URL" && !value.startsWith("https://"))
+			throw new Error(
+				'operator field "ASSET_LIST_URL" must start with "https://"',
+			)
+		if (key === "domain" && !DOMAIN.test(value))
+			throw new Error(
+				'operator field "domain" must be a bare host such as "example.com"',
+			)
 		if (key === "code" && value.length > CODE_LIMIT)
 			throw new Error(
 				`operator field "code" must be at most ${CODE_LIMIT} characters`,
@@ -283,11 +296,17 @@ export function renderStellarToml(
 					missing,
 				)
 
+	const assetListUrl =
+		operator.ASSET_LIST_URL !== undefined
+			? quote(operator.ASSET_LIST_URL, "ASSET_LIST_URL")
+			: missingField("ASSET_LIST_URL", "set it in SEP1_OPERATOR", missing)
+
 	const lines = [
 		...(isEmptyInputs(inputs) ? TEMPLATE_HEADER : GENERATED_HEADER),
 		"",
 		`VERSION = ${quote(VERSION, "VERSION")}`,
 		`NETWORK_PASSPHRASE = ${networkPassphrase}`,
+		`ASSET_LISTS = [${assetListUrl}]`,
 		"",
 		"[DOCUMENTATION]",
 		...documentationLines(operator, missing),
