@@ -577,10 +577,11 @@ a fix is a new deployment. The five identity contracts share one error block,
   date, no document number. The registry refuses country data
   (`CountryDataNotStored`). A deployment that wants on-chain country rules adds
   that storage and OpenZeppelin's country modules itself.
-- A claim ends in one of three ways: it expires; the provider revokes it
-  (`revoke_claim`); or the provider invalidates every claim of one identity on
-  one topic (`invalidate_claims`), which bumps OpenZeppelin's nonce and refuses
-  every claim created at or before that moment. The issuer also refuses a claim
+- A claim ends when it expires, or when its provider revokes it
+  (`revoke_claim`), removes the key that signed it (`remove_key`), or
+  invalidates every claim of one identity on one topic (`invalidate_claims`).
+  Invalidating bumps OpenZeppelin's nonce and refuses every claim created at or
+  before that moment. The issuer also refuses a claim
   dated after the ledger time, so a stored claim is never dated after the moment
   it was added and a later invalidation always catches it. The cost: a claim
   issued in the same second as an invalidation is refused too.
@@ -641,9 +642,10 @@ issuer on that topic. The host turns every other failure inside a called
 contract (a trap, a missing contract, a failed signature check) into one
 generic error, so the verifier reads it as a fault. A stored claim's signature
 does not go bad on its own: the identity checks each claim with its issuer when
-it is added. A claim stops passing only by expiry, revocation or invalidation,
-and each of those is a refusal with a contract error. A signature that fails at
-check time is therefore a fault, not a refusal.
+it is added. A claim stops passing when it ends (expiry, revocation, a removed
+key, invalidation) or when governance stops trusting its issuer, and each of
+those is a refusal. A signature that fails at check time is therefore a fault,
+not a refusal.
 
 Within one topic, a yes from any trusted issuer passes, and a fault beats a no.
 Across topics, a topic whose issuers all said no refuses the account even if
@@ -688,21 +690,24 @@ it.
 
 #### The exit rule
 
-No compliance module can stop a holder's way out. The kit's compliance contract
-still calls every module, so modules that keep counters (OpenZeppelin's supply
-limit, maximum balance and transfer limits) stay correct. For these moves it
-calls each module with `try_` and ignores a refusal or a failure:
+A compliance module's refusal never stops a holder's way out. The kit's
+compliance contract still calls every module, so modules that keep counters
+(OpenZeppelin's supply limit, maximum balance and transfer limits) stay
+correct. For these moves it calls each module with `try_` and ignores a refusal
+or a failure:
 
-- any move whose receiver is the bound vault, of any `TransferKind`: a
-  redemption request's escrow, a delisted holder's conversion;
-- a mint to the vault;
-- every burn. Only the token's `manager` burns, and the vault's setup requires
-  the vault to hold that role alone.
+- any move whose receiver is the bound vault, of any `TransferKind`, such as a
+  redemption request's escrow;
+- a mint to the vault, which is how a delisted holder's priced deposit becomes
+  a cash exit;
+- every burn: a claim's burn of the escrow, a wind-down surrender, a wind-down
+  payout.
 
 Every other move runs all modules, and a refusal stops it. That includes a mint
-to a holder at a share claim and a share return to a holder, which reach modules
-as `Forced`. A module that refuses an ignored move has its own changes for that
-move rolled back, so only its counters can drift, and no event says so.
+to a holder at a share claim and a share return to a holder, which reaches
+modules as `Forced`. A module that refuses an ignored move has its own changes
+for that move rolled back, so only its counters can drift, and no event says
+so.
 
 `try_` cannot catch everything. A module that runs the transaction out of budget
 or resource limits, or hits another error the host does not recover from, such
@@ -710,21 +715,23 @@ as touching a ledger entry outside the footprint, still stops the move. The
 defense is removing that module, which lands through the timelock even during
 a wind-down (§8.7).
 
-The rule keys on the bound vault and on the token's `manager` role, not on the
-token or the caller. Another token bound to the same compliance contract would
-also skip refusals on its burns and its moves into the vault; binding one is
-timelocked, and the vault's setup requires its own token linked, not linked
-alone. A second token `manager` granted after setup, also timelocked and shown
-by `health().sole_token_manager`, would burn past modules too, but it could burn
+The rule keys on the bound vault, not on the token or the caller, and it
+ignores every burn because only the token's `manager` burns and the vault's
+setup requires the vault to hold that role alone. So another token bound to the
+same compliance contract would also skip refusals on its burns and its moves
+into the vault; binding one is timelocked, and the vault's setup requires its
+own token among the linked tokens, not alone in them. A second token `manager`
+granted after setup, also timelocked and shown by
+`health().sole_token_manager`, would burn past modules too, but it could burn
 anyway. An outside compliance contract has no exit rule.
 
 #### Platform powers
 
 - **Delist at once.** The compliance authority's `remove_identity` unlinks a
   wallet and vetoes it in one call, even during a wind-down. It vetoes a wallet
-  with no link too, to block it before it onboards. A vetoed wallet cannot link
-  itself again by any path, and only the compliance authority lifts a veto
-  (`lift_veto`). Lifting does not relist: the investor onboards again. So
+  with no link too, to block it before it onboards. No path links a vetoed
+  wallet, the authority's own listing included, and only the compliance
+  authority lifts a veto (`lift_veto`). Lifting does not relist: the investor onboards again. So
   self-service never undoes a platform decision.
 - **List a wallet.** The compliance authority may link a wallet itself
   (`add_identity`), but only to a kit identity whose claims pass, and never a
@@ -986,8 +993,11 @@ flowchart LR
     CMP -.->|by deploy| RCMP
 ```
 
-Dashed edges hold by deploy only (§5). Guards, preconditions and the tests that
-pin each entrypoint are in
+Dashed edges hold by deploy only (§5). The Compliance surface reads a holder's
+standing by simulating `verify_identity`, and shows a verifier fault as
+unreadable, never as not allowed. Investor onboarding has no screen yet: an
+investor calls the registry's `onboard` directly. Guards, preconditions and the
+tests that pin each entrypoint are in
 [`docs/AUTHORIZATION_MATRIX.md`](./AUTHORIZATION_MATRIX.md).
 
 Every operation is shown in domain terms, with its conditions and resulting

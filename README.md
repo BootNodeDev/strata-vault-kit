@@ -10,7 +10,9 @@ Each operator deploys, configures and brands an independent instance.
 
 Two rules the contracts enforce:
 
-1. **Only approved addresses can enter** — an allowlist maintained post-KYC.
+1. **Only verified wallets can enter** — each investor holds a KYC claim
+   signed by a provider the fund trusts, and the platform can delist a wallet
+   at once.
 2. **A priced claim always pays** — neither a pause, a delisting nor a stale
    valuation can block an already-priced, funded cash claim. A compliance
    freeze holds it until the freeze is lifted.
@@ -50,10 +52,53 @@ than its pending deposits, and once a wind-down is proposed.
 
 Pre-release, testnet only. Nothing here is audited or production-ready.
 
+## Contracts and onboarding
+
+Each vault deployment runs its own set of contracts:
+
+| Contract | What it does |
+| --- | --- |
+| `async_vault` | Requests, epochs, pricing, the reserve, claims, the timelock and the wind-down |
+| `share_token` | The share: an OpenZeppelin RWA token that checks identity and compliance on every move |
+| `nav_oracle` | The attested share price, under on-chain guardrails |
+| `compliance` | Rule modules on every share move; a module's refusal never stops a move into the vault or a burn |
+| `claim_topics` | The claim topics the fund requires and the issuers it trusts for each |
+| `identity_registry` | Links each wallet to the investor's identity contract; investors onboard themselves, and the compliance authority delists and vetoes |
+| `identity_verifier` | Answers the share token and the vault: verified, refused, or failed when a contract it reads breaks |
+| `claim_issuer` | One per KYC provider, owned by the provider: it allows the provider's signing keys and answers whether a claim is valid |
+| `investor_identity` | One per investor, deployed by the registry from one uploaded Wasm: holds the investor's claims |
+| `sep40_feed` | Optional SEP-40 price feed for integrators |
+
+An investor onboards with one on-chain transaction, with no backend in between:
+
+1. A KYC provider checks the investor off chain and signs a claim for each
+   topic the fund requires. The claim is addressed to the identity the
+   registry will deploy for the wallet (`identity_address`).
+2. The investor calls `onboard` on the identity registry and pays for it. The
+   registry deploys the investor's identity contract, stores the claims and
+   links the wallet once the verifier accepts them. Nothing is kept if a claim
+   fails.
+3. From then on the investor can deposit. To renew a claim, the investor adds
+   it to their identity directly.
+
+The investor dApp has no onboarding screen yet; the harness shows the calls in
+[`scripts/harness/lib/onboard.ts`](./scripts/harness/lib/onboard.ts).
+
+The compliance authority delists a wallet with `remove_identity`, which also
+vetoes it, so it cannot onboard again until the authority calls `lift_veto`.
+The kit puts no personal data on chain: a claim says only that a topic holds,
+and the registry stores no country. The
+[design doc](./docs/strata-product-and-architecture.md#86-identity-and-compliance)
+explains the rules, and the
+[harness README](./scripts/harness/README.md) how the test deployment signs
+claims with a test KYC key.
+
 ## Deployed addresses
 
 Testnet only. The deploy script rewrites the table below on every testnet
 deploy from `environments.toml` → `[staging.contracts]`, which is the record.
+A table that lists no `identity_registry` comes from a deploy made before the
+identity contracts: its `identity_verifier` is the old allowlist stub.
 
 <!-- deployed-addresses:start -->
 | Contract | Address |
@@ -263,7 +308,14 @@ contract (only [proposed](https://github.com/orgs/stellar/discussions/1966)).
 The operations console is at
 [strata-vault-kit-app.vercel.app/admin](https://strata-vault-kit-app.vercel.app/admin).
 It reads the contracts the console and the transactions below ran against, not
-the set under [Deployed addresses](#deployed-addresses):
+the set under [Deployed addresses](#deployed-addresses). They predate the
+identity contracts, so their console lists and delists with the old allowlist
+verifier's `allow`. The current console removes an investor with the
+registry's `remove_identity`, which also vetoes the wallet, and "Lift the
+veto" calls `lift_veto`; its allowlisted check shows a verifier fault as
+unreadable, never as not allowed. The app generates its clients from the
+staging contracts, so it builds against staging only once testnet runs the
+identity contracts:
 
 | Contract | Address |
 | --- | --- |
@@ -407,7 +459,10 @@ The first deploy writes a secret key for each harness account to
 `.env.keys.<network>` at the repository root, and later deploys reuse them. Back
 that file up and never commit it. The
 [harness README](./scripts/harness/README.md#account-keys) explains how to use a
-key you already hold for an account.
+key you already hold for an account. One of those accounts, `kyc-provider`
+(`KYC_PROVIDER_SECRET`), owns the test claim issuer and signs the suites'
+claims; a key file made before it existed gets it from
+`npm run keys -w scripts/harness`.
 
 Output of a real run from a fresh clone. Contract IDs differ on every run.
 
@@ -493,14 +548,14 @@ STELLAR_ACCOUNT=<identity or secret> npm run extend -w scripts/harness
 It reads the testnet contracts from `environments.toml` and covers four kinds
 of entry: each contract instance, the Wasm it runs, the Wasm the identity
 registry deploys investor identities from, and each pending timelock change.
-It restores any of them that has archived, then extends each by 30 days. Any funded account pays, since extending needs no authority. Use
-`--env <name>` for another environment, or `--config <record>` for a
-deployment record.
+It restores any of them that has archived, then extends each by 30 days. Any
+funded account pays, since extending needs no authority. Use `--env <name>`
+for another environment, or `--config <record>` for a deployment record.
 
 It extends nothing else. Other entries, such as investors' identity contracts,
-epochs, requests, balances and roles, still archive when nobody uses them. Nothing in them is lost: the next
-call that needs an archived entry restores it, and the account that sends that
-call pays the restore fee. For a holder's balance or request, that is usually
+epochs, requests, balances and roles, still archive when nobody uses them.
+Nothing in them is lost: the next call that needs an archived entry restores
+it, and the account that sends that call pays the restore fee. For a holder's balance or request, that is usually
 the holder, on their next call. The
 [TTL policy](./docs/kit-spec.md#5-storage-lifetime-ttl-policy) says what each
 contract extends on its own and how a restore works.

@@ -1,8 +1,8 @@
 //! # Design
 //!
 //! A test double, never deployed: it builds as a library for the kit's tests
-//! only. Testnet-only stub — in production this is an external ERC-3643 identity
-//! registry (a trusted issuer's), not part of this product. Do not deploy to mainnet.
+//! only. Deployments use the kit's `identity-verifier` and its identity
+//! contracts instead.
 //!
 //! - **A yes or no per address.** No claims, topics or issuers, and an address
 //!   never set is refused. The cost: no expiry and no per-jurisdiction rule; a
