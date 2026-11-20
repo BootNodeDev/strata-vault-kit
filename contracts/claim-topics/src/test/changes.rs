@@ -527,6 +527,26 @@ fn is_complete_needs_an_issuer_for_every_topic() {
 }
 
 #[test]
+fn moving_a_topics_only_issuer_to_other_topics_leaves_it_incomplete() {
+    let f = bound();
+    let issuer = f.kit_issuer();
+    f.topics.add_claim_topic(&KYC, &f.admin);
+    f.topics.add_claim_topic(&AML, &f.admin);
+    f.topics
+        .add_trusted_issuer(&issuer, &topics(&f.e, &[KYC, AML]), &f.admin);
+    f.topics.finish_setup();
+    assert!(f.topics.is_complete());
+
+    f.land(&TopicsChange::UpdateIssuerTopics(
+        issuer.clone(),
+        topics(&f.e, &[AML]),
+    ));
+
+    assert!(f.topics.get_claim_topic_issuers(&KYC).is_empty());
+    assert!(!f.topics.is_complete());
+}
+
+#[test]
 fn setup_cannot_finish_while_a_hand_over_is_pending() {
     let f = bound();
     let next = Address::generate(&f.e);

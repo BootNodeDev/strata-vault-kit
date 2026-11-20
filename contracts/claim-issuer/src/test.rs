@@ -226,7 +226,6 @@ fn a_tampered_payload_fails_the_signature() {
     tampered[last] ^= 1;
     let tampered = Bytes::from_slice(&f.e, &tampered);
     let error = f.check(ED25519_SCHEME, &sig, &tampered).unwrap_err();
-    std::eprintln!("TAMPER error = {error:?}");
     let code = contract_code(&error);
     assert!(code.is_none(), "unexpected contract error {code:?}");
 }
@@ -324,7 +323,6 @@ fn a_future_dated_claim_signed_under_the_old_nonce_fails_the_signature() {
     f.issuer.invalidate_claims(&f.identity, &TOPIC);
     f.e.ledger().set_timestamp(NOW + 20);
     let error = f.check(ED25519_SCHEME, &sig, &data).unwrap_err();
-    std::eprintln!("NONCE error = {error:?}");
     assert_eq!(contract_code(&error), None);
 }
 

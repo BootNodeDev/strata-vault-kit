@@ -109,6 +109,26 @@ fn a_required_topic_with_no_trusted_issuer_is_unavailable() {
 }
 
 #[test]
+fn a_topics_only_issuer_moved_to_other_topics_leaves_it_unavailable() {
+    let f = finished();
+    let aml = f.require_aml();
+    let (account, _) = f.onboard_with(|identity| {
+        vec![
+            &f.e,
+            f.kyc.claim(&f.e, identity, KYC, NOW + YEAR),
+            aml.claim(&f.e, identity, AML, NOW + YEAR),
+        ]
+    });
+    verified(f.verify(&account));
+
+    f.topics
+        .update_issuer_claim_topics(&f.kyc.issuer, &vec![&f.e, AML], &f.admin);
+
+    assert!(!f.topics.is_complete());
+    unavailable(f.verify(&account));
+}
+
+#[test]
 fn onboarding_through_the_registry_with_this_verifier() {
     let f = finished();
     f.close_the_stack();

@@ -253,6 +253,29 @@ fn a_failing_topics_contract_is_unavailable() {
 }
 
 #[test]
+fn an_issuer_refusal_code_from_any_other_contract_is_unavailable() {
+    let d = doubles();
+    d.single_issuer();
+
+    for code in [ISSUER_REFUSALS[0], ISSUER_REFUSALS[3]] {
+        d.registry.behave_as(&Behaviour::Fails(code));
+        unavailable(d.verify());
+        d.registry.behave_as(&Behaviour::Answers);
+
+        d.topics.behave_as(&Behaviour::Fails(code));
+        unavailable(d.verify());
+        unavailable(d.check_claims());
+        d.topics.behave_as(&Behaviour::Answers);
+
+        d.identity.behave_as(&Behaviour::Fails(code));
+        unavailable(d.verify());
+        unavailable(d.check_claims());
+        d.identity.behave_as(&Behaviour::Answers);
+    }
+    verified(d.verify());
+}
+
+#[test]
 fn a_failing_identity_is_unavailable() {
     let d = doubles();
     d.single_issuer();
