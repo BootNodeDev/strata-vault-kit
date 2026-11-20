@@ -16,6 +16,13 @@ import {
 	type WalletContextType,
 } from "../providers/WalletProvider"
 import { contractErrorCode } from "../test/contractErrorCode"
+import {
+	fakeAsyncVault,
+	fakeIdentityVerifier,
+	fakeNavOracle,
+	fakeShareToken,
+	identityVerifierAt as identityVerifierAtMock,
+} from "../test/fakeClients"
 import { useSignPending } from "./useSignPending"
 
 const {
@@ -25,11 +32,6 @@ const {
 	authorizePendingMock,
 	prepareCoSignedMock,
 	latestLedgerMock,
-	tokenMock,
-	vaultMock,
-	oracleMock,
-	verifierMock,
-	identityVerifierAtMock,
 	linkTarget,
 } = vi.hoisted(() => ({
 	accountSignersMock: vi.fn(),
@@ -38,25 +40,18 @@ const {
 	authorizePendingMock: vi.fn(),
 	prepareCoSignedMock: vi.fn(),
 	latestLedgerMock: vi.fn(),
-	tokenMock: {
-		identity_verifier: vi.fn(),
-		pending_changes: vi.fn(),
-		get_admin: vi.fn(),
-		txFromXDR: vi.fn(),
-	},
-	vaultMock: { pending_changes: vi.fn() },
-	oracleMock: { pending_changes: vi.fn() },
-	verifierMock: { identity_registry: vi.fn() },
-	identityVerifierAtMock: vi.fn(),
 	linkTarget: { contractId: "", expiresAt: new Date(0) },
 }))
 
-vi.mock("../config/clients", () => ({
-	shareToken: async () => tokenMock,
-	asyncVault: async () => vaultMock,
-	navOracle: async () => oracleMock,
-	identityVerifierAt: identityVerifierAtMock,
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
+
+const tokenMock = Object.assign(
+	fakeShareToken("identity_verifier", "pending_changes", "get_admin"),
+	{ txFromXDR: vi.fn() },
+)
+const vaultMock = fakeAsyncVault("pending_changes")
+const oracleMock = fakeNavOracle("pending_changes")
+const verifierMock = fakeIdentityVerifier("identity_registry")
 
 type Marker = { signedBy: string[] }
 
@@ -201,7 +196,6 @@ describe("useSignPending", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		tokenMock.identity_verifier.mockResolvedValue({ result: "CLIVEVERIFIER" })
-		identityVerifierAtMock.mockImplementation(async () => verifierMock)
 		verifierMock.identity_registry.mockResolvedValue({
 			result: "CLIVEREGISTRY",
 		})

@@ -6,6 +6,10 @@ import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { RWAError } from "../../../app-lib/clients/identity_verifier/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
 import {
+	asyncVaultWriter as asyncVaultWriterMock,
+	fakeAsyncVault,
+} from "../test/fakeClients"
+import {
 	contractEvent,
 	deferred,
 	investorAddress,
@@ -16,15 +20,9 @@ import { useCancelRedeem } from "./useCancelRedeem"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { sharePositionKey } from "./useSharePosition"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { cancel_redeem: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
-asyncVaultWriterMock.mockResolvedValue(vaultMock)
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("cancel_redeem")
 
 const epochId = 3n
 const otherEpochId = 4n
@@ -34,7 +32,6 @@ const renderCancelRedeem = () => renderWithWallet(useCancelRedeem)
 describe("useCancelRedeem", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("reports a redemption surrendered into the wind-down claim instead of returned", async () => {

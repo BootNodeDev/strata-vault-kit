@@ -3,19 +3,15 @@ import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import { fakeAsyncVault } from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { useCloseEpoch } from "./useCloseEpoch"
 import { cycleWriteKeys } from "./useCycleState"
 import { investorRequestsKey } from "./useInvestorRequests"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { close_epoch: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("close_epoch")
 
 const renderCloseEpoch = () => renderWithWallet(useCloseEpoch)
 
@@ -30,7 +26,6 @@ const successful = (result: bigint) => ({
 describe("useCloseEpoch", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed with the sealed epoch, in order", async () => {

@@ -4,6 +4,11 @@ import { renderHook, waitFor } from "@testing-library/react"
 import { createElement, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
+	fakeIdentityVerifier,
+	fakeShareToken,
+	identityVerifierAt as identityVerifierAtMock,
+} from "../test/fakeClients"
+import {
 	IDENTITY_NOT_FOUND,
 	IDENTITY_VERIFICATION_FAILED,
 	investorAddress,
@@ -17,16 +22,10 @@ import {
 	useIsAllowed,
 } from "./useIsAllowed"
 
-const { tokenMock, verifierMock, identityVerifierAtMock } = vi.hoisted(() => ({
-	tokenMock: { identity_verifier: vi.fn() },
-	verifierMock: { verify_identity: vi.fn() },
-	identityVerifierAtMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	shareToken: async () => tokenMock,
-	identityVerifierAt: identityVerifierAtMock,
-}))
+const tokenMock = fakeShareToken("identity_verifier")
+const verifierMock = fakeIdentityVerifier("verify_identity")
 
 const allowed: ContractRead<void> = { kind: "value", value: undefined }
 const refused = (code: number): ContractRead<void> => ({
@@ -59,7 +58,6 @@ describe("classifyAllowance", () => {
 describe("useIsAllowed", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		identityVerifierAtMock.mockImplementation(async () => verifierMock)
 		tokenMock.identity_verifier.mockResolvedValue({ result: "CTOKENVERIFIER" })
 		verifierMock.verify_identity.mockResolvedValue({ result: undefined })
 	})

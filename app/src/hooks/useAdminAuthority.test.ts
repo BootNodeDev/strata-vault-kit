@@ -1,8 +1,19 @@
 import type * as AppLib from "@stellar-scaffold/app-lib"
+import type { NavOracleApi, ShareTokenApi } from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { addresses } from "../config/addresses"
 import { vaultContractId } from "../config/contracts"
+import {
+	type FakeClient,
+	fakeAsyncVault,
+	fakeIdentityRegistry,
+	fakeIdentityVerifier,
+	fakeNavOracle,
+	fakeShareToken,
+	navOracle as navOracleMock,
+	shareToken as shareTokenMock,
+} from "../test/fakeClients"
 import { pendingAdminsQuery } from "./pendingAdmins"
 import { deferred, renderWithWallet, investorAddress } from "./testSupport"
 import {
@@ -299,53 +310,39 @@ describe("toSurfaces", () => {
 })
 
 const {
-	vaultMock,
-	oracleMock,
-	tokenMock,
 	connectNavOracleMock,
 	connectShareTokenMock,
-	navOracleMock,
-	shareTokenMock,
 	accountSignersMock,
 	readPendingAdminsMock,
-	verifierMock,
-	registryMock,
 } = vi.hoisted(() => ({
-	vaultMock: {
-		governance: vi.fn(),
-		get_role_member_count: vi.fn(),
-		get_role_member: vi.fn(),
-		oracle: vi.fn(),
-		share_token: vi.fn(),
-	},
-	oracleMock: {
-		get_role_member_count: vi.fn(),
-		get_role_member: vi.fn(),
-		get_admin: vi.fn(),
-	},
-	tokenMock: {
-		get_role_member_count: vi.fn(),
-		get_role_member: vi.fn(),
-		get_admin: vi.fn(),
-		identity_verifier: vi.fn(),
-	},
 	connectNavOracleMock: vi.fn(),
 	connectShareTokenMock: vi.fn(),
-	navOracleMock: vi.fn(),
-	shareTokenMock: vi.fn(),
 	accountSignersMock: vi.fn(),
 	readPendingAdminsMock: vi.fn(),
-	verifierMock: { identity_registry: vi.fn() },
-	registryMock: { compliance: vi.fn() },
 }))
 
-vi.mock("../config/clients", () => ({
-	asyncVault: async () => vaultMock,
-	navOracle: navOracleMock,
-	shareToken: shareTokenMock,
-	identityVerifierAt: async () => verifierMock,
-	identityRegistryAt: async () => registryMock,
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
+
+const vaultMock = fakeAsyncVault(
+	"governance",
+	"get_role_member_count",
+	"get_role_member",
+	"oracle",
+	"share_token",
+)
+const oracleMock = fakeNavOracle(
+	"get_role_member_count",
+	"get_role_member",
+	"get_admin",
+)
+const tokenMock = fakeShareToken(
+	"get_role_member_count",
+	"get_role_member",
+	"get_admin",
+	"identity_verifier",
+)
+const verifierMock = fakeIdentityVerifier("identity_registry")
+const registryMock = fakeIdentityRegistry("compliance")
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 	const actual = await importOriginal<typeof AppLib>()
@@ -374,12 +371,12 @@ const pendingAdmins = (
 })
 
 const members = (
-	client: { get_role_member: ReturnType<typeof vi.fn> },
+	client: FakeClient<NavOracleApi | ShareTokenApi, "get_role_member">,
 	addresses: string[],
 ) => {
-	client.get_role_member.mockImplementation(
-		async ({ index }: { index: number }) => ({ result: addresses[index] }),
-	)
+	client.get_role_member.mockImplementation(async ({ index }) => ({
+		result: addresses[index] ?? "",
+	}))
 }
 
 const vaultRoles = (byRole: Record<string, string[]>) => {
@@ -390,7 +387,7 @@ const vaultRoles = (byRole: Record<string, string[]>) => {
 	)
 	vaultMock.get_role_member.mockImplementation(
 		async ({ role, index }: { role: string; index: number }) => ({
-			result: byRole[role]?.[index],
+			result: byRole[role]?.[index] ?? "",
 		}),
 	)
 }
@@ -409,8 +406,6 @@ describe("useAdminAuthority", () => {
 		})
 		connectNavOracleMock.mockResolvedValue(oracleMock)
 		connectShareTokenMock.mockResolvedValue(tokenMock)
-		navOracleMock.mockResolvedValue(oracleMock)
-		shareTokenMock.mockResolvedValue(tokenMock)
 		oracleMock.get_role_member_count.mockResolvedValue({ result: 0 })
 		oracleMock.get_admin.mockResolvedValue({ result: null })
 		tokenMock.get_role_member_count.mockResolvedValue({ result: 0 })
