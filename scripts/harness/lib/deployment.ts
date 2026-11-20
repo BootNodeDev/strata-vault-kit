@@ -14,7 +14,10 @@ import { type NetworkName } from "./network.js"
 
 export const CONTRACT_NAMES = [
 	"compliance",
+	"claim_topics",
+	"identity_registry",
 	"identity_verifier",
+	"claim_issuer",
 	"share_token",
 	"nav_oracle",
 	"async_vault",
@@ -22,6 +25,16 @@ export const CONTRACT_NAMES = [
 ] as const
 
 export type ContractName = (typeof CONTRACT_NAMES)[number]
+
+// Uploaded but never deployed by the harness: the registry deploys one
+// identity per investor from this code.
+export const UPLOADED_NAMES = ["investor_identity"] as const
+
+export type UploadedName = (typeof UPLOADED_NAMES)[number]
+
+export const WASM_NAMES = [...CONTRACT_NAMES, ...UPLOADED_NAMES] as const
+
+export type WasmName = (typeof WASM_NAMES)[number]
 
 export const EXAMPLE_NAMES = ["sep40_consumer"] as const
 
@@ -39,7 +52,7 @@ export interface Deployment {
 	ledger: number
 	asset: { code: string; issuer: string; contract: string }
 	contracts: Record<ContractName, string>
-	wasmHashes: Record<ContractName, string>
+	wasmHashes: Record<WasmName, string>
 	accounts: Record<AccountName, { public: string }>
 }
 
@@ -92,6 +105,9 @@ export function renderAddressesTable(record: Deployment): string {
 		["nav_oracle", record.contracts.nav_oracle],
 		["share_token", record.contracts.share_token],
 		["identity_verifier", record.contracts.identity_verifier],
+		["identity_registry", record.contracts.identity_registry],
+		["claim_topics", record.contracts.claim_topics],
+		["claim_issuer", record.contracts.claim_issuer],
 		["compliance", record.contracts.compliance],
 		["sep40_feed", record.contracts.sep40_feed],
 		["asset", record.asset.contract],
@@ -136,6 +152,9 @@ export function replaceStagingContracts(
 		`nav_oracle = { id = "${record.contracts.nav_oracle}" }`,
 		`share_token = { id = "${record.contracts.share_token}" }`,
 		`identity_verifier = { id = "${record.contracts.identity_verifier}" }`,
+		`identity_registry = { id = "${record.contracts.identity_registry}" }`,
+		`claim_topics = { id = "${record.contracts.claim_topics}" }`,
+		`claim_issuer = { id = "${record.contracts.claim_issuer}" }`,
 		`compliance = { id = "${record.contracts.compliance}" }`,
 		`sep40_feed = { id = "${record.contracts.sep40_feed}" }`,
 		`asset = { id = "${record.asset.contract}" }`,

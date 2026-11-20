@@ -21,6 +21,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "allowlist-verifier"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "stellar-access",
+ "stellar-macros",
+ "stellar-tokens",
+ "strata-bindings",
+ "strata-storage",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -184,8 +196,14 @@ checksum = "d3fb67a6e08acf24fdeccbac2cb6ac4305825bd1f117462e0e6f2f193345ad56"
 name = "async-vault"
 version = "0.1.0"
 dependencies = [
+ "allowlist-verifier",
+ "claim-issuer",
+ "claim-topics",
  "compliance",
+ "ed25519-dalek",
+ "identity-registry",
  "identity-verifier",
+ "investor-identity",
  "nav-oracle",
  "proptest",
  "share-token",
@@ -338,6 +356,31 @@ dependencies = [
  "num-traits",
  "serde",
  "windows-link",
+]
+
+[[package]]
+name = "claim-issuer"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "soroban-sdk",
+ "stellar-tokens",
+ "strata-bindings",
+ "strata-storage",
+]
+
+[[package]]
+name = "claim-topics"
+version = "0.1.0"
+dependencies = [
+ "claim-issuer",
+ "soroban-sdk",
+ "stellar-access",
+ "stellar-macros",
+ "stellar-tokens",
+ "strata-bindings",
+ "strata-storage",
+ "strata-timelock",
 ]
 
 [[package]]
@@ -1033,14 +1076,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
-name = "identity-verifier"
+name = "identity-registry"
 version = "0.1.0"
 dependencies = [
+ "claim-issuer",
+ "claim-topics",
+ "ed25519-dalek",
+ "investor-identity",
  "soroban-sdk",
  "stellar-access",
  "stellar-macros",
  "stellar-tokens",
+ "strata-bindings",
  "strata-storage",
+ "strata-timelock",
+]
+
+[[package]]
+name = "identity-verifier"
+version = "0.1.0"
+dependencies = [
+ "claim-issuer",
+ "claim-topics",
+ "ed25519-dalek",
+ "identity-registry",
+ "investor-identity",
+ "soroban-sdk",
+ "stellar-access",
+ "stellar-macros",
+ "stellar-tokens",
+ "strata-bindings",
+ "strata-storage",
+ "strata-timelock",
 ]
 
 [[package]]
@@ -1071,6 +1138,16 @@ name = "indexmap-nostd"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e04e2fd2b8188ea827b32ef11de88377086d690286ab35747ef7f9bf3ccb590"
+
+[[package]]
+name = "investor-identity"
+version = "0.1.0"
+dependencies = [
+ "soroban-sdk",
+ "stellar-tokens",
+ "strata-bindings",
+ "strata-storage",
+]
 
 [[package]]
 name = "itertools"
@@ -1744,8 +1821,8 @@ dependencies = [
 name = "share-token"
 version = "0.1.0"
 dependencies = [
+ "allowlist-verifier",
  "compliance",
- "identity-verifier",
  "soroban-sdk",
  "stellar-access",
  "stellar-contract-utils",

@@ -2,7 +2,11 @@ import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { RWAError } from "../../../app-lib/clients/share_token/src/index"
 import { simulationError } from "../test/contractErrorCode"
-import { renderWithWallet } from "./testSupport"
+import {
+	IDENTITY_VERIFICATION_FAILED,
+	refusedWith,
+	renderWithWallet,
+} from "./testSupport"
 import { useComplianceState } from "./useComplianceState"
 
 const { tokenMock, verifierMock, identityVerifierAtMock } = vi.hoisted(() => ({
@@ -11,7 +15,7 @@ const { tokenMock, verifierMock, identityVerifierAtMock } = vi.hoisted(() => ({
 		balance: vi.fn(),
 		get_frozen_tokens: vi.fn(),
 	},
-	verifierMock: { is_allowed: vi.fn() },
+	verifierMock: { verify_identity: vi.fn() },
 	identityVerifierAtMock: vi.fn(),
 }))
 
@@ -28,10 +32,11 @@ describe("useComplianceState", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		identityVerifierAtMock.mockImplementation(async () => verifierMock)
-		verifierMock.is_allowed.mockImplementation(
-			async ({ account }: { account: string }) => ({
-				result: account === TARGET,
-			}),
+		verifierMock.verify_identity.mockImplementation(
+			async ({ account }: { account: string }) =>
+				account === TARGET
+					? { result: undefined }
+					: refusedWith(IDENTITY_VERIFICATION_FAILED),
 		)
 		tokenMock.is_frozen.mockResolvedValue({ result: true })
 		tokenMock.balance.mockResolvedValue({ result: 100n })

@@ -16,6 +16,8 @@ use crate::state;
 pub(crate) enum Standing {
     Listed,
     Delisted,
+    /// The verifier failed instead of answering.
+    Unverifiable,
     Frozen,
 }
 
@@ -42,8 +44,8 @@ fn verdict(e: &Env, token: &RWATokenClient, holder: &Address) -> Verdict {
 }
 
 /// The holder's standing, asked of the share token and its identity verifier,
-/// so the vault and the token never disagree. A verifier that fails counts as
-/// delisted.
+/// so the vault and the token never disagree. Only a refusal delists; a
+/// verifier that fails leaves the holder unverifiable.
 pub(crate) fn standing(e: &Env, holder: &Address) -> Standing {
     let token = RWATokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken));
     if token.is_frozen(holder) {
@@ -51,7 +53,8 @@ pub(crate) fn standing(e: &Env, holder: &Address) -> Standing {
     }
     match verdict(e, &token, holder) {
         Verdict::Verified => Standing::Listed,
-        Verdict::Refused | Verdict::Failed => Standing::Delisted,
+        Verdict::Refused => Standing::Delisted,
+        Verdict::Failed => Standing::Unverifiable,
     }
 }
 
@@ -80,32 +83,38 @@ pub(crate) enum Decision {
 }
 
 /// What `exit` does for a holder in `standing`. No storage, no calls.
+///
+/// A fault lets no one in and forces no one out: wherever a listed and a
+/// delisted holder part ways, an unverifiable one waits, except in a
+/// wind-down, which reads the fault as a refusal.
 pub(crate) fn decide(exit: Exit, standing: Standing, winding_down: bool) -> Decision {
+    use Standing::{Delisted, Frozen, Listed, Unverifiable};
     match (exit, standing, winding_down) {
-        (Exit::RequestDeposit, Standing::Listed, _) => Decision::Proceed,
-        (Exit::RequestDeposit, Standing::Delisted | Standing::Frozen, _) => Decision::Refuse,
+        (Exit::RequestDeposit, Listed, _) => Decision::Proceed,
+        (Exit::RequestDeposit, Delisted | Unverifiable | Frozen, _) => Decision::Refuse,
 
-        (Exit::ClaimDeposit, Standing::Listed, _) => Decision::Proceed,
-        (Exit::ClaimDeposit, Standing::Delisted, false) => Decision::ConvertToExit,
-        (Exit::ClaimDeposit, Standing::Delisted, true) => Decision::Surrender,
-        (Exit::ClaimDeposit, Standing::Frozen, _) => Decision::Hold,
+        (Exit::ClaimDeposit, Listed, _) => Decision::Proceed,
+        (Exit::ClaimDeposit, Delisted, false) => Decision::ConvertToExit,
+        (Exit::ClaimDeposit, Unverifiable, false) => Decision::Refuse,
+        (Exit::ClaimDeposit, Delisted | Unverifiable, true) => Decision::Surrender,
+        (Exit::ClaimDeposit, Frozen, _) => Decision::Hold,
 
-        (Exit::CancelRedeem, Standing::Listed, false) => Decision::Proceed,
-        (Exit::CancelRedeem, Standing::Delisted, false) => Decision::Refuse,
-        (Exit::CancelRedeem, Standing::Listed | Standing::Delisted, true) => Decision::Surrender,
-        (Exit::CancelRedeem, Standing::Frozen, _) => Decision::Hold,
+        (Exit::CancelRedeem, Listed, false) => Decision::Proceed,
+        (Exit::CancelRedeem, Delisted | Unverifiable, false) => Decision::Refuse,
+        (Exit::CancelRedeem, Listed | Delisted | Unverifiable, true) => Decision::Surrender,
+        (Exit::CancelRedeem, Frozen, _) => Decision::Hold,
 
-        (Exit::CancelDeposit, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
-        (Exit::CancelDeposit, Standing::Frozen, _) => Decision::Hold,
+        (Exit::CancelDeposit, Listed | Delisted | Unverifiable, _) => Decision::Proceed,
+        (Exit::CancelDeposit, Frozen, _) => Decision::Hold,
 
-        (Exit::RequestRedeem, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
-        (Exit::RequestRedeem, Standing::Frozen, _) => Decision::Hold,
+        (Exit::RequestRedeem, Listed | Delisted | Unverifiable, _) => Decision::Proceed,
+        (Exit::RequestRedeem, Frozen, _) => Decision::Hold,
 
-        (Exit::ClaimRedeem, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
-        (Exit::ClaimRedeem, Standing::Frozen, _) => Decision::Hold,
+        (Exit::ClaimRedeem, Listed | Delisted | Unverifiable, _) => Decision::Proceed,
+        (Exit::ClaimRedeem, Frozen, _) => Decision::Hold,
 
-        (Exit::ClaimWindDown, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
-        (Exit::ClaimWindDown, Standing::Frozen, _) => Decision::Hold,
+        (Exit::ClaimWindDown, Listed | Delisted | Unverifiable, _) => Decision::Proceed,
+        (Exit::ClaimWindDown, Frozen, _) => Decision::Hold,
     }
 }
 
@@ -113,6 +122,7 @@ pub(crate) fn decide(exit: Exit, standing: Standing, winding_down: bool) -> Deci
 pub(crate) fn refused_with(standing: Standing) -> VaultError {
     match standing {
         Standing::Frozen => VaultError::Frozen,
+        Standing::Unverifiable => VaultError::VerifierFailed,
         Standing::Listed | Standing::Delisted => VaultError::NotAllowlisted,
     }
 }

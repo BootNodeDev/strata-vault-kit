@@ -3,6 +3,7 @@ import { basicNodeSigner } from "@stellar/stellar-sdk/contract"
 
 import { Client as VaultClient } from "../../../app-lib/clients/async_vault/dist/index.js"
 import { Client as ComplianceClient } from "../../../app-lib/clients/compliance/dist/index.js"
+import { Client as IdentityRegistryClient } from "../../../app-lib/clients/identity_registry/dist/index.js"
 import { Client as IdentityVerifierClient } from "../../../app-lib/clients/identity_verifier/dist/index.js"
 import { Client as OracleClient } from "../../../app-lib/clients/nav_oracle/dist/index.js"
 import { Client as Sep40ConsumerClient } from "../../../app-lib/clients/sep40_consumer/dist/index.js"
@@ -77,6 +78,8 @@ export const shareToken = (c: Connected, as: Keypair) =>
 	new ShareTokenClient(options(c, "share_token", as))
 export const identityVerifier = (c: Connected, as: Keypair) =>
 	new IdentityVerifierClient(options(c, "identity_verifier", as))
+export const identityRegistry = (c: Connected, as: Keypair) =>
+	new IdentityRegistryClient(options(c, "identity_registry", as))
 export const complianceContract = (c: Connected, as: Keypair) =>
 	new ComplianceClient(options(c, "compliance", as))
 export const sep40Feed = (c: Connected, as: Keypair) =>

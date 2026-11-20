@@ -16,6 +16,7 @@ import type React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { type AddressRow } from "../components/vault/AboutVault"
+import { IDENTITY_VERIFICATION_FAILED, refusedWith } from "../hooks/testSupport"
 import {
 	WalletContext,
 	type WalletContextType,
@@ -384,7 +385,10 @@ vi.mock("../config/clients", () => {
 		}),
 	}
 	const identity = {
-		is_allowed: async () => ({ result: mockIdentity.allowed }),
+		verify_identity: async () =>
+			mockIdentity.allowed
+				? { result: undefined }
+				: refusedWith(IDENTITY_VERIFICATION_FAILED),
 	}
 	const shares = {
 		balance: async () => ({ result: mockShares.balance }),

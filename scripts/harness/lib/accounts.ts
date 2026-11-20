@@ -23,6 +23,7 @@ export const ACCOUNT_NAMES = [
 	"attester",
 	"custodian",
 	"issuer",
+	"kyc-provider",
 	"holder-1",
 	"holder-2",
 	"holder-3",

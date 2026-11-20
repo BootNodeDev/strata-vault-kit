@@ -4,19 +4,19 @@ import { join } from "node:path"
 import { stellarAssetGenerator } from "./lib/asset-client.js"
 import { generateClient, rootSdkVersion, wasmGenerator } from "./lib/cli.js"
 import {
-	CONTRACT_NAMES,
 	EXAMPLE_NAMES,
 	REPO_ROOT,
-	type ContractName,
+	WASM_NAMES,
 	type ExampleName,
+	type WasmName,
 } from "./lib/deployment.js"
 
-const NAMES = [...CONTRACT_NAMES, ...EXAMPLE_NAMES]
+const NAMES = [...WASM_NAMES, ...EXAMPLE_NAMES]
 
-const wasmOf = (name: ContractName | ExampleName): string =>
+const wasmOf = (name: WasmName | ExampleName): string =>
 	join(REPO_ROOT, "target", "wasm32v1-none", "release", `${name}.wasm`)
 
-const clientDir = (name: ContractName | ExampleName | "asset"): string =>
+const clientDir = (name: WasmName | ExampleName | "asset"): string =>
 	join(REPO_ROOT, "app-lib", "clients", name)
 
 async function main(): Promise<void> {

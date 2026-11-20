@@ -5,7 +5,7 @@ import { OPERATOR_TIMEOUT_SECONDS } from "@stellar-scaffold/app-lib"
 import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import * as VaultClient from "../../../app-lib/clients/async_vault/src/index"
-import * as VerifierClient from "../../../app-lib/clients/identity_verifier/src/index"
+import * as RegistryClient from "../../../app-lib/clients/identity_registry/src/index"
 import * as OracleClient from "../../../app-lib/clients/nav_oracle/src/index"
 import * as ShareTokenClient from "../../../app-lib/clients/share_token/src/index"
 import { contractErrorCode, type ErrorTable } from "../test/contractErrorCode"
@@ -89,8 +89,9 @@ const {
 	vault,
 	token,
 	oracle,
-	verifier,
-	verifierWriterMock,
+	registry,
+	registryWriterMock,
+	verifierMock,
 	asyncVaultWriterMock,
 	submitSignedMock,
 	decodePendingMock,
@@ -132,8 +133,9 @@ const {
 		apply_change: vi.fn(),
 		cancel_change: vi.fn(),
 	},
-	verifier: { allow: vi.fn() },
-	verifierWriterMock: vi.fn(),
+	registry: { remove_identity: vi.fn(), lift_veto: vi.fn() },
+	registryWriterMock: vi.fn(),
+	verifierMock: { identity_registry: vi.fn() },
 	oracle: {
 		pause_nav: vi.fn(),
 		set_nav_paused: vi.fn(),
@@ -156,7 +158,8 @@ vi.mock("../config/clients", () => ({
 	asyncVaultWriter: asyncVaultWriterMock,
 	shareTokenWriter: async () => token,
 	navOracleWriter: async () => oracle,
-	identityVerifierWriter: verifierWriterMock,
+	identityRegistryWriter: registryWriterMock,
+	identityVerifierAt: async () => verifierMock,
 }))
 
 const CONTRACT = "CCONTRACTADDRESS1234567890"
@@ -621,6 +624,7 @@ const confirmed = () => ({
 })
 
 const VERIFIER = "CVERIFIERADDRESS"
+const REGISTRY = "CREGISTRYADDRESS"
 const TARGET = "GTARGETADDRESS1234"
 const DESTINATION = "GDESTINATION5678"
 
@@ -628,20 +632,20 @@ const complianceCases: Case[] = [
 	{
 		name: "useAllowAddress",
 		useHook: useAllowAddress,
-		method: verifier.allow,
+		method: registry.lift_veto,
 		arg: { verifier: VERIFIER, account: TARGET },
-		args: { account: TARGET, allowed: true },
+		args: { account: TARGET, operator: investorAddress },
 		keys: [complianceReadsKey, isAllowedKey],
-		refusal: refused(VerifierClient.AccessControlError, "Unauthorized"),
+		refusal: refused(RegistryClient.AccessControlError, "Unauthorized"),
 	},
 	{
 		name: "useDisallowAddress",
 		useHook: useDisallowAddress,
-		method: verifier.allow,
+		method: registry.remove_identity,
 		arg: { verifier: VERIFIER, account: TARGET },
-		args: { account: TARGET, allowed: false },
+		args: { account: TARGET, operator: investorAddress },
 		keys: [complianceReadsKey, isAllowedKey],
-		refusal: refused(VerifierClient.AccessControlError, "AdminNotSet"),
+		refusal: refused(RegistryClient.AccessControlError, "AdminNotSet"),
 	},
 	{
 		name: "useFreezeAddress",
@@ -704,9 +708,10 @@ describe.each([...cases, ...governanceCases, ...complianceCases])(
 		beforeEach(() => {
 			vi.clearAllMocks()
 			asyncVaultWriterMock.mockResolvedValue(vault)
-			verifierWriterMock.mockImplementation(
+			verifierMock.identity_registry.mockResolvedValue({ result: REGISTRY })
+			registryWriterMock.mockImplementation(
 				(address: string) => async () =>
-					address === VERIFIER ? verifier : undefined,
+					address === REGISTRY ? registry : undefined,
 			)
 		})
 

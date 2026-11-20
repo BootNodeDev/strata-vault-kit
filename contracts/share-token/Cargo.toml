@@ -22,7 +22,7 @@ strata-bindings = { path = "../../crates/strata-bindings" }
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
 compliance = { path = "../compliance" }
-identity-verifier = { path = "../identity-verifier" }
+allowlist-verifier = { path = "../../crates/allowlist-verifier" }
 
 [features]
 # Builds a stand-in for a later token version, used only by the upgrade tests.

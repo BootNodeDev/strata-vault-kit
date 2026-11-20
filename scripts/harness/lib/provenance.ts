@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { readFileSync } from "node:fs"
 
-import { type ContractName } from "./deployment.js"
+import { type WasmName } from "./deployment.js"
 
 export function wasmHash(file: string): string {
 	return createHash("sha256").update(readFileSync(file)).digest("hex")
@@ -38,18 +38,18 @@ export function sourceCommit(dir: string): {
 export interface Provenance {
 	commit: string
 	uncommittedChanges: boolean
-	wasmHashes: Record<ContractName, string>
+	wasmHashes: Record<WasmName, string>
 }
 
 // Reads the checkout and the wasm files, nothing else; safe to call before
 // any network action, so a deploy outside a checkout fails before it starts.
 export function readProvenance(
 	dir: string,
-	wasms: Record<ContractName, string>,
+	wasms: Record<WasmName, string>,
 ): Provenance {
 	const { commit, uncommittedChanges } = sourceCommit(dir)
 	const wasmHashes = Object.fromEntries(
 		Object.entries(wasms).map(([name, file]) => [name, wasmHash(file)]),
-	) as Record<ContractName, string>
+	) as Record<WasmName, string>
 	return { commit, uncommittedChanges, wasmHashes }
 }

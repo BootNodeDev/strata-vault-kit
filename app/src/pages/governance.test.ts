@@ -39,7 +39,7 @@ const holders = (overrides: Partial<RoleHolders> = {}): RoleHolders => ({
 	"oracle guardian": [],
 	"oracle admin": [WALLET],
 	"share-token compliance": [],
-	"identity-verifier admin": [],
+	"identity-registry compliance": [],
 	"share-token manager": [VAULT],
 	"share-token admin": [WALLET],
 	"vault pending admin": [],

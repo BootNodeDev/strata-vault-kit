@@ -1,7 +1,7 @@
 use proptest::prelude::*;
-use soroban_sdk::{contract, contracterror, contractimpl, panic_with_error, IntoVal};
-use stellar_tokens::rwa::compliance::AccountSnapshot;
+use soroban_sdk::IntoVal;
 
+use super::compliance::RefusesEveryBurn;
 use super::*;
 
 #[test]
@@ -449,37 +449,29 @@ fn a_holder_who_waits_collects_every_round_at_once() {
     assert_eq!(all_at_once, first + second);
 }
 
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(u32)]
-enum ModuleError {
-    BurnRefused = 1,
-}
-
-#[contract]
-struct FailsEveryBurn;
-
-#[contractimpl]
-impl FailsEveryBurn {
-    pub fn on_destroyed(e: Env, _from: AccountSnapshot, _amount: i128, _token: Address) {
-        panic_with_error!(&e, ModuleError::BurnRefused);
-    }
-}
-
 #[test]
-fn a_module_failing_on_burn_blocks_claims_until_removed_in_a_wind_down() {
+fn a_module_refusing_burns_does_not_block_a_wind_down_claim() {
     let f = setup();
     let holder = f.holder(500);
-    let module = f.e.register(FailsEveryBurn, ());
+    let module = f.e.register(RefusesEveryBurn, ());
     f.add_compliance_module(ComplianceHook::Destroyed, &module);
     first_round_now(&f);
 
-    assert_eq!(
-        f.vault.try_claim_wind_down(&holder),
-        Err(Ok(ModuleError::BurnRefused.into()))
-    );
-    assert_eq!(f.shares(&holder), 500);
-    assert_eq!(f.balance(&holder), 0);
+    let paid = f.vault.claim_wind_down(&holder);
+    assert!(paid > 0);
+    assert_eq!(f.balance(&holder), paid);
+    assert_eq!(f.shares(&holder), 0);
+}
+
+/// Removal is the defense against a module that uses up the whole budget,
+/// which the exit rule cannot catch.
+#[test]
+fn a_module_still_comes_off_through_the_timelock_in_a_wind_down() {
+    let f = setup();
+    f.holder(500);
+    let module = f.e.register(RefusesEveryBurn, ());
+    f.add_compliance_module(ComplianceHook::Destroyed, &module);
+    first_round_now(&f);
 
     let rules = ComplianceClient::new(&f.e, &f.share.compliance());
     let id = rules.propose_change(&ComplianceChange::RemoveModule(
@@ -489,9 +481,9 @@ fn a_module_failing_on_burn_blocks_claims_until_removed_in_a_wind_down() {
     f.advance(MIN_UPGRADE_DELAY);
     rules.apply_change(&id);
 
-    let paid = f.vault.claim_wind_down(&holder);
-    assert!(paid > 0);
-    assert_eq!(f.shares(&holder), 0);
+    assert!(rules
+        .get_modules_for_hook(&ComplianceHook::Destroyed)
+        .is_empty());
 }
 
 #[test]

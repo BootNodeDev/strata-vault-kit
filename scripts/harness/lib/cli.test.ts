@@ -16,8 +16,10 @@ import { stellarAssetGenerator } from "./asset-client.js"
 import {
 	deployArgs,
 	ensureAssetContract,
+	lastWasmHash,
 	pinClientSdk,
 	rootSdkVersion,
+	uploadArgs,
 	writeClientSources,
 	type Rpc,
 } from "./cli.js"
@@ -40,6 +42,33 @@ describe("deployArgs", () => {
 			"--vault",
 			"C1",
 		])
+	})
+})
+
+describe("uploadArgs", () => {
+	it("uploads the Wasm to the given network", () => {
+		expect(uploadArgs("c.wasm", net)).toEqual([
+			"contract",
+			"upload",
+			"--wasm",
+			"c.wasm",
+			"--rpc-url",
+			net.rpcUrl,
+			"--network-passphrase",
+			net.passphrase,
+		])
+	})
+})
+
+describe("lastWasmHash", () => {
+	const hash = "ab".repeat(32)
+
+	it("reads the hash the CLI prints last", () => {
+		expect(lastWasmHash(`ℹ️ Simulating\n✅ Done\n${hash}\n`)).toBe(hash)
+	})
+
+	it("stops when the output names no hash", () => {
+		expect(() => lastWasmHash("✅ Done\n")).toThrow(/no Wasm hash/)
 	})
 })
 

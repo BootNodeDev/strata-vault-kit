@@ -38,6 +38,7 @@ import {
 } from "../pages/sign"
 import { type TransactionFailure } from "./useContractTransaction"
 import { pendingChangesQuery } from "./useGovernanceState"
+import { identityRegistryQuery } from "./useIdentityRegistry"
 import { identityVerifierQuery } from "./useIsAllowed"
 import { useWallet } from "./useWallet"
 
@@ -62,11 +63,11 @@ const tokenAdminQuery = queryOptions({
 
 const latestLedgerKey = ["latest-ledger"] as const
 
-const signAddresses = (identityVerifier: string) => ({
+const signAddresses = (identityRegistry: string | undefined) => ({
 	vault: addresses.async_vault,
 	oracle: addresses.nav_oracle,
 	shareToken: addresses.share_token,
-	identityVerifier,
+	identityRegistry,
 })
 
 export interface UseSignPending {
@@ -90,7 +91,7 @@ type Decoded = { pending: PendingTransaction; description: SignDescription }
 
 const decode = (
 	xdr: string,
-	identityVerifier: string,
+	identityRegistry: string | undefined,
 	changes: SignChanges,
 ): Decoded | null => {
 	try {
@@ -99,7 +100,7 @@ const decode = (
 			pending,
 			description: describePending(
 				pending,
-				signAddresses(identityVerifier),
+				signAddresses(identityRegistry),
 				changes,
 			),
 		}
@@ -191,20 +192,33 @@ export function useSignPending(initialXdr: string): UseSignPending {
 	})
 	const verifier =
 		liveVerifier ?? (verifierFailed ? addresses.identity_verifier : undefined)
+	const { data: registry, isError: registryFailed } = useQuery({
+		...identityRegistryQuery(verifier),
+		retry: false,
+	})
 	const { data: vaultChanges } = useQuery(pendingChangesQuery("vault"))
 	const { data: tokenChanges } = useQuery(pendingChangesQuery("token"))
 	const { data: oracleChanges } = useQuery(pendingChangesQuery("oracle"))
 	const envelope = useMemo(() => isEnvelope(xdr), [xdr])
+	const registryPending = registry === undefined && !registryFailed
 	const described = useMemo(
 		() =>
-			verifier === undefined
+			verifier === undefined || registryPending
 				? null
-				: decode(xdr, verifier, {
+				: decode(xdr, registry, {
 						vault: vaultChanges?.pending,
 						token: tokenChanges?.pending,
 						oracle: oracleChanges?.pending,
 					}),
-		[xdr, verifier, vaultChanges, tokenChanges, oracleChanges],
+		[
+			xdr,
+			verifier,
+			registry,
+			registryPending,
+			vaultChanges,
+			tokenChanges,
+			oracleChanges,
+		],
 	)
 	const authorization = described?.pending.authorization ?? null
 	const { data: admin, isError: adminFailed } = useQuery({
@@ -446,7 +460,9 @@ export function useSignPending(initialXdr: string): UseSignPending {
 
 	return {
 		xdr,
-		loading: envelope && (verifier === undefined || checked === undefined),
+		loading:
+			envelope &&
+			(verifier === undefined || registryPending || checked === undefined),
 		pending: decoded?.pending ?? null,
 		description: decoded?.description ?? null,
 		signers,
