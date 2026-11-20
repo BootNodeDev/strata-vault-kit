@@ -416,27 +416,42 @@ Output of a real run from a fresh clone. Contract IDs differ on every run.
 > tsx deploy.ts
 
 deploying to local (http://localhost:8000/rpc)
-account keys in .env.keys.local (13 new)
-funded 13 accounts; 0 already existed
-asset contract CCW7OKVOXBBBX3YK6O7F6TZPNIFG32OG4UY7R2K6NSWZUI4R75QCEPVT
+account keys in .env.keys.local (15 new)
+funded 15 accounts; 0 already existed
+asset contract CAVOIGEEWM7DNRZC3TJZ72AV4AIU3JYE4Z57AHXLNKDZMSMBWAW64ZUH
 returned the deposit asset of 0 accounts to its issuer
-compliance CDPCD2BQQKVQBQFAFI4YBLN3TRX34J5NZUQQMUBGHPYNY64LCEM63DTL
-identity_verifier CC4SRUIMKOBZSEO2GKGVQMDWPWCBJBBIMYYE7BBCUEZE6VMD3SFQDAMW
-share_token CDC7SRTDZIMJSLC5AONUD3FIFYZGMFOHRAS7LLYV2ATJRT7RMTMQO2DG
-nav_oracle CCUUBP3RGOIZZL4DUGRL4FBOSQJZKBPNQ7VUWIN6UOOYBJYYKGNT5E52
-async_vault CB2KVM2WHLXDZRHGCYPTGE7PZM6OORXCNVBUMC3L7GY5KX4BA6NMADXE
+compliance CA3Y7U6YVAQZZXD3UK2HWMQKWANPGNURZ7GIZTBCA6DJEUI6REBYA5LN
+investor_identity wasm 38c96ef44a050905dcdd9c728b8bf05b3585463f205695e073c399b49abacac7
+claim_issuer wasm d681fadec29741dca3d4584eda9b704655c49d4cbbff4a5a3e6602d64ef2abb4
+claim_topics CBNYSAQXOXPOLFNQPMH725JKJ5HSDS5LXJU6NJO2ELVQ4QCWO35BQ44M
+identity_registry CCY5GAM2NGRM3KQ6GXTDLYJ6D6EIHFT56FTG2LYAIDF7SJLH4YMOCL6U
+identity_verifier CCDHI3LORDHM6M3WLDACNWQV6SATNJ2UEEFIQHVROJ63SMBKMRODHOFF
+claim_issuer CAIYHTPUGV23L4UF4P7LJ6EVIW3BUK66G3BBAYOPOMKBMMXFBRXA7JWJ
+share_token CCOMOPGDP6EZ3QTVRPVKWJTOITMH2WMMHYNWAK7S4OYQ73QW5KG55VN6
+nav_oracle CAMKCWZETCYY7A4VUEWKHEFBKQPWJLMFLWZ6FZVBVVFST2BB34UQ6F7C
+async_vault CBFPR64EHKCFPVW2TWO6O65CDB4EH5XPFGA2OJHBXO4SXQGLEL3OJWEE
+sep40_feed CBUK7DDAO454YLJKQYYJPODBACQ5BKGOBVSBRZ3F7BI4LMEWOU2PZ6QE
 commit <sha>
 clients generated
 vault holds share_token manager role
+share_token has a backup compliance holder
 share_token bound to the vault, setup finished
-vault is allowlisted
+claim_topics requires topic 1 from claim_issuer
+claim_issuer accepts claims signed by kyc-provider
+identity_registry checks claims with identity_verifier
+claim_topics bound to the vault, setup finished
+identity_registry bound to the vault, setup finished
+identity_verifier bound to the vault, setup finished
+vault is a protocol address of identity_verifier
+identity_verifier is ready for the vault
 share_token bound to compliance
 compliance bound to the vault, setup finished
 nav_oracle bound to the vault, setup finished
 vault notice set to 10 seconds
 vault minimum epoch duration set to 86400 seconds
 vault setup finished
-health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"min_epoch_duration_set":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
+health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"compliance_governed":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"identity_ready":true,"min_epoch_duration_set":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
+sep40_feed follows the vault
 wrote deployed.local.json
 ```
 
