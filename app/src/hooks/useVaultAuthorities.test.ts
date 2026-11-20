@@ -1,19 +1,18 @@
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { fakeAsyncVault } from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import { useVaultAuthorities } from "./useVaultAuthorities"
 
-const { vaultMock } = vi.hoisted(() => ({
-	vaultMock: {
-		governance: vi.fn(),
-		manager: vi.fn(),
-		treasury: vi.fn(),
-		guardian: vi.fn(),
-		custodian: vi.fn(),
-	},
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({ asyncVault: async () => vaultMock }))
+const vaultMock = fakeAsyncVault(
+	"governance",
+	"manager",
+	"treasury",
+	"guardian",
+	"custodian",
+)
 
 const settled = async () => {
 	const rendered = renderWithWallet(useVaultAuthorities)

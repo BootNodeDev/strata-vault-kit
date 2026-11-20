@@ -3,18 +3,14 @@ import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import { fakeAsyncVault } from "../test/fakeClients"
 import { deferred, renderWithWallet } from "./testSupport"
 import { useActivateWindDown } from "./useActivateWindDown"
 import { cycleWriteKeys } from "./useCycleState"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { activate_wind_down: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("activate_wind_down")
 
 const renderActivateWindDown = () => renderWithWallet(useActivateWindDown)
 
@@ -29,7 +25,6 @@ const successful = () => ({
 describe("useActivateWindDown", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed, in order", async () => {
