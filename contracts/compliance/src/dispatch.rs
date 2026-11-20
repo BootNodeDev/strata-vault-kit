@@ -1,6 +1,7 @@
-//! The exit rule: once a vault is bound, no module may stop a move into it or
-//! a burn. Those moves still reach every module, so counters stay right; a
-//! refusal or a failure is ignored, and rolls back only that module's changes.
+//! The exit rule: once a vault is bound, no module may stop a move into it, a
+//! mint to it or a burn. Those moves still reach every module, so counters
+//! stay right; a refusal or a failure is ignored, and rolls back only that
+//! module's changes.
 
 use soroban_sdk::{Address, Env};
 use stellar_tokens::rwa::compliance::{

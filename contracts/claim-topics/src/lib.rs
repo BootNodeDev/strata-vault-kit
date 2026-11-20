@@ -21,7 +21,9 @@
 //!   those calls.
 //! - **Completeness is reported, not enforced.** `is_complete` says whether
 //!   every topic has an issuer, for the verifier's readiness check. The cost:
-//!   a removal after setup can leave a topic with no issuer.
+//!   a removal or a topic update after setup can leave a topic with no
+//!   issuer, and the verifier then lets no one in, as a fault, until one is
+//!   added.
 //! - **No upgrade.** The contract has no upgrade path. The cost: a fix means
 //!   a new deployment and a verifier change, which waits for the vault's
 //!   timelock after setup.
@@ -265,7 +267,8 @@ impl ClaimTopics {
     /// # Events
     ///
     /// * `ChangeApplied`, after the change's own OpenZeppelin event or
-    ///   `AdminTransferInitiated`.
+    ///   `AdminTransferInitiated`. An `IssuerWasm` change emits only
+    ///   `ChangeApplied`.
     ///
     /// # Authorization
     ///

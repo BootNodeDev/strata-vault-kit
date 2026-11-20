@@ -7,9 +7,9 @@
 //! - **No rule of its own.** With no module registered every check passes; the
 //!   allowlist lives in the identity verifier. The cost: any other rule needs a
 //!   module or another compliance contract.
-//! - **No module stops an exit.** Once a vault is bound, a move into it and a
-//!   burn, which only the vault makes, still reach every module, but a refusal
-//!   or a failure is ignored. The cost: a module that uses up the transaction
+//! - **No module stops an exit.** Once a vault is bound, a move into it, a
+//!   mint to it and a burn, which only the vault makes, still reach every
+//!   module, but a refusal or a failure is ignored. The cost: a module that uses up the transaction
 //!   budget still stops the move, since that cannot be caught; removing it,
 //!   which a wind-down allows, is the defense.
 //! - **Changes wait for the vault's timelock.** After setup, module, binding

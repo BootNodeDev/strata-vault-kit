@@ -15,7 +15,9 @@
 //!   hash its identity ran, and `stored_identity` stops answering if that
 //!   code changes. Code the investor controls could fail on purpose and turn
 //!   a refusal into a fault, which holds a priced deposit open. The cost: an
-//!   identity on older kit code cannot be attached after the code changes.
+//!   identity on older kit code cannot be attached after the code changes,
+//!   though `onboard` still relinks the identity this registry deployed for
+//!   the wallet, on the kit code it was deployed with.
 //! - **No link without passing claims.** Every way to link a wallet asks the
 //!   verifier's `check_claims` about the identity first, and the transaction
 //!   reverts if it panics. The registry never calls `verify_identity`, which
@@ -23,8 +25,9 @@
 //!   already running. The cost: the verifier answers two calls with one rule.
 //! - **Delisting is a veto.** The compliance authority unlinks a wallet and
 //!   vetoes it in one call, at once, even during a wind-down. A vetoed wallet
-//!   cannot list itself again; only the compliance authority lifts a veto.
-//!   The cost: a wallet delisted by mistake waits for the authority.
+//!   cannot list itself again until the compliance authority lifts the veto;
+//!   then it onboards itself. The cost: a wallet delisted by mistake waits
+//!   for the authority.
 //! - **No recovery and no token binding.** A lost wallet's investor onboards a
 //!   new wallet, and its shares move by a legal transfer. The cost:
 //!   OpenZeppelin's recovery flow is not available.
@@ -65,8 +68,8 @@ strata_bindings::error_enum! {
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     #[repr(u32)]
     pub enum IdentityRegistryError {
-        /// The compliance authority vetoed this wallet; only it can link the
-        /// wallet again, after lifting the veto.
+        /// The compliance authority vetoed this wallet. Once it lifts the
+        /// veto, the wallet can onboard itself again.
         Vetoed = 10200,
         /// The wallet is already linked to an identity.
         AlreadyRegistered = 10201,
@@ -484,8 +487,10 @@ impl IdentityRegistry {
         registry::is_vetoed(e, &account)
     }
 
-    /// The hash of the Wasm `onboard` deploys and every new link requires.
-    /// Links made before a change keep the code they were made with.
+    /// The hash of the Wasm `onboard` deploys a new identity from, and that
+    /// `attach` and `add_identity` require. Onboarding a wallet again reuses
+    /// the identity this registry deployed for it, on the code it was
+    /// deployed with. Links made before a change keep their code.
     pub fn identity_wasm(e: &Env) -> BytesN<32> {
         governance::identity_wasm(e)
     }

@@ -117,8 +117,7 @@ async function deployContracts(
 
 	const compliance = await deploy("compliance", { admin: governance })
 
-	// The registry deploys each investor's identity from this code, and the
-	// topics contract trusts only an issuer that runs the issuer code.
+	// Uploaded only: the registry and the topics contract take these hashes.
 	const identityWasm = await uploadWasm(net, wasms.investor_identity, deployer)
 	console.log("investor_identity wasm", identityWasm)
 	const issuerWasm = await uploadWasm(net, wasms.claim_issuer, deployer)

@@ -1,5 +1,5 @@
-//! Once a vault is bound, no module stops a move into it or a burn; every
-//! other move still runs the modules, and a refusal stops it.
+//! Once a vault is bound, no module stops a move into it, a mint to it or a
+//! burn; every other move still runs the modules, and a refusal stops it.
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, panic_with_error, symbol_short, testutils::Address as _,

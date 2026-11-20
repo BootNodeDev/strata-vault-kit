@@ -6,7 +6,7 @@
 //!
 //! - **A yes or no per address.** No claims, topics or issuers, and an address
 //!   never set is refused. The cost: no expiry and no per-jurisdiction rule; a
-//!   deployment that needs them brings its own registry.
+//!   test that needs them uses the kit's identity stack.
 //! - **Instant edits.** The admin lists and delists at once, with no timelock.
 //!   The cost: a stolen admin key can list or delist any account at once; a
 //!   delisted holder still leaves in cash.
@@ -29,7 +29,7 @@ use soroban_sdk::{
 
 contractmeta!(
     key = "stub",
-    val = "testnet-only; prod = external ERC-3643 identity registry"
+    val = "test double, never deployed; deployments use identity-verifier"
 );
 use stellar_access::access_control;
 use stellar_macros::only_admin;

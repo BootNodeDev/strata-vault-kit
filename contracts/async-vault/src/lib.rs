@@ -505,8 +505,8 @@ impl AsyncVault {
     /// * `AccountingMismatch` - A payout would go below what was already paid.
     /// * `NoEntitlement` - Nothing to surrender and nothing owed, or
     ///   `holder` is the vault.
-    /// * A compliance module's own error - The compliance rules refuse the
-    ///   burn.
+    /// * A compliance module's own error - Compliance from outside the kit
+    ///   refuses the burn.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -969,8 +969,8 @@ impl AsyncVault {
     ///   already.
     /// * `AmountTooLarge` - A total would overflow.
     /// * `RWAError::InsufficientBalance` - `shares` exceeds the balance.
-    /// * A compliance module's own error - The compliance rules refuse the
-    ///   escrow move.
+    /// * A compliance module's own error - Compliance from outside the kit
+    ///   refuses the escrow move.
     ///
     /// # Events
     ///
@@ -1012,9 +1012,9 @@ impl AsyncVault {
     /// * `AlreadyClaimed` - The redemption was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
-    /// * `VerifierFailed` - It pays nothing and the identity verifier fails.
-    /// * A compliance module's own error - The compliance rules refuse the
-    ///   burn.
+    /// * `VerifierFailed` - It pays nothing and the verifier fails.
+    /// * A compliance module's own error - Compliance from outside the kit
+    ///   refuses the burn.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
