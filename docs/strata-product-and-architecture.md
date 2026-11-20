@@ -651,9 +651,10 @@ contract (a trap, a missing contract, a failed signature check) into one
 generic error, so the verifier reads it as a fault. A stored claim's signature
 does not go bad on its own: the identity checks each claim with its issuer when
 it is added. A claim stops passing when it ends (expiry, revocation, a removed
-key, invalidation) or when governance stops trusting its issuer, and each of
-those is a refusal. A signature that fails at check time is therefore a fault,
-not a refusal.
+key, invalidation) or when governance stops trusting its issuer. Each of those
+is a refusal, unless it leaves a required topic with no trusted issuer, which is
+a fault. A signature that fails at check time is therefore a fault, not a
+refusal.
 
 Within one topic, a yes from any trusted issuer passes, and a fault beats a no.
 A topic with no trusted issuer fails, as a fault. Across topics, a topic whose
@@ -694,8 +695,8 @@ A fault holds a priced deposit until the issuer is fixed or governance replaces
 it, because a fault must neither let anyone in nor push anyone out. Removing
 the broken issuer alone is not a cure: a topic left with no issuer is still a
 fault, and a holder whose only claim came from the removed issuer is refused
-once another issuer remains (see "Changing issuers or the registry" below). During a
-wind-down a fault counts as a refusal: a faulty issuer could otherwise hold a
+once another issuer remains (see "Changing issuers or the registry" below).
+During a wind-down a fault counts as a refusal: a faulty issuer could otherwise hold a
 deposit open for good, and surrendering into the payout pays the holder the same
 as delivering the shares and winding them down. A deposit priced at zero shares
 lets no one in, so its refund never waits on the verifier; only a freeze holds
@@ -810,9 +811,10 @@ Some governance changes turn holders from verified to refused, and a refusal
 converts a priced deposit into a cash exit:
 
 - **Replacing an issuer.** Propose the new issuer and the old one's removal
-  together, and apply the addition first. If the removal is applied first, the
-  topic has no issuer for a while, which is a fault: no one gets in, and priced
-  deposits wait until the addition lands. Even in the right order, a holder
+  together, and apply the addition first. If the removal is applied first and
+  the old issuer was the topic's only one, the topic has no issuer for a while,
+  which is a fault: no one gets in, and priced deposits wait until the addition
+  lands. Even in the right order, a holder
   whose only claim on the topic comes from the old issuer is refused (304) once
   the old issuer comes off. So the new provider signs claims for those holders,
   and they add them, before governance applies the removal.

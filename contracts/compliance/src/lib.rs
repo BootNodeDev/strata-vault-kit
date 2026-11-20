@@ -9,9 +9,9 @@
 //!   module or another compliance contract.
 //! - **No module stops an exit.** Once a vault is bound, a move into it, a
 //!   mint to it and a burn, which only the vault makes, still reach every
-//!   module, but a refusal or a failure is ignored. The cost: a module that uses up the transaction
-//!   budget still stops the move, since that cannot be caught; removing it,
-//!   which a wind-down allows, is the defense.
+//!   module, but a refusal or a failure is ignored. The cost: a module that
+//!   uses up the transaction budget still stops the move, since that cannot be
+//!   caught; removing it, which a wind-down allows, is the defense.
 //! - **Changes wait for the vault's timelock.** After setup, module, binding
 //!   and admin changes wait, and a wind-down refuses them, except removing a
 //!   module, so a faulty one can always come off. The cost: it still takes a
