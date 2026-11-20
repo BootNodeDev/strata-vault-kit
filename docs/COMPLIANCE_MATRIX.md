@@ -19,7 +19,7 @@ Every investor account in the vault ecosystem exists in one of four compliance s
    - The account may not acquire or receive new shares, but **must be permitted to exit into cash**.
 
 3. **Unverifiable (`Unverifiable`)**:
-   - The verifier fails with `Unavailable` (10002): a contract its answer depends on (the registry, the topics contract, the identity or an issuer) failed, and no required topic refused the account.
+   - The verifier fails with `Unavailable` (10002): no required topic refused the account, and a contract its answer depends on (the registry, the topics contract, the identity or an issuer) failed, a required topic has no trusted issuer, or no topic is required. Nobody answered, so it is not a refusal.
    - A fault lets no one in and pushes no one out. Wherever a verified and a de-listed holder part ways, an unverifiable holder waits (`VerifierFailed`) and keeps their place. A wind-down is the exception: it reads the fault as a refusal, because a faulty issuer could otherwise hold a deposit open for good.
 
 4. **Frozen (`Frozen`)**:

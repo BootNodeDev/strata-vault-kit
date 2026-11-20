@@ -603,12 +603,18 @@ lists the powers that act at once.
   check each against the proposal. A new trusted issuer must run the kit's
   issuer Wasm, deployed straight from it
   ([R15](./THREAT_MODEL.md#r15-a-claim-issuer-signs-wrongly-fails-or-runs-other-code)).
-  A required topic with no trusted issuer left refuses every account and turns
+  A required topic with no trusted issuer left fails every check with
+  `Unavailable` (10002), so no one gets in and priced deposits wait, and turns
   `health().identity_ready` false (P13). A key the provider did not announce
   means the key that owns its issuer may be compromised: governance removes
   the issuer through the timelock, which lands during a wind-down too.
+  Outside a wind-down, which refuses a new issuer, propose a replacement with
+  it and apply that first: once the issuer is off, a holder whose only claim
+  came from it is refused, and a topic with no issuer left is a fault
+  ([Changing issuers or the registry](./strata-product-and-architecture.md#changing-issuers-or-the-registry)).
   Verifier faults show no event: a holder whose check fails with `Unavailable`
-  (10002) points at a broken issuer, identity, registry or topics contract.
+  (10002) points at a broken issuer, identity, registry or topics contract, or
+  a topic with no trusted issuer.
 
 ## Storage lifetime
 

@@ -4,7 +4,7 @@
 //!   `IdentityVerificationFailed` (304) or `IdentityNotFound` (321), or met
 //!   with `Unavailable` when a contract the answer depends on fails. The vault
 //!   converts a priced deposit on a refusal and holds it open on a fault. The
-//!   cost: a broken issuer holds deposits until it is fixed or removed.
+//!   cost: a broken issuer holds deposits until it is fixed or replaced.
 //! - **Only the kit issuer's refusals are a no.** An issuer's contract error
 //!   in `ISSUER_REFUSALS` is its no. Anything else, including the host's one
 //!   error for a trap, a missing contract or a signature that fails, is a

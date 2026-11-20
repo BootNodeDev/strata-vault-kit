@@ -305,5 +305,5 @@ Tests: [`contracts/investor-identity/src/test.rs`](../contracts/investor-identit
 
 | Entrypoint | Access Control / Caller Auth | State & Precondition Guards | Tested Refusal (Test Name) |
 |---|---|---|---|
-| `add_claim` | The owner's `require_auth()` | The claim's issuer must accept it; a claim from the same issuer on the same topic is replaced | `test::only_the_owner_adds_a_claim`, `test::adding_a_claim_again_replaces_it` |
+| `add_claim` | The owner's `require_auth()` | The claim's issuer must accept it; its URI is at most 256 bytes (`ClaimUriTooLong`); a claim from the same issuer on the same topic is replaced | `test::only_the_owner_adds_a_claim`, `test::adding_a_claim_again_replaces_it`, `test::a_uri_over_the_cap_is_refused` |
 | `remove_claim` | The owner's `require_auth()` | None | `test::only_the_owner_removes_a_claim` |

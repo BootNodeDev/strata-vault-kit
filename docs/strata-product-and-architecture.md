@@ -573,6 +573,9 @@ a fix is a new deployment. The five identity contracts share one error block,
   OpenZeppelin's, which already names the network, the issuer, the identity,
   the topic and the issuer's nonce. A provider that wants an audit trail can put
   a commitment to its own case record in the payload.
+- A claim also carries a URI, which the signed message does not cover. The
+  identity refuses a URI over 256 bytes (`ClaimUriTooLong`), so an investor
+  cannot bloat the one claim the verifier reads for each topic and issuer.
 - The kit puts no personal data on chain and needs none: no country, no birth
   date, no document number. The registry refuses country data
   (`CountryDataNotStored`). A deployment that wants on-chain country rules adds
@@ -627,12 +630,17 @@ The verifier answers `verify_identity(account)` in one of three ways:
   an identity that holds a valid claim from a trusted issuer for every required
   topic.
 - **Refused**, with OpenZeppelin's codes: `IdentityNotFound` (321) when the
-  registry links no identity; `IdentityVerificationFailed` (304) when no topic
-  is required, a required topic has no trusted issuer, or every trusted issuer
-  of a required topic said no.
-- **Failed:** `Unavailable` (10002) when a contract the answer depends on failed
-  (the registry, the topics contract, the identity or an issuer) and no topic
-  was refused. A fault never uses 304 or 321.
+  registry links no identity; `IdentityVerificationFailed` (304) when a
+  required topic has trusted issuers and each of them said no.
+- **Failed:** `Unavailable` (10002) when no topic refused and something kept
+  the verifier from an answer: no topic is required, a required topic has no
+  trusted issuer, or a contract the answer depends on failed (the registry, the
+  topics contract, the identity or an issuer). A fault never uses 304 or 321.
+
+A refusal says the account does not qualify: the registry links no identity, or
+the issuers of a topic answered no. With no topic, or a topic with no issuer,
+nobody answered, so the verifier reports a fault. It still lets no one in, and
+a governance mistake there holds priced deposits instead of converting them.
 
 What counts as an issuer's "no" is narrow: a contract error from a fixed list
 (OpenZeppelin's 350 and 357, and the kit issuer's 10600 to 10605: unsupported
@@ -648,15 +656,17 @@ those is a refusal. A signature that fails at check time is therefore a fault,
 not a refusal.
 
 Within one topic, a yes from any trusted issuer passes, and a fault beats a no.
-Across topics, a topic whose issuers all said no refuses the account even if
-another topic faulted: the account cannot qualify whatever the failed topic
-would say. The answer is `Unavailable` only when no topic refused and some
-topic faulted.
+A topic with no trusted issuer fails, as a fault. Across topics, a topic whose
+issuers all said no refuses the account even if another topic faulted: the
+account cannot qualify whatever the failed topic would say. The answer is
+`Unavailable` only when no topic refused and some topic faulted.
 
 For each required topic and trusted issuer, the verifier reads only the one
 claim id OpenZeppelin derives from that pair, never the identity's list of
 claims. So an investor cannot add claims to push their own check over the
-transaction budget.
+transaction budget. Nor can it grow the claim the verifier does read: the
+issuer checks the signature and the data when the claim is added, and the
+identity caps the one field nobody signs, the URI, at 256 bytes.
 
 Protocol addresses pass without claims: the bound vault always, which cannot be
 removed, and any other address governance names, through the timelock after
@@ -680,8 +690,11 @@ A frozen holder is held on every path, whatever the verifier says. A cash claim,
 `cancel_deposit`, `claim_wind_down` and a zero-asset claim during a wind-down,
 which always burns, never depend on the answer.
 
-A fault holds a priced deposit until the issuer is fixed or governance removes
-it, because a fault must neither let anyone in nor push anyone out. During a
+A fault holds a priced deposit until the issuer is fixed or governance replaces
+it, because a fault must neither let anyone in nor push anyone out. Removing
+the broken issuer alone is not a cure: a topic left with no issuer is still a
+fault, and a holder whose only claim came from the removed issuer is refused
+once another issuer remains (see "Changing issuers or the registry" below). During a
 wind-down a fault counts as a refusal: a faulty issuer could otherwise hold a
 deposit open for good, and surrendering into the payout pays the holder the same
 as delivering the shares and winding them down. A deposit priced at zero shares
@@ -770,8 +783,45 @@ signs, and runs no service the kit calls.
 The code is checked once, when the issuer is added. The host reads an executable
 reference as the Wasm it points at now, so an issuer deployed through one passes
 the check and its owner could swap its code later. Governance therefore trusts
-only issuers deployed straight from the kit's Wasm. Such an owner would gain
-nothing it does not have: it already holds the signing keys.
+only issuers deployed straight from the kit's Wasm. The keys already let such
+an owner sign for anyone. Swapped code adds one power the kit's code does not
+have: it can make the issuer trap. That is a fault for every holder who relies
+on the issuer, so their priced deposits and share returns wait until governance
+replaces it.
+
+Before proposing an issuer, governance reads the issuer's contract instance and
+checks that its executable is the kit issuer's Wasm hash itself, not a
+reference:
+
+```sh
+stellar ledger entry fetch contract-data --contract <issuer> --instance \
+  --output json-formatted --network <network>
+```
+
+The output must show `"executable": { "wasm": "<hash>" }`, where `<hash>` is
+what the topics contract's `issuer_wasm()` returns. If the entry shows anything
+else, such as an executable reference, or does not decode, governance does not
+trust the issuer. The RPC method `getLedgerEntries` returns the same entry for
+the contract's instance key.
+
+#### Changing issuers or the registry
+
+Some governance changes turn holders from verified to refused, and a refusal
+converts a priced deposit into a cash exit:
+
+- **Replacing an issuer.** Propose the new issuer and the old one's removal
+  together, and apply the addition first. If the removal is applied first, the
+  topic has no issuer for a while, which is a fault: no one gets in, and priced
+  deposits wait until the addition lands. Even in the right order, a holder
+  whose only claim on the topic comes from the old issuer is refused (304) once
+  the old issuer comes off. So the new provider signs claims for those holders,
+  and they add them, before governance applies the removal.
+- **Swapping the registry** (`VerifierChange::Registry`). Every wallet the new
+  registry does not link reads 321, a refusal, so its priced deposits convert.
+  Holders link their identity to the new registry with `attach` before the swap
+  lands, or the operator accepts the conversions.
+- **Moving an issuer off a topic** (`UpdateIssuerTopics`) is a removal for that
+  topic and follows the first rule.
 
 #### One identity stack per vault
 
@@ -1017,7 +1067,7 @@ public surface given the vault address.
 | Share-token pause      | Secondary transfers halted                     | Controlled by governance (the token admin), never the guardian; it refuses SEP-41 transfers between holders only, never the vault's escrow moves, pricing, claims, mint, burn or forced transfer; only governance lifts it (§8.5) |
 | Compliance keys        | Wrongful delisting, freeze or transfer         | Delisted investors keep the exit-only cash path; freezes require the share token's compliance role and are auditable per operation; moving a holder's shares also needs governance's signature in the same call, lands only on a verified account and never moves shares out of or into the vault's address, which cannot be frozen once the token knows its vault. The registry's compliance authority delists and vetoes at once and publishes each act; it cannot link a wallet whose claims fail, and delisting the vault changes nothing, because the verifier passes the vault as a protocol address |
 | Vault's own listing    | A listing action stops escrow moves into the vault | None can: the kit's verifier passes the bound vault without reading claims, and the vault cannot be removed as a protocol address. A redemption request and a delisted holder's conversion, which mints into the vault's escrow, work whatever the registry holds for the vault. Share returns do not depend on the vault's listing either: the vault checks the holder itself, then moves the shares as the token's manager. A swap to another verifier must still accept the vault, when proposed and when applied |
-| KYC provider (claim issuer) | A provider signs claims for investors who should not hold shares, or its issuer contract fails | A provider reaches only the topics governance trusts it for, and only through the kit's issuer code; governance removes it through the timelock, a wind-down included. A failing issuer is a fault, never a refusal: it lets no one in and converts or burns no position, though it holds priced deposits open until it is fixed or removed. Residual: the accuracy of the provider's checks is a trust assumption, like the operator's KYC before |
+| KYC provider (claim issuer) | A provider signs claims for investors who should not hold shares, or its issuer contract fails | A provider reaches only the topics governance trusts it for, and only through the kit's issuer code; governance removes it through the timelock, a wind-down included. A failing issuer is a fault, never a refusal: it lets no one in and converts or burns no position, though it holds priced deposits open until it is fixed or replaced. Removing it is not enough: a topic left with no issuer is still a fault, and holders who relied on it are refused once another issuer remains, so governance adds the replacement first and the new provider signs for those holders (§8.6). Residual: the accuracy of the provider's checks is a trust assumption, like the operator's KYC before |
 | Compliance module      | Faulty module blocks transfers or exits        | The exit rule: on the kit's compliance contract a module's refusal or failure is ignored on every move into the vault and every burn, so no module stops a redemption request, a conversion, a claim's burn or a wind-down payout; modules still run on those moves, so their counters stay right. Elsewhere, fail-closed: a refusal stops a mint to a holder or a share return. Governance, the compliance contract's admin, adds and removes modules: instantly during its one-time setup, and after it only through the vault's timelock, so a change cannot land while the vault is paused. Adding a module or binding a token never lands during a wind-down; removing one still waits the normal delay and lands then too, whether or not it is failing, so a module that runs the transaction out of budget or resource limits, which the exit rule cannot catch, is never stuck for good. Residual risk: the same power lets a compromised governance drop a working module's rule during a wind-down, when holders have the least room to react; the vault's own checks (the identity check, freeze, reserve coverage) are not modules and cannot be removed this way (§8.6, §8.7) |
 | Deposit asset issuer   | Freeze or clawback of the vault's reserve      | Not mitigated by the kit; a declared risk of the chosen asset, whose auth flags the deploy is meant to check and report at genesis (not built yet, §8.10). After a clawback the vault pays pending escrow first, then priced claims, and refuses the rest by name, new deposits included, until treasury funds the gap; the loss reaches holders through the NAV ([THREAT_MODEL X10](./THREAT_MODEL.md#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash)) |
 | Custodian / real world | Underlying loss or delay                       | Reflected through attested NAV; the kit constrains what reaches the chain, it does not verify the world                                                                                                                                                                                                                                                                                                                                                          |

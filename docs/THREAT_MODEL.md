@@ -1043,7 +1043,11 @@ contract breaks, or its code is not the kit's.
   even during a wind-down. The verifier counts only the kit issuer's refusal
   codes (`ISSUER_REFUSALS`) and OpenZeppelin's `ClaimNotFound` as a "no".
   Anything else, a trap, a missing contract or a signature that fails at check
-  time, is a fault: `Unavailable`, never 304 or 321. A fault lets no one in,
+  time, is a fault: `Unavailable`, never 304 or 321. So is a required topic
+  with no trusted issuer, or no required topic at all: nobody answered, so it
+  is not a refusal. A code from `ISSUER_REFUSALS` counts as a "no" only from
+  an issuer, never from the registry, the topics contract or an identity. A
+  fault lets no one in,
   and the vault converts or burns no position on it: a priced deposit waits,
   outside a wind-down, and a zero-asset claim waits. Revoking and invalidating
   refuse with contract errors. An invalidation also refuses every claim
@@ -1052,23 +1056,43 @@ contract breaks, or its code is not the kit's.
 - **Residual:** The provider's off-chain checks are trusted: its keys can make
   anyone pass the topics it is trusted for. An issuer deployed through an
   executable reference passes the code check, and its owner can swap the code
-  later; governance must trust only issuers deployed straight from the kit's
-  Wasm, though such an owner gains nothing beyond the keys it holds. Unless
-  another trusted issuer of the same topic vouches for the holder, a broken
-  issuer holds priced deposits outside a wind-down, and refuses new deposit
-  requests, until it is fixed or its removal lands after the timelock. A claim
-  issued in the same second as an invalidation is refused. A lost owner key
-  means a new issuer and new claims for every investor it served.
+  later. Beyond the keys it holds, swapped code can make the issuer trap,
+  which kit code cannot: a fault that holds priced deposits and share returns
+  for every holder relying on it until governance replaces the issuer. So
+  governance trusts only issuers deployed straight from the kit's Wasm, and
+  checks it before proposing one: the issuer's contract instance entry
+  (`stellar ledger entry fetch contract-data --contract <issuer> --instance`,
+  or RPC `getLedgerEntries`) must show the executable `wasm` equal to the
+  topics contract's `issuer_wasm()`, not a reference. Unless another trusted
+  issuer of the same topic vouches for the holder, a broken issuer holds
+  priced deposits outside a wind-down, and refuses new deposit requests, until
+  it is fixed or replaced. Removing it is not a cure. A topic left with no
+  trusted issuer is a fault too, so no one gets in and priced deposits keep
+  waiting. If another issuer remains, a holder whose only claim came from the
+  removed one is refused (304), and its priced deposits convert. So governance
+  proposes the replacement and the removal together, applies the addition
+  first, and has the new provider sign for those holders before the removal
+  lands. Swapping the verifier's registry refuses every wallet the new
+  registry does not link (321), so holders `attach` to the new registry before
+  that swap lands, or their priced deposits convert. A claim issued in the
+  same second as an invalidation is refused. A lost owner key means a new
+  issuer and new claims for every investor it served.
 - **Tests:** `a_trapping_issuer_is_unavailable_not_304`,
   `a_missing_issuer_contract_is_unavailable`,
   `a_signature_failing_at_check_time_is_unavailable`,
   `every_kit_refusal_code_is_a_no`, `any_other_issuer_error_is_unavailable`,
   `one_failing_and_one_refusing_issuer_is_unavailable`,
-  `one_failing_and_one_valid_issuer_is_verified` and
-  `a_refusing_topic_wins_over_a_failing_one` in
+  `one_failing_and_one_valid_issuer_is_verified`,
+  `a_refusing_topic_wins_over_a_failing_one`,
+  `a_topic_with_no_trusted_issuer_is_unavailable`,
+  `no_required_topic_is_unavailable` and
+  `an_issuer_refusal_code_from_any_other_contract_is_unavailable` in
   [`identity-verifier/src/test/faults.rs`](../contracts/identity-verifier/src/test/faults.rs);
-  `an_invalidated_claim_is_refused_with_304` in
+  `an_invalidated_claim_is_refused_with_304` and
+  `a_topics_only_issuer_moved_to_other_topics_leaves_it_unavailable` in
   [`identity-verifier/src/test/verification.rs`](../contracts/identity-verifier/src/test/verification.rs);
+  `moving_a_topics_only_issuer_to_other_topics_leaves_it_incomplete` in
+  [`claim-topics/src/test/changes.rs`](../contracts/claim-topics/src/test/changes.rs);
   `a_claim_dated_in_the_future_is_refused`,
   `a_bumped_nonce_invalidates_earlier_signatures` and
   `the_refusal_codes_match_the_error_enum` in
@@ -1098,6 +1122,9 @@ or an investor shapes its own identity to fail or to cost too much.
   refusal into a fault that holds a deposit open. The verifier reads only the
   claim id OpenZeppelin derives from each required topic and trusted issuer,
   never the identity's list, so added claims cannot push a check over budget.
+  The claim it reads cannot grow either: the issuer checks its signature and
+  data when it is added, and the identity refuses a URI over 256 bytes
+  (`ClaimUriTooLong`), the one field the signature does not cover.
   The registry never calls `verify_identity`, which would read it back
   mid-call.
 - **Residual:** After a lifted veto, the wallet onboards again with the
@@ -1118,7 +1145,9 @@ or an investor shapes its own identity to fail or to cost too much.
   [`identity-registry/src/test/onboarding.rs`](../contracts/identity-registry/src/test/onboarding.rs);
   `check_claims_never_calls_the_registry` and
   `a_claim_naming_another_topic_or_issuer_is_a_no` in
-  [`identity-verifier/src/test/`](../contracts/identity-verifier/src/test/).
+  [`identity-verifier/src/test/`](../contracts/identity-verifier/src/test/);
+  `a_uri_over_the_cap_is_refused` in
+  [`investor-identity/src/test.rs`](../contracts/investor-identity/src/test.rs).
   An identity stuffed with claims to exhaust the budget: none, because the
   verifier never reads the list.
 
@@ -1217,9 +1246,9 @@ address gets in, or a verifier fault is read as a delisting.
   back into shares. The kit's verifier passes the vault as a protocol address,
   so the conversion's mint and a redemption request work whatever the vault's
   own listing. The verifier tells a fault from a refusal: it fails with
-  `Unavailable`, never 304 or 321, when a contract it depends on fails, and the
-  vault then holds instead of converting or burning (`VerifierFailed`), outside
-  a wind-down.
+  `Unavailable`, never 304 or 321, when a contract it depends on fails or no
+  issuer can answer, and the vault then holds instead of converting or burning
+  (`VerifierFailed`), outside a wind-down.
 - **Residual:** They leave at a later epoch's price, and a fall since their
   deposit was priced is theirs. A fault holds a priced deposit, and a
   zero-asset claim, until the verifier answers; in a wind-down a fault counts
@@ -1928,10 +1957,12 @@ These are decided, and stated as they stand:
    the minimum epoch duration, then anyone seals; with none set, holders wait
    until governance replaces the manager (R8).
 3. A broken claim issuer holds priced deposits and refuses new deposits until
-   it is fixed or removed through the timelock; a fault never converts or burns
-   a position (R15). Governance trusts only issuers deployed straight from the
-   kit's issuer Wasm, because an executable reference passes the code check
-   once and its owner can swap the code later.
+   it is fixed or replaced through the timelock; a fault never converts or
+   burns a position. Removing it alone leaves a topic with no issuer, still a
+   fault, or refuses the holders who relied on it (R15). Governance trusts
+   only issuers deployed straight from the kit's issuer Wasm, because an
+   executable reference passes the code check once and its owner can swap the
+   code later.
 4. The vault's constructor is the only check on who holds which role, for four
    pairs; later grants and the other contracts' roles are not checked (R5). The
    share token does refuse a legal transfer or recovery signed by one account

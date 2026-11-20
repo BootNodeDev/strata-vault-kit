@@ -476,7 +476,7 @@ funded 15 accounts; 0 already existed
 asset contract CAVOIGEEWM7DNRZC3TJZ72AV4AIU3JYE4Z57AHXLNKDZMSMBWAW64ZUH
 returned the deposit asset of 0 accounts to its issuer
 compliance CA3Y7U6YVAQZZXD3UK2HWMQKWANPGNURZ7GIZTBCA6DJEUI6REBYA5LN
-investor_identity wasm 38c96ef44a050905dcdd9c728b8bf05b3585463f205695e073c399b49abacac7
+investor_identity wasm a9a589679f968d5ad401b266605750519c091f195daf679f4c19eb774ff5c0f1
 claim_issuer wasm d681fadec29741dca3d4584eda9b704655c49d4cbbff4a5a3e6602d64ef2abb4
 claim_topics CBNYSAQXOXPOLFNQPMH725JKJ5HSDS5LXJU6NJO2ELVQ4QCWO35BQ44M
 identity_registry CCY5GAM2NGRM3KQ6GXTDLYJ6D6EIHFT56FTG2LYAIDF7SJLH4YMOCL6U
@@ -555,8 +555,8 @@ for another environment, or `--config <record>` for a deployment record.
 It extends nothing else. Other entries, such as investors' identity contracts,
 epochs, requests, balances and roles, still archive when nobody uses them.
 Nothing in them is lost: the next call that needs an archived entry restores
-it, and the account that sends that call pays the restore fee. For a holder's balance or request, that is usually
-the holder, on their next call. The
+it, and the account that sends that call pays the restore fee. For a holder's
+balance or request, that is usually the holder, on their next call. The
 [TTL policy](./docs/kit-spec.md#5-storage-lifetime-ttl-policy) says what each
 contract extends on its own and how a restore works.
 
