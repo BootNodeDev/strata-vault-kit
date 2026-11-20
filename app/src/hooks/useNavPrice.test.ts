@@ -9,8 +9,6 @@ import { OracleError } from "../../../app-lib/clients/nav_oracle/src/index"
 import { contractErrorCode } from "../test/contractErrorCode"
 import { classifyNav, type NavClassification } from "./useNavPrice"
 
-vi.mock("../config/clients", () => import("../test/fakeClients"))
-
 const valid: ContractRead<OracleState> = {
 	kind: "value",
 	value: { tag: "Valid", values: undefined },
