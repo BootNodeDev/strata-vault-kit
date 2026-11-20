@@ -116,7 +116,8 @@ pub(crate) fn claim(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
     shares
 }
 
-/// The holder is off the allowlist, so the shares exit in cash: next price, or the wind-down.
+/// The holder is delisted, or unverifiable in a wind-down, so the shares exit
+/// in cash: next price, or the wind-down.
 fn convert_to_exit(
     e: &Env,
     holder: &Address,
