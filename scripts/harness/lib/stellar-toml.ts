@@ -38,7 +38,7 @@ const ANCHOR_ASSET_TYPES = [
 	"other",
 ] as const
 
-const DOMAIN =
+export const DOMAIN =
 	/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/
 
 const STATUSES = ["live", "dead", "test", "private"] as const

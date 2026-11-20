@@ -144,6 +144,37 @@ describe("buildAssetList", () => {
 	})
 })
 
+describe("buildAssetList with a previous list", () => {
+	it("never returns a list whose version overflows", () => {
+		const previous = { ...LIST, version: "9999.9999" }
+		const { list, missing } = buildAssetList(
+			inputs(),
+			{ ...OPERATOR, image: "https://strata.example/new.png" },
+			previous,
+		)
+		expect(list).toBeUndefined()
+		expect(missing.map((m) => m.field)).toContain("assetlist.version")
+	})
+
+	it("treats a previous list without assets as absent", () => {
+		const { list } = buildAssetList(inputs(), OPERATOR, {
+			name: "bvUSDC asset list",
+			provider: "Strata Labs",
+			version: "3.4",
+			network: "testnet",
+		} as unknown as AssetList)
+		expect(list?.version).toBe("1.0")
+	})
+
+	it("treats a previous list with a non-string version as absent", () => {
+		const { list } = buildAssetList(inputs(), OPERATOR, {
+			...LIST,
+			version: 3.4,
+		} as unknown as AssetList)
+		expect(list?.version).toBe("1.0")
+	})
+})
+
 describe("networkOf", () => {
 	it("maps the public and test networks and nothing else", () => {
 		expect(networkOf(Networks.PUBLIC)).toBe("public")
@@ -225,5 +256,55 @@ describe("assetListProblems", () => {
 	it("accepts characters inside the CleanString range and rejects those outside", () => {
 		expect(assetListProblems(withEntry({ name: "Vault: USDC" }))).toEqual([])
 		rejects(withEntry({ name: "Vault# USDC" }))
+	})
+
+	it("bounds org to 5 to 30 characters", () => {
+		expect(assetListProblems(withEntry({ org: "abcd" }))).not.toEqual([])
+		expect(assetListProblems(withEntry({ org: "abcde" }))).toEqual([])
+		expect(assetListProblems(withEntry({ org: "a".repeat(30) }))).toEqual([])
+		expect(assetListProblems(withEntry({ org: "a".repeat(31) }))).not.toEqual(
+			[],
+		)
+	})
+
+	it("bounds provider to 5 to 50 characters", () => {
+		expect(assetListProblems({ ...LIST, provider: "abcd" })).not.toEqual([])
+		expect(assetListProblems({ ...LIST, provider: "abcde" })).toEqual([])
+		expect(assetListProblems({ ...LIST, provider: "a".repeat(50) })).toEqual([])
+		expect(
+			assetListProblems({ ...LIST, provider: "a".repeat(51) }),
+		).not.toEqual([])
+	})
+
+	it("rejects a missing contract", () =>
+		rejects(withEntry({ contract: undefined })))
+	it("rejects an invalid contract", () =>
+		rejects(withEntry({ contract: "G" + "A".repeat(55) })))
+	it("rejects more than 1000 assets", () =>
+		rejects({ ...LIST, assets: Array.from({ length: 1001 }, () => ENTRY) }))
+	it("rejects fractional decimals", () => rejects(withEntry({ decimals: 7.5 })))
+	it("accepts the public network", () => {
+		expect(assetListProblems({ ...LIST, network: "public" })).toEqual([])
+	})
+	it("rejects a version with a fifth digit", () =>
+		rejects({ ...LIST, version: "10000.0" }))
+
+	it("checks issuer, comment, description and feedback", () => {
+		const issuer = "G" + "A".repeat(55)
+		expect(assetListProblems(withEntry({ issuer }))).toEqual([])
+		rejects(withEntry({ issuer: "C" + "A".repeat(55) }))
+		expect(assetListProblems(withEntry({ comment: "a".repeat(150) }))).toEqual(
+			[],
+		)
+		rejects(withEntry({ comment: "a".repeat(151) }))
+		expect(
+			assetListProblems({ ...LIST, description: "a".repeat(400) }),
+		).toEqual([])
+		rejects({ ...LIST, description: "a".repeat(401) })
+		expect(
+			assetListProblems({ ...LIST, feedback: "https://github.com/x/y" }),
+		).toEqual([])
+		rejects({ ...LIST, feedback: "not a url" })
+		rejects({ ...LIST, feedback: "https://x.example/" + "a".repeat(100) })
 	})
 })

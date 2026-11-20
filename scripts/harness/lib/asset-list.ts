@@ -1,6 +1,7 @@
 import { Networks } from "@stellar/stellar-sdk"
 
 import {
+	DOMAIN,
 	type MissingField,
 	type OperatorValues,
 	type Sep1Inputs,
@@ -28,8 +29,7 @@ const CLEAN_STRING = /^[\w .,-@]*$/
 const VERSION = /^\d{1,4}\.\d{1,4}$/
 const CONTRACT = /^C[A-Z0-9]{55}$/
 const CODE = /^[A-Za-z0-9]{1,12}$/
-const DOMAIN =
-	/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9][a-z0-9-]{0,61}[a-z0-9]$/
+const ISSUER = /^G[A-Z0-9]{55}$/
 const IPFS_HASH = /^baf[a-zA-Z0-9]+$/
 
 const LIST_KEYS = [
@@ -79,9 +79,9 @@ export function nextVersion(
 	previous: AssetList | undefined,
 	entry: AssetListEntry,
 ): string {
-	if (previous === undefined || !VERSION.test(previous.version)) return "1.0"
+	if (previous === undefined || assetListProblems(previous).length > 0)
+		return "1.0"
 	const before = previous.assets[0]
-	if (before === undefined) return "1.0"
 	if (sameEntry(before, entry)) return previous.version
 	const [major = 0, minor = 0] = previous.version.split(".").map(Number)
 	return before.contract !== entry.contract
@@ -100,14 +100,19 @@ function stringProblem(
 	return undefined
 }
 
+function isUrl(value: string): boolean {
+	try {
+		new URL(value)
+		return true
+	} catch {
+		return false
+	}
+}
+
 function iconProblem(value: unknown): string | undefined {
 	if (typeof value !== "string") return "must be a string"
 	if (IPFS_HASH.test(value)) return undefined
-	try {
-		if (new URL(value).protocol === "https:") return undefined
-	} catch {
-		// falls through to the shared message
-	}
+	if (isUrl(value) && new URL(value).protocol === "https:") return undefined
 	return "must be an https URL or an IPFS hash"
 }
 
@@ -136,6 +141,12 @@ function entryProblems(entry: unknown, prefix: string): MissingField[] {
 	if (record.code !== undefined)
 		if (typeof record.code !== "string" || !CODE.test(record.code))
 			add("code", "must be 1 to 12 letters or digits")
+	if (record.issuer !== undefined)
+		if (typeof record.issuer !== "string" || !ISSUER.test(record.issuer))
+			add("issuer", "must be an account address (G followed by 55 characters)")
+	if (record.comment !== undefined)
+		if (typeof record.comment !== "string" || record.comment.length > 150)
+			add("comment", "must be a string of at most 150 characters")
 	if (record.domain !== undefined)
 		if (typeof record.domain !== "string" || !DOMAIN.test(record.domain))
 			add("domain", 'must be a bare host such as "example.com"')
@@ -170,6 +181,18 @@ function listProblems(list: unknown): MissingField[] {
 	if (typeof record.version !== "string" || !VERSION.test(record.version))
 		add("version", 'must look like "1.0"')
 	if (
+		record.description !== undefined &&
+		(typeof record.description !== "string" || record.description.length > 400)
+	)
+		add("description", "must be a string of at most 400 characters")
+	if (
+		record.feedback !== undefined &&
+		(typeof record.feedback !== "string" ||
+			record.feedback.length > 100 ||
+			!isUrl(record.feedback))
+	)
+		add("feedback", "must be a URL of at most 100 characters")
+	if (
 		record.network !== undefined &&
 		record.network !== "public" &&
 		record.network !== "testnet"
@@ -189,6 +212,10 @@ function listProblems(list: unknown): MissingField[] {
 	return problems
 }
 
+/**
+ * Checks every SEP-42 rule. The kit's list always names the share token by its
+ * contract, so an entry must have `contract`; `code` plus `issuer` alone is refused.
+ */
 export function assetListProblems(list: unknown): string[] {
 	return listProblems(list).map(({ field, reason }) => `${field} ${reason}`)
 }
@@ -243,10 +270,11 @@ export function buildAssetList(
 
 	const complete = entry as AssetListEntry
 	const base = previous?.network === network ? previous : undefined
-	const list: AssetList = {
-		...(candidate as Omit<AssetList, "version" | "assets">),
+	const list = {
+		...candidate,
 		version: nextVersion(base, complete),
 		assets: [complete],
-	}
-	return { list, missing }
+	} as AssetList
+	const problems = listProblems(list)
+	return problems.length > 0 ? { missing: problems } : { list, missing }
 }
