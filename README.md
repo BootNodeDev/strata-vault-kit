@@ -245,6 +245,8 @@ attestation never means re-typing them. The same file may also set `code`,
   "ORG_SUPPORT_EMAIL": "support@acme.example",
   "desc": "Share of the Acme Treasury Vault",
   "image": "https://acme.example/share.png",
+  "domain": "acme.example",
+  "ASSET_LIST_URL": "https://acme.example/assetlist.json",
   "anchor_asset_type": "other",
   "anchor_asset": "ACME-RWA",
   "redemption_instructions": "Redeem through the vault's dApp"
@@ -263,6 +265,25 @@ Regenerate and republish it after each attestation, so
 already serves a `stellar.toml` for other currencies must merge the share
 token's `[[CURRENCIES]]` entry into it rather than publish the generated file
 as is.
+
+`npm run sep1` also writes `scripts/harness/assetlist.<network>.json`, next to
+the `stellar.toml`, and git ignores both. It is a
+[SEP-42](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0042.md)
+asset list with one entry for the share token, and `stellar.toml` links to it
+under `ASSET_LISTS`. Set these fields in the operator file:
+
+- `ASSET_LIST_URL`: the https URL where you will host the list.
+- `domain`: the bare host that goes in the entry, for example `acme.example`.
+- `ORG_NAME`: becomes the entry's `org` and the list's `provider`.
+- `image`: becomes the entry's `icon`.
+
+Host the list over HTTPS, on the domain that serves `stellar.toml` or a
+subdomain of it. Serve it with `Content-Type: application/json` and
+`Access-Control-Allow-Origin: *`. It must stay under 200 KB. Holders add the URL
+in the Varial browser extension's asset list settings. The `version` follows the
+entry: the command raises it when the entry changes, starting at `1.0`, so
+nobody edits it by hand. An invalid list is not written, and the command prints
+what is missing.
 
 [`docs/sep1/stellar.template.toml`](./docs/sep1/stellar.template.toml) is the
 template with every field open; [`docs/sep1/stellar.testnet.toml`](./docs/sep1/stellar.testnet.toml)
