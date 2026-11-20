@@ -190,10 +190,11 @@ strata_bindings::error_enum! {
         /// `RWAError::IdentityVerificationFailed` (304) and
         /// `IRSError::IdentityNotFound` (321) count as an answer; any other error
         /// is a failure. It lets no one in and forces no one out: a deposit
-        /// request is refused, and a priced deposit's claim, a redemption's
-        /// cancel or a claim priced at zero assets waits, its request open for a
-        /// retry. In a wind-down a priced deposit and a cancelled redemption join
-        /// the payout instead.
+        /// request is refused, and a priced deposit's claim for shares, a
+        /// redemption's cancel or a claim priced at zero assets waits, its
+        /// request open for a retry. A deposit worth no share is still refunded.
+        /// In a wind-down a priced deposit and a cancelled redemption join the
+        /// payout instead.
         VerifierFailed = 6078,
     }
 }

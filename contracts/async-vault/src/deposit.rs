@@ -74,10 +74,12 @@ pub(crate) fn claim(e: &Env, holder: &Address, epoch_id: u64) -> i128 {
     guards::not_claimed(e, request.claimed);
     let standing = lock_policy::standing(e, holder);
     let decision = lock_policy::decide(Exit::ClaimDeposit, standing, wind_down::is_active(e));
-    guards::not_refused(e, decision, standing);
-
     let shares = Pricing::deposit_shares(e, request.amount, epoch.share_price)
         .unwrap_or_else(|err| panic_with_error!(e, err));
+    // A refund lets no one in, so only a freeze holds it.
+    if shares > 0 || standing == Standing::Frozen {
+        guards::not_refused(e, decision, standing);
+    }
 
     if shares == 0 {
         guards::refund_covered(e, request.amount);

@@ -256,6 +256,27 @@ fn a_verifier_fault_holds_a_priced_deposit_claim_open() {
     assert_eq!(s.f.shares(&investor), 200);
 }
 
+/// A refund lets no one in, so a fault does not hold it, nor the epoch's
+/// settlement behind it.
+#[test]
+fn a_verifier_fault_still_refunds_a_deposit_worth_no_shares() {
+    let s = ready_stack();
+    let investor = s.onboarded(10);
+    let epoch = s.f.vault.request_deposit(&investor, &1);
+    s.f.fulfill_epoch(price(2));
+    s.break_issuer();
+    assert_eq!(
+        s.verify(&investor),
+        Err(Ok(VerifierError::Unavailable.into()))
+    );
+
+    assert_eq!(s.f.vault.claim_deposit(&investor, &epoch), 0);
+
+    assert_eq!(s.f.balance(&investor), 10);
+    assert_eq!(s.f.vault.get_deposit_request(&epoch, &investor), None);
+    assert!(s.f.vault.get_epoch_settlement(&epoch).unwrap().reconciled());
+}
+
 #[test]
 fn a_verifier_fault_in_a_wind_down_surrenders_the_deposit() {
     let s = ready_stack();

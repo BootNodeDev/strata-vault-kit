@@ -36,8 +36,9 @@
 //! - **A verifier fault lets no one in and forces no one out.** Only a
 //!   refusal (304 or 321) delists. Any other failure refuses a deposit
 //!   request, and holds a priced deposit's claim and a redemption's cancel
-//!   with `VerifierFailed` until the verifier answers; every exit a delisted
-//!   holder keeps stays open. In a wind-down the fault counts as a refusal.
+//!   with `VerifierFailed` until the verifier answers. A deposit worth no
+//!   share is still refunded, and every exit a delisted holder keeps stays
+//!   open. In a wind-down the fault counts as a refusal.
 //!   The cost: a broken issuer holds priced deposits back until it is fixed.
 //! - **Setup, then the timelock.** Until `finish_setup` checks the wiring,
 //!   admin changes are instant and requests and epochs refused; after it,
@@ -862,7 +863,8 @@ impl AsyncVault {
     /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `AlreadyClaimed` - The deposit was claimed.
     /// * `Frozen` - `holder` is frozen.
-    /// * `VerifierFailed` - The verifier fails, outside a wind-down.
+    /// * `VerifierFailed` - The verifier fails outside a wind-down, on a
+    ///   deposit worth shares.
     /// * `ClaimNotCovered` - The free reserve cannot cover a refund yet.
     /// * A compliance module's own error - The compliance rules refuse the
     ///   mint.
