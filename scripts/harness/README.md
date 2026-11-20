@@ -21,7 +21,7 @@ npm run keys
 # Deploy contracts (local or testnet)
 npm run deploy
 
-# Generate the share token's SEP-1 stellar.toml from a deployment (reads only)
+# Generate the share token's SEP-1 stellar.toml and SEP-42 asset list from a deployment (reads only)
 npm run sep1
 
 # Unit tests of the harness itself, no network needed
