@@ -15,6 +15,7 @@ import {
 	pendingData,
 } from "./fake-ledger.js"
 import { keepAlive, keepDeploymentAlive, type Log } from "./keep-alive.js"
+import { identityWasmKey } from "./registry-keys.js"
 import { openChangesKey, pendingChangeKey } from "./timelock-keys.js"
 import { type Runner, wasmHashOf } from "./ttl.js"
 
@@ -248,6 +249,46 @@ describe("keepDeploymentAlive", () => {
 				.filter((a) => a.includes("--key-xdr"))
 				.every((a) => a.includes(CONTRACT_A)),
 		).toBe(true)
+	})
+
+	it("keeps alive the code the registry deploys identities from", async () => {
+		const ledger = new FakeLedger()
+		const lines: string[] = []
+		const log: Log = (l) => lines.push(l)
+		const identityHash = Buffer.alloc(32, 0x22).toString("hex")
+		const identityCode = new xdr.ScMapEntry({
+			key: identityWasmKey(),
+			val: xdr.ScVal.scvBytes(Buffer.from(identityHash, "hex")),
+		})
+
+		ledger.put(
+			entryKey({ id: CONTRACT_A }),
+			instanceData(CONTRACT_A, {
+				wasmHash: WASM_HASH,
+				storage: [identityCode],
+			}),
+			2000,
+		)
+		ledger.put(entryKey({ wasmHash: WASM_HASH }), codeData(WASM_HASH), 2000)
+		ledger.put(
+			entryKey({ wasmHash: identityHash }),
+			codeData(identityHash),
+			900,
+		)
+
+		await keepDeploymentAlive(
+			RPC,
+			[["identity_registry", CONTRACT_A]],
+			ledger.run,
+			log,
+		)
+
+		expect(lines).toEqual([
+			"identity_registry instance live until ledger 519400",
+			`code ${WASM_HASH.slice(0, 8)} live until ledger 519400`,
+			`identity code ${identityHash.slice(0, 8)} restored`,
+			`identity code ${identityHash.slice(0, 8)} live until ledger 519400`,
+		])
 	})
 
 	it("reads open changes from an instance restored from archive", async () => {

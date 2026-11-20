@@ -490,15 +490,15 @@ nobody calls archives after 30 days. Keep the contracts callable with:
 STELLAR_ACCOUNT=<identity or secret> npm run extend -w scripts/harness
 ```
 
-It reads the testnet contracts from `environments.toml` and covers three kinds
-of entry: each contract instance, the Wasm it runs and each pending timelock
-change. It restores any of them that has archived, then extends each by 30
-days. Any funded account pays, since extending needs no authority. Use
+It reads the testnet contracts from `environments.toml` and covers four kinds
+of entry: each contract instance, the Wasm it runs, the Wasm the identity
+registry deploys investor identities from, and each pending timelock change.
+It restores any of them that has archived, then extends each by 30 days. Any funded account pays, since extending needs no authority. Use
 `--env <name>` for another environment, or `--config <record>` for a
 deployment record.
 
-It extends nothing else. Other entries, such as epochs, requests, balances and
-roles, still archive when nobody uses them. Nothing in them is lost: the next
+It extends nothing else. Other entries, such as investors' identity contracts,
+epochs, requests, balances and roles, still archive when nobody uses them. Nothing in them is lost: the next
 call that needs an archived entry restores it, and the account that sends that
 call pays the restore fee. For a holder's balance or request, that is usually
 the holder, on their next call. The
