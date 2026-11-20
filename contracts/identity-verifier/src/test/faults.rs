@@ -180,9 +180,9 @@ fn a_topic_with_no_trusted_issuer_is_unavailable() {
 fn a_refusing_topic_wins_over_one_with_no_trusted_issuer() {
     let d = doubles();
     let refusing = d.issuer(Behaviour::Fails(ISSUER_REFUSALS[2]));
-    d.serve(&d.unsigned_claim(&refusing, KYC));
+    d.serve(&d.unsigned_claim(&refusing, AML));
 
-    d.require(&[(KYC, &[&refusing]), (AML, &[])]);
+    d.require(&[(KYC, &[]), (AML, &[&refusing])]);
 
     not_verified(d.verify());
     not_verified(d.check_claims());

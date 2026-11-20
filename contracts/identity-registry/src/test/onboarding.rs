@@ -2,13 +2,13 @@
 
 extern crate std;
 
-use investor_identity::InvestorIdentityClient;
+use investor_identity::{InvestorIdentityClient, InvestorIdentityError, MAX_CLAIM_URI_LEN};
 use soroban_sdk::{
     testutils::{
         Address as _, AuthorizedFunction, AuthorizedInvocation, Events as _, MockAuth,
         MockAuthInvoke,
     },
-    vec, Address, ContractExecutable, Event as _, Executable, IntoVal, Symbol, Val, Vec,
+    vec, Address, ContractExecutable, Event as _, Executable, IntoVal, String, Symbol, Val, Vec,
 };
 use stellar_tokens::rwa::{
     identity_verification::{
@@ -57,6 +57,23 @@ fn onboarding_deploys_the_identity_adds_claims_and_registers() {
         1
     );
     assert_eq!(f.verifier.accepted(), vec![&f.e, identity]);
+}
+
+#[test]
+fn onboarding_with_an_overlong_claim_uri_is_refused() {
+    let f = bound();
+    let account = Address::generate(&f.e);
+    let mut claim = f.claim_for(&f.registry.identity_address(&account));
+    claim.uri = String::from_str(&f.e, &"u".repeat(MAX_CLAIM_URI_LEN as usize + 1));
+
+    refused(
+        f.registry.try_onboard(&account, &vec![&f.e, claim]),
+        InvestorIdentityError::ClaimUriTooLong,
+    );
+    refused(
+        f.registry.try_stored_identity(&account),
+        IRSError::IdentityNotFound,
+    );
 }
 
 #[test]
