@@ -44,9 +44,11 @@ const versionOf = (text: string): string =>
 
 describe("writeAssetList", () => {
 	it("starts at 1.0 when there is no previous file", () => {
-		const { written, wrote, warning } = run(undefined)
+		const { written, wrote, notices } = run(undefined)
 		expect(wrote).toBe(true)
-		expect(warning).toBeUndefined()
+		expect(notices).toEqual([
+			"note: no previous assetlist.testnet.json; starting at version 1.0. If a list is already hosted, save it at assetlist.testnet.json first.",
+		])
 		expect(written).toHaveLength(1)
 		expect(written[0]?.text.endsWith("}\n")).toBe(true)
 		expect(written[0]?.text).toContain('\n  "version": "1.0"')
@@ -68,10 +70,10 @@ describe("writeAssetList", () => {
 	})
 
 	it("warns and starts at 1.0 when the previous file is not JSON", () => {
-		const { written, warning } = run("{not json")
-		expect(warning).toBe(
+		const { written, notices } = run("{not json")
+		expect(notices).toEqual([
 			"warning: assetlist.testnet.json is not valid JSON; starting at version 1.0",
-		)
+		])
 		expect(versionOf(written[0]?.text ?? "")).toBe("1.0")
 	})
 

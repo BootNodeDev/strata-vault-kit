@@ -91,8 +91,36 @@ describe("buildAssetList", () => {
 		expect(list).toBeUndefined()
 		expect(missing).toContainEqual({
 			field: "assetlist.name",
-			reason: "must be 5 to 30 characters",
+			reason:
+				'the token name must be 5 to 30 characters; set "name" in SEP1_OPERATOR',
 		})
+	})
+
+	it("names the operator field to change for an invalid org", () => {
+		const { missing } = buildAssetList(inputs(), {
+			...OPERATOR,
+			ORG_NAME: "Acme",
+		})
+		expect(missing).toContainEqual({
+			field: "assetlist.org",
+			reason: "ORG_NAME must be 5 to 30 characters",
+		})
+	})
+
+	it("warns when the domain differs from the ORG_URL host", () => {
+		const { warnings } = buildAssetList(inputs(), {
+			...OPERATOR,
+			ORG_URL: "https://other.example",
+		})
+		expect(warnings).toEqual([
+			'warning: domain "strata.example" differs from the host of ORG_URL ("other.example")',
+		])
+		expect(
+			buildAssetList(inputs(), {
+				...OPERATOR,
+				ORG_URL: "https://strata.example",
+			}).warnings,
+		).toEqual([])
 	})
 
 	it("refuses a chain code SEP-42 cannot carry", () => {
@@ -145,6 +173,31 @@ describe("buildAssetList", () => {
 })
 
 describe("buildAssetList with a previous list", () => {
+	it("warns and restarts at 1.0 when the previous list is invalid", () => {
+		const { list, warnings } = buildAssetList(inputs(), OPERATOR, {
+			...LIST,
+			version: "x",
+		})
+		expect(list?.version).toBe("1.0")
+		expect(warnings).toHaveLength(1)
+		expect(warnings[0]).toMatch(
+			/^warning: the previous asset list is not valid/,
+		)
+	})
+
+	it("warns when the list name or provider changed", () => {
+		const { warnings } = buildAssetList(
+			inputs(),
+			{ ...OPERATOR, ORG_NAME: "Strata Labs Inc" },
+			LIST,
+		)
+		expect(warnings).toEqual([
+			'warning: the provider changed from "Strata Labs" to "Strata Labs Inc"; SEP-42 says it should stay fixed',
+		])
+		const renamed = buildAssetList(inputs({ code: "bvUSDT" }), OPERATOR, LIST)
+		expect(renamed.warnings[0]).toMatch(/^warning: the list name changed/)
+	})
+
 	it("never returns a list whose version overflows", () => {
 		const previous = { ...LIST, version: "9999.9999" }
 		const { list, missing } = buildAssetList(
@@ -195,6 +248,23 @@ describe("nextVersion", () => {
 		expect(nextVersion(undefined, ENTRY)).toBe("1.0")
 	})
 
+	it("ignores the entry comment", () => {
+		expect(
+			nextVersion(
+				at("3.4", { comment: "old" } as Partial<AssetListEntry>),
+				ENTRY,
+			),
+		).toBe("3.4")
+	})
+
+	it("bumps the major version when an entry was removed", () => {
+		const previous = {
+			...at("3.4"),
+			assets: [ENTRY, { ...ENTRY, contract: OTHER_CONTRACT }],
+		} as unknown as AssetList
+		expect(nextVersion(previous, ENTRY)).toBe("4.0")
+	})
+
 	it("keeps the version for an unchanged entry", () => {
 		expect(nextVersion(at("3.4"), ENTRY)).toBe("3.4")
 	})
@@ -223,6 +293,13 @@ describe("assetListProblems", () => {
 	})
 	const rejects = (list: unknown) =>
 		expect(assetListProblems(list).length).toBeGreaterThan(0)
+
+	it("rejects icon and feedback URLs the schema's uri format refuses", () => {
+		rejects(withEntry({ icon: "https://strata.example/my share.png" }))
+		rejects(withEntry({ icon: "https://acmé.example/x.png" }))
+		rejects({ ...LIST, feedback: "https://strata.example/my feedback" })
+		rejects({ ...LIST, feedback: "https://acmé.example/feedback" })
+	})
 
 	it("accepts a valid list", () => {
 		expect(assetListProblems(LIST)).toEqual([])

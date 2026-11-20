@@ -27,7 +27,7 @@ async function main(): Promise<void> {
 		readFile: (f) => readFileSync(f, "utf8"),
 		writeFile: writeFileSync,
 	})
-	if (asset.warning !== undefined) console.log(asset.warning)
+	for (const notice of asset.notices) console.log(notice)
 	console.log(
 		asset.wrote
 			? `wrote ${relative(REPO_ROOT, listFile)}`
@@ -44,6 +44,11 @@ async function main(): Promise<void> {
 	}
 	for (const { field, reason } of [...missing, ...asset.missing]) {
 		console.log(`missing ${field}: ${reason}`)
+	}
+	if (!asset.wrote && operator.ASSET_LIST_URL !== undefined) {
+		console.log(
+			`stellar.toml links ${operator.ASSET_LIST_URL}, but the asset list was not written: fix the fields above`,
+		)
 	}
 }
 

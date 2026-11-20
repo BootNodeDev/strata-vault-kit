@@ -22,7 +22,7 @@ export function writeAssetList({
 }: WriteAssetListOptions): {
 	wrote: boolean
 	missing: MissingField[]
-	warning?: string
+	notices: string[]
 } {
 	let text: string | undefined
 	try {
@@ -32,19 +32,24 @@ export function writeAssetList({
 	}
 
 	let previous: AssetList | undefined
-	let warning: string | undefined
-	if (text !== undefined) {
+	const notices: string[] = []
+	if (text === undefined)
+		notices.push(
+			`note: no previous ${file}; starting at version 1.0. If a list is already hosted, save it at ${file} first.`,
+		)
+	else {
 		try {
 			previous = JSON.parse(text) as AssetList
 		} catch {
-			warning = `warning: ${file} is not valid JSON; starting at version 1.0`
+			notices.push(
+				`warning: ${file} is not valid JSON; starting at version 1.0`,
+			)
 		}
 	}
 
-	const { list, missing } = buildAssetList(inputs, operator, previous)
-	if (list === undefined) {
-		return { wrote: false, missing, ...(warning && { warning }) }
-	}
+	const { list, missing, warnings } = buildAssetList(inputs, operator, previous)
+	notices.push(...warnings)
+	if (list === undefined) return { wrote: false, missing, notices }
 	writeFile(file, `${JSON.stringify(list, null, 2)}\n`)
-	return { wrote: true, missing, ...(warning && { warning }) }
+	return { wrote: true, missing, notices }
 }

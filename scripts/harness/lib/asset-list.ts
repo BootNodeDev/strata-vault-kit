@@ -31,6 +31,7 @@ const CONTRACT = /^C[A-Z0-9]{55}$/
 const CODE = /^[A-Za-z0-9]{1,12}$/
 const ISSUER = /^G[A-Z0-9]{55}$/
 const IPFS_HASH = /^baf[a-zA-Z0-9]+$/
+const URI_CHARACTERS = /^[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]+$/
 
 const LIST_KEYS = [
 	"name",
@@ -56,7 +57,7 @@ const MAX_ASSETS = 1000
 const MAX_DECIMALS = 38
 
 const NOT_CLEAN =
-	"may only use letters, digits, spaces and . , - @ and the characters between , and @"
+	"may only use ASCII letters, digits, spaces and _ , - . / : ; < = > ? @"
 const between = (min: number, max: number) =>
 	`must be ${min} to ${max} characters`
 
@@ -68,9 +69,13 @@ export function networkOf(
 	return undefined
 }
 
+const NOT_COMPARED = new Set(["comment"])
+
 function sameEntry(a: AssetListEntry, b: AssetListEntry): boolean {
-	const keys = new Set([...Object.keys(a), ...Object.keys(b)])
-	return [...keys].every(
+	const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter(
+		(key) => !NOT_COMPARED.has(key),
+	)
+	return keys.every(
 		(key) => a[key as keyof AssetListEntry] === b[key as keyof AssetListEntry],
 	)
 }
@@ -82,8 +87,9 @@ export function nextVersion(
 	if (previous === undefined || assetListProblems(previous).length > 0)
 		return "1.0"
 	const before = previous.assets[0]
-	if (sameEntry(before, entry)) return previous.version
 	const [major = 0, minor = 0] = previous.version.split(".").map(Number)
+	if (previous.assets.length > 1) return `${major + 1}.0`
+	if (sameEntry(before, entry)) return previous.version
 	return before.contract !== entry.contract
 		? `${major + 1}.0`
 		: `${major}.${minor + 1}`
@@ -101,6 +107,7 @@ function stringProblem(
 }
 
 function isUrl(value: string): boolean {
+	if (!URI_CHARACTERS.test(value)) return false
 	try {
 		new URL(value)
 		return true
@@ -220,12 +227,43 @@ export function assetListProblems(list: unknown): string[] {
 	return listProblems(list).map(({ field, reason }) => `${field} ${reason}`)
 }
 
+function hostOf(url: string | undefined): string | undefined {
+	if (url === undefined) return undefined
+	try {
+		return new URL(url).hostname
+	} catch {
+		return undefined
+	}
+}
+
+function withOperatorHint({ field, reason }: MissingField): MissingField {
+	const set = (key: string) => `${reason}; set "${key}" in SEP1_OPERATOR`
+	switch (field) {
+		case "assetlist.org":
+		case "assetlist.provider":
+			return { field, reason: `ORG_NAME ${reason}` }
+		case "assetlist.name":
+			return { field, reason: `the token name ${set("name")}` }
+		case "assetlist.list_name":
+			return { field, reason: set("code") }
+		case "assetlist.code":
+			return { field, reason: set("code") }
+		case "assetlist.icon":
+			return { field, reason: set("image") }
+		case "assetlist.domain":
+			return { field, reason: set("domain") }
+		default:
+			return { field, reason }
+	}
+}
+
 export function buildAssetList(
 	inputs: Sep1Inputs,
 	operator: OperatorValues,
 	previous?: AssetList,
-): { list?: AssetList; missing: MissingField[] } {
+): { list?: AssetList; missing: MissingField[]; warnings: string[] } {
 	const missing: MissingField[] = []
+	const warnings: string[] = []
 	const unfilled = (field: string, reason: string): undefined => {
 		missing.push({ field: `assetlist.${field}`, reason })
 		return undefined
@@ -260,21 +298,45 @@ export function buildAssetList(
 		assets: [entry],
 	}
 
+	const orgHost = hostOf(operator.ORG_URL)
+	if (domain !== undefined && orgHost !== undefined && domain !== orgHost)
+		warnings.push(
+			`warning: domain "${domain}" differs from the host of ORG_URL ("${orgHost}")`,
+		)
+
 	const reported = new Set(missing.map((m) => m.field))
 	missing.push(
-		...listProblems(candidate).filter(
-			(problem) => !reported.has(problem.field),
-		),
+		...listProblems(candidate)
+			.filter((problem) => !reported.has(problem.field))
+			.map(withOperatorHint),
 	)
-	if (missing.length > 0) return { missing }
+	if (missing.length > 0) return { missing, warnings }
 
 	const complete = entry as AssetListEntry
+	const previousProblems =
+		previous === undefined ? [] : assetListProblems(previous)
+	if (previous !== undefined && previousProblems.length > 0)
+		warnings.push(
+			`warning: the previous asset list is not valid (${previousProblems[0]}); starting at version 1.0`,
+		)
 	const base = previous?.network === network ? previous : undefined
+	if (base !== undefined && previousProblems.length === 0) {
+		if (base.name !== candidate.name)
+			warnings.push(
+				`warning: the list name changed from "${base.name}" to "${candidate.name}"; SEP-42 says it should stay fixed`,
+			)
+		if (base.provider !== candidate.provider)
+			warnings.push(
+				`warning: the provider changed from "${base.provider}" to "${candidate.provider}"; SEP-42 says it should stay fixed`,
+			)
+	}
 	const list = {
 		...candidate,
 		version: nextVersion(base, complete),
 		assets: [complete],
 	} as AssetList
 	const problems = listProblems(list)
-	return problems.length > 0 ? { missing: problems } : { list, missing }
+	return problems.length > 0
+		? { missing: problems.map(withOperatorHint), warnings }
+		: { list, missing, warnings }
 }
