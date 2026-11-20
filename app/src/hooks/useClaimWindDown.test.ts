@@ -89,13 +89,16 @@ describe("useClaimWindDown", () => {
 	})
 
 	it("maps a refusal at simulation to its contract code", async () => {
+		const signAndSend = vi.fn()
 		vaultMock.claim_wind_down.mockResolvedValue({
 			simulation: { error: simulationError(VaultError, "Frozen") },
-			signAndSend: vi.fn(),
+			signAndSend,
 		})
 		const { result } = renderWithWallet(useClaimWindDown)
 
 		await act(() => result.current.submit(undefined))
+
+		expect(signAndSend).not.toHaveBeenCalled()
 
 		expect(result.current.status).toEqual({
 			status: "failed",

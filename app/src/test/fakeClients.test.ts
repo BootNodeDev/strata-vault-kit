@@ -115,7 +115,7 @@ describe("fake clients", () => {
 		// @ts-expect-error current_epoch never returns undefined
 		vault.current_epoch.mockResolvedValue({ result: undefined })
 		// @ts-expect-error not a member of an assembled transaction
-		vault.current_epoch.mockResolvedValue({ results: 3n })
+		vault.current_epoch.mockResolvedValue({ result: 3n, results: 3n })
 		// @ts-expect-error epoch_id is a bigint
 		void vault.cancel_deposit({ holder: "GHOLDER", epoch_id: 3 })
 		// @ts-expect-error the call was not declared

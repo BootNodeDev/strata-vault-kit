@@ -8,7 +8,7 @@ import {
 	type ShareTokenApi,
 } from "@stellar-scaffold/app-lib"
 import { vi, type Mock } from "vitest"
-import { type WriterSigner as Signer } from "../config/clients"
+import type { WriterSigner as Signer } from "../config/clients"
 
 export type CallName<Client> = {
 	[Name in keyof Client]: Client[Name] extends (

@@ -1,9 +1,11 @@
 import type * as AppLib from "@stellar-scaffold/app-lib"
+import type { NavOracleApi, ShareTokenApi } from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { addresses } from "../config/addresses"
 import { vaultContractId } from "../config/contracts"
 import {
+	type FakeClient,
 	fakeAsyncVault,
 	fakeIdentityRegistry,
 	fakeIdentityVerifier,
@@ -369,12 +371,12 @@ const pendingAdmins = (
 })
 
 const members = (
-	client: { get_role_member: ReturnType<typeof vi.fn> },
+	client: FakeClient<NavOracleApi | ShareTokenApi, "get_role_member">,
 	addresses: string[],
 ) => {
-	client.get_role_member.mockImplementation(
-		async ({ index }: { index: number }) => ({ result: addresses[index] }),
-	)
+	client.get_role_member.mockImplementation(async ({ index }) => ({
+		result: addresses[index] ?? "",
+	}))
 }
 
 const vaultRoles = (byRole: Record<string, string[]>) => {
@@ -385,7 +387,7 @@ const vaultRoles = (byRole: Record<string, string[]>) => {
 	)
 	vaultMock.get_role_member.mockImplementation(
 		async ({ role, index }: { role: string; index: number }) => ({
-			result: byRole[role]?.[index] as string,
+			result: byRole[role]?.[index] ?? "",
 		}),
 	)
 }
