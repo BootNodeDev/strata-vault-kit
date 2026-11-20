@@ -19,7 +19,8 @@ const CONFIGURATION_FOLLOW_UP =
 const GOVERNANCE_FOLLOW_UP = "check the Governance tab before trying again"
 const COMPLIANCE_FOLLOW_UP = "check the Compliance tab before trying again"
 
-type Refuser = "vault" | "share token" | "oracle" | "identity verifier"
+type Refuser =
+	"vault" | "share token" | "oracle" | "identity verifier" | "identity registry"
 
 type AdminCopy = {
 	refuser: Refuser
@@ -383,18 +384,18 @@ const COMPLIANCE_COPY: Record<
 	(value: string) => AdminCopy
 > = {
 	"allow-address": (value) => ({
-		refuser: "identity verifier",
-		verb: "allow the address",
-		signing: `Signing adds ${value} to the allowlist.`,
-		done: "Address allowed",
-		doneBody: `${value} is on the allowlist.`,
+		refuser: "identity registry",
+		verb: "lift the veto",
+		signing: `Signing lifts the veto on ${value}. It is not listed until it onboards again.`,
+		done: "Veto lifted",
+		doneBody: `The veto on ${value} is lifted. It is not listed until it onboards again.`,
 	}),
 	"disallow-address": (value) => ({
-		refuser: "identity verifier",
+		refuser: "identity registry",
 		verb: "remove the address from the allowlist",
-		signing: `Signing removes ${value} from the allowlist.`,
+		signing: `Signing removes ${value} from the allowlist and vetoes it until the veto is lifted.`,
 		done: "Removed from the allowlist",
-		doneBody: `${value} is off the allowlist.`,
+		doneBody: `${value} is off the allowlist and vetoed.`,
 	}),
 	"freeze-address": (value) => ({
 		refuser: "share token",
@@ -470,6 +471,7 @@ const CONTRACT_REASONS: Record<Refuser, Reasons> = {
 			"The vault is paused, which holds every share-token change; unpause it first.",
 	},
 	"identity verifier": {},
+	"identity registry": {},
 }
 
 const adminReasons = (refuser: Refuser): Reasons => ({

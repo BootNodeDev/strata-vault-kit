@@ -64,7 +64,7 @@ const SurfaceBody: React.FC<{
 	wallet: string
 	addresses: AdminAddresses
 	holders: RoleHolders
-	verifierAdminUnknown: boolean
+	registryComplianceUnknown: boolean
 }> = ({
 	surface,
 	active,
@@ -72,7 +72,7 @@ const SurfaceBody: React.FC<{
 	wallet,
 	addresses,
 	holders,
-	verifierAdminUnknown,
+	registryComplianceUnknown,
 }) => {
 	const contracts = <Contracts addresses={addresses} />
 	switch (surface) {
@@ -120,7 +120,7 @@ const SurfaceBody: React.FC<{
 					grants={grantedBy.compliance}
 					wallet={wallet}
 					addresses={addresses}
-					verifierAdminUnknown={verifierAdminUnknown}
+					registryComplianceUnknown={registryComplianceUnknown}
 					active={active}
 					contracts={contracts}
 				/>
@@ -134,14 +134,14 @@ const HeldSurfaces: React.FC<{
 	wallet: string
 	addresses: AdminAddresses
 	holders: RoleHolders
-	verifierAdminUnknown: boolean
+	registryComplianceUnknown: boolean
 }> = ({
 	held,
 	grantedBy,
 	wallet,
 	addresses,
 	holders,
-	verifierAdminUnknown,
+	registryComplianceUnknown,
 }) => {
 	const { surface } = useParams()
 	const active = held.find((candidate) => candidate === surface)
@@ -188,7 +188,7 @@ const HeldSurfaces: React.FC<{
 							wallet={wallet}
 							addresses={addresses}
 							holders={holders}
-							verifierAdminUnknown={verifierAdminUnknown}
+							registryComplianceUnknown={registryComplianceUnknown}
 						/>
 					</Activity>
 				</section>
@@ -205,7 +205,7 @@ const AdminPanel: React.FC = () => {
 		grants,
 		signersUnknown,
 		signersLoading,
-		verifierAdminUnknown,
+		registryComplianceUnknown,
 		addresses,
 		holders,
 	} = useAdminAuthority()
@@ -266,7 +266,7 @@ const AdminPanel: React.FC = () => {
 					wallet={address ?? ""}
 					addresses={addresses}
 					holders={holders}
-					verifierAdminUnknown={verifierAdminUnknown}
+					registryComplianceUnknown={registryComplianceUnknown}
 				/>
 			)}
 		</div>

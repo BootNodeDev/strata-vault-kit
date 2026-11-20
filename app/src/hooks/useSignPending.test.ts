@@ -28,6 +28,8 @@ const {
 	tokenMock,
 	vaultMock,
 	oracleMock,
+	verifierMock,
+	identityVerifierAtMock,
 	linkTarget,
 } = vi.hoisted(() => ({
 	accountSignersMock: vi.fn(),
@@ -44,6 +46,8 @@ const {
 	},
 	vaultMock: { pending_changes: vi.fn() },
 	oracleMock: { pending_changes: vi.fn() },
+	verifierMock: { identity_registry: vi.fn() },
+	identityVerifierAtMock: vi.fn(),
 	linkTarget: { contractId: "", expiresAt: new Date(0) },
 }))
 
@@ -51,6 +55,7 @@ vi.mock("../config/clients", () => ({
 	shareToken: async () => tokenMock,
 	asyncVault: async () => vaultMock,
 	navOracle: async () => oracleMock,
+	identityVerifierAt: identityVerifierAtMock,
 }))
 
 type Marker = { signedBy: string[] }
@@ -124,8 +129,8 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 			const args =
 				fn === "set_custodian"
 					? ["GCUSTODIAN", "GAUTHORITY"]
-					: fn === "allow"
-						? ["GACCOUNT", true]
+					: fn === "lift_veto"
+						? ["GACCOUNT", authority]
 						: fn === "apply_change"
 							? [3]
 							: []
@@ -196,6 +201,10 @@ describe("useSignPending", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		tokenMock.identity_verifier.mockResolvedValue({ result: "CLIVEVERIFIER" })
+		identityVerifierAtMock.mockImplementation(async () => verifierMock)
+		verifierMock.identity_registry.mockResolvedValue({
+			result: "CLIVEREGISTRY",
+		})
 		tokenMock.get_admin.mockResolvedValue({ result: admin })
 		tokenMock.txFromXDR.mockImplementation((xdr: string) => ({ xdr }))
 		latestLedgerMock.mockResolvedValue(EXPIRATION_LEDGER - 1)
@@ -495,30 +504,43 @@ describe("useSignPending", () => {
 		await waitFor(() => expect(result.current.state).toBe("executed"))
 	})
 
-	it("describes a link for the verifier the share token reports now", async () => {
-		linkTarget.contractId = "CLIVEVERIFIER"
+	it("describes a link for the registry the live verifier reports now", async () => {
+		linkTarget.contractId = "CLIVEREGISTRY"
 		accountSignersMock.mockResolvedValue(signers(2))
-		const { result } = renderSign("xdr:allow:", wallet)
+		const { result } = renderSign("xdr:lift_veto:", wallet)
 
 		await waitFor(() =>
-			expect(result.current.description?.contract).toBe("Identity verifier"),
+			expect(result.current.description?.contract).toBe("Identity registry"),
 		)
+		expect(identityVerifierAtMock).toHaveBeenCalledWith("CLIVEVERIFIER")
 	})
 
-	it("falls back to the configured verifier when the live read fails", async () => {
-		linkTarget.contractId = addresses.identity_verifier
+	it("asks the configured verifier for the registry when the live read fails", async () => {
+		linkTarget.contractId = "CLIVEREGISTRY"
 		tokenMock.identity_verifier.mockRejectedValue(new Error("rpc down"))
 		accountSignersMock.mockResolvedValue(signers(2))
-		const { result } = renderSign("xdr:allow:", wallet)
+		const { result } = renderSign("xdr:lift_veto:", wallet)
 
 		await waitFor(() =>
-			expect(result.current.description?.contract).toBe("Identity verifier"),
+			expect(result.current.description?.contract).toBe("Identity registry"),
+		)
+		expect(identityVerifierAtMock).toHaveBeenCalledWith(
+			addresses.identity_verifier,
 		)
 	})
 
-	it("stays loading, not invalid, until the live verifier is read", async () => {
-		linkTarget.contractId = "CLIVEVERIFIER"
-		const { result } = renderSign("xdr:allow:", wallet)
+	it("treats a link as invalid once the registry cannot be read", async () => {
+		linkTarget.contractId = "CLIVEREGISTRY"
+		verifierMock.identity_registry.mockRejectedValue(new Error("rpc down"))
+		const { result } = renderSign("xdr:lift_veto:", wallet)
+
+		await waitFor(() => expect(result.current.loading).toBe(false))
+		expect(result.current.description).toBeNull()
+	})
+
+	it("stays loading, not invalid, until the live registry is read", async () => {
+		linkTarget.contractId = "CLIVEREGISTRY"
+		const { result } = renderSign("xdr:lift_veto:", wallet)
 
 		expect(result.current.loading).toBe(true)
 		await waitFor(() => expect(result.current.loading).toBe(false))

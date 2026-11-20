@@ -65,3 +65,20 @@ export const succeededWith = <T>(result: T, events: xdr.ContractEvent[]) => ({
 	},
 	result,
 })
+
+export const refusedWith = (code: number) => ({
+	simulation: {
+		id: "1",
+		latestLedger: 100,
+		events: [],
+		_parsed: true,
+		error: `HostError: Error(Contract, #${code})`,
+	},
+	get result(): never {
+		throw new Error("No simulation result!")
+	},
+})
+
+export const IDENTITY_VERIFICATION_FAILED = 304
+export const IDENTITY_NOT_FOUND = 321
+export const VERIFIER_UNAVAILABLE = 10002

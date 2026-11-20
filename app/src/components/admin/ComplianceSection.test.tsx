@@ -72,7 +72,7 @@ const grantOf = (role: string): Grant => ({
 	standing: "signs-alone",
 })
 
-const verifierAdmin = grantOf("identity-verifier admin")
+const registryCompliance = grantOf("identity-registry compliance")
 const officer = grantOf("share-token compliance")
 
 const openRow = (name: string) => {
@@ -167,15 +167,17 @@ describe("ComplianceSection", () => {
 				grants={[officer]}
 				wallet={WALLET}
 				addresses={ADDRESSES}
-				verifierAdminUnknown
+				registryComplianceUnknown
 			/>,
 		)
 		enterTarget(TARGET)
-		openRow("Allow the address")
+		openRow("Lift the veto")
 
-		expect(button("Allow the address").disabled).toBe(true)
+		expect(button("Lift the veto").disabled).toBe(true)
 		expect(
-			screen.getAllByText("Could not read the allowlist admin.").length,
+			screen.getAllByText(
+				"Could not read the identity registry's compliance authority.",
+			).length,
 		).toBeGreaterThan(0)
 	})
 
@@ -242,17 +244,17 @@ describe("ComplianceSection", () => {
 		).toBe(false)
 	})
 
-	it("prepares allowing the target once it settles and still submits it on click", () => {
+	it("prepares lifting the veto on the target once it settles and still submits it on click", () => {
 		vi.useFakeTimers()
 		render(
 			<ComplianceSection
-				grants={[verifierAdmin]}
+				grants={[registryCompliance]}
 				wallet={WALLET}
 				addresses={ADDRESSES}
 			/>,
 		)
 		enterTarget(TARGET)
-		openRow("Allow the address")
+		openRow("Lift the veto")
 
 		act(() => {
 			vi.advanceTimersByTime(400)
@@ -261,14 +263,14 @@ describe("ComplianceSection", () => {
 		const allowArg = { verifier: "CVERIFIERADDRESS", account: TARGET }
 		expect(txs.useAllowAddress.prepare).toHaveBeenCalledWith(
 			allowArg,
-			verifierAdmin,
+			registryCompliance,
 		)
 
-		fireEvent.click(button("Allow the address"))
+		fireEvent.click(button("Lift the veto"))
 
 		expect(txs.useAllowAddress.submit).toHaveBeenCalledWith(
 			allowArg,
-			verifierAdmin,
+			registryCompliance,
 		)
 	})
 
@@ -276,14 +278,14 @@ describe("ComplianceSection", () => {
 		vi.useFakeTimers()
 		render(
 			<ComplianceSection
-				grants={[verifierAdmin]}
+				grants={[registryCompliance]}
 				wallet={WALLET}
 				addresses={ADDRESSES}
 				active={false}
 			/>,
 		)
 		enterTarget(TARGET)
-		openRow("Allow the address")
+		openRow("Lift the veto")
 
 		act(() => {
 			vi.advanceTimersByTime(400)
@@ -292,35 +294,35 @@ describe("ComplianceSection", () => {
 		expect(txs.useAllowAddress.prepare).not.toHaveBeenCalled()
 	})
 
-	it("allows the target and follows it in the modal", () => {
+	it("lifts the veto on the target and follows it in the modal", () => {
 		const { rerender } = render(
 			<ComplianceSection
-				grants={[verifierAdmin]}
+				grants={[registryCompliance]}
 				wallet={WALLET}
 				addresses={ADDRESSES}
 			/>,
 		)
 		enterTarget(TARGET)
 
-		fireEvent.click(button("Allow the address"))
+		fireEvent.click(button("Lift the veto"))
 		expect(txs.useAllowAddress.submit).toHaveBeenCalledWith(
 			{
 				verifier: "CVERIFIERADDRESS",
 				account: TARGET,
 			},
-			verifierAdmin,
+			registryCompliance,
 		)
 
 		txs.useAllowAddress.status = { status: "preparing" }
 		rerender(
 			<ComplianceSection
-				grants={[verifierAdmin]}
+				grants={[registryCompliance]}
 				wallet={WALLET}
 				addresses={ADDRESSES}
 			/>,
 		)
 		expect(
-			screen.getByRole("heading", { name: "Preparing to allow the address" }),
+			screen.getByRole("heading", { name: "Preparing to lift the veto" }),
 		).toBeTruthy()
 	})
 

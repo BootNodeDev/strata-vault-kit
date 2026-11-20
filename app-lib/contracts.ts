@@ -17,6 +17,7 @@ import {
 	type WindDownInfo,
 } from "./clients/async_vault/src/index"
 import { Client as ComplianceApi } from "./clients/compliance/src/index"
+import { Client as IdentityRegistryApi } from "./clients/identity_registry/src/index"
 import { Client as IdentityVerifierApi } from "./clients/identity_verifier/src/index"
 import {
 	Client as NavOracleApi,
@@ -37,6 +38,7 @@ export type {
 	DepositRequest,
 	EpochInfo,
 	EpochStatus,
+	IdentityRegistryApi,
 	IdentityVerifierApi,
 	NavOracleApi,
 	NavReport,
@@ -110,6 +112,13 @@ export const connectIdentityVerifier = async (
 	options?: ConnectOptions,
 ): Promise<IdentityVerifierApi> =>
 	new IdentityVerifierApi(clientOptions(contractId, signer, options))
+
+export const connectIdentityRegistry = async (
+	contractId: string,
+	signer?: Signer,
+	options?: ConnectOptions,
+): Promise<IdentityRegistryApi> =>
+	new IdentityRegistryApi(clientOptions(contractId, signer, options))
 
 export const connectShareToken = async (
 	contractId: string,

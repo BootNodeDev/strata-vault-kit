@@ -110,15 +110,18 @@ type Toggle<Id extends AddressActionId> = {
 	subject: string
 	wanted: boolean
 	warning?: string
+	outcome?: string
 }
 
 const TOGGLES: { [Id in AddressActionId]: Toggle<Id> } = {
 	"allow-address": {
 		id: "allow-address",
-		label: "Allow the address",
+		label: "Lift the veto",
 		condition: "Not allowlisted",
 		subject: "Allowlisted",
 		wanted: true,
+		outcome:
+			"The veto is lifted. The investor must onboard again to be listed.",
 	},
 	"disallow-address": {
 		id: "disallow-address",
@@ -171,7 +174,8 @@ function toggleSpec<Id extends AddressActionId>(
 		outcome:
 			current === null || changes !== true
 				? null
-				: `${toggle.subject} ${yesNo(current)} → ${yesNo(toggle.wanted)}.`,
+				: (toggle.outcome ??
+					`${toggle.subject} ${yesNo(current)} → ${yesNo(toggle.wanted)}.`),
 		...(confirm === undefined ? {} : { fields: [confirm.field], danger: true }),
 		ready: allMet(required),
 		arg: target,
@@ -431,7 +435,8 @@ const build = <Id extends ComplianceActionId, Arg>(
 	grant: Grant,
 ) => ({ ...toAction(spec, grant), arg: spec.arg, next: spec.next })
 
-const ADMIN_UNREADABLE = "Could not read the allowlist admin."
+const ADMIN_UNREADABLE =
+	"Could not read the identity registry's compliance authority."
 
 const allowActions = (
 	state: ComplianceState,
@@ -453,7 +458,7 @@ export function toComplianceActions(
 	const allowed = allowedOf(reads?.allowance)
 	const frozen = reads?.frozen ?? null
 	const actions: ComplianceAction[] = []
-	const admin = grantFor(grants, ROLES.verifierAdmin, wallet)
+	const admin = grantFor(grants, ROLES.registryCompliance, wallet)
 	const officer = grantFor(grants, ROLES.compliance, wallet)
 	if (admin !== undefined)
 		actions.push(...allowActions(state, allowed, inputs, admin))

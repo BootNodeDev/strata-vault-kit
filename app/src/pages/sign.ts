@@ -29,7 +29,7 @@ import {
 import { changeName, type PendingChange, QUEUES } from "./pendingChanges"
 
 export type SignContract =
-	"Vault" | "Oracle" | "Share token" | "Identity verifier"
+	"Vault" | "Oracle" | "Share token" | "Identity registry"
 
 export type SignAction = AdminModalAction | "close-epoch" | "attest" | "deploy"
 
@@ -46,7 +46,7 @@ export type SignAddresses = {
 	vault: string
 	oracle: string
 	shareToken: string
-	identityVerifier: string
+	identityRegistry: string | undefined
 }
 
 export type SignStatus = TransactionStatus<{ result: unknown }>
@@ -390,9 +390,13 @@ const tokenDecoders = (changes: SignChanges): Record<string, Decoder> => ({
 	}),
 })
 
-const VERIFIER: Record<string, Decoder> = {
-	allow: ([account, allowed]) => ({
-		action: flag(allowed) ? "allow-address" : "disallow-address",
+const REGISTRY: Record<string, Decoder> = {
+	lift_veto: ([account]) => ({
+		action: "allow-address",
+		args: [addr("Address", account)],
+	}),
+	remove_identity: ([account]) => ({
+		action: "disallow-address",
 		args: [addr("Address", account)],
 	}),
 }
@@ -416,8 +420,8 @@ const contractOf = (
 		return { contract: "Oracle", table: oracleDecoders(changes) }
 	if (contractId === addresses.shareToken)
 		return { contract: "Share token", table: tokenDecoders(changes) }
-	if (contractId === addresses.identityVerifier) {
-		return { contract: "Identity verifier", table: VERIFIER }
+	if (contractId === addresses.identityRegistry) {
+		return { contract: "Identity registry", table: REGISTRY }
 	}
 	throw new InvalidPendingTransaction("unknown contract")
 }

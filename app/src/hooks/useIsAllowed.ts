@@ -11,9 +11,18 @@ export const isAllowedKey = ["identity", "is-allowed"] as const
 
 export type Allowance = "checking" | "allowed" | "not-allowed" | "unreadable"
 
-export function classifyAllowance(read: ContractRead<boolean>): Allowance {
-	if (read.kind !== "value") return "unreadable"
-	return read.value ? "allowed" : "not-allowed"
+const IDENTITY_VERIFICATION_FAILED = 304
+const IDENTITY_NOT_FOUND = 321
+
+export function classifyAllowance(read: ContractRead<unknown>): Allowance {
+	if (read.kind === "value") return "allowed"
+	if (
+		read.kind === "contract-error" &&
+		(read.code === IDENTITY_VERIFICATION_FAILED ||
+			read.code === IDENTITY_NOT_FOUND)
+	)
+		return "not-allowed"
+	return "unreadable"
 }
 
 export async function fetchAllowance(
@@ -21,7 +30,7 @@ export async function fetchAllowance(
 	account: string,
 ): Promise<Allowance> {
 	const read = await readContract(async () =>
-		(await verifier).is_allowed({ account }),
+		(await verifier).verify_identity({ account }),
 	)
 	return classifyAllowance(read)
 }

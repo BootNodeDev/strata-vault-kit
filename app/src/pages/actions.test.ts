@@ -80,7 +80,8 @@ describe("readiness", () => {
 	})
 
 	it("reads an action the wallet cannot sign as unavailable, keeping the reason", () => {
-		const reason = "Could not read the allowlist admin."
+		const reason =
+			"Could not read the identity registry's compliance authority."
 		const action = actionWith({
 			conditions: [{ label: "Amount above zero", met: false }],
 			unavailable: reason,
