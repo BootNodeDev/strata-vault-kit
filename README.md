@@ -274,15 +274,18 @@ under `ASSET_LISTS`. Set these fields in the operator file:
 
 - `ASSET_LIST_URL`: the https URL where you will host the list.
 - `domain`: the bare host that goes in the entry, for example `acme.example`.
-- `ORG_NAME`: becomes the entry's `org` and the list's `provider`.
+- `ORG_NAME`: becomes the entry's `org` and the list's `provider`. SEP-42 is
+  stricter than SEP-1: `ORG_NAME` and the token name need 5 to 30 plain ASCII
+  characters.
 - `image`: becomes the entry's `icon`.
 
 Host the list over HTTPS, on the domain that serves `stellar.toml` or a
 subdomain of it. Serve it with `Content-Type: application/json` and
-`Access-Control-Allow-Origin: *`. It must stay under 200 KB. Holders add the URL
-in the Varial browser extension's asset list settings. The `version` follows the
-entry: the command raises it when the entry changes, starting at `1.0`, so
-nobody edits it by hand. An invalid list is not written, and the command prints
+`Access-Control-Allow-Origin: *`. The `version` follows the entry: the command
+raises it when the entry changes, so nobody edits it by hand. It reads the
+previous version from the local `assetlist.<network>.json` and starts at `1.0`
+when that file is missing. If a list is already hosted, save it at that path
+before you run the command. An invalid list is not written, and the command prints
 what is missing.
 
 [`docs/sep1/stellar.template.toml`](./docs/sep1/stellar.template.toml) is the
@@ -307,11 +310,9 @@ other sources. As of November 2026:
   [Soroswap token list](https://github.com/soroswap/token-list), which takes
   pull requests, and LOBSTR's curated list, part of its
   [listing program](https://lobstr.freshdesk.com/support/solutions/articles/151000169329-boost-visibility-of-your-assets-on-lobstr).
-- The operator can publish its own asset list: a JSON file with one entry for
-  the share token (`contract`, `code`, `name`, `org`, `domain`, `icon`,
-  `decimals`), linked from `stellar.toml` under `ASSET_LISTS`. Holders add its
-  URL in the Varial browser extension's asset list settings; the mobile app has
-  no such setting. On testnet this is the only route the operator controls:
+- The operator can publish its own asset list. `npm run sep1` writes it, as
+  described above. Holders add its URL in the Varial browser extension's asset
+  list settings; the mobile app has no such setting. On testnet this is the only route the operator controls:
   Varial's one default list there is StellarExpert's testnet Top 50.
 - [StellarExpert](https://stellar.expert) shows this file's organization and
   currency details on the token's page once it knows the contract's domain. For
