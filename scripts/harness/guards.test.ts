@@ -14,7 +14,13 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
-import { attest, freshFeed, navInput } from "./lib/oracle.js"
+import {
+	attest,
+	climbHookTimeoutMs,
+	freshFeed,
+	moveNavTo,
+	navInput,
+} from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -37,6 +43,8 @@ const {
 
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
+const firstPrice = price(2)
+const secondPrice = (price(2) * 105n) / 100n
 
 const reader = vault(c, outsider)
 const feed = oracle(c, outsider)
@@ -52,22 +60,26 @@ const fulfill = async (id: bigint) => {
 	return send(vault(c, outsider).fulfill_epoch({ epoch_id: id }))
 }
 
-beforeAll(async () => {
-	decimals = (await shareToken(c, outsider).decimals()).result
-	const verifier = identityVerifier(c, compliance)
-	for (const holder of [...holders, custodian]) {
-		await trustline(c.net, c.server, holder, c.asset)
-	}
-	for (const holder of holders) {
-		await pay(c.net, c.server, issuer, holder.publicKey(), c.asset, "1000")
-		await send(
-			verifier.allow({
-				account: holder.publicKey(),
-				allowed: true,
-			}),
-		)
-	}
-})
+beforeAll(
+	async () => {
+		decimals = (await shareToken(c, outsider).decimals()).result
+		const verifier = identityVerifier(c, compliance)
+		for (const holder of [...holders, custodian]) {
+			await trustline(c.net, c.server, holder, c.asset)
+		}
+		for (const holder of holders) {
+			await pay(c.net, c.server, issuer, holder.publicKey(), c.asset, "1000")
+			await send(
+				verifier.allow({
+					account: holder.publicKey(),
+					allowed: true,
+				}),
+			)
+		}
+		await moveNavTo(c, firstPrice)
+	},
+	climbHookTimeoutMs(c.net, firstPrice),
+)
 
 describe("an account with no role", () => {
 	const who = outsider.publicKey()
@@ -409,8 +421,6 @@ describe("who may subscribe", () => {
 	})
 })
 
-const firstPrice = price(2)
-const secondPrice = (price(2) * 105n) / 100n
 let epochA = 0n
 let epochB = 0n
 

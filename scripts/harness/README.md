@@ -43,12 +43,47 @@ npm run test:queue
 # attesting a fresh NAV first if the current one is stale; prints its
 # contract id and `tx record_price <hash>`
 npm run test:sep40
+
+# A wind-down on a vault it deploys for itself; local network only
+npm run test:wind-down
 ```
 
 `HARNESS_NETWORK` picks the network: `local` (the default) or `testnet`.
 
 Each attestation carries the SHA-256 of `docs/evidence/sample-valuation.md` and
 a URL to it: the copy on `main`, or `PROOF_URI` when set.
+
+### Running one scenario
+
+The scenarios share the deployment in `deployed.<network>.json`, so each one
+starts from what earlier runs left there. CI runs them in this order on a new
+local network: `deploy`, `test:happy-path`, `test:sep40`, `test:guards`,
+`test:wind-down`.
+
+`test:happy-path`, `test:sep40`, `test:guards` and `test:wind-down` each pass
+right after `npm run deploy`. What each one expects:
+
+- `test:happy-path` expects the holders to hold no USDC yet. Run it before
+  `test:guards` and `npm run seed`, which pay them.
+- `test:happy-path` and `test:guards` price their epochs at a NAV of 2.00,
+  and move the oracle there first. The oracle takes a fall of any size, but refuses a rise of more than
+  10% over its last report (`max_up_bps`), even a stale one. From a lower
+  price they climb in 10% steps, one per oracle cooldown (5 seconds locally,
+  60 on testnet). From 1.00 that takes eight reports, about eight minutes on
+  testnet, so the hook that climbs gets time for the slowest climb, from the
+  band's floor, on top of the usual five minutes.
+- `test:sep40` reads whatever price the feed holds. When the feed is stale it
+  posts the last price again, or 1.00 when there is none.
+- `test:wind-down` deploys a vault of its own and leaves the deployment alone.
+
+`test:queue` does not pass after `deploy` alone: it redeems shares that
+`npm run seed` gives holder-2. The seed subscribes the holders only while
+epoch 1 is open, so run `npm run seed` right after `npm run deploy`, then
+`test:queue`. The seed leaves requests in the open epoch on purpose, and
+`test:queue` seals and prices that epoch before it starts.
+
+A run that stops partway can leave the NAV paused or an epoch sealed but not
+priced. Deploy again before the next run.
 
 ## Account keys
 
