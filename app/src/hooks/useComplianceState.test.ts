@@ -9,19 +9,22 @@ import {
 } from "./testSupport"
 import { useComplianceState } from "./useComplianceState"
 
-const { tokenMock, verifierMock, identityVerifierAtMock } = vi.hoisted(() => ({
-	tokenMock: {
-		is_frozen: vi.fn(),
-		balance: vi.fn(),
-		get_frozen_tokens: vi.fn(),
-	},
-	verifierMock: { verify_identity: vi.fn() },
-	identityVerifierAtMock: vi.fn(),
-}))
+const { tokenMock, verifierMock, registryMock, identityVerifierAtMock } =
+	vi.hoisted(() => ({
+		tokenMock: {
+			is_frozen: vi.fn(),
+			balance: vi.fn(),
+			get_frozen_tokens: vi.fn(),
+		},
+		verifierMock: { verify_identity: vi.fn(), identity_registry: vi.fn() },
+		registryMock: { is_vetoed: vi.fn() },
+		identityVerifierAtMock: vi.fn(),
+	}))
 
 vi.mock("../config/clients", () => ({
 	shareToken: async () => tokenMock,
 	identityVerifierAt: identityVerifierAtMock,
+	identityRegistryAt: async () => registryMock,
 }))
 
 const VERIFIER = "CVERIFIERADDRESS"
@@ -38,6 +41,8 @@ describe("useComplianceState", () => {
 					? { result: undefined }
 					: refusedWith(IDENTITY_VERIFICATION_FAILED),
 		)
+		verifierMock.identity_registry.mockResolvedValue({ result: "CREGISTRY" })
+		registryMock.is_vetoed.mockResolvedValue({ result: false })
 		tokenMock.is_frozen.mockResolvedValue({ result: true })
 		tokenMock.balance.mockResolvedValue({ result: 100n })
 		tokenMock.get_frozen_tokens.mockResolvedValue({ result: 40n })
@@ -56,7 +61,7 @@ describe("useComplianceState", () => {
 		expect(tokenMock.balance).not.toHaveBeenCalled()
 	})
 
-	it("reads the target's allowlist, frozen state and balances", async () => {
+	it("reads the target's allowlist, veto, frozen state and balances", async () => {
 		const { result } = renderWithWallet(() =>
 			useComplianceState({
 				verifier: VERIFIER,
@@ -71,6 +76,7 @@ describe("useComplianceState", () => {
 				status: "ready",
 				reads: {
 					allowance: "allowed",
+					vetoed: false,
 					frozen: true,
 					shares: 100n,
 					frozenShares: 40n,
@@ -81,6 +87,7 @@ describe("useComplianceState", () => {
 		expect(tokenMock.get_frozen_tokens).toHaveBeenCalledWith({
 			user_address: TARGET,
 		})
+		expect(registryMock.is_vetoed).toHaveBeenCalledWith({ account: TARGET })
 	})
 
 	it("leaves a failed read unknown without losing the others", async () => {
@@ -102,6 +109,7 @@ describe("useComplianceState", () => {
 				status: "ready",
 				reads: {
 					allowance: "allowed",
+					vetoed: false,
 					frozen: null,
 					shares: null,
 					frozenShares: 40n,
@@ -122,7 +130,7 @@ describe("useComplianceState", () => {
 		await waitFor(() =>
 			expect(result.current.target).toMatchObject({
 				status: "ready",
-				reads: { allowance: "unreadable", frozen: true },
+				reads: { allowance: "unreadable", vetoed: null, frozen: true },
 			}),
 		)
 		expect(identityVerifierAtMock).not.toHaveBeenCalled()

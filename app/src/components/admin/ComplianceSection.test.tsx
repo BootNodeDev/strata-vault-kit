@@ -102,6 +102,7 @@ const readsFor = ({ target }: { target: string | undefined }) => ({
 					status: "ready",
 					reads: {
 						allowance: "not-allowed",
+						vetoed: true,
 						frozen: false,
 						shares: 100n * UNIT,
 						frozenShares: 10n * UNIT,
