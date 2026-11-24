@@ -278,6 +278,9 @@ under `ASSET_LISTS`. Set these fields in the operator file:
   stricter than SEP-1: `ORG_NAME` and the token name need 5 to 30 plain ASCII
   characters.
 - `image`: becomes the entry's `icon`.
+- `code` and `name`, when set, replace the token's `symbol()` and `name()` in
+  the entry too, as they do in `stellar.toml`. Set `code` when `symbol()` is not
+  1 to 12 letters or digits, which SEP-42 requires.
 
 Host the list over HTTPS, on the domain that serves `stellar.toml` or a
 subdomain of it. Serve it with `Content-Type: application/json` and
