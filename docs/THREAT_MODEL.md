@@ -1131,9 +1131,10 @@ or an investor shapes its own identity to fail or to cost too much.
   identity it had, even on older kit code. A wallet whose identity code
   changed reads 321 while still linked, so `onboard` refuses it as already
   registered until compliance removes it and lifts the veto; only the investor
-  can cause that. Each identity contract's lifetime is the operator's to keep:
-  `npm run extend` keeps the identity Wasm alive, not the identities, and an
-  archived identity is restored by the next transaction that needs it.
+  can cause that. Each verification extends the identity it reads, so an
+  investor who keeps using the vault keeps it alive. One nobody reads archives:
+  `npm run extend` keeps the identity Wasm alive, not the identities, and the
+  next transaction that needs it restores it.
 - **Tests:** `removal_vetoes_and_a_vetoed_wallet_cannot_onboard_or_attach`,
   `onboarding_again_after_a_lifted_veto_keeps_the_identity` and
   `a_wallet_can_be_vetoed_before_it_onboards` in
@@ -1583,16 +1584,18 @@ An idle contract's instance, code or entries archive, so calls fail.
   (90 for a role), and on mainnet no sooner than 120 days after it was created.
   The next call that needs it pays the restore, and restoring many entries can
   take separate transactions. Each investor's identity contract extends its
-  instance only when its owner entry is read, and `npm run extend` does not
-  cover identities, so keeping them alive is the operator's task; an archived
-  identity is restored by the next transaction that needs it. A compliance
+  instance when its owner entry or a claim is read, so every verification
+  renews it. `npm run extend` does not cover identities, so one nobody
+  verifies archives, and the next transaction that needs it restores it. A compliance
   contract or identity registry from outside the kit must extend its own
   entries the same way, or the share token stops working when they archive.
 - **Tests:** `any_vault_read_restores_the_instance_ttl` and
   `a_pending_request_still_claims_after_most_of_a_month` in
   [`ttl.rs`](../contracts/async-vault/src/test/ttl.rs);
   `reading_a_decayed_entry_restores_the_full_ttl` in
-  [`strata-storage/src/test.rs`](../crates/strata-storage/src/test.rs).
+  [`strata-storage/src/test.rs`](../crates/strata-storage/src/test.rs);
+  `reading_a_claim_extends_the_instance` in
+  [`investor-identity/src/test.rs`](../contracts/investor-identity/src/test.rs).
 
 ### X12. Resource limits, contention and griefing
 
@@ -1982,8 +1985,9 @@ These are decided, and stated as they stand:
    deposits, `ClaimNotCovered` for claims (X10).
 9. Wallet recovery is not offered: a lost wallet's shares move by a legal
    transfer, and the investor onboards a new wallet with a new identity (R10).
-10. Keeping each investor's identity contract alive is an operator task:
-    `npm run extend` keeps the identity Wasm alive, not the identities (X11).
+10. An investor's identity contract that nobody verifies or changes archives,
+    and the next transaction that needs it restores it: `npm run extend` keeps
+    the identity Wasm alive, not the identities (X11).
 
 ## What has no test yet
 

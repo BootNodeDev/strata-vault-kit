@@ -10,6 +10,9 @@
 //!   refuses is not stored. The cost: an issuer that is down blocks the add.
 //! - **A stored claim proves nothing alone.** The verifier asks the issuer
 //!   again on every check, so revocation needs no change here.
+//! - **Reading a claim keeps the identity alive.** The verifier reads a claim
+//!   on every check, so an investor who keeps using the vault keeps the
+//!   identity's instance from archiving. The cost: each check may extend it.
 //! - **The claim URI is capped.** The issuer's signature does not cover it,
 //!   so the owner could make it as long as it likes, and the verifier reads
 //!   the whole claim on every check. The cap keeps that read within budget.
@@ -104,6 +107,16 @@ impl IdentityClaims for InvestorIdentity {
             panic_with_error!(e, InvestorIdentityError::ClaimUriTooLong);
         }
         identity_claims::add_claim(e, topic, scheme, &issuer, &signature, &data, &uri)
+    }
+
+    /// Returns a claim by id and extends the instance, as the owner's calls do.
+    ///
+    /// # Errors
+    ///
+    /// * `ClaimNotFound` - No claim has this id.
+    fn get_claim(e: &Env, claim_id: BytesN<32>) -> Claim {
+        strata_storage::bump_instance(e);
+        identity_claims::get_claim(e, &claim_id)
     }
 }
 
