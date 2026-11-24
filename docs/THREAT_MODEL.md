@@ -815,7 +815,7 @@ not.
   `compliance` power the primary does: it freezes at once and co-signs legal
   transfers (R10), so it is one more key to guard, not a spare with less
   reach. The testnet verifier stub's admin, the
-  compliance key by deploy, lists and delists at once, without an event, and
+  compliance key by deploy, lists and delists at once (R14), and
   can be replaced only by swapping the verifier, which waits for the timelock
   after setup. The verifier and compliance contracts in this repository are
   testnet stubs;
@@ -946,26 +946,27 @@ lands.
   [`app/src/pages/SignPage.test.tsx`](../app/src/pages/SignPage.test.tsx).
   Who reads a link: none, because nothing can observe it.
 
-### R14. An allowlist change that publishes no event
+### R14. An allowlist change nobody sees
 
-The kit's identity verifier lists or delists an address without publishing an
-event.
+The admin of the kit's identity verifier lists or delists an address, and
+nobody notices, or the admin later denies it.
 
-- **Control:** None in the verifier: `allow` stores the answer and publishes
-  nothing. `is_allowed` gives the current answer for any address, and the
-  signed transaction stays in the network's history
-  ([Repudiation](#repudiation)). The verifier is a testnet stub; a production
-  identity registry has its own events. An event for `allow` is planned in
-  [#441](https://github.com/BootNodeDev/strata-vault-kit/issues/441).
-- **Residual:** A watcher that reads events misses every listing and delisting.
-  A wrong listing (R9) shows only in `is_allowed`, or in the verifier's
-  transactions: an RPC serves them for about seven days, and after that only a
-  history archive or a full-history indexer has them.
-  `set_claim_topics_and_issuers` publishes nothing either, but it stores
-  nothing.
-- **Tests:** none, because the stub publishes no event. The
-  [monitoring plan](./MONITORING_PLAN.md#what-this-plan-does-not-cover) leaves
-  the allowlist out for the same reason.
+- **Control:** `allow` publishes `AllowedSet` on every call, even one that
+  leaves the answer as it was: the account as a topic and its new answer,
+  `allowed`, as data. A watcher filters on the topic `allowed_set`
+  ([monitoring plan P14](./MONITORING_PLAN.md#p14-an-address-listed-or-delisted)).
+  `is_allowed` gives the current answer for any address, and the signed
+  transaction stays in the network's history ([Repudiation](#repudiation)).
+  The verifier is a testnet stub; a production identity registry has its own
+  events.
+- **Residual:** The kit runs no watcher. An RPC serves the event for about
+  seven days; after that only a watcher's own records, a history archive or a
+  full-history indexer have it. The event says what changed, not whose keys
+  signed; the transaction does (R4). `set_claim_topics_and_issuers` publishes
+  nothing, but it stores nothing.
+- **Tests:** `listing_an_address_publishes_its_new_answer` and
+  `delisting_an_address_publishes_its_new_answer` in
+  [`identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs).
 
 ## Redemption paths
 
@@ -1501,7 +1502,7 @@ of service. E: elevation of privilege.
 | [R11](#r11-swapping-the-tokens-compliance-contract-or-verifier) Swapping the token's compliance contract or verifier | x | x |   |   | x |   |
 | [R12](#r12-a-crafted-transaction-on-the-consoles-signing-page) A crafted transaction on the console's signing page | x | x |   |   |   |   |
 | [R13](#r13-a-signing-link-read-before-the-call-lands) A signing link read before the call lands |   |   |   | x |   |   |
-| [R14](#r14-an-allowlist-change-that-publishes-no-event) An allowlist change that publishes no event |   |   | x |   |   |   |
+| [R14](#r14-an-allowlist-change-nobody-sees) An allowlist change nobody sees |   |   | x |   |   |   |
 | [X1](#x1-the-reserve-cannot-pay-a-priced-exit) The reserve cannot pay a priced exit |   |   |   |   | x |   |
 | [X2](#x2-a-pause-a-stale-feed-or-a-delisting-blocks-a-covered-claim) A pause, a stale feed or a delisting blocks a covered claim |   |   |   |   | x |   |
 | [X3](#x3-a-frozen-holder) A frozen holder |   | x |   |   | x |   |
@@ -1571,14 +1572,15 @@ Changing the price, the books, the code, or a transaction before it is signed:
 
 Denying an act, or an act no one can trace. What the chain records:
 
-- **Events.** Every privileged call that changes state publishes an event,
-  except the verifier's `allow` (R14). That covers the setup setters and
+- **Events.** Every privileged call that changes state publishes an event.
+  That covers the setup setters and
   `finish_setup`; the change queue (`ChangeProposed`, `ChangeApplied`,
   `ChangeCancelled`; an upgrade's `ChangeApplied` carries the new code's hash);
   role grants, revocations and admin hand-overs; the vault's, the token's and
   the NAV's pauses; reports, `clear_latest` and `set_config`; sealing an epoch
   and deploying to the custodian; the wind-down; freezes, legal transfers and
-  recoveries; and the compliance contract's modules and bindings. Holders'
+  recoveries; the compliance contract's modules and bindings; and the
+  verifier's listings (R14). Holders'
   requests, cancellations and claims publish events too, and so do the calls
   anyone may make. Three calls succeed without an event because they change
   nothing: granting a role already held, a recovery from an empty balance, and
@@ -1605,7 +1607,7 @@ Denying an act, or an act no one can trace. What the chain records:
   depends on one the operator runs, or on the archives. A change to an
   authority's signers or thresholds is a Stellar account operation, not a
   contract event; the monitoring plan leaves it to an account-history service
-  (R4). The verifier stub's listings publish no event (R14).
+  (R4).
 - **Tests:** `a_refused_call_publishes_nothing` in
   [`events.rs`](../contracts/async-vault/src/test/events.rs);
   `finishing_setup_publishes_it` in
@@ -1735,7 +1737,6 @@ For Tranche 3's matrix:
 - The events of the kit's own `LatestCleared`, `NavPausedSet`, `Deployed`,
   `DepositCapUpdated`, `NoticeSet`, `WindDownDelaySet` and `VaultBound`, and
   of the wind-down ([Repudiation](#repudiation)).
-- An allowlist change, which publishes no event to test (R14).
 
 ## Out of scope
 

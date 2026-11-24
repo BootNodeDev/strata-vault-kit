@@ -74,6 +74,7 @@ actions, T for storage lifetime. Under it:
 | P11 | Compliance acts on a holder | Warning for a freeze; Critical for a legal transfer or recovery | Compliance, governance |
 | P12 | The token's rules or verifier change | Critical | Governance, compliance |
 | P13 | Wiring drift | Critical | Governance |
+| P14 | An address listed or delisted | Info; Warning when unplanned | Compliance |
 | T1 | Instance or code close to archiving | Warning; Critical under two days | On call only |
 | T2 | Pending change close to archiving | Warning | On call only |
 
@@ -342,8 +343,9 @@ The vault's figures, all in asset base units:
 
 ## Privileged actions
 
-Each privileged call on the vault, the share token, the oracle and the
-compliance contract publishes an event. After each contract's setup, role
+Each privileged call that changes state on the vault, the share token, the
+oracle, the compliance contract and the kit's identity verifier publishes an
+event. After each contract's setup, role
 grants, upgrades, admin hand-overs and most settings first wait in the
 timelock queue
 ([R1](./THREAT_MODEL.md#r1-governance-compromised-the-changes-that-wait)), so a
@@ -539,6 +541,27 @@ lists the powers that act at once.
   listed again. Threat:
   [R3](./THREAT_MODEL.md#r3-setup-left-open-or-wired-wrong).
 
+### P14. An address listed or delisted
+
+- **Source:** `AllowedSet` on the kit's identity verifier, with the account as
+  a topic and `allowed` true or false; `is_allowed(account)` on the verifier.
+  `allow` publishes it on every call, even one that leaves the answer as it
+  was. A production identity registry publishes its own events; watch those
+  instead.
+- **Threshold:** every one.
+- **Severity:** Info; Warning for one that compliance did not plan. **Told:**
+  compliance.
+- **Effect:** at once, with no timelock. A delisted holder cannot request a
+  deposit or receive shares, but its covered exits still pay in cash
+  ([X4](./THREAT_MODEL.md#x4-a-delisted-holder)). Delisting the vault's own
+  address turns `health().allowlisted` false (P13).
+- **Response:** match each one to a case in compliance's records. Compliance
+  undoes a wrong one with `allow`. One nobody planned means the verifier's
+  admin key may be compromised; the admin cannot be replaced, so governance
+  swaps the verifier, which waits for the timelock after setup (P6). Threats:
+  [R9](./THREAT_MODEL.md#r9-compliance-compromised),
+  [R14](./THREAT_MODEL.md#r14-an-allowlist-change-nobody-sees).
+
 ## Storage lifetime
 
 An archived contract instance refuses every call, so an archived vault instance
@@ -597,6 +620,7 @@ rules and module events come from OpenZeppelin's Stellar libraries.
 | `AddressFrozen`, `TokensFrozen`, `TokensUnfrozen`, `LegalTransfer`, `RecoverySuccess` | `address_frozen`, `tokens_frozen`, `tokens_unfrozen`, `legal_transfer`, `recovery_success` | Share token | P11 |
 | `ComplianceSet`, `IdentityVerifierSet` | `compliance_set`, `identity_verifier_set` | Share token | P12 |
 | `ModuleAdded`, `ModuleRemoved`, `TokenBound`, `TokenUnbound` | `module_added`, `module_removed`, `token_bound`, `token_unbound` | Compliance | P12 |
+| `AllowedSet` | `allowed_set` | Identity verifier | P14 |
 | `clawback`, `set_authorized` | `clawback`, `set_authorized` | Deposit asset | C4 |
 
 ## What this plan does not cover
@@ -609,9 +633,6 @@ rules and module events come from OpenZeppelin's Stellar libraries.
   thresholds is a Stellar account operation, not a contract event
   ([R4](./THREAT_MODEL.md#r4-an-authoritys-keys)). Watch each authority's
   account through an account-history service.
-- **The allowlist.** The identity verifier in this repository is a testnet stub
-  and publishes no event when `allow` lists or delists an address. A production
-  identity registry has its own events.
 - **External contracts.** An external compliance contract or identity registry
   keeps its own governance and storage.
 - **The custodian and the issuer.** What the custodian holds, and what the
