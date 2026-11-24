@@ -11,7 +11,7 @@ use stellar_contract_utils::{
     upgradeable,
 };
 use stellar_tokens::{
-    fungible::FungibleTokenClient,
+    fungible::{total_supply::FungibleTotalSupplyClient, FungibleTokenClient},
     rwa::{
         identity_verification::IdentityVerifierClient, utils::token_binder::TokenBinderClient,
         RWATokenClient,
@@ -199,7 +199,10 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
             roles.try_get_role_member(&TOKEN_MANAGER_ROLE, &0),
             Ok(Ok(holder)) if holder == me
         ),
-        no_shares_outstanding: matches!(shares.try_total_supply(), Ok(Ok(0))),
+        no_shares_outstanding: matches!(
+            FungibleTotalSupplyClient::new(e, &token).try_total_supply(),
+            Ok(Ok(0))
+        ),
         allowlisted: match rwa.try_identity_verifier() {
             Ok(Ok(verifier)) => matches!(
                 IdentityVerifierClient::new(e, &verifier).try_verify_identity(&me),

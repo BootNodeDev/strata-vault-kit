@@ -1,6 +1,6 @@
 use soroban_sdk::{contracttype, panic_with_error, token::TokenClient, Address, Env};
 use stellar_contract_utils::math::i128_fixed_point::checked_mul_div_floor;
-use stellar_tokens::{fungible::FungibleTokenClient, rwa::RWATokenClient};
+use stellar_tokens::{fungible::total_supply::FungibleTotalSupplyClient, rwa::RWATokenClient};
 
 pub use strata_bindings::{WindDownInfo, WindDownStatus};
 
@@ -121,7 +121,7 @@ fn credited_before_snapshot(e: &Env) -> i128 {
 /// credited straight to a holder's entitlement.
 fn snapshot_supply(e: &Env) -> i128 {
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    let total_supply = FungibleTokenClient::new(e, &share_token).total_supply();
+    let total_supply = FungibleTotalSupplyClient::new(e, &share_token).total_supply();
     state::reduce(e, total_supply, state::pending_burn_shares(e))
         .checked_add(state::pending_mint_shares(e))
         .and_then(|supply| supply.checked_add(credited_before_snapshot(e)))

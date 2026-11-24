@@ -350,9 +350,10 @@ pub(crate) fn escrow_covered(e: &Env) {
     }
 }
 
-/// The holder may hold shares and the compliance rules let the vault send them.
-pub(crate) fn eligible_to_receive(e: &Env, holder: &Address, shares: i128) {
-    if !lock_policy::can_receive(e, holder, shares) {
+/// The escrowed shares went back: the holder may hold them and the compliance
+/// rules let the vault send them.
+pub(crate) fn sent_back(e: &Env, holder: &Address, shares: i128) {
+    if !lock_policy::send_back(e, holder, shares) {
         panic_with_error!(e, VaultError::HolderNotEligible);
     }
 }

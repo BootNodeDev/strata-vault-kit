@@ -47,9 +47,10 @@ does not carry over. Read it for Soroban and OZ mechanics only.
 
 ## Build & run
 
-- **Contracts:** `stellar contract build` — **not** `cargo build`. The OZ crates
-  enable an experimental `soroban-sdk` feature (`spec_shaking_v2`) that only
-  works through the CLI wrapper. The devshell pins the Stellar CLI it expects.
+- **Contracts:** `stellar contract build` — **not** `cargo build`. soroban-sdk
+  always shakes unused entries out of the contract spec, and only the Stellar
+  CLI finishes that step, so soroban-sdk stops a plain `cargo build` for the
+  Wasm target. The devshell pins the Stellar CLI it expects.
 - **Tests:** `cargo test` from the repo root runs every workspace member against
   the in-memory `Env`. `npm run test` runs vitest over `app/`, `app-lib/` and
   `scripts/`, and `npm run typecheck` checks `app/`, `app-lib/` and the

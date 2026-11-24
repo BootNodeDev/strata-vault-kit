@@ -1,20 +1,36 @@
 use soroban_sdk::{contract, contracterror, contractimpl, panic_with_error};
 use stellar_contract_utils::pausable::PausableError;
 use stellar_tokens::rwa::{
-    compliance::ComplianceHook, identity_verification::identity_registry_storage::IRSError,
+    compliance::{AccountSnapshot, ComplianceHook, TransferKind},
+    identity_verification::identity_registry_storage::IRSError,
     RWAError, RWA,
 };
 
 use super::*;
-
-#[contract]
-pub(super) struct RefusesEveryTransfer;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(u32)]
 enum ModuleError {
     CheckFailed = 1,
+    TransferRefused = 2,
+}
+
+#[contract]
+pub(super) struct RefusesEveryTransfer;
+
+#[contractimpl]
+impl RefusesEveryTransfer {
+    pub fn on_transfer(
+        e: Env,
+        _from: AccountSnapshot,
+        _to: AccountSnapshot,
+        _amount: i128,
+        _kind: TransferKind,
+        _token: Address,
+    ) {
+        panic_with_error!(&e, ModuleError::TransferRefused)
+    }
 }
 
 #[contract]
@@ -22,13 +38,14 @@ struct FailsEveryTransferCheck;
 
 #[contractimpl]
 impl FailsEveryTransferCheck {
-    pub fn can_transfer(
+    pub fn on_transfer(
         e: Env,
-        _from: Address,
-        _to: Address,
+        _from: AccountSnapshot,
+        _to: AccountSnapshot,
         _amount: i128,
+        _kind: TransferKind,
         _token: Address,
-    ) -> bool {
+    ) {
         panic_with_error!(&e, ModuleError::CheckFailed)
     }
 }
@@ -51,19 +68,6 @@ fn still_open(f: &Fixture, holder: &Address, epoch: u64) {
         f.vault.get_epoch_settlement(&epoch).unwrap().redeems_open,
         1
     );
-}
-
-#[contractimpl]
-impl RefusesEveryTransfer {
-    pub fn can_transfer(
-        _e: Env,
-        _from: Address,
-        _to: Address,
-        _amount: i128,
-        _token: Address,
-    ) -> bool {
-        false
-    }
 }
 
 #[test]
@@ -114,7 +118,7 @@ fn a_return_the_compliance_rules_refuse_stays_escrowed() {
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &200);
     let module = f.e.register(RefusesEveryTransfer, ());
-    f.add_compliance_module(ComplianceHook::CanTransfer, &module);
+    f.add_compliance_module(ComplianceHook::Transferred, &module);
 
     refused(
         f.vault.try_cancel_redeem(&holder, &epoch),
@@ -174,7 +178,7 @@ fn a_worthless_exit_the_compliance_rules_refuse_to_return_burns() {
     // Priced at half a unit per share, one share pays nothing.
     f.fulfill_epoch(PRICE_SCALE / 2);
     let module = f.e.register(RefusesEveryTransfer, ());
-    f.add_compliance_module(ComplianceHook::CanTransfer, &module);
+    f.add_compliance_module(ComplianceHook::Transferred, &module);
 
     assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
 
@@ -213,18 +217,25 @@ fn a_worthless_exit_waits_while_the_verifier_cannot_answer() {
     assert_eq!(f.shares(&holder), 10);
 }
 
+/// A module that fails and one that refuses both panic, so the vault cannot
+/// tell them apart: the worthless exit burns and the request settles.
 #[test]
-fn a_worthless_exit_waits_while_the_compliance_rules_cannot_answer() {
+fn a_worthless_exit_burns_like_a_refusal_when_the_compliance_rules_fail() {
     let f = setup();
     let (holder, epoch) = worthless_exit(&f);
     let module = f.e.register(FailsEveryTransferCheck, ());
-    f.add_compliance_module(ComplianceHook::CanTransfer, &module);
+    f.add_compliance_module(ComplianceHook::Transferred, &module);
 
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
+
+    assert_eq!(f.shares(&holder), 9);
+    assert_eq!(f.shares(&f.vault.address), 0);
+    assert_eq!(f.vault.pending_burn_shares(), 0);
+    assert!(f.vault.get_redeem_request(&epoch, &holder).unwrap().claimed);
     assert_eq!(
-        f.vault.try_claim_redeem(&holder, &epoch),
-        Err(Ok(ModuleError::CheckFailed.into()))
+        f.vault.get_epoch_settlement(&epoch).unwrap().redeems_open,
+        0
     );
-    still_open(&f, &holder, epoch);
 }
 
 /// OpenZeppelin's verifier reports a holder with no identity in its registry,

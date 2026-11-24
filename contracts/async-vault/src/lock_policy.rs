@@ -2,7 +2,6 @@ use soroban_sdk::{panic_with_error, Address, Env, Error};
 use stellar_tokens::{
     fungible::FungibleTokenClient,
     rwa::{
-        compliance::ComplianceClient as RulesClient,
         identity_verification::{identity_registry_storage::IRSError, IdentityVerifierClient},
         RWAError, RWATokenClient,
     },
@@ -118,23 +117,27 @@ pub(crate) fn refused_with(standing: Standing) -> VaultError {
     }
 }
 
-/// The holder may hold shares and the compliance rules let the vault send
-/// them. Only an answer counts: a verifier or rules call that fails fails the
-/// caller, so no fault is read as a refusal.
-pub(crate) fn can_receive(e: &Env, holder: &Address, shares: i128) -> bool {
-    let vault = e.current_contract_address();
+/// Sends escrowed shares back to the holder when the holder may hold them.
+/// It moves them as the token's manager, so neither the vault's listing nor
+/// the token pause applies, while the compliance rules still judge the move.
+/// Returns whether they moved: any move that fails rolls back and reads as
+/// "may not", whether a module refused it or failed. A verifier that fails
+/// fails the caller, so no verifier fault is read as a refusal.
+/// Module authors: see the compliance matrix (`docs/COMPLIANCE_MATRIX.md`).
+pub(crate) fn send_back(e: &Env, holder: &Address, shares: i128) -> bool {
     let token = state::get_addr(e, &DataKey::ShareToken);
     let share = RWATokenClient::new(e, &token);
     if share.is_frozen(holder) {
         return false;
     }
-    let verified = match verdict(e, &share, holder) {
-        Verdict::Verified => true,
-        Verdict::Refused => false,
+    match verdict(e, &share, holder) {
+        Verdict::Verified => {}
+        Verdict::Refused => return false,
         Verdict::Failed => panic_with_error!(e, VaultError::VerifierFailed),
-    };
-    verified
-        && RulesClient::new(e, &share.compliance()).can_transfer(&vault, holder, &shares, &token)
+    }
+    let vault = e.current_contract_address();
+    let sent = share.try_forced_transfer(&vault, holder, &shares, &vault);
+    matches!(sent, Ok(Ok(())))
 }
 
 /// Shares the holder can move: the balance less any partial freeze.

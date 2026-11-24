@@ -301,13 +301,13 @@ describe("the oracle after setup", () => {
 
 describe("the compliance contract after setup", () => {
 	const caller = () => governance.publicKey()
-	const canCreate = { tag: "CanCreate", values: undefined } as const
+	const created = { tag: "Created", values: undefined } as const
 
 	it("governance cannot add a module at once", async () => {
 		const rules = complianceContract(c, governance)
 		expectRefused(
 			await rules.add_module_to({
-				hook: canCreate,
+				hook: created,
 				module: outsider.publicKey(),
 				operator: caller(),
 			}),
@@ -320,7 +320,7 @@ describe("the compliance contract after setup", () => {
 		const rules = complianceContract(c, governance)
 		const id = await send(
 			rules.propose_change({
-				change: { tag: "AddModule", values: [canCreate, outsider.publicKey()] },
+				change: { tag: "AddModule", values: [created, outsider.publicKey()] },
 			}),
 		)
 		expectRefused(await rules.apply_change({ id }), rules, "ChangeNotReady")

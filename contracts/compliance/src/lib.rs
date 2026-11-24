@@ -37,7 +37,11 @@ contractmeta!(
 );
 use stellar_access::access_control;
 use stellar_macros::only_admin;
-use stellar_tokens::rwa::{compliance, compliance::ComplianceHook, utils::token_binder};
+use stellar_tokens::rwa::{
+    compliance,
+    compliance::{AccountSnapshot, ComplianceHook, TransferKind},
+    utils::token_binder,
+};
 use strata_bindings::VaultBinding;
 
 pub use governance::{ComplianceChange, CompliancePendingChange, ADMIN_ACCEPT_LEDGERS};
@@ -406,8 +410,8 @@ impl token_binder::TokenBinder for Compliance {
     }
 }
 
-/// The token calls the check before and the hook after every mint, burn and
-/// transfer, which is what keeps this instance alive.
+/// The token calls a hook after every mint, burn and transfer, which is what
+/// keeps this instance alive.
 #[contractimpl(contracttrait)]
 impl compliance::Compliance for Compliance {
     /// Registers `module` on `hook`. Instant during setup; after it, propose
@@ -415,7 +419,7 @@ impl compliance::Compliance for Compliance {
     ///
     /// # Arguments
     ///
-    /// * `hook` - The check or the hook the module runs on.
+    /// * `hook` - The hook the module runs on.
     /// * `module` - The module contract.
     /// * `operator` - Not read; the admin signs instead.
     ///
@@ -446,7 +450,7 @@ impl compliance::Compliance for Compliance {
     ///
     /// # Arguments
     ///
-    /// * `hook` - The check or the hook the module runs on.
+    /// * `hook` - The hook the module runs on.
     /// * `module` - The module contract.
     /// * `operator` - Not read; the admin signs instead.
     ///
@@ -473,8 +477,9 @@ impl compliance::Compliance for Compliance {
     ///
     /// # Arguments
     ///
-    /// * `from`, `to` - The two ends of the move.
+    /// * `from`, `to` - The two ends of the move, as they stood before it.
     /// * `amount` - Share base units moved.
+    /// * `kind` - Who moved the shares, and under what authority.
     /// * `token` - The calling token.
     ///
     /// # Errors
@@ -485,16 +490,23 @@ impl compliance::Compliance for Compliance {
     /// # Authorization
     ///
     /// `token` signs, as the calling contract.
-    fn transferred(e: &Env, from: Address, to: Address, amount: i128, token: Address) {
+    fn transferred(
+        e: &Env,
+        from: AccountSnapshot,
+        to: AccountSnapshot,
+        amount: i128,
+        kind: TransferKind,
+        token: Address,
+    ) {
         strata_storage::bump_instance(e);
-        compliance::storage::transferred(e, from, to, amount, token);
+        compliance::storage::transferred(e, from, to, amount, kind, token);
     }
 
     /// Runs the `Created` modules after a bound token mints shares.
     ///
     /// # Arguments
     ///
-    /// * `to` - The account credited.
+    /// * `to` - The account credited, as it stood before the mint.
     /// * `amount` - Share base units minted.
     /// * `token` - The calling token.
     ///
@@ -506,7 +518,7 @@ impl compliance::Compliance for Compliance {
     /// # Authorization
     ///
     /// `token` signs, as the calling contract.
-    fn created(e: &Env, to: Address, amount: i128, token: Address) {
+    fn created(e: &Env, to: AccountSnapshot, amount: i128, token: Address) {
         strata_storage::bump_instance(e);
         compliance::storage::created(e, to, amount, token);
     }
@@ -515,7 +527,7 @@ impl compliance::Compliance for Compliance {
     ///
     /// # Arguments
     ///
-    /// * `from` - The account debited.
+    /// * `from` - The account debited, as it stood before the burn.
     /// * `amount` - Share base units burned.
     /// * `token` - The calling token.
     ///
@@ -527,43 +539,9 @@ impl compliance::Compliance for Compliance {
     /// # Authorization
     ///
     /// `token` signs, as the calling contract.
-    fn destroyed(e: &Env, from: Address, amount: i128, token: Address) {
+    fn destroyed(e: &Env, from: AccountSnapshot, amount: i128, token: Address) {
         strata_storage::bump_instance(e);
         compliance::storage::destroyed(e, from, amount, token);
-    }
-
-    /// Whether every `CanTransfer` module accepts the move; true when none is
-    /// registered.
-    ///
-    /// # Arguments
-    ///
-    /// * `from`, `to` - The two ends of the move.
-    /// * `amount` - Share base units.
-    /// * `token` - The token asking.
-    ///
-    /// # Errors
-    ///
-    /// * A module's own error.
-    fn can_transfer(e: &Env, from: Address, to: Address, amount: i128, token: Address) -> bool {
-        strata_storage::bump_instance(e);
-        compliance::storage::can_transfer(e, from, to, amount, token)
-    }
-
-    /// Whether every `CanCreate` module accepts the mint; true when none is
-    /// registered.
-    ///
-    /// # Arguments
-    ///
-    /// * `to` - The account to credit.
-    /// * `amount` - Share base units.
-    /// * `token` - The token asking.
-    ///
-    /// # Errors
-    ///
-    /// * A module's own error.
-    fn can_create(e: &Env, to: Address, amount: i128, token: Address) -> bool {
-        strata_storage::bump_instance(e);
-        compliance::storage::can_create(e, to, amount, token)
     }
 }
 

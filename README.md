@@ -346,7 +346,7 @@ Two ways to get a working toolchain.
 
 ```sh
 nix develop              # pinned Rust + stellar-cli + wabt/twiggy/tlaplus + prek
-stellar contract build   # build the contract wasms (not `cargo build` — OZ spec-shaking)
+stellar contract build   # build the contract wasms (not `cargo build` — soroban-sdk spec shaking)
 cargo test               # run the workspace unit tests
 ```
 

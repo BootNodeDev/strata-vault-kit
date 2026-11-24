@@ -1,5 +1,6 @@
 use proptest::prelude::*;
 use soroban_sdk::{contract, contracterror, contractimpl, panic_with_error, IntoVal};
+use stellar_tokens::rwa::compliance::AccountSnapshot;
 
 use super::*;
 
@@ -460,7 +461,7 @@ struct FailsEveryBurn;
 
 #[contractimpl]
 impl FailsEveryBurn {
-    pub fn on_destroyed(e: Env, _from: Address, _amount: i128, _token: Address) {
+    pub fn on_destroyed(e: Env, _from: AccountSnapshot, _amount: i128, _token: Address) {
         panic_with_error!(&e, ModuleError::BurnRefused);
     }
 }

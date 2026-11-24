@@ -1,5 +1,8 @@
-use soroban_sdk::{contract, contractimpl};
-use stellar_tokens::rwa::{compliance::ComplianceHook, RWAError, RWA};
+use soroban_sdk::{contract, contracterror, contractimpl, panic_with_error};
+use stellar_tokens::rwa::{
+    compliance::{AccountSnapshot, ComplianceHook},
+    RWAError, RWA,
+};
 
 use super::*;
 
@@ -81,13 +84,20 @@ fn a_holder_delisted_after_pricing_is_paid_through_a_wind_down() {
     assert_eq!(f.vault.wind_down_owed(), 0);
 }
 
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub(super) enum MintModuleError {
+    MintRefused = 1,
+}
+
 #[contract]
 pub(super) struct RefusesEveryMint;
 
 #[contractimpl]
 impl RefusesEveryMint {
-    pub fn can_create(_e: Env, _to: Address, _amount: i128, _token: Address) -> bool {
-        false
+    pub fn on_created(e: Env, _to: AccountSnapshot, _amount: i128, _token: Address) {
+        panic_with_error!(&e, MintModuleError::MintRefused)
     }
 }
 
@@ -101,11 +111,11 @@ fn a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim() {
     f.fulfill_epoch(price(2));
 
     let module = f.e.register(RefusesEveryMint, ());
-    f.add_compliance_module(ComplianceHook::CanCreate, &module);
+    f.add_compliance_module(ComplianceHook::Created, &module);
 
     assert_eq!(
         f.vault.try_claim_deposit(&investor, &epoch).err(),
-        Some(Ok(soroban_sdk::Error::from_contract_error(306)))
+        Some(Ok(MintModuleError::MintRefused.into()))
     );
     refused(
         f.vault.try_cancel_deposit(&investor, &epoch),
@@ -263,7 +273,6 @@ fn a_frozen_or_delisted_holder_cannot_transfer_shares() {
 #[test]
 fn rules_with_no_modules_accept_any_pair_yet_the_token_still_checks_both_sides() {
     let f = setup();
-    let rules = ComplianceClient::new(&f.e, &f.share.compliance());
     let holder = f.holder(500);
     let listed = f.investor(0);
     let unlisted = f.unverified_investor(0);
@@ -287,7 +296,6 @@ fn rules_with_no_modules_accept_any_pair_yet_the_token_still_checks_both_sides()
         ),
         (&frozen_sender, &listed, RWAError::AddressFrozen),
     ] {
-        assert!(rules.can_transfer(from, to, &1, &f.share.address));
         assert_eq!(f.share.try_transfer(from, to, &1), Err(Ok(error.into())));
         f.share.approve(from, &spender, &1, &live_until);
         assert_eq!(

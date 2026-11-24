@@ -13,8 +13,13 @@ use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role};
 use stellar_tokens::{
-    fungible::{Base, ContractOverrides, FungibleToken},
-    rwa::{RWAToken, RWA},
+    fungible::{
+        total_supply::{
+            increase_total_supply, FungibleTotalSupply, TotalSupply, TotalSupplyOverrides,
+        },
+        Base, Compose, ContractOverrides, FungibleToken,
+    },
+    rwa::{compliance::ComplianceClient, emit_mint, RWAError, RWAToken, RWA},
 };
 use strata_bindings::VaultBinding;
 
@@ -216,8 +221,7 @@ impl ShareToken {
         governance::pending(e)
     }
 
-    /// Moves shares under a legal order, at once. The pause, freezes and the
-    /// compliance rules' check do not apply.
+    /// Moves shares under a legal order, at once, past the pause and freezes.
     ///
     /// # Arguments
     ///
@@ -236,6 +240,7 @@ impl ShareToken {
     /// * `RWAError::IdentityVerificationFailed` - `to` is not allowlisted.
     /// * `RWAError::InsufficientBalance` - `amount` exceeds the balance.
     /// * `FungibleTokenError::LessThanZero` - `amount` is negative.
+    /// * A compliance module's own error - A module refuses this `Forced` move.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events
@@ -289,8 +294,8 @@ impl VaultBinding for ShareToken {
 
 #[contractimpl(contracttrait)]
 impl Pausable for ShareToken {
-    /// Stops `transfer` and `transfer_from`. Mints, burns, the vault's escrow
-    /// moves and legal transfers go on.
+    /// Stops `transfer`, `transfer_from` and `batch_transfer`. Mints, burns,
+    /// the vault's escrow moves and legal transfers go on.
     ///
     /// # Arguments
     ///
@@ -315,7 +320,7 @@ impl Pausable for ShareToken {
         pausable::pause(e);
     }
 
-    /// Lets `transfer` and `transfer_from` run again.
+    /// Lets `transfer`, `transfer_from` and `batch_transfer` run again.
     ///
     /// # Arguments
     ///
@@ -346,7 +351,7 @@ impl Pausable for ShareToken {
 /// `balance` and `total_supply`, which may be the only calls during a wind-down.
 #[contractimpl(contracttrait)]
 impl FungibleToken for ShareToken {
-    type ContractType = RWA;
+    type ContractType = Compose<(RWA, TotalSupply)>;
 
     /// Moves shares between two accounts. Refused while the token is paused,
     /// when either end is frozen or fails the identity check, and when the
@@ -368,7 +373,7 @@ impl FungibleToken for ShareToken {
     ///   unfrozen shares.
     /// * `RWAError::IdentityVerificationFailed` - `from` or `to` is not
     ///   allowlisted.
-    /// * `RWAError::TransferNotCompliant` - The compliance rules refuse it.
+    /// * A compliance module's own error - The compliance rules refuse it.
     /// * `FungibleTokenError::LessThanZero` - `amount` is negative.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
@@ -451,13 +456,6 @@ impl FungibleToken for ShareToken {
         );
     }
 
-    /// All shares in circulation, in share base units. Reading it extends
-    /// the token's instance.
-    fn total_supply(e: &Env) -> i128 {
-        strata_storage::bump_instance(e);
-        <Self::ContractType as ContractOverrides>::total_supply(e)
-    }
-
     /// The shares `account` holds, in share base units. Reading it extends
     /// the token's instance.
     ///
@@ -467,6 +465,16 @@ impl FungibleToken for ShareToken {
     fn balance(e: &Env, account: Address) -> i128 {
         strata_storage::bump_instance(e);
         <Self::ContractType as ContractOverrides>::balance(e, &account)
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl FungibleTotalSupply for ShareToken {
+    /// All shares in circulation, in share base units. Reading it extends
+    /// the token's instance.
+    fn total_supply(e: &Env) -> i128 {
+        strata_storage::bump_instance(e);
+        <<Self as FungibleToken>::ContractType as TotalSupplyOverrides>::total_supply(e)
     }
 }
 
@@ -653,10 +661,11 @@ impl RWAToken for ShareToken {
     /// # Errors
     ///
     /// * `AccessControlError::Unauthorized` - `operator` is not a `manager`.
+    /// * `RWAError::AddressFrozen` - `to` is frozen.
     /// * `RWAError::IdentityVerificationFailed` - `to` is not allowlisted.
-    /// * `RWAError::MintNotCompliant` - The compliance rules refuse it.
     /// * `FungibleTokenError::LessThanZero` - `amount` is negative.
     /// * `FungibleTokenError::MathOverflow` - The supply would overflow.
+    /// * A compliance module's own error - The compliance rules refuse it.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events
@@ -669,8 +678,74 @@ impl RWAToken for ShareToken {
     #[only_role(operator, "manager")]
     fn mint(e: &Env, to: Address, amount: i128, operator: Address) {
         strata_storage::bump_instance(e);
-        RWA::mint(e, &to, amount);
+        mint_shares(e, &to, amount);
         extend::balances(e, &[&to]);
+        extend::total_supply(e);
+    }
+
+    /// `mint` for several accounts at once.
+    ///
+    /// # Arguments
+    ///
+    /// * `to_list` - The accounts credited.
+    /// * `amounts` - Share base units for each account, in the same order.
+    /// * `operator` - A `manager`: the vault.
+    ///
+    /// # Errors
+    ///
+    /// * `RWAError::BatchSizeMismatch` - The lists differ in length.
+    /// * The errors of `mint`, for any account.
+    ///
+    /// # Events
+    ///
+    /// * `Mint` for each account.
+    ///
+    /// # Authorization
+    ///
+    /// `operator` signs.
+    #[only_role(operator, "manager")]
+    fn batch_mint(e: &Env, to_list: Vec<Address>, amounts: Vec<i128>, operator: Address) {
+        if to_list.len() != amounts.len() {
+            panic_with_error!(e, RWAError::BatchSizeMismatch);
+        }
+        strata_storage::bump_instance(e);
+        for (to, amount) in to_list.iter().zip(amounts.iter()) {
+            mint_shares(e, &to, amount);
+        }
+        extend::balances_of(e, &to_list);
+        extend::total_supply(e);
+    }
+
+    /// Moves shares from `from` to several accounts, each with the checks of
+    /// `transfer`.
+    ///
+    /// # Arguments
+    ///
+    /// * `from` - The sender.
+    /// * `recipients` - The receivers.
+    /// * `amounts` - Share base units for each receiver, in the same order.
+    ///
+    /// # Errors
+    ///
+    /// * `VaultAddress` - A receiver is the vault.
+    /// * `RWAError::BatchSizeMismatch` - The lists differ in length.
+    /// * The errors of `transfer`, for any receiver.
+    ///
+    /// # Events
+    ///
+    /// * `Transfer` for each receiver.
+    ///
+    /// # Authorization
+    ///
+    /// `from` signs.
+    fn batch_transfer(e: &Env, from: Address, recipients: Vec<Address>, amounts: Vec<i128>) {
+        for to in recipients.iter() {
+            guards::not_vault_address(e, &to);
+        }
+        strata_storage::bump_instance(e);
+        RWA::batch_transfer(e, &from, &recipients, &amounts);
+        extend::balances(e, &[&from]);
+        extend::balances_of(e, &recipients);
     }
 
     /// Burns shares, frozen ones included, without their holder's
@@ -688,6 +763,7 @@ impl RWAToken for ShareToken {
     /// * `AccessControlError::Unauthorized` - `operator` is not a `manager`.
     /// * `RWAError::InsufficientBalance` - `amount` exceeds the balance.
     /// * `FungibleTokenError::LessThanZero` - `amount` is negative.
+    /// * A compliance module's own error - The compliance rules refuse it.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events
@@ -704,10 +780,38 @@ impl RWAToken for ShareToken {
         extend::balances(e, &[&user_address]);
     }
 
+    /// `burn` for several accounts at once.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_addresses` - The accounts debited.
+    /// * `amounts` - Share base units for each account, in the same order.
+    /// * `operator` - A `manager`: the vault.
+    ///
+    /// # Errors
+    ///
+    /// * `RWAError::BatchSizeMismatch` - The lists differ in length.
+    /// * The errors of `burn`, for any account.
+    ///
+    /// # Events
+    ///
+    /// * The events of `burn`, for each account.
+    ///
+    /// # Authorization
+    ///
+    /// `operator` signs.
+    #[only_role(operator, "manager")]
+    fn batch_burn(e: &Env, user_addresses: Vec<Address>, amounts: Vec<i128>, operator: Address) {
+        strata_storage::bump_instance(e);
+        RWA::batch_burn(e, &user_addresses, &amounts);
+        extend::balances_of(e, &user_addresses);
+    }
+
     /// Moves shares without the sender's signature: the vault escrows
-    /// redemptions and returns escrow through it. The pause, freezes, the
-    /// identity check and the compliance rules' check do not apply. Compliance
-    /// moves shares with `legal_transfer` instead.
+    /// redemptions and returns escrow through it. The pause and freezes do not
+    /// apply; the receiver must pass the identity check, and compliance
+    /// modules see the move as `TransferKind::Forced` and can refuse it.
+    /// Compliance moves shares with `legal_transfer` instead.
     ///
     /// # Arguments
     ///
@@ -719,8 +823,10 @@ impl RWAToken for ShareToken {
     /// # Errors
     ///
     /// * `AccessControlError::Unauthorized` - `operator` is not a `manager`.
+    /// * `RWAError::IdentityVerificationFailed` - `to` is not allowlisted.
     /// * `RWAError::InsufficientBalance` - `amount` exceeds `from`'s balance.
     /// * `FungibleTokenError::LessThanZero` - `amount` is negative.
+    /// * A compliance module's own error - The compliance rules refuse it.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events
@@ -737,9 +843,44 @@ impl RWAToken for ShareToken {
         extend::balances(e, &[&from, &to]);
     }
 
+    /// `forced_transfer` for several pairs of accounts at once.
+    ///
+    /// # Arguments
+    ///
+    /// * `from_list` - The senders.
+    /// * `to_list` - The receivers, in the same order.
+    /// * `amounts` - Share base units for each pair, in the same order.
+    /// * `operator` - A `manager`: the vault.
+    ///
+    /// # Errors
+    ///
+    /// * `RWAError::BatchSizeMismatch` - The lists differ in length.
+    /// * The errors of `forced_transfer`, for any pair.
+    ///
+    /// # Events
+    ///
+    /// * The events of `forced_transfer`, for each pair.
+    ///
+    /// # Authorization
+    ///
+    /// `operator` signs.
+    #[only_role(operator, "manager")]
+    fn batch_forced_transfer(
+        e: &Env,
+        from_list: Vec<Address>,
+        to_list: Vec<Address>,
+        amounts: Vec<i128>,
+        operator: Address,
+    ) {
+        strata_storage::bump_instance(e);
+        RWA::batch_forced_transfer(e, &from_list, &to_list, &amounts);
+        extend::balances_of(e, &from_list);
+        extend::balances_of(e, &to_list);
+    }
+
     /// Moves a lost account's whole balance, and any freeze on it, to the
     /// recovery account the identity verifier names. Returns false when there
-    /// was nothing to move.
+    /// was nothing to move; an address freeze carries over even then.
     ///
     /// # Arguments
     ///
@@ -756,6 +897,7 @@ impl RWAToken for ShareToken {
     ///   allowlisted.
     /// * `RWAError::IdentityMismatch` - The verifier names another recovery
     ///   account, or none.
+    /// * A compliance module's own error - The compliance rules refuse it.
     /// * `ComplianceError::TokenNotBound` - Compliance does not list the token.
     ///
     /// # Events
@@ -814,6 +956,44 @@ impl RWAToken for ShareToken {
         extend::address_frozen(e, &user_address);
     }
 
+    /// `set_address_frozen` for several accounts at once.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_addresses` - The accounts.
+    /// * `freeze_list` - For each account, in the same order: true freezes,
+    ///   false unfreezes.
+    /// * `operator` - A `compliance` holder.
+    ///
+    /// # Errors
+    ///
+    /// * `RWAError::BatchSizeMismatch` - The lists differ in length.
+    /// * The errors of `set_address_frozen`, for any account.
+    ///
+    /// # Events
+    ///
+    /// * `AddressFrozen` for each account.
+    ///
+    /// # Authorization
+    ///
+    /// `operator` signs.
+    #[only_role(operator, "compliance")]
+    fn batch_set_address_frozen(
+        e: &Env,
+        user_addresses: Vec<Address>,
+        freeze_list: Vec<bool>,
+        operator: Address,
+    ) {
+        for (user_address, freeze) in user_addresses.iter().zip(freeze_list.iter()) {
+            guards::not_freezing_vault(e, &user_address, freeze);
+        }
+        strata_storage::bump_instance(e);
+        RWA::batch_set_address_frozen(e, &user_addresses, &freeze_list);
+        for user_address in user_addresses.iter() {
+            extend::address_frozen(e, &user_address);
+        }
+    }
+
     /// Freezes part of an account's shares, which then cannot be transferred.
     /// Never on the vault's address once the token is bound to it.
     ///
@@ -846,6 +1026,43 @@ impl RWAToken for ShareToken {
         extend::frozen_tokens(e, &user_address);
     }
 
+    /// `freeze_partial_tokens` for several accounts at once.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_addresses` - The accounts.
+    /// * `amounts` - Share base units for each account, in the same order.
+    /// * `operator` - A `compliance` holder.
+    ///
+    /// # Errors
+    ///
+    /// * `RWAError::BatchSizeMismatch` - The lists differ in length.
+    /// * The errors of `freeze_partial_tokens`, for any account.
+    ///
+    /// # Events
+    ///
+    /// * `TokensFrozen` for each account.
+    ///
+    /// # Authorization
+    ///
+    /// `operator` signs.
+    #[only_role(operator, "compliance")]
+    fn batch_freeze_partial_tokens(
+        e: &Env,
+        user_addresses: Vec<Address>,
+        amounts: Vec<i128>,
+        operator: Address,
+    ) {
+        for user_address in user_addresses.iter() {
+            guards::not_vault_address(e, &user_address);
+        }
+        strata_storage::bump_instance(e);
+        RWA::batch_freeze_partial_tokens(e, &user_addresses, &amounts);
+        for user_address in user_addresses.iter() {
+            extend::frozen_tokens(e, &user_address);
+        }
+    }
+
     /// Unfreezes part of an account's frozen shares.
     ///
     /// # Arguments
@@ -873,6 +1090,40 @@ impl RWAToken for ShareToken {
         strata_storage::bump_instance(e);
         RWA::unfreeze_partial_tokens(e, &user_address, amount);
         extend::frozen_tokens(e, &user_address);
+    }
+
+    /// `unfreeze_partial_tokens` for several accounts at once.
+    ///
+    /// # Arguments
+    ///
+    /// * `user_addresses` - The accounts.
+    /// * `amounts` - Share base units for each account, in the same order.
+    /// * `operator` - A `compliance` holder.
+    ///
+    /// # Errors
+    ///
+    /// * `RWAError::BatchSizeMismatch` - The lists differ in length.
+    /// * The errors of `unfreeze_partial_tokens`, for any account.
+    ///
+    /// # Events
+    ///
+    /// * `TokensUnfrozen` for each account.
+    ///
+    /// # Authorization
+    ///
+    /// `operator` signs.
+    #[only_role(operator, "compliance")]
+    fn batch_unfreeze_partial_tokens(
+        e: &Env,
+        user_addresses: Vec<Address>,
+        amounts: Vec<i128>,
+        operator: Address,
+    ) {
+        strata_storage::bump_instance(e);
+        RWA::batch_unfreeze_partial_tokens(e, &user_addresses, &amounts);
+        for user_address in user_addresses.iter() {
+            extend::frozen_tokens(e, &user_address);
+        }
     }
 
     /// Points the token at another compliance contract. Instant during setup;
@@ -930,6 +1181,23 @@ impl RWAToken for ShareToken {
         strata_storage::bump_instance(e);
         RWA::set_identity_verifier(e, &identity_verifier);
     }
+}
+
+/// A token pause must not stop a mint, so this is `RWA::mint` without its pause check.
+fn mint_shares(e: &Env, to: &Address, amount: i128) {
+    if RWA::is_frozen(e, to) {
+        panic_with_error!(e, RWAError::AddressFrozen);
+    }
+    guards::identity_verified(e, to);
+    let to_snapshot = RWA::account_snapshot(e, to);
+    increase_total_supply(e, amount);
+    Base::update(e, None, Some(to), amount);
+    ComplianceClient::new(e, &RWA::compliance(e)).created(
+        &to_snapshot,
+        &amount,
+        &e.current_contract_address(),
+    );
+    emit_mint(e, to, amount);
 }
 
 /// Stands in for a later token version in the upgrade tests. Never deployed.
