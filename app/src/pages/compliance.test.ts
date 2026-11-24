@@ -33,6 +33,7 @@ const officer = grantOf("share-token compliance")
 
 const reads = (overrides: Partial<TargetReads> = {}): TargetReads => ({
 	allowance: "allowed",
+	vetoed: false,
 	frozen: false,
 	shares: (100n * UNIT) as Amount,
 	frozenShares: (10n * UNIT) as Amount,
@@ -155,9 +156,9 @@ describe("toComplianceActions", () => {
 		}
 	})
 
-	it("lifts the veto on a target that is not allowlisted, saying it must onboard again", () => {
+	it("lifts the veto on a vetoed target, saying it must onboard again", () => {
 		const action = actionOf(
-			stateOf(HOLDER, { allowance: "not-allowed" }),
+			stateOf(HOLDER, { allowance: "not-allowed", vetoed: true }),
 			"allow-address",
 		)
 
@@ -168,12 +169,24 @@ describe("toComplianceActions", () => {
 		expect(action.arg).toEqual({ verifier: VERIFIER, account: HOLDER })
 	})
 
-	it("reads an already-allowlisted target as no change", () => {
-		const action = actionOf(stateOf(HOLDER), "allow-address")
+	it("reads a target with no veto as no change, listed or not", () => {
+		for (const allowance of ["allowed", "not-allowed"] as const) {
+			const action = actionOf(stateOf(HOLDER, { allowance }), "allow-address")
+
+			expect(action.enabled).toBe(false)
+			expect(action.outcome).toBeNull()
+			expect(unmet(action)).toEqual([["Vetoed", false]])
+		}
+	})
+
+	it("does not offer to lift a veto it cannot read", () => {
+		const action = actionOf(
+			stateOf(HOLDER, { allowance: "unreadable", vetoed: null }),
+			"allow-address",
+		)
 
 		expect(action.enabled).toBe(false)
-		expect(action.outcome).toBeNull()
-		expect(unmet(action)).toEqual([["Not allowlisted", false]])
+		expect(unmet(action)).toEqual([["Vetoed", null]])
 	})
 
 	it("holds nothing back while the target state is unknown", () => {

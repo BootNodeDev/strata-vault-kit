@@ -2,10 +2,11 @@ extern crate std;
 
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    testutils::{storage::Instance as _, Address as _, Ledger as _, MockAuth, MockAuthInvoke},
     Address, Bytes, BytesN, Env, IntoVal, String,
 };
 use stellar_tokens::rwa::identity_verification::identity_claims::generate_claim_id;
+use strata_storage::INSTANCE_EXTEND_AMOUNT;
 
 use crate::{InvestorIdentity, InvestorIdentityClient, InvestorIdentityError, MAX_CLAIM_URI_LEN};
 
@@ -119,6 +120,19 @@ fn a_claim_is_listed_under_its_topic() {
     assert_eq!(claim.issuer, f.issuer);
     assert_eq!(claim.topic, TOPIC);
     assert_eq!(claim.data, Bytes::from_slice(&f.e, b"payload"));
+}
+
+#[test]
+fn reading_a_claim_extends_the_instance() {
+    let f = fixture();
+    let id = f.add(b"payload");
+    let ttl = || {
+        f.e.as_contract(&f.identity.address, || f.e.storage().instance().get_ttl())
+    };
+    f.e.ledger().with_mut(|l| l.sequence_number += 2 * 17_280);
+    assert!(ttl() < INSTANCE_EXTEND_AMOUNT);
+    f.identity.get_claim(&id);
+    assert_eq!(ttl(), INSTANCE_EXTEND_AMOUNT);
 }
 
 #[test]
