@@ -15,7 +15,13 @@ import {
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
 import { onboard, onboardingTx, verified } from "./lib/onboard.js"
-import { attest, freshFeed, moveNavTo, navInput } from "./lib/oracle.js"
+import {
+	attest,
+	climbHookTimeoutMs,
+	freshFeed,
+	moveNavTo,
+	navInput,
+} from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -55,17 +61,20 @@ const fulfill = async (id: bigint) => {
 	return send(vault(c, outsider).fulfill_epoch({ epoch_id: id }))
 }
 
-beforeAll(async () => {
-	decimals = (await shareToken(c, outsider).decimals()).result
-	for (const holder of [...holders, custodian]) {
-		await trustline(c.net, c.server, holder, c.asset)
-	}
-	for (const holder of holders) {
-		await pay(c.net, c.server, issuer, holder.publicKey(), c.asset, "1000")
-		await onboard(c, holder)
-	}
-	await moveNavTo(c, firstPrice)
-})
+beforeAll(
+	async () => {
+		decimals = (await shareToken(c, outsider).decimals()).result
+		for (const holder of [...holders, custodian]) {
+			await trustline(c.net, c.server, holder, c.asset)
+		}
+		for (const holder of holders) {
+			await pay(c.net, c.server, issuer, holder.publicKey(), c.asset, "1000")
+			await onboard(c, holder)
+		}
+		await moveNavTo(c, firstPrice)
+	},
+	climbHookTimeoutMs(c.net, firstPrice),
+)
 
 describe("an account with no role", () => {
 	const who = outsider.publicKey()

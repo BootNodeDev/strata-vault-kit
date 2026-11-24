@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { oracle, send, type Connected } from "./clients.js"
 import { REPO_ROOT } from "./deployment.js"
+import { type Network } from "./network.js"
 import { outcome } from "./refused.js"
 
 export interface NavInput {
@@ -61,6 +62,20 @@ export async function attest(
 }
 
 const BPS = 10_000n
+
+/** The hook timeout `vitest.config.ts` gives every hook. */
+const HOOK_TIMEOUT_MS = 300_000
+
+// A hook that moves the NAV to `target` gets the usual time for its other calls,
+// plus the slowest climb: from the band's floor, one capped rise at a time, each
+// waiting out up to a cooldown as `attest` does. On testnet that is far past five minutes.
+export function climbHookTimeoutMs(net: Network, target: bigint): number {
+	const maxUp = BigInt(net.oracle.max_up_bps)
+	let rises = 1
+	for (let last = BigInt(net.oracle.min_answer); last < target; rises++)
+		last += (last * maxUp) / BPS
+	return HOOK_TIMEOUT_MS + rises * (net.oracle.cooldown_secs + 60) * 1_000
+}
 
 // The oracle caps each rise at `max_up_bps` of the last report, stale or not,
 // so a scenario climbs from a lower price an earlier run left.

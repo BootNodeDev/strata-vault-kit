@@ -1,6 +1,7 @@
 import { Keypair } from "@stellar/stellar-sdk"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { price } from "./amounts.js"
 import { type Connected } from "./clients.js"
 
 const { oracleMock, sendMock } = vi.hoisted(() => ({
@@ -13,7 +14,8 @@ vi.mock("./clients.js", () => ({
 	send: sendMock,
 }))
 
-const { freshFeed, moveNavTo } = await import("./oracle.js")
+const { climbHookTimeoutMs, freshFeed, moveNavTo } = await import("./oracle.js")
+const { networkNamed } = await import("./network.js")
 
 interface FakeTx {
 	result: unknown
@@ -203,5 +205,21 @@ describe("moveNavTo", () => {
 			193n,
 			200n,
 		])
+	})
+})
+
+describe("climbHookTimeoutMs", () => {
+	it("gives a testnet climb from the band's floor to 2.00 sixteen cooldowns past the usual five minutes", () => {
+		const testnet = networkNamed("testnet")
+
+		expect(climbHookTimeoutMs(testnet, price(2))).toBe(300_000 + 16 * 120_000)
+	})
+
+	it("adds one report when the target is at or under the floor", () => {
+		const local = networkNamed("local")
+
+		expect(climbHookTimeoutMs(local, BigInt(local.oracle.min_answer))).toBe(
+			300_000 + 65_000,
+		)
 	})
 })
