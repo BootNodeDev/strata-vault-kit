@@ -49,7 +49,7 @@ pub(crate) use nav_oracle::{
 pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
 pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
-use stellar_tokens::rwa::compliance::ComplianceHook;
+use stellar_tokens::rwa::{compliance::ComplianceHook, RWA};
 pub(crate) use strata_timelock::DAY_DURATION;
 
 pub(crate) use crate::{
@@ -217,6 +217,37 @@ impl Fixture<'_> {
         let id = rules.propose_change(&ComplianceChange::AddModule(hook, module.clone()));
         self.advance(MIN_UPGRADE_DELAY);
         rules.apply_change(&id);
+    }
+
+    /// Points the share token at a verifier that fails with `code` for `only`,
+    /// or for every address when `only` is `None`.
+    fn verifier_failing_with(&self, code: u32, only: Option<&Address>) {
+        let verifier = self.e.register(VerifierFailingWith, (code, only.cloned()));
+        self.e.as_contract(&self.share.address, || {
+            RWA::set_identity_verifier(&self.e, &verifier)
+        });
+    }
+}
+
+/// An identity verifier that fails with one contract error code, for one
+/// address or for all; any other address verifies.
+#[contract]
+struct VerifierFailingWith;
+
+#[contractimpl]
+impl VerifierFailingWith {
+    pub fn __constructor(e: Env, code: u32, only: Option<Address>) {
+        e.storage().instance().set(&symbol_short!("code"), &code);
+        e.storage().instance().set(&symbol_short!("only"), &only);
+    }
+
+    pub fn verify_identity(e: Env, account: Address) {
+        let only: Option<Address> = e.storage().instance().get(&symbol_short!("only")).unwrap();
+        if only.is_some_and(|only| only != account) {
+            return;
+        }
+        let code: u32 = e.storage().instance().get(&symbol_short!("code")).unwrap();
+        e.panic_with_error(soroban_sdk::Error::from_contract_error(code));
     }
 }
 

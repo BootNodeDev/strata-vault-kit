@@ -113,6 +113,7 @@ The behavior specified in this matrix is verified by on-chain automated test sui
 * `a_delisted_investor_cannot_request_a_deposit`: Verifies a de-listed depositor is refused at request time.
 * `relisting_after_pricing_lets_the_claim_through`: Verifies KYC restoration unblocks a priced claim.
 * `a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch`, `the_delisted_holder_is_paid_at_the_next_epochs_price`, `in_a_wind_down_the_shares_are_credited_before_the_first_round`, `a_conversion_caught_by_a_wind_down_is_paid_from_the_rounds`, `a_frozen_and_delisted_holders_claim_is_held`: Verify the exit path for a holder delisted after pricing ([`test/delisted.rs`](../contracts/async-vault/src/test/delisted.rs)).
+* `a_verifier_fault_for_one_holder_pays_the_priced_deposit_out_in_cash`, `a_verifier_fault_for_every_address_fails_the_deposit_claim`: Verify that a verifier fault for one holder sends the priced deposit down the same cash exit, and that a fault for every address fails the claim and moves nothing ([`test/delisted.rs`](../contracts/async-vault/src/test/delisted.rs)).
 * `a_holder_delisted_after_pricing_is_paid_through_a_wind_down`: The combined case, with the cancel refused as `AlreadyPriced` ([`test/compliance.rs`](../contracts/async-vault/src/test/compliance.rs)).
 * `a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim`: Records that a compliance module can block a priced claim (a trust assumption).
 * `a_delisted_holder_can_still_queue_an_exit`: Verifies de-listed holders can queue redemption via forced transfer.

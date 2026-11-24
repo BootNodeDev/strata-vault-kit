@@ -6,14 +6,32 @@ use crate::{
     DepositConvertedToExit, EpochReconciled, EpochSharesReconciled, RedemptionSurrendered,
 };
 
-/// A 400 deposit priced at 2.0 for 200 shares, then delisted before the claim.
-fn delisted_with_a_priced_deposit(f: &Fixture) -> (Address, u64) {
+/// A 400 deposit priced at 2.0 for 200 shares, not yet claimed.
+fn a_priced_deposit(f: &Fixture) -> (Address, u64) {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
     f.fulfill_epoch(wad(2));
+    (investor, epoch)
+}
+
+fn delisted_with_a_priced_deposit(f: &Fixture) -> (Address, u64) {
+    let (investor, epoch) = a_priced_deposit(f);
     f.identity.allow(&investor, &false);
     (investor, epoch)
 }
+
+/// The holder's cash and shares, then the vault's.
+fn balances(f: &Fixture, holder: &Address) -> (i128, i128, i128, i128) {
+    (
+        f.balance(holder),
+        f.shares(holder),
+        f.balance(&f.vault.address),
+        f.shares(&f.vault.address),
+    )
+}
+
+/// A verifier error that is neither of its refusals.
+const VERIFIER_FAULT: u32 = 1;
 
 #[test]
 fn a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch() {
@@ -279,6 +297,50 @@ fn a_conversion_waits_while_the_vault_is_delisted() {
         f.vault.get_redeem_request(&open, &investor).unwrap().shares,
         500
     );
+}
+
+/// Unlike a zero-asset redemption, a deposit claim reads a verifier fault as
+/// a delisting, so the deposit leaves in cash at the next epoch's price.
+#[test]
+fn a_verifier_fault_for_one_holder_pays_the_priced_deposit_out_in_cash() {
+    let f = setup();
+    let (investor, epoch) = a_priced_deposit(&f);
+    f.verifier_failing_with(VERIFIER_FAULT, Some(&investor));
+    let open = f.vault.current_epoch();
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 0));
+
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 200));
+    assert_eq!(
+        f.vault.get_redeem_request(&open, &investor).unwrap().shares,
+        200
+    );
+
+    let exit = f.fulfill_epoch(wad(2));
+    assert_eq!(f.vault.claim_redeem(&investor, &exit), 400);
+    assert_eq!(balances(&f, &investor), (1_000, 0, 0, 0));
+}
+
+/// The conversion mints into the vault's escrow, which the verifier must pass.
+#[test]
+fn a_verifier_fault_for_every_address_fails_the_deposit_claim() {
+    let f = setup();
+    let (investor, epoch) = a_priced_deposit(&f);
+    f.verifier_failing_with(VERIFIER_FAULT, None);
+    let open = f.vault.current_epoch();
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 0));
+
+    assert_eq!(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        Err(Ok(soroban_sdk::Error::from_contract_error(VERIFIER_FAULT)))
+    );
+
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 0));
+    let request = f.vault.get_deposit_request(&epoch, &investor).unwrap();
+    assert!(!request.claimed);
+    assert_eq!(f.vault.pending_mint_shares(), 200);
+    assert!(f.vault.get_redeem_request(&open, &investor).is_none());
 }
 
 proptest! {
