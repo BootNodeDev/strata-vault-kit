@@ -1,3 +1,4 @@
 deployed.*.json
 stellar.*.toml
 runs/
+assetlist.*.json

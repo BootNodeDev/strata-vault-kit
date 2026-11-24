@@ -35,6 +35,7 @@ const FULL_INPUTS: Sep1Inputs = {
 }
 
 const FULL_OPERATOR: OperatorValues = {
+	ASSET_LIST_URL: "https://acme.example/assetlist.json",
 	ORG_NAME: "Acme",
 	ORG_URL: "https://acme.example",
 	ORG_LOGO: "https://acme.example/logo.png",
@@ -297,6 +298,49 @@ describe("renderStellarToml", () => {
 			/name.*20/,
 		)
 		expect(() => parseOperatorValues({ status: "paused" })).toThrow(/status/)
+	})
+
+	it("links the asset list under ASSET_LISTS", () => {
+		const { toml } = renderStellarToml(FULL_INPUTS, FULL_OPERATOR)
+		const lines = toml.split("\n")
+		const passphrase = lines.findIndex((line) =>
+			line.startsWith("NETWORK_PASSPHRASE = "),
+		)
+
+		expect(lines[passphrase + 1]).toBe(
+			'ASSET_LISTS = ["https://acme.example/assetlist.json"]',
+		)
+	})
+
+	it("leaves ASSET_LISTS open and reports it missing", () => {
+		const { toml, missing } = renderStellarToml(FULL_INPUTS)
+
+		expect(toml).toContain('ASSET_LISTS = ["<ASSET_LIST_URL>"]')
+		expect(missing).toContainEqual({
+			field: "ASSET_LIST_URL",
+			reason: "set it in SEP1_OPERATOR",
+		})
+	})
+
+	it("refuses an ASSET_LIST_URL that is not https", () => {
+		expect(() =>
+			parseOperatorValues({ ASSET_LIST_URL: "http://acme.example/a.json" }),
+		).toThrow('operator field "ASSET_LIST_URL" must start with "https://"')
+	})
+
+	it("refuses a domain with a scheme or a path", () => {
+		const message =
+			'operator field "domain" must be a bare host such as "example.com"'
+		for (const domain of [
+			"https://acme.example",
+			"acme.example/path",
+			"Acme.Example",
+			"localhost",
+		])
+			expect(() => parseOperatorValues({ domain })).toThrow(message)
+		expect(parseOperatorValues({ domain: "acme.example" })).toEqual({
+			domain: "acme.example",
+		})
 	})
 
 	it("wallets parse the output", async () => {
