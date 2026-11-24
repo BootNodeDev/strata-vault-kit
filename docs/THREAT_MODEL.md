@@ -14,8 +14,8 @@ threat-to-test matrix builds on it.
 - **The console**, as far as signing goes: the `/sign` page that collects an
   authority's signatures (R12).
 - **Not the testnet deployment.** The deployment listed in the
-  [README](../README.md) runs an older release, and several controls below are
-  not on it yet.
+  [README](../README.md) was built from `tranche-3` at `56936bd`. A later
+  change reaches it only through another redeploy.
 
 The design doc
 ([§8.9](./strata-product-and-architecture.md#89-trust-boundaries--failure-modes)),
@@ -1977,8 +1977,8 @@ These are decided, and stated as they stand:
    reserve it can spend deposit escrow (X8, X10).
 6. No test signs through a relayer: the kit runs none, and whoever sends a
    transaction pays its fee (R4).
-7. The testnet deployment in the README runs older code than this commit
-   ([Scope](#scope)).
+7. The testnet deployment in the README runs `tranche-3` at `56936bd`; a
+   later change reaches it only through another redeploy ([Scope](#scope)).
 8. A clawback of the vault's cash by the asset's issuer is a loss of the fund
    that the vault does not assign. While it lasts, the vault refuses by name
    what its balance cannot cover: `EscrowNotCovered` for cancellations and new
