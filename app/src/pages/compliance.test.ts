@@ -28,11 +28,12 @@ const grantOf = (role: string): Grant => ({
 	standing: "signs-alone",
 })
 
-const verifierAdmin = grantOf("identity-verifier admin")
+const registryCompliance = grantOf("identity-registry compliance")
 const officer = grantOf("share-token compliance")
 
 const reads = (overrides: Partial<TargetReads> = {}): TargetReads => ({
 	allowance: "allowed",
+	vetoed: false,
 	frozen: false,
 	shares: (100n * UNIT) as Amount,
 	frozenShares: (10n * UNIT) as Amount,
@@ -59,7 +60,7 @@ const actionOf = (
 	state: ComplianceState,
 	id: ComplianceAction["id"],
 	inputs: Record<string, string> = {},
-	grants = [verifierAdmin, officer],
+	grants = [registryCompliance, officer],
 ): ComplianceAction => {
 	const action = toComplianceActions(state, grants, WALLET, inputs).find(
 		(candidate) => candidate.id === id,
@@ -80,7 +81,10 @@ describe("toComplianceActions", () => {
 				(action) => action.id,
 			)
 
-		expect(ids([verifierAdmin])).toEqual(["allow-address", "disallow-address"])
+		expect(ids([registryCompliance])).toEqual([
+			"allow-address",
+			"disallow-address",
+		])
 		expect(ids([officer])).toEqual([
 			"freeze-address",
 			"unfreeze-address",
@@ -111,15 +115,15 @@ describe("toComplianceActions", () => {
 		).toEqual([
 			[
 				"allow-address",
-				"Allow the address",
+				"Lift the veto",
 				false,
-				"Could not read the allowlist admin.",
+				"Could not read the identity registry's compliance authority.",
 			],
 			[
 				"disallow-address",
 				"Remove from the allowlist",
 				false,
-				"Could not read the allowlist admin.",
+				"Could not read the identity registry's compliance authority.",
 			],
 		])
 	})
@@ -128,7 +132,7 @@ describe("toComplianceActions", () => {
 		const state = { ...stateOf(HOLDER), adminUnknown: true }
 
 		expect(
-			toComplianceActions(state, [verifierAdmin], WALLET, {})
+			toComplianceActions(state, [registryCompliance], WALLET, {})
 				.filter(({ id }) => id.endsWith("allow-address"))
 				.map(({ unavailable }) => unavailable),
 		).toEqual([undefined, undefined])
@@ -138,7 +142,7 @@ describe("toComplianceActions", () => {
 	it("blocks every action until a target address is entered", () => {
 		const actions = toComplianceActions(
 			stateOf(undefined),
-			[verifierAdmin, officer],
+			[registryCompliance, officer],
 			WALLET,
 			{},
 		)
@@ -152,23 +156,37 @@ describe("toComplianceActions", () => {
 		}
 	})
 
-	it("allows a target that is not allowlisted, showing the resulting state", () => {
+	it("lifts the veto on a vetoed target, saying it must onboard again", () => {
 		const action = actionOf(
-			stateOf(HOLDER, { allowance: "not-allowed" }),
+			stateOf(HOLDER, { allowance: "not-allowed", vetoed: true }),
 			"allow-address",
 		)
 
 		expect(action.enabled).toBe(true)
-		expect(action.outcome).toBe("Allowlisted No → Yes.")
+		expect(action.outcome).toBe(
+			"The veto is lifted. The investor must onboard again to be listed.",
+		)
 		expect(action.arg).toEqual({ verifier: VERIFIER, account: HOLDER })
 	})
 
-	it("reads an already-allowlisted target as no change", () => {
-		const action = actionOf(stateOf(HOLDER), "allow-address")
+	it("reads a target with no veto as no change, listed or not", () => {
+		for (const allowance of ["allowed", "not-allowed"] as const) {
+			const action = actionOf(stateOf(HOLDER, { allowance }), "allow-address")
+
+			expect(action.enabled).toBe(false)
+			expect(action.outcome).toBeNull()
+			expect(unmet(action)).toEqual([["Vetoed", false]])
+		}
+	})
+
+	it("does not offer to lift a veto it cannot read", () => {
+		const action = actionOf(
+			stateOf(HOLDER, { allowance: "unreadable", vetoed: null }),
+			"allow-address",
+		)
 
 		expect(action.enabled).toBe(false)
-		expect(action.outcome).toBeNull()
-		expect(unmet(action)).toEqual([["Not allowlisted", false]])
+		expect(unmet(action)).toEqual([["Vetoed", null]])
 	})
 
 	it("holds nothing back while the target state is unknown", () => {

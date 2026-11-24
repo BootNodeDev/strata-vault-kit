@@ -35,6 +35,10 @@ pub const FEED_ERRORS: ErrorRange = ErrorRange {
     first: 9000,
     last: 9999,
 };
+pub const IDENTITY_ERRORS: ErrorRange = ErrorRange {
+    first: 10000,
+    last: 10999,
+};
 
 const _: () = {
     let ranges = [
@@ -43,6 +47,7 @@ const _: () = {
         TOKEN_ERRORS,
         COMPLIANCE_ERRORS,
         FEED_ERRORS,
+        IDENTITY_ERRORS,
     ];
     let mut i = 1;
     while i < ranges.len() {

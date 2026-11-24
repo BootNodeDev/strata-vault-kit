@@ -54,6 +54,9 @@ const record = (deployedAt: string): Deployment => ({
 		nav_oracle: "C4",
 		async_vault: "C5",
 		sep40_feed: "C6",
+		claim_topics: "C7",
+		identity_registry: "C8",
+		claim_issuer: "C9",
 	},
 	wasmHashes: {
 		compliance: "H1",
@@ -62,6 +65,10 @@ const record = (deployedAt: string): Deployment => ({
 		nav_oracle: "H4",
 		async_vault: "H5",
 		sep40_feed: "H6",
+		claim_topics: "H7",
+		identity_registry: "H8",
+		claim_issuer: "H9",
+		investor_identity: "H10",
 	},
 	accounts: {} as Deployment["accounts"],
 })
@@ -201,12 +208,12 @@ const at = "2026-11-04T00:00:00.000Z"
 
 describe("withFeed", () => {
 	it("adds the feed, its Wasm hash and its own source commit to a set deployed before the feed", () => {
-		const added = withFeed(beforeFeed(at), "C7", "H7", {
+		const added = withFeed(beforeFeed(at), "C70", "H70", {
 			commit: "fedcba9876543210fedcba9876543210fedcba9",
 			uncommittedChanges: true,
 		})
-		expect(added.contracts.sep40_feed).toBe("C7")
-		expect(added.wasmHashes.sep40_feed).toBe("H7")
+		expect(added.contracts.sep40_feed).toBe("C70")
+		expect(added.wasmHashes.sep40_feed).toBe("H70")
 		expect(added.contracts.async_vault).toBe("C5")
 		expect(added.feedCommit).toBe("fedcba9876543210fedcba9876543210fedcba9")
 		expect(added.feedUncommittedChanges).toBe(true)
@@ -215,7 +222,7 @@ describe("withFeed", () => {
 
 	it("refuses a set that already has a feed", () => {
 		expect(() =>
-			withFeed(record(at), "C7", "H7", {
+			withFeed(record(at), "C70", "H70", {
 				commit: "fedcba9876543210fedcba9876543210fedcba9",
 				uncommittedChanges: false,
 			}),
@@ -232,6 +239,16 @@ describe("replaceStagingContracts", () => {
 		expect(after).toContain('sep40_feed = { id = "C6" }')
 		expect(after).toContain("### Production")
 	})
+
+	it("lists the identity contracts", () => {
+		const after = replaceStagingContracts(
+			'[staging.contracts]\nasync_vault = { id = "OLD" }\n',
+			record(at),
+		)
+		expect(after).toContain('identity_registry = { id = "C8" }')
+		expect(after).toContain('claim_topics = { id = "C7" }')
+		expect(after).toContain('claim_issuer = { id = "C9" }')
+	})
 })
 
 describe("renderAddressesTable", () => {
@@ -239,5 +256,12 @@ describe("renderAddressesTable", () => {
 		expect(renderAddressesTable(record(at))).toContain(
 			"| `sep40_feed` | `C6` |",
 		)
+	})
+
+	it("lists the identity contracts", () => {
+		const table = renderAddressesTable(record(at))
+		expect(table).toContain("| `identity_registry` | `C8` |")
+		expect(table).toContain("| `claim_topics` | `C7` |")
+		expect(table).toContain("| `claim_issuer` | `C9` |")
 	})
 })

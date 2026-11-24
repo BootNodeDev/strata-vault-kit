@@ -1,6 +1,7 @@
 import { type xdr } from "@stellar/stellar-sdk"
 
 import { stellar, type Rpc } from "./cli.js"
+import { identityWasmOf } from "./registry-keys.js"
 import { openChangeIds, pendingChangeKey } from "./timelock-keys.js"
 import {
 	EXTEND_LEDGERS,
@@ -50,8 +51,9 @@ export async function keepAlive(
 }
 
 /**
- * Keeps every instance, the Wasm each one runs and every open timelock
- * change alive, reading the open ids from instance storage.
+ * Keeps every instance, the Wasm each one runs, the Wasm the identity registry
+ * deploys investor identities from and every open timelock change alive,
+ * reading the identity hash and the open ids from instance storage.
  */
 export async function keepDeploymentAlive(
 	rpc: Rpc,
@@ -72,6 +74,23 @@ export async function keepDeploymentAlive(
 	}
 	for (const wasmHash of wasmHashes) {
 		await keepAlive(rpc, { wasmHash }, `code ${wasmHash.slice(0, 8)}`, run, log)
+	}
+
+	// No instance in the set runs this code, so nothing above extends it.
+	const identityHashes = new Set<string>()
+	for (const instance of instances.values()) {
+		const wasmHash = identityWasmOf(instance)
+		if (wasmHash !== undefined && !wasmHashes.has(wasmHash))
+			identityHashes.add(wasmHash)
+	}
+	for (const wasmHash of identityHashes) {
+		await keepAlive(
+			rpc,
+			{ wasmHash },
+			`identity code ${wasmHash.slice(0, 8)}`,
+			run,
+			log,
+		)
 	}
 
 	for (const [name, id] of contracts) {

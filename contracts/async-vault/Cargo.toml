@@ -25,7 +25,13 @@ soroban-sdk = { workspace = true, features = ["testutils"] }
 nav-oracle = { path = "../nav-oracle" }
 share-token = { path = "../share-token" }
 compliance = { path = "../compliance" }
+allowlist-verifier = { path = "../../crates/allowlist-verifier" }
+claim-issuer = { path = "../claim-issuer" }
+claim-topics = { path = "../claim-topics" }
+identity-registry = { path = "../identity-registry" }
 identity-verifier = { path = "../identity-verifier" }
+investor-identity = { path = "../investor-identity" }
+ed25519-dalek = "=2.2.0"
 proptest = "=1.11.0"
 
 [features]

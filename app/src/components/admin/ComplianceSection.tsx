@@ -101,14 +101,14 @@ const ComplianceSection: React.FC<{
 	grants: Grant[]
 	wallet: string
 	addresses: AdminAddresses
-	verifierAdminUnknown?: boolean
+	registryComplianceUnknown?: boolean
 	contracts?: React.ReactNode
 	active?: boolean
 }> = ({
 	grants,
 	wallet,
 	addresses,
-	verifierAdminUnknown = false,
+	registryComplianceUnknown = false,
 	contracts,
 	active = true,
 }) => {
@@ -139,7 +139,7 @@ const ComplianceSection: React.FC<{
 		reads,
 		vault: vaultContractId,
 		destination,
-		adminUnknown: verifierAdminUnknown,
+		adminUnknown: registryComplianceUnknown,
 	}
 	const actions = toComplianceActions(state, grants, wallet, inputs)
 

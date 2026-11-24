@@ -75,6 +75,7 @@ actions, T for storage lifetime. Under it:
 | P12 | The token's rules or verifier change | Critical | Governance, compliance |
 | P13 | Wiring drift | Critical | Governance |
 | P14 | An address listed or delisted | Info; Warning when unplanned | Compliance |
+| P15 | The identity rules or a provider's keys change | Critical for a rule change; Warning for a provider's key, revocation or invalidation | Governance, compliance |
 | T1 | Instance or code close to archiving | Warning; Critical under two days | On call only |
 | T2 | Pending change close to archiving | Warning | On call only |
 
@@ -344,7 +345,7 @@ The vault's figures, all in asset base units:
 ## Privileged actions
 
 Each privileged call that changes state on the vault, the share token, the
-oracle, the compliance contract and the kit's identity verifier publishes an
+oracle, the compliance contract and the kit's identity contracts publishes an
 event. After each contract's setup, role
 grants, upgrades, admin hand-overs and most settings first wait in the
 timelock queue
@@ -417,8 +418,11 @@ lists the powers that act at once.
 ### P5. Admin hand-over
 
 - **Source:** `AdminTransferInitiated` and `AdminTransferCompleted` on the
-  vault, the share token, the oracle and the compliance contract; `get_admin()`
-  on each, and `governance()` on the vault.
+  vault, the share token, the oracle, the compliance contract, the topics
+  contract, the identity registry and the identity verifier; `get_admin()` on
+  each, and `governance()` on the vault. The vault's `health()` turns
+  `identity_ready` or `compliance_governed` false once governance no longer
+  administers one of the last four (P13).
 - **Threshold:** every one.
 - **Severity:** Critical. **Told:** governance.
 - **Response:** after setup, the offer comes from an applied `Admin` change
@@ -427,7 +431,8 @@ lists the powers that act at once.
 ### P6. Change proposed to the timelock
 
 - **Source:** `ChangeProposed`, with the change and its `eta`, on the vault,
-  the share token, the oracle, the compliance contract and the SEP-40 feed.
+  the share token, the oracle, the compliance contract, the topics contract,
+  the identity registry, the identity verifier and the SEP-40 feed.
   The event's `eta` is the one `pending_changes()` reports at that moment.
   Every second the vault spends paused afterwards, a pause already running
   included, moves the real one later, so P7 reads the `eta` from
@@ -435,7 +440,8 @@ lists the powers that act at once.
 - **Threshold:** every one.
 - **Severity:** Critical for `Upgrade`, `Admin`, `GrantRole`, `RevokeRole`,
   the vault's `Oracle` and `Custodian`, the token's `Compliance` and
-  `IdentityVerifier`, and every change on the compliance contract. Warning for
+  `IdentityVerifier`, and every change on the compliance contract, the topics
+  contract, the identity registry and the identity verifier. Warning for
   the rest: `UpgradeDelay`, `Notice`, `WindDownDelay` and the oracle's
   `Config`. The feed only ever queues `Upgrade`, so every proposal on it is
   Critical.
@@ -520,8 +526,12 @@ lists the powers that act at once.
   compliance contract.
 - **Threshold:** every one.
 - **Severity:** Critical. **Told:** governance, compliance.
-- **Response:** after setup these come from applied changes (P7). A module that
-  refuses can block exits, and unbinding the token stops every share move.
+- **Response:** after setup these come from applied changes (P7). The kit's
+  compliance contract ignores a module's refusal on moves into the vault and
+  on burns, but a module can still refuse a mint or a share return to a
+  holder, and one that runs out of budget blocks exits too. Unbinding the
+  token stops every share move. A swap to a compliance contract from outside
+  the kit drops the exit rule.
   Threats: [X6](./THREAT_MODEL.md#x6-a-compliance-module-blocks-exits),
   [R11](./THREAT_MODEL.md#r11-swapping-the-tokens-compliance-contract-or-verifier).
 
@@ -537,30 +547,74 @@ lists the powers that act at once.
 - **Response:** [Health View](./kit-spec.md#health-view) says what each flag
   means. `sole_token_manager` false means another account can mint shares
   ([R1](./THREAT_MODEL.md#r1-governance-compromised-the-changes-that-wait)).
-  `allowlisted` false holds every redemption request and delisted holders'
-  conversions until the vault is listed again. Threat:
+  `allowlisted` false means the token's verifier no longer passes the vault,
+  which holds every redemption request and delisted holders' conversions; the
+  kit's verifier always passes its bound vault, so this follows only a swap to
+  another verifier. `identity_ready` false means a governed identity contract
+  changed hands or wiring, or a required topic lost its last trusted issuer, so
+  every account is refused. `compliance_governed` false means governance no
+  longer administers the compliance contract. Threat:
   [R3](./THREAT_MODEL.md#r3-setup-left-open-or-wired-wrong).
 
 ### P14. An address listed or delisted
 
-- **Source:** `AllowedSet` on the kit's identity verifier, with the account as
-  a topic and `allowed` true or false; `is_allowed(account)` on the verifier.
-  `allow` publishes it on every call, even one that leaves the answer as it
-  was. A production identity registry publishes its own events; watch those
-  instead.
+- **Source:** on the identity registry, `IdentityRegistered` (a wallet linked,
+  by onboarding or by compliance, with the identity), `IdentityRemoved` (a
+  wallet unlinked) and `VetoSet` (`vetoed` true or false), each with the
+  account as a topic; `stored_identity(account)` and `is_vetoed(account)`. On
+  the identity verifier, `ProtocolAddressAdded` and `ProtocolAddressRemoved`,
+  once per real change; `is_protocol_address(account)`.
 - **Threshold:** every one.
-- **Severity:** Info; Warning for one that compliance did not plan. **Told:**
-  compliance.
-- **Effect:** at once, with no timelock. A delisted holder cannot request a
-  deposit or receive shares, but its covered exits still pay in cash
+- **Severity:** Info for an onboarding; Info for a delisting or a lifted veto
+  that compliance planned, Warning for one it did not; Critical for a
+  protocol address change. **Told:** compliance; governance for a protocol
+  address.
+- **Effect:** a delisting and a veto act at once, with no timelock, even
+  during a wind-down. A delisted holder cannot request a deposit or receive
+  shares, but its covered exits still pay in cash
   ([X4](./THREAT_MODEL.md#x4-a-delisted-holder)). Delisting the vault's own
-  address turns `health().allowlisted` false (P13).
-- **Response:** match each one to a case in compliance's records. Compliance
-  undoes a wrong one with `allow`. One nobody planned means the verifier's
-  admin key may be compromised; the admin cannot be replaced, so governance
-  swaps the verifier, which waits for the timelock after setup (P6). Threats:
+  address changes nothing, because the verifier passes it as a protocol
+  address. A protocol address holds and moves shares with no claims.
+- **Response:** match each delisting and lifted veto to a case in compliance's
+  records. Compliance undoes a wrong delisting with `lift_veto`, and the
+  investor onboards again. One nobody planned means the registry's compliance
+  authority may be compromised; governance replaces it through the registry's
+  timelock, which no wind-down lets through (P6). A protocol address change
+  comes from an applied change (P7). Threats:
   [R9](./THREAT_MODEL.md#r9-compliance-compromised),
-  [R14](./THREAT_MODEL.md#r14-an-allowlist-change-nobody-sees).
+  [R14](./THREAT_MODEL.md#r14-a-listing-change-nobody-sees),
+  [R16](./THREAT_MODEL.md#r16-self-service-undoes-a-platform-decision).
+
+### P15. The identity rules or a provider's keys change
+
+- **Source:** on the topics contract, `ClaimTopicAdded`, `ClaimTopicRemoved`,
+  `TrustedIssuerAdded`, `TrustedIssuerRemoved` and `IssuerTopicsUpdated`, and
+  `issuer_wasm()`; on the verifier, `IdentityRegistryStorageSet` and
+  `ClaimTopicsAndIssuersSet`; on the registry, an applied `IdentityWasm`,
+  `Verifier` or `Compliance` change (P7). On each trusted issuer, `KeyAllowed`,
+  `KeyRemoved`, `ClaimRevoked` and `SignaturesInvalidated`. On an investor's
+  identity, `ClaimAdded`, `ClaimChanged` and `ClaimRemoved`, if the operator
+  follows them.
+- **Threshold:** every one.
+- **Severity:** Critical for a topic, trusted-issuer, issuer-code or wiring
+  change; Warning for a provider's new key, revocation or invalidation; Info
+  for an investor's claim. **Told:** governance, compliance.
+- **Response:** after setup the rule changes come from applied changes (P7);
+  check each against the proposal. A new trusted issuer must run the kit's
+  issuer Wasm, deployed straight from it
+  ([R15](./THREAT_MODEL.md#r15-a-claim-issuer-signs-wrongly-fails-or-runs-other-code)).
+  A required topic with no trusted issuer left fails every check with
+  `Unavailable` (10002), so no one gets in and priced deposits wait, and turns
+  `health().identity_ready` false (P13). A key the provider did not announce
+  means the key that owns its issuer may be compromised: governance removes
+  the issuer through the timelock, which lands during a wind-down too.
+  Outside a wind-down, which refuses a new issuer, propose a replacement with
+  it and apply that first: once the issuer is off, a holder whose only claim
+  came from it is refused, and a topic with no issuer left is a fault
+  ([Changing issuers or the registry](./strata-product-and-architecture.md#changing-issuers-or-the-registry)).
+  Verifier faults show no event: a holder whose check fails with `Unavailable`
+  (10002) points at a broken issuer, identity, registry or topics contract, or
+  a topic with no trusted issuer.
 
 ## Storage lifetime
 
@@ -573,35 +627,40 @@ can still archive
 ### T1. Instance or code close to archiving
 
 - **Source:** RPC `getLedgerEntries` for each contract's instance and each Wasm
-  it runs, the deposit asset's contract included: compare `liveUntilLedgerSeq`
-  with the latest ledger. `stellar ledger entry fetch` reads the same value.
+  it runs, the deposit asset's contract included, and the investor identity
+  Wasm the registry deploys from (`identity_wasm()`): compare
+  `liveUntilLedgerSeq` with the latest ledger. `stellar ledger entry fetch` reads the same value.
 - **Threshold:** Warning when fewer than 7 days (120,960 ledgers) remain.
   Critical under 2 days (34,560 ledgers), or once archived.
 - **Told:** on call.
 - **Response:** run
   `STELLAR_ACCOUNT=<funded account> npm run extend -w scripts/harness`. It
-  restores what has archived and extends each instance, its Wasm and each
-  pending change by 30 days. Any funded account can pay; it needs no authority.
+  restores what has archived and extends each instance, its Wasm, the identity
+  Wasm and each pending change by 30 days. Any funded account can pay; it
+  needs no authority.
 
 ### T2. Pending change close to archiving
 
 - **Source:** the ids in `pending_changes()` on the vault, the share token, the
-  oracle and the compliance contract; each one's entry through
+  oracle, the compliance contract, the topics contract, the identity registry
+  and the identity verifier; each one's entry through
   `getLedgerEntries`, with the key `npm run extend` builds.
 - **Threshold:** as in T1.
 - **Severity:** Warning. **Told:** on call.
 - **Response:** `npm run extend`, as in T1. Nothing is lost if it archives: the
   call that applies it restores it and pays for the restore.
 
-Balances, roles and other entries are restored by the call that needs them, so
-the plan does not watch them. A production compliance module or identity
-registry must extend its own entries.
+Balances, roles, investors' identity contracts and other entries are restored
+by the call that needs them, so the plan does not watch them; keeping
+identities alive is the operator's choice. A compliance contract or identity
+registry from outside the kit must extend its own entries.
 
 ## Events the plan reads
 
 Event names are as in the code; the topic is what `getEvents` filters on.
-`Paused`, `Unpaused`, the role and admin events, and the freeze, recovery,
-rules and module events come from OpenZeppelin's Stellar libraries.
+`Paused`, `Unpaused`, the role and admin events, the freeze, recovery, rules
+and module events, and the topics, issuer and claim events come from
+OpenZeppelin's Stellar libraries.
 
 | Event | Topic | Contract | Signals |
 | --- | --- | --- | --- |
@@ -613,14 +672,19 @@ rules and module events come from OpenZeppelin's Stellar libraries.
 | `Deployed`, `Funded` | `deployed`, `funded` | Vault | C1, P10 |
 | `Paused`, `Unpaused` | `paused`, `unpaused` | Vault, share token | P1, P3 |
 | `RoleGranted`, `RoleRevoked` | `role_granted`, `role_revoked` | Vault, share token, oracle | P4 |
-| `AdminTransferInitiated`, `AdminTransferCompleted` | `admin_transfer_initiated`, `admin_transfer_completed` | Vault, share token, oracle, compliance | P5 |
-| `ChangeProposed`, `ChangeApplied`, `ChangeCancelled` | `change_proposed`, `change_applied`, `change_cancelled` | Vault, share token, oracle, compliance, SEP-40 feed | P6, P7 |
+| `AdminTransferInitiated`, `AdminTransferCompleted` | `admin_transfer_initiated`, `admin_transfer_completed` | Vault, share token, oracle, compliance, topics, registry, verifier | P5 |
+| `ChangeProposed`, `ChangeApplied`, `ChangeCancelled` | `change_proposed`, `change_applied`, `change_cancelled` | Vault, share token, oracle, compliance, topics, registry, verifier, SEP-40 feed | P6, P7 |
 | `DepositCapUpdated`, `NoticeSet`, `WindDownDelaySet`, `CustodianSet` | `deposit_cap_updated`, `notice_set`, `wind_down_delay_set`, `custodian_set` | Vault | P8 |
 | `WindDownProposed`, `WindDownProposalCancelled`, `WindDownActivated`, `WindDownRoundFinalized` | `wind_down_proposed`, `wind_down_proposal_cancelled`, `wind_down_activated`, `wind_down_round_finalized` | Vault | P9 |
 | `AddressFrozen`, `TokensFrozen`, `TokensUnfrozen`, `LegalTransfer`, `RecoverySuccess` | `address_frozen`, `tokens_frozen`, `tokens_unfrozen`, `legal_transfer`, `recovery_success` | Share token | P11 |
 | `ComplianceSet`, `IdentityVerifierSet` | `compliance_set`, `identity_verifier_set` | Share token | P12 |
 | `ModuleAdded`, `ModuleRemoved`, `TokenBound`, `TokenUnbound` | `module_added`, `module_removed`, `token_bound`, `token_unbound` | Compliance | P12 |
-| `AllowedSet` | `allowed_set` | Identity verifier | P14 |
+| `IdentityRegistered`, `IdentityRemoved`, `VetoSet` | `identity_registered`, `identity_removed`, `veto_set` | Identity registry | P14 |
+| `ProtocolAddressAdded`, `ProtocolAddressRemoved` | `protocol_address_added`, `protocol_address_removed` | Identity verifier | P14 |
+| `ClaimTopicAdded`, `ClaimTopicRemoved`, `TrustedIssuerAdded`, `TrustedIssuerRemoved`, `IssuerTopicsUpdated` | `claim_topic_added`, `claim_topic_removed`, `trusted_issuer_added`, `trusted_issuer_removed`, `issuer_topics_updated` | Claim topics | P15 |
+| `IdentityRegistryStorageSet`, `ClaimTopicsAndIssuersSet` | `identity_registry_storage_set`, `claim_topics_and_issuers_set` | Identity verifier | P15 |
+| `KeyAllowed`, `KeyRemoved`, `ClaimRevoked`, `SignaturesInvalidated` | `key_allowed`, `key_removed`, `claim_revoked`, `signatures_invalidated` | Claim issuer | P15 |
+| `ClaimAdded`, `ClaimChanged`, `ClaimRemoved` | `claim_added`, `claim_changed`, `claim_removed` | Investor identity | P15 |
 | `clawback`, `set_authorized` | `clawback`, `set_authorized` | Deposit asset | C4 |
 
 ## What this plan does not cover
@@ -635,6 +699,11 @@ rules and module events come from OpenZeppelin's Stellar libraries.
   account through an account-history service.
 - **External contracts.** An external compliance contract or identity registry
   keeps its own governance and storage.
+- **Verifier faults.** A fault publishes nothing; it shows only as
+  `VerifierFailed` refusals on the vault and `Unavailable` from the verifier.
+- **Ignored module refusals.** The compliance contract publishes nothing when
+  it ignores a module's refusal on an exit, so a counter module's drift is not
+  visible on chain.
 - **The custodian and the issuer.** What the custodian holds, and what the
   deposit asset's issuer does beyond C4.
 - **The RPC and the frontend.** Whether the RPC is up and serves its full

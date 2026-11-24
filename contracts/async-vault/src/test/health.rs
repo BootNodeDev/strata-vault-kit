@@ -8,8 +8,10 @@ fn all_healthy() -> Health {
         oracle_bound: true,
         sole_token_manager: true,
         allowlisted: true,
+        identity_ready: true,
         vault_unfrozen: true,
         compliance_bound: true,
+        compliance_governed: true,
         decimals_match: true,
         addresses_distinct: true,
         custodian_set: true,
@@ -80,6 +82,7 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
             Miswire::NotAllowlisted,
             Health {
                 allowlisted: false,
+                identity_ready: false,
                 ..all_healthy()
             },
         ),
@@ -108,6 +111,13 @@ fn each_missing_wiring_step_shows_in_its_own_flag() {
             Miswire::ComplianceSetupOpen,
             Health {
                 compliance_bound: false,
+                ..all_healthy()
+            },
+        ),
+        (
+            Miswire::ComplianceNotGoverned,
+            Health {
+                compliance_governed: false,
                 ..all_healthy()
             },
         ),

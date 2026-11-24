@@ -4,7 +4,7 @@ import { pay, trustline } from "./lib/accounts.js"
 import { assetsFor, price, sharesFor, units } from "./lib/amounts.js"
 import {
 	connect,
-	identityVerifier,
+	identityRegistry,
 	oracle,
 	send,
 	sep40Feed,
@@ -14,6 +14,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
+import { onboard, verified } from "./lib/onboard.js"
 import {
 	attest,
 	climbHookTimeoutMs,
@@ -79,18 +80,18 @@ describe("setup", () => {
 		}
 	})
 
-	it("allowlists each holder", async () => {
-		const verifier = identityVerifier(c, compliance)
+	it("onboards each holder with a KYC claim", async () => {
+		const registry = identityRegistry(c, outsider)
 		for (const holder of holders) {
-			await send(
-				verifier.allow({
-					account: holder.publicKey(),
-					allowed: true,
-				}),
+			const account = holder.publicKey()
+			const identity = await onboard(c, holder)
+			expect((await registry.identity_address({ account })).result).toBe(
+				identity,
 			)
-			expect(
-				(await verifier.is_allowed({ account: holder.publicKey() })).result,
-			).toBe(true)
+			expect((await registry.stored_identity({ account })).result).toBe(
+				identity,
+			)
+			expect(await verified(c, account)).toBe(true)
 		}
 	})
 })

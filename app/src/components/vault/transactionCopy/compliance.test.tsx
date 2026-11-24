@@ -16,9 +16,9 @@ describe("TransactionModal, compliance actions", () => {
 		[
 			"allow-address",
 			"GABC...WXYZ",
-			"Signing adds GABC...WXYZ to the allowlist.",
-			"Address allowed",
-			"GABC...WXYZ is on the allowlist.",
+			"Signing lifts the veto on GABC...WXYZ. It is not listed until it onboards again.",
+			"Veto lifted",
+			"The veto on GABC...WXYZ is lifted. It is not listed until it onboards again.",
 		],
 		[
 			"freeze-shares",
@@ -66,14 +66,14 @@ describe("TransactionModal, compliance actions", () => {
 		[
 			"allow-address",
 			"Unauthorized",
-			"identity verifier",
+			"identity registry",
 			/does not hold the role/,
 		],
 		[
 			"disallow-address",
 			"AdminNotSet",
-			"identity verifier",
-			/verifier has no admin/,
+			"identity registry",
+			/registry has no admin/,
 		],
 		[
 			"legal-transfer",

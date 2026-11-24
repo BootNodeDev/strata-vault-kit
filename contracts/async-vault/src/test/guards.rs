@@ -795,6 +795,9 @@ fn not_refused_refuses_a_refusal_or_a_hold() {
     refuses(&f, VaultError::NotAllowlisted, || {
         guards::not_refused(&f.e, Decision::Refuse, Standing::Delisted)
     });
+    refuses(&f, VaultError::VerifierFailed, || {
+        guards::not_refused(&f.e, Decision::Refuse, Standing::Unverifiable)
+    });
     refuses(&f, VaultError::Frozen, || {
         guards::not_refused(&f.e, Decision::Hold, Standing::Frozen)
     });

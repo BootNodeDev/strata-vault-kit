@@ -20,7 +20,7 @@ const addresses = {
 	vault: "CVAULT",
 	oracle: "CORACLE",
 	shareToken: "CTOKEN",
-	identityVerifier: "CVERIFIER",
+	identityRegistry: "CREGISTRY",
 }
 
 const account = "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H"
@@ -267,24 +267,40 @@ describe("describePending", () => {
 		})
 	})
 
-	it("maps the configured identity verifier", () => {
+	it.each([
+		[
+			"remove_identity",
+			"disallow-address",
+			"Remove the address from the allowlist",
+		],
+		["lift_veto", "allow-address", "Lift the veto"],
+	])("maps %s on the identity registry to %s", (fn, action, label) => {
 		expect(
 			describePending(
-				pending(addresses.identityVerifier, "allow", [other, false]),
+				pending(addresses.identityRegistry, fn, [other, account]),
 				addresses,
 			),
 		).toEqual({
-			contract: "Identity verifier",
-			action: "disallow-address",
-			label: "Remove the address from the allowlist",
+			contract: "Identity registry",
+			action,
+			label,
 			args: [{ label: "Address", value: "GDQN...KTL3" }],
 		})
+	})
+
+	it("refuses the stub allowlist call", () => {
+		expect(() =>
+			describePending(
+				pending(addresses.identityRegistry, "allow", [other, true]),
+				addresses,
+			),
+		).toThrow(InvalidPendingTransaction)
 	})
 
 	it("refuses a contract that is not one of the configured four", () => {
 		expect(() =>
 			describePending(
-				pending("CFOREIGN", "allow", [other, true, account]),
+				pending("CFOREIGN", "lift_veto", [other, account]),
 				addresses,
 			),
 		).toThrow(new InvalidPendingTransaction("unknown contract"))

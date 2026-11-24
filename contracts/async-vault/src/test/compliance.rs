@@ -123,6 +123,53 @@ fn a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim() {
     );
 }
 
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+enum BurnModuleError {
+    BurnRefused = 1,
+}
+
+#[contract]
+pub(super) struct RefusesEveryBurn;
+
+#[contractimpl]
+impl RefusesEveryBurn {
+    pub fn on_destroyed(e: Env, _from: AccountSnapshot, _amount: i128, _token: Address) {
+        panic_with_error!(&e, BurnModuleError::BurnRefused)
+    }
+}
+
+#[test]
+fn a_module_refusing_burns_does_not_block_a_redemption_claim() {
+    let f = setup();
+    let holder = f.holder(10);
+    let epoch = f.vault.request_redeem(&holder, &4);
+    f.fulfill_epoch(price(2));
+    let module = f.e.register(RefusesEveryBurn, ());
+    f.add_compliance_module(ComplianceHook::Destroyed, &module);
+
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 8);
+    assert_eq!(f.balance(&holder), 8);
+    assert_eq!(f.shares(&f.vault.address), 0);
+}
+
+/// The conversion mints into the vault's escrow, which no module may refuse.
+#[test]
+fn a_module_refusing_mints_does_not_block_a_conversion_to_an_exit() {
+    let f = setup();
+    let investor = f.investor(1_000);
+    let epoch = f.vault.request_deposit(&investor, &400);
+    f.fulfill_epoch(price(2));
+    f.identity.allow(&investor, &false);
+    let module = f.e.register(RefusesEveryMint, ());
+    f.add_compliance_module(ComplianceHook::Created, &module);
+
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+    assert_eq!(f.shares(&f.vault.address), 200);
+    assert_eq!(f.shares(&investor), 0);
+}
+
 #[test]
 fn an_unbound_compliance_swap_is_refused_and_every_move_goes_on() {
     let f = setup();
@@ -149,7 +196,7 @@ fn an_unbound_compliance_swap_is_refused_and_every_move_goes_on() {
 }
 
 #[test]
-fn a_verifier_that_cannot_answer_counts_as_a_failed_check() {
+fn a_verifier_that_cannot_answer_refuses_a_deposit_as_a_fault() {
     let f = setup();
     let investor = f.investor(1_000);
 
@@ -162,7 +209,7 @@ fn a_verifier_that_cannot_answer_counts_as_a_failed_check() {
 
     refused(
         f.vault.try_request_deposit(&investor, &100),
-        VaultError::NotAllowlisted,
+        VaultError::VerifierFailed,
     );
 }
 

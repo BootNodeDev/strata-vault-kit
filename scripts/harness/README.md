@@ -5,6 +5,13 @@ closes setup, the deploy sets the vault's custodian, its notice to twice the
 network's oracle cooldown, and a minimum epoch duration of one day, so an
 outsider can seal an abandoned epoch even if the manager goes silent.
 
+The deploy also sets up the identity contracts. KYC (topic 1) is the one
+required claim topic, and the kit's claim issuer is its only trusted issuer.
+That issuer accepts claims signed by the `kyc-provider` key. Investors onboard
+themselves through the identity registry. Each scenario and `npm run seed`
+onboard their holders with a claim signed by that key (`lib/onboard.ts`). No
+KYC service runs behind it.
+
 ## Usage
 
 ```sh
@@ -87,14 +94,18 @@ priced. Deploy again before the next run.
 
 ## Account keys
 
-The harness signs with fourteen accounts: `deployer`, `governance`, `manager`,
+The harness signs with fifteen accounts: `deployer`, `governance`, `manager`,
 `treasury`, `guardian`, `compliance`, `compliance-backup`, `attester`,
-`custodian`, `issuer`, `holder-1`, `holder-2`, `holder-3` and `outsider`.
-Their secret keys live in `.env.keys.<network>` at the repository root, one
-line per account.
+`custodian`, `issuer`, `kyc-provider`, `holder-1`, `holder-2`, `holder-3` and
+`outsider`. Their secret keys live in `.env.keys.<network>` at the repository
+root, one line per account.
 
 `compliance-backup` holds the share token's `compliance` role as a cold spare
-and signs nothing in the tests.
+and signs nothing in the tests. `kyc-provider` owns the claim issuer, and its
+key signs the test investors' KYC claims.
+
+A key file made before `kyc-provider` existed has no line for it. Run
+`npm run keys`, or deploy, to add it.
 
 - The first deploy creates the file, with a new key for every account.
 - Later deploys reuse the keys in the file. A deploy adds a key only for an

@@ -17,7 +17,7 @@ use stellar_tokens::{
         RWATokenClient,
     },
 };
-use strata_bindings::{OracleFeedClient, VaultBindingClient};
+use strata_bindings::{OracleFeedClient, VaultBindingClient, VerifierSetupClient};
 use strata_timelock::{queue, setup, Clock, Refusal};
 
 use crate::error::VaultError;
@@ -74,8 +74,10 @@ pub(crate) struct Wiring {
     /// Shares minted before setup would redeem against depositors' money.
     pub no_shares_outstanding: bool,
     pub allowlisted: bool,
+    pub identity_ready: bool,
     pub vault_unfrozen: bool,
     pub compliance_bound: bool,
+    pub compliance_governed: bool,
     pub decimals_match: bool,
     pub addresses_distinct: bool,
     pub custodian_set: bool,
@@ -91,8 +93,10 @@ impl Wiring {
             && self.sole_token_manager
             && self.no_shares_outstanding
             && self.allowlisted
+            && self.identity_ready
             && self.vault_unfrozen
             && self.compliance_bound
+            && self.compliance_governed
             && self.decimals_match
             && self.addresses_distinct
             && self.custodian_set
@@ -189,6 +193,9 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
     let roles = AccessControlClient::new(e, &token);
     let rwa = RWATokenClient::new(e, &token);
     let shares = FungibleTokenClient::new(e, &token);
+    let verifier = rwa.try_identity_verifier().ok().and_then(Result::ok);
+    let compliance = rwa.try_compliance().ok().and_then(Result::ok);
+    let governance = access_control::get_admin(e);
     Wiring {
         token_bound: bound_here(e, &token),
         oracle_bound: bound_here(e, &oracle),
@@ -203,16 +210,28 @@ pub(crate) fn wiring(e: &Env) -> Wiring {
             FungibleTotalSupplyClient::new(e, &token).try_total_supply(),
             Ok(Ok(0))
         ),
-        allowlisted: match rwa.try_identity_verifier() {
-            Ok(Ok(verifier)) => matches!(
-                IdentityVerifierClient::new(e, &verifier).try_verify_identity(&me),
+        allowlisted: verifier.as_ref().is_some_and(|verifier| {
+            matches!(
+                IdentityVerifierClient::new(e, verifier).try_verify_identity(&me),
                 Ok(Ok(()))
+            )
+        }),
+        identity_ready: match (&verifier, &governance) {
+            (Some(verifier), Some(governance)) => matches!(
+                VerifierSetupClient::new(e, verifier).try_ready_for(&me, governance),
+                Ok(Ok(true))
             ),
             _ => false,
         },
         vault_unfrozen: matches!(rwa.try_is_frozen(&me), Ok(Ok(false))),
-        compliance_bound: match rwa.try_compliance() {
-            Ok(Ok(compliance)) => compliance_bound(e, &compliance, &token),
+        compliance_bound: compliance
+            .as_ref()
+            .is_some_and(|compliance| compliance_bound(e, compliance, &token)),
+        compliance_governed: match (&compliance, &governance) {
+            (Some(compliance), Some(governance)) => matches!(
+                AccessControlClient::new(e, compliance).try_get_admin(),
+                Ok(Ok(Some(admin))) if admin == *governance
+            ),
             _ => false,
         },
         decimals_match: matches!(

@@ -3,8 +3,9 @@ import { keepDeploymentAlive } from "./lib/keep-alive.js"
 import { latestLedger } from "./lib/ttl.js"
 
 // Restores, when archived, and extends by 30 days each contract instance, the
-// Wasm it runs and each pending timelock change, so an idle deployment stays
-// callable. Extending needs no authority: any funded account pays.
+// Wasm it runs, the Wasm the registry deploys investor identities from and each
+// pending timelock change, so an idle deployment stays callable. Extending
+// needs no authority: any funded account pays.
 
 async function main(): Promise<void> {
 	if (!process.env["STELLAR_ACCOUNT"])

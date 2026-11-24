@@ -20,12 +20,13 @@ result. Three states per side, none skipped: **pending, priced, claimed**.
 
 What the contracts enforce:
 
-1. **Only allowlisted addresses enter.** The post-KYC allowlist is checked
-   when a subscription is requested, again when its shares are minted, and on
-   every share transfer.
+1. **Only verified addresses enter.** An address is verified when it holds a
+   valid KYC claim from a trusted issuer for every topic the fund requires.
+   That is checked when a subscription is requested, again when its shares are
+   minted, and on every share transfer.
 2. **A covered claim always pays.** Once priced and covered, a cash claim cannot
    be blocked by a pause, a stale valuation, or the investor losing their
-   allowlist place. Priced claims are never re-priced, and a cash payout never
+   verification. Priced claims are never re-priced, and a cash payout never
    needs the identity check; a delisted, non-frozen investor leaves through
    the exit-only cash path, including a deposit that was priced before the
    delisting. A compliance freeze holds the claim until it is lifted.
@@ -124,6 +125,11 @@ apply as the corresponding code lands here.
   in `environments.toml` in the same commit. Otherwise the scaffold build still
   exits 0 and CI fails minutes later on a client count, naming neither the
   contract nor the argument. This has broken two pull requests.
+- `claim_topics` and `identity_registry` take Wasm hashes as constructor
+  arguments. Their `constructor_args` in `environments.toml` compute each hash
+  with `$(shasum …)` from `target/stellar/<network>/`, which the scaffold runs
+  in a shell. A missing Wasm gives an empty argument, and the deploy fails
+  later rather than at that contract, so build the contracts first.
 - An `after_deploy` line is appended to
   `stellar contract invoke --id <this contract> --`, so it can only call the
   contract whose block it sits in. Wiring that crosses contracts, such as

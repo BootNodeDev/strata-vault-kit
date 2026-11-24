@@ -128,6 +128,26 @@ fn a_return_the_compliance_rules_refuse_stays_escrowed() {
     assert!(f.vault.get_redeem_request(&epoch, &holder).is_some());
 }
 
+/// The same module lets the shares into the vault, since that is an exit, and
+/// still stops them coming back.
+#[test]
+fn a_module_refusing_returns_still_blocks_a_cancellation() {
+    let f = setup();
+    let holder = f.holder(500);
+    let module = f.e.register(RefusesEveryTransfer, ());
+    f.add_compliance_module(ComplianceHook::Transferred, &module);
+    let epoch = f.vault.request_redeem(&holder, &200);
+    assert_eq!(f.shares(&f.vault.address), 200);
+
+    refused(
+        f.vault.try_cancel_redeem(&holder, &epoch),
+        VaultError::HolderNotEligible,
+    );
+    assert_eq!(f.shares(&holder), 300);
+    assert_eq!(f.shares(&f.vault.address), 200);
+    assert!(f.vault.get_redeem_request(&epoch, &holder).is_some());
+}
+
 #[test]
 fn a_token_pause_stops_trading_but_not_a_share_return() {
     let f = setup();

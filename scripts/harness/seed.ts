@@ -6,7 +6,7 @@ import { PRICE_DECIMALS, price, units } from "./lib/amounts.js"
 import { trustlineBalance } from "./lib/balances.js"
 import {
 	connect,
-	identityVerifier,
+	identityRegistry,
 	oracle,
 	send,
 	shareToken,
@@ -15,6 +15,7 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
+import { onboard } from "./lib/onboard.js"
 import { attest, freshFeed } from "./lib/oracle.js"
 
 function formatAmount(amount: bigint, decimals: number): string {
@@ -80,26 +81,22 @@ async function ensureFunding(
 	}
 }
 
-async function ensureAllowlist(
+async function ensureOnboarded(
 	c: Connected,
 	holder: Keypair,
 	name: string,
 ): Promise<void> {
-	const verifier = identityVerifier(c, c.keys.compliance)
-	const allowed = (await verifier.is_allowed({ account: holder.publicKey() }))
-		.result
-	if (!allowed) {
-		console.log(`  + allowlisting ${name}...`)
-		await send(
-			verifier.allow({
-				account: holder.publicKey(),
-				allowed: true,
-			}),
+	const account = holder.publicKey()
+	const vetoed = (
+		await identityRegistry(c, c.keys.outsider).is_vetoed({ account })
+	).result
+	if (vetoed) {
+		throw new Error(
+			`${name} is vetoed: compliance lifts the veto before it can onboard again`,
 		)
-		console.log(`  ✓ ${name} allowlisted`)
-	} else {
-		console.log(`  • ${name} is already allowlisted`)
 	}
+	const identity = await onboard(c, holder)
+	console.log(`  ✓ ${name} onboarded with identity ${identity}`)
 }
 
 async function main(): Promise<void> {
@@ -130,7 +127,7 @@ async function main(): Promise<void> {
 	console.log(`Deposit Asset:        ${c.asset.code} (${c.asset.issuer})\n`)
 
 	// 1. Ensure Custodian and Trustlines
-	console.log("Step 1: Verifying accounts, trustlines, and allowlist...")
+	console.log("Step 1: Verifying accounts, trustlines, and onboarding...")
 	for (const [name, key] of [
 		["custodian", custodian],
 		["holder-1", holder1],
@@ -146,7 +143,7 @@ async function main(): Promise<void> {
 		["holder-3", holder3],
 	] as const) {
 		await ensureFunding(c, key, name, 10_000, 50_000, decimals)
-		await ensureAllowlist(c, key, name)
+		await ensureOnboarded(c, key, name)
 	}
 
 	const currentCustodian = (await reader.custodian()).result
