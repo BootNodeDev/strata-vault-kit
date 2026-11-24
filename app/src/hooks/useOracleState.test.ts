@@ -1,16 +1,13 @@
 import { type ContractRead, type OracleState } from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { fakeNavOracle } from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import { classifyOracle, useOracleState } from "./useOracleState"
 
-const { oracleMock } = vi.hoisted(() => ({
-	oracleMock: { state: vi.fn() },
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	navOracle: async () => oracleMock,
-}))
+const oracleMock = fakeNavOracle("state")
 
 const tagged = (tag: OracleState["tag"]): ContractRead<OracleState> => ({
 	kind: "value",

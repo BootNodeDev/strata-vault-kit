@@ -2,12 +2,6 @@ import { type ContractRead, type Amount } from "@stellar-scaffold/app-lib"
 import { describe, expect, it, vi } from "vitest"
 import { classifyShares } from "./useSharePosition"
 
-vi.mock("../config/clients", () => ({
-	shareToken: async () => ({
-		balance: async () => ({}),
-	}),
-}))
-
 const zero: ContractRead<bigint> = { kind: "value", value: 0n }
 const held: ContractRead<bigint> = { kind: "value", value: 500_0000000n }
 const contractError: ContractRead<bigint> = {

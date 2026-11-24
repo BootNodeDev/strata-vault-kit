@@ -3,20 +3,18 @@ import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import {
+	asyncVaultWriter as asyncVaultWriterMock,
+	fakeAsyncVault,
+} from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { useCancelDeposit } from "./useCancelDeposit"
 import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { cancel_deposit: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
-asyncVaultWriterMock.mockResolvedValue(vaultMock)
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("cancel_deposit")
 
 const epochId = 3n
 const otherEpochId = 4n
@@ -26,7 +24,6 @@ const renderCancelDeposit = () => renderWithWallet(useCancelDeposit)
 describe("useCancelDeposit", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed with the refunded amount, in order", async () => {

@@ -3,29 +3,26 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { RWAError } from "../../../app-lib/clients/share_token/src/index"
 import { simulationError } from "../test/contractErrorCode"
 import {
+	fakeIdentityRegistry,
+	fakeIdentityVerifier,
+	fakeShareToken,
+	identityVerifierAt as identityVerifierAtMock,
+} from "../test/fakeClients"
+import {
 	IDENTITY_VERIFICATION_FAILED,
 	refusedWith,
 	renderWithWallet,
 } from "./testSupport"
 import { useComplianceState } from "./useComplianceState"
 
-const { tokenMock, verifierMock, registryMock, identityVerifierAtMock } =
-	vi.hoisted(() => ({
-		tokenMock: {
-			is_frozen: vi.fn(),
-			balance: vi.fn(),
-			get_frozen_tokens: vi.fn(),
-		},
-		verifierMock: { verify_identity: vi.fn(), identity_registry: vi.fn() },
-		registryMock: { is_vetoed: vi.fn() },
-		identityVerifierAtMock: vi.fn(),
-	}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	shareToken: async () => tokenMock,
-	identityVerifierAt: identityVerifierAtMock,
-	identityRegistryAt: async () => registryMock,
-}))
+const tokenMock = fakeShareToken("is_frozen", "balance", "get_frozen_tokens")
+const verifierMock = fakeIdentityVerifier(
+	"verify_identity",
+	"identity_registry",
+)
+const registryMock = fakeIdentityRegistry("is_vetoed")
 
 const VERIFIER = "CVERIFIERADDRESS"
 const TARGET = "GTARGETADDRESS1234"
@@ -34,12 +31,10 @@ const DESTINATION = "GDESTINATION5678"
 describe("useComplianceState", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		identityVerifierAtMock.mockImplementation(async () => verifierMock)
-		verifierMock.verify_identity.mockImplementation(
-			async ({ account }: { account: string }) =>
-				account === TARGET
-					? { result: undefined }
-					: refusedWith(IDENTITY_VERIFICATION_FAILED),
+		verifierMock.verify_identity.mockImplementation(async ({ account }) =>
+			account === TARGET
+				? { result: undefined }
+				: refusedWith(IDENTITY_VERIFICATION_FAILED),
 		)
 		verifierMock.identity_registry.mockResolvedValue({ result: "CREGISTRY" })
 		registryMock.is_vetoed.mockResolvedValue({ result: false })

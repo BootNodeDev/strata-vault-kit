@@ -4,18 +4,14 @@ import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import { fakeAsyncVault } from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { cycleWriteKeys } from "./useCycleState"
 import { useDeployToCustodian } from "./useDeployToCustodian"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { deploy_to_custodian: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("deploy_to_custodian")
 
 const assets = 2_500_000_000n as Amount
 
@@ -32,7 +28,6 @@ const successful = () => ({
 describe("useDeployToCustodian", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed, in order, deploying as the connected wallet", async () => {

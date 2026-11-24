@@ -6,17 +6,17 @@ import {
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { fakeAsyncVault } from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import { fetchEpochHistory, useEpochHistory } from "./useEpochHistory"
 
-const { vaultMock, asyncVaultMock, readEpochsMock } = vi.hoisted(() => ({
-	vaultMock: { current_epoch: vi.fn() },
-	asyncVaultMock: vi.fn(),
+const { readEpochsMock } = vi.hoisted(() => ({
 	readEpochsMock: vi.fn(),
 }))
-asyncVaultMock.mockResolvedValue(vaultMock)
 
-vi.mock("../config/clients", () => ({ asyncVault: asyncVaultMock }))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
+
+const vaultMock = fakeAsyncVault("current_epoch")
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),

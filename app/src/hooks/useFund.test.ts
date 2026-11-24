@@ -4,6 +4,7 @@ import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import { fakeAsyncVault } from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import type * as ContractTransactionModule from "./useContractTransaction"
 import { useContractTransaction } from "./useContractTransaction"
@@ -11,14 +12,9 @@ import { cycleWriteKeys } from "./useCycleState"
 import { depositBalanceKey } from "./useDepositBalance"
 import { useFund } from "./useFund"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { fund: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("fund")
 
 vi.mock("./useContractTransaction", async (importOriginal) => {
 	const actual = await importOriginal<typeof ContractTransactionModule>()
@@ -43,7 +39,6 @@ const successful = () => ({
 describe("useFund", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed, in order, funding from the connected wallet", async () => {
