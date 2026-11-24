@@ -69,7 +69,9 @@ right after `npm run deploy`. What each one expects:
   and move the oracle there first. The oracle takes a fall of any size, but refuses a rise of more than
   10% over its last report (`max_up_bps`), even a stale one. From a lower
   price they climb in 10% steps, one per oracle cooldown (5 seconds locally,
-  60 on testnet). From 1.00 that takes eight reports.
+  60 on testnet). From 1.00 that takes eight reports, about eight minutes on
+  testnet, so the hook that climbs gets time for the slowest climb, from the
+  band's floor, on top of the usual five minutes.
 - `test:sep40` reads whatever price the feed holds. When the feed is stale it
   posts the last price again, or 1.00 when there is none.
 - `test:wind-down` deploys a vault of its own and leaves the deployment alone.

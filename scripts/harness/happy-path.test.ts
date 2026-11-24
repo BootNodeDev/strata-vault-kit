@@ -16,6 +16,7 @@ import {
 import { waitForNotice } from "./lib/notice.js"
 import {
 	attest,
+	climbHookTimeoutMs,
 	freshFeed,
 	moveNavTo,
 	navInput,
@@ -45,10 +46,13 @@ const shares = async (who: string) =>
 const epochStatus = async (id: bigint) =>
 	(await reader.get_epoch({ epoch_id: id })).result?.status.tag
 
-beforeAll(async () => {
-	decimals = (await shareToken(c, outsider).decimals()).result
-	await moveNavTo(c, nav)
-})
+beforeAll(
+	async () => {
+		decimals = (await shareToken(c, outsider).decimals()).result
+		await moveNavTo(c, nav)
+	},
+	climbHookTimeoutMs(c.net, nav),
+)
 
 describe("setup", () => {
 	it("each holder exists on the network", async () => {
