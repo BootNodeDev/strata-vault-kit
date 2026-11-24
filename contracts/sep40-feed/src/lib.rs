@@ -13,10 +13,10 @@
 //! - **A failing read is no price.** A read that fails, the vault's or the
 //!   oracle's, answers as if no price exists. The cost: a broken oracle looks
 //!   like a missing price.
-//! - **Fourteen decimals at the edge, WAD inside.** Every price lands in
-//!   `DECIMALS` (14); the vault's NAV stays in WAD (18) until then. The cost:
-//!   precision below 10^-14 is lost, and a price that floors to zero is no
-//!   price.
+//! - **The NAV as is.** The NAV already carries the 14 decimals Stellar
+//!   feeds use, so when the asset and the share have the same decimals the
+//!   feed answers it unchanged. The cost: other decimals shift it by a power
+//!   of ten, and a price that floors to zero is no price.
 //! - **Resolution is the freshness window.** `resolution` answers the
 //!   oracle's `freshness_duration`, and a price's own timestamp is not
 //!   rounded to it. The cost: the resolution moves with the oracle, against
@@ -40,11 +40,10 @@ use sep40::{Asset, PriceData, PriceFeed};
 use soroban_sdk::{
     contract, contracterror, contractevent, contractimpl, panic_with_error, vec, Address, Env, Vec,
 };
-use strata_bindings::{VaultBinding, VaultViewClient};
+use strata_bindings::{VaultBinding, VaultViewClient, PRICE_DECIMALS};
 use strata_timelock::{setup, Clock, Refusal, TimelockHost};
 
 pub use governance::{FeedChange, FeedPendingChange};
-pub use price::{DECIMALS, ONE};
 
 strata_bindings::error_enum! {
     strata_bindings::FEED_ERRORS,
@@ -260,9 +259,9 @@ impl PriceFeed for Sep40Feed {
         ]
     }
 
-    /// Decimal places every price carries: always `DECIMALS` (14).
+    /// Decimal places every price carries: always 14.
     fn decimals(_e: &Env) -> u32 {
-        DECIMALS
+        PRICE_DECIMALS
     }
 
     /// Seconds a report stays current: the vault's current oracle's
@@ -274,8 +273,8 @@ impl PriceFeed for Sep40Feed {
         quote::resolution(e)
     }
 
-    /// The price of `asset` at `timestamp`, in `DECIMALS`, if the standing
-    /// report covered that second.
+    /// The price of `asset` at `timestamp`, with 14 decimals, if the
+    /// standing report covered that second.
     ///
     /// # Arguments
     ///
@@ -290,9 +289,9 @@ impl PriceFeed for Sep40Feed {
         quote::at(e, &asset, timestamp)
     }
 
-    /// Up to `records` most recent prices of `asset`, in `DECIMALS`, newest
-    /// first. The feed keeps no history, so this is `lastprice` alone, or
-    /// `None` when `records` is `0`.
+    /// Up to `records` most recent prices of `asset`, with 14 decimals,
+    /// newest first. The feed keeps no history, so this is `lastprice` alone,
+    /// or `None` when `records` is `0`.
     ///
     /// # Arguments
     ///
@@ -305,8 +304,8 @@ impl PriceFeed for Sep40Feed {
         quote::latest(e, &asset).map(|data| vec![e, data])
     }
 
-    /// The most recent price of `asset`, in `DECIMALS`, timestamped at the
-    /// report's attestation time.
+    /// The most recent price of `asset`, with 14 decimals, timestamped at
+    /// the report's attestation time.
     ///
     /// # Arguments
     ///

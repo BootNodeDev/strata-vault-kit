@@ -6,11 +6,11 @@ use super::*;
 fn fulfilling_an_epoch_prices_it_and_opens_the_next() {
     let f = setup();
 
-    assert_eq!(f.fulfill_epoch(wad(2)), 1);
+    assert_eq!(f.fulfill_epoch(price(2)), 1);
 
     let epoch_1 = f.vault.get_epoch(&1).unwrap();
     assert_eq!(epoch_1.status, EpochStatus::Fulfilled);
-    assert_eq!(epoch_1.share_price, wad(2));
+    assert_eq!(epoch_1.share_price, price(2));
 
     let epoch_2 = f.vault.get_epoch(&2).unwrap();
     assert_eq!(epoch_2.status, EpochStatus::Open);
@@ -26,11 +26,11 @@ fn fulfilling_keeps_the_epoch_total() {
     let investor = f.investor(1_000);
 
     f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     let epoch_1 = f.vault.get_epoch(&1).unwrap();
     assert_eq!(epoch_1.total_deposited, 400);
-    assert_eq!(epoch_1.share_price, wad(2));
+    assert_eq!(epoch_1.share_price, price(2));
     assert_eq!(
         f.vault.get_deposit_request(&1, &investor).unwrap().amount,
         400
@@ -91,7 +91,7 @@ fn a_redeem_cannot_join_a_sealed_epoch() {
 #[test]
 fn an_open_epoch_cannot_be_fulfilled() {
     let f = setup();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     refused(f.vault.try_fulfill_epoch(&1), VaultError::EpochNotPending);
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Open);
@@ -118,13 +118,13 @@ fn a_sealed_epoch_cannot_be_closed_again() {
 #[test]
 fn a_fulfilled_epoch_cannot_be_fulfilled_again() {
     let f = setup();
-    let epoch = f.fulfill_epoch(wad(2));
+    let epoch = f.fulfill_epoch(price(2));
 
     refused(
         f.vault.try_fulfill_epoch(&epoch),
         VaultError::EpochNotPending,
     );
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, price(2));
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn epochs_can_be_fulfilled_out_of_order_after_closing() {
 
     let first = f.close_epoch();
     let second = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     f.vault.fulfill_epoch(&second);
     f.vault.fulfill_epoch(&first);
@@ -175,10 +175,10 @@ fn closing_needs_the_manager_authorisation() {
 fn anyone_may_fulfill_a_closed_epoch() {
     let f = setup();
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     f.e.set_auths(&[]);
-    assert_eq!(f.vault.fulfill_epoch(&epoch), wad(2));
+    assert_eq!(f.vault.fulfill_epoch(&epoch), price(2));
 
     assert_eq!(
         f.vault.get_epoch(&epoch).unwrap().status,

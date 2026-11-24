@@ -70,7 +70,7 @@ fn an_epoch_cannot_be_priced_inside_its_notice() {
     f.vault.set_notice(&3_600);
     f.vault.request_redeem(&holder, &100);
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     refused(
         f.vault.try_fulfill_epoch(&epoch),
@@ -87,10 +87,10 @@ fn it_is_priced_once_the_notice_elapses() {
     let epoch = f.close_epoch();
 
     f.advance(3_600);
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, price(2));
 }
 
 #[test]
@@ -99,11 +99,11 @@ fn a_notice_of_zero_prices_as_soon_as_the_valuation_lands() {
     let holder = f.holder(100);
     f.vault.request_redeem(&holder, &100);
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     f.vault.fulfill_epoch(&epoch);
 
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(2));
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, price(2));
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn the_notice_does_not_reopen_the_cancellation_window() {
     f.vault.set_notice(&3_600);
     f.vault.request_deposit(&investor, &1_000);
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     // The price is readable even though the epoch cannot be priced yet, so
     // cancelling now would be declining a price already seen.

@@ -103,7 +103,7 @@ fn each_role_call_asks_its_holder_for_one_signature() {
         "close_epoch",
         (f.manager.clone(),).into_val(&f.e),
     );
-    f.fulfill_epoch_at(epoch, wad(2));
+    f.fulfill_epoch_at(epoch, price(2));
     let free = f.vault.free_reserve();
     f.vault.deploy_to_custodian(&f.treasury, &free);
     f.signed_once_by(
@@ -164,7 +164,7 @@ fn claim_redeem_asks_the_holder_for_one_signature() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     f.e.set_auths(&[]);
     missing_auth(f.vault.try_claim_redeem(&holder, &epoch));

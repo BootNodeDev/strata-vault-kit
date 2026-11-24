@@ -6,6 +6,7 @@ use soroban_sdk::{
     testutils::{Address as _, Ledger as _},
     Address, BytesN, Env, InvokeError, String,
 };
+use strata_bindings::PRICE_SCALE;
 use strata_timelock::{Clock, MIN_DELAY};
 
 use crate::guards;
@@ -13,8 +14,6 @@ use crate::{
     NavInput, NavOracleContract, NavOracleContractClient, NavReport, OracleChange, OracleConfig,
     OracleError, MAX_ANSWER, MAX_FRESHNESS_SECS, MAX_PROOF_URI_LEN, MIN_ANSWER,
 };
-
-const SCALE: i128 = 1_000_000_000_000_000_000;
 
 /// Plays the vault: the oracle binds only to an address that reports a clock.
 #[contract]
@@ -66,8 +65,8 @@ fn config() -> OracleConfig {
         cooldown_secs: 60,
         max_up_bps: 1_000,
         max_down_bps: 1_000,
-        min_answer: SCALE / 2,
-        max_answer: SCALE * 100,
+        min_answer: PRICE_SCALE / 2,
+        max_answer: PRICE_SCALE * 100,
     }
 }
 
@@ -153,7 +152,7 @@ fn valid_config_refuses_a_config_outside_the_bounds() {
             ..config()
         },
         OracleConfig {
-            max_answer: SCALE / 4,
+            max_answer: PRICE_SCALE / 4,
             ..config()
         },
         OracleConfig {
@@ -291,7 +290,7 @@ fn consumable_refuses_a_feed_that_is_not_valid() {
     let f = setup();
     refuses(&f, OracleError::NotConsumable, || guards::consumable(&f.e));
 
-    f.attest(SCALE);
+    f.attest(PRICE_SCALE);
     holds(&f, || guards::consumable(&f.e));
 
     f.oracle.pause_nav(&f.guardian);
@@ -371,8 +370,8 @@ fn cooldown_elapsed_refuses_a_report_inside_the_cooldown() {
     let f = setup();
     let cfg = config();
     let now = f.e.ledger().timestamp();
-    let elapsed = report_at(&f.e, SCALE, now - cfg.cooldown_secs);
-    let running = report_at(&f.e, SCALE, now - cfg.cooldown_secs + 1);
+    let elapsed = report_at(&f.e, PRICE_SCALE, now - cfg.cooldown_secs);
+    let running = report_at(&f.e, PRICE_SCALE, now - cfg.cooldown_secs + 1);
 
     holds(&f, || guards::cooldown_elapsed(&f.e, &cfg, &elapsed));
     refuses(&f, OracleError::CooldownActive, || {
@@ -384,19 +383,19 @@ fn cooldown_elapsed_refuses_a_report_inside_the_cooldown() {
 fn within_deviation_refuses_a_move_past_either_cap() {
     let f = setup();
     let cfg = config();
-    let last = report_at(&f.e, SCALE, 0);
-    let ten_percent = SCALE / 10;
+    let last = report_at(&f.e, PRICE_SCALE, 0);
+    let ten_percent = PRICE_SCALE / 10;
 
     holds(&f, || {
-        guards::within_deviation(&f.e, &cfg, &last, SCALE + ten_percent)
+        guards::within_deviation(&f.e, &cfg, &last, PRICE_SCALE + ten_percent)
     });
     holds(&f, || {
-        guards::within_deviation(&f.e, &cfg, &last, SCALE - ten_percent)
+        guards::within_deviation(&f.e, &cfg, &last, PRICE_SCALE - ten_percent)
     });
     refuses(&f, OracleError::DeviationExceeded, || {
-        guards::within_deviation(&f.e, &cfg, &last, SCALE + ten_percent + 1)
+        guards::within_deviation(&f.e, &cfg, &last, PRICE_SCALE + ten_percent + 1)
     });
     refuses(&f, OracleError::DeviationExceeded, || {
-        guards::within_deviation(&f.e, &cfg, &last, SCALE - ten_percent - 1)
+        guards::within_deviation(&f.e, &cfg, &last, PRICE_SCALE - ten_percent - 1)
     });
 }

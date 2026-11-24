@@ -13,6 +13,7 @@ use stellar_access::access_control::{
     AccessControlError, AccessControlStorageKey, ROLE_EXTEND_AMOUNT,
 };
 use stellar_access::role_transfer::RoleTransferError;
+use strata_bindings::PRICE_SCALE;
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
 use strata_timelock::{Clock, DAY_DURATION, MIN_DELAY};
 
@@ -25,7 +26,6 @@ use crate::{
 
 use super::{missing_auth, refused};
 
-const SCALE: i128 = 1_000_000_000_000_000_000;
 const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
 /// Testnet's minimum lifetime of a new persistent entry, in ledgers.
 const TESTNET_MIN_PERSISTENT_TTL: u32 = 120_960;
@@ -166,8 +166,8 @@ fn config() -> OracleConfig {
         cooldown_secs: 60,
         max_up_bps: 1_000,
         max_down_bps: 1_000,
-        min_answer: SCALE / 2,
-        max_answer: SCALE * 100,
+        min_answer: PRICE_SCALE / 2,
+        max_answer: PRICE_SCALE * 100,
     }
 }
 
@@ -250,19 +250,19 @@ fn only_a_shorter_freshness_window_is_instant() {
             ..config()
         },
         OracleConfig {
-            min_answer: SCALE,
+            min_answer: PRICE_SCALE,
             ..config()
         },
         OracleConfig {
-            min_answer: SCALE / 4,
+            min_answer: PRICE_SCALE / 4,
             ..config()
         },
         OracleConfig {
-            max_answer: SCALE * 50,
+            max_answer: PRICE_SCALE * 50,
             ..config()
         },
         OracleConfig {
-            max_answer: SCALE * 200,
+            max_answer: PRICE_SCALE * 200,
             ..config()
         },
         OracleConfig {
@@ -378,7 +378,7 @@ fn a_tighter_cap_or_band_waits_after_setup() {
             ..config()
         },
         OracleConfig {
-            min_answer: SCALE,
+            min_answer: PRICE_SCALE,
             ..config()
         },
     ] {
@@ -612,7 +612,7 @@ fn revoking_an_attester_or_a_guardian_stays_instant_after_setup() {
     assert!(f.oracle.has_role(&f.attester, &ATTESTER_ROLE).is_none());
     assert!(f.oracle.has_role(&f.guardian, &GUARDIAN_ROLE).is_none());
     assert_eq!(
-        f.oracle.try_attest(&input(&f.e, SCALE), &f.attester),
+        f.oracle.try_attest(&input(&f.e, PRICE_SCALE), &f.attester),
         Err(Ok(AccessControlError::Unauthorized.into()))
     );
     assert_eq!(
@@ -737,7 +737,7 @@ fn the_hand_over_offer_lasts_seven_days_of_ledgers() {
 #[test]
 fn the_nav_pause_and_clearing_stay_instant_after_setup() {
     let f = setup();
-    f.attest(SCALE);
+    f.attest(PRICE_SCALE);
     f.finish();
 
     f.oracle.pause_nav(&f.guardian);
@@ -1129,11 +1129,11 @@ fn each_role_call_asks_its_holder_for_one_signature() {
     let f = setup();
     let next = Address::generate(&f.e);
 
-    f.oracle.attest(&input(&f.e, SCALE), &f.attester);
+    f.oracle.attest(&input(&f.e, PRICE_SCALE), &f.attester);
     f.signed_once_by(
         &f.attester,
         "attest",
-        (input(&f.e, SCALE), f.attester.clone()).into_val(&f.e),
+        (input(&f.e, PRICE_SCALE), f.attester.clone()).into_val(&f.e),
     );
     f.oracle.pause_nav(&f.guardian);
     f.signed_once_by(
@@ -1217,7 +1217,7 @@ mod with_wasm {
     #[test]
     fn the_oracle_upgrades_under_a_live_valuation() {
         let f = setup_with(|e, args| e.register(oracle_v1::WASM, args));
-        f.attest(SCALE);
+        f.attest(PRICE_SCALE);
         f.finish();
         let probe_hash = f.e.deployer().upload_contract_wasm(oracle_probe::WASM);
         let id = f.propose(OracleChange::Upgrade(probe_hash));
@@ -1238,7 +1238,7 @@ mod with_wasm {
         let kept = f.oracle.latest();
         assert_eq!(
             (kept.nav_per_share, kept.accepted_at, kept.expires_at),
-            (SCALE, 10_000, 10_000 + config().freshness_duration)
+            (PRICE_SCALE, 10_000, 10_000 + config().freshness_duration)
         );
         assert_eq!(kept.proof_hash, proof(&f.e));
         assert_eq!(f.oracle.config(), config());
@@ -1247,8 +1247,8 @@ mod with_wasm {
         assert!(!f.oracle.setup_open());
         assert_eq!(f.oracle.pending_changes().len(), 0);
 
-        f.attest(SCALE + SCALE / 20);
-        assert_eq!(f.oracle.nav_per_share(), SCALE + SCALE / 20);
+        f.attest(PRICE_SCALE + PRICE_SCALE / 20);
+        assert_eq!(f.oracle.nav_per_share(), PRICE_SCALE + PRICE_SCALE / 20);
         f.oracle.pause_nav(&f.guardian);
         assert_eq!(f.oracle.state(), OracleState::Paused);
     }

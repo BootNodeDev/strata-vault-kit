@@ -47,7 +47,7 @@ fn relisting_after_pricing_lets_the_claim_through() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.identity.allow(&investor, &false);
 
     f.identity.allow(&investor, &true);
@@ -62,7 +62,7 @@ fn a_holder_delisted_after_pricing_is_paid_through_a_wind_down() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     assert_eq!(f.vault.cancellable_escrow(), 0);
     assert_eq!(f.vault.pending_mint_shares(), 200);
     f.identity.allow(&investor, &false);
@@ -98,7 +98,7 @@ fn a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     let module = f.e.register(RefusesEveryMint, ());
     f.add_compliance_module(ComplianceHook::CanCreate, &module);
@@ -120,7 +120,7 @@ fn an_unbound_compliance_swap_is_refused_and_every_move_goes_on() {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &100);
     f.vault.request_redeem(&holder, &4);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     let unbound = ComplianceClient::new(&f.e, &f.e.register(Compliance, (f.admin.clone(),)));
     unbound.bind_vault(&f.vault.address);
@@ -173,7 +173,7 @@ fn a_delisted_holder_can_still_claim_their_exit() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     f.identity.allow(&user, &false);
 
@@ -211,7 +211,7 @@ fn a_delisted_holder_cannot_cancel_redemption_back_to_shares() {
     assert_eq!(f.shares(&user), 300);
 
     // Exit proceeds through cash claim once fulfilled
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
     assert_eq!(f.balance(&user), 400);
 }
@@ -224,7 +224,7 @@ fn a_frozen_holder_is_paid_only_after_the_freeze_lifts() {
     f.share.set_address_frozen(&user, &true, &f.compliance);
 
     refused(f.vault.try_cancel_redeem(&user, &epoch), VaultError::Frozen);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     refused(f.vault.try_claim_redeem(&user, &epoch), VaultError::Frozen);
     assert_eq!(f.vault.committed(), 400);
     assert_eq!(f.shares(&user), 300);
@@ -318,7 +318,7 @@ fn a_frozen_investor_is_not_minted_until_unfrozen() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.share.set_address_frozen(&investor, &true, &f.compliance);
 
     refused(f.vault.try_claim_deposit(&investor, &1), VaultError::Frozen);
@@ -335,7 +335,7 @@ fn a_frozen_investors_zero_share_refund_is_held() {
     let f = setup();
     let investor = f.investor(10);
     let epoch = f.vault.request_deposit(&investor, &1);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.share.set_address_frozen(&investor, &true, &f.compliance);
 
     refused(
@@ -396,7 +396,7 @@ fn a_frozen_holder_does_not_get_a_worthless_exit_back() {
     let f = setup();
     let user = f.holder(1);
     let epoch = f.vault.request_redeem(&user, &1);
-    f.fulfill_epoch(WAD_SCALE / 2);
+    f.fulfill_epoch(PRICE_SCALE / 2);
     f.share.set_address_frozen(&user, &true, &f.compliance);
 
     refused(f.vault.try_claim_redeem(&user, &epoch), VaultError::Frozen);
@@ -409,7 +409,7 @@ fn a_frozen_holder_is_not_moved_into_the_exit_queue() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.identity.allow(&investor, &false);
     f.share.set_address_frozen(&investor, &true, &f.compliance);
 

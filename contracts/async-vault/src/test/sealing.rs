@@ -233,7 +233,7 @@ fn an_outsider_seal_waits_the_notice_like_any_other() {
         VaultError::NoticeNotElapsed,
     );
     f.advance(DAY_DURATION);
-    f.fulfill_epoch_at(sealed, wad(2));
+    f.fulfill_epoch_at(sealed, price(2));
     assert_eq!(
         f.vault.get_epoch(&sealed).unwrap().status,
         EpochStatus::Fulfilled

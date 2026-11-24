@@ -10,7 +10,7 @@ use crate::{
 fn a_priced_deposit(f: &Fixture) -> (Address, u64) {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     (investor, epoch)
 }
 
@@ -79,7 +79,7 @@ fn the_delisted_holder_is_paid_at_the_next_epochs_price() {
     let (investor, epoch) = delisted_with_a_priced_deposit(&f);
     f.vault.claim_deposit(&investor, &epoch);
 
-    let exit = f.fulfill_epoch(wad(8) / 5);
+    let exit = f.fulfill_epoch(price(8) / 5);
 
     assert_eq!(f.vault.claim_redeem(&investor, &exit), 320);
     assert_eq!(f.balance(&investor), 600 + 320);
@@ -93,7 +93,7 @@ fn the_delisted_holder_exits_at_the_same_price_as_everyone_in_that_epoch() {
     f.vault.claim_deposit(&investor, &epoch);
     f.vault.request_redeem(&other, &200);
 
-    let exit = f.fulfill_epoch(wad(8) / 5);
+    let exit = f.fulfill_epoch(price(8) / 5);
 
     assert_eq!(f.vault.claim_redeem(&investor, &exit), 320);
     assert_eq!(f.vault.claim_redeem(&other, &exit), 320);
@@ -105,7 +105,7 @@ fn a_conversion_adds_to_a_redemption_already_open_in_the_epoch() {
     let investor = f.holder(100);
     StellarAssetClient::new(&f.e, &f.asset).mint(&investor, &400);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     let open = f.vault.current_epoch();
     f.vault.request_redeem(&investor, &100);
     f.identity.allow(&investor, &false);
@@ -280,7 +280,7 @@ fn a_conversion_waits_while_the_vault_is_delisted() {
     let f = setup();
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &1_000);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.identity.allow(&investor, &false);
     f.identity.allow(&f.vault.address, &false);
 
@@ -317,7 +317,7 @@ fn a_verifier_fault_for_one_holder_pays_the_priced_deposit_out_in_cash() {
         200
     );
 
-    let exit = f.fulfill_epoch(wad(2));
+    let exit = f.fulfill_epoch(price(2));
     assert_eq!(f.vault.claim_redeem(&investor, &exit), 400);
     assert_eq!(balances(&f, &investor), (1_000, 0, 0, 0));
 }
@@ -363,7 +363,7 @@ proptest! {
                 who
             })
             .collect();
-        let epoch = f.fulfill_epoch(wad(1) * price_tenths / 10);
+        let epoch = f.fulfill_epoch(price(1) * price_tenths / 10);
         let open = f.vault.current_epoch();
 
         let mut claims: std::vec::Vec<(u16, usize)> =

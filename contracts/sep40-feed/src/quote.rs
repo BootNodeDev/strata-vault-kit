@@ -1,11 +1,11 @@
 use sep40::{Asset, PriceData};
 use soroban_sdk::{token::TokenClient, Env};
 use strata_bindings::{
-    OracleFeedClient, OracleState, VaultViewClient, WindDownInfo, WindDownStatus,
+    OracleFeedClient, OracleState, VaultViewClient, WindDownInfo, WindDownStatus, PRICE_SCALE,
 };
 
 use crate::bound_vault;
-use crate::price::{share_price, ONE};
+use crate::price::share_price;
 
 /// `Ok(Ok(value))` only; any other shape of a `try_` call reads as absent.
 fn ok<T, E>(
@@ -55,7 +55,7 @@ fn quote<'a>(e: &'a Env, asset: &Asset) -> Option<(PriceData, OracleFeedClient<'
         let share_decimals = ok(TokenClient::new(e, &share_token).try_decimals())?;
         share_price(nav_per_share, asset_decimals, share_decimals)?
     } else {
-        ONE
+        PRICE_SCALE
     };
 
     Some((PriceData { price, timestamp }, oracle))

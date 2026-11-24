@@ -232,7 +232,7 @@ fn an_active_wind_down_prices_nothing_and_closes_no_epoch() {
     let epoch = f.close_epoch();
     wind_down_now(&f);
 
-    f.attest(wad(2));
+    f.attest(price(2));
     refused(
         f.vault.try_fulfill_epoch(&epoch),
         VaultError::WindDownActive,
@@ -248,7 +248,7 @@ fn an_active_wind_down_sends_nothing_to_the_custodian() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     wind_down_now(&f);
 
     refused(
@@ -272,7 +272,7 @@ fn a_priced_claim_still_pays_during_a_wind_down() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     wind_down_now(&f);
 
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
@@ -283,7 +283,7 @@ fn a_priced_deposit_still_claims_during_a_wind_down() {
     let f = setup();
     let user = f.investor(1_000);
     let epoch = f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     wind_down_now(&f);
 
     assert_eq!(f.vault.claim_deposit(&user, &epoch), 200);
@@ -296,7 +296,7 @@ fn an_epoch_sealed_before_the_announcement_is_still_cancellable() {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     // The price is readable, so without a wind-down this cancel is refused.
     refused(
@@ -316,7 +316,7 @@ fn an_escrowed_redemption_cancelled_in_a_wind_down_joins_the_payout() {
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     wind_down_now(&f);
 
     assert_eq!(f.vault.cancel_redeem(&user, &epoch), 200);
@@ -400,7 +400,7 @@ fn a_round_leaves_priced_liabilities_alone() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     let committed = f.vault.committed();
     assert_eq!(committed, 400);
     first_round_now(&f);
@@ -633,7 +633,7 @@ fn a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down() {
     let a = f.holder(200);
     let b = f.holder(200);
     let epoch = f.vault.request_redeem(&a, &1);
-    f.fulfill_epoch(WAD_SCALE / 2);
+    f.fulfill_epoch(PRICE_SCALE / 2);
     wind_down_now(&f);
     assert_eq!(f.vault.finalize_wind_down_round(), 800);
 
@@ -654,7 +654,7 @@ fn a_delisted_holders_worthless_redemption_burns_in_a_wind_down() {
     let a = f.holder(200);
     let b = f.holder(200);
     let epoch = f.vault.request_redeem(&a, &1);
-    f.fulfill_epoch(WAD_SCALE / 2);
+    f.fulfill_epoch(PRICE_SCALE / 2);
     wind_down_now(&f);
     f.vault.finalize_wind_down_round();
     f.identity.allow(&a, &false);
@@ -703,7 +703,7 @@ fn a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve() {
     let epoch = f.vault.request_deposit(&investor, &1);
     f.close_epoch();
     // A price high enough that one unit of the asset buys no shares at all.
-    f.fulfill_epoch_at(epoch, wad(2));
+    f.fulfill_epoch_at(epoch, price(2));
     first_round_now(&f);
 
     // Known limit: the refund is not tracked as a liability, so a round can
@@ -816,7 +816,7 @@ fn redemption_priced_before_wind_down_is_excluded_from_snapshot() {
     let u2 = f.holder(500);
 
     let epoch = f.vault.request_redeem(&u2, &200);
-    f.fulfill_epoch(wad(1));
+    f.fulfill_epoch(price(1));
     assert_eq!(f.vault.pending_burn_shares(), 200);
 
     wind_down_now(&f);

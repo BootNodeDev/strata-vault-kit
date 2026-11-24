@@ -151,12 +151,12 @@ describe("formatExact", () => {
 
 describe("formatExact with a minimum fraction width", () => {
 	it("pads a short price to the minimum", () => {
-		const value = 11n * 10n ** 17n
+		const value = 11n * 10n ** 13n
 		expect(formatExact(value as Price, PRICE_DECIMALS, 4)).toBe("1.1000")
 	})
 
 	it("keeps every significant digit beyond the minimum", () => {
-		const value = 1_041_234_560_000_000_000n
+		const value = 104_123_456_000_000n
 		expect(formatExact(value as Price, PRICE_DECIMALS, 4)).toBe("1.04123456")
 	})
 })
@@ -226,7 +226,7 @@ describe("formatDayMonth", () => {
 })
 
 it("rejects a Price formatted with AMOUNT_DECIMALS at compile time", () => {
-	const price = 1_000000000000000000n as Price
+	const price = 1_00000000000000n as Price
 	// @ts-expect-error a Price must be formatted with PRICE_DECIMALS, not AMOUNT_DECIMALS
 	expect(typeof formatUnits(price, AMOUNT_DECIMALS)).toBe("string")
 })

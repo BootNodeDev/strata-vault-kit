@@ -166,7 +166,7 @@ contracts. The addresses emitted by the deploy script are authoritative.
   preconditions are the first lines a reader sees.
 - **Doc comments.** Every public entrypoint has one, in OpenZeppelin's style: a
   one-line summary, then `# Arguments` with units (asset base units, share base
-  units, WAD prices, seconds or ledgers), `# Errors`, `# Events` and
+  units, 14-decimal prices, seconds or ledgers), `# Errors`, `# Events` and
   `# Authorization`. Every error variant's doc says when it happens. Keep them
   short: they are stored in the Wasm as part of the contract spec, which keeps
   1,024 bytes of each doc and drops the rest without a warning.

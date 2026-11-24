@@ -142,7 +142,7 @@ fn a_user_can_claim_deposit_and_receive_shares() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     assert_eq!(f.vault.claim_deposit(&user, &1), 200);
 
@@ -158,7 +158,7 @@ fn a_deposit_cannot_be_claimed_twice() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     f.vault.claim_deposit(&user, &1);
     f.vault.claim_deposit(&user, &1);
@@ -182,7 +182,7 @@ fn claiming_without_a_request_is_rejected() {
     let f = setup();
     let stranger = Address::generate(&f.e);
 
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     refused(
         f.vault.try_claim_deposit(&stranger, &1),
         VaultError::RequestNotFound,
@@ -213,7 +213,7 @@ fn a_deposit_below_one_share_is_refunded_at_claim() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &1);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     // Nothing to mint, so the asset goes back rather than being kept.
     assert_eq!(f.vault.claim_deposit(&user, &1), 0);
@@ -226,7 +226,7 @@ fn a_refund_after_pricing_leaves_the_priced_total_unchanged() {
     let f = setup();
     let user = f.investor(1_000);
     f.vault.request_deposit(&user, &1);
-    let epoch = f.fulfill_epoch(wad(2));
+    let epoch = f.fulfill_epoch(price(2));
 
     assert_eq!(f.vault.claim_deposit(&user, &epoch), 0);
 
@@ -249,7 +249,7 @@ fn claiming_needs_the_investor_authorisation() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     f.e.set_auths(&[]);
     missing_auth(f.vault.try_claim_deposit(&user, &1));
@@ -261,9 +261,9 @@ fn claims_are_scoped_to_their_own_epoch() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.vault.request_deposit(&user, &300);
-    f.fulfill_epoch(wad(3));
+    f.fulfill_epoch(price(3));
 
     assert_eq!(f.vault.claim_deposit(&user, &1), 200);
     assert_eq!(f.vault.claim_deposit(&user, &2), 100);
@@ -276,7 +276,7 @@ fn deposits_after_fulfilling_land_in_the_new_epoch() {
     let investor = f.investor(1_000);
 
     f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     assert_eq!(f.vault.request_deposit(&investor, &300), 2);
 
@@ -317,7 +317,7 @@ fn a_deposit_is_refused_while_the_feed_is_stale() {
     assert_eq!(f.balance(&investor), 1_000);
     assert_eq!(f.vault.cancellable_escrow(), 0);
 
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.request_deposit(&investor, &100);
 }
 
@@ -343,6 +343,6 @@ fn a_deposit_is_refused_before_the_first_report() {
         f.vault.try_request_deposit(&investor, &100),
         VaultError::FeedNotValid,
     );
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.request_deposit(&investor, &100);
 }

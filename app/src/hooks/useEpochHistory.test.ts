@@ -27,7 +27,7 @@ const fulfilled: EpochInfo = {
 	status: { tag: "Fulfilled", values: undefined },
 	total_deposited: 200_0000000n,
 	total_shares_redeeming: 20_0000000n,
-	share_price: 1_500_000_000_000_000_000n,
+	share_price: 150_000_000_000_000n,
 	closed_at: 1_700_000_000n,
 	priceable_at: 1_700_003_600n,
 }
@@ -106,7 +106,7 @@ describe("fetchEpochHistory", () => {
 					status: "Fulfilled",
 					totalDeposited: 200_0000000n,
 					totalSharesRedeeming: 20_0000000n,
-					sharePrice: 1_500_000_000_000_000_000n as Price,
+					sharePrice: 150_000_000_000_000n as Price,
 					closedAt: 1_700_000_000n,
 					priceableAt: 1_700_003_600n,
 				},

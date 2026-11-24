@@ -768,7 +768,8 @@ impl AsyncVault {
     }
 
     /// An epoch: its status, deposits in asset base units, redemptions in share
-    /// base units, price in WAD, and close and pricing times in seconds.
+    /// base units, price at 14 decimals, and close and pricing times in
+    /// seconds.
     ///
     /// # Arguments
     ///
@@ -1047,9 +1048,9 @@ impl AsyncVault {
     }
 
     /// Prices a sealed epoch at the feed's standing report and returns the
-    /// share price in WAD: asset base units per share base unit. Open to
-    /// anyone once the notice has run and a report accepted after the close
-    /// is valid.
+    /// share price at 14 decimals: asset base units per share base unit.
+    /// Open to anyone once the notice has run and a report accepted after the
+    /// close is valid.
     ///
     /// # Arguments
     ///
