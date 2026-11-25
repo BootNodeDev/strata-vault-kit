@@ -103,12 +103,15 @@ identity contracts: its `identity_verifier` is the old allowlist stub.
 <!-- deployed-addresses:start -->
 | Contract | Address |
 | --- | --- |
-| `async_vault` | `CDJHQ2R5XUJGP6WUKCW4VBEVGWFAZ5TZLEONBITKITNXFDLWNNK7WVYO` |
-| `nav_oracle` | `CCZ4X25GLMYRQ33PM4ZYDMGKAJJKPUG2ABUZ4NIGUSA7W4RUTBOEEDYI` |
-| `share_token` | `CDOZT5VNIKSLQSFELF4PHVZRZA3GCJYJEHVDZTUB7O2QMBHBKKOYORQI` |
-| `identity_verifier` | `CCGHNGPI66WGVSLLALQVCIRIOZKX73QW23UDZLZ3LMXLGEG7SLVUOULD` |
-| `compliance` | `CCQI5NFRWBOO77LYSFY54D6PSU4TVWD5A3CFX2A5AWLEURVR35XISMKG` |
-| `sep40_feed` | `CCDNFOV7GFBAZQLXLFBBX6H3T66NYAZG7Z6AWBEHSKLYFNJWRZTPYD2N` |
+| `async_vault` | `CAP7ZO3AYRC6R7LF4H7CYSDS72JQRFIMU7TDWSDF5MKM4J7Z43KWUW6K` |
+| `nav_oracle` | `CCPIHPM6ZKXYWXGZQJQLPUIXOTJCEFSKIDXA6JWEKWWEPGN5B4U45GQP` |
+| `share_token` | `CDQHFAPLJ7OPFVIN3L4LYMWQFG6IS3EQGVPMCCWQAW2ZEW7BP2P76OWH` |
+| `identity_verifier` | `CDMYTPRB26SWEHNE5VQQTYZ24E2OO5UKNBZPXWFB2ZVVBWMFDAMMAZJG` |
+| `identity_registry` | `CD3C4YUNUVGAKM7HMMI5KQ4GS7RS5JO3TK24PEOBH4NICUZBBMGADHQK` |
+| `claim_topics` | `CDJUP6K3CBTTBN5FHJ3FW3HL3WDPIKFR3QRVB2UXSCT3WLMJRSV3GBBK` |
+| `claim_issuer` | `CACHTOFGRK3MCDTDAHN7SEF4WXBXLH46XPJEE43ICAKG6SHAMCH7UVKQ` |
+| `compliance` | `CAIF5C5MXFIOE25YISN3CE2ZWFFJGBUBAF2VCELLAUWB6HHVIDFEDYX2` |
+| `sep40_feed` | `CANGOWAD67YLUAIJKFFYF5WIE3I44DAJRVM7Z2YNGB5VBX4AKXHNO2KX` |
 | `asset` | `CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E` |
 <!-- deployed-addresses:end -->
 
@@ -339,8 +342,8 @@ verifier's `allow`. The current console removes an investor with the
 registry's `remove_identity`, which also vetoes the wallet, and "Lift the
 veto" calls `lift_veto`; its allowlisted check shows a verifier fault as
 unreadable, never as not allowed. The app generates its clients from the
-staging contracts, so it builds against staging only once testnet runs the
-identity contracts:
+contracts under [Deployed addresses](#deployed-addresses), which run the
+identity contracts. The contracts the console ran against:
 
 | Contract | Address |
 | --- | --- |

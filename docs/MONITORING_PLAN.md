@@ -9,8 +9,8 @@ This is a plan, not running alerts. Nothing in the kit watches the chain or
 sends a message today; push alerts are planned after v1
 ([design doc §11](./strata-product-and-architecture.md#11-potential-future-features)).
 Getter, event and entrypoint names are those of the contracts at commit
-`641765d`. The testnet deployment in the [README](../README.md) may run older
-code.
+`641765d`. The testnet deployment in the [README](../README.md) runs
+`tranche-3` at `56936bd`.
 
 Every threshold below is a default. It depends on the deployment's parameters,
 so set each one from the values in
