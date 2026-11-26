@@ -14,13 +14,63 @@ import { describe, expect, it } from "vitest"
 
 import { stellarAssetGenerator } from "./asset-client.js"
 import {
+	deployArgs,
 	ensureAssetContract,
+	lastWasmHash,
 	pinClientSdk,
 	rootSdkVersion,
+	uploadArgs,
 	writeClientSources,
+	type Rpc,
 } from "./cli.js"
 import { REPO_ROOT } from "./deployment.js"
 import { type Network } from "./network.js"
+
+const net: Rpc = {
+	rpcUrl: "http://localhost:8000/rpc",
+	passphrase: Networks.STANDALONE,
+}
+
+describe("deployArgs", () => {
+	it("leaves out the separator when there are no constructor arguments", () => {
+		expect(deployArgs("c.wasm", net, [])).not.toContain("--")
+	})
+
+	it("passes constructor arguments after the separator", () => {
+		expect(deployArgs("c.wasm", net, { vault: "C1" }).slice(-3)).toEqual([
+			"--",
+			"--vault",
+			"C1",
+		])
+	})
+})
+
+describe("uploadArgs", () => {
+	it("uploads the Wasm to the given network", () => {
+		expect(uploadArgs("c.wasm", net)).toEqual([
+			"contract",
+			"upload",
+			"--wasm",
+			"c.wasm",
+			"--rpc-url",
+			net.rpcUrl,
+			"--network-passphrase",
+			net.passphrase,
+		])
+	})
+})
+
+describe("lastWasmHash", () => {
+	const hash = "ab".repeat(32)
+
+	it("reads the hash the CLI prints last", () => {
+		expect(lastWasmHash(`ℹ️ Simulating\n✅ Done\n${hash}\n`)).toBe(hash)
+	})
+
+	it("stops when the output names no hash", () => {
+		expect(() => lastWasmHash("✅ Done\n")).toThrow(/no Wasm hash/)
+	})
+})
 
 describe("ensureAssetContract", () => {
 	it("returns the asset contract already on the network", async () => {

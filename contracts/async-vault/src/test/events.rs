@@ -2,8 +2,8 @@ use soroban_sdk::{testutils::Events as _, Event as _};
 
 use super::*;
 use crate::{
-    DepositCancelled, DepositClaimed, DepositRefunded, DepositRequested, EpochClosed,
-    EpochFulfilled, EpochReconciled, RedeemCancelled,
+    DepositCancelled, DepositClaimed, DepositRefunded, DepositRequested, EpochCashReconciled,
+    EpochClosed, EpochFulfilled, EpochReconciled, EpochSharesReconciled, RedeemCancelled,
 };
 
 #[test]
@@ -49,18 +49,25 @@ fn pricing_an_epoch_publishes_the_share_price() {
     let user = f.investor(1_000);
     f.vault.request_deposit(&user, &400);
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     let share_price = f.vault.fulfill_epoch(&epoch);
 
     assert_eq!(
         f.e.events().all().filter_by_contract(&f.vault.address),
-        [EpochFulfilled {
-            epoch,
-            share_price,
-            total_deposited: 400,
-        }
-        .to_xdr(&f.e, &f.vault.address)]
+        [
+            EpochFulfilled {
+                epoch,
+                share_price,
+                total_deposited: 400,
+            }
+            .to_xdr(&f.e, &f.vault.address),
+            EpochCashReconciled {
+                epoch,
+                cash_dust: 0,
+            }
+            .to_xdr(&f.e, &f.vault.address),
+        ]
     );
 }
 
@@ -69,7 +76,7 @@ fn claiming_the_last_deposit_publishes_the_shares_paid_and_the_settlement() {
     let f = setup();
     let user = f.investor(1_000);
     f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     f.vault.claim_deposit(&user, &1);
 
@@ -83,12 +90,12 @@ fn claiming_the_last_deposit_publishes_the_shares_paid_and_the_settlement() {
                 shares: 200,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
+            EpochSharesReconciled {
                 epoch: 1,
                 share_dust: 0,
-                cash_dust: 0,
             }
             .to_xdr(&f.e, &f.vault.address),
+            EpochReconciled { epoch: 1 }.to_xdr(&f.e, &f.vault.address),
         ]
     );
 }
@@ -119,7 +126,7 @@ fn a_deposit_priced_at_zero_shares_publishes_a_refund_not_a_cancellation() {
 
     let epoch = f.vault.request_deposit(&inv, &1);
     f.close_epoch();
-    f.attest(wad(4));
+    f.attest(price(4));
     f.vault.fulfill_epoch(&epoch);
 
     assert_eq!(f.vault.claim_deposit(&inv, &epoch), 0);

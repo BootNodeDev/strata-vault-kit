@@ -4,19 +4,23 @@ import { join } from "node:path"
 import { stellarAssetGenerator } from "./lib/asset-client.js"
 import { generateClient, rootSdkVersion, wasmGenerator } from "./lib/cli.js"
 import {
-	CONTRACT_NAMES,
+	EXAMPLE_NAMES,
 	REPO_ROOT,
-	type ContractName,
+	WASM_NAMES,
+	type ExampleName,
+	type WasmName,
 } from "./lib/deployment.js"
 
-const wasmOf = (name: ContractName): string =>
+const NAMES = [...WASM_NAMES, ...EXAMPLE_NAMES]
+
+const wasmOf = (name: WasmName | ExampleName): string =>
 	join(REPO_ROOT, "target", "wasm32v1-none", "release", `${name}.wasm`)
 
-const clientDir = (name: ContractName | "asset"): string =>
+const clientDir = (name: WasmName | ExampleName | "asset"): string =>
 	join(REPO_ROOT, "app-lib", "clients", name)
 
 async function main(): Promise<void> {
-	const missing = CONTRACT_NAMES.filter((name) => !existsSync(wasmOf(name)))
+	const missing = NAMES.filter((name) => !existsSync(wasmOf(name)))
 	if (missing.length > 0) {
 		throw new Error(
 			`missing wasm for ${missing.join(", ")}; run \`stellar contract build\` first`,
@@ -24,7 +28,7 @@ async function main(): Promise<void> {
 	}
 
 	const sdkVersion = rootSdkVersion()
-	for (const name of CONTRACT_NAMES) {
+	for (const name of NAMES) {
 		await generateClient(
 			clientDir(name),
 			wasmGenerator(wasmOf(name)),

@@ -12,6 +12,7 @@ mod events;
 mod governance;
 mod guards;
 mod health;
+mod identity_stack;
 mod lock_policy;
 mod multi_epoch;
 mod notice;
@@ -42,14 +43,14 @@ pub(crate) use soroban_sdk::{
 };
 
 pub(crate) use ::compliance::{Compliance, ComplianceChange, ComplianceClient};
-pub(crate) use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
+pub(crate) use allowlist_verifier::{IdentityVerifier, IdentityVerifierClient};
 pub(crate) use nav_oracle::{
     NavInput, NavOracleContract, NavOracleContractClient, OracleConfig, MIN_ANSWER,
 };
 pub(crate) use share_token::{ShareToken, ShareTokenClient};
 
-pub(crate) use stellar_contract_utils::math::wad::WAD_SCALE;
-use stellar_tokens::rwa::compliance::ComplianceHook;
+use stellar_tokens::rwa::{compliance::ComplianceHook, RWA};
+pub(crate) use strata_bindings::PRICE_SCALE;
 pub(crate) use strata_timelock::DAY_DURATION;
 
 pub(crate) use crate::{
@@ -58,8 +59,8 @@ pub(crate) use crate::{
     MAX_WIND_DOWN_DELAY, MIN_UPGRADE_DELAY, MIN_WIND_DOWN_DELAY,
 };
 
-fn wad(whole: i128) -> i128 {
-    whole * WAD_SCALE
+fn price(whole: i128) -> i128 {
+    whole * PRICE_SCALE
 }
 
 fn nav_input(e: &Env, nav_per_share: i128, expires_at: u64) -> NavInput {
@@ -184,7 +185,7 @@ impl Fixture<'_> {
     fn holder(&self, shares: i128) -> Address {
         let who = self.investor(shares * 2);
         let epoch = self.vault.request_deposit(&who, &(shares * 2));
-        self.fulfill_epoch(wad(2));
+        self.fulfill_epoch(price(2));
         self.vault.claim_deposit(&who, &epoch);
         who
     }
@@ -217,6 +218,37 @@ impl Fixture<'_> {
         let id = rules.propose_change(&ComplianceChange::AddModule(hook, module.clone()));
         self.advance(MIN_UPGRADE_DELAY);
         rules.apply_change(&id);
+    }
+
+    /// Points the share token at a verifier that fails with `code` for `only`,
+    /// or for every address when `only` is `None`.
+    fn verifier_failing_with(&self, code: u32, only: Option<&Address>) {
+        let verifier = self.e.register(VerifierFailingWith, (code, only.cloned()));
+        self.e.as_contract(&self.share.address, || {
+            RWA::set_identity_verifier(&self.e, &verifier)
+        });
+    }
+}
+
+/// An identity verifier that fails with one contract error code, for one
+/// address or for all; any other address verifies.
+#[contract]
+struct VerifierFailingWith;
+
+#[contractimpl]
+impl VerifierFailingWith {
+    pub fn __constructor(e: Env, code: u32, only: Option<Address>) {
+        e.storage().instance().set(&symbol_short!("code"), &code);
+        e.storage().instance().set(&symbol_short!("only"), &only);
+    }
+
+    pub fn verify_identity(e: Env, account: Address) {
+        let only: Option<Address> = e.storage().instance().get(&symbol_short!("only")).unwrap();
+        if only.is_some_and(|only| only != account) {
+            return;
+        }
+        let code: u32 = e.storage().instance().get(&symbol_short!("code")).unwrap();
+        e.panic_with_error(soroban_sdk::Error::from_contract_error(code));
     }
 }
 
@@ -270,7 +302,7 @@ fn open_feed() -> OracleConfig {
         max_up_bps: 10_000,
         max_down_bps: 10_000,
         min_answer: MIN_ANSWER,
-        max_answer: 1_000 * WAD_SCALE,
+        max_answer: 1_000 * PRICE_SCALE,
     }
 }
 
@@ -303,6 +335,7 @@ enum Miswire {
     ComplianceUnbound,
     ComplianceBoundElsewhere,
     ComplianceSetupOpen,
+    ComplianceNotGoverned,
     AssetDecimalsDiffer,
     AssetIsShareToken,
     /// The compliance contract passed as the oracle: bound here, but no feed.
@@ -383,7 +416,11 @@ fn build<'a>(
     let attester = Address::generate(&e);
     let compliance_authority = Address::generate(&e);
 
-    let compliance = ComplianceClient::new(&e, &e.register(Compliance, (admin.clone(),)));
+    let rules_admin = match miswire {
+        Miswire::ComplianceNotGoverned => Address::generate(&e),
+        _ => admin.clone(),
+    };
+    let compliance = ComplianceClient::new(&e, &e.register(Compliance, (rules_admin.clone(),)));
     let identity = IdentityVerifierClient::new(
         &e,
         &e.register(IdentityVerifier, (compliance_authority.clone(),)),
@@ -404,7 +441,7 @@ fn build<'a>(
         ),
     );
     if miswire != Miswire::ComplianceUnbound {
-        compliance.bind_token(&share.address, &admin);
+        compliance.bind_token(&share.address, &rules_admin);
     }
 
     let oracle = NavOracleContractClient::new(
@@ -535,17 +572,7 @@ fn build<'a>(
         }),
         _ => {}
     }
-    if finish {
-        vault.finish_setup();
-        // Deposits need a valid report; a second on, so the next sealed epoch is not priced by it.
-        oracle.attest(
-            &nav_input(&e, oracle.config().max_answer / 2, u64::MAX),
-            &attester,
-        );
-        e.ledger().set_timestamp(e.ledger().timestamp() + 1);
-    }
-
-    Fixture {
+    let f = Fixture {
         vault,
         share,
         identity,
@@ -559,5 +586,20 @@ fn build<'a>(
         admin,
         compliance: compliance_authority,
         e,
+    };
+    if finish {
+        finish_setup_and_report(&f);
     }
+    f
+}
+
+/// Finishes the vault's setup and posts the first report, as a deployment does.
+fn finish_setup_and_report(f: &Fixture) {
+    f.vault.finish_setup();
+    // Deposits need a valid report; a second on, so the next sealed epoch is not priced by it.
+    f.oracle.attest(
+        &nav_input(&f.e, f.oracle.config().max_answer / 2, u64::MAX),
+        &f.attester,
+    );
+    f.e.ledger().set_timestamp(f.e.ledger().timestamp() + 1);
 }

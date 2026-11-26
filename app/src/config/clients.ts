@@ -1,12 +1,14 @@
 import {
 	connectAsset,
 	connectAsyncVault,
+	connectIdentityRegistry,
 	connectIdentityVerifier,
 	connectNavOracle,
 	connectShareToken,
 	type AssetApi,
 	type AsyncVaultApi,
 	type ConnectOptions,
+	type IdentityRegistryApi,
 	type IdentityVerifierApi,
 	type NavOracleApi,
 	type ShareTokenApi,
@@ -86,6 +88,22 @@ export const identityVerifierWriter = (address: string) => {
 	return verifierWriter
 }
 
+const registryWriters = new Map<
+	string,
+	(signer: Signer) => Promise<IdentityRegistryApi>
+>()
+
+export const identityRegistryWriter = (address: string) => {
+	let registryWriter = registryWriters.get(address)
+	if (registryWriter === undefined) {
+		registryWriter = writer((signer, options) =>
+			connectIdentityRegistry(address, signer, options),
+		)
+		registryWriters.set(address, registryWriter)
+	}
+	return registryWriter
+}
+
 let oracle: Promise<NavOracleApi> | undefined
 
 export const navOracle = (): Promise<NavOracleApi> => {
@@ -108,6 +126,21 @@ export const identityVerifierAt = (
 		throw error
 	})
 	verifierReaders.set(address, client)
+	return client
+}
+
+const registryReaders = new Map<string, Promise<IdentityRegistryApi>>()
+
+export const identityRegistryAt = (
+	address: string,
+): Promise<IdentityRegistryApi> => {
+	const cached = registryReaders.get(address)
+	if (cached !== undefined) return cached
+	const client = connectIdentityRegistry(address).catch((error: unknown) => {
+		registryReaders.delete(address)
+		throw error
+	})
+	registryReaders.set(address, client)
 	return client
 }
 

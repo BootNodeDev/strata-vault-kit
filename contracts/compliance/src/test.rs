@@ -1,4 +1,5 @@
 mod changes;
+mod exit_rule;
 mod guards;
 mod ttl;
 
@@ -6,6 +7,7 @@ use soroban_sdk::{
     testutils::{storage::Instance as _, Address as _, Ledger as _},
     Address, Env,
 };
+use stellar_tokens::rwa::compliance::{AccountSnapshot, TransferKind};
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
 
 use crate::{Compliance, ComplianceClient};
@@ -19,6 +21,14 @@ fn instance_ttl(e: &Env, id: &Address) -> u32 {
 fn age(e: &Env) {
     e.ledger()
         .with_mut(|l| l.sequence_number += TWO_DAYS_IN_LEDGERS);
+}
+
+fn snapshot(address: &Address, balance: i128) -> AccountSnapshot {
+    AccountSnapshot {
+        address: address.clone(),
+        balance,
+        frozen: 0,
+    }
 }
 
 /// A compliance contract with one bound token, its instance decayed past the
@@ -43,35 +53,26 @@ fn construction_writes_the_instance_with_the_full_ttl() {
 }
 
 #[test]
-fn the_checks_a_token_runs_before_moving_shares_restore_the_instance_ttl() {
-    let e = Env::default();
-    let (client, token) = decayed(&e);
-    let holder = Address::generate(&e);
-    let other = Address::generate(&e);
-
-    assert!(client.can_create(&holder, &1, &token));
-    assert_eq!(instance_ttl(&e, &client.address), INSTANCE_EXTEND_AMOUNT);
-
-    age(&e);
-    assert!(client.can_transfer(&holder, &other, &1, &token));
-    assert_eq!(instance_ttl(&e, &client.address), INSTANCE_EXTEND_AMOUNT);
-}
-
-#[test]
 fn the_hooks_a_token_calls_after_moving_shares_restore_the_instance_ttl() {
     let e = Env::default();
     let (client, token) = decayed(&e);
     let holder = Address::generate(&e);
     let other = Address::generate(&e);
 
-    client.created(&holder, &1, &token);
+    client.created(&snapshot(&holder, 0), &1, &token);
     assert_eq!(instance_ttl(&e, &client.address), INSTANCE_EXTEND_AMOUNT);
 
     age(&e);
-    client.transferred(&holder, &other, &1, &token);
+    client.transferred(
+        &snapshot(&holder, 1),
+        &snapshot(&other, 0),
+        &1,
+        &TransferKind::Standard,
+        &token,
+    );
     assert_eq!(instance_ttl(&e, &client.address), INSTANCE_EXTEND_AMOUNT);
 
     age(&e);
-    client.destroyed(&other, &1, &token);
+    client.destroyed(&snapshot(&other, 1), &1, &token);
     assert_eq!(instance_ttl(&e, &client.address), INSTANCE_EXTEND_AMOUNT);
 }

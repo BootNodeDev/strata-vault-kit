@@ -484,13 +484,13 @@ fn positive_amount_refuses_zero_and_below() {
 #[test]
 fn feed_valid_refuses_a_stale_or_paused_feed() {
     let f = setup();
-    f.attest(wad(1));
+    f.attest(price(1));
     holds(&f, || guards::feed_valid(&f.e));
 
     f.advance(f.oracle.config().freshness_duration + 1);
     refuses(&f, VaultError::FeedNotValid, || guards::feed_valid(&f.e));
 
-    f.attest(wad(1));
+    f.attest(price(1));
     holds(&f, || guards::feed_valid(&f.e));
     f.oracle.pause_nav(&f.guardian);
     refuses(&f, VaultError::FeedNotValid, || guards::feed_valid(&f.e));
@@ -631,26 +631,28 @@ fn escrow_covered_refuses_while_the_balance_is_below_the_escrow() {
 }
 
 #[test]
-fn eligible_to_receive_refuses_a_holder_the_token_would_not_take() {
+fn sent_back_refuses_a_holder_the_token_would_not_take() {
     let f = setup();
+    let redeemer = f.holder(10);
+    f.vault.request_redeem(&redeemer, &4);
     let listed = f.investor(0);
-    holds(&f, || guards::eligible_to_receive(&f.e, &listed, 1));
+    holds(&f, || guards::sent_back(&f.e, &listed, 1));
 
     let delisted = f.unverified_investor(0);
     refuses(&f, VaultError::HolderNotEligible, || {
-        guards::eligible_to_receive(&f.e, &delisted, 1)
+        guards::sent_back(&f.e, &delisted, 1)
     });
 
     let frozen = f.investor(0);
     f.share.set_address_frozen(&frozen, &true, &f.compliance);
     refuses(&f, VaultError::HolderNotEligible, || {
-        guards::eligible_to_receive(&f.e, &frozen, 1)
+        guards::sent_back(&f.e, &frozen, 1)
     });
 
     let module = f.e.register(RefusesEveryTransfer, ());
-    f.add_compliance_module(ComplianceHook::CanTransfer, &module);
+    f.add_compliance_module(ComplianceHook::Transferred, &module);
     refuses(&f, VaultError::HolderNotEligible, || {
-        guards::eligible_to_receive(&f.e, &listed, 1)
+        guards::sent_back(&f.e, &listed, 1)
     });
 }
 
@@ -675,7 +677,7 @@ fn epoch_fulfilled_refuses_an_epoch_not_yet_priced() {
         guards::epoch_fulfilled(&f.e, &sealed)
     });
 
-    f.fulfill_epoch_at(id, wad(1));
+    f.fulfill_epoch_at(id, price(1));
     let priced = epoch(&f, id);
     holds(&f, || guards::epoch_fulfilled(&f.e, &priced));
 }
@@ -687,7 +689,7 @@ fn not_priced_refuses_a_priced_epoch() {
     let sealed = epoch(&f, id);
     holds(&f, || guards::not_priced(&f.e, &sealed));
 
-    f.fulfill_epoch_at(id, wad(1));
+    f.fulfill_epoch_at(id, price(1));
     let priced = epoch(&f, id);
     refuses(&f, VaultError::AlreadyPriced, || {
         guards::not_priced(&f.e, &priced)
@@ -704,7 +706,7 @@ fn no_price_available_refuses_a_sealed_epoch_the_vault_could_price() {
     let sealed = epoch(&f, id);
     holds(&f, || guards::no_price_available(&f.e, &sealed));
 
-    f.attest(wad(1));
+    f.attest(price(1));
     refuses(&f, VaultError::PriceAvailable, || {
         guards::no_price_available(&f.e, &sealed)
     });
@@ -714,7 +716,7 @@ fn no_price_available_refuses_a_sealed_epoch_the_vault_could_price() {
     f.vault.unpause(&f.admin);
 
     wind_down_now(&f);
-    f.attest(wad(1));
+    f.attest(price(1));
     holds(&f, || guards::no_price_available(&f.e, &sealed));
 }
 
@@ -731,7 +733,7 @@ fn fulfilable_refuses_an_epoch_the_vault_cannot_price_yet() {
     refuses(&f, VaultError::FeedNotValid, || {
         guards::fulfilable(&f.e, &unpriced)
     });
-    f.attest(wad(1));
+    f.attest(price(1));
     holds(&f, || guards::fulfilable(&f.e, &unpriced));
 
     f.advance(10);
@@ -792,6 +794,9 @@ fn not_refused_refuses_a_refusal_or_a_hold() {
 
     refuses(&f, VaultError::NotAllowlisted, || {
         guards::not_refused(&f.e, Decision::Refuse, Standing::Delisted)
+    });
+    refuses(&f, VaultError::VerifierFailed, || {
+        guards::not_refused(&f.e, Decision::Refuse, Standing::Unverifiable)
     });
     refuses(&f, VaultError::Frozen, || {
         guards::not_refused(&f.e, Decision::Hold, Standing::Frozen)

@@ -6,7 +6,6 @@ import {
 	type ContractRead,
 	type PendingAdmins,
 	readContract,
-	readContractAdmin,
 	requiredWeight,
 	type ShareTokenApi,
 	uniformWeights,
@@ -19,7 +18,13 @@ import {
 } from "@tanstack/react-query"
 import { useMemo } from "react"
 import { addresses as configured } from "../config/addresses"
-import { asyncVault, navOracle, shareToken } from "../config/clients"
+import {
+	asyncVault,
+	identityRegistryAt,
+	identityVerifierAt,
+	navOracle,
+	shareToken,
+} from "../config/clients"
 import { vaultContractId } from "../config/contracts"
 import { pendingAdminsQuery } from "./pendingAdmins"
 import { useWallet } from "./useWallet"
@@ -68,7 +73,7 @@ export interface AdminAuthority {
 	grants: Grant[]
 	signersUnknown: boolean
 	signersLoading: boolean
-	verifierAdminUnknown: boolean
+	registryComplianceUnknown: boolean
 	addresses: AdminAddresses
 	holders: RoleHolders
 }
@@ -78,7 +83,7 @@ const ROLE_SURFACES = {
 	"vault treasury": ["cycle"],
 	"oracle attester": ["cycle"],
 	"share-token compliance": ["compliance"],
-	"identity-verifier admin": ["compliance"],
+	"identity-registry compliance": ["compliance"],
 	"vault guardian": ["emergency"],
 	"oracle guardian": ["emergency"],
 	"share-token manager": [],
@@ -101,7 +106,7 @@ const emptyHolders = (): RoleHolders => ({
 	"vault treasury": [],
 	"oracle attester": [],
 	"share-token compliance": [],
-	"identity-verifier admin": [],
+	"identity-registry compliance": [],
 	"vault guardian": [],
 	"oracle guardian": [],
 	"share-token manager": [],
@@ -137,7 +142,7 @@ const emptyAuthority = (
 	grants: [],
 	signersUnknown: false,
 	signersLoading: false,
-	verifierAdminUnknown: false,
+	registryComplianceUnknown: false,
 	addresses,
 	holders: emptyHolders(),
 })
@@ -285,7 +290,7 @@ async function readSigners(
 
 type VerifierRead = {
 	address: ContractRead<string>
-	admin: ContractRead<string | null> | undefined
+	registryCompliance: ContractRead<string> | undefined
 }
 
 async function readVerifier(
@@ -294,11 +299,17 @@ async function readVerifier(
 	const address = await readContract(async () =>
 		(await token).identity_verifier(),
 	)
+	if (!isValue(address)) return { address, registryCompliance: undefined }
+	const registry = await readContract(async () =>
+		(await identityVerifierAt(address.value)).identity_registry(),
+	)
 	return {
 		address,
-		admin: isValue(address)
-			? await readContractAdmin(address.value)
-			: undefined,
+		registryCompliance: isValue(registry)
+			? await readContract(async () =>
+					(await identityRegistryAt(registry.value)).compliance(),
+				)
+			: registry,
 	}
 }
 
@@ -308,7 +319,7 @@ type HoldersRead =
 			status: "ready"
 			addresses: AdminAddresses
 			holders: RoleHolders
-			verifierAdminUnknown: boolean
+			registryComplianceUnknown: boolean
 	  }
 
 const oracleReader = (address: string) =>
@@ -405,8 +416,10 @@ async function fetchHolders(queryClient: QueryClient): Promise<HoldersRead> {
 		"oracle guardian": asMembers(oracleGuardians),
 		"oracle admin": asHolders(oracleAdmin),
 		"share-token compliance": asMembers(tokenCompliance),
-		"identity-verifier admin":
-			verifier.admin === undefined ? [] : asHolders(verifier.admin),
+		"identity-registry compliance":
+			verifier.registryCompliance === undefined
+				? []
+				: asHolders(verifier.registryCompliance),
 		"share-token manager": asMembers(tokenManager),
 		"share-token admin": asHolders(tokenAdmin),
 		"vault pending admin": pendingAdminOf(pendingAdmins, vaultContractId),
@@ -421,8 +434,9 @@ async function fetchHolders(queryClient: QueryClient): Promise<HoldersRead> {
 		status: "ready",
 		addresses,
 		holders,
-		verifierAdminUnknown:
-			verifier.admin === undefined || !isValue(verifier.admin),
+		registryComplianceUnknown:
+			verifier.registryCompliance === undefined ||
+			!isValue(verifier.registryCompliance),
 	}
 }
 
@@ -456,7 +470,7 @@ export function useAdminAuthority(): AdminAuthority {
 			...toSurfaces(address, data.holders, signers?.byAccount ?? {}),
 			signersUnknown: signers?.unknown ?? false,
 			signersLoading: signers === undefined,
-			verifierAdminUnknown: data.verifierAdminUnknown,
+			registryComplianceUnknown: data.registryComplianceUnknown,
 			addresses: data.addresses,
 			holders: data.holders,
 		}

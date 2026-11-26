@@ -3,10 +3,7 @@ use stellar_access::{
     access_control::{self, AccessControlError, AccessControlStorageKey},
     role_transfer,
 };
-use stellar_tokens::{
-    fungible::FungibleTokenClient,
-    rwa::{compliance::ComplianceClient as RulesClient, RWATokenClient},
-};
+use stellar_tokens::fungible::FungibleTokenClient;
 use strata_bindings::{OracleFeedClient, OracleState};
 use strata_timelock::{queue, setup};
 
@@ -353,14 +350,10 @@ pub(crate) fn escrow_covered(e: &Env) {
     }
 }
 
-/// The holder may hold shares and the compliance rules let the vault send them.
-pub(crate) fn eligible_to_receive(e: &Env, holder: &Address, shares: i128) {
-    let vault = e.current_contract_address();
-    let token = state::get_addr(e, &DataKey::ShareToken);
-    let share = RWATokenClient::new(e, &token);
-    if lock_policy::standing(e, holder) != Standing::Listed
-        || !RulesClient::new(e, &share.compliance()).can_transfer(&vault, holder, &shares, &token)
-    {
+/// The escrowed shares went back: the holder may hold them and the compliance
+/// rules let the vault send them.
+pub(crate) fn sent_back(e: &Env, holder: &Address, shares: i128) {
+    if !lock_policy::send_back(e, holder, shares) {
         panic_with_error!(e, VaultError::HolderNotEligible);
     }
 }

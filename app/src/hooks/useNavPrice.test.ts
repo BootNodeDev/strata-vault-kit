@@ -9,13 +9,6 @@ import { OracleError } from "../../../app-lib/clients/nav_oracle/src/index"
 import { contractErrorCode } from "../test/contractErrorCode"
 import { classifyNav, type NavClassification } from "./useNavPrice"
 
-vi.mock("../config/clients", () => ({
-	navOracle: async () => ({
-		state: async () => ({}),
-		latest: async () => ({}),
-	}),
-}))
-
 const valid: ContractRead<OracleState> = {
 	kind: "value",
 	value: { tag: "Valid", values: undefined },
@@ -31,7 +24,7 @@ const paused: ContractRead<OracleState> = {
 const unreadableState: ContractRead<OracleState> = { kind: "unreadable" }
 
 const report: NavReport = {
-	nav_per_share: 1500000000000000000n,
+	nav_per_share: 150000000000000n,
 	expires_at: 1800000000n,
 	accepted_at: 1757900000n,
 	proof_hash: Buffer.alloc(32, 0xab),

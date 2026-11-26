@@ -140,15 +140,15 @@ strata_bindings::error_enum! {
         /// Setup has finished, and it never reopens.
         SetupClosed = 6066,
         /// A wiring check `health()` reports is false (token, oracle and compliance
-        /// bound, sole token manager, allowlisted, not frozen, matching decimals,
-        /// distinct addresses, a feed that answers, a custodian) or the token has
-        /// shares outstanding, or the vault's own books are not empty, so setup
-        /// cannot finish.
+        /// bound, sole token manager, allowlisted, an identity stack ready for
+        /// the vault, compliance governed by governance, not frozen, matching
+        /// decimals, distinct addresses, a feed that answers, a custodian) or the
+        /// token has shares outstanding, or the vault's own books are not empty,
+        /// so setup cannot finish.
         SetupIncomplete = 6067,
         /// The holder fails the share token's identity check, so the vault takes no
-        /// deposit request from them and returns no escrowed shares to them. A
-        /// verifier that cannot answer, such as a broken or archived one, counts
-        /// as a failed check.
+        /// deposit request from them and returns no escrowed shares to them. Only
+        /// a refusal counts; a verifier that cannot answer is `VerifierFailed`.
         NotAllowlisted = 6068,
         /// The wind-down delay is below the shortest the vault accepts.
         WindDownDelayTooShort = 6069,
@@ -185,5 +185,16 @@ strata_bindings::error_enum! {
         /// the minimum epoch duration, or has no recorded start yet (setup is
         /// still open).
         MinEpochDurationNotElapsed = 6077,
+        /// The identity verifier failed instead of answering, so the vault cannot
+        /// tell whether the holder qualifies. Only
+        /// `RWAError::IdentityVerificationFailed` (304) and
+        /// `IRSError::IdentityNotFound` (321) count as an answer; any other error
+        /// is a failure. It lets no one in and forces no one out: a deposit
+        /// request is refused, and a priced deposit's claim for shares, a
+        /// redemption's cancel or a claim priced at zero assets waits, its
+        /// request open for a retry. A deposit worth no share is still refunded.
+        /// In a wind-down a priced deposit and a cancelled redemption join the
+        /// payout instead.
+        VerifierFailed = 6078,
     }
 }

@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { setTimeout as sleep } from "node:timers/promises"
 import { oracle, send, type Connected } from "./clients.js"
 import { REPO_ROOT } from "./deployment.js"
+import { type Network } from "./network.js"
 import { outcome } from "./refused.js"
 
 export interface NavInput {
@@ -60,13 +61,47 @@ export async function attest(
 	}
 }
 
+const BPS = 10_000n
+
+/** The hook timeout `vitest.config.ts` gives every hook. */
+const HOOK_TIMEOUT_MS = 300_000
+
+// A hook that moves the NAV to `target` gets the usual time for its other calls,
+// plus the slowest climb: from the band's floor, one capped rise at a time, each
+// waiting out up to a cooldown as `attest` does. On testnet that is far past five minutes.
+export function climbHookTimeoutMs(net: Network, target: bigint): number {
+	const maxUp = BigInt(net.oracle.max_up_bps)
+	let rises = 1
+	for (let last = BigInt(net.oracle.min_answer); last < target; rises++)
+		last += (last * maxUp) / BPS
+	return HOOK_TIMEOUT_MS + rises * (net.oracle.cooldown_secs + 60) * 1_000
+}
+
+// The oracle caps each rise at `max_up_bps` of the last report, stale or not,
+// so a scenario climbs from a lower price an earlier run left.
+export async function moveNavTo(c: Connected, nav: bigint): Promise<void> {
+	const reader = oracle(c, c.keys.outsider)
+	const maxUp = BigInt((await reader.config()).result.max_up_bps)
+	for (;;) {
+		const latest = await reader.latest()
+		const stored = outcome(latest, reader)
+		if (stored === "refused: NoRecord") return attest(c, nav)
+		if (stored !== "accepted") throw new Error(stored)
+		const last = latest.result.nav_per_share
+		const ceiling = last + (last * maxUp) / BPS
+		if (nav <= ceiling) return attest(c, nav)
+		await attest(c, ceiling, "step NAV")
+	}
+}
+
 // Deposits need a valid feed: a lapsed report is posted again at its own value.
 export async function freshFeed(c: Connected, fallback: bigint): Promise<void> {
 	const reader = oracle(c, c.keys.outsider)
 	if ((await reader.state()).result.tag !== "Stale") return
 	const latest = await reader.latest()
 	const stored = outcome(latest, reader)
-	if (stored === "accepted") return attest(c, latest.result.nav_per_share)
-	if (stored === "refused: NoRecord") return attest(c, fallback)
+	if (stored === "accepted")
+		return attest(c, latest.result.nav_per_share, "refresh NAV")
+	if (stored === "refused: NoRecord") return attest(c, fallback, "refresh NAV")
 	throw new Error(stored)
 }

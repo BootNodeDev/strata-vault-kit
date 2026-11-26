@@ -64,7 +64,7 @@ fn a_priced_redemption_waits_while_the_issuer_has_taken_the_escrow() {
     let exit = f.close_epoch();
     let c = f.investor(1_000);
     f.vault.request_deposit(&c, &300);
-    f.fulfill_epoch_at(exit, wad(2));
+    f.fulfill_epoch_at(exit, price(2));
     f.claw_back(300);
 
     refused(
@@ -82,7 +82,7 @@ fn a_refund_below_one_share_waits_while_the_issuer_has_taken_the_escrow() {
     let f = setup();
     let dust = f.investor(1_000);
     f.vault.request_deposit(&dust, &1);
-    let priced = f.fulfill_epoch(wad(2));
+    let priced = f.fulfill_epoch(price(2));
     let pending = f.investor(1_000);
     f.vault.request_deposit(&pending, &100);
     f.claw_back(2);
@@ -118,7 +118,7 @@ fn pricing_ignores_a_shortfall_and_mints_the_full_deposit() {
     let a = f.investor(1_000);
     f.vault.request_deposit(&a, &100);
     f.claw_back(40);
-    let epoch = f.fulfill_epoch(wad(1));
+    let epoch = f.fulfill_epoch(price(1));
 
     assert_eq!(f.vault.claim_deposit(&a, &epoch), 100);
     assert_eq!(f.vault.liquid_reserve(), 60);

@@ -88,6 +88,20 @@ fn compliance_may_not_also_be_the_treasury() {
     register_with(&e, roles);
 }
 
+fn implements_the_feeds_view<T: strata_bindings::VaultView>() {}
+
+#[test]
+fn the_vault_answers_the_view_the_feed_reads() {
+    implements_the_feeds_view::<AsyncVault>();
+    let f = setup();
+    let view = strata_bindings::VaultViewClient::new(&f.e, &f.vault.address);
+    assert_eq!(view.asset(), f.asset);
+    assert_eq!(view.share_token(), f.share.address);
+    assert_eq!(view.oracle(), f.oracle.address);
+    assert_eq!(view.wind_down(), None);
+    assert_eq!(view.governance(), Some(f.admin.clone()));
+}
+
 #[test]
 fn the_guardian_may_be_governance() {
     let e = Env::default();

@@ -1,6 +1,7 @@
 //! # Design
 //!
-//! The interfaces the kit's contracts share, and their error code blocks.
+//! The interfaces the kit's contracts share, their price scale and their
+//! error code blocks.
 //!
 //! - **The compiler checks the feed.** The vault prices from `OracleFeed`,
 //!   which the kit's oracle and any adopter's feed implement. The cost: a feed
@@ -8,17 +9,34 @@
 //! - **Bound contracts report their binding.** The vault's `finish_setup` and
 //!   the token's compliance swaps read `VaultBinding`. The cost: both accept a
 //!   compliance contract that does not answer it, on trust, as external.
-//! - **Fixed blocks of error codes.** The vault, token, oracle and compliance
-//!   contract each own one; `error_enum!` fails the build outside it,
-//!   `errors.rs` on overlaps. The cost: removed codes stay retired.
+//! - **Fixed blocks of error codes.** The vault, token, oracle, compliance
+//!   contract and the SEP-40 feed each own one; `error_enum!` fails the build
+//!   outside it, `errors.rs` on overlaps. The cost: removed codes stay
+//!   retired.
+//! - **The compiler checks the vault's views.** The SEP-40 feed reads
+//!   `VaultView`, which the vault implements. The cost: the wind-down types
+//!   live here, not in the vault.
+//! - **One price scale, the feeds' own.** The oracle, the vault and the
+//!   SEP-40 feed keep `nav_per_share` at 14 decimals, as Stellar price feeds
+//!   do, so the feed needs no scale conversion. The cost: a price finer than
+//!   10^-14 of an asset base unit per share base unit cannot be stored.
 
 #![no_std]
 
 mod errors;
 
-use soroban_sdk::{contracttrait, contracttype, Address, Env};
+use soroban_sdk::{contractclient, contracttrait, contracttype, Address, Env};
 
-pub use errors::{ErrorRange, COMPLIANCE_ERRORS, ORACLE_ERRORS, TOKEN_ERRORS, VAULT_ERRORS};
+pub use errors::{
+    ErrorRange, COMPLIANCE_ERRORS, FEED_ERRORS, IDENTITY_ERRORS, ORACLE_ERRORS, TOKEN_ERRORS,
+    VAULT_ERRORS,
+};
+
+/// Decimal places of a share price: asset base units per share base unit,
+/// as Stellar price feeds carry them.
+pub const PRICE_DECIMALS: u32 = 14;
+/// A share price of one asset base unit per share base unit.
+pub const PRICE_SCALE: i128 = 10i128.pow(PRICE_DECIMALS);
 
 #[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -33,6 +51,7 @@ pub enum OracleState {
 #[contracttrait]
 pub trait OracleFeed {
     fn state(e: &Env) -> OracleState;
+    /// Asset base units per share base unit, at `PRICE_DECIMALS`.
     fn nav_per_share(e: &Env) -> i128;
     /// Ledger time the standing report was accepted.
     fn attested_at(e: &Env) -> u64;
@@ -48,3 +67,52 @@ pub trait VaultBinding {
     /// Whether this contract's admin changes are still instant.
     fn setup_open(e: &Env) -> bool;
 }
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindDownStatus {
+    Proposed,
+    Active,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WindDownInfo {
+    pub status: WindDownStatus,
+    /// Ledger time the proposal may be activated.
+    pub active_at: u64,
+    /// Rounds finalised so far. Zero means no snapshot has been taken.
+    pub round: u32,
+}
+
+/// What a vault answers about itself to a contract that follows it.
+#[contracttrait]
+pub trait VaultView {
+    fn asset(e: &Env) -> Address;
+    fn share_token(e: &Env) -> Address;
+    fn oracle(e: &Env) -> Address;
+    fn wind_down(e: &Env) -> Option<WindDownInfo>;
+    /// The account that signs the vault's admin changes, and the feed's.
+    fn governance(e: &Env) -> Option<Address>;
+}
+
+/// What an identity verifier answers to a vault about its own setup.
+#[contractclient(name = "VerifierSetupClient")]
+pub trait VerifierSetup {
+    /// Whether the identity setup behind this verifier is ready for `vault` under `governance`.
+    fn ready_for(e: Env, vault: Address, governance: Address) -> bool;
+}
+
+/// What an identity verifier answers to a registry before it links a wallet.
+#[contractclient(name = "ClaimsCheckClient")]
+pub trait ClaimsCheck {
+    /// Panics unless `identity` holds a valid claim from a trusted issuer for every required topic.
+    fn check_claims(e: Env, identity: Address);
+}
+
+/// Every contract error the kit's claim issuer refuses a claim with:
+/// OpenZeppelin's `SigDataMismatch` (350) and `InvalidClaimDataExpiration`
+/// (357), then the issuer's own codes. The issuer and the verifier both read
+/// this list, because a contract that depends on a contract crate exports that
+/// crate's entrypoints too.
+pub const ISSUER_REFUSALS: [u32; 8] = [350, 357, 10600, 10601, 10602, 10603, 10604, 10605];

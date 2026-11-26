@@ -20,12 +20,13 @@ result. Three states per side, none skipped: **pending, priced, claimed**.
 
 What the contracts enforce:
 
-1. **Only allowlisted addresses enter.** The post-KYC allowlist is checked
-   when a subscription is requested, again when its shares are minted, and on
-   every share transfer.
+1. **Only verified addresses enter.** An address is verified when it holds a
+   valid KYC claim from a trusted issuer for every topic the fund requires.
+   That is checked when a subscription is requested, again when its shares are
+   minted, and on every share transfer.
 2. **A covered claim always pays.** Once priced and covered, a cash claim cannot
    be blocked by a pause, a stale valuation, or the investor losing their
-   allowlist place. Priced claims are never re-priced, and a cash payout never
+   verification. Priced claims are never re-priced, and a cash payout never
    needs the identity check; a delisted, non-frozen investor leaves through
    the exit-only cash path, including a deposit that was priced before the
    delisting. A compliance freeze holds the claim until it is lifted.
@@ -47,9 +48,10 @@ does not carry over. Read it for Soroban and OZ mechanics only.
 
 ## Build & run
 
-- **Contracts:** `stellar contract build` — **not** `cargo build`. The OZ crates
-  enable an experimental `soroban-sdk` feature (`spec_shaking_v2`) that only
-  works through the CLI wrapper. The devshell pins the Stellar CLI it expects.
+- **Contracts:** `stellar contract build` — **not** `cargo build`. soroban-sdk
+  always shakes unused entries out of the contract spec, and only the Stellar
+  CLI finishes that step, so soroban-sdk stops a plain `cargo build` for the
+  Wasm target. The devshell pins the Stellar CLI it expects.
 - **Tests:** `cargo test` from the repo root runs every workspace member against
   the in-memory `Env`. `npm run test` runs vitest over `app/`, `app-lib/` and
   `scripts/`, and `npm run typecheck` checks `app/`, `app-lib/` and the
@@ -123,6 +125,11 @@ apply as the corresponding code lands here.
   in `environments.toml` in the same commit. Otherwise the scaffold build still
   exits 0 and CI fails minutes later on a client count, naming neither the
   contract nor the argument. This has broken two pull requests.
+- `claim_topics` and `identity_registry` take Wasm hashes as constructor
+  arguments. Their `constructor_args` in `environments.toml` compute each hash
+  with `$(shasum …)` from `target/stellar/<network>/`, which the scaffold runs
+  in a shell. A missing Wasm gives an empty argument, and the deploy fails
+  later rather than at that contract, so build the contracts first.
 - An `after_deploy` line is appended to
   `stellar contract invoke --id <this contract> --`, so it can only call the
   contract whose block it sits in. Wiring that crosses contracts, such as
@@ -141,7 +148,9 @@ contracts. The addresses emitted by the deploy script are authoritative.
 
 - **Crate names.** Shared crates in `crates/` start with `strata-`
   (`strata-timelock`, `strata-storage`, `strata-bindings`), so a path such as
-  `strata_timelock::DAY_DURATION` reads as the kit's own code.
+  `strata_timelock::DAY_DURATION` reads as the kit's own code. `crates/sep40`
+  keeps the standard's name, without the `strata-` prefix, because it holds a
+  Stellar standard and no kit code.
 - **Addresses in entrypoints.** In an entrypoint the kit defines, `caller` is
   the account that must sign the call, and `holder` is the account whose
   position, request or balance the call is about. When one account is both, the
@@ -164,7 +173,7 @@ contracts. The addresses emitted by the deploy script are authoritative.
   preconditions are the first lines a reader sees.
 - **Doc comments.** Every public entrypoint has one, in OpenZeppelin's style: a
   one-line summary, then `# Arguments` with units (asset base units, share base
-  units, WAD prices, seconds or ledgers), `# Errors`, `# Events` and
+  units, 14-decimal prices, seconds or ledgers), `# Errors`, `# Events` and
   `# Authorization`. Every error variant's doc says when it happens. Keep them
   short: they are stored in the Wasm as part of the contract spec, which keeps
   1,024 bytes of each doc and drops the rest without a warning.
@@ -175,6 +184,8 @@ contracts. The addresses emitted by the deploy script are authoritative.
   and with no issue numbers or decision ids.
 - **Exact pins.** Every crates.io dependency, dev-dependencies included, is
   pinned with `=` to the version in `Cargo.lock`.
+- **Examples.** `examples/` holds contracts that show a third party using the
+  kit; an example depends on no kit crate, only on standards such as `sep40`.
 
 ## Conventions
 

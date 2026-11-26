@@ -26,9 +26,33 @@ default = true # Optional. Whether to use this account as the `--source` for com
 client = true
 constructor_args = "--admin me"
 
+# Deployed here so the scaffold uploads its Wasm and generates its client. The
+# registry deploys one identity per investor from the same code.
+[development.contracts.investor_identity]
+client = true
+constructor_args = "--owner me"
+
+[development.contracts.claim_issuer]
+client = true
+constructor_args = "--owner me"
+
+# The scaffold runs each `$(...)` in a shell before it deploys. The topics
+# contract trusts only an issuer running the claim issuer's code, and the
+# registry deploys identities from the investor identity's code, so each takes
+# that code's hash: the SHA-256 of the Wasm the scaffold uploaded above, which
+# it writes under target/stellar/<STELLAR_NETWORK, default local>/, not the
+# release directory.
+[development.contracts.claim_topics]
+client = true
+constructor_args = '--admin me --issuer_wasm $(shasum -a 256 target/stellar/${STELLAR_NETWORK:-local}/claim_issuer.wasm | cut -d " " -f 1)'
+
+[development.contracts.identity_registry]
+client = true
+constructor_args = '--admin me --compliance me --identity_wasm $(shasum -a 256 target/stellar/${STELLAR_NETWORK:-local}/investor_identity.wasm | cut -d " " -f 1)'
+
 [development.contracts.identity_verifier]
 client = true
-constructor_args = "--admin me"
+constructor_args = "--admin me --registry identity_registry --topics claim_topics"
 
 [development.contracts.share_token]
 client = true
@@ -37,33 +61,40 @@ constructor_args = '--name "Strata Vault USDC" --symbol bvUSDC --admin me --comp
 # `--config` takes the OracleConfig struct as JSON. The values match the
 # harness's testnet oracle: a one-hour freshness window, a one-minute cooldown,
 # a 10% cap on a rise, no cap on a fall (10,000 bps lets a loss of any size
-# land at once) and a 0.5–100 band at the 18-decimal scale. The two i128 fields
+# land at once) and a 0.5–100 band at the 14-decimal scale. The two i128 fields
 # are strings because they do not survive a JSON number round trip.
 [development.contracts.nav_oracle]
 client = true
-constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_up_bps\":1000,\"max_down_bps\":10000,\"min_answer\":\"500000000000000000\",\"max_answer\":\"100000000000000000000\"}'"
+constructor_args = "--admin me --attester me --guardian me --config '{\"freshness_duration\":3600,\"cooldown_secs\":60,\"max_up_bps\":1000,\"max_down_bps\":10000,\"min_answer\":\"50000000000000\",\"max_answer\":\"10000000000000000\"}'"
 
 [development.contracts.async_vault]
 client = true
 constructor_args = '--asset share_token --share_token share_token --oracle nav_oracle --roles "{\"attester\":\"me\",\"compliance\":\"compliance\",\"governance\":\"me\",\"guardian\":\"me\",\"manager\":\"me\",\"treasury\":\"share_token\"}"'
-# Two grants are missing here on purpose, because this file cannot express them.
+# Some wiring is missing here on purpose, because this file cannot express it.
 # `after_deploy` lines are appended to `stellar contract invoke --id <this
 # contract> --`, so a line can only call the contract whose block it sits in.
-# The vault needs the share token's manager role and needs allowlisting on the
-# identity verifier, and both target other contracts while requiring the vault's
-# own address, which only exists after it deploys last. The deploy in
-# scripts/harness performs and verifies both.
+# The vault needs the share token's manager role, and the claim topics, the
+# claim issuer's key, the registry's verifier and the identity contracts' vault
+# binding each cross contracts, most of them needing the vault's own address,
+# which only exists after it deploys. The deploy in scripts/harness performs and
+# verifies all of it.
 #
 # Setup cannot finish from this file either. The vault's `finish_setup` checks
-# the token, oracle and compliance bindings, the manager role and the
-# allowlist, which only the harness deploy wires, and that the token has no
-# shares outstanding. It also checks that the asset has the token's decimals,
-# that the asset, the token, the oracle and the vault are four different
-# addresses (here the asset is the share token, so this one fails too), that
-# the oracle answers as a feed, and that a custodian other than the vault is
-# set. A deploy made only from this file leaves the compliance
-# contract's, the token's, the oracle's and the vault's setup open, so its
-# vault refuses deposits with `SetupOpen`. The harness deploy closes all four.
+# the token, oracle and compliance bindings, the manager role and that the
+# identity verifier is ready for the vault, which only the harness deploy wires,
+# and that the token has no shares outstanding. It also checks that the asset
+# has the token's decimals, that the asset, the token, the oracle and the vault
+# are four different addresses (here the asset is the share token, so this one
+# fails too), that the oracle answers as a feed, and that a custodian other than
+# the vault is set. A deploy made only from this file leaves every setup open,
+# so its vault refuses deposits with `SetupOpen`. The harness deploy closes
+# them all.
+
+# The SEP-40 feed sits outside the vault's setup: nothing is wired to it, and it
+# reads the vault, its governance included, on every call.
+[development.contracts.sep40_feed]
+client = true
+constructor_args = "--vault async_vault"
 
 
 ### Staging environment configuration
@@ -82,11 +113,15 @@ default = true
 # underlying Stellar Asset Contract and has no crate here; it still gets a
 # generated client, because a SAC carries its own spec.
 [staging.contracts]
-async_vault = { id = "CDJHQ2R5XUJGP6WUKCW4VBEVGWFAZ5TZLEONBITKITNXFDLWNNK7WVYO" }
-nav_oracle = { id = "CCZ4X25GLMYRQ33PM4ZYDMGKAJJKPUG2ABUZ4NIGUSA7W4RUTBOEEDYI" }
-share_token = { id = "CDOZT5VNIKSLQSFELF4PHVZRZA3GCJYJEHVDZTUB7O2QMBHBKKOYORQI" }
-identity_verifier = { id = "CCGHNGPI66WGVSLLALQVCIRIOZKX73QW23UDZLZ3LMXLGEG7SLVUOULD" }
-compliance = { id = "CCQI5NFRWBOO77LYSFY54D6PSU4TVWD5A3CFX2A5AWLEURVR35XISMKG" }
+async_vault = { id = "CAP7ZO3AYRC6R7LF4H7CYSDS72JQRFIMU7TDWSDF5MKM4J7Z43KWUW6K" }
+nav_oracle = { id = "CCPIHPM6ZKXYWXGZQJQLPUIXOTJCEFSKIDXA6JWEKWWEPGN5B4U45GQP" }
+share_token = { id = "CDQHFAPLJ7OPFVIN3L4LYMWQFG6IS3EQGVPMCCWQAW2ZEW7BP2P76OWH" }
+identity_verifier = { id = "CDMYTPRB26SWEHNE5VQQTYZ24E2OO5UKNBZPXWFB2ZVVBWMFDAMMAZJG" }
+identity_registry = { id = "CD3C4YUNUVGAKM7HMMI5KQ4GS7RS5JO3TK24PEOBH4NICUZBBMGADHQK" }
+claim_topics = { id = "CDJUP6K3CBTTBN5FHJ3FW3HL3WDPIKFR3QRVB2UXSCT3WLMJRSV3GBBK" }
+claim_issuer = { id = "CACHTOFGRK3MCDTDAHN7SEF4WXBXLH46XPJEE43ICAKG6SHAMCH7UVKQ" }
+compliance = { id = "CAIF5C5MXFIOE25YISN3CE2ZWFFJGBUBAF2VCELLAUWB6HHVIDFEDYX2" }
+sep40_feed = { id = "CANGOWAD67YLUAIJKFFYF5WIE3I44DAJRVM7Z2YNGB5VBX4AKXHNO2KX" }
 asset = { id = "CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E" }
 
 ### Production environment configuration

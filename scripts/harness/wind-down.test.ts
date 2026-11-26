@@ -3,11 +3,11 @@ import { beforeAll, describe, expect, it } from "vitest"
 
 import { SHORT_WIND_DOWN_DIR, deployThrowaway, wasmOf } from "./deploy.js"
 import { pay, trustline } from "./lib/accounts.js"
-import { units } from "./lib/amounts.js"
+import { price, units } from "./lib/amounts.js"
 import {
 	connectTo,
-	identityVerifier,
 	send,
+	sep40Feed,
 	shareToken,
 	usdcBalance,
 	vault,
@@ -15,8 +15,10 @@ import {
 } from "./lib/clients.js"
 import { network } from "./lib/network.js"
 import { waitForNotice } from "./lib/notice.js"
+import { onboard } from "./lib/onboard.js"
 import { attest, freshFeed } from "./lib/oracle.js"
 import { outcome } from "./lib/refused.js"
+import { stellarAsset } from "./lib/sep40.js"
 
 const net = network()
 if (net.name !== "local") {
@@ -90,19 +92,14 @@ beforeAll(async () => {
 	await trustline(c.net, c.server, holder, c.asset)
 	await trustline(c.net, c.server, c.keys.custodian, c.asset)
 	await pay(c.net, c.server, c.keys.issuer, holder.publicKey(), c.asset, "1000")
-	await send(
-		identityVerifier(c, c.keys.compliance).allow({
-			account: holder.publicKey(),
-			allowed: true,
-		}),
-	)
+	await onboard(c, holder)
 })
 
 describe("a wind-down on a throwaway vault", () => {
 	const holder = () => c.keys["holder-1"].publicKey()
 
 	it("a holder subscribes, is priced and claims shares", async () => {
-		await freshFeed(c, 2n * 10n ** 18n)
+		await freshFeed(c, price(2))
 		expect(
 			await submit("request_deposit", "holder-1", {
 				holder: holder(),
@@ -114,7 +111,7 @@ describe("a wind-down on a throwaway vault", () => {
 				caller: c.keys.manager.publicKey(),
 			}),
 		).toBe("accepted")
-		await attest(c, 2n * 10n ** 18n)
+		await attest(c, price(2))
 		await waitForNotice(c, vault(c, c.keys.outsider), 1n)
 		expect(await submit("fulfill_epoch", "outsider", { epoch_id: 1n })).toBe(
 			"accepted",
@@ -137,7 +134,11 @@ describe("a wind-down on a throwaway vault", () => {
 	})
 
 	it("governance proposes the wind-down and anyone activates it", async () => {
+		await freshFeed(c, price(1))
 		expect(await submit("propose_wind_down", "governance")).toBe("accepted")
+		const feed = sep40Feed(c, c.keys.outsider)
+		const shareAsset = stellarAsset(c.deployment.contracts.share_token)
+		expect((await feed.lastprice({ asset: shareAsset })).result).not.toBeNull()
 		expect(
 			await call("request_deposit", "holder-1", {
 				holder: holder(),
@@ -145,6 +146,7 @@ describe("a wind-down on a throwaway vault", () => {
 			}),
 		).toBe("refused: WindDownAlreadyProposed")
 		expect(await submit("activate_wind_down", "outsider")).toBe("accepted")
+		expect((await feed.lastprice({ asset: shareAsset })).result).toBeNull()
 	})
 
 	it("anyone finalises a round and the holder claims", async () => {

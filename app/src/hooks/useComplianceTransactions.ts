@@ -1,8 +1,9 @@
 import { type Signer } from "@stellar-scaffold/app-lib"
-import { identityVerifierWriter, shareTokenWriter } from "../config/clients"
+import { identityRegistryWriter, shareTokenWriter } from "../config/clients"
 import { adminTransaction } from "./useAdminTransaction"
 import { complianceReadsKey } from "./useComplianceState"
 import { legalTransfersKey } from "./useCycleState"
+import { identityRegistryOf } from "./useIdentityRegistry"
 import { isAllowedKey } from "./useIsAllowed"
 
 export type AllowanceChange = { verifier: string; account: string }
@@ -16,12 +17,13 @@ export type LegalTransferOrder = {
 
 const SHARE_BALANCES_KEY = ["share", "balance"] as const
 
-const allowCall =
-	(allowed: boolean) =>
-	(signer: Signer, { verifier, account }: AllowanceChange) =>
-		identityVerifierWriter(verifier)(signer).then((client) =>
-			client.allow({ account, allowed }),
-		)
+const listingCall =
+	(method: "remove_identity" | "lift_veto") =>
+	async (signer: Signer, { verifier, account }: AllowanceChange) => {
+		const registry = await identityRegistryOf(verifier)
+		const client = await identityRegistryWriter(registry)(signer)
+		return client[method]({ account, operator: signer.publicKey })
+	}
 
 const freezeAddressCall =
 	(freeze: boolean) => (signer: Signer, account: string) =>
@@ -51,8 +53,14 @@ const legalTransferCall = (signer: Signer, order: LegalTransferOrder) =>
 
 const allowKeys = [complianceReadsKey, isAllowedKey]
 
-export const useAllowAddress = adminTransaction(allowCall(true), allowKeys)
-export const useDisallowAddress = adminTransaction(allowCall(false), allowKeys)
+export const useAllowAddress = adminTransaction(
+	listingCall("lift_veto"),
+	allowKeys,
+)
+export const useDisallowAddress = adminTransaction(
+	listingCall("remove_identity"),
+	allowKeys,
+)
 export const useFreezeAddress = adminTransaction(freezeAddressCall(true), [
 	complianceReadsKey,
 ])

@@ -3,38 +3,52 @@ import { QueryClientProvider, useQuery } from "@tanstack/react-query"
 import { renderHook, waitFor } from "@testing-library/react"
 import { createElement, type ReactNode } from "react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { investorAddress, renderWithWallet } from "./testSupport"
+import {
+	fakeIdentityVerifier,
+	fakeShareToken,
+	identityVerifierAt as identityVerifierAtMock,
+} from "../test/fakeClients"
+import {
+	IDENTITY_NOT_FOUND,
+	IDENTITY_VERIFICATION_FAILED,
+	investorAddress,
+	refusedWith,
+	renderWithWallet,
+	VERIFIER_UNAVAILABLE,
+} from "./testSupport"
 import {
 	classifyAllowance,
 	identityVerifierQuery,
 	useIsAllowed,
 } from "./useIsAllowed"
 
-const { tokenMock, verifierMock, identityVerifierAtMock } = vi.hoisted(() => ({
-	tokenMock: { identity_verifier: vi.fn() },
-	verifierMock: { is_allowed: vi.fn() },
-	identityVerifierAtMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	shareToken: async () => tokenMock,
-	identityVerifierAt: identityVerifierAtMock,
-}))
+const tokenMock = fakeShareToken("identity_verifier")
+const verifierMock = fakeIdentityVerifier("verify_identity")
 
-const allowed: ContractRead<boolean> = { kind: "value", value: true }
-const notAllowed: ContractRead<boolean> = { kind: "value", value: false }
-const contractError: ContractRead<boolean> = {
+const allowed: ContractRead<void> = { kind: "value", value: undefined }
+const refused = (code: number): ContractRead<void> => ({
 	kind: "contract-error",
-	code: 1,
+	code,
 	name: undefined,
-}
-const unreadable: ContractRead<boolean> = { kind: "unreadable" }
+})
+const unreadable: ContractRead<void> = { kind: "unreadable" }
 
 describe("classifyAllowance", () => {
-	it.each<[string, ContractRead<boolean>, string]>([
-		["a value of true", allowed, "allowed"],
-		["a value of false", notAllowed, "not-allowed"],
-		["a contract error, never as not-allowed", contractError, "unreadable"],
+	it.each<[string, ContractRead<void>, string]>([
+		["a verification that passes", allowed, "allowed"],
+		[
+			"a refused verification",
+			refused(IDENTITY_VERIFICATION_FAILED),
+			"not-allowed",
+		],
+		["a wallet with no identity", refused(IDENTITY_NOT_FOUND), "not-allowed"],
+		[
+			"a verifier fault, never as not-allowed",
+			refused(VERIFIER_UNAVAILABLE),
+			"unreadable",
+		],
 		["an unreadable read", unreadable, "unreadable"],
 	])("classifies %s as %s", (_name, read, expected) => {
 		expect(classifyAllowance(read)).toBe(expected)
@@ -44,17 +58,28 @@ describe("classifyAllowance", () => {
 describe("useIsAllowed", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		identityVerifierAtMock.mockImplementation(async () => verifierMock)
 		tokenMock.identity_verifier.mockResolvedValue({ result: "CTOKENVERIFIER" })
-		verifierMock.is_allowed.mockResolvedValue({ result: true })
+		verifierMock.verify_identity.mockResolvedValue({ result: undefined })
 	})
 
-	it("reads the allowlist of the verifier the share token reports", async () => {
+	it.each([
+		["a refused verification", IDENTITY_VERIFICATION_FAILED, "not-allowed"],
+		["a wallet with no identity", IDENTITY_NOT_FOUND, "not-allowed"],
+		["a verifier fault", VERIFIER_UNAVAILABLE, "unreadable"],
+	])("reports %s as %s", async (_name, code, expected) => {
+		verifierMock.verify_identity.mockResolvedValue(refusedWith(code))
+
+		const { result } = renderWithWallet(() => useIsAllowed())
+
+		await waitFor(() => expect(result.current.allowance).toBe(expected))
+	})
+
+	it("verifies the wallet with the verifier the share token reports", async () => {
 		const { result } = renderWithWallet(() => useIsAllowed())
 
 		await waitFor(() => expect(result.current.allowance).toBe("allowed"))
 		expect(identityVerifierAtMock).toHaveBeenCalledWith("CTOKENVERIFIER")
-		expect(verifierMock.is_allowed).toHaveBeenCalledWith({
+		expect(verifierMock.verify_identity).toHaveBeenCalledWith({
 			account: investorAddress,
 		})
 	})
@@ -65,7 +90,7 @@ describe("useIsAllowed", () => {
 		const { result } = renderWithWallet(() => useIsAllowed())
 
 		await waitFor(() => expect(result.current.allowance).toBe("unreadable"))
-		expect(verifierMock.is_allowed).not.toHaveBeenCalled()
+		expect(verifierMock.verify_identity).not.toHaveBeenCalled()
 	})
 
 	it("reads the verifier again on the next mount after a failed read", async () => {

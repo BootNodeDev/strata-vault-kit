@@ -6,17 +6,17 @@ import {
 import type * as AppLib from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { fakeAsyncVault } from "../test/fakeClients"
 import { renderWithWallet } from "./testSupport"
 import { fetchEpochHistory, useEpochHistory } from "./useEpochHistory"
 
-const { vaultMock, asyncVaultMock, readEpochsMock } = vi.hoisted(() => ({
-	vaultMock: { current_epoch: vi.fn() },
-	asyncVaultMock: vi.fn(),
+const { readEpochsMock } = vi.hoisted(() => ({
 	readEpochsMock: vi.fn(),
 }))
-asyncVaultMock.mockResolvedValue(vaultMock)
 
-vi.mock("../config/clients", () => ({ asyncVault: asyncVaultMock }))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
+
+const vaultMock = fakeAsyncVault("current_epoch")
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),
@@ -27,7 +27,7 @@ const fulfilled: EpochInfo = {
 	status: { tag: "Fulfilled", values: undefined },
 	total_deposited: 200_0000000n,
 	total_shares_redeeming: 20_0000000n,
-	share_price: 1_500_000_000_000_000_000n,
+	share_price: 150_000_000_000_000n,
 	closed_at: 1_700_000_000n,
 	priceable_at: 1_700_003_600n,
 }
@@ -106,7 +106,7 @@ describe("fetchEpochHistory", () => {
 					status: "Fulfilled",
 					totalDeposited: 200_0000000n,
 					totalSharesRedeeming: 20_0000000n,
-					sharePrice: 1_500_000_000_000_000_000n as Price,
+					sharePrice: 150_000_000_000_000n as Price,
 					closedAt: 1_700_000_000n,
 					priceableAt: 1_700_003_600n,
 				},

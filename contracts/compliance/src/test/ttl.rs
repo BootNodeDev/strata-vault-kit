@@ -7,7 +7,7 @@ use soroban_sdk::{
 };
 use stellar_tokens::rwa::{
     compliance::{storage::ComplianceDataKey, ComplianceHook, COMPLIANCE_EXTEND_AMOUNT},
-    utils::token_binder::{BUCKET_SIZE, TOKEN_BINDER_EXTEND_AMOUNT},
+    utils::token_binder::TOKEN_BINDER_EXTEND_AMOUNT,
 };
 use strata_timelock::{Clock, MIN_DELAY};
 
@@ -36,8 +36,7 @@ impl strata_timelock::ClockSource for VaultStub {
 /// Mirrors OpenZeppelin's private token-binder key: same variants, same encoding.
 #[contracttype]
 enum TokenBinderStorageKey {
-    TokenBucket(u32),
-    TotalCount,
+    Tokens,
 }
 
 struct Fixture<'a> {
@@ -53,12 +52,8 @@ impl Fixture<'_> {
         })
     }
 
-    /// Every entry a first binding writes: the token count and the first bucket.
-    fn bound_token_ttls(&self) -> [u32; 2] {
-        [
-            self.persistent_ttl(&TokenBinderStorageKey::TotalCount),
-            self.persistent_ttl(&TokenBinderStorageKey::TokenBucket(0)),
-        ]
+    fn bound_tokens_ttl(&self) -> u32 {
+        self.persistent_ttl(&TokenBinderStorageKey::Tokens)
     }
 
     fn modules_ttl(&self, hook: ComplianceHook) -> u32 {
@@ -99,7 +94,7 @@ fn a_binding_during_setup_writes_the_bound_tokens_with_the_full_ttl() {
 
     f.rules.bind_token(&Address::generate(&f.e), &f.admin);
 
-    assert_eq!(f.bound_token_ttls(), [TOKEN_BINDER_EXTEND_AMOUNT; 2]);
+    assert_eq!(f.bound_tokens_ttl(), TOKEN_BINDER_EXTEND_AMOUNT);
 }
 
 #[test]
@@ -108,21 +103,7 @@ fn a_binding_through_the_timelock_writes_the_bound_tokens_with_the_full_ttl() {
 
     f.land(&ComplianceChange::BindToken(Address::generate(&f.e)));
 
-    assert_eq!(f.bound_token_ttls(), [TOKEN_BINDER_EXTEND_AMOUNT; 2]);
-}
-
-#[test]
-fn the_binding_that_opens_a_second_bucket_writes_it_with_the_full_ttl() {
-    let f = setup();
-
-    for _ in 0..=BUCKET_SIZE {
-        f.rules.bind_token(&Address::generate(&f.e), &f.admin);
-    }
-
-    assert_eq!(
-        f.persistent_ttl(&TokenBinderStorageKey::TokenBucket(1)),
-        TOKEN_BINDER_EXTEND_AMOUNT
-    );
+    assert_eq!(f.bound_tokens_ttl(), TOKEN_BINDER_EXTEND_AMOUNT);
 }
 
 #[test]
@@ -130,13 +111,13 @@ fn a_module_added_during_setup_writes_the_hooks_modules_with_the_full_ttl() {
     let f = setup();
 
     f.rules.add_module_to(
-        &ComplianceHook::CanTransfer,
+        &ComplianceHook::Transferred,
         &Address::generate(&f.e),
         &f.admin,
     );
 
     assert_eq!(
-        f.modules_ttl(ComplianceHook::CanTransfer),
+        f.modules_ttl(ComplianceHook::Transferred),
         COMPLIANCE_EXTEND_AMOUNT
     );
 }

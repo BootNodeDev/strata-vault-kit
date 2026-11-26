@@ -31,6 +31,11 @@
 //! - **One report per cooldown.** The cooldown runs from one second to
 //!   `freshness_duration`, so no two reports share a ledger. The cost: an epoch
 //!   sealed just after a report waits up to a cooldown for the next.
+//! - **A report outlives its own cooldown.** `attest` refuses a stored expiry
+//!   that would fall before `cooldown_secs` has run from acceptance. The cost:
+//!   an attester cannot give a very short report a very short life; the
+//!   config already requires `cooldown_secs <= freshness_duration`, so an
+//!   honest attester can always comply.
 
 #![no_std]
 
@@ -46,7 +51,7 @@ use soroban_sdk::{
 use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role};
-use strata_bindings::{OracleFeed, VaultBinding};
+use strata_bindings::{OracleFeed, VaultBinding, PRICE_SCALE};
 
 use state::{get_config, get_latest, nav_paused, ATTESTER_ROLE, GUARDIAN_ROLE};
 
@@ -56,7 +61,6 @@ pub use governance::{
 pub use state::{NavInput, NavReport, OracleConfig, OracleState};
 
 const BPS_DENOM: i128 = 10_000;
-const WAD: i128 = 1_000_000_000_000_000_000;
 
 /// One report per ledger at most. A deployment sets a longer cooldown.
 pub const MIN_COOLDOWN_SECS: u64 = 1;
@@ -64,11 +68,11 @@ pub const MIN_COOLDOWN_SECS: u64 = 1;
 pub const MAX_FRESHNESS_SECS: u64 = 35 * strata_timelock::DAY_DURATION;
 /// A million units of the asset per share. Far above any real price, and far
 /// below where the deviation arithmetic could overflow.
-pub const MAX_ANSWER: i128 = 1_000_000 * WAD;
+pub const MAX_ANSWER: i128 = 1_000_000 * PRICE_SCALE;
 /// A millionth of an asset unit per share, mirroring `MAX_ANSWER`. At it, one
 /// asset base unit mints at most a million share base units, and a 1 bps
 /// move cap still allows a move.
-pub const MIN_ANSWER: i128 = WAD / 1_000_000;
+pub const MIN_ANSWER: i128 = PRICE_SCALE / 1_000_000;
 /// Longest proof URI an attestation may carry, in bytes.
 pub const MAX_PROOF_URI_LEN: u32 = 256;
 
@@ -145,6 +149,10 @@ strata_bindings::error_enum! {
         /// The configuration the constructor writes is absent from instance
         /// storage.
         NotInitialized = 3026,
+        /// The record's stored expiry, the earlier of `expires_at` and the
+        /// freshness window, would fall before `cooldown_secs` has run from
+        /// now: the next report could not land once this one goes stale.
+        ExpiresBeforeCooldown = 3027,
     }
 }
 
@@ -552,7 +560,7 @@ impl NavOracleContract {
         governance::pending(e)
     }
 
-    /// The stored report: `nav_per_share` in WAD, `accepted_at` and
+    /// The stored report: `nav_per_share` at 14 decimals, `accepted_at` and
     /// `expires_at` in seconds, and the proof the attester gave with it,
     /// `proof_hash` and `proof_uri`.
     ///
@@ -583,15 +591,15 @@ impl NavOracleContract {
     }
 
     /// Stores a valuation and its proof for the vault to price epochs from.
-    /// The stored `expires_at` is the earlier of the input's and the time of
-    /// acceptance plus `freshness_duration`. It never verifies the proof.
+    /// The stored `expires_at` is the earlier of the input's and the
+    /// freshness window. It never verifies the proof.
     ///
     /// # Arguments
     ///
-    /// * `input` - `nav_per_share` in WAD: asset base units per share base
-    ///   unit. `expires_at` in seconds: the last moment the attester vouches
-    ///   for it. `proof_hash` hashes the evidence; `proof_uri` says where to
-    ///   read it, or is empty.
+    /// * `input` - `nav_per_share` at 14 decimals: asset base units per
+    ///   share base unit. `expires_at` in seconds: the attester's own expiry.
+    ///   `proof_hash` hashes the evidence; `proof_uri` says where to read it,
+    ///   or is empty.
     /// * `caller` - An `attester`.
     ///
     /// # Errors
@@ -599,7 +607,8 @@ impl NavOracleContract {
     /// * `AccessControlError::Unauthorized` - `caller` is not an `attester`.
     /// * `NavPaused` - The NAV is paused.
     /// * `NavOutOfBand` - `nav_per_share` is outside the band.
-    /// * `ExpiresInPast` - `expires_at` is not in the future.
+    /// * `ExpiresInPast`, `ExpiresBeforeCooldown` - `expires_at` is not in the
+    ///   future, or falls inside the cooldown.
     /// * `EmptyProofHash` - `proof_hash` is all zeros.
     /// * `ProofUriTooLong` - `proof_uri` is over 256 bytes.
     /// * `CooldownActive` - The last report is younger than `cooldown_secs`.
@@ -618,6 +627,7 @@ impl NavOracleContract {
         let cfg = get_config(e);
         guards::nav_in_band(e, &cfg, input.nav_per_share);
         guards::expires_in_future(e, input.expires_at);
+        guards::expires_covers_cooldown(e, &cfg, input.expires_at);
         guards::proof_hash_not_empty(e, &input.proof_hash);
         guards::proof_uri_fits(e, &input.proof_uri);
         if let Some(last) = get_latest(e) {
@@ -715,7 +725,7 @@ impl NavOracleContract {
 
     /// The limits a report must meet: `freshness_duration` and
     /// `cooldown_secs` in seconds, `max_up_bps` and `max_down_bps` in basis
-    /// points, `min_answer` and `max_answer` in WAD.
+    /// points, `min_answer` and `max_answer` at 14 decimals.
     pub fn config(e: &Env) -> OracleConfig {
         get_config(e)
     }
@@ -758,8 +768,8 @@ impl OracleFeed for NavOracleContract {
         compute_state(e)
     }
 
-    /// The stored report's value in WAD: asset base units per share base
-    /// unit.
+    /// The stored report's value at 14 decimals: asset base units per share
+    /// base unit.
     ///
     /// # Errors
     ///

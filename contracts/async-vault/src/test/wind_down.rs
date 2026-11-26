@@ -1,6 +1,7 @@
 use proptest::prelude::*;
-use soroban_sdk::{contract, contracterror, contractimpl, panic_with_error, IntoVal};
+use soroban_sdk::IntoVal;
 
+use super::compliance::RefusesEveryBurn;
 use super::*;
 
 #[test]
@@ -232,7 +233,7 @@ fn an_active_wind_down_prices_nothing_and_closes_no_epoch() {
     let epoch = f.close_epoch();
     wind_down_now(&f);
 
-    f.attest(wad(2));
+    f.attest(price(2));
     refused(
         f.vault.try_fulfill_epoch(&epoch),
         VaultError::WindDownActive,
@@ -248,7 +249,7 @@ fn an_active_wind_down_sends_nothing_to_the_custodian() {
     let f = setup();
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     wind_down_now(&f);
 
     refused(
@@ -272,7 +273,7 @@ fn a_priced_claim_still_pays_during_a_wind_down() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     wind_down_now(&f);
 
     assert_eq!(f.vault.claim_redeem(&user, &epoch), 400);
@@ -283,7 +284,7 @@ fn a_priced_deposit_still_claims_during_a_wind_down() {
     let f = setup();
     let user = f.investor(1_000);
     let epoch = f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     wind_down_now(&f);
 
     assert_eq!(f.vault.claim_deposit(&user, &epoch), 200);
@@ -296,7 +297,7 @@ fn an_epoch_sealed_before_the_announcement_is_still_cancellable() {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     // The price is readable, so without a wind-down this cancel is refused.
     refused(
@@ -316,7 +317,7 @@ fn an_escrowed_redemption_cancelled_in_a_wind_down_joins_the_payout() {
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     wind_down_now(&f);
 
     assert_eq!(f.vault.cancel_redeem(&user, &epoch), 200);
@@ -400,7 +401,7 @@ fn a_round_leaves_priced_liabilities_alone() {
     let f = setup();
     let user = f.holder(500);
     let epoch = f.vault.request_redeem(&user, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     let committed = f.vault.committed();
     assert_eq!(committed, 400);
     first_round_now(&f);
@@ -448,48 +449,41 @@ fn a_holder_who_waits_collects_every_round_at_once() {
     assert_eq!(all_at_once, first + second);
 }
 
-#[contracterror]
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-#[repr(u32)]
-enum ModuleError {
-    BurnRefused = 1,
-}
-
-#[contract]
-struct FailsEveryBurn;
-
-#[contractimpl]
-impl FailsEveryBurn {
-    pub fn on_destroyed(e: Env, _from: Address, _amount: i128, _token: Address) {
-        panic_with_error!(&e, ModuleError::BurnRefused);
-    }
-}
-
 #[test]
-fn a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed() {
+fn a_module_refusing_burns_does_not_block_a_wind_down_claim() {
     let f = setup();
     let holder = f.holder(500);
-    let module = f.e.register(FailsEveryBurn, ());
+    let module = f.e.register(RefusesEveryBurn, ());
     f.add_compliance_module(ComplianceHook::Destroyed, &module);
     first_round_now(&f);
 
-    assert_eq!(
-        f.vault.try_claim_wind_down(&holder),
-        Err(Ok(ModuleError::BurnRefused.into()))
-    );
-    assert_eq!(f.shares(&holder), 500);
-    assert_eq!(f.balance(&holder), 0);
+    let paid = f.vault.claim_wind_down(&holder);
+    assert!(paid > 0);
+    assert_eq!(f.balance(&holder), paid);
+    assert_eq!(f.shares(&holder), 0);
+}
+
+/// Removal is the defense against a module that uses up the whole budget,
+/// which the exit rule cannot catch.
+#[test]
+fn a_module_still_comes_off_through_the_timelock_in_a_wind_down() {
+    let f = setup();
+    f.holder(500);
+    let module = f.e.register(RefusesEveryBurn, ());
+    f.add_compliance_module(ComplianceHook::Destroyed, &module);
+    first_round_now(&f);
 
     let rules = ComplianceClient::new(&f.e, &f.share.compliance());
-    assert_eq!(
-        rules.try_propose_change(&ComplianceChange::RemoveModule(
-            ComplianceHook::Destroyed,
-            module,
-        )),
-        Err(Ok(
-            ::compliance::ComplianceContractError::WindDownActive.into()
-        ))
-    );
+    let id = rules.propose_change(&ComplianceChange::RemoveModule(
+        ComplianceHook::Destroyed,
+        module,
+    ));
+    f.advance(MIN_UPGRADE_DELAY);
+    rules.apply_change(&id);
+
+    assert!(rules
+        .get_modules_for_hook(&ComplianceHook::Destroyed)
+        .is_empty());
 }
 
 #[test]
@@ -632,7 +626,7 @@ fn a_redemption_that_pays_nothing_returns_no_shares_in_a_wind_down() {
     let a = f.holder(200);
     let b = f.holder(200);
     let epoch = f.vault.request_redeem(&a, &1);
-    f.fulfill_epoch(WAD_SCALE / 2);
+    f.fulfill_epoch(PRICE_SCALE / 2);
     wind_down_now(&f);
     assert_eq!(f.vault.finalize_wind_down_round(), 800);
 
@@ -653,7 +647,7 @@ fn a_delisted_holders_worthless_redemption_burns_in_a_wind_down() {
     let a = f.holder(200);
     let b = f.holder(200);
     let epoch = f.vault.request_redeem(&a, &1);
-    f.fulfill_epoch(WAD_SCALE / 2);
+    f.fulfill_epoch(PRICE_SCALE / 2);
     wind_down_now(&f);
     f.vault.finalize_wind_down_round();
     f.identity.allow(&a, &false);
@@ -702,7 +696,7 @@ fn a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve() {
     let epoch = f.vault.request_deposit(&investor, &1);
     f.close_epoch();
     // A price high enough that one unit of the asset buys no shares at all.
-    f.fulfill_epoch_at(epoch, wad(2));
+    f.fulfill_epoch_at(epoch, price(2));
     first_round_now(&f);
 
     // Known limit: the refund is not tracked as a liability, so a round can
@@ -815,7 +809,7 @@ fn redemption_priced_before_wind_down_is_excluded_from_snapshot() {
     let u2 = f.holder(500);
 
     let epoch = f.vault.request_redeem(&u2, &200);
-    f.fulfill_epoch(wad(1));
+    f.fulfill_epoch(price(1));
     assert_eq!(f.vault.pending_burn_shares(), 200);
 
     wind_down_now(&f);

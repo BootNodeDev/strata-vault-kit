@@ -6,31 +6,28 @@ import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { OracleError } from "../../../app-lib/clients/nav_oracle/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import { fakeNavOracle } from "../test/fakeClients"
 import { deferred, investorAddress, renderWithWallet } from "./testSupport"
 import { attestWriteKeys, useAttest } from "./useAttest"
 import { cycleReadsKey } from "./useCycleState"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { navLatestKey } from "./useNavPrice"
 
-const { oracleMock, navOracleWriterMock, readLedgerTimeMock } = vi.hoisted(
-	() => ({
-		oracleMock: { attest: vi.fn() },
-		navOracleWriterMock: vi.fn(),
-		readLedgerTimeMock: vi.fn(),
-	}),
-)
+const { readLedgerTimeMock } = vi.hoisted(() => ({
+	readLedgerTimeMock: vi.fn(),
+}))
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),
 	readLedgerTime: readLedgerTimeMock,
 }))
 
-vi.mock("../config/clients", () => ({
-	navOracleWriter: navOracleWriterMock,
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
+
+const oracleMock = fakeNavOracle("attest")
 
 const attestation = {
-	price: 1_040_000_000_000_000_000n as Price,
+	price: 104_000_000_000_000n as Price,
 	freshness: 86_400n,
 	proofHash: "ab".repeat(32),
 	proofUri: "https://example.com/nav.pdf",
@@ -51,7 +48,6 @@ describe("useAttest", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
 		vi.spyOn(Date, "now").mockReturnValue(wallClock * 1000 + 999)
-		navOracleWriterMock.mockResolvedValue(oracleMock)
 		readLedgerTimeMock.mockResolvedValue(null)
 	})
 

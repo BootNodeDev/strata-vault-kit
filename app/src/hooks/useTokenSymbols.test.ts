@@ -1,14 +1,6 @@
 import { type ContractRead } from "@stellar-scaffold/app-lib"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { toSymbols } from "./useTokenSymbols"
-
-vi.mock("../config/clients", () => ({
-	asset: async () => ({ symbol: async () => ({}) }),
-	shareToken: async () => ({
-		symbol: async () => ({}),
-		name: async () => ({}),
-	}),
-}))
 
 const value = (result: string): ContractRead<string> => ({
 	kind: "value",

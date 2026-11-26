@@ -1,7 +1,7 @@
 import { Asset } from "@stellar/stellar-sdk"
 
-export const WAD = 10n ** 18n
-export const PRICE_SCALE = WAD
+export const PRICE_DECIMALS = 14
+export const PRICE_SCALE = 10n ** BigInt(PRICE_DECIMALS)
 
 export const XLM = Asset.native()
 export const XLM_DECIMALS = 7

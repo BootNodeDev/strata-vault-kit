@@ -5,6 +5,13 @@ closes setup, the deploy sets the vault's custodian, its notice to twice the
 network's oracle cooldown, and a minimum epoch duration of one day, so an
 outsider can seal an abandoned epoch even if the manager goes silent.
 
+The deploy also sets up the identity contracts. KYC (topic 1) is the one
+required claim topic, and the kit's claim issuer is its only trusted issuer.
+That issuer accepts claims signed by the `kyc-provider` key. Investors onboard
+themselves through the identity registry. Each scenario and `npm run seed`
+onboard their holders with a claim signed by that key (`lib/onboard.ts`). No
+KYC service runs behind it.
+
 ## Usage
 
 ```sh
@@ -14,11 +21,21 @@ npm run keys
 # Deploy contracts (local or testnet)
 npm run deploy
 
+# Generate the share token's SEP-1 stellar.toml and SEP-42 asset list from a deployment (reads only)
+npm run sep1
+
 # Unit tests of the harness itself, no network needed
 npm run test:unit
 ```
 
 CI runs these in the `js` job through the root `npm run test`.
+
+`npm run deploy:feed` adds a SEP-40 feed to a set deployed before the feed
+existed. It reads every other contract already in the record and deploys only
+the feed, bound to that record's vault; it writes the updated record and, on
+testnet, `environments.toml` and the README addresses table, the same as
+`npm run deploy` does. `npm run extend` covers the feed like any other
+contract in the record: it needs no changes once the feed is in it.
 
 ```sh
 # Run test suites
@@ -28,6 +45,14 @@ npm run test:guards
 # The redemption queue on a seeded deployment (`npm run seed`); prints each
 # transaction as `tx <label> <hash>`
 npm run test:queue
+
+# Deploys the sep40-consumer example and reads the feed through it,
+# attesting a fresh NAV first if the current one is stale; prints its
+# contract id and `tx record_price <hash>`
+npm run test:sep40
+
+# A wind-down on a vault it deploys for itself; local network only
+npm run test:wind-down
 ```
 
 `HARNESS_NETWORK` picks the network: `local` (the default) or `testnet`.
@@ -35,16 +60,52 @@ npm run test:queue
 Each attestation carries the SHA-256 of `docs/evidence/sample-valuation.md` and
 a URL to it: the copy on `main`, or `PROOF_URI` when set.
 
+### Running one scenario
+
+The scenarios share the deployment in `deployed.<network>.json`, so each one
+starts from what earlier runs left there. CI runs them in this order on a new
+local network: `deploy`, `test:happy-path`, `test:sep40`, `test:guards`,
+`test:wind-down`.
+
+`test:happy-path`, `test:sep40`, `test:guards` and `test:wind-down` each pass
+right after `npm run deploy`. What each one expects:
+
+- `test:happy-path` expects the holders to hold no USDC yet. Run it before
+  `test:guards` and `npm run seed`, which pay them.
+- `test:happy-path` and `test:guards` price their epochs at a NAV of 2.00,
+  and move the oracle there first. The oracle takes a fall of any size, but refuses a rise of more than
+  10% over its last report (`max_up_bps`), even a stale one. From a lower
+  price they climb in 10% steps, one per oracle cooldown (5 seconds locally,
+  60 on testnet). From 1.00 that takes eight reports, about eight minutes on
+  testnet, so the hook that climbs gets time for the slowest climb, from the
+  band's floor, on top of the usual five minutes.
+- `test:sep40` reads whatever price the feed holds. When the feed is stale it
+  posts the last price again, or 1.00 when there is none.
+- `test:wind-down` deploys a vault of its own and leaves the deployment alone.
+
+`test:queue` does not pass after `deploy` alone: it redeems shares that
+`npm run seed` gives holder-2. The seed subscribes the holders only while
+epoch 1 is open, so run `npm run seed` right after `npm run deploy`, then
+`test:queue`. The seed leaves requests in the open epoch on purpose, and
+`test:queue` seals and prices that epoch before it starts.
+
+A run that stops partway can leave the NAV paused or an epoch sealed but not
+priced. Deploy again before the next run.
+
 ## Account keys
 
-The harness signs with fourteen accounts: `deployer`, `governance`, `manager`,
+The harness signs with fifteen accounts: `deployer`, `governance`, `manager`,
 `treasury`, `guardian`, `compliance`, `compliance-backup`, `attester`,
-`custodian`, `issuer`, `holder-1`, `holder-2`, `holder-3` and `outsider`.
-Their secret keys live in `.env.keys.<network>` at the repository root, one
-line per account.
+`custodian`, `issuer`, `kyc-provider`, `holder-1`, `holder-2`, `holder-3` and
+`outsider`. Their secret keys live in `.env.keys.<network>` at the repository
+root, one line per account.
 
 `compliance-backup` holds the share token's `compliance` role as a cold spare
-and signs nothing in the tests.
+and signs nothing in the tests. `kyc-provider` owns the claim issuer, and its
+key signs the test investors' KYC claims.
+
+A key file made before `kyc-provider` existed has no line for it. Run
+`npm run keys`, or deploy, to add it.
 
 - The first deploy creates the file, with a new key for every account.
 - Later deploys reuse the keys in the file. A deploy adds a key only for an
@@ -98,7 +159,9 @@ complete record is left alone.
 The record keeps `commit`, the commit checked out when the deploy ran, and
 `wasmHashes`, the SHA-256 of each Wasm file it deployed. The deploy does not
 rebuild, so build right before you deploy. With `uncommittedChanges: true`,
-the commit alone cannot reproduce the build.
+the commit alone cannot reproduce the build. A feed added later with
+`npm run deploy:feed` was built at its own commit: rebuild `sep40_feed` at
+`feedCommit` (and check `feedUncommittedChanges` the same way).
 
 Rebuild and compare on the same operating system and CPU as the deploy:
 
@@ -110,7 +173,7 @@ shasum -a 256 target/wasm32v1-none/release/*.wasm
 
 Each hash should equal the matching entry in `wasmHashes`. A build on
 another platform can differ: CI's Linux build and a macOS build of the same
-commit hash differently for four of the five contracts, with no build path
+commit hash differently for five of the six contracts, with no build path
 in either.
 
 To check what the network runs, which needs no rebuild:

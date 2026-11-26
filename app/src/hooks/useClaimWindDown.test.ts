@@ -3,6 +3,7 @@ import { act } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import { fakeAsyncVault } from "../test/fakeClients"
 import {
 	contractEvent,
 	investorAddress,
@@ -12,13 +13,9 @@ import {
 import { useClaimWindDown } from "./useClaimWindDown"
 import { windDownClaimableKey } from "./useWindDownClaimable"
 
-const { vaultMock } = vi.hoisted(() => ({
-	vaultMock: { claim_wind_down: vi.fn() },
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: async () => vaultMock,
-}))
+const vaultMock = fakeAsyncVault("claim_wind_down")
 
 const claimed = (surrendered: bigint, assets: bigint) =>
 	contractEvent(
@@ -92,12 +89,16 @@ describe("useClaimWindDown", () => {
 	})
 
 	it("maps a refusal at simulation to its contract code", async () => {
+		const signAndSend = vi.fn()
 		vaultMock.claim_wind_down.mockResolvedValue({
 			simulation: { error: simulationError(VaultError, "Frozen") },
+			signAndSend,
 		})
 		const { result } = renderWithWallet(useClaimWindDown)
 
 		await act(() => result.current.submit(undefined))
+
+		expect(signAndSend).not.toHaveBeenCalled()
 
 		expect(result.current.status).toEqual({
 			status: "failed",

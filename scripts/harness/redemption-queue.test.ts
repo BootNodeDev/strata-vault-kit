@@ -10,13 +10,13 @@ import {
 	vault,
 	type Connected,
 } from "./lib/clients.js"
+import { priceOpenEpoch } from "./lib/epoch.js"
 import { waitForNotice } from "./lib/notice.js"
 import { attest } from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 // The redemption queue on a seeded deployment (`npm run seed`): holder-2
-// already holds shares and has no request in the open epoch. Every transaction
-// prints `tx <label> <hash>`.
+// already holds shares. Every transaction prints `tx <label> <hash>`.
 const c: Connected = connect()
 const holder = c.keys["holder-2"]
 const { custodian, manager, treasury, outsider } = c.keys
@@ -41,6 +41,7 @@ let owed = 0n
 
 beforeAll(async () => {
 	decimals = (await shareToken(c, outsider).decimals()).result
+	await priceOpenEpoch(c)
 	// The vault prices at the oracle's standing valuation, so the run attests it
 	// again rather than a price the deviation cap could refuse.
 	try {
@@ -60,10 +61,13 @@ describe("a reserve that cannot cover an exit", () => {
 		expect((await reader.uncovered()).result).toBe(0n)
 		expect(
 			(await reader.cancellable_escrow()).result,
-			"the open epoch holds deposits: seal and price it first",
+			"a sealed epoch still holds deposits: price it first",
 		).toBe(0n)
 		deployed = (await reader.free_reserve()).result
-		expect(deployed).toBeGreaterThan(0n)
+		expect(
+			deployed,
+			"the vault holds no free reserve: run npm run seed first",
+		).toBeGreaterThan(0n)
 		await send(
 			vault(c, treasury).deploy_to_custodian({
 				caller: treasury.publicKey(),

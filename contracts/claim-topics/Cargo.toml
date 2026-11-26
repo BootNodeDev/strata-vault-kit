@@ -1,0 +1,23 @@
+[package]
+name = "claim-topics"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+crate-type = ["lib", "cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellar-access = { workspace = true }
+stellar-macros = { workspace = true }
+stellar-tokens = { workspace = true }
+strata-bindings = { path = "../../crates/strata-bindings" }
+strata-storage = { path = "../../crates/strata-storage" }
+strata-timelock = { path = "../../crates/strata-timelock" }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
+claim-issuer = { path = "../claim-issuer" }

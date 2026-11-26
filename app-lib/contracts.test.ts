@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
 	connectAsset,
 	connectAsyncVault,
+	connectIdentityRegistry,
 	connectIdentityVerifier,
 	connectNavOracle,
 	connectShareToken,
@@ -23,6 +24,7 @@ describe.each([
 	{ name: "connectAsyncVault", connect: connectAsyncVault },
 	{ name: "connectNavOracle", connect: connectNavOracle },
 	{ name: "connectShareToken", connect: connectShareToken },
+	{ name: "connectIdentityRegistry", connect: connectIdentityRegistry },
 	{ name: "connectIdentityVerifier", connect: connectIdentityVerifier },
 	{ name: "connectAsset", connect: connectAsset },
 ] satisfies {
@@ -62,6 +64,7 @@ describe.each([
 	{ name: "connectAsyncVault", connect: connectAsyncVault },
 	{ name: "connectNavOracle", connect: connectNavOracle },
 	{ name: "connectShareToken", connect: connectShareToken },
+	{ name: "connectIdentityRegistry", connect: connectIdentityRegistry },
 	{ name: "connectIdentityVerifier", connect: connectIdentityVerifier },
 ] satisfies {
 	name: string

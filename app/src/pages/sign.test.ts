@@ -20,7 +20,7 @@ const addresses = {
 	vault: "CVAULT",
 	oracle: "CORACLE",
 	shareToken: "CTOKEN",
-	identityVerifier: "CVERIFIER",
+	identityRegistry: "CREGISTRY",
 }
 
 const account = "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC7OX2H"
@@ -144,8 +144,8 @@ describe("describePending", () => {
 					cooldown_secs: 3_600n,
 					max_up_bps: 500,
 					max_down_bps: 250,
-					min_answer: 500_000_000_000_000_000n,
-					max_answer: 2_000_000_000_000_000_000n,
+					min_answer: 50_000_000_000_000n,
+					max_answer: 200_000_000_000_000n,
 				},
 				account,
 			]),
@@ -167,7 +167,7 @@ describe("describePending", () => {
 			describePending(
 				pending(addresses.oracle, "attest", [
 					{
-						nav_per_share: 1_050_000_000_000_000_000n,
+						nav_per_share: 105_000_000_000_000n,
 						expires_at: 1_800_000_000n,
 						proof_hash: Buffer.alloc(32, 0xab),
 						proof_uri: "https://example.com/nav.pdf",
@@ -193,7 +193,7 @@ describe("describePending", () => {
 		const { args } = describePending(
 			pending(addresses.oracle, "attest", [
 				{
-					nav_per_share: 1_050_000_000_000_000_000n,
+					nav_per_share: 105_000_000_000_000n,
 					expires_at: 1_800_000_000n,
 					proof_hash: Buffer.alloc(32, 0xab),
 					proof_uri: "",
@@ -267,24 +267,40 @@ describe("describePending", () => {
 		})
 	})
 
-	it("maps the configured identity verifier", () => {
+	it.each([
+		[
+			"remove_identity",
+			"disallow-address",
+			"Remove the address from the allowlist",
+		],
+		["lift_veto", "allow-address", "Lift the veto"],
+	])("maps %s on the identity registry to %s", (fn, action, label) => {
 		expect(
 			describePending(
-				pending(addresses.identityVerifier, "allow", [other, false]),
+				pending(addresses.identityRegistry, fn, [other, account]),
 				addresses,
 			),
 		).toEqual({
-			contract: "Identity verifier",
-			action: "disallow-address",
-			label: "Remove the address from the allowlist",
+			contract: "Identity registry",
+			action,
+			label,
 			args: [{ label: "Address", value: "GDQN...KTL3" }],
 		})
+	})
+
+	it("refuses the stub allowlist call", () => {
+		expect(() =>
+			describePending(
+				pending(addresses.identityRegistry, "allow", [other, true]),
+				addresses,
+			),
+		).toThrow(InvalidPendingTransaction)
 	})
 
 	it("refuses a contract that is not one of the configured four", () => {
 		expect(() =>
 			describePending(
-				pending("CFOREIGN", "allow", [other, true, account]),
+				pending("CFOREIGN", "lift_veto", [other, account]),
 				addresses,
 			),
 		).toThrow(new InvalidPendingTransaction("unknown contract"))
@@ -500,8 +516,8 @@ describe("describePending", () => {
 					cooldown_secs: 3_600n,
 					max_up_bps: 500,
 					max_down_bps: 250,
-					min_answer: 500_000_000_000_000_000n,
-					max_answer: 2_000_000_000_000_000_000n,
+					min_answer: 50_000_000_000_000n,
+					max_answer: 200_000_000_000_000n,
 				},
 			],
 			"propose-oracle-config",
@@ -906,7 +922,7 @@ describe("toModalProps", () => {
 		const description = describePending(
 			pending(addresses.oracle, "attest", [
 				{
-					nav_per_share: 1_050_000_000_000_000_000n,
+					nav_per_share: 105_000_000_000_000n,
 					expires_at: 1_800_000_000n,
 					proof_hash: Buffer.alloc(32, 0xab),
 					proof_uri: "",

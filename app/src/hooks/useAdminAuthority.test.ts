@@ -1,8 +1,19 @@
 import type * as AppLib from "@stellar-scaffold/app-lib"
+import type { NavOracleApi, ShareTokenApi } from "@stellar-scaffold/app-lib"
 import { waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { addresses } from "../config/addresses"
 import { vaultContractId } from "../config/contracts"
+import {
+	type FakeClient,
+	fakeAsyncVault,
+	fakeIdentityRegistry,
+	fakeIdentityVerifier,
+	fakeNavOracle,
+	fakeShareToken,
+	navOracle as navOracleMock,
+	shareToken as shareTokenMock,
+} from "../test/fakeClients"
 import { pendingAdminsQuery } from "./pendingAdmins"
 import { deferred, renderWithWallet, investorAddress } from "./testSupport"
 import {
@@ -27,7 +38,7 @@ const noHolders: RoleHolders = {
 	"oracle guardian": [],
 	"oracle admin": [],
 	"share-token compliance": [],
-	"identity-verifier admin": [],
+	"identity-registry compliance": [],
 	"share-token manager": [],
 	"share-token admin": [],
 	"vault pending admin": [],
@@ -81,7 +92,7 @@ describe("toSurfaces", () => {
 		["vault treasury", ["cycle"]],
 		["oracle attester", ["cycle"]],
 		["share-token compliance", ["compliance"]],
-		["identity-verifier admin", ["compliance"]],
+		["identity-registry compliance", ["compliance"]],
 		["vault guardian", ["emergency"]],
 		["oracle guardian", ["emergency"]],
 		["share-token admin", ["emergency", "configuration", "governance"]],
@@ -299,49 +310,39 @@ describe("toSurfaces", () => {
 })
 
 const {
-	vaultMock,
-	oracleMock,
-	tokenMock,
 	connectNavOracleMock,
 	connectShareTokenMock,
-	navOracleMock,
-	shareTokenMock,
 	accountSignersMock,
 	readPendingAdminsMock,
-	readContractAdminMock,
 } = vi.hoisted(() => ({
-	vaultMock: {
-		governance: vi.fn(),
-		get_role_member_count: vi.fn(),
-		get_role_member: vi.fn(),
-		oracle: vi.fn(),
-		share_token: vi.fn(),
-	},
-	oracleMock: {
-		get_role_member_count: vi.fn(),
-		get_role_member: vi.fn(),
-		get_admin: vi.fn(),
-	},
-	tokenMock: {
-		get_role_member_count: vi.fn(),
-		get_role_member: vi.fn(),
-		get_admin: vi.fn(),
-		identity_verifier: vi.fn(),
-	},
 	connectNavOracleMock: vi.fn(),
 	connectShareTokenMock: vi.fn(),
-	navOracleMock: vi.fn(),
-	shareTokenMock: vi.fn(),
 	accountSignersMock: vi.fn(),
 	readPendingAdminsMock: vi.fn(),
-	readContractAdminMock: vi.fn(),
 }))
 
-vi.mock("../config/clients", () => ({
-	asyncVault: async () => vaultMock,
-	navOracle: navOracleMock,
-	shareToken: shareTokenMock,
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
+
+const vaultMock = fakeAsyncVault(
+	"governance",
+	"get_role_member_count",
+	"get_role_member",
+	"oracle",
+	"share_token",
+)
+const oracleMock = fakeNavOracle(
+	"get_role_member_count",
+	"get_role_member",
+	"get_admin",
+)
+const tokenMock = fakeShareToken(
+	"get_role_member_count",
+	"get_role_member",
+	"get_admin",
+	"identity_verifier",
+)
+const verifierMock = fakeIdentityVerifier("identity_registry")
+const registryMock = fakeIdentityRegistry("compliance")
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 	const actual = await importOriginal<typeof AppLib>()
@@ -351,7 +352,6 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => {
 		connectShareToken: connectShareTokenMock,
 		accountSigners: accountSignersMock,
 		readPendingAdmins: readPendingAdminsMock,
-		readContractAdmin: readContractAdminMock,
 	}
 })
 
@@ -371,12 +371,12 @@ const pendingAdmins = (
 })
 
 const members = (
-	client: { get_role_member: ReturnType<typeof vi.fn> },
+	client: FakeClient<NavOracleApi | ShareTokenApi, "get_role_member">,
 	addresses: string[],
 ) => {
-	client.get_role_member.mockImplementation(
-		async ({ index }: { index: number }) => ({ result: addresses[index] }),
-	)
+	client.get_role_member.mockImplementation(async ({ index }) => ({
+		result: addresses[index] ?? "",
+	}))
 }
 
 const vaultRoles = (byRole: Record<string, string[]>) => {
@@ -387,7 +387,7 @@ const vaultRoles = (byRole: Record<string, string[]>) => {
 	)
 	vaultMock.get_role_member.mockImplementation(
 		async ({ role, index }: { role: string; index: number }) => ({
-			result: byRole[role]?.[index],
+			result: byRole[role]?.[index] ?? "",
 		}),
 	)
 }
@@ -406,8 +406,6 @@ describe("useAdminAuthority", () => {
 		})
 		connectNavOracleMock.mockResolvedValue(oracleMock)
 		connectShareTokenMock.mockResolvedValue(tokenMock)
-		navOracleMock.mockResolvedValue(oracleMock)
-		shareTokenMock.mockResolvedValue(tokenMock)
 		oracleMock.get_role_member_count.mockResolvedValue({ result: 0 })
 		oracleMock.get_admin.mockResolvedValue({ result: null })
 		tokenMock.get_role_member_count.mockResolvedValue({ result: 0 })
@@ -417,79 +415,67 @@ describe("useAdminAuthority", () => {
 		})
 		accountSignersMock.mockResolvedValue(singleKey)
 		readPendingAdminsMock.mockResolvedValue(pendingAdmins({}))
-		readContractAdminMock.mockResolvedValue({ kind: "value", value: null })
+		verifierMock.identity_registry.mockResolvedValue({
+			result: "CREGISTRYADDRESS",
+		})
+		registryMock.compliance.mockResolvedValue({ result: contractHolder })
 	})
 
-	it("grants the compliance surface to the admin of the token's own identity verifier", async () => {
+	it("grants the compliance surface to the compliance authority of the token's own identity registry", async () => {
 		vaultRoles({})
-		readContractAdminMock.mockResolvedValue({
-			kind: "value",
-			value: investorAddress,
-		})
+		registryMock.compliance.mockResolvedValue({ result: investorAddress })
 		const { result } = renderWithWallet(useAdminAuthority)
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
 
-		expect(readContractAdminMock).toHaveBeenCalledWith("CVERIFIERADDRESS")
 		expect(result.current.surfaces).toEqual(new Set(["compliance"]))
-		expect(result.current.holders["identity-verifier admin"]).toEqual([
+		expect(result.current.holders["identity-registry compliance"]).toEqual([
 			investorAddress,
 		])
 	})
 
-	it("grants nothing from a verifier whose admin is another account", async () => {
+	it("grants nothing from a registry whose compliance authority is another account", async () => {
 		vaultRoles({})
-		readContractAdminMock.mockResolvedValue({
-			kind: "value",
-			value: contractHolder,
-		})
 		const { result } = renderWithWallet(useAdminAuthority)
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
 		expect(result.current.surfaces).toEqual(new Set())
 	})
 
-	it.each([
-		["cannot be read", { kind: "unreadable" }],
-		["is archived", { kind: "archived" }],
-	])(
-		"keeps the other surfaces and flags the verifier admin when it %s",
-		async (_, read) => {
-			readContractAdminMock.mockResolvedValue(read)
-			const { result } = renderWithWallet(useAdminAuthority)
-
-			await waitFor(() => expect(result.current.status).toBe("ready"))
-			expect(result.current.surfaces).toEqual(new Set(["cycle"]))
-			expect(result.current.holders["identity-verifier admin"]).toEqual([])
-			expect(result.current.verifierAdminUnknown).toBe(true)
-		},
-	)
-
-	it("does not flag the verifier admin when it is read, even with no admin", async () => {
+	it("keeps the other surfaces and flags the registry compliance authority when it cannot be read", async () => {
+		registryMock.compliance.mockRejectedValue(new Error("rpc down"))
 		const { result } = renderWithWallet(useAdminAuthority)
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
-		expect(result.current.verifierAdminUnknown).toBe(false)
+		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
+		expect(result.current.holders["identity-registry compliance"]).toEqual([])
+		expect(result.current.registryComplianceUnknown).toBe(true)
 	})
 
-	it("skips the verifier admin read and flags it when the token's verifier is unknown", async () => {
+	it("does not flag the registry compliance authority when it is read", async () => {
+		const { result } = renderWithWallet(useAdminAuthority)
+
+		await waitFor(() => expect(result.current.status).toBe("ready"))
+		expect(result.current.registryComplianceUnknown).toBe(false)
+	})
+
+	it("skips the registry read and flags it when the token's verifier is unknown", async () => {
 		tokenMock.identity_verifier.mockRejectedValue(new Error("rpc down"))
 		const { result } = renderWithWallet(useAdminAuthority)
 
 		await waitFor(() => expect(result.current.status).toBe("ready"))
-		expect(readContractAdminMock).not.toHaveBeenCalled()
+		expect(verifierMock.identity_registry).not.toHaveBeenCalled()
+		expect(registryMock.compliance).not.toHaveBeenCalled()
 		expect(result.current.surfaces).toEqual(new Set(["cycle"]))
-		expect(result.current.verifierAdminUnknown).toBe(true)
+		expect(result.current.registryComplianceUnknown).toBe(true)
 	})
 
-	it("reads the verifier admin without waiting for the other token reads", async () => {
+	it("reads the registry compliance authority without waiting for the other token reads", async () => {
 		const tokenAdmin = deferred<{ result: null }>()
 		tokenMock.get_admin.mockReturnValue(tokenAdmin.promise)
 		renderWithWallet(useAdminAuthority)
 
-		await waitFor(() =>
-			expect(readContractAdminMock).toHaveBeenCalledWith("CVERIFIERADDRESS"),
-		)
+		await waitFor(() => expect(registryMock.compliance).toHaveBeenCalled())
 		tokenAdmin.resolve({ result: null })
 	})
 

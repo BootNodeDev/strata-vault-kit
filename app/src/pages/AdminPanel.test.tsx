@@ -70,17 +70,17 @@ vi.mock("../components/admin/ComplianceSection", () => ({
 		grants,
 		contracts,
 		active,
-		verifierAdminUnknown,
+		registryComplianceUnknown,
 	}: {
 		grants: Grant[]
 		contracts: React.ReactNode
 		active: boolean
-		verifierAdminUnknown: boolean
+		registryComplianceUnknown: boolean
 	}) => (
 		<div
 			data-testid="compliance-surface"
 			data-active={String(active)}
-			data-admin-unknown={String(verifierAdminUnknown)}
+			data-admin-unknown={String(registryComplianceUnknown)}
 		>
 			<p>
 				Compliance surface for {grants.map((grant) => grant.role).join(", ")}
@@ -178,7 +178,7 @@ const noHolders: RoleHolders = {
 	"oracle guardian": [],
 	"oracle admin": [],
 	"share-token compliance": [],
-	"identity-verifier admin": [],
+	"identity-registry compliance": [],
 	"share-token manager": [],
 	"share-token admin": [],
 	"vault pending admin": [],
@@ -193,7 +193,7 @@ const authority = (overrides: Partial<AdminAuthority>): AdminAuthority => ({
 	grants: [],
 	signersUnknown: false,
 	signersLoading: false,
-	verifierAdminUnknown: false,
+	registryComplianceUnknown: false,
 	addresses: noAddresses,
 	holders: noHolders,
 	...overrides,
@@ -374,7 +374,7 @@ describe("AdminPanel", () => {
 	it("renders the compliance actions with the compliance grants, active only on its tab", () => {
 		const manager = holderOf("vault manager")
 		const officer = holderOf("share-token compliance")
-		const verifierAdmin = holderOf("identity-verifier admin")
+		const registryCompliance = holderOf("identity-registry compliance")
 		useAdminAuthorityMock.mockReturnValue(
 			authority({
 				status: "ready",
@@ -382,16 +382,16 @@ describe("AdminPanel", () => {
 				grantedBy: {
 					...emptyGrantedBy,
 					cycle: [manager],
-					compliance: [officer, verifierAdmin],
+					compliance: [officer, registryCompliance],
 				},
-				grants: [manager, officer, verifierAdmin],
+				grants: [manager, officer, registryCompliance],
 			}),
 		)
 		renderAt("/admin/compliance")
 
 		expect(
 			screen.getByText(
-				"Compliance surface for share-token compliance, identity-verifier admin",
+				"Compliance surface for share-token compliance, identity-registry compliance",
 			),
 		).toBeTruthy()
 		expect(
@@ -410,7 +410,7 @@ describe("AdminPanel", () => {
 				surfaces: new Set(["compliance"]),
 				grantedBy: { ...emptyGrantedBy, compliance: [officer] },
 				grants: [officer],
-				verifierAdminUnknown: true,
+				registryComplianceUnknown: true,
 			}),
 		)
 		renderAt("/admin/compliance")

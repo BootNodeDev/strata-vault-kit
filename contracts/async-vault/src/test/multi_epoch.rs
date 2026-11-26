@@ -32,7 +32,7 @@ fn a_younger_epoch_can_be_priced_first() {
     let first = f.close_epoch();
     let second = f.close_epoch();
 
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&second);
     f.vault.fulfill_epoch(&first);
 
@@ -62,7 +62,7 @@ fn the_rounding_residue_stays_in_the_reserve_once_the_epoch_settles() {
     f.vault.request_redeem(&c, &105);
     let epoch = f.close_epoch();
 
-    f.attest(wad(3) / 2);
+    f.attest(price(3) / 2);
     f.vault.fulfill_epoch(&epoch);
 
     // floor(309 * 1.5) = 463 credited for the epoch.
@@ -93,7 +93,7 @@ fn one_holder_redeems_across_two_epochs() {
 
     assert_eq!(f.shares(&a), 100);
 
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&first);
     f.vault.fulfill_epoch(&second);
 
@@ -114,18 +114,18 @@ fn deposit_only_redeem_only_and_empty_epochs() {
 
     let deposits = f.vault.request_deposit(&inv, &400);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&deposits);
     f.vault.claim_deposit(&inv, &deposits);
     assert_eq!(f.shares(&inv), 200);
 
     f.vault.request_redeem(&inv, &200);
     let redeems = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&redeems);
 
     let empty = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&empty);
     assert_eq!(f.vault.get_epoch(&empty).unwrap().total_deposited, 0);
 
@@ -147,7 +147,7 @@ fn an_epoch_that_owes_nothing_is_fulfilled_having_paid_nobody() {
     let epoch = f.close_epoch();
 
     // 0.4 per share: floor(2 * 0.4) = 0 owed for the whole epoch.
-    f.attest(wad(4) / 10);
+    f.attest(price(4) / 10);
     f.vault.fulfill_epoch(&epoch);
     assert_eq!(f.vault.committed(), 0);
 
@@ -172,7 +172,7 @@ fn a_later_epochs_deposit_does_not_fund_an_earlier_exit() {
 
     f.vault.request_redeem(&a, &100);
     let exits = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&exits);
 
     // Nothing on hand, so the claim waits.
@@ -210,7 +210,7 @@ fn an_epoch_prices_without_the_cash() {
     f.vault.request_redeem(&a, &100);
     let epoch = f.close_epoch();
 
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
     assert_eq!(
@@ -232,7 +232,7 @@ fn a_claim_waits_until_the_reserve_covers_it() {
 
     f.vault.request_redeem(&a, &100);
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
     refused(
@@ -258,7 +258,7 @@ fn a_covered_claim_pays_while_a_larger_one_waits() {
     f.vault.request_redeem(&big, &400);
     f.vault.request_redeem(&small, &20);
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
     // 840 owed in total, only 100 on hand.
@@ -280,7 +280,7 @@ fn the_treasury_cannot_deploy_while_anything_is_uncovered() {
 
     f.vault.request_redeem(&a, &200);
     let epoch = f.close_epoch();
-    f.attest(wad(3));
+    f.attest(price(3));
     f.vault.fulfill_epoch(&epoch);
 
     // 600 owed against 400 held.

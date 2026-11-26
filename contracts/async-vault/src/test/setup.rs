@@ -54,12 +54,12 @@ fn a_redemption_planted_during_setup_never_reaches_a_depositor() {
     f.vault.finish_setup();
 
     let investor = f.investor(1_000);
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.request_deposit(&investor, &100);
-    let entry = f.fulfill_epoch(wad(1));
+    let entry = f.fulfill_epoch(price(1));
     assert_eq!(f.vault.claim_deposit(&investor, &entry), 100);
     f.vault.request_redeem(&investor, &100);
-    let exit = f.fulfill_epoch(wad(1));
+    let exit = f.fulfill_epoch(price(1));
     assert_eq!(f.vault.claim_redeem(&investor, &exit), 100);
     assert_eq!(f.balance(&investor), 1_000);
     assert_eq!(f.shares(&planter), 0);
@@ -81,7 +81,7 @@ fn setup_finishes_once_the_wiring_is_complete() {
     f.vault.finish_setup();
 
     assert!(!f.vault.setup_open());
-    f.attest(wad(1));
+    f.attest(price(1));
     let investor = f.investor(1_000);
     f.vault.request_deposit(&investor, &100);
 }
@@ -123,6 +123,7 @@ fn every_wiring_step_is_checked_before_setup_finishes() {
         Miswire::ComplianceUnbound,
         Miswire::ComplianceBoundElsewhere,
         Miswire::ComplianceSetupOpen,
+        Miswire::ComplianceNotGoverned,
         Miswire::AssetDecimalsDiffer,
         Miswire::AssetIsShareToken,
         Miswire::OracleNotAFeed,
@@ -152,34 +153,67 @@ struct ExternalRules;
 
 #[contractimpl]
 impl ExternalRules {
-    pub fn link(e: Env, token: Address) {
+    pub fn link(e: Env, token: Address, admin: Address) {
         e.storage().instance().set(&symbol_short!("token"), &token);
+        e.storage().instance().set(&symbol_short!("admin"), &admin);
     }
 
     pub fn linked_tokens(e: Env) -> Vec<Address> {
         let token: Address = e.storage().instance().get(&symbol_short!("token")).unwrap();
         vec![&e, token]
     }
+
+    pub fn get_admin(e: Env) -> Option<Address> {
+        e.storage().instance().get(&symbol_short!("admin"))
+    }
 }
 
-/// Its own governance is a trust assumption the vault cannot check.
-#[test]
-fn a_compliance_contract_from_outside_the_kit_is_accepted() {
-    let f = setup_with(
+/// A vault in setup whose token links to outside rules; `rules_admin` picks
+/// their admin, given governance.
+fn under_external_rules<'a>(rules_admin: impl FnOnce(&Env, &Address) -> Address) -> Fixture<'a> {
+    build(
         open_feed(),
         |e, (name, symbol, admin, authority, _, verifier)| {
             let rules = e.register(ExternalRules, ());
             let token = e.register(
                 ShareToken,
-                (name, symbol, admin, authority, rules.clone(), verifier),
+                (
+                    name,
+                    symbol,
+                    admin.clone(),
+                    authority,
+                    rules.clone(),
+                    verifier,
+                ),
             );
-            ExternalRulesClient::new(e, &rules).link(&token);
+            ExternalRulesClient::new(e, &rules).link(&token, &rules_admin(e, &admin));
             token
         },
-    );
+        Miswire::Nothing,
+        false,
+    )
+}
+
+/// The vault cannot check how outside rules are bound, only that governance is
+/// their admin.
+#[test]
+fn a_compliance_contract_from_outside_the_kit_is_accepted() {
+    let f = under_external_rules(|_, governance| governance.clone());
+
+    f.vault.finish_setup();
 
     assert!(!f.vault.setup_open());
     assert!(f.vault.health().compliance_bound);
+    assert!(f.vault.health().compliance_governed);
+}
+
+#[test]
+fn a_compliance_contract_from_outside_the_kit_needs_governance_as_its_admin() {
+    let f = under_external_rules(|e, _| Address::generate(e));
+
+    assert!(f.vault.health().compliance_bound);
+    assert!(!f.vault.health().compliance_governed);
+    refused(f.vault.try_finish_setup(), VaultError::SetupIncomplete);
 }
 
 /// A token that cannot answer `wiring`'s calls must not trap the vault: every
@@ -242,6 +276,8 @@ fn a_token_that_cannot_answer_fails_its_checks_instead_of_trapping() {
     assert!(!health.allowlisted);
     assert!(!health.vault_unfrozen);
     assert!(!health.compliance_bound);
+    assert!(!health.compliance_governed);
+    assert!(!health.identity_ready);
     assert!(!health.decimals_match);
 
     refused(vault.try_finish_setup(), VaultError::SetupIncomplete);

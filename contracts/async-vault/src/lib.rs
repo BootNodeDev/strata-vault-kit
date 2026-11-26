@@ -11,7 +11,8 @@
 //!   minimum set, until a replacement passes the timelock.
 //! - **Pricing records totals; claims mint and burn.** Pricing costs the same
 //!   for any number of requests. The cost: an epoch's rounding remainder stays
-//!   in `committed` and `pending_mint_shares` until its last request settles.
+//!   in `pending_mint_shares` until its last deposit settles, and in
+//!   `committed` until its last redemption settles.
 //! - **A readable price closes cancellation,** during the notice too, until the
 //!   feed goes stale or the NAV or the vault is paused. The cost: a report that
 //!   lapses lets requests leave a sealed epoch late.
@@ -28,15 +29,25 @@
 //!   cancellations fail with `Frozen` until it lifts: compliance can delay a
 //!   payout, never redirect it. The cost: even a covered claim waits.
 //! - **A delisted holder leaves in cash.** Shares priced for them join their
-//!   redemption in the open epoch, or their wind-down entitlement. The cost:
-//!   another epoch at its price, and a wait while the vault itself is delisted.
+//!   redemption in the open epoch, or their wind-down entitlement; a
+//!   redemption priced at nothing burns the shares they may not take back. The
+//!   cost: another epoch at its price, and burned shares worth less than one
+//!   asset unit.
+//! - **A verifier fault lets no one in and forces no one out.** Only a
+//!   refusal (304 or 321) delists. Any other failure refuses a deposit
+//!   request, and holds a priced deposit's claim and a redemption's cancel
+//!   with `VerifierFailed` until the verifier answers. A deposit worth no
+//!   share is still refunded, and every exit a delisted holder keeps stays
+//!   open. In a wind-down the fault counts as a refusal.
+//!   The cost: a broken issuer holds priced deposits back until it is fixed.
 //! - **Setup, then the timelock.** Until `finish_setup` checks the wiring,
 //!   admin changes are instant and requests and epochs refused; after it,
 //!   changes that move value or cut a wait are timelocked. The cost: fixes
 //!   take a week.
 //! - **Wind-down claims run the compliance hooks:** surrendered shares burn
 //!   through the `destroyed` modules. The cost: one failing in a wind-down
-//!   blocks those claims, and no change can remove it then.
+//!   blocks those claims until its removal lands, the normal delay after it
+//!   is proposed.
 
 #![no_std]
 
@@ -65,7 +76,8 @@ use stellar_access::access_control::{self, AccessControl};
 use stellar_contract_utils::pausable::{self as pausable, Pausable};
 use stellar_contract_utils::upgradeable;
 use stellar_macros::{only_admin, only_role, when_not_paused};
-use stellar_tokens::fungible::FungibleTokenClient;
+use stellar_tokens::fungible::{total_supply::FungibleTotalSupplyClient, FungibleTokenClient};
+use strata_bindings::VaultView;
 use strata_timelock::{Clock, ClockSource, Refusal, TimelockHost, DAY_DURATION};
 
 use keys::DataKey;
@@ -76,10 +88,10 @@ pub use error::VaultError;
 pub use event::{
     ChangeApplied, ChangeCancelled, ChangeProposed, CustodianSet, Deployed, DepositCancelled,
     DepositCapUpdated, DepositClaimed, DepositConvertedToExit, DepositRefunded, DepositRequested,
-    EpochClosed, EpochFulfilled, EpochReconciled, Funded, MinEpochDurationSet, NoticeSet,
-    RedeemCancelled, RedeemClaimed, RedeemRequested, RedemptionSurrendered, SetupFinished,
-    WindDownActivated, WindDownClaimed, WindDownDelaySet, WindDownProposalCancelled,
-    WindDownProposed, WindDownRoundFinalized,
+    EpochCashReconciled, EpochClosed, EpochFulfilled, EpochReconciled, EpochSharesReconciled,
+    Funded, MinEpochDurationSet, NoticeSet, RedeemCancelled, RedeemClaimed, RedeemRequested,
+    RedemptionSurrendered, SetupFinished, WindDownActivated, WindDownClaimed, WindDownDelaySet,
+    WindDownProposalCancelled, WindDownProposed, WindDownRoundFinalized,
 };
 pub use governance::{VaultChange, VaultPendingChange, ADMIN_ACCEPT_LEDGERS};
 pub use health::Health;
@@ -167,26 +179,6 @@ impl AsyncVault {
         upgradeable::set_schema_version(e, 1);
     }
 
-    /// The deposit asset's token contract.
-    pub fn asset(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::Asset)
-    }
-
-    /// The share token.
-    pub fn share_token(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::ShareToken)
-    }
-
-    /// The feed epochs are priced from.
-    pub fn oracle(e: &Env) -> Address {
-        state::get_addr(e, &DataKey::Oracle)
-    }
-
-    /// The admin: governance.
-    pub fn governance(e: &Env) -> Option<Address> {
-        access_control::get_admin(e)
-    }
-
     /// The first holder of `manager`, which closes epochs.
     pub fn manager(e: &Env) -> Option<Address> {
         role_holder(e, &MANAGER_ROLE)
@@ -259,9 +251,9 @@ impl AsyncVault {
     /// `pending_mint_shares`.
     pub fn total_economic_supply(e: &Env) -> i128 {
         let share_token = state::get_addr(e, &DataKey::ShareToken);
-        let client = FungibleTokenClient::new(e, &share_token);
-        let total_supply = client.total_supply();
-        let vault_escrow = client.balance(&e.current_contract_address());
+        let total_supply = FungibleTotalSupplyClient::new(e, &share_token).total_supply();
+        let vault_escrow =
+            FungibleTokenClient::new(e, &share_token).balance(&e.current_contract_address());
         let circulating = state::reduce(e, total_supply, vault_escrow);
         circulating
             .checked_add(state::pending_mint_shares(e))
@@ -396,12 +388,6 @@ impl AsyncVault {
         state::min_epoch_duration(e)
     }
 
-    /// The wind-down once proposed: whether it is proposed or active, the time
-    /// in seconds it may start, and the rounds finalised.
-    pub fn wind_down(e: &Env) -> Option<WindDownInfo> {
-        wind_down::info(e)
-    }
-
     /// Announces a wind-down, which anyone can start once the delay has run.
     /// New deposits stop at once; exits go on.
     ///
@@ -519,6 +505,8 @@ impl AsyncVault {
     /// * `AccountingMismatch` - A payout would go below what was already paid.
     /// * `NoEntitlement` - Nothing to surrender and nothing owed, or
     ///   `holder` is the vault.
+    /// * A compliance module's own error - Compliance from outside the kit
+    ///   refuses the burn.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
@@ -789,7 +777,8 @@ impl AsyncVault {
     }
 
     /// An epoch: its status, deposits in asset base units, redemptions in share
-    /// base units, price in WAD, and close and pricing times in seconds.
+    /// base units, price at 14 decimals, and close and pricing times in
+    /// seconds.
     ///
     /// # Arguments
     ///
@@ -822,7 +811,7 @@ impl AsyncVault {
 
     /// Escrows `amount` of the asset into the open epoch and returns the
     /// epoch's id. The deposit can be priced once the epoch closes and its
-    /// notice has run. Refused while the feed cannot price.
+    /// notice has run.
     ///
     /// # Arguments
     ///
@@ -837,6 +826,7 @@ impl AsyncVault {
     /// * `SetupOpen` - Setup has not finished.
     /// * `InvalidAmount` - `amount` is zero or negative.
     /// * `NotAllowlisted` - `holder` fails the identity check.
+    /// * `VerifierFailed` - The verifier fails.
     /// * `Frozen` - `holder` is frozen.
     /// * `FeedNotValid` - The feed is stale or the NAV is paused.
     /// * `EscrowNotCovered` - The vault holds less than its pending escrow.
@@ -873,17 +863,18 @@ impl AsyncVault {
     /// * `EpochNotFulfilled` - The epoch is not priced yet.
     /// * `AlreadyClaimed` - The deposit was claimed.
     /// * `Frozen` - `holder` is frozen.
+    /// * `VerifierFailed` - The verifier fails outside a wind-down, on a
+    ///   deposit worth shares.
     /// * `ClaimNotCovered` - The free reserve cannot cover a refund yet.
-    /// * `RWAError::MintNotCompliant` - The compliance rules refuse the mint.
-    /// * `RWAError::IdentityVerificationFailed` - The vault is delisted, for a
-    ///   conversion.
+    /// * A compliance module's own error - The compliance rules refuse the
+    ///   mint.
     /// * The asset's own error when `holder` cannot receive a refund.
     ///
     /// # Events
     ///
-    /// * `DepositClaimed`, `DepositConvertedToExit` or, for a refund,
-    ///   `DepositRefunded`.
-    /// * `EpochReconciled` once the epoch's last request settles.
+    /// * `DepositClaimed`, `DepositConvertedToExit` or `DepositRefunded`.
+    /// * `EpochSharesReconciled` on the last deposit, then `EpochReconciled`
+    ///   if no redemption is open.
     ///
     /// # Authorization
     ///
@@ -943,8 +934,10 @@ impl AsyncVault {
     ///   share price above zero, so the price is known, even while the notice
     ///   runs.
     /// * `NotAllowlisted` - `holder` is delisted.
+    /// * `VerifierFailed` - The verifier fails, outside a wind-down.
     /// * `Frozen` - `holder` is frozen.
-    /// * `HolderNotEligible` - The compliance rules refuse the return.
+    /// * `HolderNotEligible` - The return fails, as when the compliance rules
+    ///   refuse it.
     ///
     /// # Events
     ///
@@ -958,8 +951,8 @@ impl AsyncVault {
     }
 
     /// Escrows `shares` into the open epoch's redemptions and returns the
-    /// epoch's id. Open to a delisted holder, and while the vault or the token
-    /// is paused.
+    /// epoch's id. Open to a delisted holder, to one the identity verifier
+    /// fails on, and while the vault or the token is paused.
     ///
     /// # Arguments
     ///
@@ -976,6 +969,8 @@ impl AsyncVault {
     ///   already.
     /// * `AmountTooLarge` - A total would overflow.
     /// * `RWAError::InsufficientBalance` - `shares` exceeds the balance.
+    /// * A compliance module's own error - Compliance from outside the kit
+    ///   refuses the escrow move.
     ///
     /// # Events
     ///
@@ -1001,7 +996,8 @@ impl AsyncVault {
 
     /// Pays a priced redemption and returns the asset base units paid. Open
     /// while paused and to a delisted holder. Outside a wind-down, shares
-    /// priced at nothing come back instead.
+    /// priced at nothing come back instead, or burn when the holder may not
+    /// take them back.
     ///
     /// # Arguments
     ///
@@ -1016,13 +1012,16 @@ impl AsyncVault {
     /// * `AlreadyClaimed` - The redemption was claimed.
     /// * `Frozen` - `holder` is frozen.
     /// * `ClaimNotCovered` - The liquid reserve cannot pay it yet.
-    /// * `HolderNotEligible` - Shares priced at nothing cannot come back.
+    /// * `VerifierFailed` - It pays nothing and the verifier fails.
+    /// * A compliance module's own error - Compliance from outside the kit
+    ///   refuses the burn.
     /// * The asset's own error when `holder` cannot receive it.
     ///
     /// # Events
     ///
     /// * `RedeemClaimed`, or `RedeemCancelled` when the shares come back.
-    /// * `EpochReconciled` once the epoch's last request settles.
+    /// * `EpochCashReconciled` on the last redemption, then `EpochReconciled`
+    ///   if no deposit is open.
     ///
     /// # Authorization
     ///
@@ -1065,9 +1064,9 @@ impl AsyncVault {
     }
 
     /// Prices a sealed epoch at the feed's standing report and returns the
-    /// share price in WAD: asset base units per share base unit. Open to
-    /// anyone once the notice has run and a report accepted after the close
-    /// is valid.
+    /// share price at 14 decimals: asset base units per share base unit.
+    /// Open to anyone once the notice has run and a report accepted after the
+    /// close is valid.
     ///
     /// # Arguments
     ///
@@ -1089,7 +1088,8 @@ impl AsyncVault {
     /// # Events
     ///
     /// * `EpochFulfilled`
-    /// * `EpochReconciled` when the epoch has no open request.
+    /// * `EpochSharesReconciled` and `EpochCashReconciled` for each side
+    ///   with no open request, then `EpochReconciled` if both have none.
     ///
     /// # Authorization
     ///
@@ -1289,6 +1289,35 @@ impl Pausable for AsyncVault {
         caller.require_auth();
         pausable::unpause(e);
         strata_timelock::pause::end(e);
+    }
+}
+
+#[contractimpl(contracttrait)]
+impl VaultView for AsyncVault {
+    /// The deposit asset's token contract.
+    fn asset(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::Asset)
+    }
+
+    /// The share token.
+    fn share_token(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::ShareToken)
+    }
+
+    /// The feed epochs are priced from.
+    fn oracle(e: &Env) -> Address {
+        state::get_addr(e, &DataKey::Oracle)
+    }
+
+    /// The wind-down once proposed: whether it is proposed or active, the time
+    /// in seconds it may start, and the rounds finalised.
+    fn wind_down(e: &Env) -> Option<WindDownInfo> {
+        wind_down::info(e)
+    }
+
+    /// The admin: governance.
+    fn governance(e: &Env) -> Option<Address> {
+        access_control::get_admin(e)
     }
 }
 

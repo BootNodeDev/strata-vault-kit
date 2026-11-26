@@ -3,21 +3,17 @@ import { act, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import { fakeAsyncVault } from "../test/fakeClients"
 import { deferred, renderWithWallet } from "./testSupport"
 import { cycleWriteKeys } from "./useCycleState"
 import { useFulfillEpoch } from "./useFulfillEpoch"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { fulfill_epoch: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("fulfill_epoch")
 
 const epochId = 4n
-const sharePrice = 1_250_000_000_000_000_000n
+const sharePrice = 125_000_000_000_000n
 
 const renderFulfillEpoch = () => renderWithWallet(useFulfillEpoch)
 
@@ -32,7 +28,6 @@ const successful = (result: bigint) => ({
 describe("useFulfillEpoch", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it("moves through awaiting signature, submitted, then confirmed with the share price, in order", async () => {

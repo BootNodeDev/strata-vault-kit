@@ -4,17 +4,27 @@ import { pay, trustline } from "./lib/accounts.js"
 import { assetsFor, price, sharesFor, units } from "./lib/amounts.js"
 import {
 	connect,
-	identityVerifier,
+	identityRegistry,
 	oracle,
 	send,
+	sep40Feed,
 	shareToken,
 	usdcBalance,
 	vault,
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
-import { attest, freshFeed, navInput, SAMPLE_PROOF_URI } from "./lib/oracle.js"
+import { onboard, verified } from "./lib/onboard.js"
+import {
+	attest,
+	climbHookTimeoutMs,
+	freshFeed,
+	moveNavTo,
+	navInput,
+	SAMPLE_PROOF_URI,
+} from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
+import { stellarAsset } from "./lib/sep40.js"
 
 const c: Connected = connect()
 const holders = [
@@ -28,6 +38,7 @@ const { compliance, custodian, outsider, issuer, manager, treasury } = c.keys
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
 const each = () => usdc(100)
+const nav = price(2)
 
 const reader = vault(c, outsider)
 const vaultId = c.deployment.contracts.async_vault
@@ -36,9 +47,13 @@ const shares = async (who: string) =>
 const epochStatus = async (id: bigint) =>
 	(await reader.get_epoch({ epoch_id: id })).result?.status.tag
 
-beforeAll(async () => {
-	decimals = (await shareToken(c, outsider).decimals()).result
-})
+beforeAll(
+	async () => {
+		decimals = (await shareToken(c, outsider).decimals()).result
+		await moveNavTo(c, nav)
+	},
+	climbHookTimeoutMs(c.net, nav),
+)
 
 describe("setup", () => {
 	it("each holder exists on the network", async () => {
@@ -65,18 +80,18 @@ describe("setup", () => {
 		}
 	})
 
-	it("allowlists each holder", async () => {
-		const verifier = identityVerifier(c, compliance)
+	it("onboards each holder with a KYC claim", async () => {
+		const registry = identityRegistry(c, outsider)
 		for (const holder of holders) {
-			await send(
-				verifier.allow({
-					account: holder.publicKey(),
-					allowed: true,
-				}),
+			const account = holder.publicKey()
+			const identity = await onboard(c, holder)
+			expect((await registry.identity_address({ account })).result).toBe(
+				identity,
 			)
-			expect(
-				(await verifier.is_allowed({ account: holder.publicKey() })).result,
-			).toBe(true)
+			expect((await registry.stored_identity({ account })).result).toBe(
+				identity,
+			)
+			expect(await verified(c, account)).toBe(true)
 		}
 	})
 })
@@ -150,7 +165,6 @@ describe("subscription", () => {
 	})
 })
 
-const nav = price(2)
 let redemptionEpoch = 0n
 const redeemed = new Map<string, bigint>()
 
@@ -178,6 +192,17 @@ describe("pricing", () => {
 		)
 		expect(latest.proof_hash).toEqual(navInput(nav).proof_hash)
 		expect(latest.proof_uri).toBe(SAMPLE_PROOF_URI)
+	})
+
+	it("the SEP-40 feed quotes the share at the attested NAV", async () => {
+		const feed = sep40Feed(c, outsider)
+		expect((await feed.decimals()).result).toBe(14)
+		const quote = (
+			await feed.lastprice({
+				asset: stellarAsset(c.deployment.contracts.share_token),
+			})
+		).result
+		expect(quote?.price).toBe(nav)
 	})
 
 	it("an account with no role prices the epoch", async () => {

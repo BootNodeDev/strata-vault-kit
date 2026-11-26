@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { RWAError } from "../../../app-lib/clients/identity_verifier/src/index"
 import { contractErrorCode, simulationError } from "../test/contractErrorCode"
+import { fakeAsyncVault } from "../test/fakeClients"
 import {
 	contractEvent,
 	deferred,
@@ -17,15 +18,9 @@ import { depositBalanceKey } from "./useDepositBalance"
 import { investorRequestsKey } from "./useInvestorRequests"
 import { sharePositionKey } from "./useSharePosition"
 
-const { vaultMock, asyncVaultWriterMock } = vi.hoisted(() => ({
-	vaultMock: { claim_deposit: vi.fn() },
-	asyncVaultWriterMock: vi.fn(),
-}))
-asyncVaultWriterMock.mockResolvedValue(vaultMock)
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-vi.mock("../config/clients", () => ({
-	asyncVaultWriter: asyncVaultWriterMock,
-}))
+const vaultMock = fakeAsyncVault("claim_deposit")
 
 const epochId = 3n
 
@@ -34,7 +29,6 @@ const renderClaimDeposit = () => renderWithWallet(useClaimDeposit)
 describe("useClaimDeposit", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultWriterMock.mockResolvedValue(vaultMock)
 	})
 
 	it.each([

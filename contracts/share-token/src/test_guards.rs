@@ -12,8 +12,8 @@ use strata_timelock::{Clock, MIN_DELAY};
 
 use crate::guards;
 use crate::{ShareToken, ShareTokenClient, ShareTokenError, TokenChange, MAX_REFERENCE_LEN};
+use allowlist_verifier::{IdentityVerifier, IdentityVerifierClient};
 use compliance::{Compliance, ComplianceClient};
-use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
 
 /// Plays the vault: the token binds only to an address that reports a clock.
 #[contract]

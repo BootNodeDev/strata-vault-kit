@@ -1,6 +1,8 @@
 use soroban_sdk::{contracttype, panic_with_error, token::TokenClient, Address, Env};
 use stellar_contract_utils::math::i128_fixed_point::checked_mul_div_floor;
-use stellar_tokens::{fungible::FungibleTokenClient, rwa::RWATokenClient};
+use stellar_tokens::{fungible::total_supply::FungibleTotalSupplyClient, rwa::RWATokenClient};
+
+pub use strata_bindings::{WindDownInfo, WindDownStatus};
 
 use crate::error::VaultError;
 use crate::event::{
@@ -24,23 +26,6 @@ pub const MIN_WIND_DOWN_DELAY: u64 = 7 * strata_timelock::DAY_DURATION;
 /// The local harness build activates a wind-down at once.
 #[cfg(feature = "short_wind_down")]
 pub const MIN_WIND_DOWN_DELAY: u64 = 0;
-
-#[contracttype]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WindDownStatus {
-    Proposed,
-    Active,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WindDownInfo {
-    pub status: WindDownStatus,
-    /// Ledger time the proposal may be activated.
-    pub active_at: u64,
-    /// Rounds finalised so far. Zero means no snapshot has been taken.
-    pub round: u32,
-}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -136,7 +121,7 @@ fn credited_before_snapshot(e: &Env) -> i128 {
 /// credited straight to a holder's entitlement.
 fn snapshot_supply(e: &Env) -> i128 {
     let share_token = state::get_addr(e, &DataKey::ShareToken);
-    let total_supply = FungibleTokenClient::new(e, &share_token).total_supply();
+    let total_supply = FungibleTotalSupplyClient::new(e, &share_token).total_supply();
     state::reduce(e, total_supply, state::pending_burn_shares(e))
         .checked_add(state::pending_mint_shares(e))
         .and_then(|supply| supply.checked_add(credited_before_snapshot(e)))

@@ -5,7 +5,7 @@ import { assetsFor, price, sharesFor, units } from "./lib/amounts.js"
 import {
 	complianceContract,
 	connect,
-	identityVerifier,
+	identityRegistry,
 	oracle,
 	send,
 	shareToken,
@@ -14,7 +14,14 @@ import {
 	type Connected,
 } from "./lib/clients.js"
 import { waitForNotice } from "./lib/notice.js"
-import { attest, freshFeed, navInput } from "./lib/oracle.js"
+import { onboard, onboardingTx, verified } from "./lib/onboard.js"
+import {
+	attest,
+	climbHookTimeoutMs,
+	freshFeed,
+	moveNavTo,
+	navInput,
+} from "./lib/oracle.js"
 import { expectRefused } from "./lib/refused.js"
 
 const c: Connected = connect()
@@ -37,6 +44,8 @@ const {
 
 let decimals = 7
 const usdc = (whole: number) => units(whole, decimals)
+const firstPrice = price(2)
+const secondPrice = (price(2) * 105n) / 100n
 
 const reader = vault(c, outsider)
 const feed = oracle(c, outsider)
@@ -52,22 +61,20 @@ const fulfill = async (id: bigint) => {
 	return send(vault(c, outsider).fulfill_epoch({ epoch_id: id }))
 }
 
-beforeAll(async () => {
-	decimals = (await shareToken(c, outsider).decimals()).result
-	const verifier = identityVerifier(c, compliance)
-	for (const holder of [...holders, custodian]) {
-		await trustline(c.net, c.server, holder, c.asset)
-	}
-	for (const holder of holders) {
-		await pay(c.net, c.server, issuer, holder.publicKey(), c.asset, "1000")
-		await send(
-			verifier.allow({
-				account: holder.publicKey(),
-				allowed: true,
-			}),
-		)
-	}
-})
+beforeAll(
+	async () => {
+		decimals = (await shareToken(c, outsider).decimals()).result
+		for (const holder of [...holders, custodian]) {
+			await trustline(c.net, c.server, holder, c.asset)
+		}
+		for (const holder of holders) {
+			await pay(c.net, c.server, issuer, holder.publicKey(), c.asset, "1000")
+			await onboard(c, holder)
+		}
+		await moveNavTo(c, firstPrice)
+	},
+	climbHookTimeoutMs(c.net, firstPrice),
+)
 
 describe("an account with no role", () => {
 	const who = outsider.publicKey()
@@ -160,15 +167,19 @@ describe("an account with no role", () => {
 describe("the compliance authority's reach", () => {
 	const holder = () => first.publicKey()
 
-	it("governance cannot write the allowlist", async () => {
-		await expect(
-			send(
-				identityVerifier(c, governance).allow({
-					account: outsider.publicKey(),
-					allowed: true,
-				}),
-			),
-		).rejects.toThrow(/signatures/)
+	it("governance cannot delist a holder or lift a veto", async () => {
+		const registry = identityRegistry(c, governance)
+		const asGovernance = { account: holder(), operator: governance.publicKey() }
+		expectRefused(
+			await registry.remove_identity(asGovernance),
+			registry,
+			"OperatorNotCompliance",
+		)
+		expectRefused(
+			await registry.lift_veto(asGovernance),
+			registry,
+			"OperatorNotCompliance",
+		)
 	})
 
 	it("governance and the vault manager cannot freeze a holder", async () => {
@@ -289,13 +300,13 @@ describe("the oracle after setup", () => {
 
 describe("the compliance contract after setup", () => {
 	const caller = () => governance.publicKey()
-	const canCreate = { tag: "CanCreate", values: undefined } as const
+	const created = { tag: "Created", values: undefined } as const
 
 	it("governance cannot add a module at once", async () => {
 		const rules = complianceContract(c, governance)
 		expectRefused(
 			await rules.add_module_to({
-				hook: canCreate,
+				hook: created,
 				module: outsider.publicKey(),
 				operator: caller(),
 			}),
@@ -308,7 +319,7 @@ describe("the compliance contract after setup", () => {
 		const rules = complianceContract(c, governance)
 		const id = await send(
 			rules.propose_change({
-				change: { tag: "AddModule", values: [canCreate, outsider.publicKey()] },
+				change: { tag: "AddModule", values: [created, outsider.publicKey()] },
 			}),
 		)
 		expectRefused(await rules.apply_change({ id }), rules, "ChangeNotReady")
@@ -409,8 +420,6 @@ describe("who may subscribe", () => {
 	})
 })
 
-const firstPrice = price(2)
-const secondPrice = (price(2) * 105n) / 100n
 let epochA = 0n
 let epochB = 0n
 
@@ -610,11 +619,12 @@ describe("a de-listed holder", () => {
 			vault(c, first).request_redeem({ holder, shares: redeeming }),
 		)
 		await send(
-			identityVerifier(c, compliance).allow({
-				account: first.publicKey(),
-				allowed: false,
+			identityRegistry(c, compliance).remove_identity({
+				account: holder,
+				operator: compliance.publicKey(),
 			}),
 		)
+		expect(await verified(c, holder)).toBe(false)
 		expectRefused(
 			await vault(c, first).cancel_redeem({ holder, epoch_id: epoch }),
 			vault(c, first),
@@ -637,20 +647,23 @@ describe("a de-listed holder", () => {
 		expect(await usdcBalance(c, first.publicKey())).toBe(before + paid)
 	})
 
-	it("is allowlisted again", async () => {
+	it("cannot onboard again while the veto stands", async () => {
+		const registry = identityRegistry(c, first)
+		expectRefused(await onboardingTx(c, first), registry, "Vetoed")
+	})
+
+	it("onboards again with its first identity once the veto is lifted", async () => {
+		const registry = identityRegistry(c, compliance)
+		const identity = (await registry.identity_address({ account: holder }))
+			.result
 		await send(
-			identityVerifier(c, compliance).allow({
-				account: first.publicKey(),
-				allowed: true,
+			registry.lift_veto({
+				account: holder,
+				operator: compliance.publicKey(),
 			}),
 		)
-		expect(
-			(
-				await identityVerifier(c, outsider).is_allowed({
-					account: first.publicKey(),
-				})
-			).result,
-		).toBe(true)
+		expect(await onboard(c, first)).toBe(identity)
+		expect(await verified(c, holder)).toBe(true)
 	})
 })
 

@@ -14,24 +14,65 @@ import { type NetworkName } from "./network.js"
 
 export const CONTRACT_NAMES = [
 	"compliance",
+	"claim_topics",
+	"identity_registry",
 	"identity_verifier",
+	"claim_issuer",
 	"share_token",
 	"nav_oracle",
 	"async_vault",
+	"sep40_feed",
 ] as const
 
 export type ContractName = (typeof CONTRACT_NAMES)[number]
+
+// Uploaded but never deployed by the harness: the registry deploys one
+// identity per investor from this code.
+export const UPLOADED_NAMES = ["investor_identity"] as const
+
+export type UploadedName = (typeof UPLOADED_NAMES)[number]
+
+export const WASM_NAMES = [...CONTRACT_NAMES, ...UPLOADED_NAMES] as const
+
+export type WasmName = (typeof WASM_NAMES)[number]
+
+export const EXAMPLE_NAMES = ["sep40_consumer"] as const
+
+export type ExampleName = (typeof EXAMPLE_NAMES)[number]
 
 export interface Deployment {
 	network: NetworkName
 	deployedAt: string
 	commit: string
 	uncommittedChanges: boolean
+	// The feed's own source commit: equal to `commit` for a set deployed
+	// whole, but its own when `withFeed` adds a feed to an older set.
+	feedCommit: string
+	feedUncommittedChanges: boolean
 	ledger: number
 	asset: { code: string; issuer: string; contract: string }
 	contracts: Record<ContractName, string>
-	wasmHashes: Record<ContractName, string>
+	wasmHashes: Record<WasmName, string>
 	accounts: Record<AccountName, { public: string }>
+}
+
+// Adds a feed to a set deployed before the feed existed.
+export function withFeed(
+	record: Deployment,
+	feed: string,
+	wasmHash: string,
+	source: { commit: string; uncommittedChanges: boolean },
+): Deployment {
+	if (record.contracts.sep40_feed !== undefined) {
+		throw new Error("the deployment already has a sep40_feed")
+	}
+	return {
+		...record,
+		contracts: { ...record.contracts, sep40_feed: feed },
+		wasmHashes: { ...record.wasmHashes, sep40_feed: wasmHash },
+		feedCommit: source.commit,
+		feedUncommittedChanges: source.uncommittedChanges,
+	}
 }
 
 export function publicKeysOf(accounts: Accounts): Deployment["accounts"] {
@@ -64,7 +105,11 @@ export function renderAddressesTable(record: Deployment): string {
 		["nav_oracle", record.contracts.nav_oracle],
 		["share_token", record.contracts.share_token],
 		["identity_verifier", record.contracts.identity_verifier],
+		["identity_registry", record.contracts.identity_registry],
+		["claim_topics", record.contracts.claim_topics],
+		["claim_issuer", record.contracts.claim_issuer],
 		["compliance", record.contracts.compliance],
+		["sep40_feed", record.contracts.sep40_feed],
 		["asset", record.asset.contract],
 	]
 	return [
@@ -96,29 +141,40 @@ function syncReadmeAddresses(record: Deployment): void {
 	)
 }
 
-export function syncEnvironmentsStaging(record: Deployment): void {
-	if (record.network !== "testnet") return
-	const envPath = join(REPO_ROOT, "environments.toml")
-	let content = readFileSync(envPath, "utf8")
-
+// Pure, so a unit test can check the rewrite without touching the file system.
+export function replaceStagingContracts(
+	content: string,
+	record: Deployment,
+): string {
 	const stagingContractsBlock = [
 		`[staging.contracts]`,
 		`async_vault = { id = "${record.contracts.async_vault}" }`,
 		`nav_oracle = { id = "${record.contracts.nav_oracle}" }`,
 		`share_token = { id = "${record.contracts.share_token}" }`,
 		`identity_verifier = { id = "${record.contracts.identity_verifier}" }`,
+		`identity_registry = { id = "${record.contracts.identity_registry}" }`,
+		`claim_topics = { id = "${record.contracts.claim_topics}" }`,
+		`claim_issuer = { id = "${record.contracts.claim_issuer}" }`,
 		`compliance = { id = "${record.contracts.compliance}" }`,
+		`sep40_feed = { id = "${record.contracts.sep40_feed}" }`,
 		`asset = { id = "${record.asset.contract}" }`,
 	].join("\n")
 
-	const regex = /\[staging\.contracts\](?:\r?\n[a-z_]+ = \{ id = "[^"]*" \})*/
+	const regex =
+		/\[staging\.contracts\](?:\r?\n[a-z0-9_]+ = \{ id = "[^"]*" \})*/
 	if (!regex.test(content)) {
 		throw new Error(
 			"Could not find [staging.contracts] section in environments.toml",
 		)
 	}
-	content = content.replace(regex, stagingContractsBlock)
-	writeFileSync(envPath, content)
+	return content.replace(regex, stagingContractsBlock)
+}
+
+export function syncEnvironmentsStaging(record: Deployment): void {
+	if (record.network !== "testnet") return
+	const envPath = join(REPO_ROOT, "environments.toml")
+	const content = readFileSync(envPath, "utf8")
+	writeFileSync(envPath, replaceStagingContracts(content, record))
 }
 
 function recordedTime(file: string): unknown {

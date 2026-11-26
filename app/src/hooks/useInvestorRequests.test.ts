@@ -19,24 +19,23 @@ import {
 	type WalletContextType,
 } from "../providers/WalletProvider"
 import {
+	asyncVault as asyncVaultMock,
+	fakeAsyncVault,
+} from "../test/fakeClients"
+import {
 	classifyRequest,
 	fetchInvestorRequests,
 	investorRequestsKey,
 	useInvestorRequests,
 } from "./useInvestorRequests"
 
-const { vaultMock, asyncVaultMock, readEpochRequestsMock } = vi.hoisted(() => ({
-	vaultMock: {
-		current_epoch: vi.fn(),
-	},
-	asyncVaultMock: vi.fn(),
+const { readEpochRequestsMock } = vi.hoisted(() => ({
 	readEpochRequestsMock: vi.fn(),
 }))
-asyncVaultMock.mockResolvedValue(vaultMock)
 
-vi.mock("../config/clients", () => ({
-	asyncVault: asyncVaultMock,
-}))
+vi.mock("../config/clients", () => import("../test/fakeClients"))
+
+const vaultMock = fakeAsyncVault("current_epoch")
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	...(await importOriginal<typeof AppLib>()),
@@ -67,7 +66,7 @@ const fulfilledEpoch: EpochInfo = {
 	status: { tag: "Fulfilled", values: undefined },
 	total_deposited: 200_0000000n,
 	total_shares_redeeming: 20_0000000n,
-	share_price: 1_500_000_000_000_000_000n,
+	share_price: 150_000_000_000_000n,
 	closed_at: 1_700_000_000n,
 	priceable_at: 1_700_003_600n,
 }
@@ -187,7 +186,6 @@ describe("classifyRequest", () => {
 describe("fetchInvestorRequests", () => {
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultMock.mockResolvedValue(vaultMock)
 	})
 
 	it("walks every epoch, skipping a gap without stopping", async () => {
@@ -636,7 +634,6 @@ describe("useInvestorRequests", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks()
-		asyncVaultMock.mockResolvedValue(vaultMock)
 	})
 
 	const renderInvestorRequests = () => {
@@ -666,7 +663,6 @@ describe("useInvestorRequests", () => {
 	})
 
 	it("keeps a loaded list on screen when a later background refetch fails", async () => {
-		asyncVaultMock.mockResolvedValue(vaultMock)
 		vaultMock.current_epoch.mockResolvedValue({ result: 1n })
 		readEpochRequestsMock.mockResolvedValue(
 			new Map<bigint, EpochRequestsRead>([

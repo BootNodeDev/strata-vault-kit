@@ -52,8 +52,8 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - **Testable Property**: If `liquid_reserve >= assets_owed`, `claim_redeem` succeeds when:
   1. The vault is paused (`paused == true`).
   2. The oracle feed has expired (`is_stale == true`) or the NAV is paused.
-  3. The caller has been de-listed in the `IdentityVerifier`, unless the claim pays zero assets outside a wind-down (see below).
-  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back, so the holder must be able to receive them. Outside a wind-down, a delisted holder's such claim is refused with `HolderNotEligible` and the request stays until the holder is listed again; in a wind-down the claim burns the shares instead (`a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`).
+  3. The identity verifier refuses the caller: the registry delisted the wallet, or its claims expired or were revoked. A claim that pays zero assets also succeeds: it burns the escrowed shares instead of paying (see below).
+  Priced claims are never re-priced, and a cash payout never needs the identity check. A frozen investor's covered claim is held until the freeze is lifted (`VaultError::Frozen`); the cash stays in `committed`. One priced claim pays no cash: a redemption priced at zero assets gives its escrowed shares back when the holder may receive them. When the holder may not (the identity verifier answers that the holder is delisted, or the move back fails, as when a compliance module refuses it), and always in a wind-down, the claim burns the shares instead and publishes `RedeemClaimed` with zero assets, so the request still settles (`a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles`, `a_worthless_exit_the_compliance_rules_refuse_to_return_burns`, `a_delisted_holders_worthless_redemption_burns_in_a_wind_down`). From the verifier, only an answer burns. The vault takes two verifier errors as the answer "not eligible": `RWAError::IdentityVerificationFailed` (304), the standard refusal, and `IRSError::IdentityNotFound` (321), which OpenZeppelin's verifier returns for an address with no identity in its registry, as after off-boarding (`a_worthless_exit_burns_for_a_holder_with_no_identity`). Any other verifier result is a failure: the claim fails with `VerifierFailed`; nothing moves and the request stays open for a retry (`a_worthless_exit_waits_while_the_verifier_cannot_answer`, `a_worthless_exit_waits_while_the_verifier_fails_with_any_other_code`). Compliance modules refuse by panicking, so a module that fails cannot be told from one that refuses: its failure burns the shares too (`a_worthless_exit_burns_like_a_refusal_when_the_compliance_rules_fail`). The vault takes both codes at their word. The kit's verifier never uses them for a fault: it fails with `Unavailable` (10002) when a contract it depends on fails or no issuer can answer (no topic is required, or a required topic has no trusted issuer). A verifier from outside the kit may not draw that line: OpenZeppelin's default verifier reports a claim issuer that fails as 304, and contract error codes are not scoped to one contract, so under such a verifier a fault burns a zero-asset claim. The loss is under one asset unit and needs the holder's own signed claim.
 
 ### Invariant 5: Exit Rights Never Gated or Pausable
 - **Definition**: Investors cannot be trapped in the vault by a vault pause.
@@ -61,7 +61,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - `request_deposit` is refused by `#[when_not_paused]` (`PausableError::EnforcedPause`).
   - `request_redeem` succeeds and locks shares into escrow.
   - `claim_redeem` and `claim_deposit` remain open.
-  - `cancel_redeem` remains open. Outside a wind-down, a delisted holder, or one the compliance rules refuse, exits through the cash claim instead; in a wind-down the escrow is surrendered. A frozen holder is held (Invariant 6).
+  - `cancel_redeem` remains open. Outside a wind-down, a delisted holder, one the compliance rules refuse, or one the identity verifier fails on (`VerifierFailed`), exits through the cash claim instead; in a wind-down the escrow is surrendered. A frozen holder is held (Invariant 6).
   - `cancel_deposit` and `cancel_redeem` stay open for a sealed epoch while the vault is paused, because a paused vault cannot price it (Invariant 6).
 
 ### Invariant 6: Single-Step Atomic Cancellation
@@ -73,7 +73,7 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   - While an epoch is `Open`, or `Pending` with no readable price or with the vault paused, `cancel_deposit` and `cancel_redeem` return 100% of the escrow, unless an issuer clawback leaves the balance below the deposit (`EscrowNotCovered`, see Invariant 1).
   - A readable price refuses cancellation with `PriceAvailable`, even before `priceable_at`; once that report expires, cancellation works again (`cancellation_reopens_when_the_price_that_closed_it_expires`).
   - Pausing the vault reopens cancellation; unpausing closes it again while the price is still readable (`a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price`).
-  - Outside a wind-down, `cancel_redeem` refuses a delisted holder (`NotAllowlisted`) and a move the compliance rules refuse (`HolderNotEligible`); the request stays pending and the cash claim remains open. It holds a frozen holder (`Frozen`): the request stays pending, and its cash claim is held too until the freeze is lifted. Neither the share token's transfer pause nor the vault's own allowlist place stops a cancellation (`a_token_pause_stops_trading_but_not_a_share_return`, `a_delisted_vault_still_returns_escrowed_shares`).
+  - Outside a wind-down, `cancel_redeem` refuses a delisted holder (`NotAllowlisted`), a holder the identity verifier fails on (`VerifierFailed`) and a move the compliance rules refuse (`HolderNotEligible`); the request stays pending and the cash claim remains open. It holds a frozen holder (`Frozen`): the request stays pending, and its cash claim is held too until the freeze is lifted. Neither the share token's transfer pause nor the vault's own allowlist place stops a cancellation (`a_token_pause_stops_trading_but_not_a_share_return`, `a_delisted_vault_still_returns_escrowed_shares`).
   - In an active wind-down, `cancel_redeem` never returns shares: the escrow joins the holder's wind-down entitlement (`RedemptionSurrendered`), whether the holder is allowlisted or not. A frozen holder's escrow stays until the freeze is lifted.
   - Once fulfilled, cancellation is refused with `AlreadyPriced`.
 - **Operating note**: keep `freshness_duration` longer than the notice, so a normal epoch's price does not lapse and reopen the window on its own.
@@ -88,30 +88,33 @@ The contracts enforce a set of mathematical and state-machine invariants across 
   $`\text{assets\_to\_shares}(\text{shares\_to\_assets}(s)) \le s`$
 - **Testable Property**: For all values of $`a, s \in [1, 10^{30}]`$ and $`\text{NAV} \in [\text{min\_answer}, \text{max\_answer}]`$, a round-trip conversion never creates value. Remainder satisfies:
   $`(a \cdot \text{SCALE}) - (s \cdot \text{NAV}) < \text{NAV}`$
-- **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. When the last request of a priced epoch settles, the remainder leaves `pending_mint_shares` and `committed` and the vault publishes `EpochReconciled { epoch, share_dust, cash_dust }`. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping. A deposit refunded after pricing (worth less than one share base unit) leaves the priced epoch's `total_deposited` as `EpochFulfilled` published it; only a cancellation still open for the epoch lowers it.
-- **A request that can never settle** keeps its epoch open, and the two cases leave different amounts behind. A zero-asset redemption whose holder may not take the shares back (`HolderNotEligible`, `a_request_that_cannot_settle_keeps_its_epoch_open`) leaves only the epoch's ordinary rounding remainder in `committed` — fewer units than the epoch had redemption requests — because that request was never owed any cash. A priced deposit whose mint a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's own remainder, until the mint is allowed. Either way it is still owed to nobody.
-- **A deposit worth less than one share base unit** mints nothing and is refunded at claim, from the free reserve (`a_deposit_below_one_share_is_refunded_at_claim`). Pricing moves the epoch's whole deposit into the reserve and records no refund, so `deploy_to_custodian` or a wind-down round can spend that cash first; the claim then fails with `ClaimNotCovered` until the free reserve covers it again (`a_dust_refund_never_takes_committed_money`, `a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve`). This is accepted: pricing sees only the epoch's totals, so reserving these refunds would mean visiting every request, and each is worth less than one share base unit.
+- **Settlement**: pricing records what each epoch promised (`shares_promised`, `assets_promised`, see `get_epoch_settlement`). Claims floor one by one, so together they pay at most that. Each side of a priced epoch releases its remainder once that side's last request settles: the share remainder leaves `pending_mint_shares` when the last deposit settles, and the cash remainder leaves `committed` when the last redemption settles. Each side has its own flag (`shares_reconciled`, `cash_reconciled`), so neither remainder is released twice. Setting a flag publishes that side's event once, zero included: `EpochSharesReconciled { epoch, share_dust }` and `EpochCashReconciled { epoch, cash_dust }`. Once both are set, `EpochReconciled { epoch }` follows, once, with no amounts. The cash stays in the reserve, owed to nobody, and reaches every holder through the NAV. A running total that would go below zero fails with `AccountingMismatch` (6070) instead of clamping. A deposit refunded after pricing (worth less than one share base unit) leaves the priced epoch's `total_deposited` as `EpochFulfilled` published it; only a cancellation still open for the epoch lowers it.
+- **A request that can never settle** keeps its own side of the epoch open, not the other side. A priced deposit whose mint to the holder a compliance module refuses (`a_refused_mint_keeps_a_priced_deposit_epoch_open`) is not rounding dust: the mint reverts, so that deposit's whole share entitlement stays in `pending_mint_shares`, on top of the epoch's share remainder, until the mint is allowed. A priced deposit worth shares whose claim the identity verifier fails on waits the same way, outside a wind-down, until the verifier answers (`a_verifier_fault_holds_a_priced_deposit_claim_open`). The epoch's cash remainder still leaves `committed` once its redemptions settle. A zero-asset redemption settles once the verifier answers, since its claim then returns or burns the shares; while the verifier fails, the claim fails with `VerifierFailed` and the request stays open.
+- **A deposit worth less than one share base unit** mints nothing and is refunded at claim, from the free reserve (`a_deposit_below_one_share_is_refunded_at_claim`). Pricing moves the epoch's whole deposit into the reserve and records no refund, so `deploy_to_custodian` or a wind-down round can spend that cash first; the claim then fails with `ClaimNotCovered` until the free reserve covers it again (`a_dust_refund_never_takes_committed_money`, `a_zero_share_refund_is_refused_once_a_round_has_taken_the_reserve`). The refund never waits on its own epoch's cash remainder past that epoch's last redemption, which releases it (`a_zero_share_refund_is_paid_once_its_epochs_redemptions_settle`). This is accepted: pricing sees only the epoch's totals, so reserving these refunds would mean visiting every request, and each is worth less than one share base unit.
 
 **Settlement and upgrades.** The settlement record counts a request only from the moment it exists. A vault upgraded in place to this version while any request is open would under-count its open epochs: claims in epochs priced before the upgrade would revert, and a mixed epoch could reconcile early. This version is therefore deployed fresh: an earlier vault is not upgraded to it in place.
+
+**The share token and upgrades.** A share token deployed on OpenZeppelin 0.7.2 must not be upgraded in place to this version either. 0.7.2 kept the share supply in the token's instance; this version keeps it in its own persistent entry, so the new code would read a supply of zero. A deployment built on 0.7.2 is redeployed.
 
 ### Invariant 8: Bounded Governance Timelocks
 - **Definition**: Upgrades and wind-downs cannot execute without advance notice, and delays cannot be set to invalid boundaries.
 - **Testable Property**:
   - Upgrade delay $`\in [7 \text{ days}, 90 \text{ days}]`$ and $`\text{delay} \ge \text{notice}`$, checked when a delay change is proposed and again when it applies.
   - Wind-down delay $`\in [7 \text{ days}, 90 \text{ days}]`$ (`WindDownDelayTooShort`, `WindDownDelayTooLong`); 7 days when none was set.
-  - The vault takes no deposit, redemption, seal or pricing, and proposes no wind-down, until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token has not frozen the vault's address, and the token is bound to its compliance contract. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, a custodian other than the vault, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted. Shares minted before setup closes would redeem against depositors' money, and a request booked before setup would be paid from it, so both the token supply and the vault's books must be empty. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
+  - The vault takes no deposit, redemption, seal or pricing, and proposes no wind-down, until its one-time setup closes (`SetupOpen`). `finish_setup` refuses with `SetupIncomplete` until the share token and the oracle report this vault with their own setup closed, the vault is the token's only `manager`, the token has no shares outstanding, the vault passes the token's identity check, the token's verifier reports the identity stack ready for this vault under governance (`identity_ready`), the token has not frozen the vault's address, the token is bound to its compliance contract, and governance is that contract's admin (`compliance_governed`). It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, a custodian other than the vault, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. A compliance contract that answers `vault()` and `setup_open()` must report this vault with its own setup closed; one that does not answer them is an external module and is accepted if governance is its admin. Shares minted before setup closes would redeem against depositors' money, and a request booked before setup would be paid from it, so both the token supply and the vault's books must be empty. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. Setup never reopens (`SetupClosed`).
   - After setup, the vault's custodian, role grants, revoking `manager`, admin hand-overs and lowering the notice or the wind-down delay go through the queue; a direct call is refused with `UseTimelock`. Raising the notice or the wind-down delay, the deposit cap, `pause`/`unpause` and revoking any other role stay instant. A `Notice` or `WindDownDelay` change is checked against its bounds when proposed and again when it applies.
   - Minimum epoch duration $`\in [1 \text{ day}, 30 \text{ days}]`$ (`InvalidAmount`); `None` until governance sets one, so only the manager seals. Set directly during setup; afterwards both raising and lowering it go through the queue, unlike the notice and wind-down delay, where raising stays instant. Once set, it stays within bounds and cannot be cleared back to `None`: manager-only sealing cannot return.
   - Every change waits in the queue (`propose_change` → `apply_change`). Applying before its eta reverts with `ChangeNotReady`.
   - A change whose delay is shorter than the notice standing at apply time reverts with `UpgradeDelayBelowNotice`.
   - Time spent paused does not count. Applying while paused is refused.
-  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The one exception is a grant of the share token's `compliance` role, which waits the normal delay.
+  - Nothing is proposed or applied during an active wind-down, and no admin hand-over is accepted (`WindDownActive`). The exceptions are a grant of the share token's `compliance` role, removing a compliance module, removing a claim topic or a trusted issuer from the topics contract, and removing a protocol address from the identity verifier; each still waits the normal delay. The identity registry lets no change through.
   - One code change (upgrade or upgrade delay) waits at a time (`UpgradeProposalExists`).
   - Renouncing admin is permanently refused (`AdminRequired`).
   - Once its one-time setup closes, the share token's upgrades, grants, `manager` revocations, admin hand-overs and compliance or verifier swaps wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `compliance` stays instant, granting it also lands during a wind-down, and the last holder cannot renounce (`LastComplianceHolder`).
   - A compliance swap needs a contract that lists the token in `linked_tokens`; one that answers `vault()` and `setup_open()` must also name the token's vault with its own setup finished (`ComplianceNotBound`). As at `finish_setup`, one that does not answer them is an external module and is accepted. A verifier swap needs a verifier whose `verify_identity` accepts the vault's address (`VerifierRefusesVault`). Both are checked when the change is proposed and again when it applies, and a contract that does not answer `linked_tokens` or `verify_identity` fails the check.
   - Once its one-time setup closes, the oracle's upgrades, grants, admin hand-overs and every config change except a shorter `freshness_duration` wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`. Revoking `attester` or `guardian`, the NAV pause and `clear_latest` stay instant.
   - Once its one-time setup closes, the compliance contract's module changes, token bindings and admin hand-overs wait on the vault's clock under the same rules; a direct call is refused with `UseTimelock`.
+  - So do the identity contracts' changes once each one's setup closes: required topics, trusted issuers and the trusted issuer code (topics contract); the identity code, the verifier and the compliance authority (registry); protocol addresses, the registry and the topics contract read (verifier); and each admin hand-over. Delisting, vetoing and lifting a veto on the registry stay instant.
 
 ### Invariant 9: Wind-Down Pro-Rata Solvency
 - **Definition**: In an active wind-down, total round payouts across all share claims can never exceed the capital the rounds have credited.
@@ -127,18 +130,38 @@ The contracts enforce a set of mathematical and state-machine invariants across 
 - Each payout floors per holder. Once every holder whose shares were all surrendered has claimed, `wind_down_owed` keeps less than one unit per such holder, plus whatever value the snapshot counted in shares that never actually minted (for example `pending_mint_shares` from an epoch that promised more shares than it later minted). That remainder is not released: a later round lets each holder's floor catch up and needs it (`a_later_round_needs_the_units_an_earlier_round_left_in_owed`, `owed_stays_below_the_holder_count_once_every_share_is_surrendered`).
 - A frozen holder's slice stays in `wind_down_owed` until the freeze lifts, and lifting it needs a holder of the share token's `compliance` role. So the claim depends on a live compliance holder: the last one cannot renounce, a grant of the role passes the token's timelock during a wind-down after the normal delay, and a deployment keeps a backup holder granted during setup (§4) (`a_frozen_holder_is_paid_once_a_compliance_holder_granted_in_the_wind_down_lifts_the_freeze`).
 
+### Invariant 10: Compliance Modules Never Stop an Exit
+- **Definition**: Once the kit's compliance contract is bound to its vault, no compliance module's refusal, and no failure the host can catch, stops a move into the vault, a mint to the vault or a burn. Those are the moves an exit makes: a redemption request's escrow, a delisted holder's conversion into a cash exit, a claim's burn of the escrow, a wind-down surrender and a wind-down payout.
+- **Testable Property**:
+  - The compliance contract still calls every module registered on the hook, so modules that keep counters see the move. It calls each one with `try_` and ignores a refusal or a failure on any move whose receiver is the bound vault (every `TransferKind`), on a mint to the vault and on every burn (`a_refusing_module_does_not_stop_a_move_into_the_vault`, `a_refusing_module_does_not_stop_a_mint_to_the_vault`, `a_refusing_module_does_not_stop_a_burn`).
+  - A module that refuses an ignored move has its own changes for that move rolled back; the modules after it still run (`a_counting_module_sees_moves_into_the_vault`). No event records the ignored refusal.
+  - Every other move runs all modules, and a refusal stops it: a mint to a holder at a share claim, a share return to a holder (`Forced`), a transfer between holders and a legal transfer (`a_refusing_module_still_stops_a_move_to_a_holder`, `a_refusing_module_still_stops_a_mint_to_a_holder`, `a_module_refusing_returns_still_blocks_a_cancellation`). Before a vault is bound, every move stops at a refusal (`a_refusing_module_stops_every_move_before_a_vault_is_bound`).
+  - From the vault's side, a module that refuses burns or the conversion's mint blocks no claim (`a_module_refusing_burns_does_not_block_a_redemption_claim`, `a_module_refusing_mints_does_not_block_a_conversion_to_an_exit`, `a_module_refusing_burns_does_not_block_a_wind_down_claim`).
+  - `try_` cannot catch a module that runs the transaction out of budget or another resource limit, or that hits another error the host does not recover from, such as touching a ledger entry outside the footprint. Such a module still stops the move. The defense is removing it, which lands through the timelock even during a wind-down (`a_module_still_comes_off_through_the_timelock_in_a_wind_down`).
+  - The rule ignores every burn because only the token's `manager` burns and `finish_setup` requires the vault to hold that role alone. A second `manager` granted after setup (timelocked; `health().sole_token_manager` shows it), or another token bound to the same compliance contract (timelocked), would also skip refusals on its burns and its moves into the vault.
+  - The rule lives in the kit's compliance contract. A compliance contract from outside the kit has no exit rule.
+
 ---
 
 ## 2. Deploy-Time Parameters & Runtime Configuration
 
-Deploying the Strata Vault Kit involves five contracts configured via `environments.toml`. Parameters are split into immutable deploy-time constructor arguments and governance-tunable runtime settings.
+Deploying the Strata Vault Kit involves nine contracts configured via `environments.toml`, the SEP-40 feed among them, plus the investor identity Wasm, which is uploaded once and deployed by the registry for each investor. Parameters are split into immutable deploy-time constructor arguments and governance-tunable runtime settings.
 
 ### Deploy-Time Parameters (`constructor_args`)
 
 | Contract | Parameter | Type / Units | Meaning & Constraints | Where Set |
 |---|---|---|---|---|
-| **`compliance`** | `admin` | `Address` | Administrator account for compliance configuration | `compliance.constructor_args` |
-| **`identity_verifier`** | `admin` | `Address` | Administrator account authorized to update allowlist | `identity_verifier.constructor_args` |
+| **`compliance`** | `admin` | `Address` | Administrator of modules and token bindings (Governance; `finish_setup` checks it) | `compliance.constructor_args` |
+| **`claim_topics`** | `admin` | `Address` | Administrator of the required topics and trusted issuers (Governance; `finish_setup` checks it) | `claim_topics.constructor_args` |
+| **`claim_topics`** | `issuer_wasm` | `BytesN<32>` | Hash of the kit claim issuer's Wasm. Only a contract running this code can be a trusted issuer (`NotKitIssuer`) | `claim_topics.constructor_args` |
+| **`identity_registry`** | `admin` | `Address` | Administrator: binds the vault and the verifier, proposes changes (Governance; `finish_setup` checks it) | `identity_registry.constructor_args` |
+| **`identity_registry`** | `compliance` | `Address` | Compliance authority: lists, delists and vetoes wallets, lifts a veto | `identity_registry.constructor_args` |
+| **`identity_registry`** | `identity_wasm` | `BytesN<32>` | Hash of the uploaded investor identity Wasm, which `onboard` deploys and `attach` requires (`NotKitIdentity`) | `identity_registry.constructor_args` |
+| **`identity_verifier`** | `admin` | `Address` | Administrator: names protocol addresses and the contracts read (Governance; `finish_setup` checks it) | `identity_verifier.constructor_args` |
+| **`identity_verifier`** | `registry` | `Address` | The identity registry | `identity_verifier.constructor_args` |
+| **`identity_verifier`** | `topics` | `Address` | The claim topics contract | `identity_verifier.constructor_args` |
+| **`claim_issuer`** | `owner` | `Address` | The KYC provider. Owns the issuer for good: allows keys, revokes and invalidates claims. One per provider, outside the kit's governance | `claim_issuer.constructor_args` |
+| **`investor_identity`** | `owner` | `Address` | The investor's wallet. The registry passes it when it deploys an identity; the scaffold deploys one only to upload the Wasm and generate the client | `investor_identity.constructor_args` |
 | **`share_token`** | `name` | `String` | Human-readable token name (e.g. `"Strata Vault USDC"`) | `share_token.constructor_args` |
 | **`share_token`** | `symbol` | `String` | Token ticker symbol (e.g. `"bvUSDC"`) | `share_token.constructor_args` |
 | **`share_token`** | `admin` | `Address` | Token administrative multisig (Governance) | `share_token.constructor_args` |
@@ -152,8 +175,8 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`nav_oracle`** | `config.cooldown_secs` | `u64` (seconds) | Minimum time between consecutive attestations. At least 1 s (`MIN_COOLDOWN_SECS`), so at most one report per ledger. At most `freshness_duration`, so a new report can always replace the last one before the freshness window ends | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_up_bps` | `u32` (basis points) | Largest upward move per attestation, 1 to 10,000 | `nav_oracle.constructor_args` |
 | **`nav_oracle`** | `config.max_down_bps` | `u32` (basis points) | Largest downward move per attestation, 1 to 10,000; 10,000 lets a loss of any size land at once | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.min_answer` | `i128` (18 decimals) | Absolute floor price per share, at least `MIN_ANSWER` ($`10^{12}`$, a millionth of an asset unit per share). An oracle upgraded in place with a stored `min_answer` below the floor keeps it; even its instant `set_config` (a shorter freshness window) is refused until a timelocked `Config` change raises it to the floor | `nav_oracle.constructor_args` |
-| **`nav_oracle`** | `config.max_answer` | `i128` (18 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{18}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.min_answer` | `i128` (14 decimals) | Absolute floor price per share, at least `MIN_ANSWER` ($`10^{8}`$, a millionth of an asset unit per share). An oracle upgraded in place with a stored `min_answer` below the floor keeps it; even its instant `set_config` (a shorter freshness window) is refused until a timelocked `Config` change raises it to the floor | `nav_oracle.constructor_args` |
+| **`nav_oracle`** | `config.max_answer` | `i128` (14 decimals) | Absolute ceiling price per share ($`\ge \text{min\_answer}`$, $`\le 10^{6} \times 10^{14}`$, `MAX_ANSWER`) | `nav_oracle.constructor_args` |
 | **`async_vault`** | `asset` | `Address` | Settlement asset SAC contract address (e.g. USDC). Must have the share token's 7 decimals: `finish_setup` refuses with `SetupIncomplete` otherwise (`health().decimals_match`). Every classic Stellar asset has 7; a Soroban token with other decimals needs a fork of the share token | `async_vault.constructor_args` |
 | **`async_vault`** | `share_token` | `Address` | Deployed share token contract address | `async_vault.constructor_args` |
 | **`async_vault`** | `oracle` | `Address` | Deployed NAV oracle contract address | `async_vault.constructor_args` |
@@ -163,6 +186,7 @@ Deploying the Strata Vault Kit involves five contracts configured via `environme
 | **`async_vault`** | `roles.manager` | `Address` | Account that gets the vault's `manager` role (closes epochs); a role, not one of the five authorities | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.compliance` | `Address` | Compliance multisig authority | `async_vault.constructor_args` |
 | **`async_vault`** | `roles.attester` | `Address` | Attestation authority. Not read: nothing checks that it matches the oracle's attester | `async_vault.constructor_args` |
+| **`sep40_feed`** | `vault` | `Address` | The vault this feed quotes. Must answer `VaultView` (`asset`, `share_token`, `oracle`, `wind_down`, `governance`) and `timelock_clock`, or the constructor refuses it (`NotAVault`). The feed has no admin parameter: its upgrades are signed by the vault's current `governance()` | `sep40_feed.constructor_args` |
 
 The share token's decimals are fixed at 7 in its constructor; they are not a parameter.
 
@@ -190,11 +214,11 @@ The `async_vault` constructor refuses these four pairs of equal addresses and co
 
 ### Transfer Modes
 
-The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer modes: disabled, or allowed when both sides are allowlisted. The kit already has both modes, so it adds no separate transfer-mode setting.
+The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer modes: disabled, or allowed when both sides are allowlisted. The kit already has both modes, so it adds no separate transfer-mode setting. "Allowlisted" here means verified: the identity verifier passes the address (design doc [§8.6](./strata-product-and-architecture.md#86-identity-and-compliance)).
 
-- **Allowed when both sides are allowlisted** is the default and is always on. The share token's `transfer` and `transfer_from` refuse a move unless the sender and the receiver both pass the identity verifier (`IdentityVerificationFailed`) and neither address is frozen (`AddressFrozen`). The token runs these checks itself, whatever the compliance contract answers. The kit's compliance contract registers no modules, so its `can_transfer` accepts any pair. That leaves the decision to the token's own checks; it does not open transfers (`rules_with_no_modules_accept_any_pair_yet_the_token_still_checks_both_sides`). A module can only refuse more moves, and after setup adding one waits for the timelock.
-- **Disabled** is the share token's pause. Only the token admin (governance) can call `pause` and `unpause`; anyone else is refused with `AdminRequired`, and the guardian has no role on the token. Both calls take effect at once, before and after setup: they do not go through the timelock. While the token is paused, `transfer` and `transfer_from` are refused with `EnforcedPause` (`the_token_admin_pauses_transfers_at_once_after_setup`).
-- **Exits stay open in either mode.** Both modes apply only to transfers between holders. The vault moves shares with `mint`, `burn` and `forced_transfer`, which ignore the pause, and `legal_transfer` ignores it too. While the token is paused, deposit and redemption requests (the redemption escrows shares with `forced_transfer`), cancellations of both, deposit claims (mint) and redemption claims (burn and cash payout) all go through (`a_token_pause_leaves_deposits_exits_and_cancellations_open`, `a_token_pause_stops_trading_but_not_a_share_return`, `a_token_pause_does_not_hold_a_redemption_in_a_wind_down`). A delisted holder still exits in cash (Invariant 4); only a freeze holds an exit, as below. `burn` is the RWA extension's manager-only call, with the vault as the token's sole `manager`; the token has no `burn_from`, so no holder can burn their own shares.
+- **Allowed when both sides are allowlisted** is the default and is always on. The share token's `transfer`, `transfer_from` and `batch_transfer` refuse a move unless the sender and the receiver both pass the identity verifier (`IdentityVerificationFailed`) and neither address is frozen (`AddressFrozen`). The token runs these checks itself, whatever the compliance contract answers. The kit's compliance contract registers no modules, so its `transferred` hook accepts any pair. That leaves the decision to the token's own checks; it does not open transfers (`rules_with_no_modules_accept_any_pair_yet_the_token_still_checks_both_sides`). A module can only refuse more moves, and after setup adding one waits for the timelock.
+- **Disabled** is the share token's pause. Only the token admin (governance) can call `pause` and `unpause`; anyone else is refused with `AdminRequired`, and the guardian has no role on the token. Both calls take effect at once, before and after setup: they do not go through the timelock. While the token is paused, `transfer`, `transfer_from` and `batch_transfer` are refused with `EnforcedPause` (`the_token_admin_pauses_transfers_at_once_after_setup`).
+- **Exits stay open in either mode.** Both modes apply only to transfers between holders. The vault moves shares with `mint`, `burn` and `forced_transfer`, which ignore the pause, and `legal_transfer` ignores it too. While the token is paused, deposit and redemption requests (the redemption escrows shares with `forced_transfer`), cancellations of both, deposit claims (mint) and redemption claims (burn and cash payout) all go through (`a_token_pause_leaves_deposits_exits_and_cancellations_open`, `a_token_pause_stops_trading_but_not_a_share_return`, `a_token_pause_does_not_hold_a_redemption_in_a_wind_down`, `a_token_pause_does_not_stop_a_mint`). A delisted holder still exits in cash (Invariant 4); only a freeze holds an exit, as below. `burn` is the RWA extension's manager-only call, with the vault as the token's sole `manager`; the token has no `burn_from`, so no holder can burn their own shares.
 - **Freezes and the pauses.** A freeze is per holder and set by the compliance authority. It stops that holder's transfers and also holds what the vault owes them until it is lifted (see the [compliance matrix](./COMPLIANCE_MATRIX.md)). The token pause is global and set by governance. It stops every transfer between holders and nothing else. The vault's own pause (the guardian pauses, governance unpauses) is a separate control. It stops deposit requests, pricing and applying queued changes, not transfers.
 
 ### Health View
@@ -207,17 +231,20 @@ The SCF Tranche 2 admin panel lists allowlist management, pause, and transfer mo
 | `token_bound` | The share token names this vault through `vault()` and its own setup is finished. |
 | `oracle_bound` | The oracle names this vault through `vault()` and its own setup is finished. |
 | `sole_token_manager` | This vault is the share token's only `manager`. |
-| `allowlisted` | This vault passes the share token's identity verifier. Escrowing and returning shares do not need it. Only a delisted holder's conversion does: it mints the shares into the vault's own escrow. While this flag is false, those conversions wait until the vault is allowlisted again, and nothing is lost. |
-| `vault_unfrozen` | The share token has not frozen this vault's address. The vault's own share moves ignore an address freeze, so freezing the vault stops nothing; `finish_setup` still refuses a frozen vault. |
-| `compliance_bound` | The share token is in its compliance contract's `linked_tokens`, and a compliance contract that answers `vault()` and `setup_open()` names this vault with its own setup finished. One that does not answer them is an external module and passes; its own governance is a trust assumption. |
+| `allowlisted` | This vault passes the share token's identity verifier. The token checks the vault as the receiver of a redemption request and of a delisted holder's conversion, which mints the shares into the vault's own escrow; returning shares does not need it. The kit's verifier always passes its bound vault, a protocol address it cannot remove, so with it this flag stays true. |
+| `identity_ready` | The token's verifier answers `ready_for(vault, governance)` with true. For the kit's verifier: governance is admin of the verifier, the registry and the topics contract; all three are bound to this vault with their setup finished; at least one topic is required and each has a trusted issuer; the vault is a protocol address; and the registry asks this verifier about claims. False when any read fails. |
+| `vault_unfrozen` | The share token has not frozen this vault's address. The vault's own share moves ignore an address freeze except a mint, so a frozen vault would stop conversions; the token never freezes its bound vault and `finish_setup` refuses a frozen one. |
+| `compliance_bound` | The share token is in its compliance contract's `linked_tokens`, and a compliance contract that answers `vault()` and `setup_open()` names this vault with its own setup finished. One that does not answer them is an external module and passes; its own module changes are a trust assumption. |
+| `compliance_governed` | The token's compliance contract answers `get_admin` with governance. Only the kit's compliance contract carries the exit rule; an outside one passes only when governance administers it. |
 | `decimals_match` | The asset's `decimals()` equals the share token's. Pricing converts base units at the attested price, so a mismatch would put every deposit and exit off by a power of ten. |
 | `addresses_distinct` | The asset, the share token, the oracle and the vault are four different addresses. |
 | `custodian_set` | A custodian is set, and it is not the vault itself. |
 | `feed_answers` | The oracle answers `state()` and `freshness_duration()`. A new feed with no report passes. `oracle_bound` cannot tell a feed from another contract bound to this vault, such as the compliance contract. |
 | `feed_valid` | The oracle reports `Valid`: a report exists, it has not expired, it is in band and the NAV is not paused. |
 | `freshness_covers_notice` | The oracle's `freshness_duration` is at least the vault's notice. |
+| `min_epoch_duration_set` | A minimum epoch duration is set. |
 
-`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation.
+`freshness_covers_notice` false means a report can expire before the notice ends. A sealed epoch's cancellation window can then reopen on its own, so set `freshness_duration` above the notice. `feed_valid` false right after a deploy is normal until the first attestation. `min_epoch_duration_set` false means only the manager can seal the open epoch; see [When the Manager or the Attester Stops](#when-the-manager-or-the-attester-stops).
 
 ### Supply and Capital Figures
 
@@ -237,17 +264,17 @@ If the network makes ledgers faster, each ledger-counted figure lasts less on th
 
 ## 3. Role & Authority Matrix
 
-Strata distributes control across five native Stellar multisig authorities, two `manager` roles and permissionless public entrypoints. Every privileged function needs exactly one of these authorities or roles, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An admin entrypoint the kit defines takes no caller argument: the stored admin signs it.
+Strata distributes control across five native Stellar multisig authorities, two `manager` roles and permissionless public entrypoints. Every privileged function needs exactly one of these authorities or roles, except the share token's `legal_transfer` and `recover_balance`, which need compliance and governance in the same call. Each call asks each account it needs for one signature. An admin entrypoint the kit defines takes no caller argument: the stored admin signs it. Two contracts answer to no authority: a claim issuer to the KYC provider that owns it, and an investor identity to the investor's wallet.
 
 ### Authority Capabilities & Anti-Capabilities
 
 | Authority | Quorum / Profile | Authorized Capabilities | Anti-Capabilities (What It Cannot Do) |
 |---|---|---|---|
-| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`, `min_epoch_duration`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin, finish each contract's one-time setup, co-sign compliance's `legal_transfer` and `recover_balance` as the share token's admin. After setup, these wait for the timelock: role grants, revoking the manager, admin hand-over, the custodian, lowering the notice or the wind-down delay, the minimum epoch duration in either direction, upgrades, the token's compliance and verifier swaps, the compliance contract's module and token-binding changes, and oracle config changes other than a shorter freshness window. Revoking the treasury or the guardian stays instant, because taking a power away moves no value. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
+| **Governance** | High-quorum deliberative multisig | Set parameters (`notice`, `custodian`, `deposit_cap`, `wind_down_delay`, `min_epoch_duration`), propose/apply upgrades, propose/cancel wind-down, unpause the vault, pause/unpause the share token, transfer admin, finish each contract's one-time setup, co-sign compliance's `legal_transfer` as the share token's admin. Co-signing `recover_balance` always fails with the kit's identity stack: the verifier's `recovery_target` is `None`, and the registry refuses `recover_identity` (`RecoveryNotOffered`). After setup, these wait for the timelock: role grants, revoking the manager, admin hand-over, the custodian, lowering the notice or the wind-down delay, the minimum epoch duration in either direction, upgrades, the token's compliance and verifier swaps, the compliance contract's module and token-binding changes, the identity contracts' changes (required topics, trusted issuers, issuer and identity code, protocol addresses, the contracts each one reads, the registry's compliance authority), and oracle config changes other than a shorter freshness window. Revoking the treasury or the guardian stays instant, because taking a power away moves no value. | **Cannot pause the vault directly**; cannot move funds; cannot initiate custodian transfers; cannot attest prices; cannot bypass timelocks. |
 | **Guardian** | Low-threshold fast-reaction multisig | `pause` (vault); `pause_nav` (oracle emergency price freeze). | **Cannot unpause**; cannot move funds; cannot block redemption requests; cannot block payable claims or cancellations. |
 | **Treasury** | Operational capital multisig | `deploy_to_custodian` (moves free reserve). Capital comes back through `fund`, which anyone may call. | **Cannot deploy while anything is uncovered**; cannot touch escrowed subscription assets; cannot alter parameters or pause. |
 | **Attester** | High-security attestation multisig | `attest` (submits a NAV report: the price, its expiry and a proof reference). | **Cannot price outside deviation band**; cannot violate cooldown; cannot operate on the vault directly. |
-| **Compliance** | Legal / KYC operator multisig | Manage allowlist (`allow`), topic claims; token interventions (`freeze`; `legal_transfer` and `recovery` co-signed by governance). | **Cannot touch vault reserve**; cannot move a holder's shares without governance's signature in the same call; cannot move shares out of or into the vault's address, or freeze it once the token knows its vault (an earlier freeze makes the vault's `finish_setup` refuse); cannot pause vault operations; cannot bypass exit-only cash redemptions for an unfrozen holder — freezing holds a covered claim until it lifts, rather than paying or redirecting it. |
+| **Compliance** | Legal / KYC operator multisig | As the identity registry's compliance authority (by deploy): delist and veto a wallet (`remove_identity`), lift a veto (`lift_veto`), list a wallet whose claims pass (`add_identity`), all at once; token interventions (`freeze`; `legal_transfer` co-signed by governance). | **Cannot list a wallet whose claims fail**, and cannot relist a vetoed one without lifting the veto; **cannot touch vault reserve**; cannot move a holder's shares without governance's signature in the same call; cannot move shares out of or into the vault's address, or freeze it once the token knows its vault (an earlier freeze makes the vault's `finish_setup` refuse); cannot pause vault operations; cannot bypass exit-only cash redemptions for an unfrozen holder — freezing holds a covered claim until it lifts, rather than paying or redirecting it. |
 | **Manager (vault role)** | Operational keeper account; a role, not one of the five authorities | `close_epoch`: seals the open epoch at any time, nothing else. | **Cannot choose prices**; cannot mint, burn or move shares; cannot stop a sealed epoch from being priced; not sealing stalls requests only until the open epoch has run the minimum epoch duration, if one is set; cannot alter timelocks. After setup, granting or revoking it waits for the timelock. |
 | **Manager (share-token role)** | The vault contract, alone: the vault's `finish_setup` refuses while another account holds it | `mint`, `burn`, `forced_transfer` on the share token: the vault mints and burns at claim and moves escrowed shares. | Cannot freeze, recover or make a legal transfer. After setup, granting or revoking it waits for the vault's timelock. See [`AUTHORIZATION_MATRIX.md`](./AUTHORIZATION_MATRIX.md) §2. |
 | **Permissionless** | Any caller / keeper / investor | `close_epoch` once the open epoch has run the minimum epoch duration, `fulfill_epoch`, `request_deposit`, `cancel_deposit`, `claim_deposit`, `request_redeem`, `cancel_redeem`, `claim_redeem`, `fund`, `activate_wind_down`, `finalize_wind_down_round`, `claim_wind_down`. | Operations are strictly constrained by contract state, timing, and solvency guards. |
@@ -282,6 +309,29 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 - **The manager stops sealing.** Requests in the open epoch stay pending, and each holder can still cancel: a deposit comes back as cash, a redemption as shares. Once governance has set a minimum epoch duration, anyone may seal the open epoch once it has been open that long; the earliest a holder then sees a price is the minimum plus the standing notice, counted from when the epoch opened. Without a minimum set, the way out is the same as today: governance grants a new manager, which after setup waits for the vault's timelock, at least seven days, plus any time the vault spends paused.
 - **The attester stops reporting.** Once the last report expires, new deposits are refused (`FeedNotValid`). An epoch sealed after the last report has no readable price, so its requests stay cancellable, and claims already priced still pay. Governance revokes the attester on the oracle at once and grants a replacement, which waits for the timelock after setup, as in steps 2 and 3 above.
 - **Neither comes back.** No holder can exit at a price. Governance can propose a wind-down; once its delay has run, anyone activates it, and its rounds pay every holder pro rata from the cash the vault holds and whatever the custodian returns through `fund`, with no price needed.
+
+### Replacing a Claim Issuer or the Registry
+
+Some identity changes turn verified holders into refused ones, and a refusal converts a priced deposit into a cash exit at the next epoch's price. After setup, each change below waits for the vault's timelock.
+
+**Trusting a new issuer.** Deploy it straight from the uploaded issuer Wasm. Before proposing it, read its contract instance:
+
+```sh
+stellar ledger entry fetch contract-data --contract <issuer> --instance \
+  --output json-formatted --network <network>
+```
+
+The output must show `"executable": { "wasm": "<hash>" }`, where `<hash>` is what `ClaimTopics::issuer_wasm()` returns. RPC `getLedgerEntries` on the contract's instance key returns the same entry. If the entry shows anything else, such as an executable reference, or does not decode, do not trust the issuer. The topics contract checks the code only once, when the issuer is added, and the owner of an issuer deployed through a reference can later swap in code that traps. A trapping issuer is a fault for every holder who relies on it: their priced deposits and share returns wait until governance replaces it.
+
+**Replacing an issuer.**
+
+1. Propose `AddTrustedIssuer(new, topics)` and `RemoveTrustedIssuer(old)` together.
+2. Once the delay has run, apply the addition first. The new provider then allows its key (`allow_key`, which needs the issuer trusted for the topic), signs claims for the holders the old issuer served, and the holders add them (`add_claim`).
+3. Apply the removal once those holders hold the new claims. From then on, a holder whose only claim on a topic came from the old issuer is refused (304), and its priced deposits convert.
+
+Applied in the other order, a topic the old issuer served alone has no trusted issuer in between. The verifier then answers `Unavailable` for every holder: no one gets in, and priced deposits wait until the addition lands. An `UpdateIssuerTopics` change that takes a topic from its only issuer has the same effect, so apply the change that gives the topic another issuer first. During a wind-down only the removal can land, and a wind-down treats that fault like a refusal.
+
+**Swapping the registry** (`VerifierChange::Registry`). Once the swap lands, every wallet the new registry does not link reads `IdentityNotFound` (321), a refusal, and its priced deposits convert. Before it lands, deploy the new registry with the same identity code and bind it to this verifier, and have each holder link the identity it already owns with `attach`. The vault's `identity_ready` also needs the new registry bound to the vault with its setup closed. Apply the swap once holders are linked, or accept the conversions.
 
 ---
 
@@ -338,12 +388,12 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 | **`NavOracle`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
 | **`ShareToken`** | `pause` | Admin (Governance) | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
 | **`ShareToken`** | `unpause` | Admin (Governance) | `caller` must be the admin (`AdminRequired`), then `caller.require_auth()` | N/A |
-| **`ShareToken`** | `mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
-| **`ShareToken`** | `forced_transfer` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `mint`, `batch_mint` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `burn`, `batch_burn` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
+| **`ShareToken`** | `forced_transfer`, `batch_forced_transfer` | Manager (Vault) | `#[only_role(operator, "manager")]` | Bypasses token pause |
 | **`ShareToken`** | `legal_transfer` | Compliance, co-signed by Governance (token admin) | `#[only_role(caller, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address; the destination passes `verify_identity`; a reference of 1–128 bytes | Bypasses token pause |
-| **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens` | Compliance | `#[only_role(operator, "compliance")]`; never freezes the vault's address once the token knows its vault | No |
-| **`ShareToken`** | `recover_balance` | Compliance, co-signed by Governance (token admin) | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address | No |
+| **`ShareToken`** | `set_address_frozen`, `freeze_partial_tokens`, `unfreeze_partial_tokens` and their `batch_` versions | Compliance | `#[only_role(operator, "compliance")]`; never freezes the vault's address once the token knows its vault | No |
+| **`ShareToken`** | `recover_balance` | Compliance, co-signed by Governance (token admin) | `#[only_role(operator, "compliance")]` and the admin's `require_auth()` in the same call, from two different accounts; never from or to the vault's address; always fails with the kit's verifier, whose `recovery_target` is `None` | No |
 | **`ShareToken`** | `set_compliance`, `set_identity_verifier` | Governance | `operator` must be the admin (`AdminRequired`), then `operator.require_auth()`; instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `bind_vault` | Governance (token admin) | `#[only_admin]`; during setup, once | No |
 | **`ShareToken`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
@@ -356,39 +406,58 @@ Pricing needs both roles. Once governance has set a minimum epoch duration, anyo
 | **`ShareToken`** | `revoke_role` | Governance | `compliance`: instant, the last holder included; a successor's grant waits one delay, during a wind-down too. `manager`: instant during setup, then `propose_change` | No |
 | **`ShareToken`** | `renounce_role` | The role's holder | `caller.require_auth()`; the last `compliance` holder is refused (`LastComplianceHolder`) | No |
 | **`ShareToken`** | `set_role_admin` | None | Always refused (`UseTimelock`) | N/A |
-| **`IdentityVerifier`** | `allow` | Admin (Compliance) | `#[only_admin]` | No |
-| **`IdentityVerifier`** | `set_claim_topics_and_issuers`| Admin (Compliance) | `#[only_admin]`; `operator` is not read | No |
+| **`IdentityVerifier`** | `bind_vault`, `finish_setup`, `add_protocol_address`, `remove_protocol_address`, `set_claim_topics_and_issuers`, `transfer_admin_role` | Governance (verifier admin) | `#[only_admin]`; the OpenZeppelin setter's `operator` must be the admin (`OperatorNotAdmin`); instant during setup, then `propose_change`; the bound vault cannot be removed (`VaultIsProtocol`) | No |
+| **`IdentityVerifier`** | `propose_change`, `cancel_change`, `apply_change` | Governance | `#[only_admin]`; after setup; after the vault's delay; during a wind-down, `propose_change` and `apply_change` refuse every change except removing a protocol address (`WindDownActive`), which still waits the normal delay | `apply_change` refused while the vault is paused; while it winds down too, except removing a protocol address |
+| **`IdentityVerifier`** | `verify_identity`, `check_claims`, `ready_for`, `is_protocol_address`, `recovery_target` | Permissionless | None (views; `recovery_target` is always `None`) | No |
+| **`ClaimTopics`** | `bind_vault`, `finish_setup`, `add_claim_topic`, `remove_claim_topic`, `add_trusted_issuer`, `remove_trusted_issuer`, `update_issuer_claim_topics`, `transfer_admin_role` | Governance (topics admin) | `#[only_admin]`; OpenZeppelin's `operator` must be the admin (`OperatorNotAdmin`); instant during setup, then `propose_change`; a trusted issuer must run the kit issuer's code (`NotKitIssuer`) | No |
+| **`ClaimTopics`** | `propose_change`, `cancel_change`, `apply_change` | Governance | `#[only_admin]`; after setup; after the vault's delay; during a wind-down, `propose_change` and `apply_change` refuse every change except removing a topic or a trusted issuer (`WindDownActive`), which still waits the normal delay. Removing a topic's last issuer leaves the verifier answering `Unavailable` (see "Replacing a Claim Issuer or the Registry") | `apply_change` refused while the vault is paused; while it winds down too, except removing a topic or a trusted issuer |
+| **`IdentityRegistry`** | `bind_vault`, `bind_verifier`, `finish_setup`, `transfer_admin_role`, `propose_change`, `cancel_change`, `apply_change` | Governance (registry admin) | `#[only_admin]`; instant during setup, then through the timelock; a wind-down refuses every change | `apply_change` refused while the vault is paused |
+| **`IdentityRegistry`** | `onboard`, `attach` | Investor (the wallet) | `account.require_auth()`; refused for a vetoed or already linked wallet; `attach` needs a kit identity the wallet owns; the verifier's `check_claims` must pass | No (open during a wind-down) |
+| **`IdentityRegistry`** | `add_identity`, `batch_add_identity`, `remove_identity`, `lift_veto` | Compliance (the registry's compliance authority) | `operator` must be the compliance authority (`OperatorNotCompliance`), and it signs; instant, during a wind-down too; listing refuses a vetoed wallet and needs `check_claims` to pass | No |
+| **`IdentityRegistry`** | `recover_identity`, `bind_token`, `unbind_token` | None | Always refused (`RecoveryNotOffered`, `TokenBindingNotOffered`) | N/A |
+| **`ClaimTopics`**, **`IdentityRegistry`**, **`IdentityVerifier`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
+| **`ClaimIssuer`** | `allow_key`, `remove_key`, `revoke_claim`, `invalidate_claims` | The KYC provider (issuer owner) | The owner's `require_auth()`; `allow_key` needs the topics contract to trust this issuer for the topic | No |
+| **`InvestorIdentity`** | `add_claim`, `remove_claim` | The investor (identity owner) | The owner's `require_auth()`; `add_claim` stores a claim only if its issuer accepts it and its URI is at most 256 bytes (`ClaimUriTooLong`) | No |
 | **`Compliance`** | `bind_token`, `unbind_token`, `add_module_to`, `remove_module_from` | Governance | `#[only_admin]`, `operator` is not read; instant during setup, then `propose_change` | No |
 | **`Compliance`** | `bind_vault` | Governance (compliance admin) | `#[only_admin]`; during setup, once | No |
 | **`Compliance`** | `finish_setup` | Governance | `#[only_admin]`; needs a bound vault and no pending admin hand-over | No |
-| **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup | No |
+| **`Compliance`** | `propose_change` | Governance | `#[only_admin]`; after setup; refused while the vault is winding down, except removing a module (the topics contract and the verifier let their own removals through; see their rows) | No |
 | **`Compliance`** | `cancel_change` | Governance | `#[only_admin]` | No |
-| **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused or winding down |
+| **`Compliance`** | `apply_change` | Governance | `#[only_admin]`; after the vault's delay | Refused while the vault is paused; while it winds down too, except removing a module (the topics contract and the verifier let their own removals through; see their rows) |
 | **`Compliance`** | `pending_changes` | Permissionless | None (view) | No |
 | **`Compliance`** | `transfer_admin_role` | Governance | Instant during setup, then `propose_change` (a zero `live_until_ledger` cancels at once) | No |
 | **`Compliance`** | `accept_admin_transfer` | Proposed Admin | The pending admin's `require_auth()`; refused during an active wind-down (`WindDownActive`) | No |
+| **`Compliance`** | `created`, `transferred`, `destroyed` | The bound share token | The token's `require_auth()` (`TokenNotBound` otherwise); every module runs, but once a vault is bound a module's refusal or failure is ignored on a move into the vault, a mint to it and every burn (Invariant 10) | No |
+| **`Sep40Feed`** | `propose_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); refused while the vault winds down (`WindDownActive`) or an upgrade already waits (`UpgradeAlreadyPending`) | No |
+| **`Sep40Feed`** | `cancel_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); the change must be pending (`ChangeNotFound`) | No |
+| **`Sep40Feed`** | `apply_change` | Governance (the vault's current) | The vault's `governance()`, read fresh on this call, signs (`NoGovernance` otherwise); timelocked on the vault's clock (`ChangeNotReady`, `DelayBelowNotice`) | Refused if the vault is paused or winding down |
+| **`Sep40Feed`** | `base`, `assets`, `decimals`, `resolution`, `price`, `prices`, `lastprice`, `vault`, `setup_open`, `pending_changes` | Permissionless | None (views) | No |
 
 ---
 
 ## 4. Deployment Runbook Summary
 
-A clean deployment executes in three sequenced phases:
+A clean deployment executes in three sequenced phases, plus an optional
+fourth to add the SEP-40 feed:
 
 1. **Phase 1: Contract Deployment**
-   - Deploy `compliance`, `identity_verifier`, `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`.
+   - Upload the claim issuer and investor identity Wasms, then deploy `compliance`, `claim_topics` (with the issuer's Wasm hash), `identity_registry` (with the identity's Wasm hash), `identity_verifier` (with the registry and the topics contract), one `claim_issuer` per KYC provider (owned by the provider), `share_token`, `nav_oracle`, and `async_vault` with constructor arguments matching `environments.toml`. Deploy each issuer straight from the uploaded Wasm, not through an executable reference: the topics contract checks an issuer's code only when it is added.
    - The harness deploy script (`scripts/harness/deploy.ts`) gives each authority one key. It does not create multisig accounts or check the deposit asset's auth flags yet; see the design doc's [§8.10](./strata-product-and-architecture.md#810-deployment).
 2. **Phase 2: Post-Deployment Role Wiring**
    - Call `ShareToken::grant_role(vault_address, "manager", governance)` to authorize lazy share minting and burning.
    - Call `ShareToken::grant_role(backup, "compliance", governance)` for a second compliance account kept cold, before the token's `finish_setup`. Required: lifting a freeze needs a `compliance` holder, and after setup a new one waits one timelock delay.
    - Call `ShareToken::bind_vault(vault_address)`, then `ShareToken::finish_setup()`. The token's admin changes are instant until then and wait for the vault's timelock afterwards.
-   - Call `IdentityVerifier::allow(vault_address, true)`, signed by the compliance key, so a delisted holder's priced deposit can be minted into the vault's escrow; `finish_setup` requires it.
-   - Call `Compliance::bind_token(share_token_address, governance)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards.
+   - Wire the identity stack, each call signed by governance unless noted: `ClaimTopics::add_claim_topic(topic, governance)` for each topic the fund requires, `ClaimTopics::add_trusted_issuer(issuer, topics, governance)`, then `ClaimIssuer::allow_key(public_key, claim_topics_address, topic)` signed by the provider, then `IdentityRegistry::bind_verifier(verifier_address)`. Call `bind_vault(vault_address)` and then `finish_setup()` on the topics contract, the registry and the verifier. Binding makes the vault a protocol address of the verifier, so the vault's own escrow moves never depend on a claim. Their changes are instant until then and wait for the vault's timelock afterwards.
+   - Call `Compliance::bind_token(share_token_address, governance)` to link SEP-57 rule verification, then `Compliance::bind_vault(vault_address)` and `Compliance::finish_setup()`. Its module and binding changes are instant until then and wait for the vault's timelock afterwards. A compliance contract binds at most 75 tokens, OpenZeppelin's limit; one more fails with `TokenBinderError::MaxTokensReached`.
    - Call `NavOracle::bind_vault(vault_address)`, then `NavOracle::finish_setup()`. The oracle's admin changes are instant until then and wait for the vault's timelock afterwards.
    - Call `set_min_epoch_duration(secs)` on the vault while setup is open, so the protection is on from the start: anyone can then seal an epoch once it has run that long. Set it above the manager's usual epoch length, so an outsider only seals once the manager has really stopped, not while a normal epoch is still running. Left unset, only the manager seals, and once setup closes the minimum changes only through the timelock.
    - On the vault, call `set_custodian(custodian)`, `set_notice(secs)` and, if initial capital intake is bounded, `set_deposit_cap(cap)`. All three are instant during setup, so deposits never open without the cap. The custodian is required, and the vault's own address is refused (`InvalidCustodian`).
-   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit, redemption, seal or pricing before it.
+   - Then call `finish_setup()` on the vault. It refuses with `SetupIncomplete` until every wiring step above is in place, the token has no shares outstanding and the vault's address is not frozen on it. It also needs the identity stack ready for this vault (`identity_ready`) and governance as the compliance contract's admin (`compliance_governed`). It also needs the asset to have the token's decimals, four different addresses for the asset, the token, the oracle and the vault, an oracle that answers `state()` and `freshness_duration()`, and the vault's own books empty: the first epoch, with no deposit or redemption booked in it, nothing committed, and no shares owed or to burn. It refuses with `AdminTransferPending` while an admin hand-over offered during setup is pending. `health()` shows which check is false. The vault takes no deposit, redemption, seal or pricing before it.
 3. **Phase 3: Operational Parameterization**
    - Oracle reporter submits the genesis NAV attestation (`attest`). Deposits open only once it is valid, so post it before announcing the vault.
+   - Investors onboard themselves: the provider signs each required topic's claim for the address `IdentityRegistry::identity_address(wallet)` returns, and the investor calls `IdentityRegistry::onboard(wallet, claims)`, signing and paying for it. A claim's data is OpenZeppelin's expiry header followed by the provider's payload, which the kit never reads. Its URI is not signed and holds at most 256 bytes (`MAX_CLAIM_URI_LEN`); a longer one fails the onboarding with `ClaimUriTooLong`. Keeping each identity contract alive is an operator task: `npm run extend` keeps the uploaded identity Wasm alive, not the identities deployed from it.
+4. **Phase 4 (optional): The SEP-40 feed**
+   - Deploy `sep40_feed` with the vault's address. There is nothing to wire: the feed reads the vault on every call, and the vault does not know the feed exists.
 
 ---
 
@@ -413,10 +482,15 @@ before any extension (see **Network settings**).
 |---|---|---|---|
 | `async_vault` | Its instance, and every persistent entry it reads or writes: epochs, requests, settlements, wind-down positions, pending governance changes | Every call that reads or writes the entry | 30 days (518,400 ledgers), once 29 days or less remain |
 | `nav_oracle` | Its instance, the latest report, and each pending governance change it reads or writes | `attest` extends the instance and the report; `bind_vault`, `finish_setup`, `grant_role`, `transfer_admin_role`, `propose_change`, `cancel_change` and `apply_change` extend the instance; every other call extends whichever entry it reads or writes | Same |
-| `share_token` | Its instance, each balance and freeze entry it writes, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change`; also the reads `balance` and `total_supply`, which may be the only token calls during a wind-down | Same |
-| `identity_verifier` | Its instance and each allowlist entry | `allow`, `is_allowed`, `verify_identity` | Same |
-| `compliance` | Its instance, the modules and bound tokens it writes, and each pending governance change it reads or writes | Every hook the token calls (`can_create`, `can_transfer`, `created`, `transferred`, `destroyed`) and its admin calls | Same |
+| `share_token` | Its instance, each balance and freeze entry it writes, the supply entry, and each pending governance change it reads or writes | Every call that moves shares or changes token settings: `transfer`, `transfer_from`, `approve`, `mint`, `burn`, `forced_transfer`, `legal_transfer`, the seven batch calls, freezes, recovery, `set_compliance`, `set_identity_verifier`, `pause`, `unpause`, `grant_role`, `revoke_role`, `transfer_admin_role`, `bind_vault`, `finish_setup`, `propose_change`, `cancel_change`, `apply_change`; also the reads `balance` and `total_supply`, which may be the only token calls during a wind-down | Same |
+| `identity_verifier` | Its instance, each protocol address entry, and each pending governance change it reads or writes | `verify_identity`, `check_claims` and every admin call extend the instance; adding a protocol address, directly or through the timelock, and reading one extend that entry | Same |
+| `claim_topics` | Its instance, the entries an added topic or issuer creates, and each pending governance change it reads or writes | Every admin call extends the instance; adding a topic or a trusted issuer, directly or through the timelock, reads back the lists it writes through OpenZeppelin, which extends them | The instance and pending changes: same. The lists: OpenZeppelin's lengths |
+| `identity_registry` | Its instance, each wallet's link and veto entry, and each pending governance change it reads or writes | Every call that writes, and `stored_identity`, extend the instance; every read or write of a link or a veto extends that entry | Same |
+| `claim_issuer` | Its instance and each invalidation cutoff | `is_claim_valid` extends the instance and reads the cutoff through the kit's storage; `invalidate_claims` writes the cutoff. OpenZeppelin's own entries (keys, revocations, nonces) keep its lengths | Same |
+| `investor_identity` | Its instance, through the owner entry it stores there; its claims are OpenZeppelin's | `owner`, `add_claim` and `remove_claim` read the owner and extend the instance, and so does `get_claim`, which every verification calls. A new claim starts at the network's minimum lifetime, and OpenZeppelin extends it when it reads it. An identity nobody verifies or changes archives like any other entry: `npm run extend` keeps the uploaded identity Wasm alive, not the identities | The instance: same. Claims: OpenZeppelin's lengths |
+| `compliance` | Its instance, the modules and bound tokens it writes, and each pending governance change it reads or writes | Every hook the token calls (`created`, `transferred`, `destroyed`) and its admin calls | Same |
 | `async_vault`, `share_token`, `nav_oracle` | The four entries a grant writes: the account's role, its member-list slot, the member count and the role list | Each grant (in the constructor, `grant_role` and an applied `GrantRole` change) extends all four. After that, a role check extends only that account's role entry; the slot, the count and the list are extended only by grants and by calls that list role members (such as the vault's `manager()` or the token's `get_role_member_count`) | 90 days (1,555,200 ledgers), once 89 days or less remain |
+| `sep40_feed` | Its instance, and each pending change it reads or writes | Every call that reads it, a quote or a view included, and every governance call (`propose_change`, `cancel_change`, `apply_change`); pending changes are extended as the other contracts' queues | Same |
 
 The kit's own lengths are the constants in `crates/strata-storage`
 (`PERSISTENT_EXTEND_AMOUNT`, `INSTANCE_EXTEND_AMOUNT`, and thresholds one day
@@ -425,7 +499,8 @@ of them are fixed in code: a governance setting would add an admin power for
 little gain.
 
 **Pending governance changes.** A change waiting in the timelock of
-`async_vault`, `share_token`, `nav_oracle` or `compliance` lives as a persistent entry,
+`async_vault`, `share_token`, `nav_oracle`, `compliance`, `claim_topics`,
+`identity_registry` or `identity_verifier` lives as a persistent entry,
 extended to 30 days when it is proposed. The wait itself can run up to 90 days
 (`strata_timelock::MAX_DELAY`), so a change nobody touches can archive before it is
 due. Nothing is lost: the call that applies it restores the archived entry
@@ -437,29 +512,35 @@ timelock crate does, and a test checks that the two agree. If the entry has
 archived, it restores it, then extends it the same 30 days as every instance
 and Wasm.
 
-**What OpenZeppelin extends, and what the kit adds.** `stellar-tokens` 0.7.2
-stores the share token's balances and freeze entries, and the compliance
-contract's modules and bound tokens. `stellar-access` 0.7.2 stores the roles of
-the vault, the token and the oracle. OpenZeppelin extends an existing entry
-when it reads it: balances, freezes, modules and bound tokens to 30 days, roles
-to 90. It does not extend an entry when it writes one, so a new entry would
-start at the network's minimum lifetime and wait for a later caller to read it.
-The kit closes that gap by reading back what it writes, through OpenZeppelin's
-own reads, in the same call:
+**What OpenZeppelin extends, and what the kit adds.** `stellar-tokens` 0.8.0
+stores the share token's balances, supply and freeze entries, the
+compliance contract's modules and bound tokens, the topics contract's topic and
+issuer lists, each identity's claims, and each issuer's keys, revocations and
+nonces. `stellar-access` 0.8.0 stores
+the roles of the vault, the token and the oracle. OpenZeppelin extends an
+existing entry when it reads it: balances, supply, freezes, modules and bound
+tokens to 30 days, roles to 90. It does not extend an entry when it writes
+one, so a new entry would start at the network's minimum lifetime and wait for
+a later caller to read it. The kit closes that gap by reading back what it
+writes, through OpenZeppelin's own reads, in the same call:
 
 - the share token reads back each balance and freeze entry after `mint`,
   `burn`, `transfer`, `transfer_from`, `forced_transfer`, `legal_transfer`,
-  `recover_balance`, `set_address_frozen`, `freeze_partial_tokens` and
-  `unfreeze_partial_tokens`;
+  `recover_balance`, `set_address_frozen`, `freeze_partial_tokens`,
+  `unfreeze_partial_tokens` and the seven batch calls, and the supply entry
+  after `mint` and `batch_mint`;
 - the vault, the token and the oracle read back every entry a grant writes (the
   account's role, its place in the member list, the member count and the list
   of roles) after each grant in their constructors, in `grant_role`, and in an
   applied `GrantRole` change;
-- the compliance stub reads back the hook's modules after `add_module_to` and
-  an applied `AddModule` change, and the bound tokens after `bind_token` and an
-  applied `BindToken` change.
+- the compliance contract reads back the hook's modules after `add_module_to`
+  and an applied `AddModule` change, and the bound tokens after `bind_token` and
+  an applied `BindToken` change;
+- the topics contract reads back the topic list and the topic's issuers after
+  adding a topic, and the issuer list and the issuer's topics after adding a
+  trusted issuer, directly or through the timelock.
 
-So a new balance, freeze, role, module or bound-token entry reaches its target
+So a new balance, freeze, role, module, bound-token, topic or trusted-issuer entry reaches its target
 in the transaction that creates it, and the kit keeps OpenZeppelin's thresholds
 without copying them. A revoke creates nothing: it rewrites the member count and
 moves the last member into the freed slot with plain writes, and extends none
@@ -544,11 +625,10 @@ per-transaction limits. Restore them first, in batches: each
 `--id <contract> --key-xdr <key>` a data entry, and `--wasm-hash <hash>` a
 Wasm. After a restore, simulate the call again before sending it.
 
-**Production modules.** The compliance and identity contracts in this
-repository are testnet stubs. A production compliance module or identity
-registry must extend its own instance and entries the same way, each entry in
-the transaction that creates it, or the share token stops working when they
-archive.
+**Replacement contracts.** A compliance contract, identity verifier or identity
+registry from outside the kit must extend its own instance and entries the same
+way, each entry in the transaction that creates it, or the share token stops
+working when they archive.
 
 ---
 
@@ -561,34 +641,44 @@ implementation against what the vault calls.
 | Interface | Defined in | Implemented here by | What the vault calls |
 |---|---|---|---|
 | `OracleFeed` | `crates/strata-bindings` | `nav-oracle` | `state`, `nav_per_share`, `attested_at`, `freshness_duration` |
-| `FungibleToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `transfer`, `balance`, `total_supply`, `decimals` |
-| `RWAToken` | OpenZeppelin `stellar-tokens` 0.7.2 | `share-token` | `mint`, `burn`, `forced_transfer` |
-| `IdentityVerifier` | OpenZeppelin `stellar-tokens` 0.7.2 | `identity-verifier` (testnet stub) | `verify_identity`, called by the share token |
+| `FungibleToken` | OpenZeppelin `stellar-tokens` 0.8.0 | `share-token` | `transfer`, `balance`, `decimals` |
+| `FungibleTotalSupply` | OpenZeppelin `stellar-tokens` 0.8.0 | `share-token` | `total_supply` |
+| `RWAToken` | OpenZeppelin `stellar-tokens` 0.8.0 | `share-token` | `mint`, `burn`, `forced_transfer` |
+| `IdentityVerifier` | OpenZeppelin `stellar-tokens` 0.8.0 | `identity-verifier` | `verify_identity`: the vault on its own address at setup and on a holder when it reads the holder's standing; the share token on every mint and transfer |
+| `VerifierSetup` | `crates/strata-bindings` | `identity-verifier` | `ready_for(vault, governance)`, at setup and in `health()` |
+
+The kit's identity contracts use one more trait among themselves:
+`ClaimsCheck` (`crates/strata-bindings`), whose `check_claims` the registry
+calls on the verifier before it links a wallet.
 
 A feed that implements `OracleFeed` can replace `nav-oracle`; it must report
 `Stale` once its report outlives `freshness_duration`, and `attested_at` must
 be the ledger time the report was accepted, not a time the reporter supplies.
 
-The testnet identity verifier sets one address per call (`allow`), emits no
-event and offers no paged listing. These are limits of the stub: a production
-identity registry replaces it.
+A verifier that replaces `identity-verifier` must answer `ready_for`, or the
+vault's setup cannot finish. When it cannot answer, it must fail with a code of
+its own and never with 304 or 321: the vault reads those two as a refusal, which
+converts a priced deposit and burns a zero-asset claim.
 
-Two more traits connect the share token, the oracle and the kit's compliance
-contract to the vault's timelock. The vault implements `ClockSource`
-(`crates/strata-timelock`), and the three read its `timelock_clock` to time their own
-changes. Each implements `VaultBinding` (`crates/strata-bindings`): `vault` names the
-vault it is bound to, and `setup_open` says whether its admin changes are still
-instant.
+Two more traits connect the share token, the oracle, the kit's compliance
+contract and the three governed identity contracts to the vault's timelock. The
+vault implements `ClockSource` (`crates/strata-timelock`), and each of them
+reads its `timelock_clock` to time its own changes. Each implements
+`VaultBinding` (`crates/strata-bindings`): `vault` names the vault it is bound
+to, and `setup_open` says whether its admin changes are still instant.
 
 The vault's `finish_setup` reads the token and the oracle through
 `VaultBinding` and refuses until each reports this vault with its own setup
 closed. It reads the compliance contract the same way, but accepts one that
-does not answer `VaultBinding`: such an external module keeps its own
-governance, which is a trust assumption. It also reads the token's
+does not answer `VaultBinding`: such an external module changes its modules off
+the vault's clock, which is a trust assumption, though it must still name
+governance as its admin. It also reads the token's
 `manager` members (OpenZeppelin `AccessControl`), its `total_supply` and
 `decimals` (`FungibleToken`) and the asset's `decimals`, runs
-`verify_identity` on its own address, reads `linked_tokens` from the token's
-compliance contract (OpenZeppelin `TokenBinder`), and calls the oracle's
+`verify_identity` on its own address, asks the token's verifier
+`ready_for(vault, governance)` (`VerifierSetup`), reads `linked_tokens` from the
+token's compliance contract (OpenZeppelin `TokenBinder`) and its `get_admin`
+(OpenZeppelin `AccessControl`), and calls the oracle's
 `state` and `freshness_duration` (`OracleFeed`). A replacement for any of these
 must answer those calls, or the vault's setup cannot finish.
 
@@ -599,33 +689,54 @@ name the token's vault with their setup closed. Like `finish_setup`, the token
 accepts an external module that does not answer `VaultBinding`, on trust. A new
 identity verifier must accept the vault's address in `verify_identity`.
 
+The SEP-40 feed reaches the vault through one more trait, in the other
+direction: `VaultView` (`crates/strata-bindings`), implemented by `async-vault`
+(`asset`, `share_token`, `oracle`, `wind_down`, `governance`). The feed itself
+implements `PriceFeed` (`crates/sep40`), the SEP-40 interface. A replacement
+vault must answer `VaultView` for the feed to quote it; the feed's constructor
+checks this once, at deployment.
+
 ---
 
 ## 7. Error Codes and Entrypoint Docs
 
 Each kit contract owns a block of error codes. A call that fails inside
-another contract returns that contract's code: a deposit claim the identity
-verifier refuses returns `304`, not a vault code. The blocks never overlap, so
+another contract returns that contract's code: a share transfer to an address
+the identity verifier refuses returns `304`, not a share-token code. The blocks
+never overlap, so
 a code inside them always names the kit contract that raised it. OpenZeppelin's
 codes are shared: every contract built on its libraries returns the same code
 for the same failure, so `304` says what failed, not where.
 
 | Contract | Error enum | Block | Codes in use |
 |---|---|---|---|
-| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3026 |
-| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6077 |
+| `nav_oracle` | `OracleError` | 3000–3999 | 3001–3021, 3023–3027 |
+| `async_vault` | `VaultError` | 6000–6999 | 6000–6001, 6005, 6007, 6009, 6012, 6014, 6029–6035, 6037–6078 |
 | `share_token` | `ShareTokenError` | 7000–7999 | 7000–7013, 7015–7019 |
 | `compliance` | `ComplianceContractError` | 8000–8999 | 8001–8011 |
+| `sep40_feed` | `FeedError` | 9000–9999 | 9001–9008 |
+| `identity_verifier` | `VerifierError` | 10000–10199 | 10000–10013 |
+| `identity_registry` | `IdentityRegistryError` | 10200–10399 | 10200–10220 |
+| `claim_topics` | `ClaimTopicsContractError` | 10400–10599 | 10400–10413 |
+| `claim_issuer` | `ClaimIssuerContractError` | 10600–10799 | 10600–10605 |
+| `investor_identity` | `InvestorIdentityError` | 10800–10999 | 10800 |
 
 The blocks are defined once, in `crates/strata-bindings` (`ORACLE_ERRORS`,
-`VAULT_ERRORS`, `TOKEN_ERRORS`, `COMPLIANCE_ERRORS`). Each contract declares
-its enum through `strata_bindings::error_enum!`, and the build fails if a code
-leaves its contract's block or two blocks overlap. A code is never reused: a
-removed variant leaves its number retired. The testnet identity verifier has
-no enum of its own; it refuses with OpenZeppelin's
-`RWAError::IdentityVerificationFailed` (304). OpenZeppelin's libraries keep
-their codes outside the kit's blocks: below 3000 in the modules the kit uses,
-and from 4000 to 5999 in its governance crate.
+`VAULT_ERRORS`, `TOKEN_ERRORS`, `COMPLIANCE_ERRORS`, `FEED_ERRORS`,
+`IDENTITY_ERRORS`; the five identity contracts split `IDENTITY_ERRORS` into
+the blocks above). Each contract declares its enum through
+`strata_bindings::error_enum!`, and the build fails if a code leaves its
+contract's block or two blocks overlap. A code is never reused: a removed
+variant leaves its number retired. The identity verifier refuses with
+OpenZeppelin's codes, `RWAError::IdentityVerificationFailed` (304) and
+`IRSError::IdentityNotFound` (321), and fails with its own `Unavailable`
+(10002), never 304 or 321, when a contract it depends on fails or no issuer
+can answer: no topic is required, or a required topic has no trusted issuer.
+Which issuer errors count as a refusal is listed once, in
+`strata_bindings::ISSUER_REFUSALS`: OpenZeppelin's 350 and 357, and the claim
+issuer's 10600 to 10605.
+OpenZeppelin's libraries keep their codes outside the kit's blocks: below 3000
+in the modules the kit uses, and from 4000 to 5999 in its governance crate.
 
 Every entrypoint the kit defines or overrides carries a doc in its contract's
 spec, so generated clients and block explorers show it. The doc is a one-line
@@ -635,7 +746,8 @@ section that would be empty is left out, so a view has no `# Events` and no
 override keep OpenZeppelin's docs.
 
 - Amounts are in the asset's base units and shares in the share token's base
-  units. Prices are in WAD: asset base units per share base unit, times 10^18.
+  units. Prices are asset base units per share base unit, times 10^14 (14
+  decimals).
   Times and durations are in seconds; `live_until_ledger` is a ledger number.
 - An error named without its enum is the contract's own. Any other error
   carries its enum, as in `AccessControlError::Unauthorized`.

@@ -1,41 +1,48 @@
 //! # Design
 //!
-//! Testnet-only stub — in production this is an external modular-compliance
-//! module (ERC-3643), not part of this product. Do not deploy to mainnet.
+//! The share token's modular compliance (ERC-3643): the token calls it after
+//! every mint, transfer and burn, and it runs the modules registered on that
+//! hook.
 //!
 //! - **No rule of its own.** With no module registered every check passes; the
 //!   allowlist lives in the identity verifier. The cost: any other rule needs a
 //!   module or another compliance contract.
+//! - **No module stops an exit.** Once a vault is bound, a move into it, a
+//!   mint to it and a burn, which only the vault makes, still reach every
+//!   module, but a refusal or a failure is ignored. The cost: a module that
+//!   uses up the transaction budget still stops the move, since that cannot be
+//!   caught; removing it, which a wind-down allows, is the defense.
 //! - **Changes wait for the vault's timelock.** After setup, module, binding
-//!   and admin changes wait, and a wind-down refuses them. The cost: a faulty
-//!   module takes a full delay to remove, and stays in a wind-down.
+//!   and admin changes wait, and a wind-down refuses them, except removing a
+//!   module, so a faulty one can always come off. The cost: it still takes a
+//!   full delay to come off, and adding one or rebinding a token is refused
+//!   for the rest of an active wind-down.
 //! - **An unbound token fails.** The hooks the token calls after each mint,
 //!   transfer and burn refuse it when it is not bound. The cost: unbinding it
 //!   stops all three, the vault's claims included.
 //! - **The operator is not read.** OpenZeppelin's module and binding calls take
-//!   an `operator`; the stub asks the admin to sign instead. The cost: the
+//!   an `operator`; the contract asks the admin to sign instead. The cost: the
 //!   admin cannot delegate those calls.
-//! - **No upgrade.** The stub has no upgrade path. The cost: a fix means a new
-//!   deployment and a token `Compliance` change, which waits for the vault's
-//!   timelock after setup.
+//! - **No upgrade.** The contract has no upgrade path. The cost: a fix means a
+//!   new deployment and a token `Compliance` change, which waits for the
+//!   vault's timelock after setup.
 
 #![no_std]
 
+mod dispatch;
 mod extend;
 mod governance;
 mod guards;
 
-use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contractmeta, Address, Env, Vec,
-};
+use soroban_sdk::{contract, contracterror, contractevent, contractimpl, Address, Env, Vec};
 
-contractmeta!(
-    key = "stub",
-    val = "testnet-only; prod = external compliance module"
-);
 use stellar_access::access_control;
 use stellar_macros::only_admin;
-use stellar_tokens::rwa::{compliance, compliance::ComplianceHook, utils::token_binder};
+use stellar_tokens::rwa::{
+    compliance,
+    compliance::{AccountSnapshot, ComplianceHook, TransferKind},
+    utils::token_binder,
+};
 use strata_bindings::VaultBinding;
 
 pub use governance::{ComplianceChange, CompliancePendingChange, ADMIN_ACCEPT_LEDGERS};
@@ -187,7 +194,8 @@ impl Compliance {
     /// # Errors
     ///
     /// * `SetupOpen` - Setup has not finished; change it directly.
-    /// * `WindDownActive` - The vault is winding down.
+    /// * `WindDownActive` - The vault is winding down, and the change does
+    ///   not remove a module.
     /// * `TooManyPendingChanges` - The queue is full.
     ///
     /// # Events
@@ -236,7 +244,8 @@ impl Compliance {
     /// # Errors
     ///
     /// * `ChangeNotFound` - No pending change has this id.
-    /// * `WindDownActive` - The vault is winding down.
+    /// * `WindDownActive` - The vault is winding down, and the change does
+    ///   not remove a module.
     /// * `VaultPaused` - The vault is paused.
     /// * `DelayBelowNotice` - The change's delay is shorter than the vault's
     ///   notice now.
@@ -402,8 +411,8 @@ impl token_binder::TokenBinder for Compliance {
     }
 }
 
-/// The token calls the check before and the hook after every mint, burn and
-/// transfer, which is what keeps this instance alive.
+/// The token calls a hook after every mint, burn and transfer, which is what
+/// keeps this instance alive.
 #[contractimpl(contracttrait)]
 impl compliance::Compliance for Compliance {
     /// Registers `module` on `hook`. Instant during setup; after it, propose
@@ -411,7 +420,7 @@ impl compliance::Compliance for Compliance {
     ///
     /// # Arguments
     ///
-    /// * `hook` - The check or the hook the module runs on.
+    /// * `hook` - The hook the module runs on.
     /// * `module` - The module contract.
     /// * `operator` - Not read; the admin signs instead.
     ///
@@ -442,7 +451,7 @@ impl compliance::Compliance for Compliance {
     ///
     /// # Arguments
     ///
-    /// * `hook` - The check or the hook the module runs on.
+    /// * `hook` - The hook the module runs on.
     /// * `module` - The module contract.
     /// * `operator` - Not read; the admin signs instead.
     ///
@@ -465,101 +474,79 @@ impl compliance::Compliance for Compliance {
         compliance::storage::remove_module_from(e, hook, module);
     }
 
-    /// Runs the `Transferred` modules after a bound token moves shares.
+    /// Runs the `Transferred` modules after a bound token moves shares. Once a
+    /// vault is bound, a move into it ignores a module's refusal or failure.
     ///
     /// # Arguments
     ///
-    /// * `from`, `to` - The two ends of the move.
+    /// * `from`, `to` - The two ends of the move, as they stood before it.
     /// * `amount` - Share base units moved.
+    /// * `kind` - Who moved the shares, and under what authority.
     /// * `token` - The calling token.
     ///
     /// # Errors
     ///
     /// * `ComplianceError::TokenNotBound` - `token` is not bound here.
-    /// * A module's own error.
+    /// * A module's own error, unless `to` is the bound vault.
     ///
     /// # Authorization
     ///
     /// `token` signs, as the calling contract.
-    fn transferred(e: &Env, from: Address, to: Address, amount: i128, token: Address) {
+    fn transferred(
+        e: &Env,
+        from: AccountSnapshot,
+        to: AccountSnapshot,
+        amount: i128,
+        kind: TransferKind,
+        token: Address,
+    ) {
         strata_storage::bump_instance(e);
-        compliance::storage::transferred(e, from, to, amount, token);
+        dispatch::transferred(e, from, to, amount, kind, token);
     }
 
-    /// Runs the `Created` modules after a bound token mints shares.
+    /// Runs the `Created` modules after a bound token mints shares. Once a
+    /// vault is bound, a mint to it ignores a module's refusal or failure.
     ///
     /// # Arguments
     ///
-    /// * `to` - The account credited.
+    /// * `to` - The account credited, as it stood before the mint.
     /// * `amount` - Share base units minted.
     /// * `token` - The calling token.
     ///
     /// # Errors
     ///
     /// * `ComplianceError::TokenNotBound` - `token` is not bound here.
-    /// * A module's own error.
+    /// * A module's own error, unless `to` is the bound vault.
     ///
     /// # Authorization
     ///
     /// `token` signs, as the calling contract.
-    fn created(e: &Env, to: Address, amount: i128, token: Address) {
+    fn created(e: &Env, to: AccountSnapshot, amount: i128, token: Address) {
         strata_storage::bump_instance(e);
-        compliance::storage::created(e, to, amount, token);
+        dispatch::created(e, to, amount, token);
     }
 
-    /// Runs the `Destroyed` modules after a bound token burns shares.
+    /// Runs the `Destroyed` modules after a bound token burns shares. Once a
+    /// vault is bound, a module's refusal or failure is ignored: only the
+    /// token's `manager` burns, and the vault holds that role alone.
     ///
     /// # Arguments
     ///
-    /// * `from` - The account debited.
+    /// * `from` - The account debited, as it stood before the burn.
     /// * `amount` - Share base units burned.
     /// * `token` - The calling token.
     ///
     /// # Errors
     ///
     /// * `ComplianceError::TokenNotBound` - `token` is not bound here.
-    /// * A module's own error.
+    /// * A module's own error, before a vault is bound.
     ///
     /// # Authorization
     ///
     /// `token` signs, as the calling contract.
-    fn destroyed(e: &Env, from: Address, amount: i128, token: Address) {
+    fn destroyed(e: &Env, from: AccountSnapshot, amount: i128, token: Address) {
         strata_storage::bump_instance(e);
-        compliance::storage::destroyed(e, from, amount, token);
-    }
-
-    /// Whether every `CanTransfer` module accepts the move; true when none is
-    /// registered.
-    ///
-    /// # Arguments
-    ///
-    /// * `from`, `to` - The two ends of the move.
-    /// * `amount` - Share base units.
-    /// * `token` - The token asking.
-    ///
-    /// # Errors
-    ///
-    /// * A module's own error.
-    fn can_transfer(e: &Env, from: Address, to: Address, amount: i128, token: Address) -> bool {
-        strata_storage::bump_instance(e);
-        compliance::storage::can_transfer(e, from, to, amount, token)
-    }
-
-    /// Whether every `CanCreate` module accepts the mint; true when none is
-    /// registered.
-    ///
-    /// # Arguments
-    ///
-    /// * `to` - The account to credit.
-    /// * `amount` - Share base units.
-    /// * `token` - The token asking.
-    ///
-    /// # Errors
-    ///
-    /// * A module's own error.
-    fn can_create(e: &Env, to: Address, amount: i128, token: Address) -> bool {
-        strata_storage::bump_instance(e);
-        compliance::storage::can_create(e, to, amount, token)
+        dispatch::destroyed(e, from, amount, token);
     }
 }
 

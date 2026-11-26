@@ -16,8 +16,8 @@ use crate::{
     ChangeApplied, ChangeProposed, ShareToken, ShareTokenClient, ShareTokenError, TokenChange,
     ADMIN_ACCEPT_LEDGERS,
 };
+use allowlist_verifier::{IdentityVerifier, IdentityVerifierClient};
 use compliance::{Compliance, ComplianceClient};
-use identity_verifier::{IdentityVerifier, IdentityVerifierClient};
 
 const TWO_DAYS_IN_LEDGERS: u32 = 2 * 17_280;
 

@@ -8,7 +8,7 @@ fn a_fractional_share_price_is_representable() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &400);
-    f.fulfill_epoch(3 * WAD_SCALE / 2);
+    f.fulfill_epoch(3 * PRICE_SCALE / 2);
 
     assert_eq!(f.vault.claim_deposit(&user, &1), 266);
     assert_eq!(f.shares(&user), 266);
@@ -20,7 +20,7 @@ fn conversion_rounds_down_in_the_vaults_favour() {
     let user = f.investor(1_000);
 
     f.vault.request_deposit(&user, &401);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
     assert_eq!(f.vault.claim_deposit(&user, &1), 200);
     assert_eq!(f.balance(&f.vault.address), 401);
@@ -33,9 +33,9 @@ fn a_deposit_too_large_for_an_i128_product_still_converts() {
     let amount = 10i128.pow(30);
 
     f.vault.request_deposit(&whale, &amount);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
 
-    assert!(amount.checked_mul(WAD_SCALE).is_none());
+    assert!(amount.checked_mul(PRICE_SCALE).is_none());
     assert_eq!(f.vault.claim_deposit(&whale, &1), 5 * 10i128.pow(29));
 }
 
@@ -65,14 +65,14 @@ fn conversion_arithmetic_holds_its_rounding_direction() {
         shares in 0i128..=1_000_000_000_000_000i128,
         price in 1i128..=1_000_000_000_000_000i128,
     )| {
-        let assets = checked_mul_div_floor(&env, &shares, &price, &WAD_SCALE).unwrap();
+        let assets = checked_mul_div_floor(&env, &shares, &price, &PRICE_SCALE).unwrap();
 
         // The vault never pays out more than the exact rational amount.
-        prop_assert!(assets * WAD_SCALE <= shares * price);
+        prop_assert!(assets * PRICE_SCALE <= shares * price);
         // And never less than it has to: the floor is tight.
-        prop_assert!((assets + 1) * WAD_SCALE > shares * price);
+        prop_assert!((assets + 1) * PRICE_SCALE > shares * price);
         // Depositing and redeeming straight back never manufactures value.
-        let back = checked_mul_div_floor(&env, &assets, &WAD_SCALE, &price).unwrap();
+        let back = checked_mul_div_floor(&env, &assets, &PRICE_SCALE, &price).unwrap();
         prop_assert!(back <= shares);
     });
 }
@@ -87,8 +87,8 @@ fn deposit_and_redeem_round_trip_never_manufactures_assets() {
         assets in 0i128..=1_000_000_000_000_000_000_000_000_000_000i128,
         price in 1i128..=1_000_000_000_000_000_000_000_000_000_000i128,
     )| {
-        if let Some(shares) = checked_mul_div_floor(&env, &assets, &WAD_SCALE, &price) {
-            if let Some(back_assets) = checked_mul_div_floor(&env, &shares, &price, &WAD_SCALE) {
+        if let Some(shares) = checked_mul_div_floor(&env, &assets, &PRICE_SCALE, &price) {
+            if let Some(back_assets) = checked_mul_div_floor(&env, &shares, &price, &PRICE_SCALE) {
                 // Invariant: round-trip through shares can never yield more assets than started.
                 prop_assert!(back_assets <= assets);
             }
@@ -105,8 +105,8 @@ fn redeem_and_deposit_round_trip_never_manufactures_shares() {
         shares in 0i128..=1_000_000_000_000_000_000_000_000_000_000i128,
         price in 1i128..=1_000_000_000_000_000_000_000_000_000_000i128,
     )| {
-        if let Some(assets) = checked_mul_div_floor(&env, &shares, &price, &WAD_SCALE) {
-            if let Some(back_shares) = checked_mul_div_floor(&env, &assets, &WAD_SCALE, &price) {
+        if let Some(assets) = checked_mul_div_floor(&env, &shares, &price, &PRICE_SCALE) {
+            if let Some(back_shares) = checked_mul_div_floor(&env, &assets, &PRICE_SCALE, &price) {
                 // Invariant: round-trip through assets can never yield more shares than started.
                 prop_assert!(back_shares <= shares);
             }
@@ -123,12 +123,12 @@ fn deposit_floor_is_strictly_tight() {
         assets in 0i128..=1_000_000_000_000_000i128,
         price in 1i128..=1_000_000_000_000_000i128,
     )| {
-        let shares = checked_mul_div_floor(&env, &assets, &WAD_SCALE, &price).unwrap();
+        let shares = checked_mul_div_floor(&env, &assets, &PRICE_SCALE, &price).unwrap();
 
         // Never mints more shares than backed by assets.
-        prop_assert!(shares * price <= assets * WAD_SCALE);
+        prop_assert!(shares * price <= assets * PRICE_SCALE);
         // Floor is tight: not a single additional share could be minted.
-        prop_assert!((shares + 1) * price > assets * WAD_SCALE);
+        prop_assert!((shares + 1) * price > assets * PRICE_SCALE);
     });
 }
 
@@ -148,30 +148,30 @@ fn conversion_monotonicity_in_amount_and_price() {
 
         // Monotonic in amount:
         if let (Some(s_low), Some(s_high)) = (
-            checked_mul_div_floor(&env, &amin, &WAD_SCALE, &pmin),
-            checked_mul_div_floor(&env, &amax, &WAD_SCALE, &pmin),
+            checked_mul_div_floor(&env, &amin, &PRICE_SCALE, &pmin),
+            checked_mul_div_floor(&env, &amax, &PRICE_SCALE, &pmin),
         ) {
             prop_assert!(s_low <= s_high);
         }
 
         if let (Some(a_low), Some(a_high)) = (
-            checked_mul_div_floor(&env, &amin, &pmin, &WAD_SCALE),
-            checked_mul_div_floor(&env, &amax, &pmin, &WAD_SCALE),
+            checked_mul_div_floor(&env, &amin, &pmin, &PRICE_SCALE),
+            checked_mul_div_floor(&env, &amax, &pmin, &PRICE_SCALE),
         ) {
             prop_assert!(a_low <= a_high);
         }
 
         // Monotonic in price:
         if let (Some(s_cheap), Some(s_dear)) = (
-            checked_mul_div_floor(&env, &amax, &WAD_SCALE, &pmin),
-            checked_mul_div_floor(&env, &amax, &WAD_SCALE, &pmax),
+            checked_mul_div_floor(&env, &amax, &PRICE_SCALE, &pmin),
+            checked_mul_div_floor(&env, &amax, &PRICE_SCALE, &pmax),
         ) {
             prop_assert!(s_dear <= s_cheap);
         }
 
         if let (Some(a_cheap), Some(a_dear)) = (
-            checked_mul_div_floor(&env, &amax, &pmin, &WAD_SCALE),
-            checked_mul_div_floor(&env, &amax, &pmax, &WAD_SCALE),
+            checked_mul_div_floor(&env, &amax, &pmin, &PRICE_SCALE),
+            checked_mul_div_floor(&env, &amax, &pmax, &PRICE_SCALE),
         ) {
             prop_assert!(a_cheap <= a_dear);
         }

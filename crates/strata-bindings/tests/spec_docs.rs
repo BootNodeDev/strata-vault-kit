@@ -7,15 +7,23 @@ use std::path::Path;
 
 const SPEC_DOC_LIMIT: usize = 1024;
 
-/// Every entrypoint and error enum of the five contracts lives in these files.
-const CONTRACT_SOURCES: [&str; 7] = [
+/// Every entrypoint and error enum of the eleven contracts, plus each example,
+/// lives in these files.
+const CONTRACT_SOURCES: [&str; 14] = [
     "contracts/async-vault/src/lib.rs",
     "contracts/async-vault/src/error.rs",
     "contracts/share-token/src/contract.rs",
     "contracts/share-token/src/error.rs",
     "contracts/nav-oracle/src/lib.rs",
     "contracts/compliance/src/lib.rs",
+    "contracts/claim-topics/src/lib.rs",
+    "contracts/claim-issuer/src/lib.rs",
+    "contracts/investor-identity/src/lib.rs",
+    "contracts/identity-registry/src/lib.rs",
     "contracts/identity-verifier/src/lib.rs",
+    "crates/allowlist-verifier/src/lib.rs",
+    "contracts/sep40-feed/src/lib.rs",
+    "examples/sep40-consumer/src/lib.rs",
 ];
 
 /// The doc of every function, enum and enum variant in `source`, joined the

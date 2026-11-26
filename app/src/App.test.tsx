@@ -43,7 +43,7 @@ const disconnectedAuthority: AdminAuthority = {
 	grants: [],
 	signersUnknown: false,
 	signersLoading: false,
-	verifierAdminUnknown: false,
+	registryComplianceUnknown: false,
 	addresses: { oracle: null, shareToken: null, identityVerifier: null },
 	holders: {
 		"vault governance": [],
@@ -54,7 +54,7 @@ const disconnectedAuthority: AdminAuthority = {
 		"oracle guardian": [],
 		"oracle admin": [],
 		"share-token compliance": [],
-		"identity-verifier admin": [],
+		"identity-registry compliance": [],
 		"share-token manager": [],
 		"share-token admin": [],
 		"vault pending admin": [],

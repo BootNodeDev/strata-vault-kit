@@ -1,6 +1,6 @@
 use soroban_sdk::Env;
-use stellar_contract_utils::math::{i128_fixed_point::checked_mul_div_floor, wad::WAD_SCALE};
-use strata_bindings::OracleFeedClient;
+use stellar_contract_utils::math::i128_fixed_point::checked_mul_div_floor;
+use strata_bindings::{OracleFeedClient, PRICE_SCALE};
 
 use crate::error::VaultError;
 use crate::keys::DataKey;
@@ -9,9 +9,9 @@ use crate::state;
 /// Defines the pricing interface for epoch share price resolution and conversions.
 /// A deployment or vault variant selects or implements a scheme conforming to this trait.
 pub trait PricingScheme {
-    /// Resolves the share price an epoch would take now, in WAD scale (18
-    /// decimals), or a VaultError if invalid. Cancellation calls it too, to
-    /// decide whether a price is readable, so it must not write state.
+    /// Resolves the share price an epoch would take now, at `PRICE_DECIMALS`,
+    /// or a VaultError if invalid. Cancellation calls it too, to decide
+    /// whether a price is readable, so it must not write state.
     fn resolve_share_price(e: &Env) -> Result<i128, VaultError>;
 
     /// Converts asset amount to share amount at `share_price`, rounding down
@@ -20,7 +20,7 @@ pub trait PricingScheme {
         if share_price <= 0 {
             return Err(VaultError::InvalidSharePrice);
         }
-        checked_mul_div_floor(e, &assets, &WAD_SCALE, &share_price)
+        checked_mul_div_floor(e, &assets, &PRICE_SCALE, &share_price)
             .ok_or(VaultError::AmountTooLarge)
     }
 
@@ -30,7 +30,7 @@ pub trait PricingScheme {
         if share_price <= 0 {
             return Err(VaultError::InvalidSharePrice);
         }
-        checked_mul_div_floor(e, &shares, &share_price, &WAD_SCALE)
+        checked_mul_div_floor(e, &shares, &share_price, &PRICE_SCALE)
             .ok_or(VaultError::AmountTooLarge)
     }
 }

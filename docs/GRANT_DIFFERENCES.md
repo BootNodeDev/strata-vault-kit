@@ -43,20 +43,21 @@ spec" is the [Kit specification](./kit-spec.md).
    not mention a timelock. An earlier version of the design planned to use
    OpenZeppelin's timelock. OpenZeppelin's timelock lacks four things the kit
    needs:
-   - one clock shared by the vault, the share token, the oracle and the
-     compliance contract;
+   - one clock shared by the vault, the share token, the oracle, the
+     compliance contract and the governed identity contracts;
    - paused time does not count, so a vault pause pushes back the time a
      queued change can apply;
    - a setup window in which changes are instant; it closes once and never
      reopens;
    - no change lands during a wind-down, except a grant of the share token's
-     `compliance` role, which still waits the full delay.
+     `compliance` role and removing a compliance module, a claim topic, a
+     trusted issuer or a protocol address, all of which still wait the full
+     delay.
 
    The delay is 7 to 90 days. See design doc
    [§9](./strata-product-and-architecture.md#9-relationship-to-existing-stellar-tooling).
 
-4. **Two cases hold a priced claim: a compliance freeze, and a delisted
-   holder's redemption that rounds to zero.** The proposal said exits are
+4. **One case holds a priced claim: a compliance freeze.** The proposal said exits are
    "never gated or pausable". In the kit, a vault pause, a delisting, or a
    stale or paused price never blocks a priced claim once the vault's cash,
    not counting deposits that can still be cancelled, covers it. A compliance
@@ -66,11 +67,11 @@ spec" is the [Kit specification](./kit-spec.md).
    generally treat frozen property. One edge case, a frozen holder's deposit
    too small to mint any shares, is described in the
    [compliance matrix](./COMPLIANCE_MATRIX.md#1-investor-states). There is one
-   more exception. A redemption so small that it rounds down to zero assets
-   pays no cash and gives the shares back, so the holder must be able to
-   receive shares. If the holder has been removed from the allowlist
-   (delisted), that claim waits until they are listed again. In a wind-down
-   the shares are burned instead. See kit spec
+   more case. A redemption so small that it rounds down to zero assets pays no
+   cash. It returns the shares to a holder who may take them back, and burns
+   them otherwise, always in a wind-down, under one asset unit, from the
+   holder's own signed claim. It waits only while the identity verifier fails
+   instead of answering. See kit spec
    [Invariant 4](./kit-spec.md#invariant-4-covered-claims-always-pay-exit-guarantee).
 
 5. **New deposits stop while the price cannot be trusted or the cash is
@@ -160,14 +161,16 @@ spec" is the [Kit specification](./kit-spec.md).
     [X10](./THREAT_MODEL.md#x10-the-deposit-assets-issuer-freezes-or-claws-back-the-vaults-cash)
     and [X8](./THREAT_MODEL.md#x8-wind-down).
 
-12. **In a wind-down, a failing compliance module can block claims.** In a
-    wind-down, a holder collects their part of the cash by surrendering
-    shares, which the vault burns. The share token calls the compliance
-    contract on each burn. If a compliance module (a rule plugged into the
-    compliance contract) starts failing during a wind-down, those claims fail.
-    The module cannot be removed then: removing it waits for the timelock, and
-    no timelocked change lands in a wind-down except a `compliance` grant. A
-    frozen holder's wind-down payout also waits until the compliance authority
+12. **In a wind-down, a compliance module that runs out of budget can block
+    claims.** In a wind-down, a holder collects their part of the cash by
+    surrendering shares, which the vault burns. The share token calls the
+    compliance contract on each burn, and the kit's compliance contract
+    ignores a module's refusal or failure there. A compliance module (a rule
+    plugged into the compliance contract) that runs the transaction out of
+    budget or resource limits still makes those claims fail until it is
+    removed. Removing it still waits the normal timelock delay, the same way a
+    `compliance` grant does. A frozen holder's wind-down
+    payout also waits until the compliance authority
     (a holder of the share token's `compliance` role) lifts the freeze. If that
     key is lost, granting the role to a new account waits the full timelock
     delay, at least seven days. So each deployment keeps a second `compliance`

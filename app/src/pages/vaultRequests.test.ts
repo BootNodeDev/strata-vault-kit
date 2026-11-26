@@ -35,7 +35,7 @@ const deposit: InvestorRequest = {
 	epochId: 1n,
 	side: "deposit",
 	epochStatus: fulfilled,
-	sharePrice: price(2_000_000_000_000_000_000n),
+	sharePrice: price(200_000_000_000_000n),
 	amount: amount(100_0000000n),
 	claimed: false,
 	priceableAt: 1_700_003_600n,
@@ -46,7 +46,7 @@ const redeem: InvestorRequest = {
 	epochId: 2n,
 	side: "redeem",
 	epochStatus: fulfilled,
-	sharePrice: price(2_000_000_000_000_000_000n),
+	sharePrice: price(200_000_000_000_000n),
 	amount: amount(100_0000000n),
 	claimed: false,
 	priceableAt: 1_700_003_600n,
@@ -86,7 +86,7 @@ describe("assignStage", () => {
 
 const validNav = (attestedAt: bigint): NavClassification => ({
 	status: "valid",
-	price: price(1_000_000_000_000_000_000n),
+	price: price(100_000_000_000_000n),
 	attestedAt,
 })
 
@@ -332,7 +332,7 @@ describe("toRequestEntriesByStage", () => {
 			epochId: 3n,
 			side: "deposit",
 			epochStatus: fulfilled,
-			sharePrice: price(2_000_000_000_000_000_000n),
+			sharePrice: price(200_000_000_000_000n),
 		}
 		const result = toRequestEntriesByStage(
 			{ requests: [], archived: [archived], unreadable: [] },
@@ -362,7 +362,7 @@ describe("toRequestEntriesByStage", () => {
 		const uneven: InvestorRequest = {
 			...deposit,
 			amount: amount(10000199999n),
-			sharePrice: price(2_100000000000000000n),
+			sharePrice: price(2_10000000000000n),
 		}
 		const result = toRequestEntriesByStage(
 			{ requests: [uneven], archived: [], unreadable: [] },

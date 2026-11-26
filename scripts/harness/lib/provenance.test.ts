@@ -5,7 +5,7 @@ import { join } from "node:path"
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
-import { CONTRACT_NAMES, type ContractName } from "./deployment.js"
+import { WASM_NAMES, type WasmName } from "./deployment.js"
 import { readProvenance, sourceCommit, wasmHash } from "./provenance.js"
 
 let dir = ""
@@ -87,9 +87,9 @@ describe("sourceCommit", () => {
 	})
 })
 
-const wasmsOf = (file: string): Record<ContractName, string> =>
-	Object.fromEntries(CONTRACT_NAMES.map((name) => [name, file])) as Record<
-		ContractName,
+const wasmsOf = (file: string): Record<WasmName, string> =>
+	Object.fromEntries(WASM_NAMES.map((name) => [name, file])) as Record<
+		WasmName,
 		string
 	>
 
@@ -104,7 +104,7 @@ describe("readProvenance", () => {
 
 		expect(result.commit).toBe(git("rev-parse", "HEAD").trim())
 		expect(result.uncommittedChanges).toBe(false)
-		for (const name of CONTRACT_NAMES) {
+		for (const name of WASM_NAMES) {
 			expect(result.wasmHashes[name]).toBe(wasmHash(file))
 		}
 	})

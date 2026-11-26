@@ -1,6 +1,11 @@
 import { type Amount, readContract } from "@stellar-scaffold/app-lib"
 import { skipToken, useQuery } from "@tanstack/react-query"
-import { identityVerifierAt, shareToken } from "../config/clients"
+import {
+	identityRegistryAt,
+	identityVerifierAt,
+	shareToken,
+} from "../config/clients"
+import { identityRegistryOf } from "./useIdentityRegistry"
 import { type Allowance, allowanceQuery, fetchAllowance } from "./useIsAllowed"
 import { classifyShares } from "./useSharePosition"
 
@@ -10,6 +15,7 @@ const REFRESH_MS = 15_000
 
 export type TargetReads = {
 	allowance: Allowance
+	vetoed: boolean | null
 	frozen: boolean | null
 	shares: Amount | null
 	frozenShares: Amount | null
@@ -23,6 +29,20 @@ export type TargetState =
 const sharesOf = (position: ReturnType<typeof classifyShares>) =>
 	position.status === "held" ? position.shares : null
 
+// The registry the verifier names holds the veto; with no verifier there is none to ask.
+async function fetchVetoed(
+	verifier: string | null,
+	account: string,
+): Promise<boolean | null> {
+	if (verifier === null) return null
+	const read = await readContract(async () =>
+		(await identityRegistryAt(await identityRegistryOf(verifier))).is_vetoed({
+			account,
+		}),
+	)
+	return read.kind === "value" ? read.value : null
+}
+
 async function fetchTargetReads(
 	verifier: string | null,
 	account: string,
@@ -32,8 +52,9 @@ async function fetchTargetReads(
 		verifier === null
 			? Promise.resolve("unreadable")
 			: fetchAllowance(identityVerifierAt(verifier), account)
-	const [allowance, frozen, shares, frozenShares] = await Promise.all([
+	const [allowance, vetoed, frozen, shares, frozenShares] = await Promise.all([
 		allowed,
+		fetchVetoed(verifier, account),
 		readContract(async () =>
 			(await token).is_frozen({ user_address: account }),
 		),
@@ -44,6 +65,7 @@ async function fetchTargetReads(
 	])
 	return {
 		allowance,
+		vetoed,
 		frozen: frozen.kind === "value" ? frozen.value : null,
 		shares: sharesOf(classifyShares(shares)),
 		frozenShares: sharesOf(classifyShares(frozenShares)),

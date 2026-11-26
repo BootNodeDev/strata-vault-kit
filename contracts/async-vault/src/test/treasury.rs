@@ -12,7 +12,7 @@ fn capital_makes_the_round_trip_to_the_custodian() {
     // Escrow stays refundable until the epoch prices, so none of it is free.
     assert_eq!(f.vault.free_reserve(), 0);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
     assert_eq!(f.vault.free_reserve(), 1_000);
     assert_eq!(f.vault.deploy_to_custodian(&f.treasury, &600), 600);
@@ -34,7 +34,7 @@ fn returning_more_than_was_deployed_shows_as_negative_net() {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &1_000);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
     f.vault.deploy_to_custodian(&f.treasury, &600);
@@ -50,7 +50,7 @@ fn assets_owed_to_a_priced_redemption_cannot_be_deployed() {
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &500);
 
-    assert_eq!(f.fulfill_epoch(wad(2)), epoch);
+    assert_eq!(f.fulfill_epoch(price(2)), epoch);
 
     assert_eq!(f.balance(&f.vault.address), 1_000);
     assert_eq!(f.vault.free_reserve(), 0);
@@ -80,10 +80,10 @@ fn a_claim_waits_while_the_capital_is_deployed() {
     f.empty_reserve();
 
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     // Pricing does not need the cash back; the claim does.
-    assert_eq!(f.vault.fulfill_epoch(&epoch), wad(2));
+    assert_eq!(f.vault.fulfill_epoch(&epoch), price(2));
     assert_eq!(f.vault.uncovered(), 1_000);
     refused(
         f.vault.try_claim_redeem(&holder, &epoch),

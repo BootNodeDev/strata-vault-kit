@@ -58,7 +58,7 @@ fn a_priced_epoch_is_not_cancellable() {
 
     let epoch = f.vault.request_deposit(&inv, &400);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
     refused(
@@ -73,7 +73,7 @@ fn cancelling_without_a_request_finds_no_request_once_a_price_is_known() {
     let stranger = Address::generate(&f.e);
 
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     refused(
         f.vault.try_cancel_deposit(&stranger, &epoch),
         VaultError::RequestNotFound,
@@ -158,7 +158,7 @@ fn pricing_an_epoch_makes_its_deposits_deployable() {
     let epoch = f.vault.request_deposit(&inv, &400);
     let before = f.vault.free_reserve();
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
     assert_eq!(f.vault.cancellable_escrow(), 0);
@@ -174,7 +174,7 @@ fn a_deposit_that_mints_nothing_is_refunded_at_claim() {
 
     let epoch = f.vault.request_deposit(&inv, &1);
     f.close_epoch();
-    f.attest(wad(4));
+    f.attest(price(4));
     f.vault.fulfill_epoch(&epoch);
 
     // 1 asset at 4.0 mints zero shares.
@@ -190,7 +190,7 @@ fn a_redemption_that_pays_nothing_returns_the_shares_at_claim() {
 
     let epoch = f.vault.request_redeem(&holder, &1);
     f.close_epoch();
-    f.attest(wad(4) / 10);
+    f.attest(price(4) / 10);
     f.vault.fulfill_epoch(&epoch);
 
     // 1 share at 0.4 pays zero assets.
@@ -199,26 +199,27 @@ fn a_redemption_that_pays_nothing_returns_the_shares_at_claim() {
 }
 
 #[test]
-fn a_delisted_holders_redemption_that_pays_nothing_waits_until_relisted() {
+fn a_delisted_holders_redemption_that_pays_nothing_settles_without_waiting() {
     let f = setup();
     let holder = f.holder(1);
 
     let epoch = f.vault.request_redeem(&holder, &1);
     f.close_epoch();
-    f.attest(wad(4) / 10);
+    f.attest(price(4) / 10);
     f.vault.fulfill_epoch(&epoch);
 
     // 1 share at 0.4 pays zero assets.
     f.identity.allow(&holder, &false);
-    refused(
-        f.vault.try_claim_redeem(&holder, &epoch),
-        VaultError::HolderNotEligible,
-    );
+    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
     assert_eq!(f.shares(&holder), 0);
+    assert_eq!(f.shares(&f.vault.address), 0);
 
     f.identity.allow(&holder, &true);
-    assert_eq!(f.vault.claim_redeem(&holder, &epoch), 0);
-    assert_eq!(f.shares(&holder), 1);
+    refused(
+        f.vault.try_claim_redeem(&holder, &epoch),
+        VaultError::AlreadyClaimed,
+    );
+    assert_eq!(f.shares(&holder), 0);
 }
 
 /// A refund after pricing is an extra payout, so it waits for free reserve
@@ -232,7 +233,7 @@ fn a_dust_refund_never_takes_committed_money() {
     f.vault.request_deposit(&dust, &1);
     f.vault.request_redeem(&holder, &200);
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
     // Move every free unit out, leaving only what the redeemer is owed.
@@ -266,7 +267,7 @@ fn cancelling_is_never_blocked_by_what_the_vault_owes() {
 
     f.vault.request_redeem(&holder, &200);
     let epoch = f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.vault.fulfill_epoch(&epoch);
 
     // A fresh deposit into the open epoch, with the vault fully committed.
@@ -286,7 +287,7 @@ fn an_open_epoch_cancels_with_a_healthy_feed() {
     let f = setup();
     let inv = f.investor(1_000);
 
-    f.attest(wad(2));
+    f.attest(price(2));
     let epoch = f.vault.request_deposit(&inv, &400);
 
     assert_eq!(f.vault.cancel_deposit(&inv, &epoch), 400);
@@ -301,7 +302,7 @@ fn a_sealed_epoch_cannot_be_cancelled_while_it_can_be_priced() {
 
     let epoch = f.vault.request_deposit(&inv, &400);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     refused(
         f.vault.try_cancel_deposit(&inv, &epoch),
@@ -320,7 +321,7 @@ fn a_sealed_epoch_cancels_once_the_feed_goes_stale() {
     let f = setup();
     let inv = f.investor(1_000);
 
-    f.attest(wad(2));
+    f.attest(price(2));
     let epoch = f.vault.request_deposit(&inv, &400);
     f.close_epoch();
 
@@ -353,7 +354,7 @@ fn a_paused_vault_reopens_cancellation_of_an_epoch_it_could_price() {
     let epoch = f.vault.request_deposit(&first, &400);
     f.vault.request_deposit(&second, &400);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     refused(
         f.vault.try_cancel_deposit(&first, &epoch),
         VaultError::PriceAvailable,
@@ -377,7 +378,7 @@ fn cancellation_reopens_when_the_price_that_closed_it_expires() {
     let inv = f.investor(1_000);
     let epoch = f.vault.request_deposit(&inv, &400);
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     refused(
         f.vault.try_cancel_deposit(&inv, &epoch),
         VaultError::PriceAvailable,

@@ -1,7 +1,10 @@
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{panic_with_error, Address, Env, Error};
 use stellar_tokens::{
     fungible::FungibleTokenClient,
-    rwa::{identity_verification::IdentityVerifierClient, RWATokenClient},
+    rwa::{
+        identity_verification::{identity_registry_storage::IRSError, IdentityVerifierClient},
+        RWAError, RWATokenClient,
+    },
 };
 
 use crate::error::VaultError;
@@ -13,20 +16,45 @@ use crate::state;
 pub(crate) enum Standing {
     Listed,
     Delisted,
+    /// The verifier failed instead of answering.
+    Unverifiable,
     Frozen,
 }
 
+/// The standard refusal of an identity verifier: the holder does not verify.
+const NOT_VERIFIED: Error = Error::from_contract_error(RWAError::IdentityVerificationFailed as u32);
+/// OpenZeppelin's registry holds no identity for the holder, as after off-boarding.
+const NO_IDENTITY: Error = Error::from_contract_error(IRSError::IdentityNotFound as u32);
+
+/// What the identity verifier said of a holder.
+enum Verdict {
+    Verified,
+    Refused,
+    /// The verifier failed instead of answering.
+    Failed,
+}
+
+fn verdict(e: &Env, token: &RWATokenClient, holder: &Address) -> Verdict {
+    let verifier = token.identity_verifier();
+    match IdentityVerifierClient::new(e, &verifier).try_verify_identity(holder) {
+        Ok(Ok(())) => Verdict::Verified,
+        Err(Ok(error)) if error == NOT_VERIFIED || error == NO_IDENTITY => Verdict::Refused,
+        _ => Verdict::Failed,
+    }
+}
+
 /// The holder's standing, asked of the share token and its identity verifier,
-/// so the vault and the token never disagree.
+/// so the vault and the token never disagree. Only a refusal delists; a
+/// verifier that fails leaves the holder unverifiable.
 pub(crate) fn standing(e: &Env, holder: &Address) -> Standing {
     let token = RWATokenClient::new(e, &state::get_addr(e, &DataKey::ShareToken));
     if token.is_frozen(holder) {
         return Standing::Frozen;
     }
-    let verifier = token.identity_verifier();
-    match IdentityVerifierClient::new(e, &verifier).try_verify_identity(holder) {
-        Ok(Ok(())) => Standing::Listed,
-        _ => Standing::Delisted,
+    match verdict(e, &token, holder) {
+        Verdict::Verified => Standing::Listed,
+        Verdict::Refused => Standing::Delisted,
+        Verdict::Failed => Standing::Unverifiable,
     }
 }
 
@@ -55,32 +83,38 @@ pub(crate) enum Decision {
 }
 
 /// What `exit` does for a holder in `standing`. No storage, no calls.
+///
+/// A fault lets no one in and forces no one out: wherever a listed and a
+/// delisted holder part ways, an unverifiable one waits, except in a
+/// wind-down, which reads the fault as a refusal.
 pub(crate) fn decide(exit: Exit, standing: Standing, winding_down: bool) -> Decision {
+    use Standing::{Delisted, Frozen, Listed, Unverifiable};
     match (exit, standing, winding_down) {
-        (Exit::RequestDeposit, Standing::Listed, _) => Decision::Proceed,
-        (Exit::RequestDeposit, Standing::Delisted | Standing::Frozen, _) => Decision::Refuse,
+        (Exit::RequestDeposit, Listed, _) => Decision::Proceed,
+        (Exit::RequestDeposit, Delisted | Unverifiable | Frozen, _) => Decision::Refuse,
 
-        (Exit::ClaimDeposit, Standing::Listed, _) => Decision::Proceed,
-        (Exit::ClaimDeposit, Standing::Delisted, false) => Decision::ConvertToExit,
-        (Exit::ClaimDeposit, Standing::Delisted, true) => Decision::Surrender,
-        (Exit::ClaimDeposit, Standing::Frozen, _) => Decision::Hold,
+        (Exit::ClaimDeposit, Listed, _) => Decision::Proceed,
+        (Exit::ClaimDeposit, Delisted, false) => Decision::ConvertToExit,
+        (Exit::ClaimDeposit, Unverifiable, false) => Decision::Refuse,
+        (Exit::ClaimDeposit, Delisted | Unverifiable, true) => Decision::Surrender,
+        (Exit::ClaimDeposit, Frozen, _) => Decision::Hold,
 
-        (Exit::CancelRedeem, Standing::Listed, false) => Decision::Proceed,
-        (Exit::CancelRedeem, Standing::Delisted, false) => Decision::Refuse,
-        (Exit::CancelRedeem, Standing::Listed | Standing::Delisted, true) => Decision::Surrender,
-        (Exit::CancelRedeem, Standing::Frozen, _) => Decision::Hold,
+        (Exit::CancelRedeem, Listed, false) => Decision::Proceed,
+        (Exit::CancelRedeem, Delisted | Unverifiable, false) => Decision::Refuse,
+        (Exit::CancelRedeem, Listed | Delisted | Unverifiable, true) => Decision::Surrender,
+        (Exit::CancelRedeem, Frozen, _) => Decision::Hold,
 
-        (Exit::CancelDeposit, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
-        (Exit::CancelDeposit, Standing::Frozen, _) => Decision::Hold,
+        (Exit::CancelDeposit, Listed | Delisted | Unverifiable, _) => Decision::Proceed,
+        (Exit::CancelDeposit, Frozen, _) => Decision::Hold,
 
-        (Exit::RequestRedeem, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
-        (Exit::RequestRedeem, Standing::Frozen, _) => Decision::Hold,
+        (Exit::RequestRedeem, Listed | Delisted | Unverifiable, _) => Decision::Proceed,
+        (Exit::RequestRedeem, Frozen, _) => Decision::Hold,
 
-        (Exit::ClaimRedeem, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
-        (Exit::ClaimRedeem, Standing::Frozen, _) => Decision::Hold,
+        (Exit::ClaimRedeem, Listed | Delisted | Unverifiable, _) => Decision::Proceed,
+        (Exit::ClaimRedeem, Frozen, _) => Decision::Hold,
 
-        (Exit::ClaimWindDown, Standing::Listed | Standing::Delisted, _) => Decision::Proceed,
-        (Exit::ClaimWindDown, Standing::Frozen, _) => Decision::Hold,
+        (Exit::ClaimWindDown, Listed | Delisted | Unverifiable, _) => Decision::Proceed,
+        (Exit::ClaimWindDown, Frozen, _) => Decision::Hold,
     }
 }
 
@@ -88,8 +122,32 @@ pub(crate) fn decide(exit: Exit, standing: Standing, winding_down: bool) -> Deci
 pub(crate) fn refused_with(standing: Standing) -> VaultError {
     match standing {
         Standing::Frozen => VaultError::Frozen,
+        Standing::Unverifiable => VaultError::VerifierFailed,
         Standing::Listed | Standing::Delisted => VaultError::NotAllowlisted,
     }
+}
+
+/// Sends escrowed shares back to the holder when the holder may hold them.
+/// It moves them as the token's manager, so neither the vault's listing nor
+/// the token pause applies, while the compliance rules still judge the move.
+/// Returns whether they moved: any move that fails rolls back and reads as
+/// "may not", whether a module refused it or failed. A verifier that fails
+/// fails the caller, so no verifier fault is read as a refusal.
+/// Module authors: see the compliance matrix (`docs/COMPLIANCE_MATRIX.md`).
+pub(crate) fn send_back(e: &Env, holder: &Address, shares: i128) -> bool {
+    let token = state::get_addr(e, &DataKey::ShareToken);
+    let share = RWATokenClient::new(e, &token);
+    if share.is_frozen(holder) {
+        return false;
+    }
+    match verdict(e, &share, holder) {
+        Verdict::Verified => {}
+        Verdict::Refused => return false,
+        Verdict::Failed => panic_with_error!(e, VaultError::VerifierFailed),
+    }
+    let vault = e.current_contract_address();
+    let sent = share.try_forced_transfer(&vault, holder, &shares, &vault);
+    matches!(sent, Ok(Ok(())))
 }
 
 /// Shares the holder can move: the balance less any partial freeze.

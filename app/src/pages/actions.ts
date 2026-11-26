@@ -8,7 +8,7 @@ export const ROLES = {
 	oracleAdmin: "oracle admin",
 	tokenAdmin: "share-token admin",
 	compliance: "share-token compliance",
-	verifierAdmin: "identity-verifier admin",
+	registryCompliance: "identity-registry compliance",
 } as const
 
 export const parseAccount = (text: string): string | undefined => {

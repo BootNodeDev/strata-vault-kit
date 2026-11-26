@@ -10,7 +10,9 @@ Each operator deploys, configures and brands an independent instance.
 
 Two rules the contracts enforce:
 
-1. **Only approved addresses can enter** — an allowlist maintained post-KYC.
+1. **Only verified wallets can enter** — each investor holds a KYC claim
+   signed by a provider the fund trusts, and the platform can delist a wallet
+   at once.
 2. **A priced claim always pays** — neither a pause, a delisting nor a stale
    valuation can block an already-priced, funded cash claim. A compliance
    freeze holds it until the freeze is lifted.
@@ -50,19 +52,66 @@ than its pending deposits, and once a wind-down is proposed.
 
 Pre-release, testnet only. Nothing here is audited or production-ready.
 
+## Contracts and onboarding
+
+Each vault deployment runs its own set of contracts:
+
+| Contract | What it does |
+| --- | --- |
+| `async_vault` | Requests, epochs, pricing, the reserve, claims, the timelock and the wind-down |
+| `share_token` | The share: an OpenZeppelin RWA token that checks identity and compliance on every move |
+| `nav_oracle` | The attested share price, under on-chain guardrails |
+| `compliance` | Rule modules on every share move; a module's refusal never stops a move into the vault or a burn |
+| `claim_topics` | The claim topics the fund requires and the issuers it trusts for each |
+| `identity_registry` | Links each wallet to the investor's identity contract; investors onboard themselves, and the compliance authority delists and vetoes |
+| `identity_verifier` | Answers the share token and the vault: verified, refused, or failed when a contract it reads breaks |
+| `claim_issuer` | One per KYC provider, owned by the provider: it allows the provider's signing keys and answers whether a claim is valid |
+| `investor_identity` | One per investor, deployed by the registry from one uploaded Wasm: holds the investor's claims |
+| `sep40_feed` | Optional SEP-40 price feed for integrators |
+
+An investor onboards with one on-chain transaction, with no backend in between:
+
+1. A KYC provider checks the investor off chain and signs a claim for each
+   topic the fund requires. The claim is addressed to the identity the
+   registry will deploy for the wallet (`identity_address`).
+2. The investor calls `onboard` on the identity registry and pays for it. The
+   registry deploys the investor's identity contract, stores the claims and
+   links the wallet once the verifier accepts them. Nothing is kept if a claim
+   fails.
+3. From then on the investor can deposit. To renew a claim, the investor adds
+   it to their identity directly.
+
+The investor dApp has no onboarding screen yet; the harness shows the calls in
+[`scripts/harness/lib/onboard.ts`](./scripts/harness/lib/onboard.ts).
+
+The compliance authority delists a wallet with `remove_identity`, which also
+vetoes it, so it cannot onboard again until the authority calls `lift_veto`.
+The kit puts no personal data on chain: a claim says only that a topic holds,
+and the registry stores no country. The
+[design doc](./docs/strata-product-and-architecture.md#86-identity-and-compliance)
+explains the rules, and the
+[harness README](./scripts/harness/README.md) how the test deployment signs
+claims with a test KYC key.
+
 ## Deployed addresses
 
 Testnet only. The deploy script rewrites the table below on every testnet
 deploy from `environments.toml` → `[staging.contracts]`, which is the record.
+A table that lists no `identity_registry` comes from a deploy made before the
+identity contracts: its `identity_verifier` is the old allowlist stub.
 
 <!-- deployed-addresses:start -->
 | Contract | Address |
 | --- | --- |
-| `async_vault` | `CDJHQ2R5XUJGP6WUKCW4VBEVGWFAZ5TZLEONBITKITNXFDLWNNK7WVYO` |
-| `nav_oracle` | `CCZ4X25GLMYRQ33PM4ZYDMGKAJJKPUG2ABUZ4NIGUSA7W4RUTBOEEDYI` |
-| `share_token` | `CDOZT5VNIKSLQSFELF4PHVZRZA3GCJYJEHVDZTUB7O2QMBHBKKOYORQI` |
-| `identity_verifier` | `CCGHNGPI66WGVSLLALQVCIRIOZKX73QW23UDZLZ3LMXLGEG7SLVUOULD` |
-| `compliance` | `CCQI5NFRWBOO77LYSFY54D6PSU4TVWD5A3CFX2A5AWLEURVR35XISMKG` |
+| `async_vault` | `CAP7ZO3AYRC6R7LF4H7CYSDS72JQRFIMU7TDWSDF5MKM4J7Z43KWUW6K` |
+| `nav_oracle` | `CCPIHPM6ZKXYWXGZQJQLPUIXOTJCEFSKIDXA6JWEKWWEPGN5B4U45GQP` |
+| `share_token` | `CDQHFAPLJ7OPFVIN3L4LYMWQFG6IS3EQGVPMCCWQAW2ZEW7BP2P76OWH` |
+| `identity_verifier` | `CDMYTPRB26SWEHNE5VQQTYZ24E2OO5UKNBZPXWFB2ZVVBWMFDAMMAZJG` |
+| `identity_registry` | `CD3C4YUNUVGAKM7HMMI5KQ4GS7RS5JO3TK24PEOBH4NICUZBBMGADHQK` |
+| `claim_topics` | `CDJUP6K3CBTTBN5FHJ3FW3HL3WDPIKFR3QRVB2UXSCT3WLMJRSV3GBBK` |
+| `claim_issuer` | `CACHTOFGRK3MCDTDAHN7SEF4WXBXLH46XPJEE43ICAKG6SHAMCH7UVKQ` |
+| `compliance` | `CAIF5C5MXFIOE25YISN3CE2ZWFFJGBUBAF2VCELLAUWB6HHVIDFEDYX2` |
+| `sep40_feed` | `CANGOWAD67YLUAIJKFFYF5WIE3I44DAJRVM7Z2YNGB5VBX4AKXHNO2KX` |
 | `asset` | `CCOHKZLQ5EAD2A3RLHYHH7W4K2TNLNELXUVLWZIZALH45WXHH5H3QV7E` |
 <!-- deployed-addresses:end -->
 
@@ -112,6 +161,28 @@ refused with `ClaimNotCovered`. It fails at simulation and leaves no
 transaction, so the evidence of the short reserve is the pricing transaction
 before it and the `fund` that clears it.
 
+## SEP-40 price feed
+
+The feed answers a vault's share price through SEP-40, the Stellar price-feed
+interface, so a third-party contract can read it without depending on any kit
+crate; the design document explains how it is built
+([Valuation and accounting](./docs/strata-product-and-architecture.md#85-valuation-and-accounting)).
+The harness repeats the scenario with the team's keys: it deploys a new
+consumer and, when the NAV is stale, first attests a fresh one on the oracle:
+
+```sh
+HARNESS_NETWORK=testnet npm run test:sep40 -w scripts/harness
+```
+
+| Step | Contract | Transaction |
+| --- | --- | --- |
+| Deploy the consumer | `sep40_consumer` `CDKCYZ6IHE2I6KAGATCQPTOYX7GUTTCYRLK26HOQ2JVHEHGXNVA27DOJ` | [`5142b57e…4505`](https://stellar.expert/explorer/testnet/tx/5142b57e6f09a07dcf7d07b09aa41818c85e9b8460165067dddc0071057a4505) |
+| Attest a fresh NAV | `nav_oracle` | [`3478b5b3…2bf2`](https://stellar.expert/explorer/testnet/tx/3478b5b3a2abf4b7435832e13aca2cc2f40c0aa2228f2a4e8cf5218ecf752bf2) |
+| Call `record_price` against the feed | `sep40_consumer` | [`eb0fd738…fba7`](https://stellar.expert/explorer/testnet/tx/eb0fd738e9ffa10f736946c7fb8c51f18a7595ab941214aa9f3c8a9c4beffba7) |
+
+The call recorded a price of 1.00100000000000 (100100000000000 at 14
+decimals) on 2026-11-11. The mainnet run is tracked in #433.
+
 ## Vault figures
 
 The [live dApp](https://strata-vault-kit-app.vercel.app) shows Withdrawable and
@@ -142,12 +213,137 @@ The vault's test runs with `cargo test -p async-vault
 fulfill_is_rejected_once_the_feed_goes_stale`. [Testing](./docs/TESTING.md)
 lists the TTL tests for every contract.
 
+## Asset metadata (SEP-1)
+
+[`stellar.toml`](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0001.md)
+is the file explorers check to show who issues the share token and
+to link its latest attestation. `npm run sep1 -w scripts/harness` generates
+one from a deployment: it reads the share token's name, symbol and decimals,
+the network, and the oracle's latest `proof_uri`, and writes
+`scripts/harness/stellar.<network>.toml`, replacing the whole file. It needs
+the deployment record `scripts/harness/deployed.<network>.json` and the keys
+file `.env.keys.<network>` that `connect()` checks, even though the command
+only reads from the chain. A field it cannot fill — no report yet, or a
+`symbol()`/`name()` past the SEP-1 length limit — stays a placeholder and is
+printed as `missing <field>: <reason>` so nothing silently goes out wrong.
+
+```sh
+HARNESS_NETWORK=testnet npm run sep1 -w scripts/harness
+```
+
+The fields an operator sets by hand (organization details, the share
+description and image, the anchor asset, and redemption instructions) come
+from a JSON file passed as `SEP1_OPERATOR`, so regenerating after a new
+attestation never means re-typing them. The same file may also set `code`,
+`name` and `status`; they replace the values read from the chain and the kit's
+`test`/`live` default:
+
+```json
+{
+  "ORG_NAME": "Acme Capital",
+  "ORG_URL": "https://acme.example",
+  "ORG_LOGO": "https://acme.example/logo.png",
+  "ORG_DESCRIPTION": "Acme Capital issues the Acme Treasury Vault share",
+  "ORG_OFFICIAL_EMAIL": "official@acme.example",
+  "ORG_SUPPORT_EMAIL": "support@acme.example",
+  "desc": "Share of the Acme Treasury Vault",
+  "image": "https://acme.example/share.png",
+  "domain": "acme.example",
+  "ASSET_LIST_URL": "https://acme.example/assetlist.json",
+  "anchor_asset_type": "other",
+  "anchor_asset": "ACME-RWA",
+  "redemption_instructions": "Redeem through the vault's dApp"
+}
+```
+
+```sh
+SEP1_OPERATOR=./operator.json HARNESS_NETWORK=testnet npm run sep1 -w scripts/harness
+```
+
+Publish the result at `https://DOMAIN/.well-known/stellar.toml`, where
+`DOMAIN` matches `ORG_URL`, with `Access-Control-Allow-Origin: *` and,
+recommended, a `text/plain` content type. The file must stay under 100 KB.
+Regenerate and republish it after each attestation, so
+`attestation_of_reserve` keeps pointing at the latest proof. A domain that
+already serves a `stellar.toml` for other currencies must merge the share
+token's `[[CURRENCIES]]` entry into it rather than publish the generated file
+as is.
+
+`npm run sep1` also writes `scripts/harness/assetlist.<network>.json`, next to
+the `stellar.toml`, and git ignores both. It is a
+[SEP-42](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0042.md)
+asset list with one entry for the share token, and `stellar.toml` links to it
+under `ASSET_LISTS`. Set these fields in the operator file:
+
+- `ASSET_LIST_URL`: the https URL where you will host the list.
+- `domain`: the bare host that goes in the entry, for example `acme.example`.
+- `ORG_NAME`: becomes the entry's `org` and the list's `provider`. SEP-42 is
+  stricter than SEP-1: `ORG_NAME` and the token name need 5 to 30 plain ASCII
+  characters.
+- `image`: becomes the entry's `icon`.
+- `code` and `name`, when set, replace the token's `symbol()` and `name()` in
+  the entry too, as they do in `stellar.toml`. Set `code` when `symbol()` is not
+  1 to 12 letters or digits, which SEP-42 requires.
+
+Host the list over HTTPS, on the domain that serves `stellar.toml` or a
+subdomain of it. Serve it with `Content-Type: application/json` and
+`Access-Control-Allow-Origin: *`. The `version` follows the entry: the command
+raises it when the entry changes, so nobody edits it by hand. It reads the
+previous version from the local `assetlist.<network>.json` and starts at `1.0`
+when that file is missing. If a list is already hosted, save it at that path
+before you run the command. An invalid list is not written, and the command prints
+what is missing.
+
+[`docs/sep1/stellar.template.toml`](./docs/sep1/stellar.template.toml) is the
+template with every field open; [`docs/sep1/stellar.testnet.toml`](./docs/sep1/stellar.testnet.toml)
+is an example generated from the team's testnet deployment, with the operator
+fields still placeholders.
+
+### Showing the share token in wallets
+
+Publishing the file is not enough. Under SEP-1, a wallet finds the file through
+an account's `home_domain`, and the share token is a contract, which has none.
+No standard links a contract to a domain yet, so wallets and explorers use
+other sources. As of November 2026:
+
+- Varial (formerly Freighter) reads `name()`, `symbol()` and `decimals()` from
+  the contract, and takes the icon and the "Verified" label only from
+  [SEP-42](https://github.com/stellar/stellar-protocol/blob/master/ecosystem/sep-0042.md)
+  asset lists. A token on none of the user's lists shows as "Unverified", with
+  no icon. The
+  [default mainnet lists](https://github.com/stellar/freighter/blob/master/%40shared/constants/soroban/asset-list.ts)
+  are StellarExpert's Top 50, which StellarExpert picks itself, the
+  [Soroswap token list](https://github.com/soroswap/token-list), which takes
+  pull requests, and LOBSTR's curated list, part of its
+  [listing program](https://lobstr.freshdesk.com/support/solutions/articles/151000169329-boost-visibility-of-your-assets-on-lobstr).
+- The operator can publish its own asset list. `npm run sep1` writes it, as
+  described above. Holders add its URL in the Varial browser extension's asset
+  list settings; the mobile app has no such setting. On testnet this is the only route the operator controls:
+  Varial's one default list there is StellarExpert's testnet Top 50.
+- [StellarExpert](https://stellar.expert) shows this file's organization and
+  currency details on the token's page once it knows the contract's domain. For
+  contracts it takes the domain from a
+  [list its maintainer keeps by hand](https://github.com/stellar-expert/toml-domain-mapping),
+  mainnet only, so ask the maintainer to add the share token.
+
+These do not help yet: a `home_domain` on the deployer or admin account (no
+wallet follows it from the token), a contract meta entry (it belongs to the
+Wasm, so every deployment shares it), and a `home_domain()` getter on the
+contract (only [proposed](https://github.com/orgs/stellar/discussions/1966)).
+
 ## Admin panel
 
 The operations console is at
 [strata-vault-kit-app.vercel.app/admin](https://strata-vault-kit-app.vercel.app/admin).
 It reads the contracts the console and the transactions below ran against, not
-the set under [Deployed addresses](#deployed-addresses):
+the set under [Deployed addresses](#deployed-addresses). They predate the
+identity contracts, so their console lists and delists with the old allowlist
+verifier's `allow`. The current console removes an investor with the
+registry's `remove_identity`, which also vetoes the wallet, and "Lift the
+veto" calls `lift_veto`; its allowlisted check shows a verifier fault as
+unreadable, never as not allowed. The app generates its clients from the
+contracts under [Deployed addresses](#deployed-addresses), which run the
+identity contracts. The contracts the console ran against:
 
 | Contract | Address |
 | --- | --- |
@@ -230,7 +426,7 @@ Two ways to get a working toolchain.
 
 ```sh
 nix develop              # pinned Rust + stellar-cli + wabt/twiggy/tlaplus + prek
-stellar contract build   # build the contract wasms (not `cargo build` — OZ spec-shaking)
+stellar contract build   # build the contract wasms (not `cargo build` — soroban-sdk spec shaking)
 cargo test               # run the workspace unit tests
 ```
 
@@ -291,7 +487,10 @@ The first deploy writes a secret key for each harness account to
 `.env.keys.<network>` at the repository root, and later deploys reuse them. Back
 that file up and never commit it. The
 [harness README](./scripts/harness/README.md#account-keys) explains how to use a
-key you already hold for an account.
+key you already hold for an account. One of those accounts, `kyc-provider`
+(`KYC_PROVIDER_SECRET`), owns the test claim issuer and signs the suites'
+claims; a key file made before it existed gets it from
+`npm run keys -w scripts/harness`.
 
 Output of a real run from a fresh clone. Contract IDs differ on every run.
 
@@ -300,27 +499,42 @@ Output of a real run from a fresh clone. Contract IDs differ on every run.
 > tsx deploy.ts
 
 deploying to local (http://localhost:8000/rpc)
-account keys in .env.keys.local (13 new)
-funded 13 accounts; 0 already existed
-asset contract CCW7OKVOXBBBX3YK6O7F6TZPNIFG32OG4UY7R2K6NSWZUI4R75QCEPVT
+account keys in .env.keys.local (15 new)
+funded 15 accounts; 0 already existed
+asset contract CAVOIGEEWM7DNRZC3TJZ72AV4AIU3JYE4Z57AHXLNKDZMSMBWAW64ZUH
 returned the deposit asset of 0 accounts to its issuer
-compliance CDPCD2BQQKVQBQFAFI4YBLN3TRX34J5NZUQQMUBGHPYNY64LCEM63DTL
-identity_verifier CC4SRUIMKOBZSEO2GKGVQMDWPWCBJBBIMYYE7BBCUEZE6VMD3SFQDAMW
-share_token CDC7SRTDZIMJSLC5AONUD3FIFYZGMFOHRAS7LLYV2ATJRT7RMTMQO2DG
-nav_oracle CCUUBP3RGOIZZL4DUGRL4FBOSQJZKBPNQ7VUWIN6UOOYBJYYKGNT5E52
-async_vault CB2KVM2WHLXDZRHGCYPTGE7PZM6OORXCNVBUMC3L7GY5KX4BA6NMADXE
+compliance CA3Y7U6YVAQZZXD3UK2HWMQKWANPGNURZ7GIZTBCA6DJEUI6REBYA5LN
+investor_identity wasm a9a589679f968d5ad401b266605750519c091f195daf679f4c19eb774ff5c0f1
+claim_issuer wasm d681fadec29741dca3d4584eda9b704655c49d4cbbff4a5a3e6602d64ef2abb4
+claim_topics CBNYSAQXOXPOLFNQPMH725JKJ5HSDS5LXJU6NJO2ELVQ4QCWO35BQ44M
+identity_registry CCY5GAM2NGRM3KQ6GXTDLYJ6D6EIHFT56FTG2LYAIDF7SJLH4YMOCL6U
+identity_verifier CCDHI3LORDHM6M3WLDACNWQV6SATNJ2UEEFIQHVROJ63SMBKMRODHOFF
+claim_issuer CAIYHTPUGV23L4UF4P7LJ6EVIW3BUK66G3BBAYOPOMKBMMXFBRXA7JWJ
+share_token CCOMOPGDP6EZ3QTVRPVKWJTOITMH2WMMHYNWAK7S4OYQ73QW5KG55VN6
+nav_oracle CAMKCWZETCYY7A4VUEWKHEFBKQPWJLMFLWZ6FZVBVVFST2BB34UQ6F7C
+async_vault CBFPR64EHKCFPVW2TWO6O65CDB4EH5XPFGA2OJHBXO4SXQGLEL3OJWEE
+sep40_feed CBUK7DDAO454YLJKQYYJPODBACQ5BKGOBVSBRZ3F7BI4LMEWOU2PZ6QE
 commit <sha>
 clients generated
 vault holds share_token manager role
+share_token has a backup compliance holder
 share_token bound to the vault, setup finished
-vault is allowlisted
+claim_topics requires topic 1 from claim_issuer
+claim_issuer accepts claims signed by kyc-provider
+identity_registry checks claims with identity_verifier
+claim_topics bound to the vault, setup finished
+identity_registry bound to the vault, setup finished
+identity_verifier bound to the vault, setup finished
+vault is a protocol address of identity_verifier
+identity_verifier is ready for the vault
 share_token bound to compliance
 compliance bound to the vault, setup finished
 nav_oracle bound to the vault, setup finished
 vault notice set to 10 seconds
 vault minimum epoch duration set to 86400 seconds
 vault setup finished
-health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
+health {"addresses_distinct":true,"allowlisted":true,"compliance_bound":true,"compliance_governed":true,"custodian_set":true,"decimals_match":true,"feed_answers":true,"feed_valid":false,"freshness_covers_notice":true,"identity_ready":true,"min_epoch_duration_set":true,"oracle_bound":true,"setup_open":false,"sole_token_manager":true,"token_bound":true,"vault_unfrozen":true}
+sep40_feed follows the vault
 wrote deployed.local.json
 ```
 
@@ -359,18 +573,18 @@ nobody calls archives after 30 days. Keep the contracts callable with:
 STELLAR_ACCOUNT=<identity or secret> npm run extend -w scripts/harness
 ```
 
-It reads the testnet contracts from `environments.toml` and covers three kinds
-of entry: each contract instance, the Wasm it runs and each pending timelock
-change. It restores any of them that has archived, then extends each by 30
-days. Any funded account pays, since extending needs no authority. Use
-`--env <name>` for another environment, or `--config <record>` for a
-deployment record.
+It reads the testnet contracts from `environments.toml` and covers four kinds
+of entry: each contract instance, the Wasm it runs, the Wasm the identity
+registry deploys investor identities from, and each pending timelock change.
+It restores any of them that has archived, then extends each by 30 days. Any
+funded account pays, since extending needs no authority. Use `--env <name>`
+for another environment, or `--config <record>` for a deployment record.
 
-It extends nothing else. Other entries, such as epochs, requests, balances and
-roles, still archive when nobody uses them. Nothing in them is lost: the next
-call that needs an archived entry restores it, and the account that sends that
-call pays the restore fee. For a holder's balance or request, that is usually
-the holder, on their next call. The
+It extends nothing else. Other entries, such as investors' identity contracts,
+epochs, requests, balances and roles, still archive when nobody uses them.
+Nothing in them is lost: the next call that needs an archived entry restores
+it, and the account that sends that call pays the restore fee. For a holder's
+balance or request, that is usually the holder, on their next call. The
 [TTL policy](./docs/kit-spec.md#5-storage-lifetime-ttl-policy) says what each
 contract extends on its own and how a restore works.
 

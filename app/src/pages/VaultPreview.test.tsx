@@ -6,6 +6,7 @@ import {
 	networkPassphrase,
 	PRICE_DECIMALS,
 	type Price,
+	PRICE_SCALE,
 	shortAddress,
 } from "@stellar-scaffold/app-lib"
 import type * as AppLib from "@stellar-scaffold/app-lib"
@@ -15,11 +16,19 @@ import type React from "react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { VaultError } from "../../../app-lib/clients/async_vault/src/index"
 import { type AddressRow } from "../components/vault/AboutVault"
+import { IDENTITY_VERIFICATION_FAILED, refusedWith } from "../hooks/testSupport"
 import {
 	WalletContext,
 	type WalletContextType,
 } from "../providers/WalletProvider"
 import { simulationError } from "../test/contractErrorCode"
+import {
+	fakeAsset,
+	fakeAsyncVault,
+	fakeIdentityVerifier,
+	fakeNavOracle,
+	fakeShareToken,
+} from "../test/fakeClients"
 import VaultPreview from "./VaultPreview"
 
 const {
@@ -32,14 +41,7 @@ const {
 	mockVault,
 	mockFigures,
 	mockIdentity,
-	requestDepositMock,
-	cancelDepositMock,
-	claimDepositMock,
-	requestRedeemMock,
-	cancelRedeemMock,
-	claimRedeemMock,
 	readEpochRequestsMock,
-	claimWindDownMock,
 } = vi.hoisted(() => ({
 	mockVaultId: "CMOCKVAULTADDRESS1234567890",
 	mockGovernanceAddress: "GGOVERNANCEADDRESS1234567890",
@@ -73,7 +75,7 @@ const {
 				1n,
 				{
 					status: { tag: "Fulfilled" },
-					share_price: 1_000000000000000000n,
+					share_price: 1_00000000000000n,
 					priceable_at: 1_700_003_600n,
 				},
 			],
@@ -88,14 +90,7 @@ const {
 			{ shares: bigint; claimed: boolean } | undefined
 		>(),
 	},
-	requestDepositMock: vi.fn(),
-	cancelDepositMock: vi.fn(),
-	claimDepositMock: vi.fn(),
-	requestRedeemMock: vi.fn(),
-	cancelRedeemMock: vi.fn(),
-	claimRedeemMock: vi.fn(),
 	readEpochRequestsMock: vi.fn(),
-	claimWindDownMock: vi.fn(),
 }))
 
 vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
@@ -103,12 +98,7 @@ vi.mock("@stellar-scaffold/app-lib", async (importOriginal) => ({
 	readEpochRequests: readEpochRequestsMock,
 }))
 
-const defaultCancelDepositImpl = async ({
-	epoch_id,
-}: {
-	holder: string
-	epoch_id: bigint
-}) => {
+const defaultCancelDepositImpl = async ({ epoch_id }: { epoch_id: bigint }) => {
 	const request = mockRequests.deposits.get(epoch_id)
 	const refunded = request?.amount ?? 0n
 	return {
@@ -128,12 +118,7 @@ const defaultCancelDepositImpl = async ({
 	}
 }
 
-const defaultRequestDepositImpl = async ({
-	amount,
-}: {
-	holder: string
-	amount: bigint
-}) => {
+const defaultRequestDepositImpl = async ({ amount }: { amount: bigint }) => {
 	const epochId = mockRequests.currentEpoch
 	return {
 		simulation: undefined,
@@ -149,12 +134,7 @@ const defaultRequestDepositImpl = async ({
 	}
 }
 
-const defaultRequestRedeemImpl = async ({
-	shares,
-}: {
-	holder: string
-	shares: bigint
-}) => {
+const defaultRequestRedeemImpl = async ({ shares }: { shares: bigint }) => {
 	const epochId = mockRequests.currentEpoch
 	return {
 		simulation: undefined,
@@ -170,12 +150,7 @@ const defaultRequestRedeemImpl = async ({
 	}
 }
 
-const defaultCancelRedeemImpl = async ({
-	epoch_id,
-}: {
-	holder: string
-	epoch_id: bigint
-}) => {
+const defaultCancelRedeemImpl = async ({ epoch_id }: { epoch_id: bigint }) => {
 	const request = mockRequests.redeems.get(epoch_id)
 	const returnedShares = request?.shares ?? 0n
 	return {
@@ -195,19 +170,12 @@ const defaultCancelRedeemImpl = async ({
 	}
 }
 
-const WAD_SCALE = 1_000000000000000000n
-
-const defaultClaimDepositImpl = async ({
-	epoch_id,
-}: {
-	holder: string
-	epoch_id: bigint
-}) => {
+const defaultClaimDepositImpl = async ({ epoch_id }: { epoch_id: bigint }) => {
 	const request = mockRequests.deposits.get(epoch_id)
 	const sharePrice = mockRequests.epochs.get(epoch_id)?.share_price ?? 0n
 	const shares =
 		request !== undefined && sharePrice > 0n
-			? (request.amount * WAD_SCALE) / sharePrice
+			? (request.amount * PRICE_SCALE) / sharePrice
 			: 0n
 	return {
 		simulation: undefined,
@@ -226,16 +194,11 @@ const defaultClaimDepositImpl = async ({
 	}
 }
 
-const defaultClaimRedeemImpl = async ({
-	epoch_id,
-}: {
-	holder: string
-	epoch_id: bigint
-}) => {
+const defaultClaimRedeemImpl = async ({ epoch_id }: { epoch_id: bigint }) => {
 	const request = mockRequests.redeems.get(epoch_id)
 	const sharePrice = mockRequests.epochs.get(epoch_id)?.share_price ?? 0n
 	const assets =
-		request !== undefined ? (request.shares * sharePrice) / WAD_SCALE : 0n
+		request !== undefined ? (request.shares * sharePrice) / PRICE_SCALE : 0n
 	return {
 		simulation: undefined,
 		signAndSend: async ({
@@ -320,7 +283,7 @@ afterEach(() => {
 	resetMockRequests()
 })
 
-const price = 1500000000000000000n as Price
+const price = 150000000000000n as Price
 const attestedAt = 1757900000n
 
 vi.mock("../config/contracts", () => {
@@ -328,86 +291,120 @@ vi.mock("../config/contracts", () => {
 	return { vaultContractId: mockVaultId, contractRows }
 })
 
-vi.mock("../config/clients", () => {
-	const figure = (result: bigint) => async () => ({ result })
-	const address = (result: string | null | undefined) => async () => ({
-		result,
-	})
-	const vault = {
-		liquid_reserve: figure(184000000000n),
-		committed: figure(62000000000n),
-		uncovered: async () => {
-			if (mockFigures.uncovered === null) throw new Error("boom")
-			return { result: mockFigures.uncovered }
-		},
-		total_economic_supply: figure(100000000000000n),
-		net_deployed: figure(50000000000n),
-		governance: address(mockGovernanceAddress),
-		manager: address(undefined),
-		treasury: address(undefined),
-		guardian: address(undefined),
-		custodian: address(null),
-		current_epoch: async () => {
-			if (!mockRequests.readable) throw new Error("boom")
-			return { result: mockRequests.currentEpoch }
-		},
-		paused: async () => ({ result: mockVault.paused }),
-		wind_down: async () => ({
-			result: mockVault.windingDown
-				? {
-						active_at: 1_700_000_000n,
-						round: 0,
-						status: { tag: "Active", values: undefined },
-					}
-				: null,
-		}),
-		wind_down_claimable: async () => ({
-			result: mockVault.windDownClaimable,
-		}),
-		claim_wind_down: claimWindDownMock,
-		request_deposit: requestDepositMock,
-		cancel_deposit: cancelDepositMock,
-		claim_deposit: claimDepositMock,
-		request_redeem: requestRedeemMock,
-		cancel_redeem: cancelRedeemMock,
-		claim_redeem: claimRedeemMock,
-	}
-	const oracle = {
-		state: async () => ({ result: { tag: "Valid", values: undefined } }),
-		latest: async () => ({
-			result: {
-				nav_per_share: 1500000000000000000n,
-				expires_at: 1800000000n,
-				accepted_at: 1757900000n,
-				proof_hash: Buffer.alloc(32, 0xab),
-				proof_uri: "",
-			},
-		}),
-	}
-	const identity = {
-		is_allowed: async () => ({ result: mockIdentity.allowed }),
-	}
-	const shares = {
-		balance: async () => ({ result: mockShares.balance }),
-		symbol: async () => ({ result: mockSymbols.shareToken }),
-		name: async () => ({ result: mockSymbols.vaultName }),
-		identity_verifier: async () => ({ result: "CVERIFIER" }),
-		is_frozen: async () => ({ result: mockIdentity.frozen }),
-	}
-	const depositAsset = {
-		symbol: async () => ({ result: mockSymbols.token }),
-		balance: async () => ({ result: mockDeposit.balance }),
-	}
+vi.mock("../config/clients", () => import("../test/fakeClients"))
 
-	return {
-		asyncVault: async () => vault,
-		asyncVaultWriter: async () => vault,
-		navOracle: async () => oracle,
-		identityVerifierAt: async () => identity,
-		shareToken: async () => shares,
-		asset: async () => depositAsset,
-	}
+const figure = (result: bigint) => async () => ({ result })
+const address = (result: string | null) => async () => ({ result })
+
+const vault = fakeAsyncVault(
+	"liquid_reserve",
+	"committed",
+	"uncovered",
+	"total_economic_supply",
+	"net_deployed",
+	"governance",
+	"manager",
+	"treasury",
+	"guardian",
+	"custodian",
+	"current_epoch",
+	"paused",
+	"wind_down",
+	"wind_down_claimable",
+	"claim_wind_down",
+	"request_deposit",
+	"cancel_deposit",
+	"claim_deposit",
+	"request_redeem",
+	"cancel_redeem",
+	"claim_redeem",
+)
+vault.liquid_reserve.mockImplementation(figure(184000000000n))
+vault.committed.mockImplementation(figure(62000000000n))
+vault.uncovered.mockImplementation(async () => {
+	if (mockFigures.uncovered === null) throw new Error("boom")
+	return { result: mockFigures.uncovered }
 })
+vault.total_economic_supply.mockImplementation(figure(100000000000000n))
+vault.net_deployed.mockImplementation(figure(50000000000n))
+vault.governance.mockImplementation(address(mockGovernanceAddress))
+vault.manager.mockImplementation(address(null))
+vault.treasury.mockImplementation(address(null))
+vault.guardian.mockImplementation(address(null))
+vault.custodian.mockImplementation(address(null))
+vault.current_epoch.mockImplementation(async () => {
+	if (!mockRequests.readable) throw new Error("boom")
+	return { result: mockRequests.currentEpoch }
+})
+vault.paused.mockImplementation(async () => ({ result: mockVault.paused }))
+vault.wind_down.mockImplementation(async () => ({
+	result: mockVault.windingDown
+		? {
+				active_at: 1_700_000_000n,
+				round: 0,
+				status: { tag: "Active" as const, values: undefined },
+			}
+		: null,
+}))
+vault.wind_down_claimable.mockImplementation(async () => ({
+	result: mockVault.windDownClaimable,
+}))
+
+const claimWindDownMock = vault.claim_wind_down
+const requestDepositMock = vault.request_deposit
+const cancelDepositMock = vault.cancel_deposit
+const claimDepositMock = vault.claim_deposit
+const requestRedeemMock = vault.request_redeem
+const cancelRedeemMock = vault.cancel_redeem
+const claimRedeemMock = vault.claim_redeem
+
+const oracle = fakeNavOracle("state", "latest")
+oracle.state.mockImplementation(async () => ({
+	result: { tag: "Valid" as const, values: undefined },
+}))
+oracle.latest.mockImplementation(async () => ({
+	result: {
+		nav_per_share: 150000000000000n,
+		expires_at: 1800000000n,
+		accepted_at: 1757900000n,
+		proof_hash: Buffer.alloc(32, 0xab),
+		proof_uri: "",
+	},
+}))
+
+const identity = fakeIdentityVerifier("verify_identity")
+identity.verify_identity.mockImplementation(async () =>
+	mockIdentity.allowed
+		? { result: undefined }
+		: refusedWith(IDENTITY_VERIFICATION_FAILED),
+)
+
+const shares = fakeShareToken(
+	"balance",
+	"symbol",
+	"name",
+	"identity_verifier",
+	"is_frozen",
+)
+shares.balance.mockImplementation(async () => ({ result: mockShares.balance }))
+shares.symbol.mockImplementation(async () => ({
+	result: mockSymbols.shareToken,
+}))
+shares.name.mockImplementation(async () => ({ result: mockSymbols.vaultName }))
+shares.identity_verifier.mockImplementation(async () => ({
+	result: "CVERIFIER",
+}))
+shares.is_frozen.mockImplementation(async () => ({
+	result: mockIdentity.frozen,
+}))
+
+const depositAsset = fakeAsset("symbol", "balance")
+depositAsset.symbol.mockImplementation(async () => ({
+	result: mockSymbols.token,
+}))
+depositAsset.balance.mockImplementation(async () => ({
+	result: mockDeposit.balance,
+}))
 
 const investorAddress = "GINVESTORADDRESS1234567890"
 
@@ -978,7 +975,7 @@ describe("VaultPreview", () => {
 			resolveSend = resolve
 		})
 		requestDepositMock.mockImplementationOnce(
-			async ({ amount }: { holder: string; amount: bigint }) => ({
+			async ({ amount }: { amount: bigint }) => ({
 				simulation: undefined,
 				signAndSend: async ({
 					watcher,
@@ -1027,7 +1024,7 @@ describe("VaultPreview", () => {
 			resolveSend = resolve
 		})
 		requestDepositMock.mockImplementationOnce(
-			async ({ amount }: { holder: string; amount: bigint }) => ({
+			async ({ amount }: { amount: bigint }) => ({
 				simulation: undefined,
 				signAndSend: async ({
 					watcher,
@@ -1488,7 +1485,7 @@ describe("VaultPreview", () => {
 		mockRequests.currentEpoch = readyDepositEpoch
 		mockRequests.epochs.set(readyDepositEpoch, {
 			status: { tag: "Fulfilled" },
-			share_price: 1_000000000000000000n,
+			share_price: 1_00000000000000n,
 			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.deposits.set(readyDepositEpoch, {
@@ -1594,7 +1591,7 @@ describe("VaultPreview", () => {
 		mockRequests.currentEpoch = 4n
 		mockRequests.epochs.set(4n, {
 			status: { tag: "Fulfilled" },
-			share_price: 1_000000000000000000n,
+			share_price: 1_00000000000000n,
 			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.deposits.set(4n, { amount: 150_0000000n, claimed: false })
@@ -1718,7 +1715,7 @@ describe("VaultPreview", () => {
 		mockRequests.currentEpoch = readyRedeemEpoch
 		mockRequests.epochs.set(readyRedeemEpoch, {
 			status: { tag: "Fulfilled" },
-			share_price: 1_000000000000000000n,
+			share_price: 1_00000000000000n,
 			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.redeems.set(readyRedeemEpoch, {
@@ -1764,7 +1761,7 @@ describe("VaultPreview", () => {
 		mockRequests.currentEpoch = epoch
 		mockRequests.epochs.set(epoch, {
 			status: { tag: "Fulfilled" },
-			share_price: 1_000000000000000000n,
+			share_price: 1_00000000000000n,
 			priceable_at: 1_700_003_600n,
 		})
 		mockRequests.redeems.set(epoch, { shares: 952380952n, claimed: false })

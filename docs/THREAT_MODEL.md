@@ -7,15 +7,15 @@ threat-to-test matrix builds on it.
 
 ## Scope
 
-- **Contracts.** `async-vault`, `share-token` and `nav-oracle`, the testnet
-  stubs `identity-verifier` and `compliance`, and the shared crates
-  `strata-timelock`, `strata-bindings` and `strata-storage`, at commit
-  `56b22d1`.
+- **Contracts.** `async-vault`, `share-token`, `nav-oracle` and `sep40-feed`,
+  the testnet stubs `identity-verifier` and `compliance`, and the shared
+  crates `strata-timelock`, `strata-bindings`, `strata-storage` and `sep40`,
+  at commit `28d0261`.
 - **The console**, as far as signing goes: the `/sign` page that collects an
   authority's signatures (R12).
 - **Not the testnet deployment.** The deployment listed in the
-  [README](../README.md) runs an older release, and several controls below are
-  not on it yet.
+  [README](../README.md) was built from `tranche-3` at `56936bd`. A later
+  change reaches it only through another redeploy.
 
 The design doc
 ([§8.9](./strata-product-and-architecture.md#89-trust-boundaries--failure-modes)),
@@ -59,14 +59,15 @@ Console tests, also cited by title, run with `npm run test`.
 
 | Actor | What it can do on chain |
 | --- | --- |
-| Governance | Admin of the vault. By deploy, also admin of the share token, the oracle and the compliance contract. |
+| Governance | Admin of the vault. By deploy, also admin of the share token, the oracle, the compliance contract and the three governed identity contracts (claim topics, identity registry, identity verifier); the vault's `finish_setup` checks the last four. |
 | Guardian | Pauses the vault (vault `guardian`). By deploy, also pauses the NAV (oracle `guardian`). |
 | Manager | Seals the open epoch with `close_epoch` (vault `manager`) at any time; "sealed" below means closed by the manager or by anyone once the minimum epoch duration has run. A role, not one of the five authorities. |
 | Treasury | Sends free reserve to the custodian (vault `treasury`). |
 | Attester | Posts the share price (oracle `attester`). |
-| Compliance | Freezes holders, and with governance makes legal transfers and recoveries (share token `compliance`). By deploy, also lists and delists addresses (identity verifier admin). |
+| Compliance | Freezes holders, and with governance makes legal transfers and recoveries (share token `compliance`). By deploy, also the identity registry's compliance authority: delists and vetoes wallets, lifts vetoes, and lists wallets whose claims pass. |
+| KYC provider | Owns a claim issuer: allows its signing keys per topic, signs claims off-chain, revokes a claim or invalidates an identity's claims on a topic. Governance decides which topics trust its issuer. |
 | The vault contract | Mints, burns and moves escrowed shares (share token `manager`, which `finish_setup` requires it to hold alone). |
-| Anyone | Prices a sealed epoch, funds the vault, activates a wind-down once it is due, finalizes a round, seals an epoch that has been open for the minimum epoch duration once governance has set one. Each holder signs their own requests, cancellations and claims. |
+| Anyone | Prices a sealed epoch, funds the vault, activates a wind-down once it is due, finalizes a round, seals an epoch that has been open for the minimum epoch duration once governance has set one. Each holder signs their own requests, cancellations and claims. Each investor onboards itself on the identity registry and owns its identity contract. |
 | Outside the kit | The custodian, the deposit asset's issuer, external compliance or identity contracts, wallets, and whoever hosts a frontend. |
 
 "By deploy" means the deploy script sets it and no contract checks it (R5). The
@@ -158,18 +159,28 @@ The asset really loses, or gains, more than one report may show.
 The attester stops reporting, or the last report expires.
 
 - **Control:** A report expires at the earlier of its own `expires_at` and its
-  acceptance plus `freshness_duration`. A stale feed makes `fulfill_epoch`
-  fail, and requests in a sealed epoch can be cancelled again. A stale feed
-  also makes `request_deposit` refuse (`FeedNotValid`), so no new deposit waits
-  on it. Priced claims still pay: no claim reads the oracle. Governance revokes
-  the attester at once. `health()` reports `feed_valid`, and
+  acceptance plus `freshness_duration`. `attest` refuses a stored expiry that
+  would fall before `cooldown_secs` has run from acceptance, so a report
+  always outlives its own cooldown and the next one is never blocked by
+  `CooldownActive` once this one has gone stale — while `cooldown_secs` stays
+  the value the report was accepted under. Applying a timelocked raise of
+  `cooldown_secs` stores the new value without rechecking the stored report
+  (`apply` in `nav-oracle/src/governance.rs`), so a report accepted just before the
+  change lands can go stale under the old cooldown before the new, longer one
+  ends: a bounded stale window, no longer than the new cooldown. A stale feed makes
+  `fulfill_epoch` fail, and requests in a sealed epoch can be cancelled again. A
+  stale feed also makes `request_deposit` refuse (`FeedNotValid`), so no new
+  deposit waits on it. Priced claims still pay: no claim reads the oracle.
+  Governance revokes the attester at once. `health()` reports `feed_valid`, and
   `freshness_covers_notice` is false when the freshness window is shorter than
   the notice.
 - **Residual:** Holders with shares cannot exit until a report lands, or until
   a wind-down pays them pro rata (X8). After setup, granting a new attester
   waits for the timelock: at least seven days, plus any time the vault spends
   paused.
-- **Tests:** `heartbeat_expiry_makes_it_stale` in
+- **Tests:** `heartbeat_expiry_makes_it_stale`,
+  `an_expiry_inside_its_own_cooldown_is_refused` and
+  `a_lapsed_report_is_refreshed_at_once_with_no_cooldown_wait` in
   [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
   `fulfill_is_rejected_once_the_feed_goes_stale` in
   [`oracle_pricing.rs`](../contracts/async-vault/src/test/oracle_pricing.rs);
@@ -382,7 +393,8 @@ without checking the feed's state.
   prices.
 - **Residual:** `nav_per_share()` and `latest()` return the stored report even
   when it is stale, out of band or paused. An integrator who skips `state()`
-  reads a price the vault would refuse. The SEP-40 adapter is not built yet.
+  reads a price the vault would refuse. The SEP-40 feed (O14) answers this for
+  a reader who goes through it instead of the oracle directly.
 - **Tests:** `the_nav_pause_holds_regardless_of_freshness` and
   `heartbeat_expiry_makes_it_stale` in
   [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs);
@@ -411,6 +423,54 @@ and with it which valid report prices the epoch.
   [`nav-oracle/src/test/oracle.rs`](../contracts/nav-oracle/src/test/oracle.rs).
   A keeper: none, because the kit runs no keeper.
 
+### O14. An integrator relies on the SEP-40 feed
+
+An integrator reads the vault's share price through `sep40-feed` instead of
+the oracle directly.
+
+- **Control:** A price answers only when seven conditions all hold: the asset
+  asked for is the vault's share token or its base asset; the vault's
+  `share_token`, `asset`, `wind_down` and `oracle` reads all succeed; no
+  wind-down is active; the oracle reports `Valid`; the oracle's own reads
+  succeed and the converted price is above zero; and, for `price(asset, ts)`
+  only, `ts` falls inside `[attested_at, attested_at + freshness_duration)`
+  and is not later than the current ledger time. Any failed read, anywhere in
+  that chain, answers `None` rather than a stale or wrong price. Upgrading the
+  feed goes through the vault's timelock and is signed by the vault's current
+  `governance()`. The feed follows an oracle swap on its own: it reads
+  `vault.oracle()` fresh on every call, so the vault's own timing of the swap
+  is what an integrator sees too.
+- **Residual:** A vault pause and a proposed wind-down keep the price: both
+  hold the vault's own operations, not the feed's reads, so `lastprice`
+  answers through either. `resolution()` is the oracle's current
+  `freshness_duration`, which moves when governance changes the window or
+  swaps the oracle; a caller that reads it once and keeps it can be wrong
+  after such a change, which SEP-40's own text does not anticipate. Whoever
+  holds the vault's governance also upgrades the feed, and a vault admin
+  hand-over moves that power at once, with no delay of the feed's own. `base()`
+  and `assets()` fail outright, rather than answering `None`, once the vault
+  itself is archived and its reads trap. A read that exhausts its resource
+  budget still fails the caller's whole transaction, feed or no feed. A feed
+  deployed against a different vault answers `base()` and `assets()` the same
+  as the real one whenever that vault returns the same `asset()` and
+  `share_token()`: those two calls alone do not identify a feed. An integrator
+  should pin the feed's contract ID from the README's
+  [Deployed addresses](../README.md#deployed-addresses), or check the feed's
+  own `vault()` against the vault it expects. The feed also reads both
+  tokens' `decimals()` on every quote: an upgradeable asset token that
+  changed its decimals would shift the feed's price by a power of ten with no
+  change to the vault's NAV; the vault itself does not depend on this.
+- **Tests:** `a_stale_or_paused_oracle_gives_no_price`,
+  `an_active_wind_down_gives_no_price`,
+  `a_proposed_wind_down_or_a_vault_pause_keeps_the_price`,
+  `a_failing_read_gives_no_price`, `a_time_after_the_ledger_gives_no_price`,
+  `price_answers_inside_the_reports_window_only` and
+  `the_feed_follows_an_oracle_swap` in
+  [`sep40-feed/src/test/quotes.rs`](../contracts/sep40-feed/src/test/quotes.rs);
+  `only_the_vaults_governance_proposes_cancels_and_applies` and
+  `the_feed_follows_a_governance_hand_over_on_the_vault` in
+  [`sep40-feed/src/test/timelock.rs`](../contracts/sep40-feed/src/test/timelock.rs).
+
 ## Roles
 
 ### R1. Governance compromised: the changes that wait
@@ -427,15 +487,22 @@ Someone takes governance's keys and changes code, roles or wiring.
   - oracle: an upgrade, a role grant, an admin hand-over, a config change other
     than a shorter freshness window;
   - the kit's compliance contract: adding or removing a module, binding or
-    unbinding a token, an admin hand-over.
+    unbinding a token, an admin hand-over;
+  - the identity contracts: a required topic, a trusted issuer or the trusted
+    issuer code (topics); the identity code, the verifier or the compliance
+    authority (registry); a protocol address, the registry or the topics
+    contract read (verifier); an admin hand-over on each.
 
   The delay is 7 to 90 days, and never shorter than the notice when the change
   applies. Time the vault spends paused does not count, nothing applies while it
-  is paused, nothing but a grant of the token's `compliance` role is proposed or
-  applied during a wind-down, and no admin hand-over is accepted then. One code
-  change waits at a time. No contract offers an immediate upgrade. Renouncing
-  the admin and setting a role admin are always refused. Every proposal is
-  published (`ChangeProposed`) and listed by `pending_changes()`.
+  is paused, and no admin hand-over is accepted during a wind-down. Of the
+  changes above, only a grant of the token's `compliance` role and removing a
+  compliance module, a topic, a trusted issuer or a protocol address are
+  proposed or applied then; everything else is refused for the rest of an
+  active wind-down. One code change waits at a time. No
+  contract offers an immediate upgrade. Renouncing the admin and setting a
+  role admin are always refused. Every proposal is published
+  (`ChangeProposed`) and listed by `pending_changes()`.
 - **Residual:** The delay is notice, not a guaranteed exit: leaving needs a
   sealed epoch, a valid price accepted after the seal, and cash. Once the delay
   runs, an upgrade can do anything, and a vault upgrade can also change the
@@ -448,7 +515,10 @@ Someone takes governance's keys and changes code, roles or wiring.
   `compliance` to an account it controls after one published delay, then sign
   `legal_transfer` or `recover_balance` with it alone. Holders who are not
   frozen can surrender their shares to `claim_wind_down` meanwhile, once a
-  round is finalised.
+  round is finalised. A protocol address governance names on the verifier
+  holds and moves shares with no claims once the change lands. Trusting a
+  provider's issuer, or removing a required topic, changes who qualifies for
+  every later check.
 - **Tests:** `grants_and_manager_revokes_wait_for_the_timelock`,
   `a_change_shorter_than_a_raised_notice_never_lands`,
   `nothing_timelocked_moves_during_a_wind_down_a_manager_revoke_included` and
@@ -474,6 +544,13 @@ Someone takes governance's keys and changes code, roles or wiring.
   `after_setup_rule_changes_wait_for_the_timelock` and
   `an_admin_hand_over_cannot_be_accepted_while_the_vault_winds_down` in
   [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs);
+  `every_change_lands_through_the_timelock` and
+  `a_wind_down_refuses_all_but_removals` in
+  [`identity-verifier/src/test/changes.rs`](../contracts/identity-verifier/src/test/changes.rs)
+  and
+  [`claim-topics/src/test/changes.rs`](../contracts/claim-topics/src/test/changes.rs);
+  `a_wind_down_refuses_every_change` in
+  [`identity-registry/src/test/changes.rs`](../contracts/identity-registry/src/test/changes.rs);
   `time_spent_paused_does_not_count_toward_the_delay` in
   [`strata-timelock/src/test/schedule.rs`](../crates/strata-timelock/src/test/schedule.rs);
   `a_delay_from_seven_to_ninety_days_is_in_bounds` in
@@ -518,8 +595,9 @@ Someone takes governance's keys and uses the powers that need no delay.
 A deployment takes deposits while admin changes are still instant, or with a
 binding missing.
 
-- **Control:** The vault, the share token, the oracle and the compliance
-  contract each start in a setup window in which admin changes are instant.
+- **Control:** The vault, the share token, the oracle, the compliance contract
+  and the three governed identity contracts each start in a setup window in
+  which admin changes are instant.
   `finish_setup` closes it once, and it never reopens. The vault refuses
   deposits, redemptions, and sealing or pricing an epoch until its own setup
   is finished (`SetupOpen`). Its `finish_setup` refuses (`SetupIncomplete`)
@@ -527,10 +605,15 @@ binding missing.
   - the token and the oracle name this vault and have finished their own setup;
   - the vault is the token's only `manager`, and no shares exist yet;
   - the vault passes the identity check and is not frozen on the token;
-  - the token is in its compliance contract's `linked_tokens`, and a compliance
-    contract that answers both `VaultBinding` views names this vault with its
-    setup finished (one that leaves either view unanswered is accepted as
-    external);
+  - the token's verifier reports the identity stack ready (`ready_for`):
+    governance administers the verifier, the registry and the topics contract,
+    each is bound to this vault with its setup finished, every required topic
+    has a trusted issuer, the vault is a protocol address, and the registry
+    asks this verifier;
+  - the token is in its compliance contract's `linked_tokens`, governance is
+    that contract's admin, and a compliance contract that answers both
+    `VaultBinding` views names this vault with its setup finished (one that
+    leaves either view unanswered is accepted as external);
   - the asset and the token have the same decimals, and the asset, the token,
     the oracle and the vault are four different addresses;
   - the oracle answers `state()` and `freshness_duration()`, and a custodian
@@ -544,7 +627,8 @@ binding missing.
 - **Residual:** Before `finish_setup`, the admin changes anything at once. The
   checks read only the token's `manager` list: a second attester, treasury or
   guardian is not checked, though each contract shows its role holders. An
-  external compliance contract keeps its own governance. A vault built with the
+  external compliance contract changes its modules off the vault's clock, and
+  has no exit rule. A vault built with the
   `short_wind_down` feature, meant for local tests and marked so in its contract
   meta, activates a wind-down with no delay, and nothing on chain refuses that
   build.
@@ -555,9 +639,16 @@ binding missing.
   `setup_finishes_after_cash_is_funded_during_it`,
   `every_wiring_step_is_checked_before_setup_finishes`,
   `a_compliance_contract_from_outside_the_kit_is_accepted`,
+  `a_compliance_contract_from_outside_the_kit_needs_governance_as_its_admin`,
   `setup_cannot_finish_while_a_hand_over_is_pending` and
   `setup_never_finishes_twice` in
   [`setup.rs`](../contracts/async-vault/src/test/setup.rs);
+  `finish_setup_needs_the_identity_stack_ready`,
+  `finish_setup_needs_compliance_governed_by_governance` and
+  `the_identity_stack_must_answer_to_the_vaults_governance` in
+  [`identity_stack.rs`](../contracts/async-vault/src/test/identity_stack.rs);
+  the `ready_for_needs_*` tests in
+  [`identity-verifier/src/test/readiness.rs`](../contracts/identity-verifier/src/test/readiness.rs);
   `each_missing_wiring_step_shows_in_its_own_flag` in
   [`health.rs`](../contracts/async-vault/src/test/health.rs);
   `the_setup_window_closes_once` in
@@ -602,9 +693,15 @@ than it shows.
   `each_admin_call_asks_the_admin_for_one_signature` (setup, bindings, modules,
   the change queue) in
   [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs);
-  `each_admin_call_asks_the_admin_for_one_signature` (`allow` and
-  `set_claim_topics_and_issuers`) in
-  [`identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs).
+  `each_admin_call_asks_the_admin_for_one_signature` in
+  [`identity-verifier/src/test/changes.rs`](../contracts/identity-verifier/src/test/changes.rs),
+  [`claim-topics/src/test/changes.rs`](../contracts/claim-topics/src/test/changes.rs)
+  and
+  [`identity-registry/src/test/changes.rs`](../contracts/identity-registry/src/test/changes.rs),
+  with `each_compliance_call_asks_the_authority_for_one_signature` in the
+  last; `onboarding_asks_the_investor_for_one_signature` and
+  `attaching_asks_the_investor_for_one_signature` in
+  [`identity-registry/src/test/onboarding.rs`](../contracts/identity-registry/src/test/onboarding.rs).
   Signers and thresholds on the network: none yet.
 
 ### R5. One account in several seats
@@ -621,14 +718,16 @@ compromise reaches several powers.
 - **Residual:** Nothing checks later grants or hand-overs: governance can grant
   itself the vault's treasury role, at once during setup or through the
   timelock after it. Separation is not enforced across contracts either: the
-  oracle's, the token's and the verifier's roles are constructor parameters,
-  equal to the vault's authorities by deploy only. Governance may also be the
+  oracle's and the token's roles and the registry's compliance authority are
+  constructor parameters, equal to the vault's authorities by deploy only. The
+  vault's setup does check that governance administers the compliance
+  contract and the three governed identity contracts. Governance may also be the
   guardian, and the manager may be anyone. Every check compares addresses, and
   two Stellar accounts can share a signer, so distinct addresses do not prove
   distinct keys. The checks are being redesigned so that a deployment may
   choose to run every role from one key, which the four refusals forbid today
-  at construction. Until then, holders read each contract's role holders; the
-  verifier stub has no view of its admin.
+  at construction. Until then, holders read each contract's role holders and
+  admin.
 - **Tests:** `the_treasury_may_not_also_be_the_guardian`,
   `the_treasury_may_not_also_be_governance`,
   `compliance_may_not_also_be_governance`,
@@ -712,7 +811,8 @@ The manager stops sealing, so nothing is priced, or seals when it suits someone.
   carry a valuation made before it. Before this branch only the manager could
   pick that moment; now any outsider can too. Holders still get no price
   older than the seal, so the risk falls on the operator's own cut-off
-  routine, which must now assume an outsider may seal first.
+  routine, which must now assume an outsider may seal first. `health()`
+  reports `min_epoch_duration_set`, false while no minimum is set.
 - **Tests:** `a_non_manager_cannot_close` and
   `anyone_may_fulfill_a_closed_epoch` in
   [`epochs.rs`](../contracts/async-vault/src/test/epochs.rs);
@@ -724,12 +824,15 @@ The manager stops sealing, so nothing is priced, or seals when it suits someone.
   `cancelling_a_redemption_returns_the_shares` in
   [`cancel.rs`](../contracts/async-vault/src/test/cancel.rs);
   `grants_and_manager_revokes_wait_for_the_timelock` in
-  [`governance.rs`](../contracts/async-vault/src/test/governance.rs).
+  [`governance.rs`](../contracts/async-vault/src/test/governance.rs);
+  `a_vault_with_no_minimum_set_is_reported` and
+  `setting_the_minimum_during_setup_clears_the_flag` in
+  [`health.rs`](../contracts/async-vault/src/test/health.rs).
 
 ### R9. Compliance compromised
 
-Compliance freezes or delists holders wrongly, or lists an address it should
-not.
+Compliance freezes or delists holders wrongly, lifts a veto it should not, or
+lists an address it should not.
 
 - **Control:** Freezes need the token's `compliance` role; they act at once and
   are published. The vault's own address cannot be frozen once the token knows
@@ -740,7 +843,12 @@ not.
   renounce (`LastComplianceHolder`). A grant of `compliance` goes through the
   token's timelock even during a wind-down, after the normal delay. The deploy
   grants a cold backup holder during setup. A delisted holder still leaves in
-  cash (X4), and what a frozen holder is owed stays recorded (X3).
+  cash (X4), and what a frozen holder is owed stays recorded (X3). On the
+  identity registry, compliance lists a wallet only to a kit identity whose
+  claims pass the verifier, so it cannot let in a wallet the providers have not
+  vouched for. Delisting the vault's own address changes nothing: the verifier
+  passes the vault as a protocol address, which no listing action removes.
+  Every listing act is published (R14).
 - **Residual:** A wrongful freeze holds all of a holder's exits, covered claims
   included, until it is lifted; nothing on chain checks for a legal order. A
   frozen holder's exits, a wind-down claim included, wait for a live
@@ -749,13 +857,11 @@ not.
   governance action, it stays for good. The backup holder carries every
   `compliance` power the primary does: it freezes at once and co-signs legal
   transfers (R10), so it is one more key to guard, not a spare with less
-  reach. The testnet verifier stub's admin, the
-  compliance key by deploy, lists and delists at once, without an event, and
-  can be replaced only by swapping the verifier, which waits for the timelock
-  after setup. The verifier and compliance contracts in this repository are
-  testnet stubs;
-  [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238) chooses
-  what replaces them on mainnet.
+  reach. The registry's compliance authority, the compliance key by deploy,
+  delists, vetoes and lifts a veto at once, during a wind-down too; replacing
+  it waits for the registry's timelock after setup, and none lands during a
+  wind-down. A lifted veto lets the wallet onboard again with its old identity
+  and any claims that still pass.
 - **Tests:** `the_vault_address_cannot_be_frozen`,
   `compliance_alone_cannot_move_shares`, `compliance_no_longer_forces_transfers`,
   `the_compliance_authority_cannot_mint_burn_or_swap_the_rules` and
@@ -769,8 +875,14 @@ not.
   [`share-token/src/test_governance.rs`](../contracts/share-token/src/test_governance.rs);
   `a_frozen_holder_is_paid_once_a_compliance_holder_granted_in_the_wind_down_lifts_the_freeze`
   in [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
-  `only_admin_can_allow` in
-  [`identity-verifier/src/test.rs`](../contracts/identity-verifier/src/test.rs);
+  `a_redemption_request_works_whatever_the_vault_listing` in
+  [`identity_stack.rs`](../contracts/async-vault/src/test/identity_stack.rs);
+  `only_compliance_lists_and_delists`, `compliance_lists_a_wallet_whose_claims_pass`,
+  `only_compliance_lifts_a_veto` and
+  `delisting_and_lifting_act_at_once_during_a_wind_down` in
+  [`identity-registry/src/test/platform.rs`](../contracts/identity-registry/src/test/platform.rs);
+  `a_new_compliance_authority_takes_over` in
+  [`identity-registry/src/test/changes.rs`](../contracts/identity-registry/src/test/changes.rs);
   "governance and the vault manager cannot freeze a holder" in
   [`scripts/harness/guards.test.ts`](../scripts/harness/guards.test.ts).
 
@@ -785,11 +897,11 @@ The two authorities, colluding or both compromised, take a holder's shares.
   the identity check. Each transfer publishes `LegalTransfer` with an order
   reference of 1 to 128 bytes.
 - **Residual:** Together the two can move any amount of any holder's wallet
-  shares at once, with no delay, frozen shares included. With the testnet
-  verifier stub, compliance itself lists the destination. Nothing on chain
-  checks that a legal order exists. `recover_balance` needs the same two
-  signatures and a recovery account named by the verifier; the testnet stub
-  names none, so recovery always fails there. Governance can grant
+  shares at once, with no delay, frozen shares included. The destination must
+  pass the identity check, and compliance can list it only with claims that
+  pass. Nothing on chain checks that a legal order exists. `recover_balance`
+  needs the same two signatures and a recovery account named by the verifier;
+  the kit's verifier names none, so recovery always fails. Governance can grant
   `compliance` to an account it controls after one published delay, a
   wind-down included (R1), reaching both signatures alone.
 - **Tests:** `compliance_and_the_admin_move_shares_together`,
@@ -814,11 +926,15 @@ change without notice.
   accept the vault's address.
 - **Residual:** The checks catch wiring mistakes, not intent. An external
   compliance contract keeps its own governance: its module changes do not wait
-  for the vault's timelock. The binding views prove nothing either: rules that
-  name another vault, or whose setup is open, pass as soon as they stop
-  answering one view, even between proposal and apply. A new verifier can
-  refuse every holder, which stops deposits but leaves exits in cash, or accept
-  anyone.
+  for the vault's timelock, and it has no exit rule, so its modules can stop
+  exits. The swap does not check who administers the new rules;
+  `health().compliance_governed` turns false if governance does not. The
+  binding views prove nothing either: rules that name another vault, or whose
+  setup is open, pass as soon as they stop answering one view, even between
+  proposal and apply. A new verifier can refuse every holder, which stops
+  deposits but leaves exits in cash, or accept anyone; one that reports a
+  fault as 304 or 321 makes the vault convert or burn on a fault, and one that
+  does not answer `ready_for` turns `health().identity_ready` false.
 - **Tests:** `rules_off_this_vaults_clock_or_without_the_token_are_never_proposed`,
   `rules_that_stop_qualifying_are_never_installed`,
   `rules_from_outside_the_kit_are_installed_while_they_list_the_token`,
@@ -840,7 +956,7 @@ An authority opens a shared `/sign` link, sees one operation and signs another.
   contract call, an operation whose source differs from the transaction's, an
   authorization entry that is not the source account's, and a transaction not
   yet valid. It also refuses a contract other than the configured vault,
-  oracle, share token and identity verifier, an operation the console does not
+  oracle, share token and identity registry, an operation the console does not
   offer, and arguments of the wrong shape. It shows the operation in the
   console's terms.
 - **Residual:** A signer may sign in the wallet without reading it. A tampered
@@ -881,26 +997,160 @@ lands.
   [`app/src/pages/SignPage.test.tsx`](../app/src/pages/SignPage.test.tsx).
   Who reads a link: none, because nothing can observe it.
 
-### R14. An allowlist change that publishes no event
+### R14. A listing change nobody sees
 
-The kit's identity verifier lists or delists an address without publishing an
-event.
+The registry's compliance authority delists, vetoes or lifts a veto, an
+investor onboards, or governance changes a protocol address, and nobody
+notices, or the signer later denies it.
 
-- **Control:** None in the verifier: `allow` stores the answer and publishes
-  nothing. `is_allowed` gives the current answer for any address, and the
-  signed transaction stays in the network's history
-  ([Repudiation](#repudiation)). The verifier is a testnet stub; a production
-  identity registry has its own events. An event for `allow` is planned in
-  [#441](https://github.com/BootNodeDev/strata-vault-kit/issues/441).
-- **Residual:** A watcher that reads events misses every listing and delisting.
-  A wrong listing (R9) shows only in `is_allowed`, or in the verifier's
-  transactions: an RPC serves them for about seven days, and after that only a
-  history archive or a full-history indexer has them.
-  `set_claim_topics_and_issuers` publishes nothing either, but it stores
-  nothing.
-- **Tests:** none, because the stub publishes no event. The
-  [monitoring plan](./MONITORING_PLAN.md#what-this-plan-does-not-cover) leaves
-  the allowlist out for the same reason.
+- **Control:** Each act publishes an event with the account as a topic.
+  `IdentityRegistered` (with the identity) when a wallet is linked, by
+  onboarding or by compliance; `IdentityRemoved` when compliance unlinks one;
+  `VetoSet` with `vetoed` true or false on every veto and every lifted veto;
+  `ProtocolAddressAdded` and `ProtocolAddressRemoved` on the verifier, once per
+  real change. A watcher filters on those topics
+  ([monitoring plan P14](./MONITORING_PLAN.md#p14-an-address-listed-or-delisted)).
+  `stored_identity`, `is_vetoed` and `is_protocol_address` give the current
+  answer for any address, and the signed transaction stays in the network's
+  history ([Repudiation](#repudiation)). OpenZeppelin's code publishes the
+  rest: topic and trusted-issuer changes on the topics contract, each claim
+  added or removed on an identity, and each allowed key, revocation
+  (`ClaimRevoked`) and invalidation (`SignaturesInvalidated`) on an issuer.
+- **Residual:** The kit runs no watcher. An RPC serves the event for about
+  seven days; after that only a watcher's own records, a history archive or a
+  full-history indexer have it. The event says what changed, not whose keys
+  signed; the transaction does (R4). A claim that expires publishes nothing:
+  the wallet stays linked and the verifier starts refusing it. No event says
+  when the compliance contract ignored a module's refusal (X6).
+- **Tests:** `onboarding_deploys_the_identity_adds_claims_and_registers` in
+  [`identity-registry/src/test/onboarding.rs`](../contracts/identity-registry/src/test/onboarding.rs);
+  `removal_vetoes_and_a_vetoed_wallet_cannot_onboard_or_attach`,
+  `only_compliance_lifts_a_veto` and `a_wallet_can_be_vetoed_before_it_onboards`
+  in
+  [`identity-registry/src/test/platform.rs`](../contracts/identity-registry/src/test/platform.rs);
+  `binding_the_vault_publishes_it_as_a_protocol_address` and
+  `only_a_real_change_is_published` in
+  [`identity-verifier/src/test/protocol.rs`](../contracts/identity-verifier/src/test/protocol.rs).
+
+### R15. A claim issuer signs wrongly, fails, or runs other code
+
+A KYC provider vouches for investors who should not hold shares, its issuer
+contract breaks, or its code is not the kit's.
+
+- **Control:** The topics contract trusts only issuers that run the kit
+  issuer's Wasm (`NotKitIssuer`), and each only for the topics governance
+  names; adding one waits for the timelock after setup, and removing one lands
+  even during a wind-down. The verifier counts only the kit issuer's refusal
+  codes (`ISSUER_REFUSALS`) and OpenZeppelin's `ClaimNotFound` as a "no".
+  Anything else, a trap, a missing contract or a signature that fails at check
+  time, is a fault: `Unavailable`, never 304 or 321. So is a required topic
+  with no trusted issuer, or no required topic at all: nobody answered, so it
+  is not a refusal. A code from `ISSUER_REFUSALS` counts as a "no" only from
+  an issuer, never from the registry, the topics contract or an identity. A
+  fault lets no one in,
+  and the vault converts or burns no position on it: a priced deposit waits,
+  outside a wind-down, and a zero-asset claim waits. Revoking and invalidating
+  refuse with contract errors. An invalidation also refuses every claim
+  created up to that moment, and the issuer refuses a claim dated in the
+  future, so no stored claim escapes a later invalidation.
+- **Residual:** The provider's off-chain checks are trusted: its keys can make
+  anyone pass the topics it is trusted for. An issuer deployed through an
+  executable reference passes the code check, and its owner can swap the code
+  later. Beyond the keys it holds, swapped code can make the issuer trap,
+  which kit code cannot: a fault that holds priced deposits and share returns
+  for every holder relying on it until governance replaces the issuer. So
+  governance trusts only issuers deployed straight from the kit's Wasm, and
+  checks it before proposing one: the issuer's contract instance entry
+  (`stellar ledger entry fetch contract-data --contract <issuer> --instance`,
+  or RPC `getLedgerEntries`) must show the executable `wasm` equal to the
+  topics contract's `issuer_wasm()`, not a reference. Unless another trusted
+  issuer of the same topic vouches for the holder, a broken issuer holds
+  priced deposits outside a wind-down, and refuses new deposit requests, until
+  it is fixed or replaced. Removing it is not a cure. A topic left with no
+  trusted issuer is a fault too, so no one gets in and priced deposits keep
+  waiting. If another issuer remains, a holder whose only claim came from the
+  removed one is refused (304), and its priced deposits convert. So governance
+  proposes the replacement and the removal together, applies the addition
+  first, and has the new provider sign for those holders before the removal
+  lands. Swapping the verifier's registry refuses every wallet the new
+  registry does not link (321), so holders `attach` to the new registry before
+  that swap lands, or their priced deposits convert. A claim issued in the
+  same second as an invalidation is refused. A lost owner key means a new
+  issuer and new claims for every investor it served.
+- **Tests:** `a_trapping_issuer_is_unavailable_not_304`,
+  `a_missing_issuer_contract_is_unavailable`,
+  `a_signature_failing_at_check_time_is_unavailable`,
+  `every_kit_refusal_code_is_a_no`, `any_other_issuer_error_is_unavailable`,
+  `one_failing_and_one_refusing_issuer_is_unavailable`,
+  `one_failing_and_one_valid_issuer_is_verified`,
+  `a_refusing_topic_wins_over_a_failing_one`,
+  `a_topic_with_no_trusted_issuer_is_unavailable`,
+  `no_required_topic_is_unavailable` and
+  `an_issuer_refusal_code_from_any_other_contract_is_unavailable` in
+  [`identity-verifier/src/test/faults.rs`](../contracts/identity-verifier/src/test/faults.rs);
+  `an_invalidated_claim_is_refused_with_304` and
+  `a_topics_only_issuer_moved_to_other_topics_leaves_it_unavailable` in
+  [`identity-verifier/src/test/verification.rs`](../contracts/identity-verifier/src/test/verification.rs);
+  `moving_a_topics_only_issuer_to_other_topics_leaves_it_incomplete` in
+  [`claim-topics/src/test/changes.rs`](../contracts/claim-topics/src/test/changes.rs);
+  `a_claim_dated_in_the_future_is_refused`,
+  `a_bumped_nonce_invalidates_earlier_signatures` and
+  `the_refusal_codes_match_the_error_enum` in
+  [`claim-issuer/src/test.rs`](../contracts/claim-issuer/src/test.rs);
+  `a_trusted_issuer_must_run_the_kit_issuer_code` and
+  `new_issuer_code_lands_through_the_timelock` in
+  [`claim-topics/src/test/issuer_code.rs`](../contracts/claim-topics/src/test/issuer_code.rs);
+  `a_verifier_fault_holds_a_priced_deposit_claim_open`,
+  `a_verifier_fault_lets_no_one_in` and
+  `a_verifier_fault_in_a_wind_down_surrenders_the_deposit` in
+  [`identity_stack.rs`](../contracts/async-vault/src/test/identity_stack.rs).
+  An issuer swapped through an executable reference: none, because the limit
+  is stated, not guarded.
+
+### R16. Self-service undoes a platform decision
+
+A vetoed wallet lists itself again, a wallet is linked without valid claims,
+or an investor shapes its own identity to fail or to cost too much.
+
+- **Control:** `remove_identity` unlinks and vetoes in one call. Every path that
+  links a wallet (`onboard`, `attach`, `add_identity`, `batch_add_identity`)
+  refuses a vetoed wallet and asks the verifier's `check_claims`, reverting the
+  whole transaction if it does not pass; only the compliance authority lifts a
+  veto. The registry links only identities running the kit's identity code
+  (`NotKitIdentity`), records that code's hash, and stops answering for the
+  wallet (321) if the code later changes, so an investor cannot turn its own
+  refusal into a fault that holds a deposit open. The verifier reads only the
+  claim id OpenZeppelin derives from each required topic and trusted issuer,
+  never the identity's list, so added claims cannot push a check over budget.
+  The claim it reads cannot grow either: the issuer checks its signature and
+  data when it is added, and the identity refuses a URI over 256 bytes
+  (`ClaimUriTooLong`), the one field the signature does not cover.
+  The registry never calls `verify_identity`, which would read it back
+  mid-call.
+- **Residual:** After a lifted veto, the wallet onboards again with the
+  identity it had, even on older kit code. A wallet whose identity code
+  changed reads 321 while still linked, so `onboard` refuses it as already
+  registered until compliance removes it and lifts the veto; only the investor
+  can cause that. Each verification extends the identity it reads, so an
+  investor who keeps using the vault keeps it alive. One nobody reads archives:
+  `npm run extend` keeps the identity Wasm alive, not the identities, and the
+  next transaction that needs it restores it.
+- **Tests:** `removal_vetoes_and_a_vetoed_wallet_cannot_onboard_or_attach`,
+  `onboarding_again_after_a_lifted_veto_keeps_the_identity` and
+  `a_wallet_can_be_vetoed_before_it_onboards` in
+  [`identity-registry/src/test/platform.rs`](../contracts/identity-registry/src/test/platform.rs);
+  `onboarding_without_a_valid_claim_reverts_and_registers_nothing`,
+  `attach_needs_the_kit_identity_code`,
+  `attaching_an_identity_without_passing_claims_is_refused` and
+  `an_identity_whose_code_changed_is_not_found` in
+  [`identity-registry/src/test/onboarding.rs`](../contracts/identity-registry/src/test/onboarding.rs);
+  `check_claims_never_calls_the_registry` and
+  `a_claim_naming_another_topic_or_issuer_is_a_no` in
+  [`identity-verifier/src/test/`](../contracts/identity-verifier/src/test/);
+  `a_uri_over_the_cap_is_refused` in
+  [`investor-identity/src/test.rs`](../contracts/investor-identity/src/test.rs).
+  An identity stuffed with claims to exhaust the budget: none, because the
+  verifier never reads the list.
 
 ## Redemption paths
 
@@ -932,14 +1182,16 @@ An administrative act stops a holder from collecting a priced, covered exit.
 
 - **Control:** `claim_redeem` has no pause check and does not read the oracle.
   It asks the verifier about the holder but pays a delisted holder like a listed
-  one, and a verifier that fails to answer counts as delisted. Of the holder's
-  own standing, only a freeze holds the claim (X3).
+  one, and one the verifier fails on too; only a claim that pays nothing waits
+  for the verifier's answer (X4). Of the holder's own standing, only a freeze
+  holds the claim (X3).
 - **Residual:** The claim still needs the liquid reserve to cover it, or it
   fails with `ClaimNotCovered` (X1). It also calls the share token, to check
   the freeze and burn the escrow, and the token calls the compliance contract.
-  A module that fails there blocks it (X6), and so would a timelocked revoke of
-  the vault's `manager` role on the token or an unbinding of the token from its
-  compliance contract (R1).
+  The kit's compliance contract ignores a module's refusal of the burn, but a
+  module that runs the transaction out of budget still blocks it (X6), and so
+  would a timelocked revoke of the vault's `manager` role on the token or an
+  unbinding of the token from its compliance contract (R1).
 - **Tests:** `a_paused_vault_still_pays_redemptions` in
   [`controls.rs`](../contracts/async-vault/src/test/controls.rs);
   `a_delisted_holder_can_still_claim_their_exit` in
@@ -983,33 +1235,60 @@ A freeze is used to take or redirect a holder's value.
 
 ### X4. A delisted holder
 
-Delisting traps a holder in shares they may no longer hold, or an unlisted
-address gets in.
+Delisting traps a holder in shares they may no longer hold, an unlisted
+address gets in, or a verifier fault is read as a delisting.
 
-- **Control:** The vault checks the allowlist when a deposit is requested,
+- **Control:** The vault checks the identity when a deposit is requested,
   before any cash moves. A delisted holder who is not frozen can request a
   redemption, claim cash and cancel a deposit. When they claim a priced deposit,
   the vault mints the shares into its own escrow and adds them to their
   redemption in the open epoch, paid in cash at that epoch's price; in a
   wind-down they join the holder's entitlement. They cannot cancel a redemption
-  back into shares.
+  back into shares. The kit's verifier passes the vault as a protocol address,
+  so the conversion's mint and a redemption request work whatever the vault's
+  own listing. The verifier tells a fault from a refusal: it fails with
+  `Unavailable`, never 304 or 321, when a contract it depends on fails or no
+  issuer can answer, and the vault then holds instead of converting or burning
+  (`VerifierFailed`), outside a wind-down.
 - **Residual:** They leave at a later epoch's price, and a fall since their
-  deposit was priced is theirs. The conversion mints into the vault's own
-  escrow, so it waits while compliance has delisted the vault;
-  `health().allowlisted` then reads false, and nothing is lost. A redemption
-  priced at zero assets cannot give its shares back to a delisted holder, so
-  its request stays open. Only the holder can start an exit: nothing lets
-  compliance or governance redeem a holder who is no longer eligible. If a
-  fund's terms require that, it needs a new power, and counsel must confirm the
-  process.
+  deposit was priced is theirs. A fault holds a priced deposit, and a
+  zero-asset claim, until the verifier answers; in a wind-down a fault counts
+  as a refusal and surrenders the deposit into the payout, which pays the same.
+  A redemption priced at zero assets cannot give its shares back to a delisted
+  holder, so its claim burns them, as a wind-down claim does: the holder loses
+  shares worth less than one asset unit, and the request settles. Of the
+  verifier's results, only an answer burns them, and only two codes count as
+  one: `RWAError::IdentityVerificationFailed` (304), the standard refusal, and
+  `IRSError::IdentityNotFound` (321), the answer for an address the registry
+  does not link. Anything else is a failure: the claim fails (`VerifierFailed`),
+  nothing moves, and the request waits for a retry. A third-party verifier that
+  refuses with another code leaves such a request, and its epoch's cash
+  remainder, open until it answers with one of the two. The vault takes both
+  codes at their word: a verifier from outside the kit that reports a failing
+  issuer as 304, as OpenZeppelin's default does, burns a zero-asset claim on a
+  fault, a loss under one asset unit that needs the holder's own signed claim.
+  Only the holder can start an exit: nothing lets compliance or governance
+  redeem a holder who is no longer eligible. If a fund's terms require that, it
+  needs a new power, and counsel must confirm the process.
 - **Tests:** `an_investor_who_was_never_allowlisted_is_refused_before_any_cash_moves`,
-  `a_delisted_holder_can_still_queue_an_exit` and
-  `a_delisted_holder_cannot_cancel_redemption_back_to_shares` in
+  `a_delisted_holder_can_still_queue_an_exit`,
+  `a_delisted_holder_cannot_cancel_redemption_back_to_shares` and
+  `a_verifier_that_cannot_answer_refuses_a_deposit_as_a_fault` in
   [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs);
-  `a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch`
-  and `a_conversion_waits_while_the_vault_is_delisted` in
+  `a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch`,
+  `a_verifier_fault_for_one_holder_holds_the_priced_deposit_open`,
+  `a_verifier_fault_for_every_address_fails_the_deposit_claim` and
+  `in_a_wind_down_a_verifier_fault_surrenders_the_priced_deposit` in
   [`delisted.rs`](../contracts/async-vault/src/test/delisted.rs);
-  `a_delisted_holder_with_a_worthless_exit_keeps_the_request` in
+  `a_kyc_refusal_still_converts_a_priced_deposit`,
+  `a_redemption_request_works_whatever_the_vault_listing` and
+  `a_verifier_fault_holds_a_priced_deposit_claim_open` in
+  [`identity_stack.rs`](../contracts/async-vault/src/test/identity_stack.rs);
+  `a_zero_asset_redemption_the_holder_cannot_take_back_burns_and_settles` in
+  [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
+  `a_worthless_exit_burns_for_a_holder_with_no_identity`,
+  `a_worthless_exit_waits_while_the_verifier_cannot_answer` and
+  `a_worthless_exit_waits_while_the_verifier_fails_with_any_other_code` in
   [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs).
 
 ### X5. Escrowed shares that should come back
@@ -1018,15 +1297,22 @@ A token pause, the vault's own delisting or the rules stop a cancelled
 redemption from returning.
 
 - **Control:** Outside a wind-down, `cancel_redeem` checks the holder itself
-  (not frozen, passes the identity check, allowed by the rules' `can_transfer`)
-  and returns the shares with the manager's `forced_transfer`. Neither the token
-  pause nor the vault's own place on the allowlist applies to that move.
-- **Residual:** A return the rules refuse fails with `HolderNotEligible`; the
-  request stays and is paid in cash once priced. In a wind-down no shares come
-  back: the escrow is burned into the holder's entitlement.
+  (not frozen, passes the identity check) and returns the shares with the
+  manager's `forced_transfer`, which the compliance modules judge as a forced
+  move. Neither the token pause nor the vault's own listing applies to that
+  move.
+- **Residual:** A return that fails, whether a module refuses it or fails,
+  is refused with `HolderNotEligible`; the request stays and is paid in cash
+  once priced. If that price pays nothing, the claim burns the shares instead
+  of returning them, so a module that fails costs the holder shares worth
+  under one asset unit, and only on the holder's own signed claim. In a
+  wind-down no shares come back: the escrow is burned into the holder's
+  entitlement.
 - **Tests:** `a_token_pause_stops_trading_but_not_a_share_return`,
   `a_delisted_vault_still_returns_escrowed_shares`,
-  `a_return_the_compliance_rules_refuse_stays_escrowed` and
+  `a_return_the_compliance_rules_refuse_stays_escrowed`,
+  `a_worthless_exit_the_compliance_rules_refuse_to_return_burns`,
+  `a_worthless_exit_burns_like_a_refusal_when_the_compliance_rules_fail` and
   `a_partial_freeze_does_not_stop_a_return` in
   [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs);
   `an_escrowed_redemption_cancelled_in_a_wind_down_joins_the_payout` in
@@ -1036,27 +1322,71 @@ redemption from returning.
 
 A module on the compliance contract refuses or fails, so the token's calls fail.
 
-- **Control:** On the kit's compliance contract, modules change only through the
-  vault's timelock after setup, never while the vault is paused, and never
-  during a wind-down. The kit registers no modules.
-- **Residual:** The token calls the compliance contract on every mint, transfer
-  and burn, and exits use all three: a mint for a share claim, a forced transfer
-  to escrow or return a redemption, a burn to pay a redemption or a wind-down
-  claim. A module that refuses or fails there blocks even a covered exit.
-  Removing it waits for the timelock, and during a wind-down it cannot be
-  removed at all. An external compliance contract changes its modules under its
-  own governance. Which modules mainnet uses, and what they may do during an
-  exit, is decided with
-  [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238).
-- **Tests:** `a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim`
-  in [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs);
-  `a_module_failing_on_burn_blocks_wind_down_claims_and_cannot_be_removed` in
+- **Control:** The exit rule. Once the kit's compliance contract is bound to its
+  vault, it calls every module with `try_` and ignores a refusal or a failure
+  on any move into the vault (a redemption request's escrow, a conversion's
+  escrow, of any `TransferKind`), on a mint to the vault and on every burn (a
+  claim's burn, a wind-down surrender or payout). The modules still see those
+  moves, so counters stay right, and a refusing module's own changes roll back
+  for that move only. Only the token's `manager` burns, and the vault's setup
+  requires the vault to hold that role alone. On the kit's compliance
+  contract, modules change only through the vault's timelock after setup,
+  never while the vault is paused. A wind-down refuses every module, binding
+  or admin change except removing a module: governance may remove any module,
+  failing or not, after the normal delay, the same power it already has
+  outside a wind-down. The kit registers no modules.
+- **Residual:**
+  - `try_` cannot catch a module that runs the transaction out of budget or
+    resource limits, or that hits another error the host does not recover
+    from, such as touching a ledger entry outside the footprint. Such a module
+    still blocks even a covered exit until its removal lands, the normal delay
+    after it is proposed, in a wind-down too.
+  - Every other move still runs all modules and stops at a refusal: a mint to a
+    holder at a share claim blocks that claim and keeps its epoch's share side
+    open, and a share return refused or failed leaves the holder in the queue
+    to exit in cash (X5).
+  - The rule keys on the bound vault and on the token's `manager` role. Another
+    token bound to the same compliance contract would also skip refusals on
+    its burns and moves into the vault; binding one is timelocked, and the
+    vault's setup requires its own token among the linked tokens, not alone
+    in them. A second
+    `manager` granted after setup (timelocked, and shown by
+    `health().sole_token_manager`) would burn past modules too, but it can burn
+    anyway.
+  - No event records an ignored refusal, so a counter module can drift
+    without anyone seeing it.
+  - Because removal is not conditioned on the module failing, a compromised or
+    adversarial governance could remove a working module during a wind-down to
+    drop a rule it enforced (a holder limit, a transfer restriction) for the
+    rest of it. What stays protected: exits keep working either way, the
+    vault's own checks (the identity check, a freeze, reserve coverage) are not
+    modules and cannot be removed this way, and the delay still gives holders
+    and the operator notice before the removal lands.
+  - An external compliance contract changes its modules under its own
+    governance and has no exit rule (R11).
+- **Tests:** `a_module_refusing_burns_does_not_block_a_redemption_claim`,
+  `a_module_refusing_mints_does_not_block_a_conversion_to_an_exit` and
+  `a_compliance_module_that_refuses_the_mint_blocks_a_priced_claim` in
+  [`compliance.rs`](../contracts/async-vault/src/test/compliance.rs);
+  `a_module_refusing_returns_still_blocks_a_cancellation` in
+  [`share_returns.rs`](../contracts/async-vault/src/test/share_returns.rs);
+  `a_module_refusing_burns_does_not_block_a_wind_down_claim` and
+  `a_module_still_comes_off_through_the_timelock_in_a_wind_down` in
   [`wind_down.rs`](../contracts/async-vault/src/test/wind_down.rs);
   `a_refused_mint_keeps_a_priced_deposit_epoch_open` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
-  `after_setup_rule_changes_wait_for_the_timelock` and
-  `nothing_lands_while_the_vault_is_paused_or_winding_down` in
+  `a_refusing_module_does_not_stop_a_move_into_the_vault`,
+  `a_refusing_module_does_not_stop_a_mint_to_the_vault`,
+  `a_refusing_module_does_not_stop_a_burn`,
+  `a_refusing_module_still_stops_a_move_to_a_holder` and
+  `a_counting_module_sees_moves_into_the_vault` in
+  [`compliance/src/test/exit_rule.rs`](../contracts/compliance/src/test/exit_rule.rs);
+  `after_setup_rule_changes_wait_for_the_timelock`,
+  `nothing_lands_while_the_vault_is_paused_or_winding_down` and
+  `removing_a_module_still_lands_through_the_timelock_during_a_wind_down` in
   [`compliance/src/test/changes.rs`](../contracts/compliance/src/test/changes.rs).
+  A module that exhausts the budget: none; removal is the defense, and its
+  path through the timelock in a wind-down is tested above.
 
 ### X7. Escrow behind stalled pricing
 
@@ -1114,8 +1444,10 @@ others' cost.
     per holder in `wind_down_owed` at any price the oracle allows, plus the
     value of any shares the snapshot counted that were never minted.
   - No queued change applies during a wind-down except a grant of the token's
-    `compliance` role, so nothing else can be fixed then, a failing module
-    included (X6).
+    `compliance` role and removing a compliance module, a claim topic, a
+    trusted issuer or a protocol address, so nothing else can be fixed then
+    (X6, R15). A verifier fault counts as a refusal then, so a broken issuer
+    cannot hold a deposit open for the rest of the wind-down.
   - `uncovered()` leaves out what the rounds owe, although `free_reserve()`
     subtracts it. After a loss of reserve, such as an issuer clawback (X10),
     `uncovered()` can read zero while the vault cannot pay both its priced exits
@@ -1150,21 +1482,27 @@ others' cost.
 Rounding lets a claim take more than its share, or a tiny deposit is lost.
 
 - **Control:** Conversions round down, in the vault's favour. Claims round one
-  by one, so together they never pay more than pricing promised. When an
-  epoch's last request settles, the remainder leaves `committed` and
-  `pending_mint_shares` and stays in the reserve (`EpochReconciled`). A running
-  total that would go below zero fails (`AccountingMismatch`) instead of being
-  clamped. A deposit worth less than one share mints nothing and is refunded at
-  claim, from the free reserve.
+  by one, so together they never pay more than pricing promised. Each side of
+  an epoch releases its remainder once its own requests settle, and only once:
+  the cash remainder leaves `committed` after the last redemption and stays in
+  the reserve (`EpochCashReconciled`), the share remainder leaves
+  `pending_mint_shares` after the last deposit (`EpochSharesReconciled`). A
+  running total that would go below zero fails (`AccountingMismatch`) instead
+  of being clamped. A deposit worth less than one share mints nothing and is
+  refunded at claim, from the free reserve.
 - **Residual:** Rounding remainders stay with the fund. A request that never
-  settles keeps its epoch's remainder in the totals. The refund for a deposit
+  settles keeps its side's remainder in the totals. The refund for a deposit
   below one share is not set aside when the epoch is priced: the treasury or a
   wind-down round can spend that cash first, and the claim then waits for the
-  free reserve.
+  free reserve. It waits on its own epoch's cash remainder only until that
+  epoch's last redemption settles.
 - **Tests:** `deposit_and_redeem_round_trip_never_manufactures_assets` and
   `conversion_rounds_down_in_the_vaults_favour` in
   [`conversions.rs`](../contracts/async-vault/src/test/conversions.rs);
-  `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once` and
+  `the_last_redemption_claim_clears_the_cash_remainder_and_says_so_once`,
+  `a_zero_share_refund_is_paid_once_its_epochs_redemptions_settle`,
+  `each_remainder_leaves_once_whichever_side_settles_last`,
+  `a_settled_epoch_leaves_no_remainder_in_the_totals` and
   `a_total_that_would_go_below_zero_fails_loudly` in
   [`settlement.rs`](../contracts/async-vault/src/test/settlement.rs);
   `a_deposit_below_one_share_is_refunded_at_claim` and
@@ -1245,14 +1583,19 @@ An idle contract's instance, code or entries archive, so calls fail.
 - **Residual:** An entry nobody touches archives 30 days after its last renewal
   (90 for a role), and on mainnet no sooner than 120 days after it was created.
   The next call that needs it pays the restore, and restoring many entries can
-  take separate transactions. A production compliance module or identity
-  registry must extend its own entries the same way, or the share token stops
-  working when they archive.
+  take separate transactions. Each investor's identity contract extends its
+  instance when its owner entry or a claim is read, so every verification
+  renews it. `npm run extend` does not cover identities, so one nobody
+  verifies archives, and the next transaction that needs it restores it. A compliance
+  contract or identity registry from outside the kit must extend its own
+  entries the same way, or the share token stops working when they archive.
 - **Tests:** `any_vault_read_restores_the_instance_ttl` and
   `a_pending_request_still_claims_after_most_of_a_month` in
   [`ttl.rs`](../contracts/async-vault/src/test/ttl.rs);
   `reading_a_decayed_entry_restores_the_full_ttl` in
-  [`strata-storage/src/test.rs`](../crates/strata-storage/src/test.rs).
+  [`strata-storage/src/test.rs`](../crates/strata-storage/src/test.rs);
+  `reading_a_claim_extends_the_instance` in
+  [`investor-identity/src/test.rs`](../contracts/investor-identity/src/test.rs).
 
 ### X12. Resource limits, contention and griefing
 
@@ -1266,15 +1609,17 @@ others out.
   ([design doc §8.4](./strata-product-and-architecture.md#84-request-lifecycle)).
   No call walks over holders or requests. A holder has at most one deposit and
   one redemption request per epoch. Whoever sends a request pays its fee and
-  the storage for its entry. Deposits need an allowlisted address, and
-  redemptions need shares.
+  the storage for its entry. Deposits need a verified address, and
+  redemptions need shares. An investor pays for its own onboarding, and the
+  verifier's work per check is bounded by the topics and issuers governance
+  chose, not by how many claims an identity holds (R16).
 - **Residual:** Requests, cancellations and claims write entries that all
   holders share: the running totals in the vault's instance, each epoch's
   record and settlement record, and the vault's own asset and share balances.
   Calls in the same ledger compete for those entries, and nothing has measured
   how many fit in one ledger. Anyone holding the asset can call `fund` with one
-  unit, and an allowlisted investor can request and cancel a deposit again and
-  again, paying only fees. An allowlisted investor can also fill the deposit
+  unit, and a verified investor can request and cancel a deposit again and
+  again, paying only fees. A verified investor can also fill the deposit
   cap with a deposit and cancel it before pricing, keeping others out of that
   epoch. Governance can raise the cap at once, and compliance can delist the
   investor.
@@ -1297,7 +1642,14 @@ or queued changes.
   vault, because its settlement record cannot count requests made before it
   existed
   ([kit spec, Invariant 7](./kit-spec.md#invariant-7-directional-rounding--non-creation-of-value)).
-  The oracle's own case has a written recovery (O11).
+  The oracle's own case has a written recovery (O11). This release also
+  changes a stored type: the vault's settlement record (`EpochSettlement`)
+  replaces `reconciled` with `shares_reconciled` and `cash_reconciled`. It is
+  therefore deployed fresh, as the rule above already requires; it is never
+  upgraded in place over a vault that stored records of the old shape. A
+  share token deployed on OpenZeppelin 0.7.2 is not upgraded in place either:
+  0.7.2 kept the supply in the token's instance, and this release reads it
+  from its own entry, so it would read a supply of zero.
 - **Residual:** No release ships a `migrate`; only test builds have one. If an
   upgrade changes a stored struct's fields or a variant's payload, every entry
   of the old shape fails to decode. Read from the code, not from a test, that
@@ -1318,9 +1670,11 @@ or queued changes.
   [`upgrade.rs`](../contracts/async-vault/src/test/upgrade.rs);
   `the_oracle_upgrades_under_a_live_valuation`, also with `upgrade_wasm`, in
   [`nav-oracle/src/test/governance.rs`](../contracts/nav-oracle/src/test/governance.rs).
-  A vault upgrade over stored entries of another shape: none, because no
-  release changes a stored type yet. The failures above are read from the
-  code, and a test belongs with the first release that changes one.
+  A vault upgrade over stored entries of another shape: none. This release
+  changes `EpochSettlement` but is deployed fresh, so no vault ever holds both
+  shapes; the failures above are read from the code. A test belongs with the
+  first release that must upgrade a live vault across a changed type, together
+  with the migration it needs.
 
 ### X14. A call made in a holder's name
 
@@ -1378,6 +1732,7 @@ of service. E: elevation of privilege.
 | [O11](#o11-an-oracle-upgraded-in-place-cannot-read-its-old-report) An oracle upgraded in place cannot read its old report |   |   |   |   | x |   |
 | [O12](#o12-an-integrator-reads-a-price-the-vault-would-refuse) An integrator reads a price the vault would refuse |   | x |   |   |   |   |
 | [O13](#o13-choosing-which-report-prices-an-epoch) Choosing which report prices an epoch |   | x |   |   |   |   |
+| [O14](#o14-an-integrator-relies-on-the-sep-40-feed) An integrator relies on the SEP-40 feed | x | x |   |   | x |   |
 | [R1](#r1-governance-compromised-the-changes-that-wait) Governance compromised: the changes that wait |   | x |   |   |   | x |
 | [R2](#r2-governance-compromised-the-powers-that-act-at-once) Governance compromised: the powers that act at once |   | x |   |   | x | x |
 | [R3](#r3-setup-left-open-or-wired-wrong) Setup left open, or wired wrong |   | x |   |   |   | x |
@@ -1391,7 +1746,9 @@ of service. E: elevation of privilege.
 | [R11](#r11-swapping-the-tokens-compliance-contract-or-verifier) Swapping the token's compliance contract or verifier | x | x |   |   | x |   |
 | [R12](#r12-a-crafted-transaction-on-the-consoles-signing-page) A crafted transaction on the console's signing page | x | x |   |   |   |   |
 | [R13](#r13-a-signing-link-read-before-the-call-lands) A signing link read before the call lands |   |   |   | x |   |   |
-| [R14](#r14-an-allowlist-change-that-publishes-no-event) An allowlist change that publishes no event |   |   | x |   |   |   |
+| [R14](#r14-a-listing-change-nobody-sees) A listing change nobody sees |   |   | x |   |   |   |
+| [R15](#r15-a-claim-issuer-signs-wrongly-fails-or-runs-other-code) A claim issuer signs wrongly, fails, or runs other code | x |   |   |   | x |   |
+| [R16](#r16-self-service-undoes-a-platform-decision) Self-service undoes a platform decision | x |   |   |   | x | x |
 | [X1](#x1-the-reserve-cannot-pay-a-priced-exit) The reserve cannot pay a priced exit |   |   |   |   | x |   |
 | [X2](#x2-a-pause-a-stale-feed-or-a-delisting-blocks-a-covered-claim) A pause, a stale feed or a delisting blocks a covered claim |   |   |   |   | x |   |
 | [X3](#x3-a-frozen-holder) A frozen holder |   | x |   |   | x |   |
@@ -1428,13 +1785,22 @@ Acting as another account, contract or person. What proves who is calling:
   only from its `manager`, the vault. The host accepts a contract's
   authorization only when that contract makes the call, so no account can pose
   as the vault. The other way round, the vault and the token believe whatever
-  answers at the oracle, compliance and verifier addresses governance set.
-  After setup, changing those waits for the timelock (O9, R11), and
-  `finish_setup` checks that each one answers what it should (R3).
-- **Investors.** The allowlist says who may hold shares. A compliance key that
-  lists an address it should not (R9), a verifier that lets anyone in (R11), or
-  an unlisted address that gets in (X4) lets someone pose as a verified
-  investor.
+  answers at the oracle, compliance and verifier addresses governance set, and
+  the verifier believes the registry, the topics contract and the issuers it
+  reads; only issuers running the kit's code can be trusted (R15). After setup,
+  changing those waits for the timelock (O9, R11), and `finish_setup` checks
+  that each one answers what it should (R3). An
+  integrator who picks the SEP-40 feed by what it answers can be handed a copy
+  bound to another vault; pinning the feed's contract ID, or checking its
+  `vault()`, tells the two apart (O14).
+- **Investors.** The identity verifier says who may hold shares: a wallet the
+  registry links to an identity with a valid claim from a trusted issuer for
+  every required topic, or a protocol address. A provider that signs for the
+  wrong person (R15), a compliance key that lifts a veto it should not (R9), a
+  protocol address governance names (R1), a verifier that lets anyone in
+  (R11), or an unlisted address that gets in (X4) lets someone pose as a
+  verified investor. Self-service cannot list a wallet without valid claims
+  (R16).
 - **The console.** The `/sign` page decodes a transaction and shows it in the
   console's terms before anyone signs, and refuses one it cannot show (R12). A
   copy of the console hosted by someone else can show anything; each operator
@@ -1448,7 +1814,7 @@ calls.
 
 Changing the price, the books, the code, or a transaction before it is signed:
 
-- the price: O1, O2, O3, O5, O8, O9, O10, O12, O13;
+- the price: O1, O2, O3, O5, O8, O9, O10, O12, O13, O14;
 - code, roles and wiring: R1, R2, R3, R11;
 - what a holder is owed or paid: R10, X3, X8, X9, X10;
 - when an epoch is sealed: R8;
@@ -1458,19 +1824,21 @@ Changing the price, the books, the code, or a transaction before it is signed:
 
 Denying an act, or an act no one can trace. What the chain records:
 
-- **Events.** Every privileged call that changes state publishes an event,
-  except the verifier's `allow` (R14). That covers the setup setters and
+- **Events.** Every privileged call that changes state publishes an event.
+  That covers the setup setters and
   `finish_setup`; the change queue (`ChangeProposed`, `ChangeApplied`,
   `ChangeCancelled`; an upgrade's `ChangeApplied` carries the new code's hash);
   role grants, revocations and admin hand-overs; the vault's, the token's and
   the NAV's pauses; reports, `clear_latest` and `set_config`; sealing an epoch
   and deploying to the custodian; the wind-down; freezes, legal transfers and
-  recoveries; and the compliance contract's modules and bindings. Holders'
-  requests, cancellations and claims publish events too, and so do the calls
-  anyone may make. Three calls succeed without an event because they change
-  nothing: granting a role already held, a recovery from an empty balance, and
-  the verifier's `set_claim_topics_and_issuers`. A refused call publishes
-  nothing, because its transaction rolls back.
+  recoveries; the compliance contract's modules and bindings; and the
+  registry's listings and vetoes and the verifier's protocol addresses (R14).
+  Holders' requests, cancellations and claims publish events too, and so do
+  onboarding and the calls anyone may make. Some calls succeed without an
+  event because they change nothing: granting a role already held, a recovery
+  from an empty balance, lifting a veto that is not set, and adding a protocol
+  address that is one already or removing one that is not. A refused call
+  publishes nothing, because its transaction rolls back.
 - **Who signed.** An event says what happened, not whose keys approved it. The
   transaction does: it carries a signature from each account the call needs
   (R4) and, for a multisig, shows which of its keys signed. A legal transfer
@@ -1492,7 +1860,7 @@ Denying an act, or an act no one can trace. What the chain records:
   depends on one the operator runs, or on the archives. A change to an
   authority's signers or thresholds is a Stellar account operation, not a
   contract event; the monitoring plan leaves it to an account-history service
-  (R4). The verifier stub's listings publish no event (R14).
+  (R4).
 - **Tests:** `a_refused_call_publishes_nothing` in
   [`events.rs`](../contracts/async-vault/src/test/events.rs);
   `finishing_setup_publishes_it` in
@@ -1524,23 +1892,28 @@ design: anyone can check the books without trusting the operator. On chain:
 
 - each holder's shares and frozen shares, requests per epoch, what is owed to
   them, and wind-down credits;
-- each address's allowlist entry; the kit's verifier stores only whether the
-  address is listed;
+- each wallet's link to its identity contract, and each veto; the registry
+  stores no country data;
+- each identity's claims: the topic, the issuer, the signature, the creation
+  and expiry times, and the provider's payload, which the kit never reads;
 - each report: the price, its times, the proof hash and, when the attester
   gives one, the proof URI;
 - the role holders, the queued changes, and every event with its addresses and
   amounts.
 
-Off chain: the KYC data behind each allowlist entry, and the valuation's inputs
-behind each report. The kit's verifier keeps only a yes or no per address, and
-the oracle only a hash and an optional URI per report. What an external
-identity registry keeps on chain is its own choice. The quality of the KYC and
+Off chain: the KYC data behind each claim, and the valuation's inputs behind
+each report. A claim attests only that its topic holds, and the oracle keeps
+only a hash and an optional URI per report. What a provider puts in a claim's
+payload is its own choice; the kit asks for no personal data there. The quality of the KYC and
 of the valuation is out of scope ([Out of scope](#out-of-scope)); this section
 says only where the data stays.
 
 - **Residual:** An address is not a name, but anyone who links one to a person
   sees that person's position and its history. A listed address shows that its
-  owner passed the operator's KYC. A holder who needs more privacy than a
+  owner passed a provider's KYC, and which topics and providers vouched for
+  it; a fund-specific topic, such as an approved jurisdiction, says that much
+  about the investor. A payload a provider fills with personal data is public
+  too. A holder who needs more privacy than a
   public ledger gives cannot get it from the kit. What the proof URI points to
   is public as well; an attester that wants the evidence kept private publishes
   the hash alone and shows the evidence to whoever checks it.
@@ -1556,34 +1929,43 @@ Stopping pricing, exits or calls:
 - pricing stops: O3, O4, O7, O11;
 - an authority stalls the vault, holds back a holder or leaves the reserve
   short: R2, R6, R7, R8, R9, R11;
+- a broken issuer holds deposits: R15;
 - exits are held: X1 to X8, X10;
-- calls fail: X11, X12, X13.
+- calls fail: X11, X12, X13, O14.
 
 ### Elevation of privilege
 
 Gaining a power one should not hold, or using one beyond its purpose:
 
 - an authority's keys are taken: R1, R2, R6, R7, R9;
+- an investor undoes a veto or lists itself without valid claims: R16;
 - setup is left open: R3;
 - one key acts alone, or a call takes more signatures than it shows: R4;
 - one account holds several seats: R5;
 - two authorities act together: R10.
 
 No threat covers a holder gaining a role: every privileged call checks the role
-and asks its holder to sign (R4).
+and asks its holder to sign (R4). Onboarding gives an investor no role, only a
+link the verifier checks on every move (R16).
 
 ## Known limits
 
 These are decided, and stated as they stand:
 
-1. A compliance module that refuses can block a covered exit, and removing it
-   waits for the timelock (X6). Which modules mainnet uses is decided in
-   [#238](https://github.com/BootNodeDev/strata-vault-kit/issues/238).
+1. A compliance module that runs the transaction out of budget or resource
+   limits can still block a redemption request or a covered exit, and removing
+   it waits for the timelock; the exit rule ignores only a module's refusal or
+   failure (X6).
 2. A stopped manager holds exits at a price back until the open epoch has run
    the minimum epoch duration, then anyone seals; with none set, holders wait
    until governance replaces the manager (R8).
-3. The identity verifier and compliance contracts in this repository are
-   testnet stubs, not for mainnet (R9, R11, R14).
+3. A broken claim issuer holds priced deposits and refuses new deposits until
+   it is fixed or replaced through the timelock; a fault never converts or
+   burns a position. Removing it alone leaves a topic with no issuer, still a
+   fault, or refuses the holders who relied on it (R15). Governance trusts
+   only issuers deployed straight from the kit's issuer Wasm, because an
+   executable reference passes the code check once and its owner can swap the
+   code later.
 4. The vault's constructor is the only check on who holds which role, for four
    pairs; later grants and the other contracts' roles are not checked (R5). The
    share token does refuse a legal transfer or recovery signed by one account
@@ -1595,12 +1977,17 @@ These are decided, and stated as they stand:
    reserve it can spend deposit escrow (X8, X10).
 6. No test signs through a relayer: the kit runs none, and whoever sends a
    transaction pays its fee (R4).
-7. The testnet deployment in the README runs older code than this commit
-   ([Scope](#scope)).
+7. The testnet deployment in the README runs `tranche-3` at `56936bd`; a
+   later change reaches it only through another redeploy ([Scope](#scope)).
 8. A clawback of the vault's cash by the asset's issuer is a loss of the fund
    that the vault does not assign. While it lasts, the vault refuses by name
    what its balance cannot cover: `EscrowNotCovered` for cancellations and new
    deposits, `ClaimNotCovered` for claims (X10).
+9. Wallet recovery is not offered: a lost wallet's shares move by a legal
+   transfer, and the investor onboards a new wallet with a new identity (R10).
+10. An investor's identity contract that nobody verifies or changes archives,
+    and the next transaction that needs it restores it: `npm run extend` keeps
+    the identity Wasm alive, not the identities (X11).
 
 ## What has no test yet
 
@@ -1615,6 +2002,8 @@ For Tranche 3's matrix:
 - The deposit asset's issuer freezing the vault's balance, and a deploy check
   of the asset's authorization flags (X10).
 - The cost of a call, and contention between calls in one ledger (X12).
+- A compliance module that runs an exit out of budget (X6), and an issuer whose
+  code is swapped through an executable reference after it is trusted (R15).
 - A vault upgrade over requests, positions or queued changes stored in an
   earlier shape (X13).
 - Alerts on large price moves, on `LatestCleared` and on the report after it
@@ -1622,11 +2011,10 @@ For Tranche 3's matrix:
 - The events of the kit's own `LatestCleared`, `NavPausedSet`, `Deployed`,
   `DepositCapUpdated`, `NoticeSet`, `WindDownDelaySet` and `VaultBound`, and
   of the wind-down ([Repudiation](#repudiation)).
-- An allowlist change, which publishes no event to test (R14).
 
 ## Out of scope
 
-The quality of the KYC behind the allowlist; the data and method behind each
+The quality of the KYC behind each claim; the data and method behind each
 valuation; the custodian's operations and solvency; the deposit asset's issuer
 beyond X10; how the authorities keep and rotate their keys; who hosts a
 frontend, and how; external compliance and identity contracts beyond the checks

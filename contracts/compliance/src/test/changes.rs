@@ -9,11 +9,11 @@ use soroban_sdk::{
     vec, Address, Env, Event as _, IntoVal, Symbol, Val, Vec,
 };
 use stellar_access::role_transfer::RoleTransferError;
-use stellar_tokens::rwa::compliance::ComplianceHook;
+use stellar_tokens::rwa::compliance::{ComplianceHook, TransferKind};
 use strata_storage::INSTANCE_EXTEND_AMOUNT;
 use strata_timelock::{Clock, DAY_DURATION, MIN_DELAY};
 
-use super::{age, instance_ttl};
+use super::{age, instance_ttl, snapshot};
 use crate::{
     ChangeApplied, ChangeProposed, Compliance, ComplianceChange, ComplianceClient,
     ComplianceContractError, CompliancePendingChange, ADMIN_ACCEPT_LEDGERS,
@@ -274,12 +274,12 @@ fn after_setup_rule_changes_wait_for_the_timelock() {
     );
     refused(
         f.rules
-            .try_add_module_to(&ComplianceHook::CanTransfer, &module, &f.admin),
+            .try_add_module_to(&ComplianceHook::Transferred, &module, &f.admin),
         ComplianceContractError::UseTimelock,
     );
     refused(
         f.rules
-            .try_remove_module_from(&ComplianceHook::CanTransfer, &module, &f.admin),
+            .try_remove_module_from(&ComplianceHook::Transferred, &module, &f.admin),
         ComplianceContractError::UseTimelock,
     );
 }
@@ -334,25 +334,25 @@ fn every_rule_change_lands_through_the_timelock() {
     let late = Address::generate(&f.e);
     f.rules.bind_token(&token, &f.admin);
     f.rules
-        .add_module_to(&ComplianceHook::CanTransfer, &early, &f.admin);
+        .add_module_to(&ComplianceHook::Transferred, &early, &f.admin);
     f.rules.finish_setup();
 
     f.land(&ComplianceChange::RemoveModule(
-        ComplianceHook::CanTransfer,
+        ComplianceHook::Transferred,
         early.clone(),
     ));
     f.land(&ComplianceChange::AddModule(
-        ComplianceHook::CanCreate,
+        ComplianceHook::Created,
         late.clone(),
     ));
     f.land(&ComplianceChange::UnbindToken(token));
 
     assert!(!f
         .rules
-        .is_module_registered(&ComplianceHook::CanTransfer, &early));
+        .is_module_registered(&ComplianceHook::Transferred, &early));
     assert!(f
         .rules
-        .is_module_registered(&ComplianceHook::CanCreate, &late));
+        .is_module_registered(&ComplianceHook::Created, &late));
     assert_eq!(f.rules.linked_tokens().len(), 0);
 }
 
@@ -361,7 +361,7 @@ fn nothing_lands_while_the_vault_is_paused_or_winding_down() {
     let f = finished();
     let module = Address::generate(&f.e);
     let id = f.rules.propose_change(&ComplianceChange::AddModule(
-        ComplianceHook::CanCreate,
+        ComplianceHook::Created,
         module,
     ));
     f.e.ledger().set_timestamp(10_000 + MIN_DELAY);
@@ -386,6 +386,29 @@ fn nothing_lands_while_the_vault_is_paused_or_winding_down() {
             .try_propose_change(&ComplianceChange::BindToken(Address::generate(&f.e))),
         ComplianceContractError::WindDownActive,
     );
+}
+
+#[test]
+fn removing_a_module_still_lands_through_the_timelock_during_a_wind_down() {
+    let f = finished();
+    let module = Address::generate(&f.e);
+    f.land(&ComplianceChange::AddModule(
+        ComplianceHook::Transferred,
+        module.clone(),
+    ));
+
+    let mut winding = running();
+    winding.winding_down = true;
+    f.clock.set(&winding);
+
+    f.land(&ComplianceChange::RemoveModule(
+        ComplianceHook::Transferred,
+        module.clone(),
+    ));
+
+    assert!(!f
+        .rules
+        .is_module_registered(&ComplianceHook::Transferred, &module));
 }
 
 #[test]
@@ -707,18 +730,18 @@ fn each_admin_call_asks_the_admin_for_one_signature() {
         (token.clone(), f.admin.clone()).into_val(&f.e),
     );
     f.rules
-        .add_module_to(&ComplianceHook::CanTransfer, &module, &f.admin);
+        .add_module_to(&ComplianceHook::Transferred, &module, &f.admin);
     f.signed_once_by(
         &f.admin,
         "add_module_to",
-        (ComplianceHook::CanTransfer, module.clone(), f.admin.clone()).into_val(&f.e),
+        (ComplianceHook::Transferred, module.clone(), f.admin.clone()).into_val(&f.e),
     );
     f.rules
-        .remove_module_from(&ComplianceHook::CanTransfer, &module, &f.admin);
+        .remove_module_from(&ComplianceHook::Transferred, &module, &f.admin);
     f.signed_once_by(
         &f.admin,
         "remove_module_from",
-        (ComplianceHook::CanTransfer, module, f.admin.clone()).into_val(&f.e),
+        (ComplianceHook::Transferred, module, f.admin.clone()).into_val(&f.e),
     );
 
     f.rules.bind_vault(&f.clock.address);
@@ -781,22 +804,33 @@ fn each_hook_asks_the_bound_token_for_one_signature() {
     let to = Address::generate(&f.e);
     f.rules.bind_token(&token, &f.admin);
 
-    f.rules.created(&to, &10, &token);
+    let minted = snapshot(&to, 0);
+    f.rules.created(&minted, &10, &token);
     f.signed_once_by(
         &token,
         "created",
-        (to.clone(), 10_i128, token.clone()).into_val(&f.e),
+        (minted, 10_i128, token.clone()).into_val(&f.e),
     );
-    f.rules.transferred(&to, &from, &4, &token);
+    let (sender, receiver) = (snapshot(&to, 10), snapshot(&from, 0));
+    f.rules
+        .transferred(&sender, &receiver, &4, &TransferKind::Standard, &token);
     f.signed_once_by(
         &token,
         "transferred",
-        (to.clone(), from.clone(), 4_i128, token.clone()).into_val(&f.e),
+        (
+            sender,
+            receiver,
+            4_i128,
+            TransferKind::Standard,
+            token.clone(),
+        )
+            .into_val(&f.e),
     );
-    f.rules.destroyed(&from, &4, &token);
+    let burned = snapshot(&from, 4);
+    f.rules.destroyed(&burned, &4, &token);
     f.signed_once_by(
         &token,
         "destroyed",
-        (from, 4_i128, token.clone()).into_val(&f.e),
+        (burned, 4_i128, token.clone()).into_val(&f.e),
     );
 }

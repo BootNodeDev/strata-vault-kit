@@ -16,51 +16,51 @@ fn fulfill_is_rejected_before_the_first_attestation() {
 fn fulfill_is_rejected_while_the_nav_is_paused() {
     let f = setup();
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
     f.oracle.pause_nav(&f.guardian);
 
     refused(f.vault.try_fulfill_epoch(&1), VaultError::FeedNotValid);
 
     f.oracle.set_nav_paused(&false);
-    assert_eq!(f.vault.fulfill_epoch(&1), wad(2));
+    assert_eq!(f.vault.fulfill_epoch(&1), price(2));
 }
 
 #[test]
 fn fulfill_is_rejected_once_the_feed_goes_stale() {
     let f = setup();
     f.close_epoch();
-    f.attest(wad(2));
+    f.attest(price(2));
 
     f.advance(3_601);
     assert!(f.oracle.is_stale());
     refused(f.vault.try_fulfill_epoch(&1), VaultError::FeedNotValid);
     assert_eq!(f.vault.get_epoch(&1).unwrap().status, EpochStatus::Pending);
 
-    f.attest(wad(1));
+    f.attest(price(1));
     f.vault.fulfill_epoch(&1);
-    assert_eq!(f.vault.get_epoch(&1).unwrap().share_price, wad(1));
+    assert_eq!(f.vault.get_epoch(&1).unwrap().share_price, price(1));
 }
 
 #[test]
 fn the_epoch_is_priced_at_the_attestation() {
     let f = setup();
     f.close_epoch();
-    f.attest(3 * WAD_SCALE / 2);
+    f.attest(3 * PRICE_SCALE / 2);
 
     f.vault.fulfill_epoch(&1);
 
     assert_eq!(
         f.vault.get_epoch(&1).unwrap().share_price,
-        3 * WAD_SCALE / 2
+        3 * PRICE_SCALE / 2
     );
-    assert_eq!(f.oracle.nav_per_share(), 3 * WAD_SCALE / 2);
+    assert_eq!(f.oracle.nav_per_share(), 3 * PRICE_SCALE / 2);
 }
 
 #[test]
 fn an_epoch_is_not_priced_against_a_valuation_older_than_its_close() {
     let f = setup();
     let holder = f.holder(100);
-    f.attest(wad(3));
+    f.attest(price(3));
     f.vault.request_redeem(&holder, &100);
 
     f.advance(60);
@@ -81,11 +81,11 @@ fn a_valuation_that_lands_after_the_close_prices_the_epoch() {
     f.advance(60);
     let epoch = f.close_epoch();
     f.advance(60);
-    f.attest(wad(3));
+    f.attest(price(3));
 
     f.vault.fulfill_epoch(&epoch);
 
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(3));
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, price(3));
 }
 
 #[test]
@@ -96,11 +96,11 @@ fn a_valuation_taken_in_the_closing_ledger_prices_the_epoch() {
 
     f.advance(60);
     let epoch = f.close_epoch();
-    f.attest(wad(3));
+    f.attest(price(3));
 
     f.vault.fulfill_epoch(&epoch);
 
-    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, wad(3));
+    assert_eq!(f.vault.get_epoch(&epoch).unwrap().share_price, price(3));
     assert_eq!(
         f.oracle.attested_at(),
         f.vault.get_epoch(&epoch).unwrap().closed_at
@@ -126,7 +126,7 @@ fn a_priced_redemption_still_pays_while_the_nav_is_paused() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.oracle.pause_nav(&f.guardian);
     assert_eq!(f.oracle.state(), OracleState::Paused);
     assert_eq!(f.vault.uncovered(), 0);
@@ -140,7 +140,7 @@ fn a_priced_redemption_still_pays_once_the_feed_goes_stale() {
     let f = setup();
     let holder = f.holder(500);
     let epoch = f.vault.request_redeem(&holder, &200);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.advance(f.oracle.config().freshness_duration + 1);
     assert_eq!(f.oracle.state(), OracleState::Stale);
     assert_eq!(f.vault.uncovered(), 0);
@@ -154,7 +154,7 @@ fn a_priced_deposit_still_claims_while_the_nav_is_paused() {
     let f = setup();
     let investor = f.investor(400);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     f.oracle.pause_nav(&f.guardian);
     assert_eq!(f.oracle.state(), OracleState::Paused);
 

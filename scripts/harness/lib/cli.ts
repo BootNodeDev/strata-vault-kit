@@ -81,6 +81,24 @@ function formatArgs(args: ConstructorArgs): string[] {
 	return Object.entries(args).flatMap(([k, v]) => [`--${k}`, String(v)])
 }
 
+// No "--" separator for a constructor that takes no arguments: the CLI
+// refuses an empty one.
+export function deployArgs(
+	wasm: string,
+	net: Rpc,
+	constructorArgs: ConstructorArgs,
+): string[] {
+	const formatted = formatArgs(constructorArgs)
+	return [
+		"contract",
+		"deploy",
+		"--wasm",
+		wasm,
+		...rpcArgs(net),
+		...(formatted.length > 0 ? ["--", ...formatted] : []),
+	]
+}
+
 export async function deployContract(
 	net: Network,
 	wasm: string,
@@ -88,18 +106,37 @@ export async function deployContract(
 	constructorArgs: ConstructorArgs,
 ): Promise<string> {
 	const out = await stellar(
-		[
-			"contract",
-			"deploy",
-			"--wasm",
-			wasm,
-			...rpcArgs(net),
-			"--",
-			...formatArgs(constructorArgs),
-		],
+		deployArgs(wasm, net, constructorArgs),
 		withSource(source),
 	)
 	return lastContractId(out)
+}
+
+export const uploadArgs = (wasm: string, net: Rpc): string[] => [
+	"contract",
+	"upload",
+	"--wasm",
+	wasm,
+	...rpcArgs(net),
+]
+
+export function lastWasmHash(output: string): string {
+	const found = output
+		.split("\n")
+		.map((line) => line.trim())
+		.findLast((line) => /^[0-9a-f]{64}$/.test(line))
+	if (found === undefined)
+		throw new Error(`no Wasm hash in CLI output:\n${output}`)
+	return found
+}
+
+// Puts code on the network without an instance, for a contract that deploys it.
+export async function uploadWasm(
+	net: Network,
+	wasm: string,
+	source: Keypair,
+): Promise<string> {
+	return lastWasmHash(await stellar(uploadArgs(wasm, net), withSource(source)))
 }
 
 async function deployAssetContract(

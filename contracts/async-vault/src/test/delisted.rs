@@ -1,17 +1,38 @@
 use proptest::prelude::*;
 use soroban_sdk::{testutils::Events as _, Event as _};
+use stellar_tokens::rwa::RWA;
 
 use super::*;
-use crate::{DepositConvertedToExit, EpochReconciled, RedemptionSurrendered};
+use crate::{
+    DepositConvertedToExit, EpochReconciled, EpochSharesReconciled, RedemptionSurrendered,
+};
 
-/// A 400 deposit priced at 2.0 for 200 shares, then delisted before the claim.
-fn delisted_with_a_priced_deposit(f: &Fixture) -> (Address, u64) {
+/// A 400 deposit priced at 2.0 for 200 shares, not yet claimed.
+fn a_priced_deposit(f: &Fixture) -> (Address, u64) {
     let investor = f.investor(1_000);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
+    (investor, epoch)
+}
+
+fn delisted_with_a_priced_deposit(f: &Fixture) -> (Address, u64) {
+    let (investor, epoch) = a_priced_deposit(f);
     f.identity.allow(&investor, &false);
     (investor, epoch)
 }
+
+/// The holder's cash and shares, then the vault's.
+fn balances(f: &Fixture, holder: &Address) -> (i128, i128, i128, i128) {
+    (
+        f.balance(holder),
+        f.shares(holder),
+        f.balance(&f.vault.address),
+        f.shares(&f.vault.address),
+    )
+}
+
+/// A verifier error that is neither of its refusals.
+const VERIFIER_FAULT: u32 = 1;
 
 #[test]
 fn a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch() {
@@ -31,12 +52,12 @@ fn a_delisted_holders_priced_deposit_joins_their_redemption_in_the_open_epoch() 
                 shares: 200,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
+            EpochSharesReconciled {
                 epoch,
                 share_dust: 0,
-                cash_dust: 0,
             }
             .to_xdr(&f.e, &f.vault.address),
+            EpochReconciled { epoch }.to_xdr(&f.e, &f.vault.address),
         ]
     );
     assert_eq!(f.shares(&investor), 0);
@@ -59,7 +80,7 @@ fn the_delisted_holder_is_paid_at_the_next_epochs_price() {
     let (investor, epoch) = delisted_with_a_priced_deposit(&f);
     f.vault.claim_deposit(&investor, &epoch);
 
-    let exit = f.fulfill_epoch(wad(8) / 5);
+    let exit = f.fulfill_epoch(price(8) / 5);
 
     assert_eq!(f.vault.claim_redeem(&investor, &exit), 320);
     assert_eq!(f.balance(&investor), 600 + 320);
@@ -73,7 +94,7 @@ fn the_delisted_holder_exits_at_the_same_price_as_everyone_in_that_epoch() {
     f.vault.claim_deposit(&investor, &epoch);
     f.vault.request_redeem(&other, &200);
 
-    let exit = f.fulfill_epoch(wad(8) / 5);
+    let exit = f.fulfill_epoch(price(8) / 5);
 
     assert_eq!(f.vault.claim_redeem(&investor, &exit), 320);
     assert_eq!(f.vault.claim_redeem(&other, &exit), 320);
@@ -85,7 +106,7 @@ fn a_conversion_adds_to_a_redemption_already_open_in_the_epoch() {
     let investor = f.holder(100);
     StellarAssetClient::new(&f.e, &f.asset).mint(&investor, &400);
     let epoch = f.vault.request_deposit(&investor, &400);
-    f.fulfill_epoch(wad(2));
+    f.fulfill_epoch(price(2));
     let open = f.vault.current_epoch();
     f.vault.request_redeem(&investor, &100);
     f.identity.allow(&investor, &false);
@@ -122,12 +143,12 @@ fn in_a_wind_down_the_shares_are_credited_before_the_first_round() {
                 shares: 200,
             }
             .to_xdr(&f.e, &f.vault.address),
-            EpochReconciled {
+            EpochSharesReconciled {
                 epoch,
                 share_dust: 0,
-                cash_dust: 0,
             }
             .to_xdr(&f.e, &f.vault.address),
+            EpochReconciled { epoch }.to_xdr(&f.e, &f.vault.address),
         ]
     );
     assert_eq!(f.vault.finalize_wind_down_round(), 400);
@@ -255,28 +276,78 @@ fn a_delisted_holders_unpriced_redemption_joins_the_wind_down_when_cancelled() {
     assert_eq!(f.vault.claim_wind_down(&other), 400);
 }
 
+/// A fault is not a refusal: nothing converts, and the claim delivers the
+/// shares once the verifier answers again.
 #[test]
-fn a_conversion_waits_while_the_vault_is_delisted() {
+fn a_verifier_fault_for_one_holder_holds_the_priced_deposit_open() {
     let f = setup();
-    let investor = f.investor(1_000);
-    let epoch = f.vault.request_deposit(&investor, &1_000);
-    f.fulfill_epoch(wad(2));
-    f.identity.allow(&investor, &false);
-    f.identity.allow(&f.vault.address, &false);
-
-    assert_eq!(
-        f.vault.try_claim_deposit(&investor, &epoch),
-        Err(Ok(soroban_sdk::Error::from_contract_error(304)))
-    );
-    assert!(f.vault.get_deposit_request(&epoch, &investor).is_some());
-
-    f.identity.allow(&f.vault.address, &true);
-    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+    let (investor, epoch) = a_priced_deposit(&f);
+    let verifier = f.share.identity_verifier();
+    f.verifier_failing_with(VERIFIER_FAULT, Some(&investor));
     let open = f.vault.current_epoch();
-    assert_eq!(
-        f.vault.get_redeem_request(&open, &investor).unwrap().shares,
-        500
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 0));
+
+    refused(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        VaultError::VerifierFailed,
     );
+
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 0));
+    assert!(
+        !f.vault
+            .get_deposit_request(&epoch, &investor)
+            .unwrap()
+            .claimed
+    );
+    assert_eq!(f.vault.pending_mint_shares(), 200);
+    assert!(f.vault.get_redeem_request(&open, &investor).is_none());
+
+    f.e.as_contract(&f.share.address, || {
+        RWA::set_identity_verifier(&f.e, &verifier)
+    });
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 200);
+    assert_eq!(balances(&f, &investor), (600, 200, 400, 0));
+}
+
+#[test]
+fn a_verifier_fault_for_every_address_fails_the_deposit_claim() {
+    let f = setup();
+    let (investor, epoch) = a_priced_deposit(&f);
+    f.verifier_failing_with(VERIFIER_FAULT, None);
+    let open = f.vault.current_epoch();
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 0));
+
+    refused(
+        f.vault.try_claim_deposit(&investor, &epoch),
+        VaultError::VerifierFailed,
+    );
+
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 0));
+    let request = f.vault.get_deposit_request(&epoch, &investor).unwrap();
+    assert!(!request.claimed);
+    assert_eq!(f.vault.pending_mint_shares(), 200);
+    assert!(f.vault.get_redeem_request(&open, &investor).is_none());
+}
+
+/// In a wind-down a fault is read as a refusal, so a broken verifier cannot
+/// hold the deposit open for good. Surrendering mints nothing, so it needs no
+/// answer for the vault either.
+#[test]
+fn in_a_wind_down_a_verifier_fault_surrenders_the_priced_deposit() {
+    let f = setup();
+    let (investor, epoch) = a_priced_deposit(&f);
+    f.vault.propose_wind_down();
+    f.advance(MIN_WIND_DOWN_DELAY);
+    f.vault.activate_wind_down();
+    f.verifier_failing_with(VERIFIER_FAULT, None);
+
+    assert_eq!(f.vault.claim_deposit(&investor, &epoch), 0);
+
+    assert_eq!(balances(&f, &investor), (600, 0, 400, 0));
+    assert_eq!(f.vault.pending_mint_shares(), 0);
+    assert_eq!(f.vault.finalize_wind_down_round(), 400);
+    assert_eq!(f.vault.claim_wind_down(&investor), 400);
+    assert_eq!(f.balance(&investor), 1_000);
 }
 
 proptest! {
@@ -299,7 +370,7 @@ proptest! {
                 who
             })
             .collect();
-        let epoch = f.fulfill_epoch(wad(1) * price_tenths / 10);
+        let epoch = f.fulfill_epoch(price(1) * price_tenths / 10);
         let open = f.vault.current_epoch();
 
         let mut claims: std::vec::Vec<(u16, usize)> =
@@ -321,7 +392,7 @@ proptest! {
         }
 
         let s = f.vault.get_epoch_settlement(&epoch).unwrap();
-        prop_assert!(s.reconciled);
+        prop_assert!(s.reconciled());
         prop_assert_eq!(f.vault.pending_mint_shares(), 0);
         prop_assert_eq!(
             f.vault.get_epoch(&open).unwrap().total_shares_redeeming,

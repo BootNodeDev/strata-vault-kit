@@ -18,8 +18,14 @@ pub struct Health {
     pub oracle_bound: bool,
     pub sole_token_manager: bool,
     pub allowlisted: bool,
+    /// The token's identity verifier answers `ready_for` with this vault and
+    /// its governance: its stack is complete, bound here with every setup
+    /// closed, and administered by governance.
+    pub identity_ready: bool,
     pub vault_unfrozen: bool,
     pub compliance_bound: bool,
+    /// The token's compliance contract names governance as its admin.
+    pub compliance_governed: bool,
     pub decimals_match: bool,
     /// The asset, the share token, the oracle and the vault are four
     /// different addresses.
@@ -32,6 +38,9 @@ pub struct Health {
     /// A report outlives the notice, so an epoch's cancellation window does
     /// not reopen on its own while the notice runs.
     pub freshness_covers_notice: bool,
+    /// A minimum epoch duration is set. While unset, only the manager can
+    /// seal the open epoch.
+    pub min_epoch_duration_set: bool,
 }
 
 pub(crate) fn health(e: &Env) -> Health {
@@ -44,8 +53,10 @@ pub(crate) fn health(e: &Env) -> Health {
         oracle_bound: wiring.oracle_bound,
         sole_token_manager: wiring.sole_token_manager,
         allowlisted: wiring.allowlisted,
+        identity_ready: wiring.identity_ready,
         vault_unfrozen: wiring.vault_unfrozen,
         compliance_bound: wiring.compliance_bound,
+        compliance_governed: wiring.compliance_governed,
         decimals_match: wiring.decimals_match,
         addresses_distinct: wiring.addresses_distinct,
         custodian_set: wiring.custodian_set,
@@ -55,5 +66,6 @@ pub(crate) fn health(e: &Env) -> Health {
             feed.try_freshness_duration(),
             Ok(Ok(freshness)) if freshness >= notice
         ),
+        min_epoch_duration_set: state::min_epoch_duration(e).is_some(),
     }
 }
